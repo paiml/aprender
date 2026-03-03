@@ -550,6 +550,61 @@ fn test_falsify_config_from_vocab_size_dispatch() {
     );
 }
 
+// ============================================================================
+// Merge Format Compatibility Tests (String vs Array)
+// ============================================================================
+
+/// Verify that string-format merges parse correctly (Qwen2/GPT-2/LLaMA format).
+#[test]
+fn test_merge_format_string() {
+    let json = r#"{
+        "model": {
+            "vocab": {"a": 0, "b": 1, "ab": 2},
+            "merges": ["a b"]
+        },
+        "added_tokens": []
+    }"#;
+    let tokenizer = super::load_from_json(json).expect("string-format merges should parse");
+    assert_eq!(tokenizer.vocab_size(), 3);
+}
+
+/// Verify that array-format merges parse correctly (Qwen3/newer HF format).
+#[test]
+fn test_merge_format_array() {
+    let json = r#"{
+        "model": {
+            "vocab": {"a": 0, "b": 1, "ab": 2},
+            "merges": [["a", "b"]]
+        },
+        "added_tokens": []
+    }"#;
+    let tokenizer = super::load_from_json(json).expect("array-format merges should parse");
+    assert_eq!(tokenizer.vocab_size(), 3);
+}
+
+/// Verify that both formats produce identical tokenizers.
+#[test]
+fn test_merge_format_equivalence() {
+    let json_string = r#"{
+        "model": {
+            "vocab": {"h": 0, "e": 1, "l": 2, "o": 3, "he": 4, "lo": 5, "helo": 6},
+            "merges": ["h e", "l o"]
+        },
+        "added_tokens": []
+    }"#;
+    let json_array = r#"{
+        "model": {
+            "vocab": {"h": 0, "e": 1, "l": 2, "o": 3, "he": 4, "lo": 5, "helo": 6},
+            "merges": [["h", "e"], ["l", "o"]]
+        },
+        "added_tokens": []
+    }"#;
+    let tok_s = super::load_from_json(json_string).expect("string format");
+    let tok_a = super::load_from_json(json_array).expect("array format");
+
+    assert_eq!(tok_s.vocab_size(), tok_a.vocab_size());
+}
+
 #[path = "tests_encode_decode.rs"]
 mod tests_encode_decode;
 

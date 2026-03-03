@@ -4,6 +4,70 @@ use crate::error::{AprenderError, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+// ============================================================================
+// Merge Format Compatibility (Qwen2 string vs Qwen3 array)
+// ============================================================================
+
+/// Deserialize BPE merges from either string or array format.
+///
+/// HuggingFace tokenizer.json uses two merge formats across model generations:
+/// - **String format** (Qwen2, GPT-2, LLaMA): `"Ġ Ġ"` — space-separated pair
+/// - **Array format** (Qwen3, newer models): `["Ġ", "Ġ"]` — 2-element array
+///
+/// This deserializer normalizes both to `"first second"` string format.
+fn deserialize_merges<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, SeqAccess, Visitor};
+    use std::fmt;
+
+    struct MergesVisitor;
+
+    impl<'de> Visitor<'de> for MergesVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a list of merge rules (strings or 2-element arrays)")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> std::result::Result<Vec<String>, A::Error>
+        where
+            A: SeqAccess<'de>,
+        {
+            let mut merges = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+
+            while let Some(element) = seq.next_element::<MergeEntry>()? {
+                match element {
+                    MergeEntry::String(s) => merges.push(s),
+                    MergeEntry::Array(pair) => {
+                        if pair.len() == 2 {
+                            merges.push(format!("{} {}", pair[0], pair[1]));
+                        } else {
+                            return Err(de::Error::custom(format!(
+                                "merge array must have exactly 2 elements, got {}",
+                                pair.len()
+                            )));
+                        }
+                    }
+                }
+            }
+
+            Ok(merges)
+        }
+    }
+
+    /// A single merge entry: either `"a b"` or `["a", "b"]`.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MergeEntry {
+        String(String),
+        Array(Vec<String>),
+    }
+
+    deserializer.deserialize_seq(MergesVisitor)
+}
+
 impl Qwen2BpeTokenizer {
     // Source of truth: SpecialTokens::qwen2() from special-tokens-registry-v1.yaml
     /// Special token: <|`im_start`|>
@@ -221,9 +285,13 @@ struct HfTokenizerJson {
 }
 
 /// BPE model section in tokenizer.json.
+///
+/// Supports both string-format merges (`"Ġ Ġ"`, Qwen2/GPT-2/LLaMA) and
+/// array-format merges (`["Ġ", "Ġ"]`, Qwen3/newer HF models).
 #[derive(Debug, Deserialize)]
 struct HfModel {
     vocab: HashMap<String, u32>,
+    #[serde(deserialize_with = "deserialize_merges")]
     merges: Vec<String>,
 }
 
@@ -237,6 +305,10 @@ struct HfAddedToken {
 }
 
 /// Load tokenizer from `HuggingFace` tokenizer.json format.
+///
+/// Uses the optimized loading path (GH-378): pre-sized HashMaps, owned-string
+/// moves, and fast merge loading. Applies to all vocab sizes via
+/// `config_from_vocab_size` dispatch (Qwen2, Whisper, GPT-2, LLaMA).
 ///
 /// # Arguments
 /// * `json` - JSON string of tokenizer configuration
@@ -258,11 +330,19 @@ pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
             message: format!("Failed to parse tokenizer JSON: {e}"),
         })?;
 
-    let config = config_from_vocab_size(hf_tokenizer.model.vocab.len());
-    let mut tokenizer = BpeTokenizer::new(config);
+    let vocab_size = hf_tokenizer.model.vocab.len();
+    let merge_count = hf_tokenizer.model.merges.len();
+    let config = config_from_vocab_size(vocab_size);
 
-    load_vocab_into(&mut tokenizer, &hf_tokenizer.model.vocab);
-    load_merges_from_strings(&mut tokenizer, &hf_tokenizer.model.merges);
+    // Pre-size all HashMaps to avoid rehashing (151K entries = ~15 rehash cycles avoided)
+    let mut tokenizer = BpeTokenizer::with_capacity(config, vocab_size, merge_count);
+
+    // Move vocab strings (saves 150K String clones vs borrow+clone)
+    load_vocab_owned(&mut tokenizer, hf_tokenizer.model.vocab);
+
+    // Process merges with split_once + owned strings (saves 150K Vec + String allocations)
+    load_merges_fast(&mut tokenizer, hf_tokenizer.model.merges);
+
     load_added_tokens(&mut tokenizer, &hf_tokenizer.added_tokens);
 
     Ok(tokenizer)
@@ -281,7 +361,7 @@ fn config_from_vocab_size(vocab_size: usize) -> BpeConfig {
     }
 }
 
-/// Load vocabulary entries into a tokenizer.
+/// Load vocabulary entries into a tokenizer (borrow path, used by `load_from_files`).
 fn load_vocab_into(tokenizer: &mut BpeTokenizer, vocab: &HashMap<String, u32>) {
     for (token, id) in vocab {
         tokenizer.vocab.insert(token.clone(), *id);
@@ -289,12 +369,25 @@ fn load_vocab_into(tokenizer: &mut BpeTokenizer, vocab: &HashMap<String, u32>) {
     }
 }
 
-/// Load merge rules from space-separated merge strings.
-fn load_merges_from_strings(tokenizer: &mut BpeTokenizer, merges: &[String]) {
+/// Load vocabulary by consuming the deserialized HashMap.
+///
+/// Moves each String into `vocab` (zero-copy) and clones once for `id_to_token`.
+/// Saves 150K String allocations vs the borrow path on Qwen2-scale vocabs.
+fn load_vocab_owned(tokenizer: &mut BpeTokenizer, vocab: HashMap<String, u32>) {
+    for (token, id) in vocab {
+        tokenizer.id_to_token.insert(id, token.clone());
+        tokenizer.vocab.insert(token, id); // move, not clone
+    }
+}
+
+/// Load merge rules by consuming the deserialized Vec.
+///
+/// Uses `split_once` (no Vec allocation) and `add_merge_owned` (moves strings
+/// instead of cloning). Saves ~300K String + 150K Vec allocations on Qwen2.
+fn load_merges_fast(tokenizer: &mut BpeTokenizer, merges: Vec<String>) {
     for merge_str in merges {
-        let parts: Vec<&str> = merge_str.split(' ').collect();
-        if parts.len() >= 2 {
-            tokenizer.add_merge(parts[0], parts[1]);
+        if let Some((first, second)) = merge_str.split_once(' ') {
+            tokenizer.add_merge_owned(first.to_string(), second.to_string());
         }
     }
 }

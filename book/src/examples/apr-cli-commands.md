@@ -262,11 +262,24 @@ Runs inference on APR, SafeTensors, or GGUF models:
 - JSON array: `"[1.0, 2.0, 3.0]"`
 - CSV: `"1.0,2.0,3.0"`
 
-#### 17. SERVE - Start Inference Server
+#### 17. SERVE - Inference Server and Capacity Planning
 
+**Serve Plan** — Pre-flight capacity planning (no weights loaded):
 ```bash
-apr serve model.apr --port 8080              # Start on port 8080
-apr serve model.apr --host 0.0.0.0 --port 3000  # Bind to all interfaces
+# Plan from local file
+apr serve plan model.gguf --gpu
+
+# Plan from HuggingFace repo (fetches only ~2KB config.json)
+apr serve plan hf://Qwen/Qwen2.5-Coder-1.5B-Instruct --gpu --quant Q4_K_M
+
+# JSON output for CI/tooling
+apr serve plan microsoft/phi-2 --gpu --format json
+```
+
+**Serve Run** — Start inference server:
+```bash
+apr serve run model.apr --port 8080              # Start on port 8080
+apr serve run model.apr --host 0.0.0.0 --port 3000  # Bind to all interfaces
 ```
 
 Starts a REST API server for model inference:

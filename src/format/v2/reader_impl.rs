@@ -180,6 +180,16 @@ impl AprV2Reader {
                 Some(floats)
             }
             TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::BF16 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(2)
+                    .map(|chunk| {
+                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        f32::from_bits(u32::from(bits) << 16)
+                    })
+                    .collect();
+                Some(floats)
+            }
             TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
             TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
             _ => None, // Other types not yet supported
@@ -371,6 +381,16 @@ impl<'a> AprV2ReaderRef<'a> {
                 Some(floats)
             }
             TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::BF16 => {
+                let floats: Vec<f32> = data
+                    .chunks_exact(2)
+                    .map(|chunk| {
+                        let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
+                        f32::from_bits(u32::from(bits) << 16)
+                    })
+                    .collect();
+                Some(floats)
+            }
             TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
             TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
             _ => None, // Other types not yet supported

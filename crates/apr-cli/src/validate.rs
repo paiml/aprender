@@ -56,8 +56,15 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         }
         Commands::Export { plan: true, .. } => vec![],
         Commands::Export { file, .. } => file.iter().cloned().collect(),
-        Commands::Serve { file, .. }
-        | Commands::Trace { file, .. }
+        Commands::Serve { command } => match command {
+            ServeCommands::Run { file, .. } => vec![file.clone()],
+            ServeCommands::Plan { model, .. } => {
+                // HF URLs don't have local files to validate
+                let path = PathBuf::from(model);
+                if path.exists() { vec![path] } else { vec![] }
+            }
+        },
+        Commands::Trace { file, .. }
         | Commands::Convert { file, .. }
         | Commands::Check { file, .. } => vec![file.clone()],
 

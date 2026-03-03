@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
+- **GH-378: Optimized tokenizer.json loading** — Pre-sized HashMaps, moved vocab strings instead of cloning, eliminated 600K String/Vec allocations during merge loading. `from_file` 272ms -> 142ms (1.91x faster), now beats HuggingFace v0.22 by 1.43x. Applies to all tokenizer formats (Qwen2, Whisper, GPT-2, LLaMA) via shared `load_from_json` path.
 
 ### Added
 - `apr serve plan` now accepts HuggingFace repo IDs (`hf://org/repo` or bare `org/repo`)

@@ -80,6 +80,27 @@ fn print_category_summary(results: &RealProfileResults) {
         cat.norm_pct,
         bar(cat.norm_pct).yellow()
     );
+    if cat.tokenize_pct > 0.0 {
+        println!(
+            "  Tokenize:  {:5.1}%  {}",
+            cat.tokenize_pct,
+            bar(cat.tokenize_pct).magenta()
+        );
+    }
+    if cat.training_pct > 0.0 {
+        println!(
+            "  Training:  {:5.1}%  {}",
+            cat.training_pct,
+            bar(cat.training_pct).red()
+        );
+    }
+    if cat.serving_pct > 0.0 {
+        println!(
+            "  Serving:   {:5.1}%  {}",
+            cat.serving_pct,
+            bar(cat.serving_pct).blue()
+        );
+    }
     println!(
         "  Other:     {:5.1}%  {}",
         cat.other_pct,

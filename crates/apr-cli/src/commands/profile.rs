@@ -319,6 +319,9 @@ pub(crate) struct CategorySummary {
     pub attention_pct: f64,
     pub ffn_pct: f64,
     pub norm_pct: f64,
+    pub tokenize_pct: f64,
+    pub training_pct: f64,
+    pub serving_pct: f64,
     pub other_pct: f64,
 }
 

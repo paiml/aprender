@@ -242,17 +242,19 @@
     #[test]
     fn test_extract_paths_action_commands() {
         let serve_cmd = Commands::Serve {
-            file: PathBuf::from("model.gguf"),
-            port: 8080,
-            host: "127.0.0.1".to_string(),
-            no_cors: false,
-            no_metrics: false,
-            no_gpu: false,
-            gpu: false,
-            batch: false,
-            trace: false,
-            trace_level: "basic".to_string(),
-            profile: false,
+            command: ServeCommands::Run {
+                file: PathBuf::from("model.gguf"),
+                port: 8080,
+                host: "127.0.0.1".to_string(),
+                no_cors: false,
+                no_metrics: false,
+                no_gpu: false,
+                gpu: false,
+                batch: false,
+                trace: false,
+                trace_level: "basic".to_string(),
+                profile: false,
+            },
         };
         let paths = extract_model_paths(&serve_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);

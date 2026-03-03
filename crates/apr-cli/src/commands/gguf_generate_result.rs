@@ -324,85 +324,60 @@ fn format_prediction_output(
 }
 
 /// Print layer-level trace timing breakdown.
+///
+/// Only reports measurable wall-clock totals. Per-layer breakdown is not
+/// available without BrickProfiler instrumentation — use `apr profile --granular`
+/// for real per-operation telemetry.
 fn print_layer_trace(result: &RunResult, max_tokens: usize) {
-    let num_layers = 28;
     let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
     let total_ms = result.duration_secs * 1000.0;
-    let per_layer_ms = total_ms / (num_layers as f64 * tokens_generated as f64);
 
+    eprintln!();
+    eprintln!("{}", "Layer Timing:".cyan());
+    eprintln!("  Total inference: {:.2} ms", total_ms);
+    eprintln!("  Tokens generated: {}", tokens_generated);
+    eprintln!(
+        "  Throughput: {:.1} tok/s",
+        tokens_generated as f64 / result.duration_secs
+    );
     eprintln!();
     eprintln!(
         "{}",
-        format!("Layer Timing ({num_layers} layers × {tokens_generated} tokens):").cyan()
+        "Per-layer breakdown not available in this path.".yellow()
     );
     eprintln!(
-        "  {:>6} | {:>9} | {:>8} | {:>9} | {:>10}",
-        "Layer", "Attn (ms)", "FFN (ms)", "Norm (ms)", "Total (ms)"
+        "{}",
+        "Use `apr profile <model> --granular` for real per-layer timing.".yellow()
     );
-    eprintln!("  -------|-----------|----------|-----------|------------");
-    for i in 0..num_layers.min(5) {
-        let attn = per_layer_ms * 0.40;
-        let ffn = per_layer_ms * 0.55;
-        let norm = per_layer_ms * 0.05;
-        let total = attn + ffn + norm;
-        eprintln!(
-            "  {:>6} | {:>9.2} | {:>8.2} | {:>9.2} | {:>10.2}",
-            i, attn, ffn, norm, total
-        );
-    }
-    if num_layers > 5 {
-        eprintln!("  ... ({} more layers)", num_layers - 5);
-    }
     eprintln!();
 }
 
 /// Print payload trace with activation statistics.
+///
+/// Activation capture is not implemented in this code path.
+/// Use `apr profile` or set REALIZE_TRACE=1 for real activation data.
 fn print_payload_trace(result: &RunResult, max_tokens: usize) {
-    let num_layers = 28;
     let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+    let total_ms = result.duration_secs * 1000.0;
 
     eprintln!();
-    eprintln!(
-        "{}",
-        "Activation Statistics (--trace-level payload):".cyan()
-    );
+    eprintln!("{}", "Payload Trace:".cyan());
+    eprintln!("  Total inference: {:.2} ms", total_ms);
+    eprintln!("  Tokens generated: {}", tokens_generated);
     eprintln!();
     eprintln!(
         "{}",
-        format!("Tokens processed: {tokens_generated}").bright_white()
+        "Activation statistics not available in this path.".yellow()
     );
-    eprintln!("{}", format!("Layers: {num_layers}").bright_white());
-    eprintln!();
-
-    eprintln!(
-        "  {:>10} | {:>12} | {:>12} | {:>12} | {:>12}",
-        "Layer", "Min", "Max", "Mean", "Std"
-    );
-    eprintln!("  -----------|--------------|--------------|--------------|-------------");
-    for i in 0..num_layers.min(5) {
-        let layer_seed = (i as f32 + 1.0) * 0.1;
-        eprintln!(
-            "  {:>10} | {:>12.4} | {:>12.4} | {:>12.4} | {:>12.4}",
-            format!("Layer {i}"),
-            -2.5 + layer_seed * 0.3,
-            2.8 + layer_seed * 0.2,
-            0.01 + layer_seed * 0.005,
-            0.85 + layer_seed * 0.02,
-        );
-    }
-    if num_layers > 5 {
-        eprintln!("  ... ({} more layers)", num_layers - 5);
-    }
-    eprintln!();
-    eprintln!("{}", "Attention Patterns:".cyan());
-    eprintln!("  Head 0: Focus on positions [0, 3, 7] (prompt context)");
-    eprintln!("  Head 1: Focus on positions [1, 2] (recent tokens)");
-    eprintln!("  Head 2: Uniform attention across sequence");
-    eprintln!();
     eprintln!(
         "{}",
-        "Note: Full payload inspection requires REALIZE_TRACE=1".yellow()
+        "Use `apr profile <model> --granular` for real per-operation telemetry,".yellow()
     );
+    eprintln!(
+        "{}",
+        "or set REALIZE_TRACE=1 for activation capture during inference.".yellow()
+    );
+    eprintln!();
 }
 
 /// Print roofline profiling analysis.

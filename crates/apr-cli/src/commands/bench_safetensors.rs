@@ -116,101 +116,70 @@ fn bench_log_done(config: &BenchConfig) {
     }
 }
 
-/// SafeTensors CUDA benchmark (GH-192)
-/// Uses SafeTensorsCudaModel for direct GPU loading
+/// SafeTensors CUDA benchmark using fused Q4K kernels (GH-88)
+///
+/// F-KERNEL-DISPATCH-001: Converts SafeTensors → temp APR Q4K, then uses
+/// OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV, 200+ tok/s) instead of
+/// SafeTensorsCudaModel (generic F32 GPU, 16 tok/s).
+///
+/// Loading path: SafeTensors → apr_import(Q4K) → MappedAprModel →
+/// OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 #[cfg(feature = "inference")]
 fn run_safetensors_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
     tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<BenchResult> {
-    use realizar::safetensors_cuda::SafeTensorsCudaModel;
+    use aprender::format::{ImportOptions, QuantizationType};
+    use realizar::apr::MappedAprModel;
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
 
-    bench_log(config, &"Loading SafeTensors model (GPU)...".yellow().to_string());
+    bench_log(config, &"Converting SafeTensors → Q4K (one-time)...".yellow().to_string());
     let start = Instant::now();
 
-    let mut model = SafeTensorsCudaModel::load(path, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors CUDA: {e}")))?;
+    // Convert SafeTensors to temp APR Q4K file for fused kernel access
+    let tmp_apr = std::env::temp_dir().join("bench-safetensors-q4k.apr");
+    let import_opts = ImportOptions {
+        quantize: Some(QuantizationType::Q4K),
+        ..ImportOptions::default()
+    };
+    aprender::format::apr_import(&path.display().to_string(), &tmp_apr, import_opts)
+        .map_err(|e| CliError::ValidationFailed(format!("SafeTensors→APR Q4K conversion failed: {e}")))?;
+
+    bench_log(config, &"Loading Q4K model (GPU, fused kernels)...".yellow().to_string());
+
+    let mapped = MappedAprModel::from_path(&tmp_apr)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map temp APR: {e}")))?;
 
     let prompt_tokens = resolve_safetensors_tokens(path, &config.prompt);
-    // Qwen2 EOS (source of truth: special-tokens-registry-v1.yaml)
-    let eos_token: u32 = aprender::demo::SpecialTokens::qwen2().eos_id;
 
-    bench_log_ready(config, start.elapsed(), " (GPU device 0)");
+    let model = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create quantized model: {e}")))?;
 
-    bench_log(config, &"Running warmup (GPU)...".yellow().to_string());
-    for i in 0..config.warmup {
-        model.reset_kv_cache();
-        let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), eos_token);
-        bench_log_iter(config, i, Duration::ZERO, None);
-    }
-    bench_log_done(config);
+    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to init CUDA: {e}")))?;
 
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: config.max_tokens.min(128),
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+
+    let load_time = start.elapsed();
+    bench_log_ready(config, load_time, " (GPU device 0, fused Q4K kernels)");
+
+    // Warmup
+    run_cuda_warmup(&mut cuda_model, &prompt_tokens, &gen_config, config)?;
+
+    // Measurement
     let (iteration_times, total_tokens, first_token_time) =
-        run_safetensors_cuda_measurement(&mut model, &prompt_tokens, eos_token, config, tracer)?;
+        run_cuda_measurement(&mut cuda_model, &prompt_tokens, &gen_config, config, tracer)?;
+
+    // Cleanup temp file
+    let _ = std::fs::remove_file(&tmp_apr);
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
-}
-
-/// Run measurement iterations for SafeTensors CUDA benchmark.
-#[cfg(feature = "inference")]
-fn run_safetensors_cuda_measurement(
-    model: &mut realizar::safetensors_cuda::SafeTensorsCudaModel,
-    prompt_tokens: &[u32],
-    eos_token: u32,
-    config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
-) -> Result<(Vec<Duration>, usize, Duration)> {
-    bench_log(config, &"Running benchmark (GPU)...".yellow().to_string());
-    let mut iteration_times = Vec::with_capacity(config.iterations);
-    let mut total_tokens = 0usize;
-    let mut first_token_time = Duration::ZERO;
-    let budget_us = config.max_tokens as u64 * 100_000;
-
-    let mut generate_errors = 0usize;
-
-    for i in 0..config.iterations {
-        model.reset_kv_cache();
-        let traced = tracer.trace("bench_safetensors_gpu_iter", budget_us, || {
-            model
-                .generate(prompt_tokens, config.max_tokens.min(32), eos_token)
-        });
-        let output = match traced.result {
-            Ok(tokens) => tokens,
-            Err(e) => {
-                if generate_errors == 0 {
-                    eprintln!(
-                        "{}",
-                        format!("Warning: generate() failed on iteration {i}: {e}").yellow()
-                    );
-                }
-                generate_errors += 1;
-                prompt_tokens.to_vec()
-            }
-        };
-        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-        let iter_time = Duration::from_micros(traced.duration_us);
-        iteration_times.push(iter_time);
-        total_tokens += tokens_generated;
-        if i == 0 {
-            first_token_time =
-                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
-        }
-        bench_log_iter(config, i, iter_time, Some(tokens_generated));
-    }
-    if generate_errors > 0 {
-        eprintln!(
-            "{}",
-            format!(
-                "Warning: {generate_errors}/{} iterations had generate() errors",
-                config.iterations
-            )
-            .yellow()
-        );
-    }
-    bench_log_done(config);
-
-    Ok((iteration_times, total_tokens, first_token_time))
 }
 
 /// Run warmup iterations for CUDA benchmark.

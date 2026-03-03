@@ -97,6 +97,26 @@ dependencies = [
 [[package]]
 name = "alimentar"
 version = "0.2.6"
+dependencies = [
+ "arrow 57.2.0",
+ "arrow-csv 57.2.0",
+ "arrow-json 57.2.0",
+ "bytes",
+ "lz4_flex",
+ "parquet 57.2.0",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "unicode-width 0.2.0",
+ "zstd",
+]
+
+[[package]]
+name = "alimentar"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38f995d174944bd6dac254db94d6dc76e27697c1e03177ead9b45ee5e8979ad3"
 dependencies = [
@@ -119,26 +139,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tokio",
- "unicode-width 0.2.0",
- "zstd",
-]
-
-[[package]]
-name = "alimentar"
-version = "0.2.7"
-dependencies = [
- "arrow 57.2.0",
- "arrow-csv 57.2.0",
- "arrow-json 57.2.0",
- "bytes",
- "lz4_flex",
- "parquet 57.2.0",
- "rand 0.8.5",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror 2.0.18",
  "unicode-width 0.2.0",
  "zstd",
 ]
@@ -261,7 +261,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.4.10"
 dependencies = [
- "alimentar 0.2.7",
+ "alimentar 0.2.6",
  "aprender 0.27.4",
  "assert_cmd",
  "axum",
@@ -297,7 +297,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
- "trueno 0.16.2",
+ "trueno 0.16.1",
  "trueno-explain",
  "trueno-viz 0.2.1",
  "trueno-zram-core",
@@ -330,7 +330,7 @@ name = "aprender"
 version = "0.27.4"
 dependencies = [
  "aes-gcm",
- "alimentar 0.2.6",
+ "alimentar 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "alsa",
  "argon2",
  "batuta-common",
@@ -2289,13 +2289,14 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 name = "entrenar"
 version = "0.7.5"
 dependencies = [
- "alimentar 0.2.6",
+ "alimentar 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "aprender 0.27.4",
  "arrow 57.2.0",
  "bytemuck",
  "chrono",
  "clap",
  "clap_complete",
+ "ctrlc",
  "dirs 5.0.1",
  "ed25519-dalek",
  "half",
@@ -2316,7 +2317,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
- "trueno 0.16.2",
+ "trueno 0.16.1",
  "trueno-gpu",
  "trueno-viz 0.2.1",
  "zip",
@@ -4981,8 +4982,6 @@ dependencies = [
 [[package]]
 name = "provable-contracts"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25d845cee13c0160ff2d644c8bd4b65a8487f894a827d9d0fe23d47980a9fa5"
 dependencies = [
  "serde",
  "serde_json",
@@ -4993,8 +4992,6 @@ dependencies = [
 [[package]]
 name = "provable-contracts-macros"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5325,7 +5322,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.16.2",
+ "trueno 0.16.1",
  "trueno-gpu",
  "trueno-quant",
  "uuid",
@@ -5455,7 +5452,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno 0.16.2",
+ "trueno 0.16.1",
  "trueno-db",
  "trueno-graph",
  "trueno-viz 0.2.1",
@@ -6762,7 +6759,7 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.16.2"
+version = "0.16.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -6772,6 +6769,27 @@ dependencies = [
  "num_cpus",
  "pollster",
  "rayon",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "trueno-quant",
+ "wgpu",
+]
+
+[[package]]
+name = "trueno"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2676205d0af0b161e0fb1805ed6b5cbfe32d10d3630d3572609c7fa07d53816e"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "chrono",
+ "futures-intrusive",
+ "hostname",
+ "num_cpus",
+ "pollster",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -6906,7 +6924,7 @@ dependencies = [
  "serde",
  "serde_yaml_ng",
  "thiserror 2.0.18",
- "trueno 0.16.2",
+ "trueno 0.16.1",
 ]
 
 [[package]]
@@ -8074,11 +8092,3 @@ checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
 dependencies = [
  "zune-core 0.5.1",
 ]
-
-[[patch.unused]]
-name = "provable-contracts"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "provable-contracts-macros"
-version = "0.1.0"

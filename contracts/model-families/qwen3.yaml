@@ -83,6 +83,37 @@ size_variants:
     rope_theta: 1000000.0
     rms_norm_eps: 0.000001
 
+# =============================================================================
+# CUDA TRAINING RESOURCE BUDGET (Provable Design-by-Contract)
+#
+# Meyer (1992) "No Hidden Clauses": max_seq_len MUST be derived from model dims
+# and available VRAM — never hardcoded. Every buffer allocation in
+# entrenar/src/transformer/cuda_block.rs is a known function of these dims.
+#
+# FORMULA (f32, 4 bytes per element):
+#
+#   Let H = hidden_dim, Q = num_heads * head_dim, KV = num_kv_heads * head_dim,
+#       I = intermediate_dim, N = num_heads, hd = head_dim, L = num_layers,
+#       S = max_seq_len
+#
+#   per_layer_weights = Q*H + KV*H*2 + H*Q + I*H*3 + H*2          (constant)
+#   per_layer_grad_weights = H*H*2 + H*KV*2 + H*I*3 + H*2         (constant)
+#   per_layer_scratch_linear(S) = S*(8H + 2KV + 4I + 3N*hd)        (linear in S)
+#   per_layer_scratch_quadratic(S) = N*S*max(S,hd) + N*S*S          (quadratic in S)
+#
+#   total_vram_bytes(S) = 4 * L * (per_layer_weights + per_layer_grad_weights
+#                                   + per_layer_scratch_linear(S)
+#                                   + per_layer_scratch_quadratic(S))
+#
+# RESOLUTION ORDER (highest priority first):
+#   1. User CLI override: --max-seq-len <N>
+#   2. Data-derived: max token count in training corpus
+#   3. VRAM budget solver: largest S such that total_vram_bytes(S) <= available_vram
+#
+# INVARIANT: max_seq_len <= max_position_embeddings (always)
+# INVARIANT: max_seq_len >= max_token_count_in_data (correctness)
+# =============================================================================
+
 constraints:
   attention_type: gqa
   activation: silu

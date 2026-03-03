@@ -152,7 +152,7 @@ trueno-explain = "0.2.2"
 entrenar-lora = "0.3.0"
 # ML training engine: classification fine-tuning pipeline (--task classify)
 # ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
-entrenar = { version = "0.7.3", features = ["cuda", "parquet"] }
+entrenar = { version = "0.7.3", features = ["cuda", "gpu", "parquet"] }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 alimentar = { version = "0.2.6", path = "/home/noah/src/alimentar", default-features = false, features = ["shuffle"] }
 half = "2.4.1"

@@ -99,8 +99,19 @@ fn profile_gguf_real(
     let vocab_size = config.vocab_size;
     let hidden_dim = config.hidden_dim;
 
-    // Test prompt tokens (BOS + "Hello")
-    let test_tokens: Vec<u32> = vec![1, 15043]; // BOS + "Hello" for TinyLlama/Qwen
+    // Load tokenizer for profiled encoding (GH-378)
+    let test_prompt = "What is 2+2?";
+    let tokenizer = load_tokenizer_for_profile(path);
+    let test_tokens: Vec<u32> = if let Some(ref tok) = tokenizer {
+        let encoded = tok.encode(test_prompt);
+        if encoded.is_empty() {
+            vec![1, 15043] // Fallback: BOS + "Hello"
+        } else {
+            encoded
+        }
+    } else {
+        vec![1, 15043] // BOS + "Hello" for TinyLlama/Qwen
+    };
     let tokens_per_pass = test_tokens.len();
 
     let gen_config = QuantizedGenerateConfig {
@@ -140,6 +151,13 @@ fn profile_gguf_real(
 
     for _ in 0..measure_passes {
         let pass_start = Instant::now();
+
+        // Profile tokenization if tokenizer is available (GH-378)
+        if let Some(ref tok) = tokenizer {
+            profiler.start("Tokenize");
+            let _ = tok.encode(test_prompt);
+            profiler.stop("Tokenize");
+        }
 
         // Use forward_profiled() for real per-operation timing
         let logits = model.forward_profiled(&test_tokens, &mut profiler);
@@ -277,8 +295,19 @@ fn profile_apr_real(
     let vocab_size = config.vocab_size;
     let hidden_dim = config.hidden_dim;
 
-    // Test tokens
-    let test_tokens: Vec<u32> = vec![1, 15043];
+    // Load tokenizer for profiled encoding (GH-378)
+    let test_prompt = "What is 2+2?";
+    let tokenizer = load_tokenizer_for_profile(path);
+    let test_tokens: Vec<u32> = if let Some(ref tok) = tokenizer {
+        let encoded = tok.encode(test_prompt);
+        if encoded.is_empty() {
+            vec![1, 15043]
+        } else {
+            encoded
+        }
+    } else {
+        vec![1, 15043]
+    };
     let tokens_per_pass = test_tokens.len();
 
     // Warmup
@@ -305,6 +334,13 @@ fn profile_apr_real(
     profiler.start_inference();
 
     for _ in 0..measure_passes {
+        // Profile tokenization if tokenizer is available (GH-378)
+        if let Some(ref tok) = tokenizer {
+            profiler.start("Tokenize");
+            let _ = tok.encode(test_prompt);
+            profiler.stop("Tokenize");
+        }
+
         profiler.start("forward_pass");
         let start = Instant::now();
         let result = model.forward(&test_tokens);
@@ -387,6 +423,45 @@ fn profile_apr_real(
         kernel_launch_overhead_pct: 0.0, // APR CPU: no kernel launches
         kernel_launch_overhead_us: 0.0,
     })
+}
+
+/// Load a BPE tokenizer for profiling, searching sibling paths.
+///
+/// Returns None if no tokenizer.json is found (profiling continues without
+/// tokenization timing). This is best-effort — models without a sibling
+/// tokenizer still get full forward-pass profiling.
+#[cfg(feature = "inference")]
+fn load_tokenizer_for_profile(model_path: &Path) -> Option<aprender::text::bpe::BpeTokenizer> {
+    use aprender::text::bpe::BpeTokenizer;
+
+    // 1. Sibling {stem}.tokenizer.json
+    let stem = model_path.file_stem()?.to_string_lossy();
+    let sibling = model_path.with_file_name(format!("{stem}.tokenizer.json"));
+    if sibling.exists() {
+        if let Ok(tok) = BpeTokenizer::from_huggingface(&sibling) {
+            println!(
+                "{}",
+                format!("Loaded tokenizer from {}", sibling.display()).dimmed()
+            );
+            return Some(tok);
+        }
+    }
+
+    // 2. tokenizer.json in same directory
+    if let Some(parent) = model_path.parent() {
+        let tokenizer_json = parent.join("tokenizer.json");
+        if tokenizer_json.exists() {
+            if let Ok(tok) = BpeTokenizer::from_huggingface(&tokenizer_json) {
+                println!(
+                    "{}",
+                    format!("Loaded tokenizer from {}", tokenizer_json.display()).dimmed()
+                );
+                return Some(tok);
+            }
+        }
+    }
+
+    None
 }
 
 /// Print human-readable results with per-operation hotspots, category bars, and roofline

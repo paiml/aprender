@@ -1,22 +1,117 @@
 
-    /// Test Serve command defaults
+    /// Test Serve Plan command with local file path
     #[test]
-    fn test_parse_serve_defaults() {
-        let args = vec!["apr", "serve", "model.apr"];
+    fn test_parse_serve_plan_local() {
+        let args = vec!["apr", "serve", "plan", "model.gguf"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Serve {
-                port,
-                host,
-                no_cors,
-                no_metrics,
-                no_gpu,
-                gpu,
-                batch,
-                trace,
-                trace_level,
-                profile,
-                ..
+                command:
+                    ServeCommands::Plan {
+                        ref model,
+                        gpu,
+                        batch_size,
+                        seq_len,
+                        ref format,
+                        ref quant,
+                    },
+            } => {
+                assert_eq!(model, "model.gguf");
+                assert!(!gpu);
+                assert_eq!(batch_size, 1);
+                assert_eq!(seq_len, 4096);
+                assert_eq!(format, "text");
+                assert!(quant.is_none());
+            }
+            _ => panic!("Expected Serve Plan command"),
+        }
+    }
+
+    /// Test Serve Plan command with HuggingFace URL
+    #[test]
+    fn test_parse_serve_plan_hf_url() {
+        let args = vec![
+            "apr", "serve", "plan",
+            "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
+            "--gpu", "--quant", "Q4_K_M",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Serve {
+                command:
+                    ServeCommands::Plan {
+                        ref model,
+                        gpu,
+                        batch_size,
+                        seq_len,
+                        ref format,
+                        ref quant,
+                    },
+            } => {
+                assert_eq!(model, "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF");
+                assert!(gpu);
+                assert_eq!(batch_size, 1);
+                assert_eq!(seq_len, 4096);
+                assert_eq!(format, "text");
+                assert_eq!(quant.as_deref(), Some("Q4_K_M"));
+            }
+            _ => panic!("Expected Serve Plan command"),
+        }
+    }
+
+    /// Test Serve Plan with JSON output and custom batch/seq
+    #[test]
+    fn test_parse_serve_plan_options() {
+        let args = vec![
+            "apr", "serve", "plan", "meta-llama/Llama-3.2-1B",
+            "--gpu", "--batch-size", "4", "--seq-len", "2048",
+            "--format", "json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Serve {
+                command:
+                    ServeCommands::Plan {
+                        ref model,
+                        gpu,
+                        batch_size,
+                        seq_len,
+                        ref format,
+                        ref quant,
+                    },
+            } => {
+                assert_eq!(model, "meta-llama/Llama-3.2-1B");
+                assert!(gpu);
+                assert_eq!(batch_size, 4);
+                assert_eq!(seq_len, 2048);
+                assert_eq!(format, "json");
+                assert!(quant.is_none());
+            }
+            _ => panic!("Expected Serve Plan command"),
+        }
+    }
+
+    /// Test Serve Run command defaults
+    #[test]
+    fn test_parse_serve_defaults() {
+        let args = vec!["apr", "serve", "run", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Serve {
+                command:
+                    ServeCommands::Run {
+                        port,
+                        ref host,
+                        no_cors,
+                        no_metrics,
+                        no_gpu,
+                        gpu,
+                        batch,
+                        trace,
+                        ref trace_level,
+                        profile,
+                        ..
+                    },
             } => {
                 assert_eq!(port, 8080);
                 assert_eq!(host, "127.0.0.1");
@@ -29,7 +124,7 @@
                 assert_eq!(trace_level, "basic");
                 assert!(!profile);
             }
-            _ => panic!("Expected Serve command"),
+            _ => panic!("Expected Serve Run command"),
         }
     }
 

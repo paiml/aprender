@@ -74,6 +74,7 @@ include!("extended_commands.rs");
 include!("tool_commands.rs");
 include!("data_commands.rs");
 include!("train_commands.rs");
+include!("serve_commands.rs");
 include!("tokenize_commands.rs");
 include!("pipeline_commands.rs");
 include!("validate.rs");

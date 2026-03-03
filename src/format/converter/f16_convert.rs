@@ -134,38 +134,26 @@ fn name_matches_any(name: &str, patterns: &[&str]) -> bool {
     patterns.iter().any(|p| name.contains(p))
 }
 
-/// Tensor name patterns that indicate embedding tensors (GH-231/232).
-const EMBEDDING_PATTERNS: &[&str] = &[
-    "embed_tokens",
-    "token_embd",
-    "wte",
-    "wpe",
-    "word_embeddings",
-    "position_embedding",
-];
-
 /// Tensor name patterns that indicate norm/bias tensors (precision-sensitive).
 const NORM_BIAS_PATTERNS: &[&str] = &["bias", "layernorm", "layer_norm", "norm.weight"];
 
 /// GH-237: Should this tensor skip quantization?
 ///
 /// Returns true for tensors where quantization causes quality loss:
-/// - Embeddings lose lookup precision (GH-231/232)
 /// - Biases are too small and precision-sensitive
 /// - LayerNorm/RMSNorm weights are critical for numerical stability
-/// - lm_head has same small-value distribution as embeddings (GH-234)
 /// - Small tensors (<1024 elements) don't benefit from quantization
+///
+/// GH-88: Embeddings and lm_head are NO LONGER skipped. GGUF files quantize
+/// both to Q4K/Q6K, and realizar's GPU-resident kernel requires Q4K weight
+/// tensors. `dequantize_embedding()` handles Q4K embeddings correctly.
+/// Keeping them F32 caused 2.5GB APR files and garbage GPU inference because
+/// `WeightQuantType::from_ggml_type(0)` defaults to Q4K dispatch.
 ///
 /// Used by both the convert path (`add_tensor_with_quantization`) and the
 /// import path (`add_f32_tensor_to_writer` in write.rs).
 pub(super) fn should_skip_quantization(name: &str, element_count: usize) -> bool {
-    let is_embedding = name_matches_any(name, EMBEDDING_PATTERNS);
-    let is_lm_head = name.contains("lm_head") || name == "output.weight";
-
-    is_embedding
-        || is_lm_head
-        || name_matches_any(name, NORM_BIAS_PATTERNS)
-        || element_count < 1024
+    name_matches_any(name, NORM_BIAS_PATTERNS) || element_count < 1024
 }
 
 /// GH-237: Write a tensor to the APR writer with correct dtype dispatch.

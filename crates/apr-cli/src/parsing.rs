@@ -53,17 +53,19 @@
         }
     }
 
-    /// Test parsing 'apr serve' command
+    /// Test parsing 'apr serve run' command
     #[test]
     fn test_parse_serve_command() {
-        let args = vec!["apr", "serve", "model.apr", "--port", "3000"];
+        let args = vec!["apr", "serve", "run", "model.apr", "--port", "3000"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Serve { file, port, .. } => {
-                assert_eq!(file, PathBuf::from("model.apr"));
+            Commands::Serve {
+                command: ServeCommands::Run { ref file, port, .. },
+            } => {
+                assert_eq!(*file, PathBuf::from("model.apr"));
                 assert_eq!(port, 3000);
             }
-            _ => panic!("Expected Serve command"),
+            _ => panic!("Expected Serve Run command"),
         }
     }
 

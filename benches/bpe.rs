@@ -1,5 +1,10 @@
 //! Benchmarks for BPE tokenizer (GH-378).
 //!
+//! **DEPRECATED**: Use `cargo bench -p aprender-bench-tokenizer` instead.
+//! The `aprender-bench-tokenizer` crate provides comprehensive head-to-head
+//! benchmarks against HuggingFace tokenizers v0.22 with canonical payloads,
+//! scaling analysis, batch encoding, and special token handling.
+//!
 //! Measures encode/decode throughput across word lengths and real-world payloads.
 //! Uses the root `tokenizer.json` (Qwen2.5 151K vocab) shipped in the repo.
 //! Skips gracefully if the tokenizer file is absent.

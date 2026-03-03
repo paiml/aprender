@@ -31,14 +31,33 @@ use std::path::Path;
 
 /// Resolve tied embeddings for F32 tensor maps (PMAT-100).
 ///
-/// If lm_head.weight is missing but embed_tokens exists, synthesizes lm_head from embed_tokens.
+/// If lm_head.weight is missing OR all-zeros (tied weights), synthesizes from embed_tokens.
+/// GH-88: HuggingFace models with `tie_word_embeddings: true` store lm_head.weight as
+/// all-zeros in SafeTensors since the runtime ties it to embed_tokens. We must detect
+/// this and copy the embedding data to lm_head for correct inference.
 /// Returns (possibly modified tensor map, whether tied embeddings were detected).
 fn resolve_f32_tied_embeddings(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> (BTreeMap<String, (Vec<f32>, Vec<usize>)>, bool) {
     let mut result = tensors.clone();
     let has_lm_head = tensors.keys().any(|k| k == "lm_head.weight");
-    if !has_lm_head {
+
+    // GH-88: Detect degenerate lm_head (tied weights stored as near-zeros in SafeTensors).
+    // HuggingFace models with `tie_word_embeddings: true` store lm_head as zeros or
+    // near-zeros (99.9%+ zero rows) since the runtime ties it to embed_tokens.
+    let lm_head_is_zero = has_lm_head
+        && tensors
+            .get("lm_head.weight")
+            .map(|(data, _)| {
+                let zero_count = data.iter().filter(|&&x| x == 0.0).count();
+                // Degenerate if >99.9% of values are zero (allowing a handful of non-zero)
+                data.is_empty() || zero_count * 1000 >= data.len() * 999
+            })
+            .unwrap_or(false);
+
+    let needs_synthesis = !has_lm_head || lm_head_is_zero;
+
+    if needs_synthesis {
         let embed_key = tensors
             .keys()
             .find(|k| {
@@ -47,6 +66,11 @@ fn resolve_f32_tied_embeddings(
             .cloned();
         if let Some(embed_name) = embed_key {
             if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
+                if lm_head_is_zero {
+                    eprintln!(
+                        "[GH-88] lm_head.weight is all-zeros (tied embeddings) — replacing with {embed_name}"
+                    );
+                }
                 result.insert(
                     "lm_head.weight".to_string(),
                     (embed_data.clone(), embed_shape.clone()),
@@ -54,7 +78,7 @@ fn resolve_f32_tied_embeddings(
             }
         }
     }
-    let has_tied = !has_lm_head && result.contains_key("lm_head.weight");
+    let has_tied = needs_synthesis && result.contains_key("lm_head.weight");
     (result, has_tied)
 }
 

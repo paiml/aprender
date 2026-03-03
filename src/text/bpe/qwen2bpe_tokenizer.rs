@@ -66,6 +66,30 @@ impl BpeTokenizer {
         }
     }
 
+    /// Create a new BPE tokenizer with pre-sized data structures.
+    ///
+    /// Avoids repeated HashMap rehashing when loading large vocabularies.
+    /// For Qwen2 (151K vocab, 151K merges), this eliminates ~15 rehash
+    /// cycles per HashMap during loading.
+    #[must_use]
+    pub(crate) fn with_capacity(config: BpeConfig, vocab_cap: usize, merge_cap: usize) -> Self {
+        let (byte_encoder, byte_decoder) = bytes_to_unicode();
+
+        Self {
+            config,
+            vocab: HashMap::with_capacity(vocab_cap),
+            id_to_token: HashMap::with_capacity(vocab_cap),
+            merges: Vec::with_capacity(merge_cap),
+            merge_ranks: HashMap::new(), // populated by add_merge only, not fast path
+            merge_id_map: HashMap::with_capacity(merge_cap),
+            merge_token_ids: HashMap::new(),
+            merge_id_to_token: HashMap::new(),
+            special_tokens: HashMap::new(),
+            byte_encoder,
+            byte_decoder,
+        }
+    }
+
     /// Load tokenizer from a `HuggingFace` tokenizer.json file path.
     ///
     /// Parses the `HuggingFace` tokenizer.json format, extracting:
@@ -170,6 +194,26 @@ impl BpeTokenizer {
         let merged_id = self.get_or_assign_id(&merged);
         self.merge_id_map
             .insert((first_id, second_id), (rank as u32, merged_id));
+    }
+
+    /// Bulk-add a merge rule from owned strings, avoiding redundant clones.
+    ///
+    /// Skips `merge_ranks` population (only used by tests, never at encode time).
+    /// The priority-queue algorithm (GH-378) uses `merge_id_map` exclusively.
+    /// Saves 300K String clones on Qwen2-scale vocabularies.
+    pub(crate) fn add_merge_owned(&mut self, first: String, second: String) {
+        let rank = self.merges.len();
+
+        // Build ID-based merge map (the only structure used at encode time)
+        let merged = format!("{}{}", first, second);
+        let first_id = self.get_or_assign_id(&first);
+        let second_id = self.get_or_assign_id(&second);
+        let merged_id = self.get_or_assign_id(&merged);
+        self.merge_id_map
+            .insert((first_id, second_id), (rank as u32, merged_id));
+
+        // Move originals into MergeRule (no clones needed — merge_ranks skipped)
+        self.merges.push(MergeRule { first, second });
     }
 
     /// Get vocab ID for a token, auto-assigning internally if absent.

@@ -81,18 +81,21 @@ fn test_ssc023_from_huggingface_json_merges_preserved() {
     assert_eq!(tokenizer.merges[1].first, "ab");
     assert_eq!(tokenizer.merges[1].second, "c");
 
-    // Merge ranks should reflect priority
+    // merge_id_map should reflect priority (merge_ranks skipped in fast path)
+    let a_id = tokenizer.token_to_id("a").unwrap();
+    let b_id = tokenizer.token_to_id("b").unwrap();
+    let ab_id = tokenizer.token_to_id("ab").unwrap();
+    let c_id = tokenizer.token_to_id("c").unwrap();
+    let abc_id = tokenizer.token_to_id("abc").unwrap();
+    // (a, b) → rank 0, produces "ab"
     assert_eq!(
-        tokenizer
-            .merge_ranks
-            .get(&("a".to_string(), "b".to_string())),
-        Some(&0)
+        tokenizer.merge_id_map.get(&(a_id, b_id)),
+        Some(&(0, ab_id))
     );
+    // (ab, c) → rank 1, produces "abc"
     assert_eq!(
-        tokenizer
-            .merge_ranks
-            .get(&("ab".to_string(), "c".to_string())),
-        Some(&1)
+        tokenizer.merge_id_map.get(&(ab_id, c_id)),
+        Some(&(1, abc_id))
     );
 }
 
@@ -499,4 +502,59 @@ fn test_ssc023_qwen2_from_json_uses_from_huggingface_json_path() {
     // Both should have the same vocabulary
     assert_eq!(qwen2.base.vocab_size(), base.vocab_size());
     assert_eq!(qwen2.base.token_to_id("hello"), base.token_to_id("hello"));
+}
+
+// ============================================================================
+// GH-378: Optimized loading path applies to all vocab sizes
+// ============================================================================
+
+/// Verify that Whisper-sized vocab goes through the same optimized load_from_json
+/// path: pre-sized HashMaps, load_vocab_owned, load_merges_fast. The merge_id_map
+/// should be populated (used at encode time) while merge_ranks stays empty
+/// (skipped by add_merge_owned in the fast path).
+#[test]
+fn test_whisper_uses_fast_loading_path() {
+    let json = mock_tokenizer_json(
+        &[
+            ("a", 0),
+            ("b", 1),
+            ("ab", 2),
+            ("<|endoftext|>", 50256),
+            ("<|startoftranscript|>", 50257),
+        ],
+        &["a b"],
+        &[
+            ("<|endoftext|>", 50256, true),
+            ("<|startoftranscript|>", 50257, true),
+        ],
+    );
+
+    let tokenizer =
+        BpeTokenizer::from_huggingface_json(&json).expect("whisper-format JSON should load");
+
+    // Vocab correctly loaded
+    assert_eq!(tokenizer.token_to_id("a"), Some(0));
+    assert_eq!(tokenizer.token_to_id("ab"), Some(2));
+    assert!(tokenizer.is_special_token("<|endoftext|>"));
+
+    // merge_id_map populated (fast path builds this)
+    let a_id = tokenizer.token_to_id("a").unwrap();
+    let b_id = tokenizer.token_to_id("b").unwrap();
+    let ab_id = tokenizer.token_to_id("ab").unwrap();
+    assert_eq!(
+        tokenizer.merge_id_map.get(&(a_id, b_id)),
+        Some(&(0, ab_id)),
+        "merge_id_map should be populated by the fast path"
+    );
+
+    // merge_ranks empty (skipped by add_merge_owned in fast path)
+    assert!(
+        tokenizer.merge_ranks.is_empty(),
+        "merge_ranks should be empty — fast path skips it"
+    );
+
+    // Encode still works correctly
+    assert_eq!(tokenizer.merges.len(), 1);
+    assert_eq!(tokenizer.merges[0].first, "a");
+    assert_eq!(tokenizer.merges[0].second, "b");
 }

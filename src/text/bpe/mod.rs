@@ -30,6 +30,18 @@
 //! Performance: 2.06x speedup (145us → 70us) on Qwen3 151K vocab merge-sort
 //! payload. Beats HuggingFace tokenizers v0.22 reference (104us). ~3.76M tokens/sec.
 //!
+//! # Loading Performance (GH-378)
+//!
+//! Tokenizer.json loading uses pre-sized HashMaps, owned-string moves, and a
+//! fast merge path that skips redundant `merge_ranks` population. Eliminates
+//! ~600K String/Vec allocations on Qwen2-scale (151K) vocabularies.
+//!
+//! - `from_file`: 142ms (1.43x faster than HF v0.22's 204ms)
+//! - `from_json`: 136ms (in-memory, no disk I/O)
+//!
+//! All tokenizer formats (Qwen2, Whisper, GPT-2, LLaMA) share the same
+//! optimized `load_from_json` path via `config_from_vocab_size` dispatch.
+//!
 //! # Example
 //!
 //! ```rust

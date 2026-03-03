@@ -185,6 +185,14 @@ fn classify_operation_category(name: &str) -> String {
         | "OutputProjection" => "Attention".to_string(),
         "GateProjection" | "UpProjection" | "Activation" | "DownProjection" => "FFN".to_string(),
         "RmsNorm" | "LayerNorm" => "Norm".to_string(),
+        // Tokenization operations (GH-378)
+        "Tokenize" | "TokenizeEncode" | "TokenizeDecode" => "Tokenize".to_string(),
+        // Training operations
+        "LoraForward" | "LoraBackward" | "OptimizerStep" | "LossCompute" | "TrainStep" => {
+            "Training".to_string()
+        }
+        // Serving operations
+        "TTFT" | "Decode" | "BatchGenerate" => "Serving".to_string(),
         _ => "Other".to_string(),
     }
 }
@@ -248,7 +256,11 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
     let mut attn = 0.0_f64;
     let mut ffn = 0.0_f64;
     let mut norm = 0.0_f64;
+    let mut tokenize = 0.0_f64;
     let mut other = 0.0_f64;
+
+    let mut training = 0.0_f64;
+    let mut serving = 0.0_f64;
 
     for h in hotspots {
         let cat = match h.category.as_deref() {
@@ -259,6 +271,9 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
             "Attention" => attn += h.time_us,
             "FFN" => ffn += h.time_us,
             "Norm" => norm += h.time_us,
+            "Tokenize" => tokenize += h.time_us,
+            "Training" => training += h.time_us,
+            "Serving" => serving += h.time_us,
             _ => other += h.time_us,
         }
     }
@@ -267,6 +282,9 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
         attention_pct: (attn / total) * 100.0,
         ffn_pct: (ffn / total) * 100.0,
         norm_pct: (norm / total) * 100.0,
+        tokenize_pct: (tokenize / total) * 100.0,
+        training_pct: (training / total) * 100.0,
+        serving_pct: (serving / total) * 100.0,
         other_pct: (other / total) * 100.0,
     }
 }
@@ -378,7 +396,7 @@ fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
 /// Detect GPU hardware specs for roofline analysis
 /// Returns (peak_tflops_as_gflops, peak_bw_gbps, ai_threshold, model_name)
 /// Look up known GPU specs (peak GFLOPS, peak BW GB/s, AI threshold) by name.
-fn gpu_specs_by_name(name: &str) -> (f64, f64, f64) {
+pub(crate) fn gpu_specs_by_name(name: &str) -> (f64, f64, f64) {
     match name {
         n if n.contains("4090") => (82_580.0, 1008.0, 82.0),
         n if n.contains("4080") => (48_740.0, 716.8, 68.0),
@@ -392,7 +410,7 @@ fn gpu_specs_by_name(name: &str) -> (f64, f64, f64) {
 }
 
 /// Parse nvidia-smi output to extract GPU name. Returns None if unavailable.
-fn query_nvidia_smi_gpu_name() -> Option<String> {
+pub(crate) fn query_nvidia_smi_gpu_name() -> Option<String> {
     let output = std::process::Command::new("nvidia-smi")
         .args([
             "--query-gpu=name,memory.total,clocks.max.sm,clocks.max.mem",
@@ -413,11 +431,28 @@ fn query_nvidia_smi_gpu_name() -> Option<String> {
     }
 }
 
-fn detect_gpu_hardware() -> (f64, f64, f64, String) {
+pub(crate) fn detect_gpu_hardware() -> (f64, f64, f64, String) {
     if let Some(gpu_name) = query_nvidia_smi_gpu_name() {
         let (peak_gflops, peak_bw, ai_thresh) = gpu_specs_by_name(&gpu_name);
         return (peak_gflops, peak_bw, ai_thresh, gpu_name);
     }
     // Fallback: generic CUDA GPU
     (30_000.0, 800.0, 37.5, "CUDA GPU (unknown)".to_string())
+}
+
+/// Query total GPU VRAM in MB via nvidia-smi.
+pub(crate) fn query_gpu_vram_mb() -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let info = String::from_utf8_lossy(&output.stdout);
+    let line = info.lines().next()?;
+    line.trim().parse::<f64>().ok()
 }

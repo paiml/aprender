@@ -207,13 +207,14 @@ fn run_plan_pretrain(
                 println!();
                 output::kv("  Parameters", format_params(estimate.param_count));
                 println!();
-                println!("  {}:", "VRAM Estimate".bold());
-                println!("    Weights ({})       {:>8.1} GB", estimate.dtype_label, estimate.weights_gb);
-                println!("    Gradients (f32)       {:>8.1} GB", estimate.gradients_gb);
-                println!("    Optimizer (AdamW)     {:>8.1} GB", estimate.optimizer_gb);
-                println!("    Activations (est.)    {:>8.1} GB", estimate.activations_gb);
-                println!("    ─────────────────────────────");
-                println!("    {}        {:>8.1} GB", "Total".bold(), estimate.total_gb);
+                println!("  {} (contract: training-memory-kernel-v1):", "Memory Estimate".bold());
+                println!("    Weights ({})       {:>8.1} GB  (CPU RAM)", estimate.dtype_label, estimate.weights_gb);
+                println!("    Gradients (f32)       {:>8.1} GB  (CPU RAM)", estimate.gradients_gb);
+                println!("    Optimizer (AdamW)     {:>8.1} GB  (CPU RAM)", estimate.optimizer_gb);
+                println!("    Activations (est.)    {:>8.1} GB  (CPU RAM)", estimate.activations_gb);
+                println!("    CUDA context          {:>8.1} GB  (VRAM)", 0.5);
+                println!("    ─────────────────────────────────────");
+                println!("    {}        {:>8.1} GB  (system total)", "Total".bold(), estimate.total_gb);
             }
         }
 

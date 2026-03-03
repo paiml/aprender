@@ -100,12 +100,13 @@
         }
     }
 
-    /// Test parsing 'apr serve' with all options
+    /// Test parsing 'apr serve run' with all options
     #[test]
     fn test_parse_serve_all_options() {
         let args = vec![
             "apr",
             "serve",
+            "run",
             "model.apr",
             "--port",
             "9090",
@@ -123,16 +124,19 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Serve {
-                port,
-                host,
-                no_cors,
-                no_metrics,
-                no_gpu,
-                batch,
-                trace,
-                trace_level,
-                profile,
-                ..
+                command:
+                    ServeCommands::Run {
+                        port,
+                        ref host,
+                        no_cors,
+                        no_metrics,
+                        no_gpu,
+                        batch,
+                        trace,
+                        ref trace_level,
+                        profile,
+                        ..
+                    },
             } => {
                 assert_eq!(port, 9090);
                 assert_eq!(host, "0.0.0.0");
@@ -144,7 +148,7 @@
                 assert_eq!(trace_level, "layer");
                 assert!(profile);
             }
-            _ => panic!("Expected Serve command"),
+            _ => panic!("Expected Serve Run command"),
         }
     }
 

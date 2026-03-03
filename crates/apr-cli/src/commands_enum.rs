@@ -73,41 +73,10 @@ pub enum Commands {
         #[arg(short, long)]
         verbose: bool,
     },
-    /// Start inference server (REST API, streaming, metrics)
+    /// Inference server (plan/run)
     Serve {
-        /// Path to model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
-        /// Port to listen on
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
-        /// Host to bind to
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
-        /// Disable CORS
-        #[arg(long)]
-        no_cors: bool,
-        /// Disable Prometheus metrics endpoint
-        #[arg(long)]
-        no_metrics: bool,
-        /// Disable GPU acceleration
-        #[arg(long)]
-        no_gpu: bool,
-        /// Force GPU acceleration (requires CUDA)
-        #[arg(long)]
-        gpu: bool,
-        /// Enable batched GPU inference for 2X+ throughput
-        #[arg(long)]
-        batch: bool,
-        /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
-        #[arg(long)]
-        trace: bool,
-        /// Trace detail level (none, basic, layer)
-        #[arg(long, value_name = "LEVEL", default_value = "basic")]
-        trace_level: String,
-        /// Enable inline Roofline profiling (adds X-Profile headers)
-        #[arg(long)]
-        profile: bool,
+        #[command(subcommand)]
+        command: ServeCommands,
     },
     /// Inspect model metadata, vocab, and structure
     Inspect {

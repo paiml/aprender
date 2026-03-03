@@ -56,6 +56,27 @@ apr chat model.gguf --temperature 0.7 --top-p 0.9 --max-tokens 512
 
 ## Optional Features
 
+### Pre-flight Capacity Planning
+
+Check if a model fits your GPU before downloading:
+
+```bash
+# From HuggingFace (fetches only ~2KB config.json, no weights)
+apr serve plan hf://Qwen/Qwen2.5-Coder-1.5B-Instruct --gpu
+
+# With quantization override
+apr serve plan microsoft/phi-2 --gpu --quant Q4_K_M
+
+# From local file
+apr serve plan model.gguf --gpu
+
+# JSON output
+apr serve plan hf://mistralai/Mistral-7B-Instruct-v0.3 --gpu --format json
+```
+
+Reports VRAM budget, throughput estimates, roofline analysis, and contract checks
+(READY / WARNINGS / BLOCKED verdict).
+
 ### Inference Server
 
 Enable the `inference` feature to serve models via HTTP:
@@ -63,7 +84,7 @@ Enable the `inference` feature to serve models via HTTP:
 ```bash
 cargo install apr-cli --features inference
 
-apr serve model.gguf --port 8080
+apr serve run model.gguf --port 8080
 ```
 
 The server provides an OpenAI-compatible API:

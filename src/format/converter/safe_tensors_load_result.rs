@@ -114,7 +114,15 @@ fn load_single_safetensors(
     path: &Path,
     options: &ImportOptions,
 ) -> Result<SourceLoadResult> {
-    let st_result = load_safetensors_with_f16_passthrough(path)?;
+    // GH-88: When quantization is requested (Q4K, Int4, Int8), we need F32 data for
+    // the quantizer to work on. F16 passthrough skips F32 conversion, which means
+    // dispatch_quantize() gets empty tensors and produces broken output.
+    let needs_f32 = options.quantize.is_some();
+    let st_result = if needs_f32 {
+        load_safetensors_as_f32(path)?
+    } else {
+        load_safetensors_with_f16_passthrough(path)?
+    };
     let config_from_json = load_model_config_from_json(path);
     let config_json_found = config_from_json.is_some();
     let model_config =
@@ -457,6 +465,66 @@ pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeT
     Ok(SafeTensorsLoadResult {
         tensors,
         f16_raw_tensors,
+        user_metadata,
+    })
+}
+
+/// GH-88: Load SafeTensors with all tensors converted to F32.
+///
+/// Used when quantization is requested (Q4K, Int4, Int8) — the quantizer needs
+/// F32 data to work on. F16 passthrough would produce empty tensors that break
+/// dispatch_quantize().
+pub(crate) fn load_safetensors_as_f32(path: &Path) -> Result<SafeTensorsLoadResult> {
+    let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to mmap SafeTensors: {e}"),
+    })?;
+
+    let user_metadata = mapped.user_metadata().clone();
+    if !user_metadata.is_empty() {
+        eprintln!(
+            "[PMAT-223] Extracted {} user metadata key(s) from SafeTensors __metadata__",
+            user_metadata.len()
+        );
+    }
+
+    let mut tensors = BTreeMap::new();
+
+    let names: Vec<String> = mapped
+        .tensor_names()
+        .iter()
+        .map(|&s| (*s).to_string())
+        .collect();
+
+    for name in &names {
+        if name.starts_with("__") {
+            continue;
+        }
+
+        let meta = mapped
+            .get_metadata(name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor metadata not found for '{name}'"),
+            })?;
+
+        // Convert ALL tensors to F32 (no passthrough) for quantization
+        let data = mapped
+            .get_tensor(name)
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to extract tensor '{name}': {e}"),
+            })?;
+
+        validate_tensor_values(name, &data)?;
+        tensors.insert(name.clone(), (data, meta.shape.clone()));
+    }
+
+    eprintln!(
+        "[GH-88] Loaded {} tensors as F32 (quantization requested, no F16 passthrough)",
+        tensors.len()
+    );
+
+    Ok(SafeTensorsLoadResult {
+        tensors,
+        f16_raw_tensors: BTreeMap::new(),
         user_metadata,
     })
 }

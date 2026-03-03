@@ -94,6 +94,48 @@ fn dispatch_serve(
     serve::run(file, &config)
 }
 
+/// Route `apr serve` subcommands: plan or run.
+fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliError> {
+    match command {
+        ServeCommands::Plan {
+            model,
+            gpu,
+            batch_size,
+            seq_len,
+            format,
+            quant,
+        } => commands::serve_plan::run_serve_plan(
+            model, *gpu, *batch_size, *seq_len, format, quant.as_deref(),
+        ),
+        ServeCommands::Run {
+            file,
+            port,
+            host,
+            no_cors,
+            no_metrics,
+            no_gpu,
+            gpu,
+            batch,
+            trace,
+            trace_level,
+            profile,
+        } => dispatch_serve(
+            file,
+            *port,
+            host,
+            *no_cors,
+            *no_metrics,
+            *no_gpu,
+            *gpu,
+            *batch,
+            *trace,
+            trace_level,
+            *profile,
+            cli.verbose,
+        ),
+    }
+}
+
 /// Parse hex offset and run hex inspection.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_hex(
