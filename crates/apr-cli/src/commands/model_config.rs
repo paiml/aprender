@@ -48,12 +48,13 @@ pub(crate) fn read_apr_architecture(
     )
 }
 
-/// Resolve TransformerConfig from .apr metadata or --model-size fallback.
+/// Resolve TransformerConfig from .apr metadata, HF config.json, or --model-size fallback.
 ///
 /// Precedence:
 ///   1. `.apr` file metadata (provable, validated at import)
-///   2. `--model-size` string match (legacy fallback, no .apr file)
-///   3. Error (refuse to silently degrade to tiny)
+///   2. HuggingFace `config.json` in model directory
+///   3. `--model-size` string match (legacy fallback, no .apr file)
+///   4. Error (refuse to silently degrade to tiny)
 pub(crate) fn resolve_transformer_config(
     model_path: Option<&Path>,
     model_size: Option<&str>,
@@ -69,8 +70,69 @@ pub(crate) fn resolve_transformer_config(
         );
     }
 
-    // Attempt 2: Legacy --model-size string matching
+    // Attempt 2: Read architecture from HuggingFace config.json in model directory
+    if let Some(path) = model_path.filter(|p| p.is_dir()) {
+        if let Some(config) = read_hf_config_json(path) {
+            return Ok(config);
+        }
+    }
+
+    // Attempt 3: Legacy --model-size string matching
     resolve_transformer_config_by_size(model_size)
+}
+
+/// Read TransformerConfig from a HuggingFace `config.json` in a model directory.
+///
+/// Parses the standard HF model config format used by Qwen, LLaMA, Mistral, etc.
+/// Returns None if config.json doesn't exist or required fields are missing.
+fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerConfig> {
+    let config_path = dir.join("config.json");
+    let data = std::fs::read_to_string(&config_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&data).ok()?;
+
+    let hidden_size = json.get("hidden_size")?.as_u64()? as usize;
+    let num_heads = json.get("num_attention_heads")?.as_u64()? as usize;
+    let num_kv_heads = json
+        .get("num_key_value_heads")
+        .and_then(|v| v.as_u64())
+        .map_or(num_heads, |v| v as usize);
+    let intermediate_size = json.get("intermediate_size")?.as_u64()? as usize;
+    let num_layers = json.get("num_hidden_layers")?.as_u64()? as usize;
+    let vocab_size = json.get("vocab_size")?.as_u64()? as usize;
+    let max_pos = json
+        .get("max_position_embeddings")
+        .and_then(|v| v.as_u64())
+        .map_or(4096, |v| v as usize);
+    let rms_norm_eps = json
+        .get("rms_norm_eps")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1e-6) as f32;
+    let rope_theta = json
+        .get("rope_theta")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(10000.0) as f32;
+    let head_dim = json
+        .get("head_dim")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+    let use_bias = json
+        .get("attention_bias")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    Some(entrenar::transformer::TransformerConfig {
+        hidden_size,
+        num_attention_heads: num_heads,
+        num_kv_heads,
+        intermediate_size,
+        num_hidden_layers: num_layers,
+        vocab_size,
+        max_position_embeddings: max_pos,
+        rms_norm_eps,
+        rope_theta,
+        head_dim_override: head_dim,
+        use_bias,
+    })
 }
 
 /// Resolve TransformerConfig from `--model-size` string only.
