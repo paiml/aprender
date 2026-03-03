@@ -71,7 +71,8 @@ fn start_apr_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(config.verbose);
+    .with_verbose(config.verbose)
+    .with_inference_trace(config.trace);
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "APR GPU (fused Q4K kernels)")
@@ -155,7 +156,8 @@ fn start_safetensors_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(config.verbose);
+    .with_verbose(config.verbose)
+    .with_inference_trace(config.trace);
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "SafeTensors GPU (fused Q4K kernels)")

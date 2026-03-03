@@ -1,0 +1,183 @@
+# APR CPU Q4K Kernel Routing Contract v1.0.0
+# THE SOURCE OF TRUTH for APR model CPU inference path selection
+#
+# STATUS: Authoritative — start_apr_server() MUST follow this contract
+# CONSUMERS:
+#   - crates/apr-cli/src/commands/serve/handlers.rs (start_apr_server)
+#   - crates/apr-cli/src/commands/serve/handlers_include_01.rs (start_apr_server_gpu)
+#   - crates/apr-cli/src/commands/serve/server.rs (run_cpu_server)
+#
+# ENFORCEMENT: Code review + benchmark regression test
+#
+# Problem Statement:
+#   APR CPU inference uses AprTransformer (F32 matmul), achieving only 9.5 tok/s.
+#   GGUF and SafeTensors CPU paths use OwnedQuantizedModel (fused Q4K kernels),
+#   achieving 23-28 tok/s. APR files already contain Q4K tensors — the slow path
+#   is unnecessary for transformer models.
+#
+# Citation: Internal benchmark (probador llm bench, 2026-03-03)
+#   - APR AprTransformer CPU: 9.5 tok/s
+#   - APR OwnedQuantizedModel CPU: ~28 tok/s (projected, matches SafeTensors)
+#   - GGUF OwnedQuantizedModel CPU: 23.0 tok/s
+#   - SafeTensors OwnedQuantizedModel CPU: 28.3 tok/s
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-03"
+  author: "PAIML Engineering"
+  description: "Route APR CPU inference through fused Q4K kernels (OwnedQuantizedModel)"
+  references:
+    - "GH-87: APR GPU fused Q4K (existing pattern)"
+    - "GH-99: SafeTensors CPU Q4K (template for this fix)"
+  issues:
+    - "APR CPU 7-23x slower than llama.cpp"
+
+# =============================================================================
+# ROUTING EQUATION
+# =============================================================================
+
+equations:
+  inference_dispatch:
+    formula: |
+      start_apr_server(path, config):
+        1. IF cuda available AND config.gpu: try start_apr_server_gpu(path, config)
+        2. TRY try_apr_quantized_cpu(path, config)
+           a. MappedAprModel::from_path(path)
+           b. OwnedQuantizedModel::from_apr(mapped)
+           c. run_cpu_server(quantized, vocab, config)
+        3. FALLBACK: load_apr_model_state → AprTransformer (for non-Q4K models)
+    domain: "path is valid APR v2 file"
+    properties:
+      - q4k_priority: "Fused Q4K path is tried BEFORE AprTransformer"
+      - graceful_fallback: "AprTransformer fallback for models without Q4K tensors"
+      - no_conversion: "APR files already contain Q4K data — zero conversion overhead"
+
+# =============================================================================
+# PRECONDITIONS
+# =============================================================================
+
+preconditions:
+  valid_apr_file:
+    description: "Model path must be a valid APR v2 file (detected by magic bytes)"
+    assertion: "detect_format(magic) == ModelFormat::Apr"
+
+  q4k_tensors_present:
+    description: "Most APR files from GGUF/SafeTensors import contain Q4K tensors"
+    assertion: "MappedAprModel::from_path(path).is_ok() implies Q4K data available"
+    note: "Fallback handles the case where Q4K is NOT available"
+
+# =============================================================================
+# POSTCONDITIONS
+# =============================================================================
+
+postconditions:
+  uses_fused_kernels:
+    description: "When Q4K path succeeds, inference uses fused Q4K/Q6K GEMV kernels"
+    assertion: "Server state contains OwnedQuantizedModel, NOT AprTransformer"
+    performance: ">=20 tok/s on CPU (vs 9.5 with AprTransformer)"
+
+  full_endpoint_parity:
+    description: "Q4K CPU path uses realizar's create_router (Ollama-parity endpoints)"
+    assertion: "Endpoints: /health, /generate, /v1/completions, /v1/chat/completions"
+
+  tokenizer_preserved:
+    description: "Embedded BPE tokenizer from APR metadata is used for encoding/decoding"
+    assertion: "vocab = mapped.metadata.get_embedded_vocabulary()"
+
+  fallback_correctness:
+    description: "When Q4K path fails, AprTransformer is used (existing behavior)"
+    assertion: "AprTransformer path produces identical output to pre-fix behavior"
+
+# =============================================================================
+# INVARIANTS
+# =============================================================================
+
+invariants:
+  gpu_path_unchanged:
+    description: "CUDA GPU path is not modified — only CPU fallback changes"
+    assertion: "start_apr_server_gpu() call site unchanged"
+
+  no_temp_files:
+    description: "Unlike SafeTensors path, APR Q4K does NOT create temp files"
+    assertion: "No std::env::temp_dir() usage in try_apr_quantized_cpu"
+    rationale: "APR files already contain Q4K tensors natively"
+
+  merge_rules_honored:
+    description: "BPE merge rules from APR metadata are used when available"
+    assertion: "mapped.metadata.get_embedded_merges() feeds into tokenizer"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  loading_path:
+    description: "MappedAprModel::from_path → OwnedQuantizedModel::from_apr → run_cpu_server"
+    rationale: "Identical to start_apr_server_gpu minus CUDA, identical to start_safetensors_server_cpu_quantized minus conversion"
+
+  vocabulary_extraction:
+    description: "Use mapped.metadata.get_embedded_vocabulary() with placeholder fallback"
+    assertion: "Pattern matches start_apr_server_gpu lines 45-53"
+
+  error_reporting:
+    description: "On Q4K path failure, print warning and fall through to AprTransformer"
+    assertion: "println!(Q4K path unavailable ({}), using AprTransformer, e)"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_tool: "probador llm bench"
+  model: "qwen2.5-coder-1.5b-instruct-q4k.apr"
+
+  bounds:
+    apr_cpu_q4k:
+      description: "APR CPU with fused Q4K kernels"
+      min_tok_per_sec: 20
+      target_tok_per_sec: 28
+      baseline_tok_per_sec: 9.5
+      baseline_engine: "AprTransformer"
+      expected_speedup: "2.5-3x"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  FALSIFY-APR-CPU-001:
+    name: "Q4K path loads successfully for GGUF-imported APR"
+    assertion: "try_apr_quantized_cpu succeeds for qwen2.5-coder-1.5b-instruct-q4k.apr"
+    status: "PRE-REGISTERED"
+
+  FALSIFY-APR-CPU-002:
+    name: "Fallback activates for non-Q4K APR files"
+    assertion: "F32-only APR file triggers AprTransformer fallback"
+    status: "PRE-REGISTERED"
+
+  FALSIFY-APR-CPU-003:
+    name: "Endpoint parity with GGUF CPU path"
+    assertion: "/v1/chat/completions produces coherent output (not garbage)"
+    status: "PRE-REGISTERED"
+
+  FALSIFY-APR-CPU-004:
+    name: "Performance meets minimum bound"
+    assertion: ">=20 tok/s on CPU benchmark"
+    status: "PRE-REGISTERED"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-APR-CPU-Q4K-001"
+  name: "APR CPU Q4K Routing Contract"
+  checks:
+    - "Q4K path tried before AprTransformer"
+    - "run_cpu_server used (Ollama-parity endpoints)"
+    - "Embedded vocabulary extracted from APR metadata"
+    - "Fallback to AprTransformer on Q4K failure"
+    - "No temp file creation"
+    - ">=20 tok/s on benchmark"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"
