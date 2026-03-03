@@ -191,7 +191,8 @@
 <h2 id="commands-overview"><a class="header" href="#commands-overview">Commands Overview</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Command</th><th>Description</th><th>Toyota Way Principle</th></tr></thead><tbody>
 <tr><td><code>run</code></td><td>Run model directly (auto-download, cache, execute)</td><td>Just-in-Time Production</td></tr>
-<tr><td><code>serve</code></td><td>Start inference server with GPU acceleration</td><td>Just-in-Time Production</td></tr>
+<tr><td><code>serve plan</code></td><td>Pre-flight capacity planning (VRAM, throughput, contracts)</td><td>Poka-Yoke (Error Prevention)</td></tr>
+<tr><td><code>serve run</code></td><td>Start inference server with GPU acceleration</td><td>Just-in-Time Production</td></tr>
 <tr><td><code>chat</code></td><td>Interactive chat with language models</td><td>Genchi Genbutsu (Go and See)</td></tr>
 <tr><td><code>inspect</code></td><td>View model metadata and structure</td><td>Genchi Genbutsu (Go and See)</td></tr>
 <tr><td><code>debug</code></td><td>Debug output with optional drama mode</td><td>Visualization</td></tr>
@@ -229,15 +230,18 @@
 </tbody></table>
 </div>
 <h2 id="serve-command"><a class="header" href="#serve-command">Serve Command</a></h2>
+<p>The <code>serve</code> command has two subcommands: <code>plan</code> (pre-flight capacity check) and
+<code>run</code> (start the server).</p>
+<h3 id="serve-run"><a class="header" href="#serve-run">Serve Run</a></h3>
 <p>Start an OpenAI-compatible inference server with optional GPU acceleration.</p>
 <pre><code class="language-bash"># Basic server (CPU)
-apr serve model.gguf --port 8080
+apr serve run model.gguf --port 8080
 
 # GPU-accelerated server
-apr serve model.gguf --port 8080 --gpu
+apr serve run model.gguf --port 8080 --gpu
 
 # Batched GPU mode (2.9x faster than Ollama)
-apr serve model.gguf --port 8080 --gpu --batch
+apr serve run model.gguf --port 8080 --gpu --batch
 </code></pre>
 <h3 id="performance"><a class="header" href="#performance">Performance</a></h3>
 <div class="table-wrapper"><table><thead><tr><th>Mode</th><th>Model</th><th>Throughput</th><th>vs Ollama</th><th>Memory</th></tr></thead><tbody>
@@ -274,6 +278,38 @@ curl -H &quot;X-Trace-Level: brick&quot; http://localhost:8080/v1/chat/completio
 # Layer-level timing
 curl -H &quot;X-Trace-Level: layer&quot; http://localhost:8080/v1/chat/completions ...
 </code></pre>
+<h3 id="serve-plan-pre-flight-capacity-planning"><a class="header" href="#serve-plan-pre-flight-capacity-planning">Serve Plan (Pre-flight Capacity Planning)</a></h3>
+<p>Before downloading or launching a model, <code>apr serve plan</code> computes VRAM budget,
+throughput estimates, and contract checks. Header-only — no weights loaded.</p>
+<pre><code class="language-bash"># Plan from a local file
+apr serve plan model.gguf --gpu
+
+# Plan from a HuggingFace repo (fetches only ~2KB config.json)
+apr serve plan hf://Qwen/Qwen2.5-Coder-1.5B-Instruct --gpu
+
+# Bare org/repo also works (auto-detected as HuggingFace)
+apr serve plan microsoft/phi-2 --gpu --quant Q4_K_M
+
+# JSON output for tooling
+apr serve plan hf://mistralai/Mistral-7B-Instruct-v0.3 --gpu --format json
+</code></pre>
+<p><strong>Flags:</strong></p>
+<div class="table-wrapper"><table><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--gpu</code></td><td>Detect GPU via nvidia-smi for VRAM budget</td></tr>
+<tr><td><code>--quant &lt;Q&gt;</code></td><td>Quantization override for HF models (e.g., Q4_K_M, Q6_K, F16)</td></tr>
+<tr><td><code>--batch-size &lt;N&gt;</code></td><td>Target batch size for throughput estimation (default: 1)</td></tr>
+<tr><td><code>--seq-len &lt;N&gt;</code></td><td>Sequence length for KV cache estimation (default: 4096)</td></tr>
+<tr><td><code>--format &lt;F&gt;</code></td><td>Output format: text, json, yaml (default: text)</td></tr>
+</tbody></table>
+</div>
+<p><strong>Contracts verified:</strong></p>
+<ul>
+<li><code>BUDGET-001</code>: Total VRAM fits within 95% safety margin</li>
+<li><code>BUDGET-002</code>: Model weights loadable contiguous</li>
+<li><code>BUDGET-003</code>: KV cache fits at batch=1</li>
+<li><code>BUDGET-004</code>: Target batch size achievable (when batch &gt; 1)</li>
+</ul>
+<p><strong>Verdict:</strong> READY, WARNINGS, or BLOCKED.</p>
 <h3 id="tool-calling-gh-160"><a class="header" href="#tool-calling-gh-160">Tool Calling (GH-160)</a></h3>
 <p>The server supports OpenAI-compatible tool calling, allowing models to invoke external functions.</p>
 <p><strong>Define tools in your request:</strong></p>
@@ -1382,6 +1418,39 @@ apr finetune --task test-gen --model-size 0.5B \
 <blockquote>
 <p><strong>Auto-class-balancing</strong>: When training with <code>apr finetune --task classify</code>, entrenar auto-detects class imbalance (ratio &gt;2:1) and applies sqrt-inverse weights. No manual <code>--class-weights</code> flag is needed for typical corpora.</p>
 </blockquote>
+<h3 id="distributed-training-multi-node"><a class="header" href="#distributed-training-multi-node">Distributed Training (Multi-Node)</a></h3>
+<p>Train across multiple machines using TCP gradient AllReduce. One node acts as the
+coordinator (manages epochs, averages gradients), others are workers (compute
+forward/backward, send gradients).</p>
+<pre><code class="language-bash"># On coordinator (e.g., intel machine)
+apr finetune --task classify --model-size 4B \
+    ./models/qwen3-4b \
+    --data train.jsonl \
+    --num-classes 2 \
+    --role coordinator \
+    --bind 0.0.0.0:9000 \
+    --expect-workers 1 \
+    -o ./ssc-distributed/
+
+# On worker (e.g., lambda machine)
+apr finetune --task classify --model-size 4B \
+    ./models/qwen3-4b \
+    --data train.jsonl \
+    --num-classes 2 \
+    --role worker \
+    --coordinator intel:9000 \
+    -o ./ssc-distributed/
+</code></pre>
+<p><strong>Flags</strong>:</p>
+<ul>
+<li><code>--role coordinator|worker</code> — Node role in distributed training</li>
+<li><code>--bind ADDR</code> — Address for coordinator to listen on (default: <code>0.0.0.0:9000</code>)</li>
+<li><code>--coordinator ADDR</code> — Coordinator address for worker to connect to</li>
+<li><code>--expect-workers N</code> — Number of workers the coordinator waits for</li>
+</ul>
+<p><strong>Design</strong>: LoRA gradients (~5-22MB) are averaged on CPU via AllReduce, making
+the system backend-agnostic (CUDA workers and wgpu workers can coexist).
+See <code>docs/specifications/distributed-training-spec.md</code> for the full spec.</p>
 <h2 id="tune-command"><a class="header" href="#tune-command">Tune Command</a></h2>
 <p>Automatic hyperparameter search for fine-tuning (SPEC-TUNE-2026-001). Searches over 9 parameters using TPE, Grid, or Random strategies.</p>
 <pre><code class="language-bash"># Scout: fast 1-epoch sweep to find good HP region
