@@ -122,6 +122,28 @@ pub enum TrainCommands {
         /// Manual batch size (only used with --strategy manual)
         #[arg(long)]
         batch_size: Option<usize>,
+
+        // ── Distributed training params (tickets #131-#140, aprender #393) ──
+        /// Enable distributed data-parallel training
+        #[arg(long)]
+        distributed: bool,
+        /// Total number of workers (default: auto-detect GPUs)
+        #[arg(long, value_name = "N")]
+        world_size: Option<usize>,
+        /// This worker's global rank (default: 0 = coordinator)
+        #[arg(long, value_name = "N")]
+        rank: Option<usize>,
+        /// Coordinator address for distributed training (default: 0.0.0.0:9000)
+        #[arg(long, value_name = "HOST:PORT")]
+        coordinator_addr: Option<String>,
+
+        // ── Reproducibility params (R-084 C-DETERM-001) ──
+        /// Enable bitwise deterministic training (CUBLAS_WORKSPACE_CONFIG, cuDNN deterministic)
+        #[arg(long)]
+        deterministic: bool,
+        /// Random seed for reproducibility (default: from YAML or 42)
+        #[arg(long, value_name = "N")]
+        seed: Option<u64>,
     },
 
     /// Watch a training run with automatic restart on crash and hang detection.
