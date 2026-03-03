@@ -21,7 +21,8 @@ The binary will be available at `target/release/apr`.
 | Command | Description | Toyota Way Principle |
 |---------|-------------|---------------------|
 | `run` | Run model directly (auto-download, cache, execute) | Just-in-Time Production |
-| `serve` | Start inference server with GPU acceleration | Just-in-Time Production |
+| `serve plan` | Pre-flight capacity planning (VRAM, throughput, contracts) | Poka-Yoke (Error Prevention) |
+| `serve run` | Start inference server with GPU acceleration | Just-in-Time Production |
 | `chat` | Interactive chat with language models | Genchi Genbutsu (Go and See) |
 | `inspect` | View model metadata and structure | Genchi Genbutsu (Go and See) |
 | `debug` | Debug output with optional drama mode | Visualization |
@@ -59,17 +60,22 @@ The binary will be available at `target/release/apr`.
 
 ## Serve Command
 
+The `serve` command has two subcommands: `plan` (pre-flight capacity check) and
+`run` (start the server).
+
+### Serve Run
+
 Start an OpenAI-compatible inference server with optional GPU acceleration.
 
 ```bash
 # Basic server (CPU)
-apr serve model.gguf --port 8080
+apr serve run model.gguf --port 8080
 
 # GPU-accelerated server
-apr serve model.gguf --port 8080 --gpu
+apr serve run model.gguf --port 8080 --gpu
 
 # Batched GPU mode (2.9x faster than Ollama)
-apr serve model.gguf --port 8080 --gpu --batch
+apr serve run model.gguf --port 8080 --gpu --batch
 ```
 
 ### Performance
@@ -115,6 +121,43 @@ curl -H "X-Trace-Level: brick" http://localhost:8080/v1/chat/completions ...
 # Layer-level timing
 curl -H "X-Trace-Level: layer" http://localhost:8080/v1/chat/completions ...
 ```
+
+### Serve Plan (Pre-flight Capacity Planning)
+
+Before downloading or launching a model, `apr serve plan` computes VRAM budget,
+throughput estimates, and contract checks. Header-only — no weights loaded.
+
+```bash
+# Plan from a local file
+apr serve plan model.gguf --gpu
+
+# Plan from a HuggingFace repo (fetches only ~2KB config.json)
+apr serve plan hf://Qwen/Qwen2.5-Coder-1.5B-Instruct --gpu
+
+# Bare org/repo also works (auto-detected as HuggingFace)
+apr serve plan microsoft/phi-2 --gpu --quant Q4_K_M
+
+# JSON output for tooling
+apr serve plan hf://mistralai/Mistral-7B-Instruct-v0.3 --gpu --format json
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--gpu` | Detect GPU via nvidia-smi for VRAM budget |
+| `--quant <Q>` | Quantization override for HF models (e.g., Q4_K_M, Q6_K, F16) |
+| `--batch-size <N>` | Target batch size for throughput estimation (default: 1) |
+| `--seq-len <N>` | Sequence length for KV cache estimation (default: 4096) |
+| `--format <F>` | Output format: text, json, yaml (default: text) |
+
+**Contracts verified:**
+- `BUDGET-001`: Total VRAM fits within 95% safety margin
+- `BUDGET-002`: Model weights loadable contiguous
+- `BUDGET-003`: KV cache fits at batch=1
+- `BUDGET-004`: Target batch size achievable (when batch > 1)
+
+**Verdict:** READY, WARNINGS, or BLOCKED.
 
 ### Tool Calling (GH-160)
 
@@ -1483,6 +1526,43 @@ Classification JSONL with `input` (text) and `label` (integer). The shell preamb
 Export from bashrs: `cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl`
 
 > **Auto-class-balancing**: When training with `apr finetune --task classify`, entrenar auto-detects class imbalance (ratio >2:1) and applies sqrt-inverse weights. No manual `--class-weights` flag is needed for typical corpora.
+
+### Distributed Training (Multi-Node)
+
+Train across multiple machines using TCP gradient AllReduce. One node acts as the
+coordinator (manages epochs, averages gradients), others are workers (compute
+forward/backward, send gradients).
+
+```bash
+# On coordinator (e.g., intel machine)
+apr finetune --task classify --model-size 4B \
+    ./models/qwen3-4b \
+    --data train.jsonl \
+    --num-classes 2 \
+    --role coordinator \
+    --bind 0.0.0.0:9000 \
+    --expect-workers 1 \
+    -o ./ssc-distributed/
+
+# On worker (e.g., lambda machine)
+apr finetune --task classify --model-size 4B \
+    ./models/qwen3-4b \
+    --data train.jsonl \
+    --num-classes 2 \
+    --role worker \
+    --coordinator intel:9000 \
+    -o ./ssc-distributed/
+```
+
+**Flags**:
+- `--role coordinator|worker` — Node role in distributed training
+- `--bind ADDR` — Address for coordinator to listen on (default: `0.0.0.0:9000`)
+- `--coordinator ADDR` — Coordinator address for worker to connect to
+- `--expect-workers N` — Number of workers the coordinator waits for
+
+**Design**: LoRA gradients (~5-22MB) are averaged on CPU via AllReduce, making
+the system backend-agnostic (CUDA workers and wgpu workers can coexist).
+See `docs/specifications/distributed-training-spec.md` for the full spec.
 
 ## Tune Command
 

@@ -4,17 +4,34 @@ issue: "https://github.com/paiml/aprender/issues/393"
 status: In Progress
 created: 2026-03-03
 updated: 2026-03-03
-version: 1.0.0
+version: 1.1.0
 ---
 
 # SPEC-DIST-2026-001: Heterogeneous Distributed Training
 
-**Version**: 1.0.0
-**Status**: Implementation Phase 1 Complete, Phase 2 In Progress
+**Version**: 1.1.0
+**Status**: Core Implementation Complete (multi-node TCP AllReduce + CLI wiring)
 **Author**: paiml engineering
 **Date**: 2026-03-03
 **Requires**: aprender >= 0.27.2, entrenar >= 0.7.5, trueno >= 0.16.1
 **Contract**: `provable-contracts/contracts/entrenar/distributed-training-v1.yaml`
+
+### Implementation Status
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Wire protocol (7 msg types) | Done | `entrenar::finetune::distributed` |
+| GradientServer (coordinator) | Done | `entrenar::finetune::gradient_server` |
+| WorkerClient (worker) | Done | `entrenar::finetune::worker_client` |
+| AllReduce (CPU averaging) | Done | `entrenar::finetune::data_parallel` |
+| Coordinator training loop | Done | `ClassifyTrainer::train_as_coordinator()` |
+| Worker training loop | Done | `ClassifyTrainer::run_worker()` |
+| Gradient serialization | Done | `ClassifyPipeline::collect/apply_lora_gradients()` |
+| CLI flags (--role, --bind, etc.) | Done | `apr-cli::commands::finetune` |
+| Falsification tests (13) | Done | `data_parallel::tests::falsify_dp_*` |
+| Integration test (TCP roundtrip) | Done | `classify_trainer::tests::test_distributed_*` |
+| wgpu batched forward pass | Planned | Phase 2 |
+| GpuDevicePool multi-adapter | Planned | Phase 2 |
 
 ---
 
