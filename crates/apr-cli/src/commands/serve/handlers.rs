@@ -84,6 +84,19 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                     }
                 }
             }
+            // GH-99: Try Q4K CPU path (same fused kernels as GGUF, eliminates F32 fallback)
+            #[cfg(feature = "inference")]
+            {
+                match start_safetensors_server_cpu_quantized(model_path, config) {
+                    Ok(()) => return Ok(()),
+                    Err(e) => {
+                        println!(
+                            "{}",
+                            format!("Q4K conversion failed, falling back to F32: {e}").yellow()
+                        );
+                    }
+                }
+            }
             println!("{}", "Starting SafeTensors inspection server...".cyan());
             super::safetensors::start_safetensors_server(model_path, config)
         }
@@ -360,6 +373,23 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         }
     }
 
+    // Contract: apr-cpu-q4k-routing-v1.yaml
+    // Try fused Q4K CPU path first (same engine as GGUF/SafeTensors, 3x faster than AprTransformer).
+    // APR files from GGUF/SafeTensors import already contain Q4K tensors — no conversion needed.
+    #[cfg(feature = "inference")]
+    {
+        match try_apr_quantized_cpu(model_path, config) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                println!(
+                    "{}",
+                    format!("Q4K path unavailable ({e}), using AprTransformer fallback").yellow()
+                );
+            }
+        }
+    }
+
+    // Fallback: AprTransformer for non-transformer or non-Q4K APR models
     let state = load_apr_model_state(model_path, config)?;
     let is_transformer = state.is_transformer;
 
@@ -386,6 +416,62 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         println!("{}", "Server stopped".yellow());
         Ok(())
     })
+}
+
+/// Route APR CPU inference through fused Q4K kernels (OwnedQuantizedModel).
+///
+/// Contract: apr-cpu-q4k-routing-v1.yaml
+/// Loading path: MappedAprModel::from_path → OwnedQuantizedModel::from_apr → run_cpu_server.
+/// APR files from GGUF/SafeTensors import already contain Q4K tensors, so this avoids
+/// the slow AprTransformer F32 matmul path (9.5 → ~28 tok/s).
+#[cfg(feature = "inference")]
+fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    use realizar::apr::MappedAprModel;
+    use realizar::gguf::OwnedQuantizedModel;
+
+    println!("{}", "Loading APR model (fused Q4K kernels)...".dimmed());
+
+    let mapped = MappedAprModel::from_path(model_path)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to map APR: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "APR loaded: {} tensors, {} metadata entries",
+            mapped.tensors.len(),
+            mapped.metadata.extra.len()
+        )
+        .dimmed()
+    );
+
+    let quantized = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "Model ready: {} layers, vocab_size={}, hidden_dim={}",
+            quantized.layers().len(),
+            quantized.config().vocab_size,
+            quantized.config().hidden_dim
+        )
+        .green()
+    );
+
+    // Extract vocabulary from embedded APR metadata (GGUF-imported models embed tokenizer)
+    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
+        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
+        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
+        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+        if !v.is_empty() {
+            v[0] = "<unk>".to_string();
+        }
+        v
+    });
+
+    println!("{}", "Q4K CPU inference ready".green());
+
+    run_cpu_server(quantized, vocab, config)
 }
 
 /// Build the axum Router for APR CPU inference.

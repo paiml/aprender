@@ -449,7 +449,8 @@ fn start_gguf_server_cuda(
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                .with_verbose(config.verbose);
+                .with_verbose(config.verbose)
+                .with_inference_trace(config.trace);
 
             let app = create_router(state);
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
