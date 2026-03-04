@@ -78,6 +78,11 @@ pub enum ModelOpsCommands {
         /// Wait for VRAM availability before training (timeout in seconds, 0 = no wait)
         #[arg(long, value_name = "SECS", default_value = "0")]
         wait_gpu: u64,
+        /// Multi-adapter training: data:checkpoint pairs (GPU-SHARE Phase 2)
+        /// Format: --adapters data/corpus-a.jsonl:checkpoints/adapter-a
+        /// Can be specified multiple times for concurrent adapter training.
+        #[arg(long, value_name = "DATA:CHECKPOINT")]
+        adapters: Vec<String>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

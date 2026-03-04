@@ -329,6 +329,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             coordinator,
             expect_workers,
             wait_gpu,
+            adapters,
         }) => finetune::run(
             file.as_deref(),
             method,
@@ -355,6 +356,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             coordinator.as_deref(),
             *expect_workers,
             *wait_gpu,
+            adapters,
             cli.json,
         ),
         Commands::ModelOps(ModelOpsCommands::Prune {

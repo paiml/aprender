@@ -157,7 +157,7 @@ entrenar = { version = "0.7.3", features = ["cuda", "gpu", "parquet"] }
 alimentar = { version = "0.2.6", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
-serde_yaml_ng = "0.10"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10" }
 
 [[example]]
 name = "probar_tui_testing"
