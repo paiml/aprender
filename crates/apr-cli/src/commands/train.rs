@@ -570,29 +570,29 @@ fn build_distributed_yaml(
     world_size: Option<usize>,
     rank: Option<usize>,
     coordinator_addr: Option<&str>,
-) -> serde_yaml::Value {
-    let mut m = serde_yaml::Mapping::new();
+) -> serde_yaml_ng::Value {
+    let mut m = serde_yaml_ng::Mapping::new();
     let ws = world_size.unwrap_or(2);
     m.insert(
-        serde_yaml::Value::String("world_size".into()),
-        serde_yaml::Value::Number(serde_yaml::Number::from(ws as u64)),
+        serde_yaml_ng::Value::String("world_size".into()),
+        serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(ws as u64)),
     );
     let r = rank.unwrap_or(0);
     m.insert(
-        serde_yaml::Value::String("rank".into()),
-        serde_yaml::Value::Number(serde_yaml::Number::from(r as u64)),
+        serde_yaml_ng::Value::String("rank".into()),
+        serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(r as u64)),
     );
     let addr = coordinator_addr.unwrap_or("0.0.0.0:9000");
     m.insert(
-        serde_yaml::Value::String("coordinator_addr".into()),
-        serde_yaml::Value::String(addr.into()),
+        serde_yaml_ng::Value::String("coordinator_addr".into()),
+        serde_yaml_ng::Value::String(addr.into()),
     );
     let role = if r == 0 { "coordinator" } else { "worker" };
     m.insert(
-        serde_yaml::Value::String("role".into()),
-        serde_yaml::Value::String(role.into()),
+        serde_yaml_ng::Value::String("role".into()),
+        serde_yaml_ng::Value::String(role.into()),
     );
-    serde_yaml::Value::Mapping(m)
+    serde_yaml_ng::Value::Mapping(m)
 }
 
 /// Patch a YAML training config with CLI overrides (distributed, deterministic, seed).
@@ -607,34 +607,34 @@ fn patch_yaml_config(
 ) -> Result<std::path::PathBuf> {
     let yaml_content = std::fs::read_to_string(config_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
-    let mut yaml_val: serde_yaml::Value = serde_yaml::from_str(&yaml_content)
+    let mut yaml_val: serde_yaml_ng::Value = serde_yaml_ng::from_str(&yaml_content)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML: {e}")))?;
 
     let training = yaml_val
         .get_mut("training")
         .ok_or_else(|| CliError::ValidationFailed("Missing 'training' section".into()))?;
 
-    if let serde_yaml::Value::Mapping(training_map) = training {
+    if let serde_yaml_ng::Value::Mapping(training_map) = training {
         if distributed {
             let dist = build_distributed_yaml(world_size, rank, coordinator_addr);
-            training_map.insert(serde_yaml::Value::String("distributed".into()), dist);
+            training_map.insert(serde_yaml_ng::Value::String("distributed".into()), dist);
         }
         if deterministic {
             training_map.insert(
-                serde_yaml::Value::String("deterministic".into()),
-                serde_yaml::Value::Bool(true),
+                serde_yaml_ng::Value::String("deterministic".into()),
+                serde_yaml_ng::Value::Bool(true),
             );
         }
         if let Some(s) = seed {
             training_map.insert(
-                serde_yaml::Value::String("seed".into()),
-                serde_yaml::Value::Number(serde_yaml::Number::from(s)),
+                serde_yaml_ng::Value::String("seed".into()),
+                serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(s)),
             );
         }
     }
 
     let temp_path = std::env::temp_dir().join("apr-patched-config.yaml");
-    let patched_yaml = serde_yaml::to_string(&yaml_val)
+    let patched_yaml = serde_yaml_ng::to_string(&yaml_val)
         .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
     std::fs::write(&temp_path, &patched_yaml)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write temp config: {e}")))?;
@@ -1025,7 +1025,7 @@ pub(crate) fn run_sweep(
 
     let base_content = std::fs::read_to_string(config_path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read config: {e}")))?;
-    let base: serde_yaml::Value = serde_yaml::from_str(&base_content)
+    let base: serde_yaml_ng::Value = serde_yaml_ng::from_str(&base_content)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML: {e}")))?;
 
     std::fs::create_dir_all(output_dir)
@@ -1049,7 +1049,7 @@ pub(crate) fn run_sweep(
     let mut results = Vec::new();
     for (i, config) in configs.iter().enumerate() {
         let filename = output_dir.join(format!("sweep-{i:03}.yaml"));
-        let yaml_str = serde_yaml::to_string(config)
+        let yaml_str = serde_yaml_ng::to_string(config)
             .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
         std::fs::write(&filename, &yaml_str)
             .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", filename.display())))?;
@@ -1092,9 +1092,9 @@ pub(crate) fn run_sweep(
 
 /// Generate grid search configs over LR × batch_size × weight_decay.
 fn generate_grid_configs(
-    base: &serde_yaml::Value,
+    base: &serde_yaml_ng::Value,
     max_configs: usize,
-) -> Vec<serde_yaml::Value> {
+) -> Vec<serde_yaml_ng::Value> {
     let lr_values = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3];
     let bs_values: &[u64] = &[2, 4, 8];
     let wd_values = [0.0, 0.01, 0.1];
@@ -1119,10 +1119,10 @@ fn generate_grid_configs(
 
 /// Generate random search configs using LCG PRNG.
 fn generate_random_configs(
-    base: &serde_yaml::Value,
+    base: &serde_yaml_ng::Value,
     num_configs: usize,
     seed: u64,
-) -> Vec<serde_yaml::Value> {
+) -> Vec<serde_yaml_ng::Value> {
     let mut rng_state = seed;
     let mut configs = Vec::new();
 
@@ -1161,14 +1161,14 @@ fn lcg_f64(state: &mut u64) -> f64 {
 }
 
 /// Set a nested YAML value (f64).
-fn set_yaml_f64(root: &mut serde_yaml::Value, path: &[&str], val: f64) {
+fn set_yaml_f64(root: &mut serde_yaml_ng::Value, path: &[&str], val: f64) {
     let mut node = root;
     for (i, key) in path.iter().enumerate() {
         if i == path.len() - 1 {
-            node[*key] = serde_yaml::Value::Number(serde_yaml::Number::from(val));
+            node[*key] = serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(val));
         } else {
             if node.get(*key).is_none() {
-                node[*key] = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+                node[*key] = serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new());
             }
             node = &mut node[*key];
         }
@@ -1176,14 +1176,14 @@ fn set_yaml_f64(root: &mut serde_yaml::Value, path: &[&str], val: f64) {
 }
 
 /// Set a nested YAML value (u64).
-fn set_yaml_u64(root: &mut serde_yaml::Value, path: &[&str], val: u64) {
+fn set_yaml_u64(root: &mut serde_yaml_ng::Value, path: &[&str], val: u64) {
     let mut node = root;
     for (i, key) in path.iter().enumerate() {
         if i == path.len() - 1 {
-            node[*key] = serde_yaml::Value::Number(serde_yaml::Number::from(val));
+            node[*key] = serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(val));
         } else {
             if node.get(*key).is_none() {
-                node[*key] = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+                node[*key] = serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new());
             }
             node = &mut node[*key];
         }
