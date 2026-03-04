@@ -75,6 +75,9 @@ pub enum ModelOpsCommands {
         /// Expected number of workers (coordinator only)
         #[arg(long, value_name = "N")]
         expect_workers: Option<usize>,
+        /// Wait for VRAM availability before training (timeout in seconds, 0 = no wait)
+        #[arg(long, value_name = "SECS", default_value = "0")]
+        wait_gpu: u64,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {
