@@ -330,6 +330,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             expect_workers,
             wait_gpu,
             adapters,
+            adapters_config,
             experimental_mps,
             gpu_share,
         }) => finetune::run(
@@ -359,6 +360,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *expect_workers,
             *wait_gpu,
             adapters,
+            adapters_config.as_deref(),
             cli.json,
             *experimental_mps,
             *gpu_share,

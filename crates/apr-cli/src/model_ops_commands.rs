@@ -84,6 +84,10 @@ pub enum ModelOpsCommands {
         #[arg(long, value_name = "DATA:CHECKPOINT")]
         adapters: Vec<String>,
 
+        /// Multi-adapter config file: TOML with [[adapter]] entries (GPU-SHARE §2.4)
+        #[arg(long, value_name = "FILE")]
+        adapters_config: Option<PathBuf>,
+
         /// Enable experimental CUDA MPS for concurrent GPU sharing (GPU-SHARE §1.5).
         /// WARNING: A GPU fault in any MPS client will crash ALL clients on that GPU.
         #[arg(long)]
