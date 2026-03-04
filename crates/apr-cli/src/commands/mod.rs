@@ -26,6 +26,7 @@ pub(crate) mod explain;
 pub(crate) mod export;
 pub(crate) mod finetune;
 pub(crate) mod flow;
+pub(crate) mod gpu;
 pub(crate) mod hex;
 pub(crate) mod import;
 pub(crate) mod inspect;

@@ -373,8 +373,37 @@ pub(crate) fn run(
     bind: Option<&str>,
     coordinator: Option<&str>,
     expect_workers: Option<usize>,
+    wait_gpu: u64,
     json_output: bool,
 ) -> Result<()> {
+    // Wait for VRAM if requested (GPU-SHARE-003)
+    if wait_gpu > 0 {
+        let vram_mb = (vram_gb * 1024.0) as usize;
+        let task_name = task.unwrap_or("finetune");
+        eprintln!(
+            "[GPU] Waiting up to {wait_gpu}s for {vram_mb} MB VRAM ({task_name})..."
+        );
+        let mut ledger = entrenar::gpu::ledger::auto_ledger();
+        let config =
+            entrenar::gpu::wait::WaitConfig::with_timeout_secs(wait_gpu);
+        let mut profiler = entrenar::gpu::profiler::GpuProfiler::disabled();
+        match entrenar::gpu::wait::wait_for_vram(
+            &mut ledger,
+            vram_mb,
+            task_name,
+            &config,
+            &mut profiler,
+        ) {
+            Ok(id) => eprintln!("[GPU] VRAM reserved: {vram_mb} MB (id: {id})"),
+            Err(e) => {
+                return Err(CliError::Aprender(format!(
+                    "VRAM wait failed: {e}"
+                )));
+            }
+        }
+        // Note: ledger reservation will be released on drop (end of training)
+    }
+
     if merge_mode {
         return run_merge(model_path, adapter_path, output_path, json_output);
     }

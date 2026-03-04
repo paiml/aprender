@@ -425,6 +425,12 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// GPU status and VRAM reservation management (GPU-SHARE-001)
+    Gpu {
+        /// Show reservations as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]
     Extended(ExtendedCommands),
