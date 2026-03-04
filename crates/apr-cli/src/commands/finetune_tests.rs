@@ -65,6 +65,14 @@ fn test_run_no_model() {
         5,
         "apr,safetensors",
         false,
+        None,
+        false,
+        None,
+        "cuda",
+        None,
+        None,
+        None,
+        None,
         false,
     );
     assert!(result.is_err());
@@ -89,6 +97,14 @@ fn test_run_plan_with_model_size() {
         5,
         "apr,safetensors",
         false,
+        None,
+        false,
+        None,
+        "cuda",
+        None,
+        None,
+        None,
+        None,
         false,
     );
     assert!(result.is_ok());
@@ -113,6 +129,14 @@ fn test_run_plan_json() {
         5,
         "apr,safetensors",
         false,
+        None,
+        false,
+        None,
+        "cuda",
+        None,
+        None,
+        None,
+        None,
         true,
     );
     assert!(result.is_ok());
@@ -139,6 +163,14 @@ fn test_run_with_model_file() {
         5,
         "apr,safetensors",
         false,
+        None,
+        false,
+        None,
+        "cuda",
+        None,
+        None,
+        None,
+        None,
         false,
     );
     assert!(result.is_ok());
@@ -246,6 +278,14 @@ fn test_run_training_creates_adapter() {
         5,
         "apr,safetensors",
         false,
+        None,
+        false,
+        None,
+        "cuda",
+        None,
+        None,
+        None,
+        None,
         true,
     );
     assert!(result.is_ok(), "Training should succeed: {result:?}");

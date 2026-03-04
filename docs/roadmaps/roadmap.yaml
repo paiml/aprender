@@ -4617,3 +4617,71 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-367
+  github_issue: null
+  item_type: task
+  title: 'fix: TensorDType::from_u8 missing GGML Q4_0/Q5_0/Q5_1 dtype mappings (GH-375)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:37:08Z
+  updated: 2026-03-04T17:48:18.366251734+00:00
+  spec: null
+  acceptance_criteria:
+  - Five-whys RCA + fix missing/wrong GGML quant type mappings in tensor_index_impl.rs
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-368
+  github_issue: null
+  item_type: task
+  title: 'fix: apr-qa dim-smoke G0 config.json resolution from HF cache (GH-360)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:48:30Z
+  updated: 2026-03-04T17:50:33.356431402+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Five-whys: dim-smoke scenarios look in workspace dir but config.json lives in HF cache. Fix: resolve config.json from HF cache path.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-369
+  github_issue: null
+  item_type: task
+  title: 'fix: sharded SafeTensors symlink resolution (GH-363)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:51:36Z
+  updated: 2026-03-04T17:55:21.184156193+00:00
+  spec: null
+  acceptance_criteria:
+  - base_dir must canonicalize to resolve symlinks before joining shard filenames
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-370
+  github_issue: null
+  item_type: task
+  title: 'fix: BPE tokenizer O(n²) greedy rescan → priority queue (GH-378)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:58:20Z
+  updated: 2026-03-04T17:59:03.610305800+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Port HF tokenizers word.rs algorithm: doubly-linked symbol list + BinaryHeap, integer pair keys'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

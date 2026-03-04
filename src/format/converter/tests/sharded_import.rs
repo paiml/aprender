@@ -242,6 +242,43 @@ fn test_load_sharded_empty_index_error() {
 }
 
 // ============================================================================
+// GH-363: Symlink resolution for sharded SafeTensors
+// ============================================================================
+
+#[test]
+fn test_load_sharded_via_symlinked_index() {
+    // Real dir with shards + index
+    let real_dir = tempfile::tempdir().expect("create real dir");
+    let shard_path = real_dir.path().join("model-00001-of-00001.safetensors");
+    create_shard_file(&shard_path, &[("layer.0.weight", &[1.0, 2.0, 3.0, 4.0])]);
+    let real_index = real_dir.path().join("model.safetensors.index.json");
+    create_index_json(
+        &real_index,
+        &[("layer.0.weight", "model-00001-of-00001.safetensors")],
+    );
+
+    // Symlink dir: index.json symlinked, but shards NOT symlinked
+    let link_dir = tempfile::tempdir().expect("create link dir");
+    let link_index = link_dir.path().join("model.safetensors.index.json");
+    std::os::unix::fs::symlink(&real_index, &link_index).expect("create symlink");
+
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
+    // Before fix: this fails with "shard not found" because base_dir is link_dir (no shards)
+    // After fix: canonicalize resolves to real_dir where shards exist
+    let result = import::load_sharded_safetensors(&link_index, &options);
+    assert!(
+        result.is_ok(),
+        "Sharded import via symlinked index should succeed, got: {}",
+        result.unwrap_err()
+    );
+    let loaded = result.unwrap();
+    assert!(loaded.tensors.contains_key("layer.0.weight"));
+}
+
+// ============================================================================
 // load_source_tensors: .index.json routing
 // ============================================================================
 

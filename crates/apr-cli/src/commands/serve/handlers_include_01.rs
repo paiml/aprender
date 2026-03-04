@@ -64,7 +64,6 @@ fn start_apr_server_gpu(
     println!("{}", "CUDA fused Q4K model ready".green());
 
     // GH-88: Use BPE tokenizer with merge rules when available (SafeTensors/HF imports).
-    // GGUF-converted APR files also embed merges, so both paths benefit.
     let state = if let Some(merge_rules) = merges {
         AppState::with_cuda_model_and_bpe(cuda_model, vocab, merge_rules)
     } else {
