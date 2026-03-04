@@ -427,6 +427,3 @@ replace = "## [{{version}}] - {{date}}"
 # See .cargo/config.toml.dev-overrides for full-stack development setup.
 [patch.crates-io]
 aprender = { path = "." }
-entrenar = { path = "../entrenar" }
-realizar = { path = "../realizar" }
-trueno-gpu = { path = "../trueno/trueno-gpu" }

@@ -464,9 +464,9 @@ fn test_field9_and_field13_both_handled() {
 #[test]
 fn test_real_onnx_file_debug() {
     // MiniLM-L6-v2 ONNX model from fastembed cache (optional)
-    let path = std::path::Path::new(
-        "/home/noah/src/trueno-rag/.fastembed_cache/models--Qdrant--all-MiniLM-L6-v2-onnx/snapshots/5f1b8cd78bc4fb444dd171e59b18f3a3af89a079/model.onnx"
-    );
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let onnx_path_buf = std::path::PathBuf::from(&home).join("src/trueno-rag/.fastembed_cache/models--Qdrant--all-MiniLM-L6-v2-onnx/snapshots/5f1b8cd78bc4fb444dd171e59b18f3a3af89a079/model.onnx");
+    let path = onnx_path_buf.as_path();
     if !path.exists() {
         return; // Skip if model not available
     }

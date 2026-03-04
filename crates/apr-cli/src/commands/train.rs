@@ -525,7 +525,10 @@ fn run_apply_classify(
         .map(std::path::Path::to_path_buf)
         .or_else(|| {
             plan.model.weights_available.then(|| {
-                std::path::PathBuf::from("/home/noah/src/models/qwen2.5-coder-0.5b")
+                // Use MODEL_PATH env var or default to ./models/qwen2.5-coder-0.5b
+                std::env::var("APR_MODEL_PATH")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|_| std::path::PathBuf::from("models/qwen2.5-coder-0.5b"))
             })
         })
         .ok_or_else(|| {
