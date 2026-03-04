@@ -9,7 +9,7 @@ fn start_apr_server_gpu(
     config: &ServerConfig,
 ) -> Result<()> {
     use realizar::apr::MappedAprModel;
-    use realizar::api::{create_router, AppState};
+    use realizar::api::{create_router, AppState, CudaBatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!("{}", "Loading APR model (fused Q4K kernels)...".dimmed());
@@ -71,6 +71,7 @@ fn start_apr_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+    .with_cuda_dispatch(CudaBatchConfig::default())
     .with_verbose(config.verbose)
     .with_inference_trace(config.trace);
 
@@ -91,7 +92,7 @@ fn start_safetensors_server_gpu(
 ) -> Result<()> {
     use aprender::format::{ImportOptions, QuantizationType};
     use realizar::apr::MappedAprModel;
-    use realizar::api::{create_router, AppState};
+    use realizar::api::{create_router, AppState, CudaBatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
@@ -156,6 +157,7 @@ fn start_safetensors_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+    .with_cuda_dispatch(CudaBatchConfig::default())
     .with_verbose(config.verbose)
     .with_inference_trace(config.trace);
 
