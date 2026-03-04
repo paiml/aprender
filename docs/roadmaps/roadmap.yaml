@@ -4617,3 +4617,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-367
+  github_issue: null
+  item_type: task
+  title: 'fix: TensorDType::from_u8 missing GGML Q4_0/Q5_0/Q5_1 dtype mappings (GH-375)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:37:08Z
+  updated: 2026-03-04T17:48:18.366251734+00:00
+  spec: null
+  acceptance_criteria:
+  - Five-whys RCA + fix missing/wrong GGML quant type mappings in tensor_index_impl.rs
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
