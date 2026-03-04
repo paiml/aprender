@@ -422,11 +422,6 @@ replace = "## [{{version}}] - {{date}}"
 # PMAT-262: Self-patch so transitive deps (realizar, entrenar) use the local
 # workspace aprender instead of a stale crates.io version. This prevents type
 # mismatches when building apr-cli from the workspace.
-# GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml
+# GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml.dev-overrides
 # so that `git clone && cargo check` works without sibling repos.
 # See .cargo/config.toml.dev-overrides for full-stack development setup.
-[patch.crates-io]
-aprender = { path = "." }
-entrenar = { path = "../entrenar" }
-realizar = { path = "../realizar" }
-trueno-gpu = { path = "../trueno/trueno-gpu" }
