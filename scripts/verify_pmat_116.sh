@@ -9,7 +9,7 @@ echo ""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APRENDER_DIR="$(dirname "$SCRIPT_DIR")"
-REALIZAR_DIR="/home/noah/src/realizar"
+REALIZAR_DIR="$(dirname "$SCRIPT_DIR")/../realizar"
 
 # 1. Existence Checks
 echo "[1/5] Verifying Implementation Existence..."

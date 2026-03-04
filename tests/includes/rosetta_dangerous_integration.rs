@@ -4,9 +4,17 @@
 
 /// Helper: Get path to test GGUF model (Qwen2.5-Coder-1.5B Q4_K)
 fn test_gguf_path() -> Option<PathBuf> {
-    let path = PathBuf::from(
-        "/home/noah/.cache/huggingface/models/qwen2.5-coder-1.5b-gguf/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
-    );
+    // Check HF_HOME, then ~/.cache/huggingface (XDG default)
+    let cache_base = std::env::var("HF_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".cache").join("huggingface")
+        });
+    let path = cache_base
+        .join("models")
+        .join("qwen2.5-coder-1.5b-gguf")
+        .join("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf");
     if path.exists() {
         Some(path)
     } else {
@@ -16,10 +24,16 @@ fn test_gguf_path() -> Option<PathBuf> {
 
 /// Helper: Get path to test SafeTensors model
 fn test_safetensors_path() -> Option<PathBuf> {
+    let cache_base = std::env::var("HF_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+            PathBuf::from(home).join(".cache").join("huggingface")
+        });
     let candidates =
-        ["/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2.5-Coder-1.5B-Instruct/snapshots"];
+        [cache_base.join("hub/models--Qwen--Qwen2.5-Coder-1.5B-Instruct/snapshots")];
 
-    for base in candidates {
+    for base in &candidates {
         if let Ok(entries) = std::fs::read_dir(base) {
             for entry in entries.flatten() {
                 let snap_path = entry.path();

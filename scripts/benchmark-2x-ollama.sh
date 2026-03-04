@@ -18,18 +18,20 @@
 # ALL MODALITIES DONE - NO P2
 
 # Configuration
-MODEL_GGUF="${MODEL_GGUF:-/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MODEL_GGUF="${MODEL_GGUF:-models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
 MODEL_APR="${MODEL_APR:-/tmp/test-transformer.apr}"
-REALIZAR_DIR="${REALIZAR_DIR:-/home/noah/src/realizar}"
-APR_BIN="${APR_BIN:-/mnt/nvme-raid0/targets/aprender/release/apr}"
+REALIZAR_DIR="${REALIZAR_DIR:-${REPO_DIR}/../realizar}"
+APR_BIN="${APR_BIN:-${REPO_DIR}/target/release/apr}"
 OLLAMA_BASELINE="${OLLAMA_BASELINE:-291}"       # GPU batched baseline
 OLLAMA_SINGLE="${OLLAMA_SINGLE:-120}"           # GPU single-request baseline
 OLLAMA_CPU="${OLLAMA_CPU:-15}"                  # CPU baseline
 TARGET_MULTIPLIER="2.0"
 RESULTS_JSON="/tmp/benchmark-2x-ollama-results.json"
-REALIZAR_BIN="/mnt/nvme-raid0/targets/realizar/release/examples/apr_gpu_benchmark"
-BIAS_BIN="/mnt/nvme-raid0/targets/realizar/release/examples/check_qkv_bias"
-APR_GENERATOR="${APR_GENERATOR:-/mnt/nvme-raid0/targets/aprender/release/examples/create_test_transformer_apr}"
+REALIZAR_BIN="${REALIZAR_BIN:-${REALIZAR_DIR}/target/release/examples/apr_gpu_benchmark}"
+BIAS_BIN="${BIAS_BIN:-${REALIZAR_DIR}/target/release/examples/check_qkv_bias}"
+APR_GENERATOR="${APR_GENERATOR:-${REPO_DIR}/target/release/examples/create_test_transformer_apr}"
 
 # Colors
 RED='\033[0;31m'
@@ -315,7 +317,7 @@ if [[ ! -f "$MODEL_APR" ]]; then
         "$APR_GENERATOR" &>/dev/null
     else
         # Try cargo run instead
-        (cd /home/noah/src/aprender && cargo run --example create_test_transformer_apr --release &>/dev/null) || true
+        (cd "$REPO_DIR" && cargo run --example create_test_transformer_apr --release &>/dev/null) || true
     fi
 fi
 

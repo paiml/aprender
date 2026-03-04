@@ -525,7 +525,12 @@ fn run_apply_classify(
         .map(std::path::Path::to_path_buf)
         .or_else(|| {
             plan.model.weights_available.then(|| {
-                std::path::PathBuf::from("/home/noah/src/models/qwen2.5-coder-0.5b")
+                // Use cache dir or current working directory as default model location
+                dirs::cache_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("aprender")
+                    .join("models")
+                    .join("qwen2.5-coder-0.5b")
             })
         })
         .ok_or_else(|| {
