@@ -278,7 +278,7 @@ fn measure_generate_throughput(
     warmup: usize,
     iterations: usize,
     prompt_len: usize,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
     brick_name: &str,
     budget_us: u64,
     verbose: bool,
@@ -342,7 +342,7 @@ fn throughput_gguf(
     model_bytes: &[u8],
     config: &QaConfig,
     cuda_available: bool,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
     use realizar::gguf::{
@@ -426,7 +426,7 @@ fn throughput_gguf(
 fn throughput_apr(
     path: &Path,
     config: &QaConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
     use realizar::apr::AprV2Model;

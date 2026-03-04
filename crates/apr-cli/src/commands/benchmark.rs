@@ -137,7 +137,7 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     // Route to format-specific benchmark
     // GH-192: All formats now support CUDA acceleration
     let use_cuda = cuda_available && cuda_devices > 0;
-    let tracer = renacer::brick_tracer::BrickTracer::new_local();
+    let tracer = TracerImpl::new_local();
     match format {
         ModelFormat::Gguf => run_gguf_benchmark(path, config, use_cuda, &tracer),
         ModelFormat::Apr => run_apr_benchmark(path, config, use_cuda, &tracer),
@@ -151,7 +151,7 @@ fn run_gguf_benchmark(
     path: &Path,
     config: &BenchConfig,
     use_cuda: bool,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
 
@@ -259,7 +259,7 @@ fn handle_zero_generation_fallback(
 fn try_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<Option<BenchResult>> {
     let result = run_apr_cuda_benchmark(path, config, tracer)?;
     if result.total_tokens > 0 {
@@ -281,7 +281,7 @@ fn run_apr_benchmark(
     path: &Path,
     config: &BenchConfig,
     use_cuda: bool,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
@@ -400,7 +400,7 @@ fn run_apr_benchmark(
 fn run_apr_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::apr::{AprV2Model, MappedAprModel};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};

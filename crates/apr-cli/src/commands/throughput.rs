@@ -3,7 +3,7 @@
 fn throughput_safetensors(
     path: &Path,
     config: &QaConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
     prompt: &str,
 ) -> Result<Option<(f64, Duration)>> {
     use aprender::text::bpe::{load_from_json, BpeTokenizer};
@@ -56,7 +56,7 @@ fn throughput_for_format(
     prompt: &str,
     config: &QaConfig,
     cuda_available: bool,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<Option<(f64, Duration)>> {
     use realizar::format::ModelFormat;
 

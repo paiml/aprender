@@ -66,6 +66,65 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+#[cfg(feature = "visualization")]
+use renacer::brick_tracer::BrickTracer as TracerImpl;
+#[cfg(not(feature = "visualization"))]
+use brick_tracer_shim::BrickTracer as TracerImpl;
+
+/// No-op BrickTracer shim when the `visualization` (renacer) feature is disabled.
+/// Provides the same API surface so callers compile without cfg gates on every call site.
+#[cfg(not(feature = "visualization"))]
+mod brick_tracer_shim {
+    /// Stub syscall breakdown — all zeros.
+    pub struct SyscallBreakdown {
+        pub compute_us: u64,
+        pub mmap_us: u64,
+        pub futex_us: u64,
+        pub ioctl_us: u64,
+    }
+    impl SyscallBreakdown {
+        pub fn syscall_overhead_percent(&self) -> f64 { 0.0 }
+        pub fn dominant_syscall(&self) -> &'static str { "none" }
+    }
+
+    /// Stub trace metadata.
+    pub struct TraceMetadata {
+        pub budget_us: u64,
+        pub actual_us: u64,
+        pub efficiency: f64,
+    }
+
+    /// Result of a traced operation — contains the closure result + timing.
+    pub struct TracedResult<T> {
+        pub result: T,
+        pub duration_us: u64,
+        pub syscall_breakdown: SyscallBreakdown,
+        pub metadata: Option<TraceMetadata>,
+    }
+
+    /// No-op tracer that just times the closure with `Instant`.
+    pub struct BrickTracer;
+    impl BrickTracer {
+        pub fn new_local() -> Self { Self }
+        pub fn trace<T>(&self, _name: &str, _budget_us: u64, f: impl FnOnce() -> T) -> TracedResult<T> {
+            let start = std::time::Instant::now();
+            let result = f();
+            let duration_us = start.elapsed().as_micros() as u64;
+            TracedResult {
+                result,
+                duration_us,
+                syscall_breakdown: SyscallBreakdown {
+                    compute_us: duration_us,
+                    mmap_us: 0,
+                    futex_us: 0,
+                    ioctl_us: 0,
+                },
+                metadata: None,
+            }
+        }
+    }
+}
+
 /// QA configuration
 #[derive(Debug, Clone)]
 pub struct QaConfig {

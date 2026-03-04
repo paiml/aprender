@@ -6,7 +6,7 @@ fn run_safetensors_benchmark(
     path: &Path,
     config: &BenchConfig,
     use_cuda: bool,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
@@ -128,7 +128,7 @@ fn bench_log_done(config: &BenchConfig) {
 fn run_safetensors_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use aprender::format::{ImportOptions, QuantizationType};
     use realizar::apr::MappedAprModel;
@@ -219,7 +219,7 @@ fn run_cuda_measurement(
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<(Vec<Duration>, usize, Duration)> {
     if !config.quiet {
         eprintln!("{}", "Running benchmark (GPU)...".yellow());
@@ -277,7 +277,7 @@ fn run_cuda_benchmark(
     config: &BenchConfig,
     start: Instant,
     model_path: &Path,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
@@ -320,7 +320,7 @@ fn run_cpu_benchmark(
     config: &BenchConfig,
     start: Instant,
     path: &Path,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
@@ -362,7 +362,7 @@ fn run_cpu_measurement(
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> (Vec<Duration>, usize, Duration) {
     bench_log(config, &"Running benchmark (CPU)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);

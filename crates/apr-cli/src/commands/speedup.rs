@@ -15,7 +15,7 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
 
-        let tracer = renacer::brick_tracer::BrickTracer::new_local();
+        let tracer = TracerImpl::new_local();
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
 
         let model_bytes = std::fs::read(path)
@@ -113,7 +113,7 @@ fn ollama_parity_grade(ratio: f64) -> &'static str {
 fn measure_our_gguf_tps(
     path: &Path,
     config: &QaConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<f64> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
@@ -219,7 +219,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
     #[cfg(feature = "inference")]
     {
-        let tracer = renacer::brick_tracer::BrickTracer::new_local();
+        let tracer = TracerImpl::new_local();
         let ollama_tps = measure_ollama_throughput(path, config)?;
 
         if ollama_tps <= 0.0 {
@@ -280,7 +280,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 fn measure_gpu_cpu_tps(
     path: &Path,
     config: &QaConfig,
-    tracer: &renacer::brick_tracer::BrickTracer,
+    tracer: &TracerImpl,
 ) -> Result<(f64, f64)> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
@@ -383,7 +383,7 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        let tracer = renacer::brick_tracer::BrickTracer::new_local();
+        let tracer = TracerImpl::new_local();
         let (cpu_tps, gpu_tps) = measure_gpu_cpu_tps(path, config, &tracer)?;
         let duration = start.elapsed();
 
