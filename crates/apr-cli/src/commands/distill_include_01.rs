@@ -28,7 +28,7 @@ mod tests {
     #[test]
     fn test_run_teacher_not_found() {
         let result = run(
-            Path::new("/nonexistent.apr"),
+            Some(Path::new("/nonexistent.apr")),
             None,
             None,
             Some(Path::new("/tmp/out.apr")),
@@ -37,6 +37,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             false,
         );
         assert!(result.is_err());
@@ -47,7 +49,7 @@ mod tests {
     fn test_run_invalid_temperature() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(),
+            Some(input.path()),
             None,
             None,
             Some(Path::new("/tmp/out.apr")),
@@ -56,6 +58,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             false,
         );
         assert!(result.is_err());
@@ -69,7 +73,7 @@ mod tests {
     fn test_run_invalid_alpha() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(),
+            Some(input.path()),
             None,
             None,
             Some(Path::new("/tmp/out.apr")),
@@ -78,6 +82,8 @@ mod tests {
             1.5,
             3,
             false,
+            None,
+            None,
             false,
         );
         assert!(result.is_err());
@@ -92,7 +98,7 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 512]).expect("write");
         let result = run(
-            input.path(),
+            Some(input.path()),
             None,
             None,
             Some(Path::new("/tmp/out.apr")),
@@ -101,6 +107,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             false,
         );
         assert!(result.is_err());
@@ -117,7 +125,7 @@ mod tests {
         let mut student = NamedTempFile::with_suffix(".apr").expect("create student");
         student.write_all(&[0u8; 256]).expect("write");
         let result = run(
-            teacher.path(),
+            Some(teacher.path()),
             Some(student.path()),
             None,
             None,
@@ -126,6 +134,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             false,
         );
         assert!(result.is_err());
@@ -158,7 +168,7 @@ mod tests {
         let student = make_test_model();
         let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(),
+            Some(teacher.path()),
             Some(student.path()),
             None,
             Some(output.path()),
@@ -167,6 +177,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             true,
         );
         assert!(result.is_ok(), "Distill should succeed: {result:?}");
@@ -182,7 +194,7 @@ mod tests {
     fn test_plan_mode() {
         let teacher = make_test_model();
         let result = run(
-            teacher.path(),
+            Some(teacher.path()),
             None,
             None,
             None,
@@ -191,6 +203,8 @@ mod tests {
             0.7,
             3,
             true,
+            None,
+            None,
             false,
         );
         assert!(result.is_ok());
@@ -200,7 +214,7 @@ mod tests {
     fn test_plan_json() {
         let teacher = make_test_model();
         let result = run(
-            teacher.path(),
+            Some(teacher.path()),
             None,
             None,
             None,
@@ -209,6 +223,8 @@ mod tests {
             0.5,
             5,
             true,
+            None,
+            None,
             true,
         );
         assert!(result.is_ok());
@@ -220,7 +236,7 @@ mod tests {
         let teacher = make_test_model();
         let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(),
+            Some(teacher.path()),
             None,
             None,
             Some(output.path()),
@@ -229,6 +245,8 @@ mod tests {
             0.7,
             3,
             false,
+            None,
+            None,
             true,
         );
         assert!(result.is_ok(), "Progressive should succeed: {result:?}");

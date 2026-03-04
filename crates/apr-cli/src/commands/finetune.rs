@@ -522,46 +522,25 @@ include!("finetune_display_next_validate.rs");
 // Distributed training config builder
 // =============================================================================
 
-/// Build `DistributedConfig` from CLI flags, if `--role` is specified.
+/// Build distributed config from CLI flags, if `--role` is specified.
 ///
-/// Returns `None` for single-machine training (no `--role` flag).
+/// Returns `None` — distributed training requires unpublished entrenar APIs
+/// (DistributedConfig, NodeRole). Stubbed until entrenar publishes the
+/// distributed training subsystem.
 fn build_distributed_config(
     role: Option<&str>,
-    bind: Option<&str>,
-    coordinator: Option<&str>,
-    expect_workers: Option<usize>,
-) -> Result<Option<entrenar::finetune::DistributedConfig>> {
-    let Some(role_str) = role else {
-        return Ok(None);
-    };
-
-    match role_str {
-        "coordinator" => {
-            let bind_addr = bind
-                .unwrap_or("0.0.0.0:9000")
-                .parse()
-                .map_err(|e| CliError::ValidationFailed(format!("Invalid bind address: {e}")))?;
-            let workers = expect_workers.unwrap_or(1);
-            Ok(Some(entrenar::finetune::DistributedConfig::coordinator(
-                bind_addr, workers,
-            )))
-        }
-        "worker" => {
-            let coord_addr = coordinator
-                .or(bind)
-                .unwrap_or("127.0.0.1:9000")
-                .parse()
-                .map_err(|e| {
-                    CliError::ValidationFailed(format!("Invalid coordinator address: {e}"))
-                })?;
-            Ok(Some(entrenar::finetune::DistributedConfig::worker(
-                coord_addr,
-            )))
-        }
-        other => Err(CliError::ValidationFailed(format!(
-            "Unknown role '{other}'. Use: coordinator, worker"
-        ))),
+    _bind: Option<&str>,
+    _coordinator: Option<&str>,
+    _expect_workers: Option<usize>,
+) -> Result<()> {
+    if role.is_some() {
+        return Err(CliError::ValidationFailed(
+            "Distributed training (--role) requires unreleased entrenar APIs. \
+             Use single-machine training for now."
+                .to_string(),
+        ));
     }
+    Ok(())
 }
 
 // =============================================================================
@@ -583,7 +562,7 @@ fn print_corpus_stats(stats: &entrenar::finetune::SafetyCorpusStats) {
 ///
 /// Contract: provable-contracts/contracts/entrenar/qlora-hyperparameters-v1.yaml
 fn build_classify_config(
-    model_config: &entrenar::transformer::TransformerConfig,
+    _model_config: &entrenar::transformer::TransformerConfig,
     num_classes: usize,
     rank: u32,
     epochs: u32,
@@ -593,42 +572,22 @@ fn build_classify_config(
 ) -> entrenar::finetune::classify_pipeline::ClassifyConfig {
     use entrenar::finetune::classify_pipeline::ClassifyConfig;
 
-    let classify_config = if quantize_nf4 {
-        let model_params = model_config.hidden_size as u64
-            * model_config.num_hidden_layers as u64
-            * 12;
-        let mut cfg = ClassifyConfig::qlora_default(model_params);
-        cfg.num_classes = num_classes;
-        cfg.lora_rank = rank as usize;
-        cfg.learning_rate = learning_rate as f32;
-        cfg.epochs = epochs as usize;
-        cfg.lora_alpha = (2 * rank) as f32;
-        if let Some(msl) = max_seq_len {
-            cfg.max_seq_len = msl;
-        }
-        cfg.accumulation_steps = (16 / cfg.batch_size.max(1)).max(1);
-        cfg
-    } else {
-        ClassifyConfig {
-            num_classes,
-            lora_rank: rank as usize,
-            lora_alpha: rank as f32,
-            learning_rate: learning_rate as f32,
-            epochs: epochs as usize,
-            max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
-            quantize_nf4,
-            ..ClassifyConfig::default()
-        }
-    };
-
-    // Validate against research contracts
-    let model_params_est = model_config.hidden_size as u64
-        * model_config.num_hidden_layers as u64 * 12;
-    let diags = classify_config.validate_hyperparameters(model_params_est);
-    if !diags.items.is_empty() {
-        eprintln!("[HP] Contract validation (qlora-hyperparameters-v1.yaml):");
-        diags.print_all();
+    if quantize_nf4 {
+        eprintln!(
+            "[warn] --quantize-nf4 requested but ClassifyConfig.quantize_nf4 is not \
+             available in entrenar 0.7.5. Proceeding without NF4 quantization."
+        );
     }
+
+    let classify_config = ClassifyConfig {
+        num_classes,
+        lora_rank: rank as usize,
+        lora_alpha: rank as f32,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
+        ..ClassifyConfig::default()
+    };
 
     classify_config
 }
@@ -664,15 +623,10 @@ fn display_classify_header(
 }
 
 /// Display distributed training config info.
-fn display_distributed_info(config: &Option<entrenar::finetune::DistributedConfig>) {
-    if let Some(ref dc) = config {
-        output::kv("Distributed", format!("{:?}", dc.role));
-        output::kv("Bind address", dc.bind_addr.to_string());
-        if let Some(addr) = dc.coordinator_addr {
-            output::kv("Coordinator", addr.to_string());
-        }
-        output::kv("Expected workers", dc.expect_workers.to_string());
-    }
+///
+/// Stubbed — distributed training requires unpublished entrenar APIs.
+fn display_distributed_info() {
+    // No-op: distributed training not yet available in published entrenar.
 }
 
 /// Display GPU/device info in non-JSON output.
@@ -721,7 +675,6 @@ fn run_classify(
     expect_workers: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
     use entrenar::finetune::{ClassifyTrainer, TrainingConfig};
 
     if !json_output {
@@ -743,10 +696,11 @@ fn run_classify(
         );
     }
 
-    let distributed_config = build_distributed_config(role, bind, coordinator, expect_workers)?;
+    // Validate no distributed flags were passed (unsupported in entrenar 0.7.5)
+    build_distributed_config(role, bind, coordinator, expect_workers)?;
 
     if !json_output {
-        display_distributed_info(&distributed_config);
+        display_distributed_info();
     }
 
     let pipeline = load_classify_pipeline(model_path, &model_config, classify_config)?;
@@ -790,6 +744,13 @@ fn run_classify(
         .unwrap_or(Path::new("checkpoints"))
         .to_path_buf();
 
+    if oversample {
+        eprintln!(
+            "[warn] --oversample requested but TrainingConfig.oversample_minority is not \
+             available in entrenar 0.7.5. Proceeding without oversampling."
+        );
+    }
+
     // Create TrainingConfig from CLI args
     let training_config = TrainingConfig {
         epochs: epochs as usize,
@@ -799,9 +760,6 @@ fn run_classify(
         checkpoint_dir: output_dir.clone(),
         seed: 42,
         log_interval: 1,
-        oversample_minority: oversample,
-        quantize_nf4,
-        distributed: distributed_config.clone(),
         ..TrainingConfig::default()
     };
 
@@ -819,8 +777,7 @@ fn run_classify(
             .unwrap_or(0)
     );
     let mut writer =
-        entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name)
-            .with_console_progress(!json_output);
+        entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name);
     // Wire GPU telemetry into training state for `apr monitor`
     if let Some((ref name, mem)) = gpu_info {
         writer.set_gpu(name, mem as f32 / 1e9);
@@ -834,23 +791,8 @@ fn run_classify(
         println!();
     }
 
-    // Run training — dispatch to worker mode if configured
-    let is_worker = distributed_config
-        .as_ref()
-        .is_some_and(|dc| matches!(dc.role, entrenar::finetune::NodeRole::Worker));
-
-    let result = if is_worker {
-        if !json_output {
-            output::pipeline_stage("Worker mode", output::StageStatus::Running);
-            println!("  Connecting to coordinator...");
-            println!();
-        }
-        trainer
-            .run_worker()
-            .map_err(|e| CliError::ValidationFailed(format!("Worker training failed: {e}")))?
-    } else {
-        trainer.train()
-    };
+    // Run training (single-machine mode; distributed requires unreleased entrenar APIs)
+    let result = trainer.train();
 
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Done);
@@ -988,151 +930,40 @@ fn display_train_result(
 // moved to shared module: super::model_config
 
 /// Run instruction fine-tuning pipeline via entrenar.
+///
+/// Stubbed — the instruct fine-tuning subsystem (instruct_corpus, instruct_pipeline,
+/// instruct_trainer, InstructTrainResult) is not published in entrenar 0.7.5.
+/// Returns a clear error directing users to wait for the next entrenar release.
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::disallowed_methods)]
 fn run_instruct(
-    model_path: Option<&Path>,
-    model_size: Option<&str>,
-    data_path: Option<&Path>,
-    output_path: Option<&Path>,
-    rank: u32,
-    epochs: u32,
-    learning_rate: f64,
-    plan_only: bool,
-    json_output: bool,
-    method: &str,
-    quantize_nf4: bool,
-    max_seq_len: Option<usize>,
-    vram_gb: f64,
+    _model_path: Option<&Path>,
+    _model_size: Option<&str>,
+    _data_path: Option<&Path>,
+    _output_path: Option<&Path>,
+    _rank: u32,
+    _epochs: u32,
+    _learning_rate: f64,
+    _plan_only: bool,
+    _json_output: bool,
+    _method: &str,
+    _quantize_nf4: bool,
+    _max_seq_len: Option<usize>,
+    _vram_gb: f64,
 ) -> Result<()> {
-    use entrenar::finetune::instruct_corpus::{load_instruct_corpus, instruct_corpus_stats};
-    use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
-    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
-
-    if !json_output {
-        output::section("apr finetune --task instruct (GH-371: Instruction Fine-tuning)");
-        println!();
-    }
-
-    // GH-376: Read architecture from .apr metadata (single source of truth).
-    let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
-
-    // Determine if QLoRA is requested via --method qlora or --quantize-nf4
-    let is_qlora = quantize_nf4 || method.eq_ignore_ascii_case("qlora");
-
-    let instruct_config = InstructConfig {
-        lora_rank: rank as usize,
-        lora_alpha: rank as f32 * 2.0,
-        learning_rate: learning_rate as f32,
-        epochs: epochs as usize,
-        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
-        quantize_nf4: is_qlora,
-        ..InstructConfig::default()
-    };
-
-    if !json_output {
-        output::kv(
-            "Model",
-            format!(
-                "{}h x {}L (vocab {})",
-                model_config.hidden_size,
-                model_config.num_hidden_layers,
-                model_config.vocab_size,
-            ),
-        );
-        output::kv("Method", if is_qlora { "QLoRA (NF4)" } else { "LoRA" });
-        output::kv("LoRA rank", rank.to_string());
-        output::kv("LoRA alpha", format!("{:.0}", rank as f32 * 2.0));
-        output::kv("Epochs", epochs.to_string());
-        output::kv("Learning rate", format!("{learning_rate:.1e}"));
-        output::kv("Max seq len", instruct_config.max_seq_len.to_string());
-        if is_qlora {
-            output::kv("VRAM budget", format!("{vram_gb:.1} GB"));
-        }
-        println!();
-    }
-
-    let pipeline = load_instruct_pipeline(model_path, &model_config, instruct_config)?;
-
-    if !json_output {
-        if let Some(ref name) = pipeline.gpu_name() {
-            output::kv("Device", format!("CUDA ({name})"));
-        } else {
-            output::kv("Device", "CPU");
-        }
-        println!("{}", pipeline.summary());
-        println!();
-    }
-
-    if plan_only {
-        display_instruct_plan(&pipeline, &model_config, is_qlora, rank, json_output);
-        return Ok(());
-    }
-
-    let Some(data) = data_path else {
-        display_instruct_next_steps(json_output);
-        return Ok(());
-    };
-
-    if !data.exists() {
-        return Err(CliError::FileNotFound(data.to_path_buf()));
-    }
-
-    let samples = load_instruct_corpus(data)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load corpus: {e}")))?;
-
-    let stats = instruct_corpus_stats(&samples);
-
-    if !json_output {
-        output::subheader("Corpus");
-        output::kv("Samples", stats.total.to_string());
-        output::kv(
-            "Avg instruction",
-            format!("{} chars", stats.avg_instruction_len),
-        );
-        output::kv("Avg response", format!("{} chars", stats.avg_response_len));
-        if !stats.sources.is_empty() {
-            output::kv("Sources", stats.sources.join(", "));
-        }
-        println!();
-    }
-
-    let output_dir = output_path
-        .unwrap_or(Path::new("checkpoints"))
-        .to_path_buf();
-
-    let training_config = InstructTrainingConfig {
-        epochs: epochs as usize,
-        checkpoint_dir: output_dir.clone(),
-        ..InstructTrainingConfig::default()
-    };
-
-    let mut trainer = InstructTrainer::new(pipeline, samples, training_config)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
-
-    if !json_output {
-        output::pipeline_stage("Training", output::StageStatus::Running);
-        output::kv("Train samples", trainer.train_size().to_string());
-        output::kv("Val samples", trainer.val_size().to_string());
-        output::kv("Data hash", trainer.data_hash().to_string());
-        output::kv("Output dir", output_dir.display().to_string());
-        println!();
-    }
-
-    let result = trainer.train();
-
-    if json_output {
-        display_instruct_result_json(&result, &output_dir);
-    } else {
-        output::pipeline_stage("Training", output::StageStatus::Done);
-        println!();
-        display_instruct_result(&result, &output_dir);
-    }
-
-    Ok(())
+    Err(CliError::ValidationFailed(
+        "Instruction fine-tuning (--task instruct) requires unreleased entrenar APIs \
+         (instruct_corpus, instruct_pipeline, instruct_trainer). \
+         This feature will be available once entrenar publishes the instruct subsystem. \
+         Use --task classify for classification fine-tuning."
+            .to_string(),
+    ))
 }
 
-/// Load classify pipeline from model path (directory, .apr file, or new).
+/// Load classify pipeline from model path (directory or new).
+///
+/// Note: `ClassifyPipeline::from_apr()` and `set_model_path()` are not available
+/// in entrenar 0.7.5. `.apr` file loading falls back to `from_pretrained` with
+/// the parent directory, and bare `new()` is used without model path injection.
 fn load_classify_pipeline(
     model_path: Option<&Path>,
     model_config: &entrenar::transformer::TransformerConfig,
@@ -1146,19 +977,16 @@ fn load_classify_pipeline(
         )
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))
     } else if let Some(mp) = model_path.filter(|p| p.is_file()) {
-        entrenar::finetune::classify_pipeline::ClassifyPipeline::from_apr(
-            mp,
+        // from_apr() not available in entrenar 0.7.5; use parent dir with from_pretrained
+        let parent = mp.parent().unwrap_or(mp);
+        entrenar::finetune::classify_pipeline::ClassifyPipeline::from_pretrained(
+            parent,
             model_config,
             config,
         )
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR model: {e}")))
     } else {
-        let mut pipe =
-            entrenar::finetune::classify_pipeline::ClassifyPipeline::new(model_config, config);
-        if let Some(mp) = model_path {
-            pipe.set_model_path(mp);
-        }
-        Ok(pipe)
+        Ok(entrenar::finetune::classify_pipeline::ClassifyPipeline::new(model_config, config))
     }
 }
 
@@ -1198,188 +1026,11 @@ fn display_classify_next_steps(json_output: bool) {
     }
 }
 
-/// Load instruct pipeline from model path (directory, .apr file, or new).
-fn load_instruct_pipeline(
-    model_path: Option<&Path>,
-    model_config: &entrenar::transformer::TransformerConfig,
-    config: entrenar::finetune::instruct_pipeline::InstructConfig,
-) -> Result<entrenar::finetune::instruct_pipeline::InstructPipeline> {
-    if let Some(mp) = model_path.filter(|p| p.is_dir()) {
-        entrenar::finetune::instruct_pipeline::InstructPipeline::from_pretrained(
-            mp,
-            model_config,
-            config,
-        )
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))
-    } else if let Some(mp) = model_path.filter(|p| p.is_file()) {
-        entrenar::finetune::instruct_pipeline::InstructPipeline::from_apr(
-            mp,
-            model_config,
-            config,
-        )
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR model: {e}")))
-    } else {
-        let mut pipe =
-            entrenar::finetune::instruct_pipeline::InstructPipeline::new(model_config, config);
-        if let Some(mp) = model_path {
-            pipe.set_model_path(mp);
-        }
-        Ok(pipe)
-    }
-}
-
-/// Display plan-only output for instruct fine-tuning.
-fn display_instruct_plan(
-    pipeline: &entrenar::finetune::instruct_pipeline::InstructPipeline,
-    model_config: &entrenar::transformer::TransformerConfig,
-    is_qlora: bool,
-    rank: u32,
-    json_output: bool,
-) {
-    if json_output {
-        let json = serde_json::json!({
-            "task": "instruct",
-            "method": if is_qlora { "qlora" } else { "lora" },
-            "quantize_nf4": is_qlora,
-            "lora_rank": rank,
-            "lora_alpha": rank as f32 * 2.0,
-            "hidden_size": model_config.hidden_size,
-            "num_layers": model_config.num_hidden_layers,
-            "vocab_size": model_config.vocab_size,
-            "trainable_params": pipeline.num_trainable_parameters(),
-            "is_cuda": pipeline.is_cuda(),
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
-        );
-    }
-}
-
-/// Display next-steps guidance when no training data is provided.
-fn display_instruct_next_steps(json_output: bool) {
-    if !json_output {
-        println!("{}", "NEXT STEPS".white().bold());
-        println!("{}", "\u{2500}".repeat(50));
-        println!("  Provide --data <train.jsonl> to start training.");
-        println!("  JSONL format: {{\"instruction\": \"...\", \"response\": \"...\"}}");
-        println!(
-            "  Example: apr finetune --task instruct --data instruct.jsonl -o checkpoints/"
-        );
-    }
-}
-
-/// Display instruction training results as human-readable text.
-fn display_instruct_result(
-    result: &entrenar::finetune::InstructTrainResult,
-    output_dir: &Path,
-) {
-    output::subheader("Training Metrics");
-    println!();
-    println!(
-        "  {:>5}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>8}",
-        "Epoch".white().bold(),
-        "Train Loss".white().bold(),
-        "Val Loss".white().bold(),
-        "Train PPL".white().bold(),
-        "Val PPL".white().bold(),
-        "LR".white().bold(),
-        "Time".white().bold(),
-    );
-    println!("  {}", "\u{2500}".repeat(72));
-
-    for m in &result.epoch_metrics {
-        let is_best = m.epoch == result.best_epoch;
-        let marker = if is_best { "*" } else { " " };
-        println!(
-            " {}{:>4}  {:>10.4}  {:>10.4}  {:>10.2}  {:>10.2}  {:>10.2e}  {:>6}ms",
-            marker,
-            m.epoch + 1,
-            m.train_loss,
-            m.val_loss,
-            m.train_perplexity,
-            m.val_perplexity,
-            m.learning_rate,
-            m.epoch_time_ms,
-        );
-    }
-    println!();
-
-    output::subheader("Summary");
-    let total_secs = result.total_time_ms as f64 / 1000.0;
-    output::kv("Total epochs", result.epoch_metrics.len().to_string());
-    output::kv(
-        "Best epoch",
-        format!(
-            "{} (val_loss: {:.4})",
-            result.best_epoch + 1,
-            result.best_val_loss
-        ),
-    );
-    if result.stopped_early {
-        output::kv(
-            "Early stopping",
-            "Yes (patience exhausted)".yellow().to_string(),
-        );
-    } else {
-        output::kv("Early stopping", "No (completed all epochs)");
-    }
-    output::kv("Total time", format!("{total_secs:.1}s"));
-    output::kv("Checkpoints", output_dir.display().to_string());
-
-    if let Some(best) = result
-        .epoch_metrics
-        .iter()
-        .find(|m| m.epoch == result.best_epoch)
-    {
-        println!();
-        println!(
-            "  {} Best validation perplexity: {:.2}",
-            "\u{2713}".green().bold(),
-            best.val_perplexity,
-        );
-    }
-}
-
-/// Display instruction training results as JSON.
-#[allow(clippy::disallowed_methods)]
-fn display_instruct_result_json(
-    result: &entrenar::finetune::InstructTrainResult,
-    output_dir: &Path,
-) {
-    let epochs_json: Vec<serde_json::Value> = result
-        .epoch_metrics
-        .iter()
-        .map(|m| {
-            serde_json::json!({
-                "epoch": m.epoch,
-                "train_loss": m.train_loss,
-                "train_perplexity": m.train_perplexity,
-                "val_loss": m.val_loss,
-                "val_perplexity": m.val_perplexity,
-                "learning_rate": m.learning_rate,
-                "epoch_time_ms": m.epoch_time_ms,
-                "samples_per_sec": m.samples_per_sec,
-            })
-        })
-        .collect();
-
-    let json = serde_json::json!({
-        "status": "training_complete",
-        "task": "instruct",
-        "best_epoch": result.best_epoch,
-        "best_val_loss": result.best_val_loss,
-        "stopped_early": result.stopped_early,
-        "total_time_ms": result.total_time_ms,
-        "total_epochs": result.epoch_metrics.len(),
-        "checkpoint_dir": output_dir.display().to_string(),
-        "epoch_metrics": epochs_json,
-    });
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json).unwrap_or_default()
-    );
-}
+// Instruct helper functions (load_instruct_pipeline, display_instruct_plan,
+// display_instruct_next_steps, display_instruct_result, display_instruct_result_json)
+// are removed — they depend on unpublished entrenar 0.7.5 APIs:
+//   instruct_corpus, instruct_pipeline, instruct_trainer, InstructTrainResult.
+// They will be restored when entrenar publishes the instruct subsystem.
 
 #[cfg(test)]
 #[path = "finetune_tests.rs"]

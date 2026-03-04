@@ -63,15 +63,15 @@ fn start_apr_server_gpu(
     preload_gpu_weights(&mut cuda_model);
     println!("{}", "CUDA fused Q4K model ready".green());
 
-    // GH-88: Use BPE tokenizer with merge rules when available (SafeTensors/HF imports).
-    // GGUF-converted APR files also embed merges, so both paths benefit.
-    let state = if let Some(merge_rules) = merges {
-        AppState::with_cuda_model_and_bpe(cuda_model, vocab, merge_rules)
-    } else {
-        AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-    }
-    .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(config.verbose);
+    // GH-88: Use vocabulary-based tokenizer. Merge rules (for proper BPE) are
+    // handled internally by with_cuda_model_and_vocab when available in realizar.
+    // The merge_rules extracted above are not yet supported by the published
+    // realizar 0.8.0 API, so we pass only the vocab. BPE merge support will be
+    // added in a future realizar release.
+    let _merges = merges; // Retained for future use when with_cuda_model_and_bpe is published
+    let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+        .with_verbose(config.verbose);
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "APR GPU (fused Q4K kernels)")
@@ -148,14 +148,12 @@ fn start_safetensors_server_gpu(
     // Cleanup temp file (model is already loaded into GPU memory)
     let _ = std::fs::remove_file(&tmp_apr);
 
-    // GH-88: Use BPE tokenizer with merge rules when available (SafeTensors imports)
-    let state = if let Some(merge_rules) = merges {
-        AppState::with_cuda_model_and_bpe(cuda_model, vocab, merge_rules)
-    } else {
-        AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-    }
-    .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(config.verbose);
+    // GH-88: Use vocabulary-based tokenizer. Merge rules not yet supported in
+    // published realizar 0.8.0 (with_cuda_model_and_bpe not available).
+    let _merges = merges;
+    let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+        .with_verbose(config.verbose);
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "SafeTensors GPU (fused Q4K kernels)")
