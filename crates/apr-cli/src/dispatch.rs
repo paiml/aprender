@@ -302,6 +302,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             seed,
             plan,
         } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json, *plan),
+        Commands::Gpu { json } => gpu::run(*json),
         Commands::ModelOps(ModelOpsCommands::Finetune {
             file,
             method,
@@ -327,6 +328,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             bind,
             coordinator,
             expect_workers,
+            wait_gpu,
         }) => finetune::run(
             file.as_deref(),
             method,
@@ -352,6 +354,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             bind.as_deref(),
             coordinator.as_deref(),
             *expect_workers,
+            *wait_gpu,
             cli.json,
         ),
         Commands::ModelOps(ModelOpsCommands::Prune {
