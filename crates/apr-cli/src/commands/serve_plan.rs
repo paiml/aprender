@@ -324,7 +324,7 @@ fn assemble_and_output(
             println!("{json}");
         }
         "yaml" => {
-            let yaml = serde_yaml_ng::to_string(&plan)
+            let yaml = serde_yaml::to_string(&plan)
                 .map_err(|e| CliError::Aprender(format!("YAML serialization failed: {e}")))?;
             print!("{yaml}");
         }

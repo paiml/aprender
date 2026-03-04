@@ -211,7 +211,7 @@ impl DistillYamlConfig {
     fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
-        serde_yaml_ng::from_str(&content)
+        serde_yaml::from_str(&content)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to parse YAML: {e}")))
     }
 

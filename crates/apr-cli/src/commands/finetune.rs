@@ -374,6 +374,7 @@ pub(crate) fn run(
     coordinator: Option<&str>,
     expect_workers: Option<usize>,
     wait_gpu: u64,
+    adapters: &[String],
     json_output: bool,
 ) -> Result<()> {
     // Wait for VRAM if requested (GPU-SHARE-003)
@@ -430,6 +431,22 @@ pub(crate) fn run(
             bind,
             coordinator,
             expect_workers,
+            json_output,
+        );
+    }
+
+    // GPU-SHARE Phase 2: Multi-adapter training (GH-206)
+    if !adapters.is_empty() {
+        return run_multi_adapter(
+            model_path,
+            model_size,
+            adapters,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            quantize_nf4,
+            max_seq_len,
             json_output,
         );
     }
@@ -1158,6 +1175,223 @@ fn run_instruct(
         display_instruct_result(&result, &output_dir);
     }
 
+    Ok(())
+}
+
+/// Parse `--adapters DATA:CHECKPOINT` specs into (data_path, checkpoint_dir) pairs.
+fn parse_adapter_specs(adapters: &[String]) -> Result<Vec<(std::path::PathBuf, std::path::PathBuf)>> {
+    let mut specs = Vec::new();
+    for spec in adapters {
+        let parts: Vec<&str> = spec.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Err(CliError::ValidationFailed(format!(
+                "Invalid --adapters format: {spec:?}. Expected DATA:CHECKPOINT (e.g., data/corpus.jsonl:checkpoints/adapter-a)"
+            )));
+        }
+        let data_path = std::path::PathBuf::from(parts[0]);
+        let checkpoint_dir = std::path::PathBuf::from(parts[1]);
+        if !data_path.exists() {
+            return Err(CliError::FileNotFound(data_path));
+        }
+        specs.push((data_path, checkpoint_dir));
+    }
+    Ok(specs)
+}
+
+/// Load adapter corpora and register slots on the multi-adapter pipeline.
+fn load_adapter_slots(
+    multi: &mut entrenar::finetune::multi_adapter_pipeline::MultiAdapterPipeline,
+    adapter_specs: &[(std::path::PathBuf, std::path::PathBuf)],
+    instruct_config: &entrenar::finetune::instruct_pipeline::InstructConfig,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::finetune::instruct_corpus::load_instruct_corpus;
+    use entrenar::finetune::multi_adapter_pipeline::AdapterConfig;
+
+    for (i, (data_path, checkpoint_dir)) in adapter_specs.iter().enumerate() {
+        let samples = load_instruct_corpus(data_path)
+            .map_err(|e| CliError::ValidationFailed(format!("Adapter {i}: failed to load corpus: {e}")))?;
+
+        let total = samples.len();
+        let val_split = (total / 10).max(1);
+        let (val_samples, train_samples) = if total > val_split {
+            let mut all = samples;
+            let val = all.split_off(all.len() - val_split);
+            (val, all)
+        } else {
+            (Vec::new(), samples)
+        };
+
+        if !json_output {
+            output::kv(
+                &format!("Adapter {i}"),
+                format!("{} train, {} val samples", train_samples.len(), val_samples.len()),
+            );
+        }
+
+        std::fs::create_dir_all(checkpoint_dir).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Cannot create checkpoint dir {}: {e}",
+                checkpoint_dir.display()
+            ))
+        })?;
+
+        let adapter_config = AdapterConfig {
+            data_path: data_path.clone(),
+            checkpoint_dir: checkpoint_dir.clone(),
+            instruct_config: instruct_config.clone(),
+        };
+
+        multi.add_adapter(adapter_config, train_samples, val_samples);
+    }
+    Ok(())
+}
+
+/// Run the multi-adapter training loop and display results.
+fn run_multi_adapter_training(
+    multi: &mut entrenar::finetune::multi_adapter_pipeline::MultiAdapterPipeline,
+    epochs: u32,
+    json_output: bool,
+) {
+    use entrenar::finetune::instruct_pipeline::InstructStepResult;
+
+    let start = std::time::Instant::now();
+    for epoch in 0..epochs {
+        multi.reset_epoch(epoch as u64);
+        let mut epoch_losses: Vec<Vec<f32>> = vec![Vec::new(); multi.num_adapters()];
+
+        while !multi.all_exhausted() {
+            if let Some(idx) = multi.select_next_adapter() {
+                if let Some(InstructStepResult { loss, .. }) = multi.train_step_adapter(idx) {
+                    epoch_losses[idx].push(loss);
+                }
+            } else {
+                break;
+            }
+        }
+
+        if !json_output {
+            for (i, losses) in epoch_losses.iter().enumerate() {
+                let avg = if losses.is_empty() { 0.0 } else { losses.iter().sum::<f32>() / losses.len() as f32 };
+                output::kv(
+                    &format!("Epoch {} Adapter {i}", epoch + 1),
+                    format!("avg_loss={avg:.4} ({} steps)", losses.len()),
+                );
+            }
+        }
+    }
+
+    let elapsed = start.elapsed();
+    if json_output {
+        let json = serde_json::json!({
+            "status": "training_complete",
+            "mode": "multi_adapter",
+            "num_adapters": multi.num_adapters(),
+            "epochs": epochs,
+            "total_time_ms": elapsed.as_millis() as u64,
+            "global_steps": multi.global_step,
+        });
+        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+    } else {
+        output::pipeline_stage("Multi-Adapter Training", output::StageStatus::Done);
+        println!();
+        output::kv("Total steps", multi.global_step.to_string());
+        output::kv("Total time", format!("{:.1}s", elapsed.as_secs_f64()));
+        for (i, slot) in multi.adapters.iter().enumerate() {
+            output::kv(&format!("Adapter {i} checkpoint"), slot.checkpoint_dir.display().to_string());
+        }
+    }
+}
+
+/// Multi-adapter training (GPU-SHARE Phase 2, GH-206).
+///
+/// Trains N independent LoRA adapter sets on a single frozen base model.
+/// Each `--adapters DATA:CHECKPOINT` pair is parsed into an adapter slot.
+#[allow(clippy::too_many_arguments)]
+fn run_multi_adapter(
+    model_path: Option<&Path>,
+    model_size: Option<&str>,
+    adapters: &[String],
+    rank: u32,
+    epochs: u32,
+    learning_rate: f64,
+    plan_only: bool,
+    quantize_nf4: bool,
+    max_seq_len: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    use entrenar::finetune::multi_adapter_pipeline::{AdapterSchedule, MultiAdapterPipeline};
+
+    if !json_output {
+        output::section("apr finetune --adapters (GPU-SHARE Phase 2: Multi-Adapter Training)");
+        println!();
+    }
+
+    let adapter_specs = parse_adapter_specs(adapters)?;
+    let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
+
+    if !json_output {
+        output::kv("Model", format!("{}h x {}L (vocab {})", model_config.hidden_size, model_config.num_hidden_layers, model_config.vocab_size));
+        output::kv("Adapters", adapter_specs.len().to_string());
+        output::kv("Method", if quantize_nf4 { "QLoRA (NF4)" } else { "LoRA" });
+        output::kv("LoRA rank", rank.to_string());
+        output::kv("Epochs", epochs.to_string());
+        output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        println!();
+        for (i, (data, ckpt)) in adapter_specs.iter().enumerate() {
+            output::kv(&format!("Adapter {i}"), format!("data={} ckpt={}", data.display(), ckpt.display()));
+        }
+        println!();
+    }
+
+    let instruct_config = InstructConfig {
+        lora_rank: rank as usize,
+        lora_alpha: rank as f32 * 2.0,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+        quantize_nf4,
+        ..InstructConfig::default()
+    };
+
+    let base_pipeline = load_instruct_pipeline(model_path, &model_config, instruct_config.clone())?;
+
+    if !json_output {
+        if let Some(ref name) = base_pipeline.gpu_name() {
+            output::kv("Device", format!("CUDA ({name})"));
+        } else {
+            output::kv("Device", "CPU");
+        }
+        println!();
+    }
+
+    let mut multi = MultiAdapterPipeline::new(base_pipeline, AdapterSchedule::RoundRobin);
+    load_adapter_slots(&mut multi, &adapter_specs, &instruct_config, json_output)?;
+
+    if plan_only {
+        if json_output {
+            let json = serde_json::json!({
+                "mode": "multi_adapter",
+                "num_adapters": multi.num_adapters(),
+                "schedule": "round_robin",
+                "lora_rank": rank,
+                "quantize_nf4": quantize_nf4,
+                "epochs": epochs,
+            });
+            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        } else {
+            output::kv("Status", "plan-only — no training will run");
+        }
+        return Ok(());
+    }
+
+    if !json_output {
+        output::pipeline_stage("Multi-Adapter Training", output::StageStatus::Running);
+        println!();
+    }
+
+    run_multi_adapter_training(&mut multi, epochs, json_output);
     Ok(())
 }
 
