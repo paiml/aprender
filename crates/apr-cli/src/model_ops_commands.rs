@@ -83,6 +83,16 @@ pub enum ModelOpsCommands {
         /// Can be specified multiple times for concurrent adapter training.
         #[arg(long, value_name = "DATA:CHECKPOINT")]
         adapters: Vec<String>,
+
+        /// Enable experimental CUDA MPS for concurrent GPU sharing (GPU-SHARE §1.5).
+        /// WARNING: A GPU fault in any MPS client will crash ALL clients on that GPU.
+        #[arg(long)]
+        experimental_mps: bool,
+
+        /// MPS thread percentage (1-100). Controls SM allocation per process.
+        /// Only effective with --experimental-mps. Default: 50.
+        #[arg(long, value_name = "PCT", default_value = "50")]
+        gpu_share: u32,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

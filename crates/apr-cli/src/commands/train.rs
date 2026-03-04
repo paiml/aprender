@@ -1307,10 +1307,10 @@ pub(crate) fn run_submit(
     use entrenar::gpu::placement::{place_adapters, AdapterJob};
 
     let cluster = ClusterConfig::from_file(cluster_path)
-        .map_err(|e| CliError::InvalidInput(format!("failed to load cluster config: {e}")))?;
+        .map_err(|e| CliError::ValidationFailed(format!("failed to load cluster config: {e}")))?;
 
     if adapters.is_empty() {
-        return Err(CliError::InvalidInput(
+        return Err(CliError::ValidationFailed(
             "at least one --adapter DATA:CHECKPOINT pair is required".to_string(),
         ));
     }
@@ -1405,7 +1405,7 @@ pub(crate) fn run_cluster_status(
     use entrenar::gpu::cluster::ClusterConfig;
 
     let cluster = ClusterConfig::from_file(cluster_path)
-        .map_err(|e| CliError::InvalidInput(format!("failed to load cluster config: {e}")))?;
+        .map_err(|e| CliError::ValidationFailed(format!("failed to load cluster config: {e}")))?;
 
     if json {
         let nodes: Vec<serde_json::Value> = cluster
