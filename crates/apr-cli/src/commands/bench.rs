@@ -242,7 +242,9 @@ fn analytical_budget_report(brick: &impl realizar::brick::ComputeBrick) -> reali
 ///
 /// Loads AprTransformer to extract config dimensions (hidden_dim, num_layers, etc.)
 /// used by training and serving bricks for real-model benchmarking.
+// TODO: Re-enable when realizar publishes training/serving bricks
 #[cfg(feature = "inference")]
+#[allow(dead_code)]
 fn read_apr_model_config(
     model_path: &Path,
 ) -> Result<realizar::apr_transformer::AprTransformerConfig> {
@@ -258,13 +260,12 @@ fn read_apr_model_config(
 fn execute_brick_benchmark(
     brick_name: &str,
     bench_config: &realizar::brick::BenchmarkConfig,
-    model_path: &Path,
+    _model_path: &Path,
 ) -> Result<realizar::brick::BenchmarkReport> {
     use realizar::brick::{
-        benchmark_brick, AttentionBrick, FfnBrick, LoraForwardBrick, LossComputeBrick,
-        OProjBrick, OptimizerStepBrick, QkvBrick, RmsNormBrick, RopeBrick,
-        ServeBatchBrick, ServeThroughputBrick, ServeTtftBrick, TokenizeBrick,
-        TrainingStepBrick, TransformerLayerBrick,
+        benchmark_brick, AttentionBrick, FfnBrick,
+        OProjBrick, QkvBrick, RmsNormBrick, RopeBrick,
+        TransformerLayerBrick,
     };
 
     // GH-90: Bricks without run() return analytical budget directly.
@@ -285,20 +286,12 @@ fn execute_brick_benchmark(
                 bench_config,
             )
         }
+        // TODO: TokenizeBrick not yet published in realizar 0.8.0
+        // Restore when realizar publishes TokenizeBrick
         "tokenize" | "bpe" => {
-            let tokenizer = load_tokenizer_for_brick(model_path)?;
-            let brick = TokenizeBrick::new();
-            // GH-378 canonical payload: 636-char merge sort implementation
-            let payload = "def merge_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    mid = len(arr) // 2\n    left = merge_sort(arr[:mid])\n    right = merge_sort(arr[mid:])\n    return merge(left, right)\n\ndef merge(left, right):\n    result = []\n    i = j = 0\n    while i < len(left) and j < len(right):\n        if left[i] <= right[j]:\n            result.append(left[i])\n            i += 1\n        else:\n            result.append(right[j])\n            j += 1\n    result.extend(left[i:])\n    result.extend(right[j:])\n    return result\n\ndef quick_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[len(arr) // 2]\n    left = [x for x in arr if x < pivot]\n    middle = [x for x in arr if x == pivot]\n    right = [x for x in arr if x > pivot]\n    return quick_sort(left) + middle + quick_sort(right)\n";
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = tokenizer.encode(payload);
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            return Err(CliError::ValidationFailed(
+                "tokenize brick not yet available: TokenizeBrick is not published in realizar 0.8.0".to_string()
+            ));
         }
         "qkv" => {
             let brick = QkvBrick::new(896, 896, 128, 128);
@@ -338,206 +331,17 @@ fn execute_brick_benchmark(
             }
         }
 
-        // ================================================================
-        // Training bricks — use real model dimensions from .apr metadata
-        // ================================================================
-        "lora_forward" | "lora" => {
-            let config = read_apr_model_config(model_path)?;
-            let d_in = config.hidden_dim;
-            let d_out = config.hidden_dim;
-            let rank: usize = 16;
-            let brick = LoraForwardBrick::new(d_in, d_out, rank, 32.0);
-
-            eprintln!(
-                "LoRA forward: d_in={}, d_out={}, rank={} (from {})",
-                d_in, d_out, rank, config.architecture
-            );
-
-            // Benchmark actual LoRA matmul: y = B @ (A @ x)
-            // A: [rank × d_in], B: [d_out × rank], x: [d_in]
-            let a_matrix: Vec<f32> = (0..rank * d_in)
-                .map(|i| ((i as f32 * 0.001).sin() * 0.01))
-                .collect();
-            let b_matrix: Vec<f32> = (0..d_out * rank)
-                .map(|i| ((i as f32 * 0.002).cos() * 0.01))
-                .collect();
-            let input: Vec<f32> = vec![0.5; d_in];
-
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    // A @ x -> intermediate [rank]
-                    let mut intermediate = vec![0.0f32; rank];
-                    for (r, val) in intermediate.iter_mut().enumerate() {
-                        let row = &a_matrix[r * d_in..(r + 1) * d_in];
-                        *val = row.iter().zip(input.iter()).map(|(a, x)| a * x).sum();
-                    }
-                    // B @ intermediate -> output [d_out]
-                    let mut output = vec![0.0f32; d_out];
-                    for (i, val) in output.iter_mut().enumerate() {
-                        let row = &b_matrix[i * rank..(i + 1) * rank];
-                        *val = row
-                            .iter()
-                            .zip(intermediate.iter())
-                            .map(|(b, x)| b * x)
-                            .sum();
-                    }
-                    std::hint::black_box(&output);
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
-        }
-
-        "optimizer" | "adamw" => {
-            let config = read_apr_model_config(model_path)?;
-            // LoRA params: 2 matrices per layer × (rank × hidden_dim) × target_modules
-            let rank: usize = 16;
-            let num_params = config.num_layers * 2 * rank * config.hidden_dim * 2; // Q + V
-            let brick = OptimizerStepBrick::new(num_params);
-
-            eprintln!(
-                "Optimizer: {} trainable LoRA params ({} layers × rank-{}, from {})",
-                num_params, config.num_layers, rank, config.architecture
-            );
-            analytical_budget_report(&brick)
-        }
-
-        "loss" | "cross_entropy" => {
-            let config = read_apr_model_config(model_path)?;
-            let seq_len: usize = 128;
-            let brick = LossComputeBrick::new(config.vocab_size, seq_len);
-
-            eprintln!(
-                "Loss: vocab_size={}, seq_len={} (from {})",
-                config.vocab_size, seq_len, config.architecture
-            );
-            analytical_budget_report(&brick)
-        }
-
-        "train_step" | "training" => {
-            let config = read_apr_model_config(model_path)?;
-            let rank: usize = 16;
-            let brick =
-                TrainingStepBrick::from_model_config(config.hidden_dim, config.num_layers, rank);
-
-            eprintln!(
-                "Training step: hidden_dim={}, layers={}, rank={} (from {})",
-                config.hidden_dim, config.num_layers, rank, config.architecture
-            );
-            analytical_budget_report(&brick)
-        }
-
-        // ================================================================
-        // Serving bricks — load real model and run actual inference
-        // ================================================================
-        "ttft" | "time_to_first_token" => {
-            use realizar::apr_transformer::{AprTransformer, GenerateConfig};
-
-            let brick = ServeTtftBrick::new(16); // ~16 token prompt
-
-            eprintln!("Loading model for TTFT benchmark...");
-            let transformer = AprTransformer::from_apr_file(model_path)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-
-            let prompt_tokens = resolve_apr_prompt_tokens(model_path, "What is 2+2?");
-            let gen_config = GenerateConfig {
-                max_tokens: 1,
-                temperature: 0.0,
-                top_p: 1.0,
-                top_k: 0,
-                repetition_penalty: 1.0,
-                trace: false,
-                stop_tokens: vec![],
-            };
-
-            eprintln!("Prompt tokens: {}", prompt_tokens.len());
-
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
-        }
-
-        "throughput" | "decode" => {
-            use realizar::apr_transformer::{AprTransformer, GenerateConfig};
-
-            let max_tokens: usize = 32;
-            let brick = ServeThroughputBrick::new(max_tokens);
-
-            eprintln!("Loading model for throughput benchmark...");
-            let transformer = AprTransformer::from_apr_file(model_path)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-
-            let prompt_tokens = resolve_apr_prompt_tokens(model_path, "What is 2+2?");
-            let gen_config = GenerateConfig {
-                max_tokens: max_tokens.min(32),
-                temperature: 0.0,
-                top_p: 1.0,
-                top_k: 0,
-                repetition_penalty: 1.0,
-                trace: false,
-                stop_tokens: vec![],
-            };
-
-            eprintln!("Prompt tokens: {}, max_tokens: {}", prompt_tokens.len(), max_tokens);
-
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-                    // Report per-token latency (budget is throughput-based: 50 tok/s = 20000µs/tok)
-                    let elapsed_us = start.elapsed().as_nanos() as f64 / 1000.0;
-                    elapsed_us / max_tokens as f64
-                },
-                bench_config,
-            )
-        }
-
-        "batch" | "batch_generate" => {
-            use realizar::apr_transformer::{AprTransformer, GenerateConfig};
-
-            let batch_size: usize = 4;
-            let max_tokens: usize = 16;
-            let brick = ServeBatchBrick::new(batch_size, max_tokens);
-
-            eprintln!("Loading model for batch benchmark ({}x sequential)...", batch_size);
-            let transformer = AprTransformer::from_apr_file(model_path)
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-
-            let prompt_tokens = resolve_apr_prompt_tokens(model_path, "What is 2+2?");
-            let gen_config = GenerateConfig {
-                max_tokens: max_tokens.min(16),
-                temperature: 0.0,
-                top_p: 1.0,
-                top_k: 0,
-                repetition_penalty: 1.0,
-                trace: false,
-                stop_tokens: vec![],
-            };
-
-            eprintln!("Batch: {} requests × {} tokens each", batch_size, max_tokens);
-
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    for _ in 0..batch_size {
-                        let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-                    }
-                    let elapsed_us = start.elapsed().as_nanos() as f64 / 1000.0;
-                    // Per-token latency across the batch
-                    elapsed_us / (batch_size * max_tokens) as f64
-                },
-                bench_config,
-            )
+        // TODO: Training and serving bricks not yet published in realizar 0.8.0.
+        // Restore when realizar publishes: LoraForwardBrick, OptimizerStepBrick,
+        // LossComputeBrick, TrainingStepBrick, ServeTtftBrick, ServeThroughputBrick,
+        // ServeBatchBrick.
+        "lora_forward" | "lora" | "optimizer" | "adamw" | "loss" | "cross_entropy"
+        | "train_step" | "training" | "ttft" | "time_to_first_token"
+        | "throughput" | "decode" | "batch" | "batch_generate" => {
+            return Err(CliError::ValidationFailed(format!(
+                "brick '{}' not yet available: its brick type is not published in realizar 0.8.0",
+                brick_name
+            )));
         }
 
         _ => unreachable!(),
@@ -551,7 +355,9 @@ fn execute_brick_benchmark(
 /// 1. Sibling `{model_stem}.tokenizer.json`
 /// 2. Sibling `tokenizer.json` in same directory
 /// 3. Embedded tokenizer in GGUF/APR model (extracts to temp file)
+// TODO: Re-enable when realizar publishes TokenizeBrick
 #[cfg(feature = "inference")]
+#[allow(dead_code)]
 fn load_tokenizer_for_brick(model_path: &Path) -> Result<aprender::text::bpe::BpeTokenizer> {
     use aprender::text::bpe::BpeTokenizer;
 

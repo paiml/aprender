@@ -34,7 +34,7 @@ pub(crate) fn read_apr_architecture(
     file.read_exact(&mut meta_buf).ok()?;
 
     let metadata = AprV2Metadata::from_json(&meta_buf).ok()?;
-    entrenar::transformer::TransformerConfig::from_apr_metadata(
+    transformer_config_from_apr_metadata(
         metadata.hidden_size,
         metadata.num_heads,
         metadata.num_kv_heads,
@@ -111,7 +111,7 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         .get("rope_theta")
         .and_then(|v| v.as_f64())
         .unwrap_or(10000.0) as f32;
-    let head_dim = json
+    let _head_dim = json
         .get("head_dim")
         .and_then(|v| v.as_u64())
         .map(|v| v as usize);
@@ -120,6 +120,9 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
+    // Note: head_dim_override not available in entrenar 0.7.5 TransformerConfig.
+    // The published struct only has head_dim() = hidden_size / num_attention_heads.
+    // Explicit head_dim override (needed for Qwen3) will be supported in a future release.
     Some(entrenar::transformer::TransformerConfig {
         hidden_size,
         num_attention_heads: num_heads,
@@ -130,23 +133,74 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         max_position_embeddings: max_pos,
         rms_norm_eps,
         rope_theta,
-        head_dim_override: head_dim,
         use_bias,
     })
 }
 
 /// Resolve TransformerConfig from `--model-size` string only.
 ///
-/// Delegates to `TransformerConfig::from_size_str()` — the single canonical
-/// mapping from size strings to configs. No duplicated match tables.
+/// Local implementation of the size-string-to-config mapping. The upstream
+/// `TransformerConfig::from_size_str()` exists in local entrenar source but
+/// is not yet published in entrenar 0.7.5.
 pub(crate) fn resolve_transformer_config_by_size(
     model_size: Option<&str>,
 ) -> Result<entrenar::transformer::TransformerConfig> {
+    use entrenar::transformer::TransformerConfig;
     match model_size {
-        Some(size) => entrenar::transformer::TransformerConfig::from_size_str(size)
-            .map_err(CliError::ValidationFailed),
+        Some(size) => match size {
+            "0.5B" | "500M" | "qwen2-0.5b" => Ok(TransformerConfig::qwen2_0_5b()),
+            "7B" | "llama2-7b" => Ok(TransformerConfig::llama2_7b()),
+            "13B" | "llama2-13b" => Ok(TransformerConfig::llama2_13b()),
+            "mistral-7b" => Ok(TransformerConfig::mistral_7b()),
+            "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => Ok(TransformerConfig::qwen3_5_9b()),
+            unknown => Err(CliError::ValidationFailed(format!(
+                "Unknown model size '{unknown}'. Known sizes: 0.5B, 7B, 9B, 13B"
+            ))),
+        },
         None => Err(CliError::ValidationFailed(
             "No model path or --model-size provided. Cannot determine architecture.".to_string(),
         )),
     }
+}
+
+/// Construct TransformerConfig from APR v2 metadata fields.
+///
+/// Local stub for `TransformerConfig::from_apr_metadata()` which exists in
+/// local entrenar source but is not yet published in entrenar 0.7.5.
+///
+/// Returns None if any required field (hidden_size, num_heads, num_layers,
+/// vocab_size, intermediate_size) is missing.
+fn transformer_config_from_apr_metadata(
+    hidden_size: Option<usize>,
+    num_heads: Option<usize>,
+    num_kv_heads: Option<usize>,
+    intermediate_size: Option<usize>,
+    num_layers: Option<usize>,
+    vocab_size: Option<usize>,
+    max_position_embeddings: Option<usize>,
+    rms_norm_eps: Option<f32>,
+    rope_theta: Option<f32>,
+    architecture: Option<&str>,
+) -> Option<entrenar::transformer::TransformerConfig> {
+    let hidden = hidden_size?;
+    let heads = num_heads?;
+    let layers = num_layers?;
+    let vocab = vocab_size?;
+    let intermediate = intermediate_size?;
+
+    // Determine use_bias from architecture family
+    let use_bias = matches!(architecture, Some(a) if a.starts_with("qwen2"));
+
+    Some(entrenar::transformer::TransformerConfig {
+        hidden_size: hidden,
+        num_attention_heads: heads,
+        num_kv_heads: num_kv_heads.unwrap_or(heads),
+        intermediate_size: intermediate,
+        num_hidden_layers: layers,
+        vocab_size: vocab,
+        max_position_embeddings: max_position_embeddings.unwrap_or(32768),
+        rms_norm_eps: rms_norm_eps.unwrap_or(1e-6),
+        rope_theta: rope_theta.unwrap_or(10000.0),
+        use_bias,
+    })
 }

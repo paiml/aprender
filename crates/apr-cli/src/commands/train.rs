@@ -1,10 +1,9 @@
-//! `apr train plan` — Forjar-style training pre-flight validation.
+//! `apr train` — Training commands (plan, apply, watch, sweep).
 //!
-//! Generates a `TrainingPlan` by validating data quality, model compatibility,
-//! HPO search space, resource estimates, and pre-flight checks — all without
-//! touching the GPU.
-//!
-//! Analogous to `forjar plan` which shows what will change before `forjar apply`.
+//! Classification fine-tuning (plan/apply for --task classify) requires
+//! entrenar >= 0.8 which has not yet been published. Those subcommands
+//! return a clear error. Pre-training (--task pretrain), sweep, and watch
+//! work with the current entrenar 0.7.x release.
 
 use colored::Colorize;
 
@@ -12,104 +11,44 @@ use crate::{error::CliError, output};
 
 type Result<T> = std::result::Result<T, CliError>;
 
+/// Error returned when classify fine-tuning APIs are invoked.
+fn classify_not_available() -> CliError {
+    CliError::ValidationFailed(
+        "apr train (classify) requires entrenar >= 0.8 (not yet published). \
+         Use --task pretrain for causal LM pre-training."
+            .to_string(),
+    )
+}
+
 /// Run `apr train plan` — generate and display a training plan.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_plan(
-    data: Option<&std::path::Path>,
-    model_size: &str,
-    model_path: Option<&std::path::Path>,
-    num_classes: usize,
+    _data: Option<&std::path::Path>,
+    _model_size: &str,
+    _model_path: Option<&std::path::Path>,
+    _num_classes: usize,
     task: &str,
     config_path: Option<&std::path::Path>,
-    output_dir: &std::path::Path,
-    strategy: &str,
-    budget: usize,
-    scout: bool,
-    max_epochs: usize,
-    manual_lr: Option<f32>,
-    manual_lora_rank: Option<usize>,
-    manual_batch_size: Option<usize>,
-    val_data: Option<&std::path::Path>,
-    test_data: Option<&std::path::Path>,
-    format: &str,
+    _output_dir: &std::path::Path,
+    _strategy: &str,
+    _budget: usize,
+    _scout: bool,
+    _max_epochs: usize,
+    _manual_lr: Option<f32>,
+    _manual_lora_rank: Option<usize>,
+    _manual_batch_size: Option<usize>,
+    _val_data: Option<&std::path::Path>,
+    _test_data: Option<&std::path::Path>,
+    _format: &str,
     json_output: bool,
 ) -> Result<()> {
     match task {
         "pretrain" | "causal_lm" => run_plan_pretrain(config_path, json_output),
-        "classify" => {
-            let data = data.ok_or_else(|| {
-                CliError::ValidationFailed(
-                    "--data is required for --task classify".to_string(),
-                )
-            })?;
-            run_plan_classify(
-                data, model_size, model_path, num_classes, output_dir, strategy,
-                budget, scout, max_epochs, manual_lr, manual_lora_rank,
-                manual_batch_size, val_data, test_data, format, json_output,
-            )
-        }
+        "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
             "Unknown task type: {task}. Supported: classify, pretrain"
         ))),
     }
-}
-
-/// Plan for classification fine-tuning (existing behavior).
-#[allow(clippy::too_many_arguments)]
-fn run_plan_classify(
-    data: &std::path::Path,
-    model_size: &str,
-    model_path: Option<&std::path::Path>,
-    num_classes: usize,
-    output_dir: &std::path::Path,
-    strategy: &str,
-    budget: usize,
-    scout: bool,
-    max_epochs: usize,
-    manual_lr: Option<f32>,
-    manual_lora_rank: Option<usize>,
-    manual_batch_size: Option<usize>,
-    val_data: Option<&std::path::Path>,
-    test_data: Option<&std::path::Path>,
-    format: &str,
-    json_output: bool,
-) -> Result<()> {
-    let config = entrenar::finetune::PlanConfig {
-        task: "classify".to_string(),
-        data_path: data.to_path_buf(),
-        val_path: val_data.map(std::path::Path::to_path_buf),
-        test_path: test_data.map(std::path::Path::to_path_buf),
-        model_size: model_size.to_string(),
-        model_path: model_path.map(std::path::Path::to_path_buf),
-        num_classes,
-        output_dir: output_dir.to_path_buf(),
-        strategy: strategy.to_string(),
-        budget,
-        scout,
-        max_epochs,
-        manual_lr,
-        manual_lora_rank,
-        manual_batch_size,
-        manual_lora_alpha: None,
-        manual_warmup: None,
-        manual_gradient_clip: None,
-        manual_lr_min_ratio: None,
-        manual_class_weights: None,
-        manual_target_modules: None,
-    };
-
-    let plan = entrenar::finetune::training_plan(&config)
-        .map_err(|e| CliError::ValidationFailed(e.to_string()))?;
-
-    let effective_format = if json_output { "json" } else { format };
-
-    match effective_format {
-        "json" => println!("{}", plan.to_json()),
-        "yaml" => println!("{}", plan.to_yaml()),
-        _ => print_plan_text(&plan),
-    }
-
-    Ok(())
 }
 
 /// Plan for causal LM pre-training from YAML config (ALB-009).
@@ -160,20 +99,6 @@ fn run_plan_pretrain(
                 "mixed_precision": spec.training.mixed_precision,
             },
             "verdict": "ready",
-            "vram_estimate": spec.model.architecture.as_ref()
-                .and_then(|arch| estimate_vram(arch, &spec))
-                .map(|e| serde_json::json!({
-                    "parameters": e.param_count,
-                    "weights_gb": e.weights_gb,
-                    "gradients_gb": e.gradients_gb,
-                    "optimizer_gb": e.optimizer_gb,
-                    "activations_gb": e.activations_gb,
-                    "total_gb": e.total_gb,
-                    "ram_total_gb": e.ram_total_gb,
-                    "disk_checkpoint_gb": e.disk_checkpoint_gb,
-                    "tokens_per_step": e.tokens_per_step,
-                    "estimated_step_ms": e.estimated_step_ms,
-                })),
         });
         println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
     } else {
@@ -205,32 +130,6 @@ fn run_plan_pretrain(
             output::kv("  LoRA rank", lora.rank.to_string());
             output::kv("  LoRA alpha", format!("{:.1}", lora.alpha));
         }
-        // VRAM estimation from architecture overrides
-        if let Some(ref arch) = spec.model.architecture {
-            if let Some(estimate) = estimate_vram(arch, &spec) {
-                println!();
-                output::kv("  Parameters", format_params(estimate.param_count));
-                println!();
-                println!("  {} (contract: training-memory-kernel-v1):", "Memory Estimate".bold());
-                println!("    Weights ({})       {:>8.1} GB  (CPU RAM)", estimate.dtype_label, estimate.weights_gb);
-                println!("    Gradients (f32)       {:>8.1} GB  (CPU RAM)", estimate.gradients_gb);
-                println!("    Optimizer (AdamW)     {:>8.1} GB  (CPU RAM)", estimate.optimizer_gb);
-                println!("    Activations (est.)    {:>8.1} GB  (CPU RAM)", estimate.activations_gb);
-                println!("    CUDA context          {:>8.1} GB  (VRAM)", 0.5);
-                println!("    ─────────────────────────────────────");
-                println!("    {}        {:>8.1} GB  (system total)", "Total".bold(), estimate.total_gb);
-                println!();
-                println!("  {} (R-095):", "Extended Resource Estimates".bold());
-                println!("    RAM (total)           {:>8.1} GB", estimate.ram_total_gb);
-                println!("    Disk (per checkpoint) {:>8.1} GB", estimate.disk_checkpoint_gb);
-                println!("    Tokens/step           {:>8}", estimate.tokens_per_step);
-                println!("    Est. step time        {:>8.0} ms  (RTX 4090 peak)", estimate.estimated_step_ms);
-                if estimate.tokens_per_step > 0 && estimate.estimated_step_ms > 0.0 {
-                    let tok_per_sec = estimate.tokens_per_step as f64 / (estimate.estimated_step_ms / 1000.0);
-                    println!("    Est. throughput       {:>8.0} tok/s", tok_per_sec);
-                }
-            }
-        }
 
         println!();
         println!("  {} Config validated, ready for apply", "READY".green().bold());
@@ -239,219 +138,24 @@ fn run_plan_pretrain(
     Ok(())
 }
 
-/// Comprehensive resource estimate from training-memory-kernel-v1.yaml contract.
-struct VramEstimate {
-    param_count: usize,
-    dtype_label: &'static str,
-    weights_gb: f64,
-    gradients_gb: f64,
-    optimizer_gb: f64,
-    activations_gb: f64,
-    total_gb: f64,
-    // Extended estimates (R-095)
-    ram_total_gb: f64,
-    disk_checkpoint_gb: f64,
-    tokens_per_step: usize,
-    estimated_step_ms: f64,
-}
-
-/// Estimate VRAM usage from architecture parameters.
-///
-/// All formulas from `contracts/training-memory-kernel-v1.yaml`:
-///   - parameter_count: P_total = P_embed + L × P_layer + P_norm (equivalence, tolerance=0)
-///   - weight_memory:   M_weights = P_total × B_w (equivalence, tolerance=0)
-///   - gradient_memory: M_grad = P_total × 4 (equivalence, tolerance=0)
-///   - optimizer_memory: M_opt = P_total × 8 (equivalence, tolerance=0)
-///   - activation_memory: M_act = L × S × H × K × 4 (bound, K=10)
-///   - total_memory: M_total = sum + M_cuda (M_cuda = 512 MB)
-fn estimate_vram(
-    arch: &entrenar::config::ArchitectureOverrides,
-    spec: &entrenar::config::TrainSpec,
-) -> Option<VramEstimate> {
-    let h = arch.hidden_size?;
-    let l = arch.num_hidden_layers?;
-    let v = arch.vocab_size?;
-    let i = arch.intermediate_size.unwrap_or(h * 4);
-    let num_heads = arch.num_attention_heads?;
-    let kv_heads = arch.num_kv_heads.unwrap_or(num_heads);
-    let head_dim = h / num_heads;
-    let d_kv = kv_heads * head_dim;
-
-    // Contract eq: parameter_count
-    // P_embed = V × H
-    let p_embed = v * h;
-    // P_layer = 2H + 2H² + 2H×D_kv + 3H×I
-    let p_layer = 2 * h + 2 * h * h + 2 * h * d_kv + 3 * h * i;
-    // P_norm = H
-    let p_norm = h;
-    // P_total = P_embed + L × P_layer + P_norm
-    let p_total = p_embed + l * p_layer + p_norm;
-
-    // Contract eq: weight_memory — M_weights = P_total × B_w
-    // entrenar stores f32 master weights; fp16 cast at matmul site
-    let b_w: f64 = 4.0; // always f32 in current entrenar impl
-    let is_fp16 = matches!(
-        spec.training.mixed_precision.as_deref(),
-        Some("fp16") | Some("bf16")
-    );
-
-    let gb = |bytes: f64| bytes / (1024.0 * 1024.0 * 1024.0);
-
-    let weights_gb = gb(p_total as f64 * b_w);
-    // Contract eq: gradient_memory — M_grad = P_total × 4
-    let gradients_gb = gb(p_total as f64 * 4.0);
-    // Contract eq: optimizer_memory — M_opt = P_total × 8
-    let optimizer_gb = gb(p_total as f64 * 8.0);
-
-    // Contract eq: activation_memory — M_act = L × S × H × K × 4 (upper bound)
-    let s = spec.data.seq_len.unwrap_or(512) as f64;
-    let k: f64 = 10.0; // contract constant: Q,K,V,attn_scores,attn_out,gate,up,down,2×residual
-    let activations_gb = gb(l as f64 * s * h as f64 * k * 4.0);
-
-    // Contract eq: total_memory — M_total = sum + M_cuda
-    let m_cuda_gb = 0.5; // 512 MB CUDA context overhead
-    let total_gb = weights_gb + gradients_gb + optimizer_gb + activations_gb + m_cuda_gb;
-
-    // Extended estimates (R-095)
-    let batch_size = spec.data.batch_size as usize;
-    let seq_len = spec.data.seq_len.unwrap_or(512) as usize;
-    let tokens_per_step = batch_size * seq_len;
-
-    // RAM: data loading + embedding table + workspace
-    let data_buffer_gb = gb(tokens_per_step as f64 * 4.0 * 16.0); // ~16 batches buffered
-    let ram_total_gb = weights_gb + optimizer_gb + data_buffer_gb + 1.0; // +1 GB overhead
-
-    // Disk: checkpoint = weights + optimizer state + metadata
-    let disk_checkpoint_gb = weights_gb + optimizer_gb + 0.01; // ~10 MB metadata
-    // Time estimate: ~6NBS / TFLOPS per step (RTX 4090 ≈ 82 TFLOPS fp32)
-    let tflops = 82.0; // RTX 4090 theoretical peak
-    let flops_per_step = 6.0 * p_total as f64 * tokens_per_step as f64;
-    let estimated_step_ms = flops_per_step / (tflops * 1e9); // TFLOPS = 1e12, ms = 1e-3
-
-    Some(VramEstimate {
-        param_count: p_total,
-        dtype_label: if is_fp16 { "fp16" } else { "f32" },
-        weights_gb,
-        gradients_gb,
-        optimizer_gb,
-        activations_gb,
-        total_gb,
-        ram_total_gb,
-        disk_checkpoint_gb,
-        tokens_per_step,
-        estimated_step_ms,
-    })
-}
-
-include!("train_output.rs");
-
-/// Load a training plan from file, or generate one inline.
-#[allow(clippy::too_many_arguments)]
-fn load_or_generate_plan(
-    plan_file: Option<&std::path::Path>,
-    data: Option<&std::path::Path>,
-    model_size: &str,
-    model_path: Option<&std::path::Path>,
-    num_classes: usize,
-    output_dir: &std::path::Path,
-    strategy: &str,
-    budget: usize,
-    scout: bool,
-    max_epochs: usize,
-    manual_lr: Option<f32>,
-    manual_lora_rank: Option<usize>,
-    manual_batch_size: Option<usize>,
-) -> Result<entrenar::finetune::TrainingPlan> {
-    if let Some(plan_path) = plan_file {
-        let content = std::fs::read_to_string(plan_path).map_err(|_| {
-            CliError::FileNotFound(plan_path.to_path_buf())
-        })?;
-        entrenar::finetune::TrainingPlan::from_str(&content)
-            .map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "Failed to parse plan file {}: {e}",
-                    plan_path.display()
-                ))
-            })
-    } else {
-        let data_path = data.ok_or_else(|| {
-            CliError::ValidationFailed(
-                "Either --plan <file> or --data <file> is required".to_string(),
-            )
-        })?;
-        let config = entrenar::finetune::PlanConfig {
-            task: "classify".to_string(),
-            data_path: data_path.to_path_buf(),
-            val_path: None,
-            test_path: None,
-            model_size: model_size.to_string(),
-            model_path: model_path.map(std::path::Path::to_path_buf),
-            num_classes,
-            output_dir: output_dir.to_path_buf(),
-            strategy: strategy.to_string(),
-            budget,
-            scout,
-            max_epochs,
-            manual_lr,
-            manual_lora_rank,
-            manual_batch_size,
-            manual_lora_alpha: None,
-            manual_warmup: None,
-            manual_gradient_clip: None,
-            manual_lr_min_ratio: None,
-            manual_class_weights: None,
-            manual_target_modules: None,
-        };
-        entrenar::finetune::training_plan(&config)
-            .map_err(|e| CliError::ValidationFailed(e.to_string()))
-    }
-}
-
-/// Print apply summary before execution.
-fn print_apply_summary(
-    plan: &entrenar::finetune::TrainingPlan,
-    output_dir: &std::path::Path,
-) {
-    output::header("apr train apply — Executing Training Plan");
-    println!();
-    output::kv("  Strategy", &plan.hyperparameters.strategy);
-    if plan.hyperparameters.strategy == "manual" {
-        if let Some(ref m) = plan.hyperparameters.manual {
-            output::kv("  Learning rate", format!("{:.2e}", m.learning_rate));
-            output::kv("  LoRA rank", m.lora_rank.to_string());
-            output::kv("  Batch size", m.batch_size.to_string());
-        }
-    } else {
-        output::kv("  Budget", format!("{} trials", plan.hyperparameters.budget));
-        output::kv(
-            "  Mode",
-            if plan.hyperparameters.scout { "scout (1 epoch/trial)" } else { "full" },
-        );
-    }
-    output::kv("  Model", &plan.model.size);
-    output::kv("  Data", &plan.data.train_path);
-    output::kv("  Output", output_dir.display().to_string());
-    println!();
-}
-
 /// Run `apr train apply` — execute a training plan.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_apply(
-    plan_file: Option<&std::path::Path>,
+    _plan_file: Option<&std::path::Path>,
     config_path: Option<&std::path::Path>,
     task: &str,
-    data: Option<&std::path::Path>,
-    model_size: &str,
-    model_path: Option<&std::path::Path>,
-    num_classes: usize,
-    output_dir: &std::path::Path,
-    strategy: &str,
-    budget: usize,
-    scout: bool,
-    max_epochs: usize,
-    manual_lr: Option<f32>,
-    manual_lora_rank: Option<usize>,
-    manual_batch_size: Option<usize>,
+    _data: Option<&std::path::Path>,
+    _model_size: &str,
+    _model_path: Option<&std::path::Path>,
+    _num_classes: usize,
+    _output_dir: &std::path::Path,
+    _strategy: &str,
+    _budget: usize,
+    _scout: bool,
+    _max_epochs: usize,
+    _manual_lr: Option<f32>,
+    _manual_lora_rank: Option<usize>,
+    _manual_batch_size: Option<usize>,
     json_output: bool,
     distributed: bool,
     world_size: Option<usize>,
@@ -471,103 +175,11 @@ pub(crate) fn run_apply(
             deterministic,
             seed,
         ),
-        "classify" => run_apply_classify(
-            plan_file, data, model_size, model_path, num_classes,
-            output_dir, strategy, budget, scout, max_epochs,
-            manual_lr, manual_lora_rank, manual_batch_size, json_output,
-        ),
+        "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
             "Unknown task type: {task}. Supported: classify, pretrain"
         ))),
     }
-}
-
-/// Execute classification fine-tuning (existing behavior).
-#[allow(clippy::too_many_arguments)]
-fn run_apply_classify(
-    plan_file: Option<&std::path::Path>,
-    data: Option<&std::path::Path>,
-    model_size: &str,
-    model_path: Option<&std::path::Path>,
-    num_classes: usize,
-    output_dir: &std::path::Path,
-    strategy: &str,
-    budget: usize,
-    scout: bool,
-    max_epochs: usize,
-    manual_lr: Option<f32>,
-    manual_lora_rank: Option<usize>,
-    manual_batch_size: Option<usize>,
-    json_output: bool,
-) -> Result<()> {
-    let plan = load_or_generate_plan(
-        plan_file, data, model_size, model_path, num_classes,
-        output_dir, strategy, budget, scout, max_epochs,
-        manual_lr, manual_lora_rank, manual_batch_size,
-    )?;
-
-    if plan.verdict == entrenar::finetune::PlanVerdict::Blocked {
-        if json_output {
-            println!("{}", plan.to_json());
-        } else {
-            println!(
-                "  {} Plan is blocked — resolve failures before applying",
-                "BLOCKED".red().bold()
-            );
-            print_plan_text(&plan);
-        }
-        return Err(CliError::ValidationFailed(
-            "Plan is blocked — resolve all failures first".to_string(),
-        ));
-    }
-
-    let resolved_model_path = model_path
-        .map(std::path::Path::to_path_buf)
-        .or_else(|| {
-            plan.model.weights_available.then(|| {
-                // Use cache dir or current working directory as default model location
-                dirs::cache_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."))
-                    .join("aprender")
-                    .join("models")
-                    .join("qwen2.5-coder-0.5b")
-            })
-        })
-        .ok_or_else(|| {
-            CliError::ValidationFailed(
-                "--model-path is required for apply (model weights directory)".to_string(),
-            )
-        })?;
-
-    let resolved_data_path = match data {
-        Some(p) => p.to_path_buf(),
-        None => std::path::PathBuf::from(&plan.data.train_path),
-    };
-
-    if !json_output {
-        print_apply_summary(&plan, output_dir);
-    }
-
-    let apply_config = entrenar::finetune::ApplyConfig {
-        model_path: resolved_model_path,
-        data_path: resolved_data_path,
-        output_dir: output_dir.to_path_buf(),
-        on_trial_complete: None,
-    };
-
-    let result = entrenar::finetune::execute_plan(&plan, &apply_config)
-        .map_err(|e| CliError::ValidationFailed(format!("Training failed: {e}")))?;
-
-    if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&result).unwrap_or_default()
-        );
-    } else {
-        print_apply_result(&result);
-    }
-
-    Ok(())
 }
 
 /// Build a YAML distributed config section from CLI flags.
@@ -742,28 +354,7 @@ fn run_apply_pretrain(
     Ok(())
 }
 
-/// Format a parameter count for display.
-fn format_params(count: usize) -> String {
-    if count >= 1_000_000 {
-        format!("{:.1}M", count as f64 / 1_000_000.0)
-    } else if count >= 1_000 {
-        format!("{:.1}K", count as f64 / 1_000.0)
-    } else {
-        count.to_string()
-    }
-}
-
-/// Format minutes into human-readable duration.
-fn format_duration(minutes: f64) -> String {
-    if minutes < 1.0 {
-        format!("{:.0} sec", minutes * 60.0)
-    } else if minutes < 60.0 {
-        format!("{:.1} min", minutes)
-    } else {
-        let hours = minutes / 60.0;
-        format!("{:.1} hours", hours)
-    }
-}
+// ── Watch supervisor ────────────────────────────────────────────────────────
 
 /// Run `apr train watch` — crash-resilient training supervisor.
 ///
@@ -1095,7 +686,7 @@ pub(crate) fn run_sweep(
     Ok(())
 }
 
-/// Generate grid search configs over LR × batch_size × weight_decay.
+/// Generate grid search configs over LR x batch_size x weight_decay.
 fn generate_grid_configs(
     base: &serde_yaml_ng::Value,
     max_configs: usize,
@@ -1195,9 +786,10 @@ fn set_yaml_u64(root: &mut serde_yaml_ng::Value, path: &[&str], val: u64) {
     }
 }
 
-// ── Checkpoint Archival (R-085) ─────────────────────────────────────────────
+// ============================================================================
+// Archive command (self-contained, no unpublished API deps)
+// ============================================================================
 
-/// Run `apr train archive` — package checkpoint into a release bundle.
 pub(crate) fn run_archive(
     checkpoint_dir: &std::path::Path,
     output_dir: &std::path::Path,
@@ -1225,7 +817,6 @@ pub(crate) fn run_archive(
         println!();
     }
 
-    // Copy checkpoint files
     let mut manifest_entries = Vec::new();
     let mut total_bytes: u64 = 0;
 
@@ -1262,7 +853,6 @@ pub(crate) fn run_archive(
         }
     }
 
-    // Write MANIFEST.json
     let manifest = serde_json::json!({
         "format": "albor-checkpoint-archive",
         "version": version.unwrap_or("0.0.0"),

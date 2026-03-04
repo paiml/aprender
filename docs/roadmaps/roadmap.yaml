@@ -4651,3 +4651,37 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-369
+  github_issue: null
+  item_type: task
+  title: 'fix: sharded SafeTensors symlink resolution (GH-363)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:51:36Z
+  updated: 2026-03-04T17:55:21.184156193+00:00
+  spec: null
+  acceptance_criteria:
+  - base_dir must canonicalize to resolve symlinks before joining shard filenames
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-370
+  github_issue: null
+  item_type: task
+  title: 'fix: BPE tokenizer O(n²) greedy rescan → priority queue (GH-378)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T17:58:20Z
+  updated: 2026-03-04T17:59:03.610305800+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Port HF tokenizers word.rs algorithm: doubly-linked symbol list + BinaryHeap, integer pair keys'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

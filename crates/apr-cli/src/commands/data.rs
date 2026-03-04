@@ -11,6 +11,247 @@ use crate::{error::CliError, output};
 
 type Result<T> = std::result::Result<T, CliError>;
 
+// ── Local stubs for APIs not yet published in alimentar 0.2.6 ────────────────
+
+/// Text column statistics — mirrors the alimentar::quality::TextColumnStats
+/// that exists in local source but hasn't been published yet.
+struct TextColumnStats {
+    pub min_len: usize,
+    pub max_len: usize,
+    pub mean_len: f64,
+    pub p50_len: usize,
+    pub p95_len: usize,
+    pub p99_len: usize,
+    pub empty_count: usize,
+    pub preamble_count: usize,
+    #[allow(dead_code)]
+    pub total: usize,
+}
+
+impl TextColumnStats {
+    /// Compute text column statistics from a JSONL file by reading lines directly.
+    ///
+    /// Avoids depending on arrow array types (not a direct dep of apr-cli).
+    /// Reads the JSONL file, extracts the text column, and computes stats.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn from_jsonl_path(
+        path: &Path,
+        column: &str,
+        preamble_prefix: Option<&str>,
+    ) -> std::result::Result<Self, String> {
+        use std::io::{BufRead, BufReader};
+
+        let file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+        let reader = BufReader::new(file);
+
+        let mut lengths: Vec<usize> = Vec::new();
+        let mut empty_count = 0usize;
+        let mut preamble_count = 0usize;
+
+        for line in reader.lines() {
+            let line = line.map_err(|e| format!("Read error: {e}"))?;
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let obj: serde_json::Value = serde_json::from_str(line)
+                .map_err(|e| format!("JSON parse error: {e}"))?;
+
+            if let Some(val) = obj.get(column).and_then(|v| v.as_str()) {
+                let len = val.len();
+                lengths.push(len);
+
+                if val.trim().is_empty() {
+                    empty_count += 1;
+                }
+                if let Some(prefix) = preamble_prefix {
+                    if val.starts_with(prefix) {
+                        preamble_count += 1;
+                    }
+                }
+            }
+            // Skip nulls / missing column entries
+        }
+
+        if lengths.is_empty() {
+            return Ok(Self {
+                min_len: 0,
+                max_len: 0,
+                mean_len: 0.0,
+                p50_len: 0,
+                p95_len: 0,
+                p99_len: 0,
+                empty_count: 0,
+                preamble_count: 0,
+                total: 0,
+            });
+        }
+
+        lengths.sort_unstable();
+        let total = lengths.len();
+        let min_len = lengths[0];
+        let max_len = lengths[total - 1];
+        let mean_len = lengths.iter().sum::<usize>() as f64 / total as f64;
+        let p50_len = lengths[total / 2];
+        let p95_len = lengths[(total as f64 * 0.95) as usize];
+        let p99_len = lengths[(total as f64 * 0.99).min((total - 1) as f64) as usize];
+
+        Ok(Self {
+            min_len,
+            max_len,
+            mean_len,
+            p50_len,
+            p95_len,
+            p99_len,
+            empty_count,
+            preamble_count,
+            total,
+        })
+    }
+}
+
+/// Resampling strategy — mirrors alimentar::ResampleStrategy (not yet published).
+#[derive(Debug, Clone, Copy)]
+enum ResampleStrategy {
+    Oversample,
+    Undersample,
+}
+
+/// Compute sqrt-inverse class weights — mirrors alimentar::sqrt_inverse_weights.
+fn sqrt_inverse_weights(counts: &[usize]) -> Vec<f32> {
+    let total: usize = counts.iter().sum();
+    if total == 0 || counts.is_empty() {
+        return vec![];
+    }
+    let k = counts.len() as f32;
+    counts
+        .iter()
+        .map(|&c| {
+            if c == 0 {
+                0.0
+            } else {
+                (total as f32 / (k * c as f32)).sqrt()
+            }
+        })
+        .collect()
+}
+
+/// Resample a JSONL file to balance classes — mirrors alimentar::resample (not yet published).
+///
+/// Operates on the JSONL file directly (read lines, resample, write to temp, reload)
+/// to avoid depending on arrow array types which are not a direct dependency of apr-cli.
+fn resample_jsonl(
+    path: &Path,
+    label_column: &str,
+    strategy: ResampleStrategy,
+    seed: u64,
+) -> std::result::Result<alimentar::ArrowDataset, String> {
+    use std::collections::HashMap;
+    use std::io::{BufRead, BufReader, Write};
+
+    // Read all JSONL lines and group by label
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+    let reader = BufReader::new(file);
+
+    let mut rows: Vec<String> = Vec::new();
+    let mut label_indices: HashMap<String, Vec<usize>> = HashMap::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("Read error: {e}"))?;
+        let trimmed = line.trim().to_string();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let obj: serde_json::Value = serde_json::from_str(&trimmed)
+            .map_err(|e| format!("JSON parse error: {e}"))?;
+
+        let label = obj
+            .get(label_column)
+            .map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                other => other.to_string(),
+            })
+            .unwrap_or_default();
+
+        let idx = rows.len();
+        label_indices.entry(label).or_default().push(idx);
+        rows.push(trimmed);
+    }
+
+    if rows.is_empty() {
+        return Err("Empty dataset".to_string());
+    }
+
+    // Determine target count per class
+    let target_count = match strategy {
+        ResampleStrategy::Oversample => label_indices
+            .values()
+            .map(|v| v.len())
+            .max()
+            .unwrap_or(0),
+        ResampleStrategy::Undersample => label_indices
+            .values()
+            .map(|v| v.len())
+            .min()
+            .unwrap_or(0),
+    };
+
+    // Deterministic resampling using seed
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut selected_indices: Vec<usize> = Vec::new();
+    for (_label, indices) in &label_indices {
+        if indices.len() >= target_count {
+            // Undersample: deterministic shuffle then take first target_count
+            let mut shuffled = indices.clone();
+            let mut hasher = DefaultHasher::new();
+            seed.hash(&mut hasher);
+            let h = hasher.finish();
+            shuffled.sort_by(|a, b| {
+                let mut ha = DefaultHasher::new();
+                (*a as u64 ^ h).hash(&mut ha);
+                let mut hb = DefaultHasher::new();
+                (*b as u64 ^ h).hash(&mut hb);
+                ha.finish().cmp(&hb.finish())
+            });
+            selected_indices.extend_from_slice(&shuffled[..target_count]);
+        } else {
+            // Oversample: repeat indices cyclically until target_count
+            selected_indices.extend_from_slice(indices);
+            let mut extra_needed = target_count - indices.len();
+            let mut cycle_idx = 0;
+            while extra_needed > 0 {
+                selected_indices.push(indices[cycle_idx % indices.len()]);
+                cycle_idx += 1;
+                extra_needed -= 1;
+            }
+        }
+    }
+
+    selected_indices.sort_unstable();
+
+    // Write resampled rows to temp JSONL, then reload via ArrowDataset::from_json
+    let tmp_path = std::env::temp_dir().join("apr-resample-tmp.jsonl");
+    {
+        let mut out = std::fs::File::create(&tmp_path)
+            .map_err(|e| format!("Failed to create temp file: {e}"))?;
+        for &idx in &selected_indices {
+            writeln!(out, "{}", rows[idx])
+                .map_err(|e| format!("Write error: {e}"))?;
+        }
+    }
+
+    let result = alimentar::ArrowDataset::from_json(&tmp_path)
+        .map_err(|e| format!("Failed to reload resampled dataset: {e}"));
+
+    let _ = std::fs::remove_file(&tmp_path);
+    result
+}
+
 // ── apr data audit ──────────────────────────────────────────────────────────
 
 /// Collected results from the audit analysis phase, passed to the formatter.
@@ -20,7 +261,7 @@ struct AuditResult {
     num_classes: usize,
     duplicate_count: usize,
     imbalance_report: alimentar::imbalance::ImbalanceReport,
-    text_stats: alimentar::quality::TextColumnStats,
+    text_stats: TextColumnStats,
     path: String,
 }
 
@@ -168,7 +409,7 @@ pub(crate) fn run_audit(
 ) -> Result<()> {
     use alimentar::{
         imbalance::ImbalanceDetector,
-        quality::{QualityChecker, TextColumnStats},
+        quality::QualityChecker,
         ArrowDataset, Dataset,
     };
 
@@ -214,9 +455,9 @@ pub(crate) fn run_audit(
             CliError::ValidationFailed(format!("Imbalance analysis failed: {e}"))
         })?;
 
-    // Text column statistics
-    let text_stats = TextColumnStats::from_dataset(
-        &dataset,
+    // Text column statistics (read directly from JSONL to avoid arrow dep)
+    let text_stats = TextColumnStats::from_jsonl_path(
+        path,
         input_column,
         preamble_prefix,
     )
@@ -395,7 +636,7 @@ pub(crate) fn run_balance(
     json_output: bool,
 ) -> Result<()> {
     use alimentar::{
-        imbalance::ImbalanceDetector, ArrowDataset, Dataset, ResampleStrategy,
+        imbalance::ImbalanceDetector, ArrowDataset, Dataset,
     };
 
     if !path.exists() {
@@ -425,7 +666,7 @@ pub(crate) fn run_balance(
             }
         }
 
-        let weights = alimentar::sqrt_inverse_weights(&ordered_counts);
+        let weights = sqrt_inverse_weights(&ordered_counts);
 
         if json_output {
             #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
@@ -459,7 +700,7 @@ pub(crate) fn run_balance(
         }
     };
 
-    let resampled = alimentar::resample(&dataset, label_column, resample_strategy, seed)
+    let resampled = resample_jsonl(path, label_column, resample_strategy, seed)
         .map_err(|e| CliError::ValidationFailed(format!("Resampling failed: {e}")))?;
 
     let new_len = resampled.len();
