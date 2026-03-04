@@ -1270,13 +1270,18 @@ fn run_multi_adapter_training(
             }
         }
 
-        if !json_output {
-            for (i, losses) in epoch_losses.iter().enumerate() {
-                let avg = if losses.is_empty() { 0.0 } else { losses.iter().sum::<f32>() / losses.len() as f32 };
+        // Per-adapter epoch logging and checkpointing
+        for (i, losses) in epoch_losses.iter().enumerate() {
+            let avg = if losses.is_empty() { 0.0 } else { losses.iter().sum::<f32>() / losses.len() as f32 };
+            if !json_output {
                 output::kv(
                     &format!("Epoch {} Adapter {i}", epoch + 1),
                     format!("avg_loss={avg:.4} ({} steps)", losses.len()),
                 );
+            }
+            // Save per-adapter checkpoint
+            if let Err(e) = multi.save_adapter_checkpoint(i, epoch as usize, avg) {
+                eprintln!("Warning: adapter {i} checkpoint failed: {e}");
             }
         }
     }
