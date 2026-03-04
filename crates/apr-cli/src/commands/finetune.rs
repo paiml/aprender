@@ -1247,7 +1247,11 @@ fn run_multi_adapter(
         ..InstructConfig::default()
     };
 
-    let base_pipeline = load_instruct_pipeline(model_path, &model_config, instruct_config.clone())?;
+    // Instruct pipeline API removed — pending entrenar instruct subsystem publish
+    #[allow(unreachable_code)]
+    let base_pipeline: entrenar::finetune::InstructPipeline = {
+        return Err(CliError::Aprender("Multi-adapter training requires entrenar instruct subsystem (not yet published)".into()));
+    };
 
     if !json_output {
         if let Some(ref name) = base_pipeline.gpu_name() {

@@ -120,9 +120,6 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
 
-    // Note: head_dim_override not available in entrenar 0.7.5 TransformerConfig.
-    // The published struct only has head_dim() = hidden_size / num_attention_heads.
-    // Explicit head_dim override (needed for Qwen3) will be supported in a future release.
     Some(entrenar::transformer::TransformerConfig {
         hidden_size,
         num_attention_heads: num_heads,
@@ -134,6 +131,7 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         rms_norm_eps,
         rope_theta,
         use_bias,
+        head_dim_override: None,
     })
 }
 
@@ -202,5 +200,6 @@ fn transformer_config_from_apr_metadata(
         rms_norm_eps: rms_norm_eps.unwrap_or(1e-6),
         rope_theta: rope_theta.unwrap_or(10000.0),
         use_bias,
+        head_dim_override: None,
     })
 }

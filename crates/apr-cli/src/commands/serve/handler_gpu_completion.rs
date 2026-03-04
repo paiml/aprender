@@ -434,7 +434,7 @@ fn start_gguf_server_cuda(
     mapped_model: &realizar::gguf::MappedGGUFModel,
     config: &ServerConfig,
 ) -> Result<()> {
-    use realizar::api::{create_router, AppState, CudaBatchConfig};
+    use realizar::api::{create_router, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!(
@@ -449,9 +449,8 @@ fn start_gguf_server_cuda(
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                .with_cuda_dispatch(CudaBatchConfig::default())
-                .with_verbose(config.verbose)
-                .with_inference_trace(config.trace);
+                .with_verbose(false) // TODO: restore with_batch_config when realizar API stabilizes
+                .with_verbose(config.verbose);
 
             let app = create_router(state);
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")

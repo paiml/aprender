@@ -10,8 +10,7 @@ fn run_cpu_server(
 
     let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
-        .with_verbose(config.verbose) // GH-152: Pass verbose flag to handlers
-        .with_inference_trace(config.trace); // GH-103: Pass trace flag to inference engine
+        .with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
 
     // Create realizar's full inference router (Ollama-parity endpoints)
     let app = create_router(state);
