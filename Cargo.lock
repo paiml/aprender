@@ -7106,8 +7106,6 @@ dependencies = [
 [[package]]
 name = "trueno-viz"
 version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8517b57060a70bcda986e3560fb9369af165fccf0c05dd593bd2db231d7e8f"
 dependencies = [
  "base64 0.22.1",
  "batuta-common",
