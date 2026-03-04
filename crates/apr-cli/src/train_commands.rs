@@ -227,4 +227,48 @@ pub enum TrainCommands {
         #[arg(long)]
         notes: Option<String>,
     },
+
+    /// Submit multi-adapter training jobs to a cluster (GPU-SHARE Phase 3).
+    ///
+    /// Reads a cluster.yaml config, places adapter jobs across nodes using
+    /// the greedy placement algorithm, and generates launch commands.
+    Submit {
+        /// Path to cluster config YAML
+        #[arg(long, value_name = "FILE")]
+        cluster: PathBuf,
+
+        /// Model checkpoint path (.apr)
+        #[arg(long, value_name = "FILE")]
+        model: PathBuf,
+
+        /// Adapter specs: DATA:CHECKPOINT pairs (one per adapter)
+        #[arg(long = "adapter", value_name = "DATA:CHECKPOINT")]
+        adapters: Vec<String>,
+
+        /// LoRA rank
+        #[arg(long, default_value = "16")]
+        rank: u32,
+
+        /// Number of training epochs
+        #[arg(long, default_value = "3")]
+        epochs: u32,
+
+        /// Estimated VRAM budget per adapter (MB)
+        #[arg(long, default_value = "6000")]
+        budget_mb: u64,
+
+        /// Dry run: show placement and commands without executing
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show cluster status: nodes, GPUs, adapter capacity (GPU-SHARE Phase 3).
+    ///
+    /// Reads a cluster.yaml config and displays node health, VRAM availability,
+    /// and adapter placement capacity.
+    ClusterStatus {
+        /// Path to cluster config YAML
+        #[arg(long, value_name = "FILE")]
+        cluster: PathBuf,
+    },
 }

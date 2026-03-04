@@ -1295,6 +1295,162 @@ pub(crate) fn run_archive(
     Ok(())
 }
 
+/// Run `apr train submit` — place adapter jobs across a cluster and show launch commands.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_submit(
+    cluster_path: &std::path::Path,
+    model_path: &std::path::Path,
+    adapters: &[String],
+    rank: u32,
+    epochs: u32,
+    budget_mb: u64,
+    dry_run: bool,
+    json: bool,
+) -> Result<()> {
+    use entrenar::gpu::cluster::ClusterConfig;
+    use entrenar::gpu::coordinator::build_launch_command;
+    use entrenar::gpu::placement::{place_adapters, AdapterJob};
+
+    let cluster = ClusterConfig::from_file(cluster_path)
+        .map_err(|e| CliError::InvalidInput(format!("failed to load cluster config: {e}")))?;
+
+    if adapters.is_empty() {
+        return Err(CliError::InvalidInput(
+            "at least one --adapter DATA:CHECKPOINT pair is required".to_string(),
+        ));
+    }
+
+    let jobs: Vec<AdapterJob> = adapters
+        .iter()
+        .enumerate()
+        .map(|(i, spec)| AdapterJob {
+            adapter_idx: i,
+            budget_mb,
+            label: spec.clone(),
+        })
+        .collect();
+
+    let placements = place_adapters(&cluster, &jobs, &[]);
+
+    if json {
+        let entries: Vec<serde_json::Value> = placements
+            .iter()
+            .map(|p| {
+                let parts: Vec<&str> = adapters[p.adapter_idx].splitn(2, ':').collect();
+                serde_json::json!({
+                    "adapter_idx": p.adapter_idx,
+                    "node": p.node_name,
+                    "score": p.score,
+                    "data": parts.first().unwrap_or(&""),
+                    "checkpoint": parts.get(1).unwrap_or(&""),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "cluster": cluster_path,
+            "model": model_path,
+            "placements": entries,
+            "total_adapters": adapters.len(),
+            "placed": placements.len(),
+            "dry_run": dry_run,
+        })).unwrap_or_default());
+        return Ok(());
+    }
+
+    println!("{}", cluster);
+    println!("--- Placement ---");
+    for p in &placements {
+        println!(
+            "  Adapter {} ({}): -> {} (score: {:.3})",
+            p.adapter_idx, adapters[p.adapter_idx], p.node_name, p.score
+        );
+    }
+
+    let unplaced: Vec<_> = jobs
+        .iter()
+        .filter(|j| !placements.iter().any(|p| p.adapter_idx == j.adapter_idx))
+        .collect();
+    for j in &unplaced {
+        println!("  Adapter {} ({}): {} (no eligible node)",
+            j.adapter_idx, j.label, "UNPLACED".red());
+    }
+
+    println!();
+    println!("--- Launch Commands ---");
+    for p in &placements {
+        if let Some(node) = cluster.find_node(&p.node_name) {
+            let parts: Vec<&str> = adapters[p.adapter_idx].splitn(2, ':').collect();
+            let data = parts.first().unwrap_or(&"data.jsonl");
+            let ckpt = parts.get(1).unwrap_or(&"/tmp/adapter");
+            let cmd = build_launch_command(
+                node,
+                model_path,
+                std::path::Path::new(data),
+                std::path::Path::new(ckpt),
+                rank,
+                epochs,
+            );
+            println!("  [{}] {cmd}", p.node_name);
+        }
+    }
+
+    if dry_run {
+        println!();
+        println!("  {} (dry run — no jobs launched)", "DRY RUN".yellow().bold());
+    }
+
+    Ok(())
+}
+
+/// Run `apr train cluster-status` — display cluster node info and capacity.
+pub(crate) fn run_cluster_status(
+    cluster_path: &std::path::Path,
+    json: bool,
+) -> Result<()> {
+    use entrenar::gpu::cluster::ClusterConfig;
+
+    let cluster = ClusterConfig::from_file(cluster_path)
+        .map_err(|e| CliError::InvalidInput(format!("failed to load cluster config: {e}")))?;
+
+    if json {
+        let nodes: Vec<serde_json::Value> = cluster
+            .nodes
+            .iter()
+            .map(|n| {
+                serde_json::json!({
+                    "name": n.name,
+                    "host": n.host,
+                    "transport": format!("{}", n.transport),
+                    "gpus": n.gpus.iter().map(|g| serde_json::json!({
+                        "uuid": g.uuid,
+                        "type": g.gpu_type,
+                        "vram_mb": g.vram_mb,
+                        "usable_vram_mb": g.usable_vram_mb(),
+                        "memory_type": format!("{:?}", g.memory_type),
+                    })).collect::<Vec<_>>(),
+                    "max_adapters": n.max_adapters,
+                    "total_vram_mb": n.total_vram_mb(),
+                    "usable_vram_mb": n.usable_vram_mb(),
+                    "is_local": n.is_local(),
+                    "is_cpu_only": n.is_cpu_only(),
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "cluster_config": cluster_path,
+            "total_nodes": cluster.nodes.len(),
+            "total_adapter_capacity": cluster.total_adapter_capacity(),
+            "nodes": nodes,
+        })).unwrap_or_default());
+        return Ok(());
+    }
+
+    println!("{cluster}");
+    println!("Total adapter capacity: {}", cluster.total_adapter_capacity());
+
+    Ok(())
+}
+
 fn format_archive_size(bytes: u64) -> String {
     if bytes >= 1_073_741_824 {
         format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
