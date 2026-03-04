@@ -407,6 +407,27 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             notes.as_deref(),
             cli.json,
         ),
+        TrainCommands::Submit {
+            cluster,
+            model,
+            adapters,
+            rank,
+            epochs,
+            budget_mb,
+            dry_run,
+        } => train::run_submit(
+            cluster,
+            model,
+            adapters,
+            *rank,
+            *epochs,
+            *budget_mb,
+            *dry_run,
+            cli.json,
+        ),
+        TrainCommands::ClusterStatus { cluster } => {
+            train::run_cluster_status(cluster, cli.json)
+        }
     }
 }
 
