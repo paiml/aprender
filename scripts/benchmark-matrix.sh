@@ -25,10 +25,12 @@ set -euo pipefail
 # Configuration
 # ═══════════════════════════════════════════════════════════════════════
 
-MODEL_GGUF="${MODEL_GGUF:-/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+MODEL_GGUF="${MODEL_GGUF:-models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf}"
 MODEL_APR="${MODEL_APR:-/tmp/test-transformer.apr}"
-APR_BIN="${APR_BIN:-/mnt/nvme-raid0/targets/aprender/release/apr}"
-REALIZAR_BIN="${REALIZAR_BIN:-/mnt/nvme-raid0/targets/realizar/release/examples/test_m16}"
+APR_BIN="${APR_BIN:-${REPO_DIR}/target/release/apr}"
+REALIZAR_BIN="${REALIZAR_BIN:-${REPO_DIR}/../realizar/target/release/examples/test_m16}"
 
 # Defaults
 WARMUP_ITERATIONS=2

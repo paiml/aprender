@@ -21,7 +21,7 @@ checked=0
 
 echo "Publish safety gate..."
 
-# Check 1: No tracked symlinks (P0: symlinks to /mnt/nvme-raid0 broke all users)
+# Check 1: No tracked symlinks (P0: symlinks to build dirs broke all users)
 echo -n "  Symlink check... "
 symlinks=$(git ls-files -s | grep "^120000" || true)
 checked=$((checked + 1))

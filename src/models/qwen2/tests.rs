@@ -362,9 +362,10 @@ fn test_safetensors_weight_tying_lm_head_ready() {
     //
     // We test this by loading a real SafeTensors file if available,
     // or skip if not (integration test covers this).
-    let safetensors_path = std::path::Path::new(
-        "/home/noah/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
-    );
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let safetensors_path = std::path::PathBuf::from(format!(
+        "{home}/.cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots/c540970f9e29518b1d8f06ab8b24cba66ad77b6d/model.safetensors"
+    ));
 
     if !safetensors_path.exists() {
         // Skip if model not downloaded (CI may not have it)
@@ -378,7 +379,7 @@ fn test_safetensors_weight_tying_lm_head_ready() {
     // WHEN: loading with new_uninitialized + load_from_safetensors
     let mut model = Qwen2Model::new_uninitialized(&config);
     let loaded = model
-        .load_from_safetensors(safetensors_path)
+        .load_from_safetensors(&safetensors_path)
         .expect("Should load SafeTensors");
 
     // THEN: lm_head must be ready (weight_t cached via weight tying)
@@ -406,7 +407,8 @@ fn test_safetensors_weight_tying_lm_head_ready() {
 #[test]
 #[ignore = "requires tokenizer download - run with: cargo test -- --ignored"]
 fn s1_tokenizer_loads_from_json() {
-    let tokenizer_path = std::path::Path::new("/home/noah/.cache/qwen2/tokenizer.json");
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let tokenizer_path = std::path::PathBuf::from(format!("{home}/.cache/qwen2/tokenizer.json"));
 
     if !tokenizer_path.exists() {
         eprintln!("SKIP S1: tokenizer.json not found at {:?}", tokenizer_path);
