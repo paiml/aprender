@@ -106,14 +106,15 @@ fn test_reader_ref_get_f32_tensor_wrong_dtype() {
 
 #[test]
 fn test_reader_get_tensor_as_f32_unsupported_dtype() {
-    // BF16 is not supported by get_tensor_as_f32
+    // BF16 is now supported by get_tensor_as_f32, verify it returns Some
     let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
     writer.add_tensor("bf16_w", TensorDType::BF16, vec![4], vec![0u8; 8]);
     let bytes = writer.write().expect("write");
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let result = reader.get_tensor_as_f32("bf16_w");
-    assert!(result.is_none(), "BF16 dequant should return None");
+    assert!(result.is_some(), "BF16 dequant is now supported");
+    assert_eq!(result.unwrap().len(), 4);
 }
 
 #[test]

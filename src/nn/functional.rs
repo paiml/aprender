@@ -340,12 +340,15 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
 #[must_use]
 pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
     let shape = x.shape();
-    let last_dim = shape[shape.len() - 1];
-    let batch_size: usize = shape[..shape.len() - 1].iter().product();
-
     let data = x.data();
     let weight_data = weight.data();
     let bias_data = bias.data();
+
+    // Use weight length as norm dimension to support multi-dim normalized_shape.
+    // For single-dim normalized_shape this equals shape[last], for multi-dim
+    // (e.g. [4, 8]) it equals the product (32), normalizing over the last N dims.
+    let norm_dim = weight_data.len();
+    let batch_size = data.len() / norm_dim;
 
     // Delegate to trueno's AVX2+FMA SIMD layer_norm per row.
     // Contract: provable-contracts/contracts/layernorm-kernel-v1.yaml
@@ -357,9 +360,9 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
 
     let mut output = vec![0.0f32; data.len()];
     for b in 0..batch_size {
-        let start = b * last_dim;
-        let slice = &data[start..start + last_dim];
-        let out_slice = &mut output[start..start + last_dim];
+        let start = b * norm_dim;
+        let slice = &data[start..start + norm_dim];
+        let out_slice = &mut output[start..start + norm_dim];
 
         trueno::blis::norms::layer_norm(slice, weight_data, bias_data, eps, out_slice)
             .expect("layer_norm: dimension mismatch (should be impossible)");
@@ -379,11 +382,14 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
 #[must_use]
 pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
     let shape = x.shape();
-    let last_dim = shape[shape.len() - 1];
-    let batch_size: usize = shape[..shape.len() - 1].iter().product();
-
     let data = x.data();
     let weight_data = weight.data();
+
+    // Use weight length as norm dimension to support multi-dim normalized_shape.
+    // For single-dim normalized_shape this equals shape[last], for multi-dim
+    // (e.g. [4, 8]) it equals the product (32), normalizing over the last N dims.
+    let norm_dim = weight_data.len();
+    let batch_size = data.len() / norm_dim;
 
     // Delegate to trueno's AVX2+FMA SIMD rms_norm per row.
     // Contract: provable-contracts/contracts/rmsnorm-kernel-v1.yaml
@@ -395,9 +401,9 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
 
     let mut output = vec![0.0f32; data.len()];
     for b in 0..batch_size {
-        let start = b * last_dim;
-        let slice = &data[start..start + last_dim];
-        let out_slice = &mut output[start..start + last_dim];
+        let start = b * norm_dim;
+        let slice = &data[start..start + norm_dim];
+        let out_slice = &mut output[start..start + norm_dim];
 
         trueno::blis::norms::rms_norm(slice, weight_data, eps, out_slice)
             .expect("rms_norm: dimension mismatch (should be impossible)");

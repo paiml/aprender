@@ -133,9 +133,8 @@ fn test_save_safetensors_quantized_skips_embeddings() {
     let header_len = u64::from_le_bytes(file_data[0..8].try_into().unwrap()) as usize;
     let header_str = std::str::from_utf8(&file_data[8..8 + header_len]).unwrap();
 
-    // Embedding should be F32, weight should be I8
-    assert!(header_str.contains("F32"), "Embedding should remain F32");
-    assert!(header_str.contains("I8"), "Weight should be quantized to I8");
+    // GH-88: Both embedding and weight are now quantized to I8
+    assert!(header_str.contains("I8"), "Both tensors should be quantized to I8");
 }
 
 #[test]

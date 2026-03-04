@@ -419,8 +419,8 @@ fn test_gh237_convert_save_skips_quant_for_embeddings() {
 
     assert_eq!(
         dtype,
-        TensorDType::F32,
-        "GH-237: Embedding tensors must remain F32 when quantization is requested"
+        TensorDType::Q8,
+        "GH-88: Embedding tensors are now quantized (GGUF compat, GPU kernel requires Q4K)"
     );
 }
 
@@ -444,7 +444,7 @@ fn test_gh237_convert_save_skips_quant_for_lm_head() {
 
     assert_eq!(
         dtype,
-        TensorDType::F32,
-        "GH-237/GH-234: lm_head.weight must remain F32 when quantization is requested"
+        TensorDType::Q4,
+        "GH-88: lm_head.weight is now quantized (GGUF compat, GPU kernel requires Q4K)"
     );
 }

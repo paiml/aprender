@@ -6,20 +6,21 @@ use super::super::import::load_model_config_from_json;
 
 #[test]
 fn test_should_skip_quantization_embedding_gh219() {
-    // Embeddings should always be skipped
-    assert!(should_skip_quantization("model.embed_tokens.weight", 100_000));
-    assert!(should_skip_quantization("token_embd.weight", 100_000));
-    assert!(should_skip_quantization("wte.weight", 100_000));
-    assert!(should_skip_quantization("wpe.weight", 100_000));
-    assert!(should_skip_quantization("word_embeddings.weight", 100_000));
-    assert!(should_skip_quantization("position_embedding.weight", 100_000));
+    // GH-88: Embeddings are NO LONGER skipped. GGUF files quantize them,
+    // and realizar's GPU kernel requires Q4K weight tensors.
+    assert!(!should_skip_quantization("model.embed_tokens.weight", 100_000));
+    assert!(!should_skip_quantization("token_embd.weight", 100_000));
+    assert!(!should_skip_quantization("wte.weight", 100_000));
+    assert!(!should_skip_quantization("wpe.weight", 100_000));
+    assert!(!should_skip_quantization("word_embeddings.weight", 100_000));
+    assert!(!should_skip_quantization("position_embedding.weight", 100_000));
 }
 
 #[test]
 fn test_should_skip_quantization_lm_head_gh219() {
-    // lm_head should be skipped (GH-234)
-    assert!(should_skip_quantization("lm_head.weight", 100_000));
-    assert!(should_skip_quantization("output.weight", 100_000));
+    // GH-88: lm_head is NO LONGER skipped — same rationale as embeddings.
+    assert!(!should_skip_quantization("lm_head.weight", 100_000));
+    assert!(!should_skip_quantization("output.weight", 100_000));
 }
 
 #[test]
