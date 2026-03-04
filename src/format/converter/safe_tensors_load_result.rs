@@ -254,7 +254,11 @@ pub(crate) fn load_sharded_safetensors(
         });
     }
 
-    let base_dir = index_path
+    // GH-363: Canonicalize index_path to resolve symlinks before extracting parent dir.
+    // When index.json is a symlink, parent() returns the symlink's directory (no shards).
+    // Canonicalize resolves to the real directory where shard files actually live.
+    let canonical_index = std::fs::canonicalize(index_path).unwrap_or_else(|_| index_path.to_path_buf());
+    let base_dir = canonical_index
         .parent()
         .ok_or_else(|| AprenderError::FormatError {
             message: format!(
