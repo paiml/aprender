@@ -77,6 +77,31 @@ fn setup_mps(gpu_share: u32, json_output: bool) -> Result<()> {
     Ok(())
 }
 
+/// Merge --adapters-config TOML entries with --adapter CLI flags (GPU-SHARE §2.4).
+fn merge_adapters_config(
+    cli_adapters: &[String],
+    config_path: Option<&Path>,
+    json_output: bool,
+) -> Result<Vec<String>> {
+    let mut all = cli_adapters.to_vec();
+    if let Some(path) = config_path {
+        let config =
+            entrenar::finetune::multi_adapter_pipeline::AdaptersConfigFile::from_file(path)
+                .map_err(CliError::ValidationFailed)?;
+        for entry in &config.adapters {
+            all.push(format!("{}:{}", entry.data.display(), entry.checkpoint.display()));
+        }
+        if !json_output {
+            eprintln!(
+                "[adapters-config] Loaded {} adapter(s) from {}",
+                config.adapters.len(),
+                path.display()
+            );
+        }
+    }
+    Ok(all)
+}
+
 /// Resolve model parameters from either --model-size flag or file inspection.
 fn resolve_model_params(model_size: Option<&str>, model_path: Option<&Path>) -> Result<u64> {
     if let Some(size) = model_size {
@@ -398,6 +423,7 @@ pub(crate) fn run(
     expect_workers: Option<usize>,
     wait_gpu: u64,
     adapters: &[String],
+    adapters_config: Option<&Path>,
     json_output: bool,
     experimental_mps: bool,
     gpu_share: u32,
@@ -406,6 +432,10 @@ pub(crate) fn run(
     if experimental_mps {
         setup_mps(gpu_share, json_output)?;
     }
+
+    // Merge --adapters-config TOML entries into the adapters list (GPU-SHARE §2.4)
+    let all_adapters = merge_adapters_config(adapters, adapters_config, json_output)?;
+    let adapters = &all_adapters;
 
     // Wait for VRAM if requested (GPU-SHARE-003)
     if wait_gpu > 0 {
