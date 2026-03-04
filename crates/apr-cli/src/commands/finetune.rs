@@ -54,6 +54,29 @@ impl From<FinetuneMethod> for Method {
     }
 }
 
+/// Setup CUDA MPS environment (GPU-SHARE §1.5).
+fn setup_mps(gpu_share: u32, json_output: bool) -> Result<()> {
+    let mps_config = entrenar::gpu::mps::MpsConfig::with_share(gpu_share);
+    let validation = entrenar::gpu::mps::validate_mps_config(&mps_config);
+    if validation.has_errors() {
+        return Err(CliError::ValidationFailed(format!(
+            "MPS config errors: {}",
+            validation.errors.join("; ")
+        )));
+    }
+    for w in &validation.warnings {
+        eprintln!("[MPS] Warning: {w}");
+    }
+    let vars = entrenar::gpu::mps::setup_mps_env(&mps_config);
+    entrenar::gpu::mps::print_mps_warning(&mps_config);
+    if !json_output {
+        for (k, v) in &vars {
+            eprintln!("[MPS] Set {k}={v}");
+        }
+    }
+    Ok(())
+}
+
 /// Resolve model parameters from either --model-size flag or file inspection.
 fn resolve_model_params(model_size: Option<&str>, model_path: Option<&Path>) -> Result<u64> {
     if let Some(size) = model_size {
@@ -376,7 +399,14 @@ pub(crate) fn run(
     wait_gpu: u64,
     adapters: &[String],
     json_output: bool,
+    experimental_mps: bool,
+    gpu_share: u32,
 ) -> Result<()> {
+    // MPS setup (GPU-SHARE §1.5) — must happen before any CUDA context creation
+    if experimental_mps {
+        setup_mps(gpu_share, json_output)?;
+    }
+
     // Wait for VRAM if requested (GPU-SHARE-003)
     if wait_gpu > 0 {
         let vram_mb = (vram_gb * 1024.0) as usize;
