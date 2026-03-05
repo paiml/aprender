@@ -507,6 +507,208 @@ pub(crate) fn run_audit(
     Ok(())
 }
 
+// ── apr data decontaminate ──────────────────────────────────────────────────
+
+/// Check training data for n-gram overlap with evaluation benchmarks.
+pub(crate) fn run_decontaminate(
+    path: &Path,
+    reference_paths: &[std::path::PathBuf],
+    ngram_size: usize,
+    threshold: f64,
+    output_path: Option<&Path>,
+    text_column: &str,
+    json_output: bool,
+) -> Result<()> {
+    use std::io::{BufRead, BufReader, Write};
+
+    if !path.exists() {
+        return Err(CliError::FileNotFound(path.to_path_buf()));
+    }
+    if reference_paths.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "--reference requires at least one benchmark file".to_string(),
+        ));
+    }
+
+    let training_texts = read_text_column(path, text_column)?;
+    let mut reference_texts: Vec<String> = Vec::new();
+    for ref_path in reference_paths {
+        if !ref_path.exists() {
+            return Err(CliError::FileNotFound(ref_path.clone()));
+        }
+        let mut texts = read_text_column(ref_path, text_column)?;
+        if texts.is_empty() {
+            texts = read_text_column(ref_path, "prompt")?;
+        }
+        if texts.is_empty() {
+            texts = read_text_column(ref_path, "text")?;
+        }
+        reference_texts.extend(texts);
+    }
+
+    if reference_texts.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "No text found in reference files".to_string(),
+        ));
+    }
+
+    let train_refs: Vec<&str> = training_texts.iter().map(String::as_str).collect();
+    let ref_refs: Vec<&str> = reference_texts.iter().map(String::as_str).collect();
+    let report = alimentar::quality::check_contamination(
+        &train_refs, &ref_refs, ngram_size, threshold,
+    );
+
+    if json_output {
+        #[allow(clippy::disallowed_methods)]
+        let json_report = serde_json::json!({
+            "path": path.display().to_string(),
+            "ngram_size": report.ngram_size,
+            "threshold": report.threshold,
+            "total_samples": report.total_samples,
+            "contaminated_count": report.contaminated_count,
+            "contamination_rate": report.contamination_rate,
+            "reference_samples": reference_texts.len(),
+            "flagged": report.flagged.iter().map(|f| {
+                serde_json::json!({
+                    "sample_index": f.sample_index,
+                    "max_overlap": f.max_overlap,
+                    "matched_reference": f.matched_reference,
+                })
+            }).collect::<Vec<_>>(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_report).unwrap_or_default()
+        );
+    } else {
+        output::section("Decontamination Check");
+        println!();
+        output::kv(
+            "Training data",
+            format!("{} ({} samples)", path.display(), report.total_samples),
+        );
+        output::kv(
+            "Reference",
+            format!(
+                "{} samples from {} file(s)",
+                reference_texts.len(),
+                reference_paths.len()
+            ),
+        );
+        output::kv("N-gram size", report.ngram_size);
+        output::kv("Threshold", format!("{:.0}%", report.threshold * 100.0));
+        println!();
+
+        if report.contaminated_count == 0 {
+            output::kv(
+                "Result",
+                format!("{} — no contamination detected", "CLEAN".green()),
+            );
+        } else {
+            let pct = report.contamination_rate * 100.0;
+            output::kv(
+                "Result",
+                format!(
+                    "{} — {} samples ({pct:.2}%) exceed threshold",
+                    "CONTAMINATED".red(),
+                    report.contaminated_count,
+                ),
+            );
+            println!();
+            println!("{}", "Flagged samples:".yellow().bold());
+            for f in &report.flagged {
+                println!(
+                    "  sample[{}] overlap={:.1}% matched ref[{}]",
+                    f.sample_index,
+                    f.max_overlap * 100.0,
+                    f.matched_reference,
+                );
+            }
+        }
+    }
+
+    // Write clean output if requested
+    if let Some(out) = output_path {
+        let contaminated_indices: std::collections::HashSet<usize> =
+            report.flagged.iter().map(|f| f.sample_index).collect();
+
+        let file = std::fs::File::open(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to open: {e}")))?;
+        let reader = BufReader::new(file);
+        let mut writer = std::fs::File::create(out)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to create output: {e}")))?;
+
+        let mut idx = 0usize;
+        for line in reader.lines() {
+            let line =
+                line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !contaminated_indices.contains(&idx) {
+                writeln!(writer, "{trimmed}")
+                    .map_err(|e| CliError::ValidationFailed(format!("Write error: {e}")))?;
+            }
+            idx += 1;
+        }
+
+        let clean_count = report.total_samples - report.contaminated_count;
+        if !json_output {
+            println!();
+            output::kv(
+                "Clean output",
+                format!("{} ({clean_count} samples)", out.display()),
+            );
+        }
+    }
+
+    if report.contamination_rate >= 0.01 {
+        if !json_output {
+            println!();
+            println!(
+                "{}",
+                "GATE FAILED: AC-016 requires <1% contamination rate"
+                    .red()
+                    .bold()
+            );
+        }
+        return Err(CliError::ValidationFailed(format!(
+            "Contamination rate {:.2}% exceeds 1% gate (AC-016)",
+            report.contamination_rate * 100.0,
+        )));
+    }
+
+    Ok(())
+}
+
+/// Read text values from a specific column of a JSONL file.
+fn read_text_column(path: &Path, column: &str) -> Result<Vec<String>> {
+    use std::io::{BufRead, BufReader};
+
+    let file = std::fs::File::open(path).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to open {}: {e}", path.display()))
+    })?;
+    let reader = BufReader::new(file);
+    let mut texts = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let obj: serde_json::Value = serde_json::from_str(trimmed)
+            .map_err(|e| CliError::ValidationFailed(format!("JSON parse: {e}")))?;
+
+        if let Some(val) = obj.get(column).and_then(|v| v.as_str()) {
+            texts.push(val.to_string());
+        }
+    }
+
+    Ok(texts)
+}
+
 // ── apr data split ──────────────────────────────────────────────────────────
 
 /// Stratified train/val/test split using alimentar.

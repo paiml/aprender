@@ -261,6 +261,22 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             output,
             json,
         ),
+        DataCommands::Decontaminate {
+            file,
+            reference,
+            ngram,
+            threshold,
+            output,
+            text_column,
+        } => data::run_decontaminate(
+            file,
+            reference,
+            *ngram,
+            *threshold,
+            output.as_deref(),
+            text_column,
+            json,
+        ),
         DataCommands::Balance {
             file,
             strategy,
