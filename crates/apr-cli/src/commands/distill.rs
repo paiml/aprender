@@ -312,6 +312,40 @@ fn validate_optional_paths(student_path: Option<&Path>, data_path: Option<&Path>
     Ok(())
 }
 
+/// Print the distill run header (file-based mode).
+#[allow(clippy::too_many_arguments)]
+fn print_distill_header(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    data_path: Option<&Path>,
+    distill_strategy: DistillStrategy,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    out: &Path,
+    json_output: bool,
+) {
+    if !json_output {
+        output::header("APR Distill");
+        let mut pairs = vec![
+            ("Teacher", teacher_path.display().to_string()),
+            ("Strategy", format!("{distill_strategy:?}")),
+            ("Temperature", format!("{temperature:.1}")),
+            ("Alpha", format!("{alpha:.2}")),
+            ("Epochs", epochs.to_string()),
+            ("Output", out.display().to_string()),
+        ];
+        if let Some(student) = student_path {
+            pairs.insert(1, ("Student", student.display().to_string()));
+        }
+        if let Some(data) = data_path {
+            pairs.push(("Training data", data.display().to_string()));
+        }
+        println!("{}", output::kv_table(&pairs));
+        println!();
+    }
+}
+
 /// Run the distill command — dispatches between file-based and config-driven modes.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -334,7 +368,6 @@ pub(crate) fn run(
         return run_config_mode(config, stage, plan_only, json_output);
     }
 
-    // File-based mode (original): apr distill <teacher.apr> [--student ...]
     let teacher_path = teacher_path.ok_or_else(|| {
         CliError::ValidationFailed(
             "Teacher model path required. Use positional arg or --config <yaml>".to_string(),
@@ -346,18 +379,11 @@ pub(crate) fn run(
     }
 
     let distill_strategy: DistillStrategy = strategy.parse().map_err(CliError::ValidationFailed)?;
-
     validate_distill_params(temperature, alpha)?;
 
     if plan_only {
         return run_plan(
-            teacher_path,
-            student_path,
-            distill_strategy,
-            temperature,
-            alpha,
-            epochs,
-            json_output,
+            teacher_path, student_path, distill_strategy, temperature, alpha, epochs, json_output,
         );
     }
 
@@ -373,26 +399,7 @@ pub(crate) fn run(
         )
     })?;
 
-    if !json_output {
-        output::header("APR Distill");
-        let mut pairs = vec![
-            ("Teacher", teacher_path.display().to_string()),
-            ("Strategy", format!("{distill_strategy:?}")),
-            ("Temperature", format!("{temperature:.1}")),
-            ("Alpha", format!("{alpha:.2}")),
-            ("Epochs", epochs.to_string()),
-            ("Output", out.display().to_string()),
-        ];
-        if let Some(student) = student_path {
-            pairs.insert(1, ("Student", student.display().to_string()));
-        }
-        if let Some(data) = data_path {
-            pairs.push(("Training data", data.display().to_string()));
-        }
-        println!("{}", output::kv_table(&pairs));
-        println!();
-    }
-
+    print_distill_header(teacher_path, student_path, data_path, distill_strategy, temperature, alpha, epochs, out, json_output);
     validate_optional_paths(student_path, data_path)?;
 
     if !json_output {

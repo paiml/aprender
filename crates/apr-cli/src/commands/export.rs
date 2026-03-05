@@ -92,6 +92,82 @@ fn execute_and_display(
     }
 }
 
+/// Run the export plan for batch mode (multiple formats).
+#[allow(clippy::disallowed_methods)]
+fn run_plan_batch(
+    file: &Path,
+    file_size: u64,
+    batch_formats: &str,
+    quantize: Option<&str>,
+    output: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    let formats: Vec<ExportFormat> = batch_formats
+        .split(',')
+        .map(|s| {
+            s.trim().parse::<ExportFormat>().map_err(|_| {
+                CliError::ValidationFailed(format!("Unknown format in batch: {s}"))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    for f in &formats {
+        if !f.is_supported() {
+            return Err(CliError::ValidationFailed(format!(
+                "Format '{}' in batch is not yet supported",
+                f.display_name()
+            )));
+        }
+    }
+
+    let quant_type = parse_quantization(quantize)?;
+
+    if json_output {
+        let json = serde_json::json!({
+            "plan": true,
+            "status": "valid",
+            "input": file.display().to_string(),
+            "input_size": file_size,
+            "batch": true,
+            "formats": formats.iter().map(|f| f.display_name()).collect::<Vec<_>>(),
+            "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
+            "output_dir": output.map(|p| p.display().to_string()),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::header("APR Export — Plan (Batch)");
+        let pairs: Vec<(&str, String)> = vec![
+            (
+                "Input",
+                format!(
+                    "{} ({})",
+                    file.display(),
+                    humansize::format_size(file_size, BINARY)
+                ),
+            ),
+            (
+                "Formats",
+                formats
+                    .iter()
+                    .map(ExportFormat::display_name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
+            (
+                "Output dir",
+                output.map_or("exports/".to_string(), |p| p.display().to_string()),
+            ),
+        ];
+        println!("{}", output::kv_table(&pairs));
+        println!();
+        println!("  {}", output::badge_pass("Plan valid — ready to export"));
+    }
+    Ok(())
+}
+
 /// Run the export plan (dry-run validation).
 #[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
 fn run_plan(
@@ -108,72 +184,8 @@ fn run_plan(
 
     let file_size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
 
-    // Validate format(s)
     if let Some(batch_formats) = batch {
-        let formats: Vec<ExportFormat> = batch_formats
-            .split(',')
-            .map(|s| {
-                s.trim().parse::<ExportFormat>().map_err(|_| {
-                    CliError::ValidationFailed(format!("Unknown format in batch: {s}"))
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        for f in &formats {
-            if !f.is_supported() {
-                return Err(CliError::ValidationFailed(format!(
-                    "Format '{}' in batch is not yet supported",
-                    f.display_name()
-                )));
-            }
-        }
-
-        let quant_type = parse_quantization(quantize)?;
-
-        if json_output {
-            let json = serde_json::json!({
-                "plan": true,
-                "status": "valid",
-                "input": file.display().to_string(),
-                "input_size": file_size,
-                "batch": true,
-                "formats": formats.iter().map(|f| f.display_name()).collect::<Vec<_>>(),
-                "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
-                "output_dir": output.map(|p| p.display().to_string()),
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json).unwrap_or_default()
-            );
-        } else {
-            output::header("APR Export — Plan (Batch)");
-            let pairs: Vec<(&str, String)> = vec![
-                (
-                    "Input",
-                    format!(
-                        "{} ({})",
-                        file.display(),
-                        humansize::format_size(file_size, BINARY)
-                    ),
-                ),
-                (
-                    "Formats",
-                    formats
-                        .iter()
-                        .map(ExportFormat::display_name)
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
-                (
-                    "Output dir",
-                    output.map_or("exports/".to_string(), |p| p.display().to_string()),
-                ),
-            ];
-            println!("{}", output::kv_table(&pairs));
-            println!();
-            println!("  {}", output::badge_pass("Plan valid — ready to export"));
-        }
-        return Ok(());
+        return run_plan_batch(file, file_size, batch_formats, quantize, output, json_output);
     }
 
     let effective_output = output.unwrap_or(Path::new("model.safetensors"));

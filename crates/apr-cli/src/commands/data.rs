@@ -137,6 +137,44 @@ fn sqrt_inverse_weights(counts: &[usize]) -> Vec<f32> {
         .collect()
 }
 
+/// Select resampled indices using deterministic hashing for reproducibility.
+fn select_resample_indices(
+    label_indices: &std::collections::HashMap<String, Vec<usize>>,
+    target_count: usize,
+    seed: u64,
+) -> Vec<usize> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut selected_indices: Vec<usize> = Vec::new();
+    for (_label, indices) in label_indices {
+        if indices.len() >= target_count {
+            let mut shuffled = indices.clone();
+            let mut hasher = DefaultHasher::new();
+            seed.hash(&mut hasher);
+            let h = hasher.finish();
+            shuffled.sort_by(|a, b| {
+                let mut ha = DefaultHasher::new();
+                (*a as u64 ^ h).hash(&mut ha);
+                let mut hb = DefaultHasher::new();
+                (*b as u64 ^ h).hash(&mut hb);
+                ha.finish().cmp(&hb.finish())
+            });
+            selected_indices.extend_from_slice(&shuffled[..target_count]);
+        } else {
+            selected_indices.extend_from_slice(indices);
+            let mut extra_needed = target_count - indices.len();
+            let mut cycle_idx = 0;
+            while extra_needed > 0 {
+                selected_indices.push(indices[cycle_idx % indices.len()]);
+                cycle_idx += 1;
+                extra_needed -= 1;
+            }
+        }
+    }
+    selected_indices
+}
+
 /// Resample a JSONL file to balance classes — mirrors alimentar::resample (not yet published).
 ///
 /// Operates on the JSONL file directly (read lines, resample, write to temp, reload)
@@ -185,48 +223,14 @@ fn resample_jsonl(
         return Err("Empty dataset".to_string());
     }
 
-    // Determine target count per class
     let target_count = match strategy {
         ResampleStrategy::Oversample => label_indices.values().map(|v| v.len()).max().unwrap_or(0),
         ResampleStrategy::Undersample => label_indices.values().map(|v| v.len()).min().unwrap_or(0),
     };
 
-    // Deterministic resampling using seed
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut selected_indices: Vec<usize> = Vec::new();
-    for (_label, indices) in &label_indices {
-        if indices.len() >= target_count {
-            // Undersample: deterministic shuffle then take first target_count
-            let mut shuffled = indices.clone();
-            let mut hasher = DefaultHasher::new();
-            seed.hash(&mut hasher);
-            let h = hasher.finish();
-            shuffled.sort_by(|a, b| {
-                let mut ha = DefaultHasher::new();
-                (*a as u64 ^ h).hash(&mut ha);
-                let mut hb = DefaultHasher::new();
-                (*b as u64 ^ h).hash(&mut hb);
-                ha.finish().cmp(&hb.finish())
-            });
-            selected_indices.extend_from_slice(&shuffled[..target_count]);
-        } else {
-            // Oversample: repeat indices cyclically until target_count
-            selected_indices.extend_from_slice(indices);
-            let mut extra_needed = target_count - indices.len();
-            let mut cycle_idx = 0;
-            while extra_needed > 0 {
-                selected_indices.push(indices[cycle_idx % indices.len()]);
-                cycle_idx += 1;
-                extra_needed -= 1;
-            }
-        }
-    }
-
+    let mut selected_indices = select_resample_indices(&label_indices, target_count, seed);
     selected_indices.sort_unstable();
 
-    // Write resampled rows to temp JSONL, then reload via ArrowDataset::from_json
     let tmp_path = std::env::temp_dir().join("apr-resample-tmp.jsonl");
     {
         let mut out = std::fs::File::create(&tmp_path)
@@ -389,6 +393,43 @@ fn print_audit_report(r: &AuditResult) {
     }
 }
 
+/// Validate dataset schema has required columns.
+fn validate_audit_schema(
+    dataset: &alimentar::ArrowDataset,
+    input_column: &str,
+    label_column: &str,
+) -> Result<()> {
+    use alimentar::Dataset;
+    let schema = dataset.schema();
+    if schema.column_with_name(input_column).is_none() {
+        return Err(CliError::ValidationFailed(format!(
+            "Required column '{input_column}' not found in schema"
+        )));
+    }
+    if schema.column_with_name(label_column).is_none() {
+        return Err(CliError::ValidationFailed(format!(
+            "Required column '{label_column}' not found in schema"
+        )));
+    }
+    Ok(())
+}
+
+/// Count labels outside the valid range [0, num_classes).
+fn count_out_of_range_labels(
+    imbalance_report: &alimentar::imbalance::ImbalanceReport,
+    num_classes: usize,
+) -> usize {
+    let mut out_of_range = 0usize;
+    for label_str in imbalance_report.distribution.counts.keys() {
+        if let Ok(v) = label_str.parse::<i64>() {
+            if v < 0 || v >= num_classes as i64 {
+                out_of_range += imbalance_report.distribution.get_count(label_str);
+            }
+        }
+    }
+    out_of_range
+}
+
 /// Run data quality audit on a JSONL classification dataset.
 pub(crate) fn run_audit(
     path: &Path,
@@ -404,7 +445,6 @@ pub(crate) fn run_audit(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    // Load JSONL as Arrow dataset
     let dataset = ArrowDataset::from_json(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
 
@@ -413,20 +453,8 @@ pub(crate) fn run_audit(
         return Err(CliError::ValidationFailed("Dataset is empty".to_string()));
     }
 
-    // Validate schema has required columns
-    let schema = dataset.schema();
-    if schema.column_with_name(input_column).is_none() {
-        return Err(CliError::ValidationFailed(format!(
-            "Required column '{input_column}' not found in schema"
-        )));
-    }
-    if schema.column_with_name(label_column).is_none() {
-        return Err(CliError::ValidationFailed(format!(
-            "Required column '{label_column}' not found in schema"
-        )));
-    }
+    validate_audit_schema(&dataset, input_column, label_column)?;
 
-    // Quality check (duplicates, nulls, etc.)
     let checker = QualityChecker::new()
         .max_null_ratio(0.01)
         .max_duplicate_ratio(0.05);
@@ -434,26 +462,15 @@ pub(crate) fn run_audit(
         .check(&dataset)
         .map_err(|e| CliError::ValidationFailed(format!("Quality check failed: {e}")))?;
 
-    // Imbalance analysis
     let imbalance_report = ImbalanceDetector::new(label_column)
         .analyze(&dataset)
         .map_err(|e| CliError::ValidationFailed(format!("Imbalance analysis failed: {e}")))?;
 
-    // Text column statistics (read directly from JSONL to avoid arrow dep)
     let text_stats = TextColumnStats::from_jsonl_path(path, input_column, preamble_prefix)
         .map_err(|e| CliError::ValidationFailed(format!("Text stats failed: {e}")))?;
 
-    // Label range validation (use imbalance distribution counts)
-    let mut out_of_range = 0usize;
-    for label_str in imbalance_report.distribution.counts.keys() {
-        if let Ok(v) = label_str.parse::<i64>() {
-            if v < 0 || v >= num_classes as i64 {
-                out_of_range += imbalance_report.distribution.get_count(label_str);
-            }
-        }
-    }
+    let out_of_range = count_out_of_range_labels(&imbalance_report, num_classes);
 
-    // Duplicate count from quality report
     let duplicate_count: usize = quality_report
         .issues
         .iter()
@@ -466,7 +483,7 @@ pub(crate) fn run_audit(
         .sum();
 
     if json_output {
-        #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
+        #[allow(clippy::disallowed_methods)]
         let report = serde_json::json!({
             "path": path.display().to_string(),
             "total_samples": total,
@@ -642,46 +659,7 @@ pub(crate) fn run_balance(
 
     // sqrt-inverse mode: just compute and print weights, no resampling
     if strategy == "sqrt-inverse" {
-        let report = ImbalanceDetector::new(label_column)
-            .analyze(&dataset)
-            .map_err(|e| CliError::ValidationFailed(format!("Imbalance analysis failed: {e}")))?;
-
-        let k = num_classes.unwrap_or(report.distribution.num_classes);
-        // Build ordered counts vector
-        let mut ordered_counts = vec![0usize; k];
-        for (label, count) in &report.distribution.counts {
-            if let Ok(idx) = label.parse::<usize>() {
-                if idx < k {
-                    ordered_counts[idx] = *count;
-                }
-            }
-        }
-
-        let weights = sqrt_inverse_weights(&ordered_counts);
-
-        if json_output {
-            #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
-            let report = serde_json::json!({
-                "strategy": "sqrt-inverse",
-                "class_counts": ordered_counts,
-                "weights": weights,
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).unwrap_or_default()
-            );
-        } else {
-            output::section("Sqrt-Inverse Class Weights");
-            println!();
-            for (i, w) in weights.iter().enumerate() {
-                let count = ordered_counts.get(i).copied().unwrap_or(0);
-                println!("  class {i}: count={count:>8}  weight={w:.4}");
-            }
-            let sum: f32 = weights.iter().sum();
-            println!();
-            output::kv("Weight sum", format!("{sum:.4} (should equal {k})"));
-        }
-        return Ok(());
+        return run_balance_sqrt_inverse(&dataset, label_column, num_classes, json_output);
     }
 
     let resample_strategy = match strategy {
@@ -699,38 +677,187 @@ pub(crate) fn run_balance(
 
     let new_len = resampled.len();
 
-    // Write output
-    if let Some(out) = output_path {
-        resampled
-            .to_json(out)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
-
-        if json_output {
-            #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
-            let report = serde_json::json!({
-                "strategy": strategy,
-                "original_samples": original_len,
-                "resampled_samples": new_len,
-                "output": out.display().to_string(),
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).unwrap_or_default()
-            );
-        } else {
-            output::section("Class Rebalancing");
-            println!();
-            output::kv("Strategy", strategy);
-            output::kv("Original", format!("{original_len} samples"));
-            output::kv("Resampled", format!("{new_len} samples"));
-            output::kv("Output", out.display());
-            println!();
-            println!("{} Resampled dataset written", "OK".green());
-        }
-    } else {
-        return Err(CliError::ValidationFailed(
+    let out = output_path.ok_or_else(|| {
+        CliError::ValidationFailed(
             "--output is required for oversample/undersample strategies".to_string(),
-        ));
+        )
+    })?;
+
+    resampled
+        .to_json(out)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
+
+    print_balance_result(strategy, original_len, new_len, out, json_output);
+    Ok(())
+}
+
+/// Handle sqrt-inverse balance strategy: compute and display class weights.
+fn run_balance_sqrt_inverse(
+    dataset: &alimentar::ArrowDataset,
+    label_column: &str,
+    num_classes: Option<usize>,
+    json_output: bool,
+) -> Result<()> {
+    use alimentar::{imbalance::ImbalanceDetector, Dataset};
+
+    let report = ImbalanceDetector::new(label_column)
+        .analyze(dataset)
+        .map_err(|e| CliError::ValidationFailed(format!("Imbalance analysis failed: {e}")))?;
+
+    let k = num_classes.unwrap_or(report.distribution.num_classes);
+    let mut ordered_counts = vec![0usize; k];
+    for (label, count) in &report.distribution.counts {
+        if let Ok(idx) = label.parse::<usize>() {
+            if idx < k {
+                ordered_counts[idx] = *count;
+            }
+        }
+    }
+
+    let weights = sqrt_inverse_weights(&ordered_counts);
+
+    if json_output {
+        #[allow(clippy::disallowed_methods)]
+        let report = serde_json::json!({
+            "strategy": "sqrt-inverse",
+            "class_counts": ordered_counts,
+            "weights": weights,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    } else {
+        output::section("Sqrt-Inverse Class Weights");
+        println!();
+        for (i, w) in weights.iter().enumerate() {
+            let count = ordered_counts.get(i).copied().unwrap_or(0);
+            println!("  class {i}: count={count:>8}  weight={w:.4}");
+        }
+        let sum: f32 = weights.iter().sum();
+        println!();
+        output::kv("Weight sum", format!("{sum:.4} (should equal {k})"));
+    }
+    Ok(())
+}
+
+/// Print balance result output (JSON or human-readable).
+#[allow(clippy::disallowed_methods)]
+fn print_balance_result(
+    strategy: &str,
+    original_len: usize,
+    new_len: usize,
+    out: &Path,
+    json_output: bool,
+) {
+    if json_output {
+        let report = serde_json::json!({
+            "strategy": strategy,
+            "original_samples": original_len,
+            "resampled_samples": new_len,
+            "output": out.display().to_string(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    } else {
+        output::section("Class Rebalancing");
+        println!();
+        output::kv("Strategy", strategy);
+        output::kv("Original", format!("{original_len} samples"));
+        output::kv("Resampled", format!("{new_len} samples"));
+        output::kv("Output", out.display());
+        println!();
+        println!("{} Resampled dataset written", "OK".green());
+    }
+}
+
+// ── apr data decontaminate ──────────────────────────────────────────────────
+
+/// Check training data for benchmark contamination via n-gram overlap.
+pub(crate) fn run_decontaminate(
+    path: &Path,
+    reference_paths: &[std::path::PathBuf],
+    ngram_size: usize,
+    threshold: f64,
+    json_output: bool,
+) -> Result<()> {
+    use alimentar::quality::check_contamination;
+
+    if !path.exists() {
+        return Err(CliError::FileNotFound(path.to_path_buf()));
+    }
+
+    // Load training data (one text per line from JSONL)
+    let training_text = std::fs::read_to_string(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read training data: {e}")))?;
+    let training_lines: Vec<&str> = training_text.lines().collect();
+
+    // Load reference benchmark data
+    let mut ref_texts = Vec::new();
+    for ref_path in reference_paths {
+        if !ref_path.exists() {
+            return Err(CliError::FileNotFound(ref_path.clone()));
+        }
+        let text = std::fs::read_to_string(ref_path).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Failed to read reference {}: {e}",
+                ref_path.display()
+            ))
+        })?;
+        for line in text.lines() {
+            ref_texts.push(line.to_string());
+        }
+    }
+    let ref_slices: Vec<&str> = ref_texts.iter().map(|s| s.as_str()).collect();
+
+    let report = check_contamination(&training_lines, &ref_slices, ngram_size, threshold);
+
+    if json_output {
+        #[allow(clippy::disallowed_methods)]
+        let json = serde_json::json!({
+            "ngram_size": report.ngram_size,
+            "threshold": report.threshold,
+            "total_samples": report.total_samples,
+            "contaminated_count": report.contaminated_count,
+            "contamination_rate": report.contamination_rate,
+            "gate": if report.contamination_rate < 0.01 { "PASS" } else { "FAIL" },
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::section("Decontamination Check");
+        println!();
+        output::kv("Training samples", format!("{}", report.total_samples));
+        output::kv("Reference samples", format!("{}", ref_slices.len()));
+        output::kv("N-gram size", format!("{}", report.ngram_size));
+        output::kv("Threshold", format!("{:.2}", report.threshold));
+        println!();
+        output::kv("Contaminated", format!("{}", report.contaminated_count));
+        output::kv(
+            "Rate",
+            format!("{:.2}%", report.contamination_rate * 100.0),
+        );
+        println!();
+        if report.contamination_rate < 0.01 {
+            println!("{} Contamination rate <1% (AC-016 gate)", "PASS".green());
+        } else {
+            println!(
+                "{} Contamination rate {:.2}% exceeds 1% threshold",
+                "FAIL".red(),
+                report.contamination_rate * 100.0
+            );
+        }
+    }
+
+    if report.contamination_rate >= 0.01 {
+        return Err(CliError::ValidationFailed(format!(
+            "Contamination rate {:.2}% exceeds 1% gate (AC-016)",
+            report.contamination_rate * 100.0
+        )));
     }
 
     Ok(())

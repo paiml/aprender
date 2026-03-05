@@ -326,7 +326,21 @@ fn run_apr_benchmark(
         let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
     });
 
-    // Measurement
+    let (iteration_times, total_tokens, first_token_time) =
+        run_apr_measurement(&transformer, &prompt_tokens, &gen_config, config, tracer)?;
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// Run the measurement phase of APR benchmark, collecting timing and token data.
+#[cfg(feature = "inference")]
+fn run_apr_measurement(
+    transformer: &realizar::apr_transformer::AprTransformer,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::apr_transformer::GenerateConfig,
+    config: &BenchConfig,
+    tracer: &TracerImpl,
+) -> Result<(Vec<Duration>, usize, Duration)> {
     if !config.quiet {
         eprintln!("{}", "Running benchmark...".yellow());
     }
@@ -335,13 +349,11 @@ fn run_apr_benchmark(
     let mut first_token_time = Duration::ZERO;
     let mut generation_failed = false;
     let budget_us = config.max_tokens as u64 * 100_000;
-
     let mut generate_errors = 0usize;
 
     for i in 0..config.iterations {
         let traced = tracer.trace("bench_apr_iter", budget_us, || {
-            transformer
-                .generate_with_cache(&prompt_tokens, &gen_config)
+            transformer.generate_with_cache(prompt_tokens, gen_config)
         });
         let output = match traced.result {
             Ok(tokens) => tokens,
@@ -353,11 +365,10 @@ fn run_apr_benchmark(
                     );
                 }
                 generate_errors += 1;
-                prompt_tokens.clone()
+                prompt_tokens.to_vec()
             }
         };
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-
         let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
@@ -369,26 +380,20 @@ fn run_apr_benchmark(
                 generation_failed = true;
             }
         }
-
         print_bench_progress(config, i, tokens_generated, iter_time);
     }
     if !config.quiet {
         eprintln!();
     }
 
-    // GH-254: If generation produced 0 new tokens, fall back to forward-pass throughput
     total_tokens = handle_zero_generation_fallback(
-        generation_failed,
-        total_tokens,
-        config.iterations,
-        prompt_tokens.len(),
-        config.quiet,
+        generation_failed, total_tokens, config.iterations, prompt_tokens.len(), config.quiet,
     );
     if !config.quiet {
         eprintln!();
     }
 
-    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+    Ok((iteration_times, total_tokens, first_token_time))
 }
 
 /// APR format CUDA benchmark using fused Q4K kernels (GH-87)

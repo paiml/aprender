@@ -46,6 +46,24 @@ pub enum DataCommands {
         #[arg(short, long)]
         output: PathBuf,
     },
+    /// Check training data for benchmark contamination via n-gram overlap
+    Decontaminate {
+        /// Path to training JSONL data file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Reference benchmark JSONL files to check against
+        #[arg(long, required = true, num_args = 1..)]
+        reference: Vec<PathBuf>,
+        /// N-gram size for overlap detection
+        #[arg(long, default_value = "10")]
+        ngram: usize,
+        /// Overlap threshold (0.0-1.0) above which a sample is flagged
+        #[arg(long, default_value = "0.5")]
+        threshold: f64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Resample dataset to address class imbalance
     Balance {
         /// Path to JSONL data file

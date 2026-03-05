@@ -137,7 +137,6 @@ fn run_safetensors_cuda_benchmark(
     bench_log(config, &"Converting SafeTensors → Q4K (one-time)...".yellow().to_string());
     let start = Instant::now();
 
-    // Convert SafeTensors to temp APR Q4K file for fused kernel access
     let tmp_apr = std::env::temp_dir().join("bench-safetensors-q4k.apr");
     let import_opts = ImportOptions {
         quantize: Some(QuantizationType::Q4K),
@@ -176,7 +175,6 @@ fn run_safetensors_cuda_benchmark(
     let (iteration_times, total_tokens, first_token_time) =
         run_cuda_measurement(&mut cuda_model, &prompt_tokens, &gen_config, config, tracer)?;
 
-    // Cleanup temp file
     let _ = std::fs::remove_file(&tmp_apr);
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)

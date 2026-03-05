@@ -50,18 +50,8 @@ fn sparkline(data: &[f64], width: usize) -> String {
 /// Render a braille chart from a slice of f64 values.
 /// Each character encodes a 2x4 dot matrix (2 columns, 4 rows per cell).
 /// Returns multi-line string with y-axis labels.
-fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
-    if data.is_empty() {
-        return String::new();
-    }
-    let max = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let min = data.iter().copied().fold(f64::INFINITY, f64::min);
-    let range = (max - min).max(1e-10);
-    let rows = height; // Each row = 4 braille dots vertically
-    let total_dots_y = rows * 4;
-
-    // Sample data to fit width * 2 (2 dot columns per braille char)
-    let total_dots_x = width * 2;
+/// Sample data points to fit braille grid, returning y-positions in dot coordinates.
+fn sample_braille_data(data: &[f64], total_dots_x: usize, total_dots_y: usize, min: f64, range: f64) -> Vec<usize> {
     let n = data.len();
     let mut samples = Vec::with_capacity(total_dots_x);
     for i in 0..total_dots_x {
@@ -72,51 +62,64 @@ fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
         };
         let val = data[idx.min(n - 1)];
         let normalized = ((val - min) / range).clamp(0.0, 1.0);
-        // Invert: high values at top (low dot row number)
         let dot_y = ((1.0 - normalized) * (total_dots_y - 1) as f64).round() as usize;
         samples.push(dot_y.min(total_dots_y - 1));
     }
+    samples
+}
 
-    // Braille dot positions within a cell:
-    // Col 0: dots 0,1,2,6 (rows 0-3)  → bits 0,1,2,6
-    // Col 1: dots 3,4,5,7 (rows 0-3)  → bits 3,4,5,7
+/// Render one row of braille characters from sample data.
+fn render_braille_row(samples: &[usize], row: usize, width: usize, dot_bits: &[[u8; 4]; 2]) -> String {
+    let row_start_y = row * 4;
+    let mut row_chars = String::new();
+    for col in 0..width {
+        let mut pattern: u8 = 0;
+        for dot_col in 0..2 {
+            let x = col * 2 + dot_col;
+            if x < samples.len() {
+                let sample_y = samples[x];
+                for dot_row in 0..4 {
+                    let y = row_start_y + dot_row;
+                    if sample_y == y {
+                        pattern |= 1 << dot_bits[dot_col][dot_row];
+                    }
+                }
+            }
+        }
+        let ch = char::from_u32(BRAILLE_BASE + pattern as u32).unwrap_or(' ');
+        row_chars.push(ch);
+    }
+    row_chars
+}
+
+fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
+    if data.is_empty() {
+        return String::new();
+    }
+    let max = data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let min = data.iter().copied().fold(f64::INFINITY, f64::min);
+    let range = (max - min).max(1e-10);
+    let rows = height;
+    let total_dots_y = rows * 4;
+    let total_dots_x = width * 2;
+
+    let samples = sample_braille_data(data, total_dots_x, total_dots_y, min, range);
+
     let dot_bits: [[u8; 4]; 2] = [
-        [0, 1, 2, 6], // left column: rows 0-3
-        [3, 4, 5, 7], // right column: rows 0-3
+        [0, 1, 2, 6],
+        [3, 4, 5, 7],
     ];
 
     let y_label_width = format!("{:.2}", max).len().max(format!("{:.2}", min).len());
     let mut lines = Vec::with_capacity(rows + 1);
 
     for row in 0..rows {
-        let row_start_y = row * 4;
-        let mut line = String::new();
-
-        // Y-axis label
         let y_val = max - (row as f64 / (rows - 1).max(1) as f64) * range;
-        line.push_str(&format!("{:>width$.2} │", y_val, width = y_label_width));
-
-        for col in 0..width {
-            let mut pattern: u8 = 0;
-            for dot_col in 0..2 {
-                let x = col * 2 + dot_col;
-                if x < samples.len() {
-                    let sample_y = samples[x];
-                    for dot_row in 0..4 {
-                        let y = row_start_y + dot_row;
-                        if sample_y == y {
-                            pattern |= 1 << dot_bits[dot_col][dot_row];
-                        }
-                    }
-                }
-            }
-            let ch = char::from_u32(BRAILLE_BASE + pattern as u32).unwrap_or(' ');
-            line.push(ch);
-        }
+        let mut line = format!("{:>width$.2} │", y_val, width = y_label_width);
+        line.push_str(&render_braille_row(&samples, row, width, &dot_bits));
         lines.push(line);
     }
 
-    // X-axis
     let axis_line = format!(
         "{:>width$} └{}",
         "",
@@ -125,7 +128,6 @@ fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
     );
     lines.push(axis_line);
 
-    // X-axis labels (step range)
     let x_label = format!(
         "{:>width$}  0{:>pad$}{}",
         "",

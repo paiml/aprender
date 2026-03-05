@@ -639,27 +639,26 @@ fn detect_model_config(
 
 /// Infer hidden dimension from metadata or tensor shapes.
 fn infer_hidden_dim(report: &InspectionReport) -> usize {
-    // Try canonical metadata keys (used by RosettaStone for GGUF)
-    for key in [
-        "n_embd",
-        "llama.embedding_length",
-        "qwen2.embedding_length",
-        "phi3.embedding_length",
-        "gemma.embedding_length",
-    ] {
-        if let Some(val) = report.metadata.get(key) {
-            if let Ok(dim) = val.parse::<usize>() {
-                return dim;
-            }
-        }
+    if let Some(dim) = infer_from_metadata(
+        report,
+        &[
+            "n_embd",
+            "llama.embedding_length",
+            "qwen2.embedding_length",
+            "phi3.embedding_length",
+            "gemma.embedding_length",
+        ],
+    ) {
+        return dim;
     }
-    // Fall back to embedding tensor shape (last dim = hidden_dim)
-    // GGUF embedding: shape=[vocab_size, hidden_dim], take last
-    // SafeTensors: may be [hidden_dim, vocab_size], take smaller
+    infer_hidden_dim_from_tensors(report)
+}
+
+/// Fall back to embedding tensor shape to infer hidden dimension.
+fn infer_hidden_dim_from_tensors(report: &InspectionReport) -> usize {
     for tensor in &report.tensors {
         if tensor.name.contains("token_embd") || tensor.name.contains("embed_tokens") {
             if tensor.shape.len() == 2 {
-                // Hidden dim is typically the smaller of the two
                 return tensor.shape[0].min(tensor.shape[1]);
             }
             if let Some(&dim) = tensor.shape.last() {

@@ -70,7 +70,7 @@ fn start_apr_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(false) // TODO: restore with_batch_config when realizar API stabilizes
+    .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 
     let app = create_router(state);
@@ -95,7 +95,6 @@ fn start_safetensors_server_gpu(
 
     println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
 
-    // Convert SafeTensors to temp APR Q4K for fused kernel access
     let tmp_apr = std::env::temp_dir().join("serve-safetensors-q4k.apr");
     let import_opts = ImportOptions {
         quantize: Some(QuantizationType::Q4K),
@@ -145,7 +144,6 @@ fn start_safetensors_server_gpu(
     preload_gpu_weights(&mut cuda_model);
     println!("{}", "CUDA fused Q4K model ready".green());
 
-    // Cleanup temp file (model is already loaded into GPU memory)
     let _ = std::fs::remove_file(&tmp_apr);
 
     // GH-88: Use BPE tokenizer with merge rules when available (SafeTensors imports)
@@ -155,7 +153,7 @@ fn start_safetensors_server_gpu(
         AppState::with_cuda_model_and_vocab(cuda_model, vocab)
     }
     .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-    .with_verbose(false) // TODO: restore with_batch_config when realizar API stabilizes
+    .with_verbose(false) // with_batch_config deferred until realizar API stabilizes
     .with_verbose(config.verbose);
 
     let app = create_router(state);
@@ -178,7 +176,6 @@ fn start_safetensors_server_cpu_quantized(
 
     println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
 
-    // Convert SafeTensors to temp APR Q4K for fused kernel access
     let tmp_apr = std::env::temp_dir().join("serve-safetensors-cpu-q4k.apr");
     let import_opts = ImportOptions {
         quantize: Some(QuantizationType::Q4K),
@@ -217,7 +214,6 @@ fn start_safetensors_server_cpu_quantized(
         v
     });
 
-    // Cleanup temp file (model is already loaded into memory)
     let _ = std::fs::remove_file(&tmp_apr);
 
     println!("{}", "Q4K CPU inference ready (GH-99)".green());

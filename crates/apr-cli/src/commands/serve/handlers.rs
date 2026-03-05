@@ -67,43 +67,47 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             start_gguf_server(model_path, config)
         }
         ModelFormat::SafeTensors => {
-            // GH-88: Try fused Q4K GPU path first (same kernels as GGUF/APR, 200+ tok/s)
-            #[cfg(feature = "cuda")]
-            {
-                let use_gpu = config.gpu && !config.no_gpu;
-                if use_gpu {
-                    println!(
-                        "{}",
-                        "Starting SafeTensors GPU server (fused Q4K)...".cyan()
-                    );
-                    match start_safetensors_server_gpu(model_path, config) {
-                        Ok(()) => return Ok(()),
-                        Err(e) => {
-                            println!(
-                                "{}",
-                                format!("GPU init failed, falling back to CPU: {e}").yellow()
-                            );
-                        }
-                    }
-                }
-            }
-            // GH-99: Try Q4K CPU path (same fused kernels as GGUF, eliminates F32 fallback)
-            #[cfg(feature = "inference")]
-            {
-                match start_safetensors_server_cpu_quantized(model_path, config) {
-                    Ok(()) => return Ok(()),
-                    Err(e) => {
-                        println!(
-                            "{}",
-                            format!("Q4K conversion failed, falling back to F32: {e}").yellow()
-                        );
-                    }
-                }
-            }
-            println!("{}", "Starting SafeTensors inspection server...".cyan());
-            super::safetensors::start_safetensors_server(model_path, config)
+            start_safetensors_server_with_fallback(model_path, config)
         }
     }
+}
+
+/// Start SafeTensors server with GPU → Q4K CPU → F32 fallback chain.
+#[cfg(feature = "inference")]
+fn start_safetensors_server_with_fallback(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    #[cfg(feature = "cuda")]
+    {
+        let use_gpu = config.gpu && !config.no_gpu;
+        if use_gpu {
+            println!(
+                "{}",
+                "Starting SafeTensors GPU server (fused Q4K)...".cyan()
+            );
+            match start_safetensors_server_gpu(model_path, config) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    println!(
+                        "{}",
+                        format!("GPU init failed, falling back to CPU: {e}").yellow()
+                    );
+                }
+            }
+        }
+    }
+    #[cfg(feature = "inference")]
+    {
+        match start_safetensors_server_cpu_quantized(model_path, config) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                println!(
+                    "{}",
+                    format!("Q4K conversion failed, falling back to F32: {e}").yellow()
+                );
+            }
+        }
+    }
+    println!("{}", "Starting SafeTensors inspection server...".cyan());
+    super::safetensors::start_safetensors_server(model_path, config)
 }
 
 // ============================================================================
