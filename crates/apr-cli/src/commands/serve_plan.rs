@@ -18,7 +18,9 @@ use crate::commands::profile;
 use crate::commands::serve_plan_output::print_serve_plan_text;
 use crate::error::CliError;
 use aprender::format::converter::sanitize_hf_json;
-use aprender::format::model_family::{FamilyRegistry, ModelConstraints, ModelFamily, ModelSizeConfig};
+use aprender::format::model_family::{
+    FamilyRegistry, ModelConstraints, ModelFamily, ModelSizeConfig,
+};
 use aprender::format::model_family_loader::load_family_registry;
 use aprender::format::rosetta::{InspectionReport, RosettaStone};
 use serde::{Deserialize, Serialize};
@@ -190,9 +192,9 @@ fn run_serve_plan_local(
 ) -> Result<(), CliError> {
     // 1. Inspect model (header-only, no weight load)
     let rosetta = RosettaStone::new();
-    let report = rosetta.inspect(file).map_err(|e| {
-        CliError::Aprender(format!("Failed to inspect model: {e}"))
-    })?;
+    let report = rosetta
+        .inspect(file)
+        .map_err(|e| CliError::Aprender(format!("Failed to inspect model: {e}")))?;
 
     // 2. Load family registry and detect model family
     let registry = load_registry()?;
@@ -242,11 +244,7 @@ fn run_serve_plan_hf(
 
     // 3-10. Shared pipeline
     let display_name = format!("hf://{repo_id}");
-    let model_name = repo_id
-        .rsplit('/')
-        .next()
-        .unwrap_or(repo_id)
-        .to_string();
+    let model_name = repo_id.rsplit('/').next().unwrap_or(repo_id).to_string();
     let quantization = quant_override
         .map(str::to_uppercase)
         .or_else(|| infer_quant_from_repo_name(repo_id));
@@ -289,13 +287,10 @@ fn assemble_and_output(
     let stats = build_statistical_analysis(size_config, constraints);
     let kernels = build_kernel_compatibility(size_config, constraints, &stats);
 
-    let hw = if gpu {
-        Some(detect_hardware()?)
-    } else {
-        None
-    };
+    let hw = if gpu { Some(detect_hardware()?) } else { None };
 
-    let memory_budget = compute_memory_budget(&stats, size_config, hw.as_ref(), batch_size, seq_len);
+    let memory_budget =
+        compute_memory_budget(&stats, size_config, hw.as_ref(), batch_size, seq_len);
     let roofline = hw.as_ref().map(|h| compute_roofline(&stats, h));
     let throughput = compute_throughput(&kernels, roofline.as_ref(), batch_size);
     let contracts = run_contract_checks(&memory_budget, hw.as_ref());
@@ -346,7 +341,10 @@ fn resolve_quantization(report: &InspectionReport, file: &Path) -> Option<String
     }
     // Fall back to filename pattern matching (e.g., q4_k_m, q6_k, q8_0)
     let stem = file.file_stem()?.to_str()?.to_lowercase();
-    for pattern in ["q4_k_m", "q4_k_s", "q5_k_m", "q5_k_s", "q6_k", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1", "q2_k", "q3_k", "q4k", "q6k", "q8k", "fp16", "f16", "f32"] {
+    for pattern in [
+        "q4_k_m", "q4_k_s", "q5_k_m", "q5_k_s", "q6_k", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1",
+        "q2_k", "q3_k", "q4k", "q6k", "q8k", "fp16", "f16", "f32",
+    ] {
         if stem.contains(pattern) {
             return Some(pattern.to_uppercase());
         }
@@ -397,9 +395,7 @@ fn hf_get(url: &str) -> ureq::Request {
 
 /// Fetch config.json from a HuggingFace repo (raw endpoint, ~2KB).
 fn fetch_config_json_from_hf(repo_id: &str) -> Result<serde_json::Value, CliError> {
-    let url = format!(
-        "https://huggingface.co/{repo_id}/raw/main/config.json"
-    );
+    let url = format!("https://huggingface.co/{repo_id}/raw/main/config.json");
 
     let response = hf_get(&url).call().map_err(|e| match &e {
         ureq::Error::Status(401 | 403, _) => {
@@ -425,9 +421,9 @@ fn fetch_config_json_from_hf(repo_id: &str) -> Result<serde_json::Value, CliErro
         _ => CliError::NetworkError(format!("Failed to fetch config.json from HuggingFace: {e}")),
     })?;
 
-    let body = response.into_string().map_err(|e| {
-        CliError::NetworkError(format!("Failed to read config.json response: {e}"))
-    })?;
+    let body = response
+        .into_string()
+        .map_err(|e| CliError::NetworkError(format!("Failed to read config.json response: {e}")))?;
 
     let sanitized = sanitize_hf_json(&body);
     serde_json::from_str(&sanitized).map_err(|e| {
@@ -444,9 +440,7 @@ fn detect_model_config_from_hf(
     registry: &FamilyRegistry,
 ) -> Result<(ModelSizeConfig, ModelConstraints), CliError> {
     // Detect family from model_type field
-    let model_type = json
-        .get("model_type")
-        .and_then(|v| v.as_str());
+    let model_type = json.get("model_type").and_then(|v| v.as_str());
 
     let family: Option<&dyn ModelFamily> =
         model_type.and_then(|mt| registry.detect_from_model_type(mt));
@@ -503,19 +497,22 @@ fn detect_model_config_from_hf(
         .detect_size(hidden_dim, num_layers)
         .unwrap_or_else(|| "unknown".to_string());
 
-    let size_config = family.size_config(&size_name).cloned().unwrap_or(ModelSizeConfig {
-        parameters: estimate_param_string(hidden_dim, num_layers, intermediate_dim, vocab_size),
-        hidden_dim,
-        num_layers,
-        num_heads,
-        num_kv_heads,
-        intermediate_dim,
-        vocab_size,
-        max_position_embeddings: max_position,
-        head_dim,
-        rope_theta,
-        norm_eps,
-    });
+    let size_config = family
+        .size_config(&size_name)
+        .cloned()
+        .unwrap_or(ModelSizeConfig {
+            parameters: estimate_param_string(hidden_dim, num_layers, intermediate_dim, vocab_size),
+            hidden_dim,
+            num_layers,
+            num_heads,
+            num_kv_heads,
+            intermediate_dim,
+            vocab_size,
+            max_position_embeddings: max_position,
+            head_dim,
+            rope_theta,
+            norm_eps,
+        });
 
     let constraints = family.constraints().clone();
     Ok((size_config, constraints))
@@ -558,8 +555,8 @@ fn estimate_param_string(
 fn infer_quant_from_repo_name(repo: &str) -> Option<String> {
     let lower = repo.to_lowercase();
     for pattern in [
-        "q4_k_m", "q4_k_s", "q5_k_m", "q5_k_s", "q6_k", "q8_0",
-        "q4_0", "q4_1", "q5_0", "q5_1", "q2_k", "q3_k", "fp16", "f16", "f32",
+        "q4_k_m", "q4_k_s", "q5_k_m", "q5_k_s", "q6_k", "q8_0", "q4_0", "q4_1", "q5_0", "q5_1",
+        "q2_k", "q3_k", "fp16", "f16", "f32",
     ] {
         if lower.contains(pattern) {
             return Some(pattern.to_uppercase());
@@ -719,44 +716,59 @@ fn build_inferred_size_config(
     hidden_dim: usize,
     num_layers: usize,
 ) -> ModelSizeConfig {
-    let num_heads = infer_from_metadata(report, &[
-        "n_heads",
-        "llama.attention.head_count",
-        "qwen2.attention.head_count",
-        "phi3.attention.head_count",
-    ])
+    let num_heads = infer_from_metadata(
+        report,
+        &[
+            "n_heads",
+            "llama.attention.head_count",
+            "qwen2.attention.head_count",
+            "phi3.attention.head_count",
+        ],
+    )
     .unwrap_or(32);
 
-    let num_kv_heads = infer_from_metadata(report, &[
-        "n_kv_heads",
-        "llama.attention.head_count_kv",
-        "qwen2.attention.head_count_kv",
-        "phi3.attention.head_count_kv",
-    ])
+    let num_kv_heads = infer_from_metadata(
+        report,
+        &[
+            "n_kv_heads",
+            "llama.attention.head_count_kv",
+            "qwen2.attention.head_count_kv",
+            "phi3.attention.head_count_kv",
+        ],
+    )
     .unwrap_or(num_heads);
 
-    let intermediate_dim = infer_from_metadata(report, &[
-        "n_ff",
-        "llama.feed_forward_length",
-        "qwen2.feed_forward_length",
-        "phi3.feed_forward_length",
-    ])
+    let intermediate_dim = infer_from_metadata(
+        report,
+        &[
+            "n_ff",
+            "llama.feed_forward_length",
+            "qwen2.feed_forward_length",
+            "phi3.feed_forward_length",
+        ],
+    )
     .unwrap_or(hidden_dim * 4);
 
-    let vocab_size = infer_from_metadata(report, &[
-        "n_vocab",
-        "llama.vocab_size",
-        "qwen2.vocab_size",
-        "tokenizer.ggml.tokens",
-    ])
+    let vocab_size = infer_from_metadata(
+        report,
+        &[
+            "n_vocab",
+            "llama.vocab_size",
+            "qwen2.vocab_size",
+            "tokenizer.ggml.tokens",
+        ],
+    )
     .unwrap_or(32000);
 
-    let max_position = infer_from_metadata(report, &[
-        "n_ctx",
-        "llama.context_length",
-        "qwen2.context_length",
-        "phi3.context_length",
-    ])
+    let max_position = infer_from_metadata(
+        report,
+        &[
+            "n_ctx",
+            "llama.context_length",
+            "qwen2.context_length",
+            "phi3.context_length",
+        ],
+    )
     .unwrap_or(4096);
 
     let rope_theta_str = report
@@ -844,8 +856,7 @@ fn compute_memory_budget(
         (kv_per_token as f64 * seq_len as f64 * batch_size as f64) / (1024.0 * 1024.0);
 
     // Activations: ~hidden_dim * seq_len * 4 bytes (f32) / 1MB
-    let activations_mb =
-        (size.hidden_dim as f64 * seq_len as f64 * 4.0) / (1024.0 * 1024.0);
+    let activations_mb = (size.hidden_dim as f64 * seq_len as f64 * 4.0) / (1024.0 * 1024.0);
 
     // CUDA overhead: ~512 MB for context, driver, etc.
     let overhead_mb = if hw.is_some() { 512.0 } else { 0.0 };
@@ -976,7 +987,11 @@ fn run_contract_checks(
             detail: format!(
                 "{:.0} MB {} {:.0} MB (95% of {:.0} MB)",
                 budget.total_mb,
-                if budget.total_mb <= safety_margin { "<" } else { ">" },
+                if budget.total_mb <= safety_margin {
+                    "<"
+                } else {
+                    ">"
+                },
                 safety_margin,
                 gpu_mb,
             ),
@@ -991,9 +1006,10 @@ fn run_contract_checks(
         });
 
         // BUDGET-003: KV cache fits at batch=1
-        let batch1_total =
-            budget.weights_mb + budget.activations_mb + budget.overhead_mb
-                + (budget.kv_cache_mb / budget.batch_size.max(1) as f64);
+        let batch1_total = budget.weights_mb
+            + budget.activations_mb
+            + budget.overhead_mb
+            + (budget.kv_cache_mb / budget.batch_size.max(1) as f64);
         checks.push(ContractCheck {
             id: "BUDGET-003".to_string(),
             name: "KV cache fits at batch=1".to_string(),

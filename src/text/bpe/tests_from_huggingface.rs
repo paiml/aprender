@@ -88,10 +88,7 @@ fn test_ssc023_from_huggingface_json_merges_preserved() {
     let c_id = tokenizer.token_to_id("c").unwrap();
     let abc_id = tokenizer.token_to_id("abc").unwrap();
     // (a, b) → rank 0, produces "ab"
-    assert_eq!(
-        tokenizer.merge_id_map.get(&(a_id, b_id)),
-        Some(&(0, ab_id))
-    );
+    assert_eq!(tokenizer.merge_id_map.get(&(a_id, b_id)), Some(&(0, ab_id)));
     // (ab, c) → rank 1, produces "abc"
     assert_eq!(
         tokenizer.merge_id_map.get(&(ab_id, c_id)),

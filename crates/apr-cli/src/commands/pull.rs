@@ -459,9 +459,7 @@ fn download_companion_files(cache_dir: &Path, base_url: &str, force: bool) -> Re
 
     // GH-356: Validate at least one tokenizer file exists
     let tokenizer_files = ["tokenizer.json", "tokenizer.model", "tokenizer_config.json"];
-    let has_tokenizer = tokenizer_files
-        .iter()
-        .any(|f| cache_dir.join(f).exists());
+    let has_tokenizer = tokenizer_files.iter().any(|f| cache_dir.join(f).exists());
     if !has_tokenizer {
         return Err(CliError::ValidationFailed(format!(
             "No tokenizer found for this model. Tried: {}.\n\

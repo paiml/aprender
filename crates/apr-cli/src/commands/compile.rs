@@ -15,7 +15,10 @@ use std::process::Command;
 const TARGETS: &[(&str, &str)] = &[
     // Native
     ("x86_64-unknown-linux-gnu", "Linux x86_64 (glibc)"),
-    ("x86_64-unknown-linux-musl", "Linux x86_64 (musl, fully static)"),
+    (
+        "x86_64-unknown-linux-musl",
+        "Linux x86_64 (musl, fully static)",
+    ),
     ("aarch64-unknown-linux-gnu", "Linux ARM64"),
     ("x86_64-apple-darwin", "macOS x86_64"),
     ("aarch64-apple-darwin", "macOS ARM64 (Apple Silicon)"),
@@ -91,8 +94,7 @@ pub(crate) fn run(
     }
 
     // Generate ephemeral Cargo project for compilation
-    let tmp_dir = tempfile::tempdir()
-        .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
+    let tmp_dir = tempfile::tempdir().map_err(|e| CliError::Io(std::io::Error::other(e)))?;
     let project_dir = tmp_dir.path().join(&bin_name);
 
     generate_cargo_project(&project_dir, &bin_name, file, &info, release, strip, lto)?;
@@ -110,7 +112,16 @@ pub(crate) fn run(
     let binary_size = fs::metadata(&output_path)?.len();
 
     if json_output {
-        print_compile_result_json(file, &output_path, &info, binary_size, release, strip, lto, target);
+        print_compile_result_json(
+            file,
+            &output_path,
+            &info,
+            binary_size,
+            release,
+            strip,
+            lto,
+            target,
+        );
     } else {
         print_compile_result_text(&output_path, &info, binary_size, release, strip, lto);
     }
@@ -227,7 +238,10 @@ fn print_compile_result_json(
         "lto": lto,
         "target": target,
     });
-    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&result).unwrap_or_default()
+    );
 }
 
 /// Print compile result as text.
@@ -254,10 +268,7 @@ fn print_compile_result_text(
     );
     println!();
     println!("  {}", output::badge_pass("Compile successful"));
-    println!(
-        "  Run with: {}",
-        output_path.display().to_string().as_str()
-    );
+    println!("  Run with: {}", output_path.display().to_string().as_str());
 }
 
 /// Print available compilation targets.
@@ -267,11 +278,12 @@ fn print_targets(json_output: bool) -> Result<()> {
         #[allow(clippy::disallowed_methods)]
         let targets: Vec<_> = TARGETS
             .iter()
-            .map(|(triple, desc)| {
-                serde_json::json!({ "triple": triple, "description": desc })
-            })
+            .map(|(triple, desc)| serde_json::json!({ "triple": triple, "description": desc }))
             .collect();
-        println!("{}", serde_json::to_string_pretty(&targets).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&targets).unwrap_or_default()
+        );
     } else {
         output::header("Available Compilation Targets");
         println!();
@@ -401,8 +413,14 @@ mod tests {
 
     #[test]
     fn test_derive_binary_name() {
-        assert_eq!(derive_binary_name(Path::new("whisper-tiny.apr")), "whisper_tiny");
-        assert_eq!(derive_binary_name(Path::new("/path/to/Qwen2.5-Coder.apr")), "qwen2_5_coder");
+        assert_eq!(
+            derive_binary_name(Path::new("whisper-tiny.apr")),
+            "whisper_tiny"
+        );
+        assert_eq!(
+            derive_binary_name(Path::new("/path/to/Qwen2.5-Coder.apr")),
+            "qwen2_5_coder"
+        );
         assert_eq!(derive_binary_name(Path::new("model.apr")), "model");
     }
 
@@ -425,8 +443,14 @@ mod tests {
     fn test_run_missing_file() {
         let result = run(
             Some(Path::new("/nonexistent/model.apr")),
-            None, None, None,
-            false, false, false, false, false,
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -440,8 +464,14 @@ mod tests {
     fn test_quantize_not_yet_supported() {
         let result = run(
             Some(Path::new("test.apr")),
-            None, None, Some("int8"),
-            false, false, false, false, false,
+            None,
+            None,
+            Some("int8"),
+            false,
+            false,
+            false,
+            false,
+            false,
         );
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();

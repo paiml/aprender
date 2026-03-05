@@ -3,11 +3,7 @@
 use crate::commands::serve_plan::{PlanVerdict, ServePlan};
 
 pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
-    let quant = plan
-        .model
-        .quantization
-        .as_deref()
-        .unwrap_or("unknown");
+    let quant = plan.model.quantization.as_deref().unwrap_or("unknown");
 
     let hw_label = match plan.hardware {
         Some(ref h) => h.gpu_name.clone(),
@@ -21,7 +17,10 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
 
     // Model info
     println!("MODEL");
-    println!("  Parameters:      {:>14}", format_params(plan.model.params));
+    println!(
+        "  Parameters:      {:>14}",
+        format_params(plan.model.params)
+    );
     println!("  Quantization:    {:>14}", quant);
     println!("  Format:          {:>14}", plan.model.format);
     println!("  File size:       {:>11.0} MB", plan.model.file_size_mb);
@@ -40,9 +39,7 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
     );
     println!(
         "  KV cache (batch={}, {} seq): {:>1.0} MB",
-        plan.memory_budget.batch_size,
-        plan.memory_budget.seq_len,
-        plan.memory_budget.kv_cache_mb,
+        plan.memory_budget.batch_size, plan.memory_budget.seq_len, plan.memory_budget.kv_cache_mb,
     );
     println!(
         "  Activations:          {:>8.0} MB",
@@ -62,15 +59,10 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
     ) {
         println!(
             "  Total:           {:>8.0} MB / {:.0} MB  ({:.1}%)",
-            plan.memory_budget.total_mb,
-            gpu_total,
-            util,
+            plan.memory_budget.total_mb, gpu_total, util,
         );
     } else {
-        println!(
-            "  Total:           {:>8.0} MB",
-            plan.memory_budget.total_mb,
-        );
+        println!("  Total:           {:>8.0} MB", plan.memory_budget.total_mb,);
     }
 
     if let Some(max_batch) = plan.memory_budget.max_batch {
@@ -81,10 +73,7 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
     // Roofline analysis (GPU only)
     if let Some(ref roof) = plan.roofline {
         println!("ROOFLINE ANALYSIS");
-        println!(
-            "  Memory bandwidth:    {:>8.0} GB/s",
-            roof.bandwidth_gbps,
-        );
+        println!("  Memory bandwidth:    {:>8.0} GB/s", roof.bandwidth_gbps,);
         println!(
             "  Bandwidth ceiling:   {:>8.0} tok/s",
             roof.bandwidth_ceiling_tps,
@@ -132,7 +121,9 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
     match plan.verdict {
         PlanVerdict::Ready | PlanVerdict::Warnings => {
             if is_hf {
-                println!("Next: apr pull {display_name} && apr serve run <local_path> --gpu --batch");
+                println!(
+                    "Next: apr pull {display_name} && apr serve run <local_path> --gpu --batch"
+                );
             } else if plan.hardware.is_some() {
                 println!("Next: apr serve run {display_name} --gpu --batch");
             } else {
@@ -142,11 +133,11 @@ pub fn print_serve_plan_text(plan: &ServePlan, display_name: &str) {
         PlanVerdict::Blocked => {
             if let Some(max) = plan.memory_budget.max_batch {
                 if max > 0 {
-                    println!(
-                        "Hint: reduce batch size to {max} or use a smaller quantization"
-                    );
+                    println!("Hint: reduce batch size to {max} or use a smaller quantization");
                 } else {
-                    println!("Hint: model exceeds available VRAM. Use CPU mode or a smaller model.");
+                    println!(
+                        "Hint: model exceeds available VRAM. Use CPU mode or a smaller model."
+                    );
                 }
             }
         }

@@ -3,8 +3,8 @@
 //! Displays GPU detection info, VRAM capacity, active reservations,
 //! and available budget from the entrenar VRAM ledger.
 
-use crate::CliError;
 use crate::error::Result;
+use crate::CliError;
 
 pub fn run(json: bool) -> Result<()> {
     let uuid = entrenar::gpu::ledger::detect_gpu_uuid();
@@ -41,7 +41,10 @@ pub fn run(json: bool) -> Result<()> {
                 "lease_expires": r.lease_expires.to_rfc3339(),
             })).collect::<Vec<_>>(),
         });
-        println!("{}", serde_json::to_string_pretty(&json_val).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_val).unwrap_or_default()
+        );
     } else {
         println!("GPU: {uuid}");
         println!("Total: {total_mb} MB");

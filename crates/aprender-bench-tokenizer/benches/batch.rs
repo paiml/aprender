@@ -25,17 +25,13 @@ fn bench_batch_aprender(c: &mut Criterion) {
         let batch = payloads::generate_batch(count);
         group.throughput(Throughput::Elements(count as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("prompts", count),
-            &batch,
-            |b, prompts| {
-                b.iter(|| {
-                    for prompt in black_box(prompts) {
-                        let _ = tokenizer.encode(prompt);
-                    }
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("prompts", count), &batch, |b, prompts| {
+            b.iter(|| {
+                for prompt in black_box(prompts) {
+                    let _ = tokenizer.encode(prompt);
+                }
+            });
+        });
     }
 
     group.finish();
@@ -53,17 +49,13 @@ fn bench_batch_hf(c: &mut Criterion) {
         let batch = payloads::generate_batch(count);
         group.throughput(Throughput::Elements(count as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("prompts", count),
-            &batch,
-            |b, prompts| {
-                b.iter(|| {
-                    for prompt in black_box(prompts) {
-                        tokenizer.encode(prompt.as_str(), false).unwrap();
-                    }
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("prompts", count), &batch, |b, prompts| {
+            b.iter(|| {
+                for prompt in black_box(prompts) {
+                    tokenizer.encode(prompt.as_str(), false).unwrap();
+                }
+            });
+        });
     }
 
     group.finish();

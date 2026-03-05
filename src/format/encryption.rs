@@ -15,8 +15,8 @@ use super::{
     RECIPIENT_HASH_SIZE, SALT_SIZE, X25519_PUBLIC_KEY_SIZE,
 };
 use super::{X25519PublicKey, X25519SecretKey};
-use aes_gcm::aead::rand_core::RngCore;
 use crate::error::{AprenderError, Result};
+use aes_gcm::aead::rand_core::RngCore;
 
 /// Save a model with password-based encryption (spec §4.1.2)
 ///

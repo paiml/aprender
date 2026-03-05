@@ -18,8 +18,8 @@
 //! Reports elements/s (f32 values processed).
 
 use aprender::format::quantize::{dequantize, quantize, QuantType};
-use aprender_bench_compute::sizes::QUANT_SIZES;
 use aprender_bench_compute::deterministic_f32;
+use aprender_bench_compute::sizes::QUANT_SIZES;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn bench_quantize_q8_0(c: &mut Criterion) {

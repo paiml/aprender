@@ -69,13 +69,9 @@ fn bench_bpe_encode(c: &mut Criterion) {
         let tokens = tokenizer.encode(&word);
         group.throughput(Throughput::Elements(tokens.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("chars", char_len),
-            &word,
-            |b, input| {
-                b.iter(|| tokenizer.encode(black_box(input)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("chars", char_len), &word, |b, input| {
+            b.iter(|| tokenizer.encode(black_box(input)));
+        });
     }
 
     group.finish();
@@ -120,13 +116,9 @@ fn bench_bpe_decode(c: &mut Criterion) {
         let ids: Vec<u32> = token_ids.iter().copied().cycle().take(n_tokens).collect();
         group.throughput(Throughput::Elements(n_tokens as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("tokens", n_tokens),
-            &ids,
-            |b, input| {
-                b.iter(|| tokenizer.decode(black_box(input)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tokens", n_tokens), &ids, |b, input| {
+            b.iter(|| tokenizer.decode(black_box(input)));
+        });
     }
 
     group.finish();

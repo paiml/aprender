@@ -20,13 +20,9 @@ fn bench_scaling_aprender(c: &mut Criterion) {
         let tokens = tokenizer.encode(&text);
         group.throughput(Throughput::Bytes(char_len as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("chars", char_len),
-            &text,
-            |b, input| {
-                b.iter(|| tokenizer.encode(black_box(input)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("chars", char_len), &text, |b, input| {
+            b.iter(|| tokenizer.encode(black_box(input)));
+        });
 
         // Verify token count scales linearly (sanity check, not a benchmark assertion)
         drop(tokens);
@@ -47,13 +43,9 @@ fn bench_scaling_hf(c: &mut Criterion) {
         let text = payloads::synthetic_text(char_len);
         group.throughput(Throughput::Bytes(char_len as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("chars", char_len),
-            &text,
-            |b, input| {
-                b.iter(|| tokenizer.encode(black_box(input.as_str()), false).unwrap());
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("chars", char_len), &text, |b, input| {
+            b.iter(|| tokenizer.encode(black_box(input.as_str()), false).unwrap());
+        });
     }
 
     group.finish();

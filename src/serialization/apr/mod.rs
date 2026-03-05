@@ -322,16 +322,15 @@ impl AprWriter {
 
         // F-CKPT-009: Atomic write via tmp+fsync+rename
         let tmp_path = path.with_extension("apr.tmp");
-        let mut file = fs::File::create(&tmp_path)
-            .map_err(|e| format!("Failed to create temp file: {e}"))?;
+        let mut file =
+            fs::File::create(&tmp_path).map_err(|e| format!("Failed to create temp file: {e}"))?;
         file.write_all(&bytes)
             .map_err(|e| format!("Failed to write temp file: {e}"))?;
         file.sync_all()
             .map_err(|e| format!("Failed to fsync temp file: {e}"))?;
         drop(file);
 
-        fs::rename(&tmp_path, path)
-            .map_err(|e| format!("Failed to rename temp file: {e}"))?;
+        fs::rename(&tmp_path, path).map_err(|e| format!("Failed to rename temp file: {e}"))?;
 
         Ok(())
     }

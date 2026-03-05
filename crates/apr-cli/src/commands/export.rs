@@ -113,9 +113,9 @@ fn run_plan(
         let formats: Vec<ExportFormat> = batch_formats
             .split(',')
             .map(|s| {
-                s.trim()
-                    .parse::<ExportFormat>()
-                    .map_err(|_| CliError::ValidationFailed(format!("Unknown format in batch: {s}")))
+                s.trim().parse::<ExportFormat>().map_err(|_| {
+                    CliError::ValidationFailed(format!("Unknown format in batch: {s}"))
+                })
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -141,13 +141,33 @@ fn run_plan(
                 "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
                 "output_dir": output.map(|p| p.display().to_string()),
             });
-            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            );
         } else {
             output::header("APR Export — Plan (Batch)");
             let pairs: Vec<(&str, String)> = vec![
-                ("Input", format!("{} ({})", file.display(), humansize::format_size(file_size, BINARY))),
-                ("Formats", formats.iter().map(ExportFormat::display_name).collect::<Vec<_>>().join(", ")),
-                ("Output dir", output.map_or("exports/".to_string(), |p| p.display().to_string())),
+                (
+                    "Input",
+                    format!(
+                        "{} ({})",
+                        file.display(),
+                        humansize::format_size(file_size, BINARY)
+                    ),
+                ),
+                (
+                    "Formats",
+                    formats
+                        .iter()
+                        .map(ExportFormat::display_name)
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+                (
+                    "Output dir",
+                    output.map_or("exports/".to_string(), |p| p.display().to_string()),
+                ),
             ];
             println!("{}", output::kv_table(&pairs));
             println!();
@@ -169,11 +189,21 @@ fn run_plan(
             "format": export_format.display_name(),
             "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
         });
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
     } else {
         output::header("APR Export — Plan");
         let mut pairs: Vec<(&str, String)> = vec![
-            ("Input", format!("{} ({})", file.display(), humansize::format_size(file_size, BINARY))),
+            (
+                "Input",
+                format!(
+                    "{} ({})",
+                    file.display(),
+                    humansize::format_size(file_size, BINARY)
+                ),
+            ),
             ("Output", effective_output.display().to_string()),
             ("Format", export_format.display_name().to_string()),
         ];

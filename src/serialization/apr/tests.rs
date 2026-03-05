@@ -387,10 +387,16 @@ fn falsify_ckpt_009_atomic_write_no_orphan_tmp() {
 
     // The .tmp file must NOT exist after successful write
     let tmp_path = path.with_extension("apr.tmp");
-    assert!(!tmp_path.exists(), "FALSIFIED F-CKPT-009: orphan .tmp file exists after write");
+    assert!(
+        !tmp_path.exists(),
+        "FALSIFIED F-CKPT-009: orphan .tmp file exists after write"
+    );
 
     // The target file must exist
-    assert!(path.exists(), "FALSIFIED F-CKPT-009: target file missing after write");
+    assert!(
+        path.exists(),
+        "FALSIFIED F-CKPT-009: target file missing after write"
+    );
 
     // Must be a valid APR
     let reader = AprReader::open(&path).unwrap();
@@ -412,7 +418,10 @@ fn falsify_ckpt_011_corrupt_crc_rejected() {
     }
 
     let result = AprReader::from_bytes(bytes);
-    assert!(result.is_err(), "FALSIFIED F-CKPT-011: corrupt APR accepted without CRC error");
+    assert!(
+        result.is_err(),
+        "FALSIFIED F-CKPT-011: corrupt APR accepted without CRC error"
+    );
 }
 
 /// FALSIFY F-CKPT-013: NaN in tensor is detected
@@ -424,7 +433,10 @@ fn falsify_ckpt_013_nan_detected() {
     let reader = AprReader::from_bytes(bytes).unwrap();
 
     let result = reader.read_tensor_f32_checked("w");
-    assert!(result.is_err(), "FALSIFIED F-CKPT-013: NaN tensor accepted by checked read");
+    assert!(
+        result.is_err(),
+        "FALSIFIED F-CKPT-013: NaN tensor accepted by checked read"
+    );
     assert!(
         result.unwrap_err().contains("F-CKPT-013"),
         "Error should reference F-CKPT-013 contract"
@@ -440,7 +452,10 @@ fn falsify_ckpt_013_inf_detected() {
     let reader = AprReader::from_bytes(bytes).unwrap();
 
     let result = reader.read_tensor_f32_checked("w");
-    assert!(result.is_err(), "FALSIFIED F-CKPT-013: Inf tensor accepted by checked read");
+    assert!(
+        result.is_err(),
+        "FALSIFIED F-CKPT-013: Inf tensor accepted by checked read"
+    );
 }
 
 /// FALSIFY F-CKPT-013: Clean tensor passes checked read
@@ -482,7 +497,10 @@ fn falsify_ckpt_014_missing_tensor() {
     let reader = AprReader::from_bytes(bytes).unwrap();
 
     let err = reader.validate_tensor_shape("nonexistent", 10);
-    assert!(err.is_err(), "FALSIFIED F-CKPT-014: missing tensor not detected");
+    assert!(
+        err.is_err(),
+        "FALSIFIED F-CKPT-014: missing tensor not detected"
+    );
 }
 
 /// FALSIFY F-CKPT-015: Canonical ordering verified
@@ -518,7 +536,11 @@ fn falsify_ckpt_016_training_filtered() {
     let reader =
         AprReader::from_bytes_filtered(bytes, |n| !n.starts_with("__training__.")).unwrap();
 
-    assert_eq!(reader.tensors.len(), 1, "FALSIFIED F-CKPT-016: training tensors not filtered");
+    assert_eq!(
+        reader.tensors.len(),
+        1,
+        "FALSIFIED F-CKPT-016: training tensors not filtered"
+    );
     assert_eq!(reader.tensors[0].name, "model.w");
 }
 

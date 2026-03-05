@@ -267,9 +267,7 @@ pub fn run_classify_tune(
     _time_limit: Option<&str>,
     json_output: bool,
 ) -> Result<(), CliError> {
-    use entrenar::finetune::{
-        ClassifyTuner, SchedulerKind, TuneConfig, TuneStrategy,
-    };
+    use entrenar::finetune::{ClassifyTuner, SchedulerKind, TuneConfig, TuneStrategy};
 
     // Parse strategy
     let tune_strategy: TuneStrategy = strategy
@@ -304,8 +302,8 @@ pub fn run_classify_tune(
     };
 
     // Create tuner (validates budget > 0 and num_classes > 0)
-    let tuner = ClassifyTuner::new(tune_config)
-        .map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+    let tuner =
+        ClassifyTuner::new(tune_config).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
 
     // Build searcher and scheduler to verify they work
     let mut searcher = tuner.build_searcher();
@@ -344,10 +342,24 @@ pub fn run_classify_tune(
     println!();
     output::kv("Task", "classify");
     output::kv("Strategy", format!("{tune_strategy}"));
-    output::kv("Mode", if scout { "scout (1 epoch/trial)" } else { "full" });
+    output::kv(
+        "Mode",
+        if scout {
+            "scout (1 epoch/trial)"
+        } else {
+            "full"
+        },
+    );
     output::kv("Budget", format!("{budget} trials"));
     output::kv("Classes", num_classes.to_string());
-    output::kv("Max epochs", if scout { "1".to_string() } else { max_epochs.to_string() });
+    output::kv(
+        "Max epochs",
+        if scout {
+            "1".to_string()
+        } else {
+            max_epochs.to_string()
+        },
+    );
 
     if let Some(path) = data_path {
         output::kv("Data", path.display().to_string());
@@ -388,7 +400,10 @@ pub fn run_classify_tune(
         println!("{}", "NEXT STEPS".bold());
         println!("{}", "─".repeat(50));
         println!("  Provide training data to start tuning:");
-        println!("  apr tune --task classify --data corpus.jsonl --budget {budget} {}", if scout { "--scout" } else { "" });
+        println!(
+            "  apr tune --task classify --data corpus.jsonl --budget {budget} {}",
+            if scout { "--scout" } else { "" }
+        );
     }
 
     Ok(())
