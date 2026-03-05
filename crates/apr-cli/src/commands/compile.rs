@@ -357,21 +357,8 @@ fn generate_cargo_project(
     let model_dest = project_dir.join("model.apr");
     fs::copy(model_path, &model_dest)?;
 
-    // Generate Cargo.toml
-    let cargo_toml = format!(
-        r#"[package]
-name = "{bin_name}"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-clap = {{ version = "4", features = ["derive"] }}
-
-[profile.release]
-opt-level = "s"
-codegen-units = 1
-"#
-    );
+    // Generate Cargo.toml with realizar + server deps
+    let cargo_toml = generate_cargo_toml(bin_name);
     fs::write(project_dir.join("Cargo.toml"), cargo_toml)?;
 
     // Generate main.rs
