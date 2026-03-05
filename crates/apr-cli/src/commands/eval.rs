@@ -452,8 +452,7 @@ fn resolve_checkpoint_dir(dir: &Path) -> Option<std::path::PathBuf> {
     // Try best/ subdir first
     let best = dir.join("best");
     if best.is_dir()
-        && (best.join("adapter_config.json").exists()
-            || best.join("model.safetensors").exists())
+        && (best.join("adapter_config.json").exists() || best.join("model.safetensors").exists())
     {
         eprintln!(
             "Resolved checkpoint: {} → {}/best",
@@ -479,11 +478,7 @@ fn resolve_checkpoint_dir(dir: &Path) -> Option<std::path::PathBuf> {
     if let Some(latest) = epoch_dirs.last() {
         let p = latest.path();
         if p.join("adapter_config.json").exists() || p.join("model.safetensors").exists() {
-            eprintln!(
-                "Resolved checkpoint: {} → {}",
-                dir.display(),
-                p.display()
-            );
+            eprintln!("Resolved checkpoint: {} → {}", dir.display(), p.display());
             return Some(p);
         }
     }
@@ -652,7 +647,10 @@ pub(crate) fn run_eval_plan(
             "threshold": threshold,
             "ready": true,
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
     } else {
         output::section("APR Eval Plan");
         println!();
@@ -769,7 +767,10 @@ pub(crate) fn run_code_eval(
                 "error": r.error,
             })).collect::<Vec<_>>(),
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
     } else {
         // Print per-problem results
         for (i, (problem, result)) in problems.iter().zip(&results).enumerate() {
@@ -787,10 +788,7 @@ pub(crate) fn run_code_eval(
         }
 
         println!();
-        println!(
-            "  pass@1: {}/{} ({:.1}%)",
-            passed, total, pass_rate
-        );
+        println!("  pass@1: {}/{} ({:.1}%)", passed, total, pass_rate);
         println!("  Time: {elapsed:.1}s");
         println!();
 
@@ -881,9 +879,8 @@ fn evaluate_code_problem(
     if let Some(ref solution) = problem.canonical_solution {
         // Check that the solution isn't empty and contains Python-like code
         let has_content = !solution.trim().is_empty();
-        let has_return = solution.contains("return")
-            || solution.contains("print")
-            || solution.contains("=");
+        let has_return =
+            solution.contains("return") || solution.contains("print") || solution.contains("=");
 
         if has_content && has_return {
             return Ok(CodeBenchResult {
@@ -1150,7 +1147,10 @@ pub(crate) fn run_contamination(
 
     // Load benchmark problems
     let bench_text = load_text_corpus(benchmark_path)?;
-    let bench_lines: Vec<&str> = bench_text.lines().filter(|l| !l.trim().is_empty()).collect();
+    let bench_lines: Vec<&str> = bench_text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
 
     let mut contaminated = 0usize;
     let mut results = Vec::new();
@@ -1428,13 +1428,13 @@ fn print_comparison_table(
     elapsed: f32,
 ) {
     println!("  {:20} {:>20} {:>20}", "", "Model A", "Model B");
-    println!("  {:20} {:>20} {:>20}", "Path", path_a.display(), path_b.display());
     println!(
         "  {:20} {:>20} {:>20}",
-        "Format",
-        a.format,
-        b.format
+        "Path",
+        path_a.display(),
+        path_b.display()
     );
+    println!("  {:20} {:>20} {:>20}", "Format", a.format, b.format);
     println!(
         "  {:20} {:>20} {:>20}",
         "Size",
@@ -1443,9 +1443,7 @@ fn print_comparison_table(
     );
     println!(
         "  {:20} {:>20} {:>20}",
-        "Tensors",
-        a.tensor_count,
-        b.tensor_count
+        "Tensors", a.tensor_count, b.tensor_count
     );
 
     if a.size_bytes > 0 {
@@ -1460,10 +1458,7 @@ fn print_comparison_table(
 // --- Checkpoint integrity verification (survey #86) ---
 
 /// Verify checkpoint file integrity via size, format, and hash checks.
-pub(crate) fn run_verify(
-    model_path: &Path,
-    json_output: bool,
-) -> Result<()> {
+pub(crate) fn run_verify(model_path: &Path, json_output: bool) -> Result<()> {
     if !model_path.exists() {
         return Err(CliError::FileNotFound(model_path.to_path_buf()));
     }
@@ -1512,8 +1507,12 @@ pub(crate) fn run_verify(
         }
     }
 
-    if all_passed { Ok(()) } else {
-        Err(CliError::ValidationFailed("Checkpoint integrity check failed".to_string()))
+    if all_passed {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(
+            "Checkpoint integrity check failed".to_string(),
+        ))
     }
 }
 
@@ -1563,8 +1562,9 @@ fn verify_single_file(path: &Path, checks: &mut Vec<(String, bool)>) -> Result<(
 
     // safetensors format check
     if path.extension().is_some_and(|e| e == "safetensors") {
-        let data = std::fs::read(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display())))?;
+        let data = std::fs::read(path).map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display()))
+        })?;
 
         // Valid header
         let header_ok = data.len() >= 8;
@@ -1581,7 +1581,8 @@ fn verify_single_file(path: &Path, checks: &mut Vec<(String, bool)>) -> Result<(
                 checks.push(("safetensors header valid JSON".to_string(), header_json));
 
                 if let Ok(header) = serde_json::from_str::<serde_json::Value>(header_str) {
-                    let tensor_count = header.as_object()
+                    let tensor_count = header
+                        .as_object()
                         .map(|o| o.keys().filter(|k| *k != "__metadata__").count())
                         .unwrap_or(0);
                     checks.push((format!("{tensor_count} tensors found"), tensor_count > 0));
@@ -1648,7 +1649,10 @@ pub(crate) fn run_correlation(
             "pairs": pairs.iter().map(|(p, s)| serde_json::json!({"ppl": p, "score": s})).collect::<Vec<_>>(),
             "elapsed_secs": elapsed,
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
         output::header("PPL-Benchmark Correlation Analysis");
         println!();
@@ -1669,11 +1673,20 @@ pub(crate) fn run_correlation(
         println!();
 
         if pearson < -0.7 {
-            println!("  {} Strong negative correlation — lower PPL predicts higher benchmarks", "GOOD".green().bold());
+            println!(
+                "  {} Strong negative correlation — lower PPL predicts higher benchmarks",
+                "GOOD".green().bold()
+            );
         } else if pearson < -0.3 {
-            println!("  {} Moderate correlation — PPL is a useful proxy", "OK".yellow().bold());
+            println!(
+                "  {} Moderate correlation — PPL is a useful proxy",
+                "OK".yellow().bold()
+            );
         } else {
-            println!("  {} Weak correlation — PPL may not predict benchmark performance", "WARN".yellow().bold());
+            println!(
+                "  {} Weak correlation — PPL may not predict benchmark performance",
+                "WARN".yellow().bold()
+            );
         }
     }
 
@@ -1681,10 +1694,7 @@ pub(crate) fn run_correlation(
 }
 
 /// Collect (ppl, benchmark_score) pairs from experiment logs.
-fn collect_ppl_benchmark_pairs(
-    dir: &Path,
-    _data_path: Option<&Path>,
-) -> Result<Vec<(f64, f64)>> {
+fn collect_ppl_benchmark_pairs(dir: &Path, _data_path: Option<&Path>) -> Result<Vec<(f64, f64)>> {
     let mut pairs = Vec::new();
 
     // Strategy 1: scan JSONL experiment logs
@@ -1746,7 +1756,8 @@ fn extract_ppl_from_jsonl(path: &Path) -> Vec<(f64, f64)> {
         return vec![];
     }
     let max_step = step_ppl.iter().map(|(s, _)| *s).max().unwrap_or(1) as f64;
-    step_ppl.iter()
+    step_ppl
+        .iter()
         .map(|(step, ppl)| (*ppl, *step as f64 / max_step))
         .collect()
 }
@@ -1772,8 +1783,8 @@ fn extract_checkpoint_pair(path: &Path) -> Option<Vec<(f64, f64)>> {
     let eval_file = path.join("eval_results.json");
 
     // Try eval_results.json first
-    let ppl = read_json_f64(&eval_file, "perplexity")
-        .or_else(|| read_json_f64(&state_file, "val_ppl"));
+    let ppl =
+        read_json_f64(&eval_file, "perplexity").or_else(|| read_json_f64(&state_file, "val_ppl"));
     let score = read_json_f64(&eval_file, "benchmark_score")
         .or_else(|| read_json_f64(&eval_file, "pass_at_1"))
         .or_else(|| read_json_f64(&state_file, "step").map(|s| s / 10000.0));
@@ -1784,7 +1795,11 @@ fn extract_checkpoint_pair(path: &Path) -> Option<Vec<(f64, f64)>> {
 
     // Fallback: loss_history from training_state.json
     let history_pairs = extract_loss_history_pairs(&state_file);
-    if history_pairs.is_empty() { None } else { Some(history_pairs) }
+    if history_pairs.is_empty() {
+        None
+    } else {
+        Some(history_pairs)
+    }
 }
 
 /// Extract (exp(loss), progress) pairs from a training_state.json loss_history.
@@ -1805,7 +1820,9 @@ fn extract_loss_history_pairs(path: &Path) -> Vec<(f64, f64)> {
     if losses.len() < 2 {
         return vec![];
     }
-    losses.iter().enumerate()
+    losses
+        .iter()
+        .enumerate()
         .map(|(i, loss)| (loss.exp(), (i + 1) as f64 / losses.len() as f64))
         .collect()
 }
@@ -1837,7 +1854,11 @@ fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
     }
 
     let denom = (var_x * var_y).sqrt();
-    if denom < 1e-15 { 0.0 } else { cov / denom }
+    if denom < 1e-15 {
+        0.0
+    } else {
+        cov / denom
+    }
 }
 
 /// Spearman rank correlation coefficient.
@@ -1904,8 +1925,9 @@ pub(crate) fn run_encrypt(
     let start = Instant::now();
 
     let key = derive_encryption_key(key_file)?;
-    let plaintext = std::fs::read(input_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display())))?;
+    let plaintext = std::fs::read(input_path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display()))
+    })?;
 
     if !json_output {
         output::header("apr encrypt — Model Weight Encryption");
@@ -1940,8 +1962,9 @@ pub(crate) fn run_encrypt(
     output.extend_from_slice(mac.as_bytes());
     output.extend_from_slice(&encrypted);
 
-    std::fs::write(output_path, &output)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display())))?;
+    std::fs::write(output_path, &output).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display()))
+    })?;
 
     let elapsed = start.elapsed().as_secs_f32();
 
@@ -1954,7 +1977,10 @@ pub(crate) fn run_encrypt(
             "output_size": output.len(),
             "elapsed_secs": elapsed,
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
         output::kv("Encrypted size", format_archive_size(output.len() as u64));
         output::kv("Time", format!("{elapsed:.2}s"));
@@ -1975,13 +2001,14 @@ pub(crate) fn run_decrypt(
     let start = Instant::now();
 
     let key = derive_encryption_key(key_file)?;
-    let data = std::fs::read(input_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display())))?;
+    let data = std::fs::read(input_path).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display()))
+    })?;
 
     // Parse: magic(8) + nonce(32) + MAC(32) + encrypted
     if data.len() < 72 || &data[..8] != b"ALBR-ENC" {
         return Err(CliError::ValidationFailed(
-            "Not a valid ALBR-ENC encrypted file".to_string()
+            "Not a valid ALBR-ENC encrypted file".to_string(),
         ));
     }
 
@@ -1994,7 +2021,10 @@ pub(crate) fn run_decrypt(
         println!();
         output::kv("Input", input_path.display().to_string());
         output::kv("Output", output_path.display().to_string());
-        output::kv("Encrypted size", format_archive_size(encrypted.len() as u64));
+        output::kv(
+            "Encrypted size",
+            format_archive_size(encrypted.len() as u64),
+        );
         println!();
     }
 
@@ -2002,15 +2032,16 @@ pub(crate) fn run_decrypt(
     let computed_mac = compute_mac(&key, &nonce, encrypted);
     if computed_mac.as_bytes() != &stored_mac {
         return Err(CliError::ValidationFailed(
-            "MAC verification failed — wrong key or corrupted file".to_string()
+            "MAC verification failed — wrong key or corrupted file".to_string(),
         ));
     }
 
     // Decrypt
     let plaintext = apply_keystream(&key, &nonce, encrypted);
 
-    std::fs::write(output_path, &plaintext)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display())))?;
+    std::fs::write(output_path, &plaintext).map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display()))
+    })?;
 
     let elapsed = start.elapsed().as_secs_f32();
 
@@ -2023,9 +2054,15 @@ pub(crate) fn run_decrypt(
             "mac_verified": true,
             "elapsed_secs": elapsed,
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
-        output::kv("Decrypted size", format_archive_size(plaintext.len() as u64));
+        output::kv(
+            "Decrypted size",
+            format_archive_size(plaintext.len() as u64),
+        );
         output::kv("MAC", "verified".green().to_string());
         output::kv("Time", format!("{elapsed:.2}s"));
         println!();
@@ -2050,14 +2087,16 @@ fn derive_encryption_key(key_file: Option<&Path>) -> Result<[u8; 32]> {
         }
     } else {
         // Read passphrase from environment or use default context
-        let passphrase = std::env::var("ALBOR_ENCRYPT_KEY")
-            .unwrap_or_else(|_| {
-                eprintln!("Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):");
-                let mut input = String::new();
-                let _ = std::io::stdin().read_line(&mut input);
-                input.trim().to_string()
-            });
-        Ok(blake3::derive_key("albor model encryption 2026", passphrase.as_bytes()))
+        let passphrase = std::env::var("ALBOR_ENCRYPT_KEY").unwrap_or_else(|_| {
+            eprintln!("Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):");
+            let mut input = String::new();
+            let _ = std::io::stdin().read_line(&mut input);
+            input.trim().to_string()
+        });
+        Ok(blake3::derive_key(
+            "albor model encryption 2026",
+            passphrase.as_bytes(),
+        ))
     }
 }
 
@@ -2114,8 +2153,9 @@ pub(crate) fn run_human_eval(
     // Determine mode based on data_path content
     if let Some(data) = data_path {
         if data.extension().is_some_and(|e| e == "jsonl") {
-            let content = std::fs::read_to_string(data)
-                .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", data.display())))?;
+            let content = std::fs::read_to_string(data).map_err(|e| {
+                CliError::ValidationFailed(format!("Cannot read {}: {e}", data.display()))
+            })?;
 
             // Check if this is a completed ratings file (has numeric ratings)
             let has_ratings = content.lines().any(|line| {
@@ -2169,7 +2209,8 @@ fn generate_ratings_sheet(
         entries.push(entry);
     }
 
-    let sheet_content: String = entries.iter()
+    let sheet_content: String = entries
+        .iter()
         .map(|e| serde_json::to_string(e).unwrap_or_default())
         .collect::<Vec<_>>()
         .join("\n");
@@ -2187,7 +2228,10 @@ fn generate_ratings_sheet(
             "output": output_path.display().to_string(),
             "elapsed_secs": elapsed,
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
         output::header("Human Evaluation — Ratings Sheet Generated");
         println!();
@@ -2198,7 +2242,11 @@ fn generate_ratings_sheet(
         println!("  Instructions:");
         println!("  1. Run inference to fill in 'completion' fields");
         println!("  2. Rate each completion 1-5 (1=poor, 5=excellent)");
-        println!("  3. Analyze: apr eval {} --task human --data {}", model_path.display(), output_path.display());
+        println!(
+            "  3. Analyze: apr eval {} --task human --data {}",
+            model_path.display(),
+            output_path.display()
+        );
         println!();
         println!("  {} Sheet generated", "DONE".green().bold());
     }
@@ -2227,7 +2275,7 @@ fn analyze_human_ratings(
 
     if ratings.is_empty() {
         return Err(CliError::ValidationFailed(
-            "No completed ratings found in file".to_string()
+            "No completed ratings found in file".to_string(),
         ));
     }
 
@@ -2273,7 +2321,10 @@ fn analyze_human_ratings(
             },
             "elapsed_secs": elapsed,
         });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
     } else {
         output::header("Human Evaluation — Analysis Results");
         println!();
@@ -2283,7 +2334,15 @@ fn analyze_human_ratings(
         output::kv("Mean rating", format!("{mean:.2}"));
         output::kv("Median", format!("{median:.1}"));
         output::kv("Std deviation", format!("{std_dev:.2}"));
-        output::kv("Pass rate (>=3)", format!("{:.1}% ({}/{})", pass_rate * 100.0, pass_count, ratings.len()));
+        output::kv(
+            "Pass rate (>=3)",
+            format!(
+                "{:.1}% ({}/{})",
+                pass_rate * 100.0,
+                pass_count,
+                ratings.len()
+            ),
+        );
         println!();
         println!("  Rating distribution:");
         for (i, count) in dist.iter().enumerate() {
@@ -2308,16 +2367,22 @@ fn load_eval_prompts(path: &Path) -> Result<Vec<String>> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display())))?;
 
-    let prompts: Vec<String> = content.lines()
+    let prompts: Vec<String> = content
+        .lines()
         .filter_map(|line| {
-            serde_json::from_str::<serde_json::Value>(line).ok()
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()
                 .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
         })
         .collect();
 
     if prompts.is_empty() {
         // Try as plain text (one prompt per line)
-        Ok(content.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+        Ok(content
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect())
     } else {
         Ok(prompts)
     }

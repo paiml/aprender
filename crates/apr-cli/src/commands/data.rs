@@ -55,8 +55,8 @@ impl TextColumnStats {
             if line.is_empty() {
                 continue;
             }
-            let obj: serde_json::Value = serde_json::from_str(line)
-                .map_err(|e| format!("JSON parse error: {e}"))?;
+            let obj: serde_json::Value =
+                serde_json::from_str(line).map_err(|e| format!("JSON parse error: {e}"))?;
 
             if let Some(val) = obj.get(column).and_then(|v| v.as_str()) {
                 let len = val.len();
@@ -151,8 +151,8 @@ fn resample_jsonl(
     use std::io::{BufRead, BufReader, Write};
 
     // Read all JSONL lines and group by label
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("Failed to open {}: {e}", path.display()))?;
     let reader = BufReader::new(file);
 
     let mut rows: Vec<String> = Vec::new();
@@ -164,8 +164,8 @@ fn resample_jsonl(
         if trimmed.is_empty() {
             continue;
         }
-        let obj: serde_json::Value = serde_json::from_str(&trimmed)
-            .map_err(|e| format!("JSON parse error: {e}"))?;
+        let obj: serde_json::Value =
+            serde_json::from_str(&trimmed).map_err(|e| format!("JSON parse error: {e}"))?;
 
         let label = obj
             .get(label_column)
@@ -187,16 +187,8 @@ fn resample_jsonl(
 
     // Determine target count per class
     let target_count = match strategy {
-        ResampleStrategy::Oversample => label_indices
-            .values()
-            .map(|v| v.len())
-            .max()
-            .unwrap_or(0),
-        ResampleStrategy::Undersample => label_indices
-            .values()
-            .map(|v| v.len())
-            .min()
-            .unwrap_or(0),
+        ResampleStrategy::Oversample => label_indices.values().map(|v| v.len()).max().unwrap_or(0),
+        ResampleStrategy::Undersample => label_indices.values().map(|v| v.len()).min().unwrap_or(0),
     };
 
     // Deterministic resampling using seed
@@ -240,8 +232,7 @@ fn resample_jsonl(
         let mut out = std::fs::File::create(&tmp_path)
             .map_err(|e| format!("Failed to create temp file: {e}"))?;
         for &idx in &selected_indices {
-            writeln!(out, "{}", rows[idx])
-                .map_err(|e| format!("Write error: {e}"))?;
+            writeln!(out, "{}", rows[idx]).map_err(|e| format!("Write error: {e}"))?;
         }
     }
 
@@ -407,20 +398,15 @@ pub(crate) fn run_audit(
     preamble_prefix: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
-    use alimentar::{
-        imbalance::ImbalanceDetector,
-        quality::QualityChecker,
-        ArrowDataset, Dataset,
-    };
+    use alimentar::{imbalance::ImbalanceDetector, quality::QualityChecker, ArrowDataset, Dataset};
 
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
     // Load JSONL as Arrow dataset
-    let dataset = ArrowDataset::from_json(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to load JSONL: {e}"))
-    })?;
+    let dataset = ArrowDataset::from_json(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
 
     let total = dataset.len();
     if total == 0 {
@@ -444,26 +430,18 @@ pub(crate) fn run_audit(
     let checker = QualityChecker::new()
         .max_null_ratio(0.01)
         .max_duplicate_ratio(0.05);
-    let quality_report = checker.check(&dataset).map_err(|e| {
-        CliError::ValidationFailed(format!("Quality check failed: {e}"))
-    })?;
+    let quality_report = checker
+        .check(&dataset)
+        .map_err(|e| CliError::ValidationFailed(format!("Quality check failed: {e}")))?;
 
     // Imbalance analysis
     let imbalance_report = ImbalanceDetector::new(label_column)
         .analyze(&dataset)
-        .map_err(|e| {
-            CliError::ValidationFailed(format!("Imbalance analysis failed: {e}"))
-        })?;
+        .map_err(|e| CliError::ValidationFailed(format!("Imbalance analysis failed: {e}")))?;
 
     // Text column statistics (read directly from JSONL to avoid arrow dep)
-    let text_stats = TextColumnStats::from_jsonl_path(
-        path,
-        input_column,
-        preamble_prefix,
-    )
-    .map_err(|e| {
-        CliError::ValidationFailed(format!("Text stats failed: {e}"))
-    })?;
+    let text_stats = TextColumnStats::from_jsonl_path(path, input_column, preamble_prefix)
+        .map_err(|e| CliError::ValidationFailed(format!("Text stats failed: {e}")))?;
 
     // Label range validation (use imbalance distribution counts)
     let mut out_of_range = 0usize;
@@ -509,7 +487,10 @@ pub(crate) fn run_audit(
             "empty_inputs": text_stats.empty_count,
             "preamble_found": text_stats.preamble_count,
         });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -545,9 +526,8 @@ pub(crate) fn run_split(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    let dataset = ArrowDataset::from_json(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to load JSONL: {e}"))
-    })?;
+    let dataset = ArrowDataset::from_json(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
 
     let total = dataset.len();
 
@@ -575,16 +555,17 @@ pub(crate) fn run_split(
     let val_path = output_dir.join("val.jsonl");
     let test_path = output_dir.join("test.jsonl");
 
-    split.train().to_json(&train_path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to write train.jsonl: {e}"))
-    })?;
-    split.test().to_json(&test_path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to write test.jsonl: {e}"))
-    })?;
+    split
+        .train()
+        .to_json(&train_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to write train.jsonl: {e}")))?;
+    split
+        .test()
+        .to_json(&test_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to write test.jsonl: {e}")))?;
     if let Some(val) = split.validation() {
-        val.to_json(&val_path).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to write val.jsonl: {e}"))
-        })?;
+        val.to_json(&val_path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to write val.jsonl: {e}")))?;
     }
 
     let train_len = split.train().len();
@@ -601,7 +582,10 @@ pub(crate) fn run_split(
             "val": { "path": val_path.display().to_string(), "samples": val_len },
             "test": { "path": test_path.display().to_string(), "samples": test_len },
         });
-        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -614,11 +598,21 @@ pub(crate) fn run_split(
         format!("train={train_ratio}, val={val_ratio}, test={test_ratio}"),
     );
     println!();
-    output::kv("Train", format!("{} ({train_len} samples)", train_path.display()));
+    output::kv(
+        "Train",
+        format!("{} ({train_len} samples)", train_path.display()),
+    );
     output::kv("Val", format!("{} ({val_len} samples)", val_path.display()));
-    output::kv("Test", format!("{} ({test_len} samples)", test_path.display()));
+    output::kv(
+        "Test",
+        format!("{} ({test_len} samples)", test_path.display()),
+    );
     println!();
-    println!("{} Splits written to {}", "OK".green(), output_dir.display());
+    println!(
+        "{} Splits written to {}",
+        "OK".green(),
+        output_dir.display()
+    );
 
     Ok(())
 }
@@ -635,17 +629,14 @@ pub(crate) fn run_balance(
     output_path: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
-    use alimentar::{
-        imbalance::ImbalanceDetector, ArrowDataset, Dataset,
-    };
+    use alimentar::{imbalance::ImbalanceDetector, ArrowDataset, Dataset};
 
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    let dataset = ArrowDataset::from_json(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to load JSONL: {e}"))
-    })?;
+    let dataset = ArrowDataset::from_json(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
 
     let original_len = dataset.len();
 
@@ -675,7 +666,10 @@ pub(crate) fn run_balance(
                 "class_counts": ordered_counts,
                 "weights": weights,
             });
-            println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
         } else {
             output::section("Sqrt-Inverse Class Weights");
             println!();
@@ -707,9 +701,9 @@ pub(crate) fn run_balance(
 
     // Write output
     if let Some(out) = output_path {
-        resampled.to_json(out).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to write output: {e}"))
-        })?;
+        resampled
+            .to_json(out)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
         if json_output {
             #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
@@ -719,7 +713,10 @@ pub(crate) fn run_balance(
                 "resampled_samples": new_len,
                 "output": out.display().to_string(),
             });
-            println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
         } else {
             output::section("Class Rebalancing");
             println!();

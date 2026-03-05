@@ -66,10 +66,10 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "visualization")]
-use renacer::brick_tracer::BrickTracer as TracerImpl;
 #[cfg(not(feature = "visualization"))]
 use brick_tracer_shim::BrickTracer as TracerImpl;
+#[cfg(feature = "visualization")]
+use renacer::brick_tracer::BrickTracer as TracerImpl;
 
 /// No-op BrickTracer shim when the `visualization` (renacer) feature is disabled.
 /// Provides the same API surface so callers compile without cfg gates on every call site.
@@ -83,8 +83,12 @@ mod brick_tracer_shim {
         pub ioctl_us: u64,
     }
     impl SyscallBreakdown {
-        pub fn syscall_overhead_percent(&self) -> f64 { 0.0 }
-        pub fn dominant_syscall(&self) -> &'static str { "none" }
+        pub fn syscall_overhead_percent(&self) -> f64 {
+            0.0
+        }
+        pub fn dominant_syscall(&self) -> &'static str {
+            "none"
+        }
     }
 
     /// Stub trace metadata.
@@ -105,8 +109,15 @@ mod brick_tracer_shim {
     /// No-op tracer that just times the closure with `Instant`.
     pub struct BrickTracer;
     impl BrickTracer {
-        pub fn new_local() -> Self { Self }
-        pub fn trace<T>(&self, _name: &str, _budget_us: u64, f: impl FnOnce() -> T) -> TracedResult<T> {
+        pub fn new_local() -> Self {
+            Self
+        }
+        pub fn trace<T>(
+            &self,
+            _name: &str,
+            _budget_us: u64,
+            f: impl FnOnce() -> T,
+        ) -> TracedResult<T> {
             let start = std::time::Instant::now();
             let result = f();
             let duration_us = start.elapsed().as_micros() as u64;

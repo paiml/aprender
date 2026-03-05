@@ -36,11 +36,7 @@ pub(crate) fn run(
     format: &str,
 ) -> Result<()> {
     // Determine output format: --json flag overrides --format
-    let output_format = if json {
-        "json"
-    } else {
-        format
-    };
+    let output_format = if json { "json" } else { format };
 
     // If no directory specified, try to discover active runs
     let dir = match experiment_dir {
@@ -110,7 +106,9 @@ fn discover_active_runs(format: &str) -> Result<()> {
     }
 
     let store = entrenar::storage::SqliteBackend::open(db_path.to_string_lossy().as_ref())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to open experiment database: {e}")))?;
+        .map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to open experiment database: {e}"))
+        })?;
 
     let active_runs = scan_active_runs(&store)?;
 
@@ -187,13 +185,20 @@ fn print_active_runs(
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string())
+        );
     } else {
         println!("Active training runs:");
         println!();
         for (i, (name, dir, run)) in active_runs.iter().enumerate() {
             println!("  [{}] {} — {}", i + 1, name, dir);
-            println!("      Run: {} | Started: {}", run.id, run.start_time.format("%H:%M:%S"));
+            println!(
+                "      Run: {} | Started: {}",
+                run.id,
+                run.start_time.format("%H:%M:%S")
+            );
         }
         println!();
         println!("Attach to a run:");

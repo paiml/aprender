@@ -42,7 +42,11 @@ pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
     let n = src.len();
     let mut data = vec![0.0f32; n];
     for i in 0..n {
-        data[i] = if src[i] > 0.0 { src[i] } else { negative_slope * src[i] };
+        data[i] = if src[i] > 0.0 {
+            src[i]
+        } else {
+            negative_slope * src[i]
+        };
     }
     Tensor::from_vec(data, x.shape())
 }

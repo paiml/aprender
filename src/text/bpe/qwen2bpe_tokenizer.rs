@@ -495,7 +495,11 @@ impl BpeTokenizer {
         for i in 0..n - 1 {
             let pair = (symbols[i].id, symbols[i + 1].id);
             if let Some(&(rank, new_id)) = self.merge_id_map.get(&pair) {
-                queue.push(BpeMerge { pos: i, rank, new_id });
+                queue.push(BpeMerge {
+                    pos: i,
+                    rank,
+                    new_id,
+                });
             }
         }
 
@@ -563,8 +567,14 @@ impl BpeTokenizer {
         // Left neighbor + merged symbol
         if symbols[pos].prev >= 0 {
             let prev_pos = symbols[pos].prev as usize;
-            if let Some(&(rank, new_id)) = merge_id_map.get(&(symbols[prev_pos].id, symbols[pos].id)) {
-                queue.push(BpeMerge { pos: prev_pos, rank, new_id });
+            if let Some(&(rank, new_id)) =
+                merge_id_map.get(&(symbols[prev_pos].id, symbols[pos].id))
+            {
+                queue.push(BpeMerge {
+                    pos: prev_pos,
+                    rank,
+                    new_id,
+                });
             }
         }
         // Merged symbol + right neighbor

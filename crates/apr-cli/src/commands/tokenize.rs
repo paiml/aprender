@@ -190,9 +190,8 @@ fn analyze_corpus(path: &Path) -> Result<CorpusStats> {
         .map_err(|e| CliError::ValidationFailed(format!("Cannot stat {}: {e}", path.display())))?;
     let bytes = metadata.len();
 
-    let content = std::fs::read_to_string(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display()))
-    })?;
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display())))?;
 
     let lines = content.lines().count();
     let unique_chars: std::collections::HashSet<char> = content.chars().collect();
@@ -247,23 +246,25 @@ impl TrainedTokenizer {
     }
 }
 
-fn train_tokenizer(corpus: &[&str], vocab_size: usize, algorithm: &str) -> Result<TrainedTokenizer> {
+fn train_tokenizer(
+    corpus: &[&str],
+    vocab_size: usize,
+    algorithm: &str,
+) -> Result<TrainedTokenizer> {
     match algorithm {
         "bpe" => {
-            let tokenizer =
-                aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size).map_err(|e| {
-                    CliError::ValidationFailed(format!("BPE training failed: {e}"))
-                })?;
+            let tokenizer = aprender::text::tokenize::BpeTokenizer::train(corpus, vocab_size)
+                .map_err(|e| CliError::ValidationFailed(format!("BPE training failed: {e}")))?;
             Ok(TrainedTokenizer {
                 vocab: tokenizer.vocab().clone(),
                 merges: tokenizer.merges().to_vec(),
             })
         }
         "wordpiece" => {
-            let tokenizer =
-                aprender::text::tokenize::WordPieceTokenizer::train(corpus, vocab_size).map_err(
-                    |e| CliError::ValidationFailed(format!("WordPiece training failed: {e}")),
-                )?;
+            let tokenizer = aprender::text::tokenize::WordPieceTokenizer::train(corpus, vocab_size)
+                .map_err(|e| {
+                    CliError::ValidationFailed(format!("WordPiece training failed: {e}"))
+                })?;
             // WordPiece has vocab but no merges
             Ok(TrainedTokenizer {
                 vocab: tokenizer.vocab().clone(),
@@ -271,10 +272,10 @@ fn train_tokenizer(corpus: &[&str], vocab_size: usize, algorithm: &str) -> Resul
             })
         }
         "unigram" => {
-            let tokenizer =
-                aprender::text::tokenize::UnigramTokenizer::train(corpus, vocab_size).map_err(
-                    |e| CliError::ValidationFailed(format!("Unigram training failed: {e}")),
-                )?;
+            let tokenizer = aprender::text::tokenize::UnigramTokenizer::train(corpus, vocab_size)
+                .map_err(|e| {
+                CliError::ValidationFailed(format!("Unigram training failed: {e}"))
+            })?;
             // Unigram has vocab (as id map) but no merges
             Ok(TrainedTokenizer {
                 vocab: tokenizer.vocab_ids(),
@@ -366,10 +367,7 @@ fn print_apply_header(
 
 fn print_apply_result(result: &TokenizeResult) {
     output::section("Result");
-    println!(
-        "  {} Tokenizer trained successfully",
-        "OK".green().bold()
-    );
+    println!("  {} Tokenizer trained successfully", "OK".green().bold());
     output::kv("  Final vocab size", format_number(result.vocab_size));
     output::kv(
         "  Training time",

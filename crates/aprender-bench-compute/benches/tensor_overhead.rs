@@ -26,13 +26,9 @@ fn bench_tensor_create(c: &mut Criterion) {
         let data = deterministic_f32(size);
         group.throughput(Throughput::Elements(size as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("Tensor_new", size),
-            &size,
-            |bench, _| {
-                bench.iter(|| black_box(Tensor::new(&data, &[1, size])));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("Tensor_new", size), &size, |bench, _| {
+            bench.iter(|| black_box(Tensor::new(&data, &[1, size])));
+        });
 
         group.bench_with_input(BenchmarkId::new("Vec_clone", size), &size, |bench, _| {
             bench.iter(|| black_box(data.clone()));
@@ -64,21 +60,13 @@ fn bench_tensor_add(c: &mut Criterion) {
         let a2 = ndarray::Array1::from_vec(data.clone());
         group.throughput(Throughput::Elements(size as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("Tensor_add", size),
-            &size,
-            |bench, _| {
-                bench.iter(|| black_box(t1.add(&t2)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("Tensor_add", size), &size, |bench, _| {
+            bench.iter(|| black_box(t1.add(&t2)));
+        });
 
-        group.bench_with_input(
-            BenchmarkId::new("ndarray_add", size),
-            &size,
-            |bench, _| {
-                bench.iter(|| black_box(&a1 + &a2));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("ndarray_add", size), &size, |bench, _| {
+            bench.iter(|| black_box(&a1 + &a2));
+        });
     }
 
     group.finish();

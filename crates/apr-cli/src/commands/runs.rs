@@ -34,7 +34,11 @@ fn sparkline(data: &[f64], width: usize) -> String {
     let n = data.len();
     let mut result = String::with_capacity(width * 4);
     for i in 0..width.min(n) {
-        let idx = if n <= width { i } else { i * (n - 1) / (width - 1).max(1) };
+        let idx = if n <= width {
+            i
+        } else {
+            i * (n - 1) / (width - 1).max(1)
+        };
         let val = data[idx.min(n - 1)];
         let normalized = ((val - min) / range).clamp(0.0, 1.0);
         let char_idx = ((normalized * 7.0).round() as usize).min(7);
@@ -61,7 +65,11 @@ fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
     let n = data.len();
     let mut samples = Vec::with_capacity(total_dots_x);
     for i in 0..total_dots_x {
-        let idx = if n <= total_dots_x { i.min(n - 1) } else { i * (n - 1) / (total_dots_x - 1).max(1) };
+        let idx = if n <= total_dots_x {
+            i.min(n - 1)
+        } else {
+            i * (n - 1) / (total_dots_x - 1).max(1)
+        };
         let val = data[idx.min(n - 1)];
         let normalized = ((val - min) / range).clamp(0.0, 1.0);
         // Invert: high values at top (low dot row number)
@@ -230,8 +238,12 @@ pub(crate) fn run_show(
 
     // Get metrics
     let loss_metrics = store.get_metrics(run_id, "loss").unwrap_or_default();
-    let lr_metrics = store.get_metrics(run_id, "learning_rate").unwrap_or_default();
-    let tps_metrics = store.get_metrics(run_id, "tokens_per_second").unwrap_or_default();
+    let lr_metrics = store
+        .get_metrics(run_id, "learning_rate")
+        .unwrap_or_default();
+    let tps_metrics = store
+        .get_metrics(run_id, "tokens_per_second")
+        .unwrap_or_default();
 
     if json {
         print_show_json(&run, &params, &loss_metrics, &lr_metrics, &tps_metrics);
@@ -264,20 +276,26 @@ pub(crate) fn run_diff(
 
     let loss_a = store.get_metrics(run_id_a, "loss").unwrap_or_default();
     let loss_b = store.get_metrics(run_id_b, "loss").unwrap_or_default();
-    let tps_a = store.get_metrics(run_id_a, "tokens_per_second").unwrap_or_default();
-    let tps_b = store.get_metrics(run_id_b, "tokens_per_second").unwrap_or_default();
-    let lr_a = store.get_metrics(run_id_a, "learning_rate").unwrap_or_default();
-    let lr_b = store.get_metrics(run_id_b, "learning_rate").unwrap_or_default();
+    let tps_a = store
+        .get_metrics(run_id_a, "tokens_per_second")
+        .unwrap_or_default();
+    let tps_b = store
+        .get_metrics(run_id_b, "tokens_per_second")
+        .unwrap_or_default();
+    let lr_a = store
+        .get_metrics(run_id_a, "learning_rate")
+        .unwrap_or_default();
+    let lr_b = store
+        .get_metrics(run_id_b, "learning_rate")
+        .unwrap_or_default();
 
     if json {
         print_diff_json(
-            &run_a, &run_b, &params_a, &params_b,
-            &loss_a, &loss_b, &tps_a, &tps_b, &lr_a, &lr_b,
+            &run_a, &run_b, &params_a, &params_b, &loss_a, &loss_b, &tps_a, &tps_b, &lr_a, &lr_b,
         );
     } else {
         print_diff_text(
-            &run_a, &run_b, &params_a, &params_b,
-            &loss_a, &loss_b, &tps_a, &tps_b, &lr_a, &lr_b,
+            &run_a, &run_b, &params_a, &params_b, &loss_a, &loss_b, &tps_a, &tps_b, &lr_a, &lr_b,
         );
     }
 
@@ -290,7 +308,9 @@ fn open_store(dir: &Option<PathBuf>, global: bool) -> Result<SqliteBackend> {
     let db_path = if global {
         dirs::home_dir()
             .map(|h| h.join(".entrenar").join("experiments.db"))
-            .ok_or_else(|| CliError::ValidationFailed("Could not determine home directory".into()))?
+            .ok_or_else(|| {
+                CliError::ValidationFailed("Could not determine home directory".into())
+            })?
     } else {
         let base = dir.as_deref().unwrap_or(Path::new("."));
         base.join(".entrenar").join("experiments.db")
@@ -310,7 +330,10 @@ fn open_store(dir: &Option<PathBuf>, global: bool) -> Result<SqliteBackend> {
 // ─── Table output (ls) ─────────────────────────────────────────────────────
 
 fn print_runs_table(
-    runs: &[(entrenar::storage::sqlite::Experiment, entrenar::storage::sqlite::Run)],
+    runs: &[(
+        entrenar::storage::sqlite::Experiment,
+        entrenar::storage::sqlite::Run,
+    )],
     store: &SqliteBackend,
 ) {
     println!(
@@ -346,7 +369,8 @@ fn print_runs_table(
             .and_then(|m| m.last().map(|p| format!("{:.0}", p.value)))
             .unwrap_or_else(|| "—".to_string());
 
-        let duration_str = run.end_time
+        let duration_str = run
+            .end_time
             .map(|end| {
                 let secs = (end - run.start_time).num_seconds();
                 if secs > 3600 {
@@ -361,7 +385,11 @@ fn print_runs_table(
 
         // Inline sparkline + trend
         let spark = if loss_data.len() >= 2 {
-            format!("{} {}", sparkline(&loss_data, 16), loss_trend_arrow(&loss_data))
+            format!(
+                "{} {}",
+                sparkline(&loss_data, 16),
+                loss_trend_arrow(&loss_data)
+            )
         } else {
             "—".to_string()
         };
@@ -394,7 +422,10 @@ fn truncate_str(s: &str, max_len: usize) -> String {
 // ─── JSON output (ls) ──────────────────────────────────────────────────────
 
 fn print_runs_json(
-    runs: &[(entrenar::storage::sqlite::Experiment, entrenar::storage::sqlite::Run)],
+    runs: &[(
+        entrenar::storage::sqlite::Experiment,
+        entrenar::storage::sqlite::Run,
+    )],
     store: &SqliteBackend,
 ) {
     let entries: Vec<serde_json::Value> = runs
@@ -431,7 +462,10 @@ fn print_runs_json(
         })
         .collect();
 
-    println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string()));
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string())
+    );
 }
 
 // ─── Show (detailed) ────────────────────────────────────────────────────────
@@ -446,32 +480,41 @@ fn print_show_json(
     let mut metrics_map = serde_json::Map::new();
     if !loss_metrics.is_empty() {
         let loss_values: Vec<f64> = loss_metrics.iter().map(|p| p.value).collect();
-        metrics_map.insert("loss".into(), serde_json::json!({
-            "count": loss_values.len(),
-            "first": loss_values.first(),
-            "last": loss_values.last(),
-            "min": loss_values.iter().copied().fold(f64::INFINITY, f64::min),
-            "max": loss_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            "values": loss_values,
-        }));
+        metrics_map.insert(
+            "loss".into(),
+            serde_json::json!({
+                "count": loss_values.len(),
+                "first": loss_values.first(),
+                "last": loss_values.last(),
+                "min": loss_values.iter().copied().fold(f64::INFINITY, f64::min),
+                "max": loss_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "values": loss_values,
+            }),
+        );
     }
     if !tps_metrics.is_empty() {
         let tps_values: Vec<f64> = tps_metrics.iter().map(|p| p.value).collect();
-        metrics_map.insert("tokens_per_second".into(), serde_json::json!({
-            "count": tps_values.len(),
-            "last": tps_values.last(),
-            "max": tps_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
-            "mean": tps_values.iter().sum::<f64>() / tps_values.len() as f64,
-            "values": tps_values,
-        }));
+        metrics_map.insert(
+            "tokens_per_second".into(),
+            serde_json::json!({
+                "count": tps_values.len(),
+                "last": tps_values.last(),
+                "max": tps_values.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+                "mean": tps_values.iter().sum::<f64>() / tps_values.len() as f64,
+                "values": tps_values,
+            }),
+        );
     }
     if !lr_metrics.is_empty() {
         let lr_values: Vec<f64> = lr_metrics.iter().map(|p| p.value).collect();
-        metrics_map.insert("learning_rate".into(), serde_json::json!({
-            "count": lr_values.len(),
-            "last": lr_values.last(),
-            "values": lr_values,
-        }));
+        metrics_map.insert(
+            "learning_rate".into(),
+            serde_json::json!({
+                "count": lr_values.len(),
+                "last": lr_values.last(),
+                "values": lr_values,
+            }),
+        );
     }
 
     let params_map: std::collections::HashMap<_, _> = params
@@ -489,7 +532,10 @@ fn print_show_json(
         "params": params_map,
         "metrics": serde_json::Value::Object(metrics_map),
     });
-    println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
 }
 
 fn print_show_text(
@@ -511,11 +557,17 @@ fn print_show_text(
         _ => "Unknown",
     };
     println!("  Status:     {status_str}");
-    println!("  Started:    {}", run.start_time.format("%Y-%m-%d %H:%M:%S"));
+    println!(
+        "  Started:    {}",
+        run.start_time.format("%Y-%m-%d %H:%M:%S")
+    );
     if let Some(end) = run.end_time {
         let duration = end - run.start_time;
         println!("  Ended:      {}", end.format("%Y-%m-%d %H:%M:%S"));
-        println!("  Duration:   {}", format_duration_long(duration.num_seconds()));
+        println!(
+            "  Duration:   {}",
+            format_duration_long(duration.num_seconds())
+        );
     }
 
     // Parameters
@@ -539,10 +591,19 @@ fn print_show_text(
         let last = loss_values.last().copied().unwrap_or(0.0);
         let min = loss_values.iter().copied().fold(f64::INFINITY, f64::min);
         let trend = loss_trend_arrow(&loss_values);
-        let change_pct = if first > 0.0 { ((last - first) / first) * 100.0 } else { 0.0 };
+        let change_pct = if first > 0.0 {
+            ((last - first) / first) * 100.0
+        } else {
+            0.0
+        };
         println!(
             "    Loss:        {:.4} → {:.4} {} ({:+.1}%, min: {:.4}, {} steps)",
-            first, last, trend, change_pct, min, loss_values.len()
+            first,
+            last,
+            trend,
+            change_pct,
+            min,
+            loss_values.len()
         );
 
         // Inline sparkline
@@ -567,14 +628,21 @@ fn print_show_text(
         let last = tps_values.last().copied().unwrap_or(0.0);
         let max = tps_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let mean = tps_values.iter().sum::<f64>() / tps_values.len() as f64;
-        println!("    Throughput:  {:.0} tok/s (peak: {:.0}, mean: {:.0})", last, max, mean);
+        println!(
+            "    Throughput:  {:.0} tok/s (peak: {:.0}, mean: {:.0})",
+            last, max, mean
+        );
         println!("    Sparkline:   {}", sparkline(&tps_values, 40));
     }
 
     if !lr_metrics.is_empty() {
         let lr_values: Vec<f64> = lr_metrics.iter().map(|p| p.value).collect();
         let last = lr_values.last().copied().unwrap_or(0.0);
-        println!("    LR:          {:.2e}  {}", last, sparkline(&lr_values, 20));
+        println!(
+            "    LR:          {:.2e}  {}",
+            last,
+            sparkline(&lr_values, 20)
+        );
     }
 
     println!();
@@ -589,12 +657,20 @@ fn metric_values(points: &[entrenar::storage::MetricPoint]) -> Vec<f64> {
 
 /// Helper: compute mean of a non-empty slice.
 fn mean(data: &[f64]) -> f64 {
-    if data.is_empty() { 0.0 } else { data.iter().sum::<f64>() / data.len() as f64 }
+    if data.is_empty() {
+        0.0
+    } else {
+        data.iter().sum::<f64>() / data.len() as f64
+    }
 }
 
 /// Helper: min of a slice, or None if empty.
 fn min_val(data: &[f64]) -> Option<f64> {
-    if data.is_empty() { None } else { Some(data.iter().copied().fold(f64::INFINITY, f64::min)) }
+    if data.is_empty() {
+        None
+    } else {
+        Some(data.iter().copied().fold(f64::INFINITY, f64::min))
+    }
 }
 
 /// Helper: format an optional f64 as "X.XXXXXX" or "—".
@@ -649,34 +725,69 @@ fn print_diff_text(
     println!("  ─────────────────────────────────────────────────────────────────");
     println!(
         "  {:<24} \x1b[36m{:<20}\x1b[0m \x1b[33m{:<20}\x1b[0m",
-        "", format!("A: {id_a}"), format!("B: {id_b}")
+        "",
+        format!("A: {id_a}"),
+        format!("B: {id_b}")
     );
     println!("  ─────────────────────────────────────────────────────────────────");
 
-    diff_row("Status", &format!("{:?}", run_a.status), &format!("{:?}", run_b.status));
+    diff_row(
+        "Status",
+        &format!("{:?}", run_a.status),
+        &format!("{:?}", run_b.status),
+    );
 
-    let dur_a = run_a.end_time.map(|e| format_duration_long((e - run_a.start_time).num_seconds()));
-    let dur_b = run_b.end_time.map(|e| format_duration_long((e - run_b.start_time).num_seconds()));
-    diff_row("Duration", &dur_a.unwrap_or_else(|| "running".into()), &dur_b.unwrap_or_else(|| "running".into()));
+    let dur_a = run_a
+        .end_time
+        .map(|e| format_duration_long((e - run_a.start_time).num_seconds()));
+    let dur_b = run_b
+        .end_time
+        .map(|e| format_duration_long((e - run_b.start_time).num_seconds()));
+    diff_row(
+        "Duration",
+        &dur_a.unwrap_or_else(|| "running".into()),
+        &dur_b.unwrap_or_else(|| "running".into()),
+    );
 
     let lv_a = metric_values(loss_a);
     let lv_b = metric_values(loss_b);
-    diff_row("Final loss", &fmt_loss(lv_a.last().copied()), &fmt_loss(lv_b.last().copied()));
-    diff_row("Min loss", &fmt_loss(min_val(&lv_a)), &fmt_loss(min_val(&lv_b)));
+    diff_row(
+        "Final loss",
+        &fmt_loss(lv_a.last().copied()),
+        &fmt_loss(lv_b.last().copied()),
+    );
+    diff_row(
+        "Min loss",
+        &fmt_loss(min_val(&lv_a)),
+        &fmt_loss(min_val(&lv_b)),
+    );
     diff_row("Steps", &lv_a.len().to_string(), &lv_b.len().to_string());
 
     // Verdict
     if let (Some(a), Some(b)) = (lv_a.last(), lv_b.last()) {
-        let winner = if a < b { "\x1b[32mA wins\x1b[0m" } else if b < a { "\x1b[32mB wins\x1b[0m" } else { "tie" };
+        let winner = if a < b {
+            "\x1b[32mA wins\x1b[0m"
+        } else if b < a {
+            "\x1b[32mB wins\x1b[0m"
+        } else {
+            "tie"
+        };
         let diff_pct = ((a - b) / b.abs().max(1e-10)) * 100.0;
-        println!("  {:<24} {} ({:+.2}% loss difference)", "\x1b[1mVerdict\x1b[0m", winner, diff_pct);
+        println!(
+            "  {:<24} {} ({:+.2}% loss difference)",
+            "\x1b[1mVerdict\x1b[0m", winner, diff_pct
+        );
     }
 
     // Throughput
     let tv_a = metric_values(tps_a);
     let tv_b = metric_values(tps_b);
     if !tv_a.is_empty() || !tv_b.is_empty() {
-        diff_row("Mean tok/s", &format!("{:.0}", mean(&tv_a)), &format!("{:.0}", mean(&tv_b)));
+        diff_row(
+            "Mean tok/s",
+            &format!("{:.0}", mean(&tv_a)),
+            &format!("{:.0}", mean(&tv_b)),
+        );
     }
 
     // Loss sparklines
@@ -695,7 +806,10 @@ fn print_diff_text(
         println!();
         println!("\x1b[1m  Config Diff (changed params only):\x1b[0m");
         for (key, va, vb) in &diffs {
-            println!("    \x1b[36m{:<20}\x1b[0m \x1b[31m{}\x1b[0m → \x1b[32m{}\x1b[0m", key, va, vb);
+            println!(
+                "    \x1b[36m{:<20}\x1b[0m \x1b[31m{}\x1b[0m → \x1b[32m{}\x1b[0m",
+                key, va, vb
+            );
         }
     } else {
         println!();
@@ -707,8 +821,16 @@ fn print_diff_text(
 fn print_diff_sparklines(label: &str, a: &[f64], b: &[f64]) {
     println!();
     println!("\x1b[1m  {label}:\x1b[0m");
-    let sa = if a.len() >= 2 { sparkline(a, 40) } else { "—".to_string() };
-    let sb = if b.len() >= 2 { sparkline(b, 40) } else { "—".to_string() };
+    let sa = if a.len() >= 2 {
+        sparkline(a, 40)
+    } else {
+        "—".to_string()
+    };
+    let sb = if b.len() >= 2 {
+        sparkline(b, 40)
+    } else {
+        "—".to_string()
+    };
     println!("    \x1b[36mA:\x1b[0m {sa}");
     println!("    \x1b[33mB:\x1b[0m {sb}");
 }
@@ -786,14 +908,22 @@ fn print_diff_json(
         },
         "config_diff": serde_json::Value::Object(config_diff_json(params_a, params_b)),
     });
-    println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
 }
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
 fn format_duration_long(secs: i64) -> String {
     if secs > 86400 {
-        format!("{}d {}h {}m", secs / 86400, (secs % 86400) / 3600, (secs % 3600) / 60)
+        format!(
+            "{}d {}h {}m",
+            secs / 86400,
+            (secs % 86400) / 3600,
+            (secs % 3600) / 60
+        )
     } else if secs > 3600 {
         format!("{}h {}m {}s", secs / 3600, (secs % 3600) / 60, secs % 60)
     } else if secs > 60 {

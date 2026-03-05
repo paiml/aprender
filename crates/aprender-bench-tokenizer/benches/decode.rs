@@ -27,13 +27,9 @@ fn bench_decode_aprender(c: &mut Criterion) {
         let ids: Vec<u32> = all_ids.iter().copied().cycle().take(n_tokens).collect();
         group.throughput(Throughput::Elements(n_tokens as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("tokens", n_tokens),
-            &ids,
-            |b, input| {
-                b.iter(|| tokenizer.decode(black_box(input)));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tokens", n_tokens), &ids, |b, input| {
+            b.iter(|| tokenizer.decode(black_box(input)));
+        });
     }
 
     group.finish();
@@ -56,13 +52,9 @@ fn bench_decode_hf(c: &mut Criterion) {
         let ids: Vec<u32> = all_ids.iter().copied().cycle().take(n_tokens).collect();
         group.throughput(Throughput::Elements(n_tokens as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("tokens", n_tokens),
-            &ids,
-            |b, input| {
-                b.iter(|| tokenizer.decode(black_box(input), false).unwrap());
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tokens", n_tokens), &ids, |b, input| {
+            b.iter(|| tokenizer.decode(black_box(input), false).unwrap());
+        });
     }
 
     group.finish();

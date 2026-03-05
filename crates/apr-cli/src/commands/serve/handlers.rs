@@ -72,7 +72,10 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             {
                 let use_gpu = config.gpu && !config.no_gpu;
                 if use_gpu {
-                    println!("{}", "Starting SafeTensors GPU server (fused Q4K)...".cyan());
+                    println!(
+                        "{}",
+                        "Starting SafeTensors GPU server (fused Q4K)...".cyan()
+                    );
                     match start_safetensors_server_gpu(model_path, config) {
                         Ok(()) => return Ok(()),
                         Err(e) => {
@@ -459,15 +462,18 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
     );
 
     // Extract vocabulary from embedded APR metadata (GGUF-imported models embed tokenizer)
-    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
-        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
-        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
-        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-        if !v.is_empty() {
-            v[0] = "<unk>".to_string();
-        }
-        v
-    });
+    let vocab = mapped
+        .metadata
+        .get_embedded_vocabulary()
+        .unwrap_or_else(|| {
+            let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
+            eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
+            let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+            if !v.is_empty() {
+                v[0] = "<unk>".to_string();
+            }
+            v
+        });
 
     println!("{}", "Q4K CPU inference ready".green());
 

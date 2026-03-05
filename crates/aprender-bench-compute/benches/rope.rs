@@ -53,18 +53,10 @@ fn bench_rope_ndarray(c: &mut Criterion) {
 
         let max_pos = seq_len.max(2048);
         let cos_cache: Vec<f32> = (0..max_pos)
-            .flat_map(|pos| {
-                inv_freq
-                    .iter()
-                    .map(move |&freq| (pos as f32 * freq).cos())
-            })
+            .flat_map(|pos| inv_freq.iter().map(move |&freq| (pos as f32 * freq).cos()))
             .collect();
         let sin_cache: Vec<f32> = (0..max_pos)
-            .flat_map(|pos| {
-                inv_freq
-                    .iter()
-                    .map(move |&freq| (pos as f32 * freq).sin())
-            })
+            .flat_map(|pos| inv_freq.iter().map(move |&freq| (pos as f32 * freq).sin()))
             .collect();
 
         let data = deterministic_f32(total);
@@ -80,8 +72,7 @@ fn bench_rope_ndarray(c: &mut Criterion) {
                             let cos_val = cos_cache[s * half_dim + i];
                             let sin_val = sin_cache[s * half_dim + i];
 
-                            let idx1 =
-                                s * num_heads * head_dim + h * head_dim + 2 * i;
+                            let idx1 = s * num_heads * head_dim + h * head_dim + 2 * i;
                             let idx2 = idx1 + 1;
 
                             let x1 = data[idx1];

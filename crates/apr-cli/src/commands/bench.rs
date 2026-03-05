@@ -27,10 +27,10 @@ use colored::Colorize;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "visualization")]
-use renacer::brick_tracer::BrickTracer as TracerImpl;
 #[cfg(not(feature = "visualization"))]
 use brick_tracer_shim::BrickTracer as TracerImpl;
+#[cfg(feature = "visualization")]
+use renacer::brick_tracer::BrickTracer as TracerImpl;
 
 /// No-op BrickTracer shim when the `visualization` (renacer) feature is disabled.
 /// Provides the same API surface so callers compile without cfg gates on every call site.
@@ -44,8 +44,12 @@ mod brick_tracer_shim {
         pub ioctl_us: u64,
     }
     impl SyscallBreakdown {
-        pub fn syscall_overhead_percent(&self) -> f64 { 0.0 }
-        pub fn dominant_syscall(&self) -> &'static str { "none" }
+        pub fn syscall_overhead_percent(&self) -> f64 {
+            0.0
+        }
+        pub fn dominant_syscall(&self) -> &'static str {
+            "none"
+        }
     }
 
     /// Stub trace metadata.
@@ -66,8 +70,15 @@ mod brick_tracer_shim {
     /// No-op tracer that just times the closure with `Instant`.
     pub struct BrickTracer;
     impl BrickTracer {
-        pub fn new_local() -> Self { Self }
-        pub fn trace<T>(&self, _name: &str, _budget_us: u64, f: impl FnOnce() -> T) -> TracedResult<T> {
+        pub fn new_local() -> Self {
+            Self
+        }
+        pub fn trace<T>(
+            &self,
+            _name: &str,
+            _budget_us: u64,
+            f: impl FnOnce() -> T,
+        ) -> TracedResult<T> {
             let start = std::time::Instant::now();
             let result = f();
             let duration_us = start.elapsed().as_micros() as u64;
@@ -276,7 +287,9 @@ fn resolve_brick_spec(brick_name: &str) -> Result<(f64, &'static str)> {
 /// but don't execute real computation. The budget is a theoretical estimate
 /// based on FLOP counts and memory bandwidth, not measured wall-clock time.
 #[cfg(feature = "inference")]
-fn analytical_budget_report(brick: &impl realizar::brick::ComputeBrick) -> realizar::brick::BenchmarkReport {
+fn analytical_budget_report(
+    brick: &impl realizar::brick::ComputeBrick,
+) -> realizar::brick::BenchmarkReport {
     let budget = brick.budget();
     eprintln!(
         "[GH-90] Brick '{}' has no run() implementation — reporting analytical budget ({:.1}µs), not measured timing",
@@ -322,8 +335,7 @@ fn execute_brick_benchmark(
     _model_path: &Path,
 ) -> Result<realizar::brick::BenchmarkReport> {
     use realizar::brick::{
-        benchmark_brick, AttentionBrick, FfnBrick,
-        OProjBrick, QkvBrick, RmsNormBrick, RopeBrick,
+        benchmark_brick, AttentionBrick, FfnBrick, OProjBrick, QkvBrick, RmsNormBrick, RopeBrick,
         TransformerLayerBrick,
     };
 
@@ -394,9 +406,20 @@ fn execute_brick_benchmark(
         // Restore when realizar publishes: LoraForwardBrick, OptimizerStepBrick,
         // LossComputeBrick, TrainingStepBrick, ServeTtftBrick, ServeThroughputBrick,
         // ServeBatchBrick.
-        "lora_forward" | "lora" | "optimizer" | "adamw" | "loss" | "cross_entropy"
-        | "train_step" | "training" | "ttft" | "time_to_first_token"
-        | "throughput" | "decode" | "batch" | "batch_generate" => {
+        "lora_forward"
+        | "lora"
+        | "optimizer"
+        | "adamw"
+        | "loss"
+        | "cross_entropy"
+        | "train_step"
+        | "training"
+        | "ttft"
+        | "time_to_first_token"
+        | "throughput"
+        | "decode"
+        | "batch"
+        | "batch_generate" => {
             return Err(CliError::ValidationFailed(format!(
                 "brick '{}' not yet available: its brick type is not published in realizar 0.8.0",
                 brick_name
@@ -425,7 +448,10 @@ fn load_tokenizer_for_brick(model_path: &Path) -> Result<aprender::text::bpe::Bp
     let sibling = model_path.with_file_name(format!("{stem}.tokenizer.json"));
     if sibling.exists() {
         return BpeTokenizer::from_huggingface(&sibling).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to load tokenizer from {}: {e}", sibling.display()))
+            CliError::ValidationFailed(format!(
+                "Failed to load tokenizer from {}: {e}",
+                sibling.display()
+            ))
         });
     }
 
@@ -466,7 +492,8 @@ fn print_brick_results(
     let cv_stable = cv <= 0.05;
 
     // GH-90: Indicate when results are analytical (not measured)
-    let is_analytical = report.std_us == 0.0 && report.p50_us == report.p99_us && report.p50_us == report.mean_us;
+    let is_analytical =
+        report.std_us == 0.0 && report.p50_us == report.p99_us && report.p50_us == report.mean_us;
     if is_analytical {
         println!(
             "{}",
@@ -555,7 +582,12 @@ fn print_brick_results(
 /// Tests individual ComputeBrick types for their token budget compliance.
 /// Implements falsification tests F023-F029 for per-brick performance.
 #[cfg(feature = "inference")]
-fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize, model_path: &Path) -> Result<()> {
+fn run_brick_benchmark(
+    brick_name: &str,
+    warmup: usize,
+    iterations: usize,
+    model_path: &Path,
+) -> Result<()> {
     use realizar::brick::BenchmarkConfig;
 
     let (budget_target, brick_description) = resolve_brick_spec(brick_name)?;

@@ -19,10 +19,10 @@ pub const MATMUL_SIZES: &[(usize, usize, usize)] = &[
 ///
 /// The hot path in autoregressive generation: one input vector × weight matrix.
 pub const MATVEC_SIZES: &[(usize, usize)] = &[
-    (1536, 1536),   // 1.5B hidden→hidden
-    (1536, 8960),   // 1.5B hidden→FFN
-    (4096, 4096),   // 7B hidden→hidden
-    (4096, 11008),  // 7B hidden→FFN
+    (1536, 1536),  // 1.5B hidden→hidden
+    (1536, 8960),  // 1.5B hidden→FFN
+    (4096, 4096),  // 7B hidden→hidden
+    (4096, 11008), // 7B hidden→FFN
 ];
 
 /// Activation sizes (number of elements).
@@ -63,8 +63,8 @@ pub const ELEMENTWISE_SIZES: &[usize] = &[1536, 4096, 8192, 16384];
 /// Rotary position embedding applied per-head per-token.
 /// 7B: 32 heads × 128 head_dim, 1.5B: 12 heads × 128 head_dim.
 pub const ROPE_SIZES: &[(usize, usize, usize)] = &[
-    (1, 12, 128),    // 1.5B single-token
-    (1, 32, 128),    // 7B single-token
-    (128, 32, 128),  // 7B prefill 128 tokens
-    (512, 32, 128),  // 7B prefill 512 tokens
+    (1, 12, 128),   // 1.5B single-token
+    (1, 32, 128),   // 7B single-token
+    (128, 32, 128), // 7B prefill 128 tokens
+    (512, 32, 128), // 7B prefill 512 tokens
 ];

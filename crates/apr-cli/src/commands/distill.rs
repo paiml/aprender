@@ -253,7 +253,6 @@ impl DistillYamlConfig {
         }
         Ok(())
     }
-
 }
 
 /// Distillation strategy
@@ -480,18 +479,38 @@ fn run_config_plan(
     let dataset_path = std::path::Path::new(&config.dataset.path);
     let dataset_exists = dataset_path.exists();
     let dataset_size = if dataset_exists {
-        std::fs::metadata(dataset_path).map(|m| m.len()).unwrap_or(0)
+        std::fs::metadata(dataset_path)
+            .map(|m| m.len())
+            .unwrap_or(0)
     } else {
         0
     };
     let teacher_path = std::path::Path::new(&config.teacher.model_id);
     let teacher_exists = teacher_path.exists();
-    let teacher_size = if teacher_exists { dir_size(teacher_path) } else { 0 };
+    let teacher_size = if teacher_exists {
+        dir_size(teacher_path)
+    } else {
+        0
+    };
 
     if json_output {
-        print_config_plan_json(config, config_path, teacher_exists, teacher_size, dataset_exists, dataset_size);
+        print_config_plan_json(
+            config,
+            config_path,
+            teacher_exists,
+            teacher_size,
+            dataset_exists,
+            dataset_size,
+        );
     } else {
-        print_config_plan_text(config, config_path, teacher_exists, teacher_size, dataset_exists, dataset_size);
+        print_config_plan_text(
+            config,
+            config_path,
+            teacher_exists,
+            teacher_size,
+            dataset_exists,
+            dataset_size,
+        );
     }
     Ok(())
 }
@@ -545,7 +564,10 @@ fn print_config_plan_json(
         "stages": ["precompute", "train"],
         "verdict": if teacher_exists && dataset_exists { "ready" } else { "missing_dependencies" },
     });
-    println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 }
 
 /// Text output for config-driven plan.
@@ -571,19 +593,42 @@ fn print_config_plan_text(
 
     output::subheader("  Two-Stage Workflow");
     output::kv("    Output dir", &config.output.dir);
-    println!("    Stage 1: apr distill --config {} --stage precompute", config_path.display());
-    println!("             Extract teacher logits → {}/logits/", config.output.dir);
-    println!("    Stage 2: apr distill --config {} --stage train", config_path.display());
-    println!("             Train student with KD loss → {}/student/", config.output.dir);
+    println!(
+        "    Stage 1: apr distill --config {} --stage precompute",
+        config_path.display()
+    );
+    println!(
+        "             Extract teacher logits → {}/logits/",
+        config.output.dir
+    );
+    println!(
+        "    Stage 2: apr distill --config {} --stage train",
+        config_path.display()
+    );
+    println!(
+        "             Train student with KD loss → {}/student/",
+        config.output.dir
+    );
     println!();
 
     if teacher_exists && dataset_exists {
-        println!("  {} Config validated, ready for apply", "READY".green().bold());
+        println!(
+            "  {} Config validated, ready for apply",
+            "READY".green().bold()
+        );
     } else {
         let mut missing = Vec::new();
-        if !teacher_exists { missing.push("teacher model"); }
-        if !dataset_exists { missing.push("dataset"); }
-        println!("  {} Missing: {}", "WARN".yellow().bold(), missing.join(", "));
+        if !teacher_exists {
+            missing.push("teacher model");
+        }
+        if !dataset_exists {
+            missing.push("dataset");
+        }
+        println!(
+            "  {} Missing: {}",
+            "WARN".yellow().bold(),
+            missing.join(", ")
+        );
     }
 }
 
@@ -594,7 +639,14 @@ fn print_config_plan_teacher(config: &DistillYamlConfig, exists: bool, size: u64
     if exists {
         output::kv("    Size", humansize::format_size(size, humansize::BINARY));
     }
-    output::kv("    8-bit loading", if config.teacher.load_in_8bit { "yes" } else { "no" });
+    output::kv(
+        "    8-bit loading",
+        if config.teacher.load_in_8bit {
+            "yes"
+        } else {
+            "no"
+        },
+    );
     println!();
 }
 
@@ -610,7 +662,10 @@ fn print_config_plan_student(config: &DistillYamlConfig) {
 
 fn print_config_plan_distill(config: &DistillYamlConfig) {
     output::subheader("  Distillation");
-    output::kv("    Temperature", format!("{:.1}", config.distillation.temperature));
+    output::kv(
+        "    Temperature",
+        format!("{:.1}", config.distillation.temperature),
+    );
     output::kv("    Alpha", format!("{:.2}", config.distillation.alpha));
     if config.distillation.progressive.is_some() {
         output::kv("    Progressive", "enabled");
@@ -625,7 +680,10 @@ fn print_config_plan_training(config: &DistillYamlConfig) {
     output::subheader("  Training");
     output::kv("    Epochs", config.training.epochs.to_string());
     output::kv("    Batch size", config.training.batch_size.to_string());
-    output::kv("    Learning rate", format!("{:.2e}", config.training.learning_rate));
+    output::kv(
+        "    Learning rate",
+        format!("{:.2e}", config.training.learning_rate),
+    );
     if let Some(ref mp) = config.training.mixed_precision {
         output::kv("    Mixed precision", mp);
     }
@@ -639,7 +697,10 @@ fn print_config_plan_dataset(config: &DistillYamlConfig, exists: bool, size: u64
     if exists {
         output::kv("    Size", humansize::format_size(size, humansize::BINARY));
     }
-    output::kv("    Max seq length", config.dataset.max_seq_length.to_string());
+    output::kv(
+        "    Max seq length",
+        config.dataset.max_seq_length.to_string(),
+    );
     println!();
 }
 
@@ -819,9 +880,12 @@ fn inspect_dir_files(
     let mut total_size = 0u64;
     for entry in entries.flatten() {
         let p = entry.path();
-        let is_model = p.extension().and_then(|e| e.to_str())
-            .map_or(false, |ext| matches!(ext, "safetensors" | "apr" | "gguf" | "bin"));
-        if !is_model { continue; }
+        let is_model = p.extension().and_then(|e| e.to_str()).map_or(false, |ext| {
+            matches!(ext, "safetensors" | "apr" | "gguf" | "bin")
+        });
+        if !is_model {
+            continue;
+        }
         total_tensors += rosetta.inspect(&p).map_or(0, |r| r.tensors.len());
         total_size += std::fs::metadata(&p).map_or(0, |m| m.len());
     }
@@ -933,10 +997,7 @@ fn run_config_train(
             println!();
             output::kv("  Metadata", meta_path.display().to_string());
             println!();
-            println!(
-                "  {} Student training completed.",
-                "DONE".green().bold()
-            );
+            println!("  {} Student training completed.", "DONE".green().bold());
         }
     } else {
         if !json_output {
