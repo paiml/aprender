@@ -442,9 +442,23 @@ fn start_gguf_server_cuda(
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
     );
 
-    match OwnedQuantizedModelCuda::new(quantized_model, 0) {
+    // GH-129: Allow max_seq_len override for memory-constrained devices (Jetson 7.4 GB unified)
+    let max_seq_len = std::env::var("REALIZR_MAX_SEQ_LEN")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2048);
+    println!("  Max sequence length: {max_seq_len}");
+
+    match OwnedQuantizedModelCuda::with_max_seq_len(quantized_model, 0, max_seq_len) {
         Ok(mut cuda_model) => {
             preload_gpu_weights(&mut cuda_model);
+
+            // GH-129: Free CPU weight copies on unified memory devices (Jetson).
+            // After GPU preload, the CPU Vec<u8> copies are redundant — saves ~1 GB.
+            if std::env::var("REALIZR_FREE_CPU_WEIGHTS").as_deref() == Ok("1") {
+                cuda_model.free_cpu_weights();
+            }
+
             println!("{}", "CUDA optimized model ready".green());
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
