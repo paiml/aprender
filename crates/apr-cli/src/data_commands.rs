@@ -67,6 +67,27 @@ pub enum DataCommands {
         #[arg(long, default_value = "input")]
         text_column: String,
     },
+    /// Extract instruction/response pairs from Python source for fine-tuning
+    Prep {
+        /// Directory of Python source files to extract from
+        #[arg(value_name = "DIR")]
+        source_dir: PathBuf,
+        /// Output JSONL file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Corpus identifier (e.g., "cpython", "numpy")
+        #[arg(long, default_value = "corpus")]
+        corpus: String,
+        /// Minimum response body lines
+        #[arg(long, default_value = "3")]
+        min_lines: usize,
+        /// Maximum response body lines
+        #[arg(long, default_value = "200")]
+        max_lines: usize,
+        /// Disable deduplication by instruction text
+        #[arg(long)]
+        no_dedup: bool,
+    },
     /// Resample dataset to address class imbalance
     Balance {
         /// Path to JSONL data file

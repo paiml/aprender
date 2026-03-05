@@ -709,6 +709,75 @@ fn read_text_column(path: &Path, column: &str) -> Result<Vec<String>> {
     Ok(texts)
 }
 
+// ── apr data prep ───────────────────────────────────────────────────────────
+
+/// Extract instruction/response pairs from Python source files.
+pub(crate) fn run_prep(
+    source_dir: &Path,
+    output: &Path,
+    corpus: &str,
+    min_lines: usize,
+    max_lines: usize,
+    deduplicate: bool,
+    json_output: bool,
+) -> Result<()> {
+    use alimentar::doctest::instruct::{ExtractConfig, InstructExtractor};
+
+    if !source_dir.exists() {
+        return Err(CliError::FileNotFound(source_dir.to_path_buf()));
+    }
+    if !source_dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "{} is not a directory",
+            source_dir.display()
+        )));
+    }
+
+    let config = ExtractConfig {
+        min_lines,
+        max_lines,
+        deduplicate,
+    };
+    let extractor = InstructExtractor::new(config);
+
+    let pairs = extractor.extract_from_directory(source_dir, corpus).map_err(|e| {
+        CliError::ValidationFailed(format!("Extraction failed: {e}"))
+    })?;
+
+    InstructExtractor::write_jsonl(&pairs, output).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to write JSONL: {e}"))
+    })?;
+
+    if json_output {
+        #[allow(clippy::disallowed_methods)]
+        let report = serde_json::json!({
+            "source_dir": source_dir.display().to_string(),
+            "output": output.display().to_string(),
+            "corpus": corpus,
+            "pairs_extracted": pairs.len(),
+            "min_lines": min_lines,
+            "max_lines": max_lines,
+            "deduplicate": deduplicate,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    } else {
+        output::section("Instruction/Response Extraction");
+        println!();
+        output::kv("Source", source_dir.display());
+        output::kv("Corpus", corpus);
+        output::kv("Pairs extracted", pairs.len());
+        output::kv("Output", output.display());
+        output::kv("Config", format!("lines={min_lines}-{max_lines}, dedup={deduplicate}"));
+        println!();
+        println!("{} Written to {}", "OK".green(), output.display());
+    }
+
+    Ok(())
+}
+
 // ── apr data split ──────────────────────────────────────────────────────────
 
 /// Stratified train/val/test split using alimentar.

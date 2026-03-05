@@ -277,6 +277,22 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             text_column,
             json,
         ),
+        DataCommands::Prep {
+            source_dir,
+            output,
+            corpus,
+            min_lines,
+            max_lines,
+            no_dedup,
+        } => data::run_prep(
+            source_dir,
+            output,
+            corpus,
+            *min_lines,
+            *max_lines,
+            !*no_dedup,
+            json,
+        ),
         DataCommands::Balance {
             file,
             strategy,
