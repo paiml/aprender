@@ -124,6 +124,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "alimentar"
+version = "0.2.8"
+dependencies = [
+ "arrow 57.3.0",
+ "arrow-csv",
+ "arrow-json",
+ "bytes",
+ "clap",
+ "crossterm",
+ "lz4_flex",
+ "memmap2",
+ "nu-ansi-term",
+ "parquet 57.3.0",
+ "rand 0.8.5",
+ "reedline",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "unicode-width 0.2.0",
+ "zstd",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -241,7 +268,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "apr-cli"
 version = "0.4.10"
 dependencies = [
- "alimentar",
+ "alimentar 0.2.8",
  "aprender 0.27.4",
  "assert_cmd",
  "axum",
@@ -313,7 +340,7 @@ name = "aprender"
 version = "0.27.4"
 dependencies = [
  "aes-gcm",
- "alimentar",
+ "alimentar 0.2.8",
  "alsa",
  "argon2",
  "batuta-common",
@@ -2276,7 +2303,7 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 name = "entrenar"
 version = "0.7.5"
 dependencies = [
- "alimentar",
+ "alimentar 0.2.7",
  "aprender 0.27.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "arrow 57.3.0",
  "bytemuck",
@@ -7041,7 +7068,7 @@ dependencies = [
 
 [[package]]
 name = "trueno-gpu"
-version = "0.4.25"
+version = "0.4.26"
 dependencies = [
  "batuta-common",
  "libloading",

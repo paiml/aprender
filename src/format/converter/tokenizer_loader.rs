@@ -536,6 +536,23 @@ fn find_sentencepiece_model(model_path: &Path) -> Option<PathBuf> {
 ///   ModelProto.pieces (field 1, length-delimited) → repeated SentencePiece
 ///     SentencePiece.piece (field 1, length-delimited) → string
 ///     SentencePiece.score (field 2, wire type 5) → float32
+/// Skip a protobuf field based on wire type, advancing position past it.
+fn skip_proto_field(data: &[u8], pos: usize, wire_type: u64) -> Option<usize> {
+    match wire_type {
+        2 => {
+            let (len, new_pos) = read_varint(data, pos)?;
+            Some(new_pos + len as usize)
+        }
+        0 => {
+            let (_, new_pos) = read_varint(data, pos)?;
+            Some(new_pos)
+        }
+        1 => Some(pos + 8),
+        5 => Some(pos + 4),
+        _ => None,
+    }
+}
+
 fn parse_sentencepiece_protobuf(data: &[u8]) -> Option<(Vec<String>, Vec<f32>)> {
     let mut vocab = Vec::new();
     let mut scores = Vec::new();
@@ -544,12 +561,10 @@ fn parse_sentencepiece_protobuf(data: &[u8]) -> Option<(Vec<String>, Vec<f32>)> 
     while pos < data.len() {
         let (tag, new_pos) = read_varint(data, pos)?;
         pos = new_pos;
-
         let field_number = tag >> 3;
         let wire_type = tag & 0x7;
 
         match (field_number, wire_type) {
-            // ModelProto.pieces — field 1, length-delimited
             (1, 2) => {
                 let (len, new_pos) = read_varint(data, pos)?;
                 pos = new_pos;
@@ -557,39 +572,41 @@ fn parse_sentencepiece_protobuf(data: &[u8]) -> Option<(Vec<String>, Vec<f32>)> 
                 if pos + len > data.len() {
                     return None;
                 }
-                let submsg = &data[pos..pos + len];
-                let (piece, score) = parse_sentencepiece_entry(submsg)?;
+                let (piece, score) = parse_sentencepiece_entry(&data[pos..pos + len])?;
                 vocab.push(piece);
                 scores.push(score);
                 pos += len;
             }
-            // Skip other length-delimited fields (TrainerSpec, NormalizerSpec, etc.)
-            (_, 2) => {
-                let (len, new_pos) = read_varint(data, pos)?;
-                pos = new_pos;
-                pos += len as usize;
+            _ => {
+                pos = skip_proto_field(data, pos, wire_type)?;
             }
-            // Skip varint fields
-            (_, 0) => {
-                let (_, new_pos) = read_varint(data, pos)?;
-                pos = new_pos;
-            }
-            // Skip 64-bit fields
-            (_, 1) => pos += 8,
-            // Skip 32-bit fields
-            (_, 5) => pos += 4,
-            _ => return None,
         }
     }
 
-    if vocab.is_empty() {
-        None
-    } else {
-        Some((vocab, scores))
-    }
+    if vocab.is_empty() { None } else { Some((vocab, scores)) }
 }
 
 /// Parse a single SentencePiece submessage to extract piece string and score.
+/// Read a length-delimited protobuf string field.
+fn read_proto_string(data: &[u8], pos: usize) -> Option<(String, usize)> {
+    let (len, new_pos) = read_varint(data, pos)?;
+    let len = len as usize;
+    if new_pos + len > data.len() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&data[new_pos..new_pos + len]).into_owned();
+    Some((s, new_pos + len))
+}
+
+/// Read a 32-bit float from protobuf wire format.
+fn read_proto_f32(data: &[u8], pos: usize) -> Option<(f32, usize)> {
+    if pos + 4 > data.len() {
+        return None;
+    }
+    let val = f32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+    Some((val, pos + 4))
+}
+
 fn parse_sentencepiece_entry(data: &[u8]) -> Option<(String, f32)> {
     let mut piece = String::new();
     let mut score: f32 = 0.0;
@@ -598,51 +615,23 @@ fn parse_sentencepiece_entry(data: &[u8]) -> Option<(String, f32)> {
     while pos < data.len() {
         let (tag, new_pos) = read_varint(data, pos)?;
         pos = new_pos;
-
         let field_number = tag >> 3;
         let wire_type = tag & 0x7;
 
         match (field_number, wire_type) {
-            // SentencePiece.piece — field 1, string
             (1, 2) => {
-                let (len, new_pos) = read_varint(data, pos)?;
+                let (s, new_pos) = read_proto_string(data, pos)?;
+                piece = s;
                 pos = new_pos;
-                let len = len as usize;
-                if pos + len > data.len() {
-                    return None;
-                }
-                piece = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-                pos += len;
             }
-            // SentencePiece.score — field 2, float32
             (2, 5) => {
-                if pos + 4 > data.len() {
-                    return None;
-                }
-                score = f32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-                pos += 4;
-            }
-            // SentencePiece.type — field 3, varint
-            (3, 0) => {
-                let (_, new_pos) = read_varint(data, pos)?;
+                let (v, new_pos) = read_proto_f32(data, pos)?;
+                score = v;
                 pos = new_pos;
             }
-            // Skip other length-delimited fields
-            (_, 2) => {
-                let (len, new_pos) = read_varint(data, pos)?;
-                pos = new_pos;
-                pos += len as usize;
+            _ => {
+                pos = skip_proto_field(data, pos, wire_type)?;
             }
-            // Skip other varint fields
-            (_, 0) => {
-                let (_, new_pos) = read_varint(data, pos)?;
-                pos = new_pos;
-            }
-            // Skip 32-bit fields
-            (_, 5) => pos += 4,
-            // Skip 64-bit fields
-            (_, 1) => pos += 8,
-            _ => return None,
         }
     }
 

@@ -399,7 +399,11 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         return Ok(model);
     }
 
-    // GH-357: Detect PyTorch-only repos and give a helpful conversion hint
+    resolve_hf_model_fallback(&filenames, org, repo)
+}
+
+/// GH-357: Handle repos with no GGUF/SafeTensors — detect PyTorch-only repos.
+fn resolve_hf_model_fallback(filenames: &[&str], org: &str, repo: &str) -> Result<ResolvedModel> {
     let has_bin_files = filenames
         .iter()
         .any(|f| f.to_lowercase().ends_with(".bin"));

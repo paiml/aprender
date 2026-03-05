@@ -247,7 +247,7 @@ hkdf = { version = "0.12", optional = true }
 sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 
 # Data loading
-alimentar = { version = "0.2.2", optional = true }
+alimentar = { version = "0.2.8", path = "../alimentar", optional = true }
 
 # entrenar: removed as runtime dep — explainable types now live in aprender (GH-305)
 # entrenar remains as dev-dependency for InferenceMonitor integration tests

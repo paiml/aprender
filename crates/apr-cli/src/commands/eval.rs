@@ -743,6 +743,25 @@ pub(crate) fn run_code_eval(
     }
 
     let elapsed = start.elapsed().as_secs_f32();
+
+    print_code_eval_results(
+        model_path, data_path, &problems, &results, elapsed, threshold, json_output,
+    )?;
+
+    Ok(())
+}
+
+/// Format and print code evaluation results.
+#[allow(clippy::disallowed_methods)]
+fn print_code_eval_results(
+    model_path: &Path,
+    data_path: &Path,
+    problems: &[CodeBenchProblem],
+    results: &[CodeBenchResult],
+    elapsed: f32,
+    threshold: f32,
+    json_output: bool,
+) -> Result<()> {
     let total = results.len();
     let passed = results.iter().filter(|r| r.passed).count();
     let pass_rate = if total > 0 {
@@ -772,8 +791,7 @@ pub(crate) fn run_code_eval(
             serde_json::to_string_pretty(&output).unwrap_or_default()
         );
     } else {
-        // Print per-problem results
-        for (i, (problem, result)) in problems.iter().zip(&results).enumerate() {
+        for (i, (problem, result)) in problems.iter().zip(results).enumerate() {
             let fallback = format!("task_{i}");
             let task_id = problem.task_id.as_deref().unwrap_or(&fallback);
             let status = if result.passed {

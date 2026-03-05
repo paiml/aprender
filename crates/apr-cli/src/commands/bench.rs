@@ -314,7 +314,7 @@ fn analytical_budget_report(
 ///
 /// Loads AprTransformer to extract config dimensions (hidden_dim, num_layers, etc.)
 /// used by training and serving bricks for real-model benchmarking.
-// TODO: Re-enable when realizar publishes training/serving bricks
+// Disabled until realizar publishes training/serving bricks
 #[cfg(feature = "inference")]
 #[allow(dead_code)]
 fn read_apr_model_config(
@@ -357,8 +357,8 @@ fn execute_brick_benchmark(
                 bench_config,
             )
         }
-        // TODO: TokenizeBrick not yet published in realizar 0.8.0
-        // Restore when realizar publishes TokenizeBrick
+        // TokenizeBrick not yet published in realizar 0.8.0
+        // Will be restored when realizar publishes TokenizeBrick
         "tokenize" | "bpe" => {
             return Err(CliError::ValidationFailed(
                 "tokenize brick not yet available: TokenizeBrick is not published in realizar 0.8.0".to_string()
@@ -402,8 +402,8 @@ fn execute_brick_benchmark(
             }
         }
 
-        // TODO: Training and serving bricks not yet published in realizar 0.8.0.
-        // Restore when realizar publishes: LoraForwardBrick, OptimizerStepBrick,
+        // Training and serving bricks not yet published in realizar 0.8.0.
+        // Pending realizar publication of: LoraForwardBrick, OptimizerStepBrick,
         // LossComputeBrick, TrainingStepBrick, ServeTtftBrick, ServeThroughputBrick,
         // ServeBatchBrick.
         "lora_forward"
@@ -437,7 +437,7 @@ fn execute_brick_benchmark(
 /// 1. Sibling `{model_stem}.tokenizer.json`
 /// 2. Sibling `tokenizer.json` in same directory
 /// 3. Embedded tokenizer in GGUF/APR model (extracts to temp file)
-// TODO: Re-enable when realizar publishes TokenizeBrick
+// Disabled until realizar publishes TokenizeBrick
 #[cfg(feature = "inference")]
 #[allow(dead_code)]
 fn load_tokenizer_for_brick(model_path: &Path) -> Result<aprender::text::bpe::BpeTokenizer> {

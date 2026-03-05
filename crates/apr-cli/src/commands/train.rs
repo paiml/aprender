@@ -430,28 +430,39 @@ pub(crate) fn run_watch(
         }
 
         kill_stale_gpu_procs();
-        let exit_status = run_training_process(config_path, state.use_blocking);
+        match handle_watch_iteration(config_path, &mut state, backoff_initial, backoff_max, json_output)? {
+            Some(result) => return result,
+            None => continue,
+        }
+    }
+}
 
-        match exit_status {
-            Ok(status) if status.success() => {
-                return watch_success(state.attempt, json_output);
+/// Run one iteration of the watch loop. Returns Some(result) to exit, None to continue.
+fn handle_watch_iteration(
+    config_path: &std::path::Path,
+    state: &mut WatchState,
+    backoff_initial: u64,
+    backoff_max: u64,
+    json_output: bool,
+) -> Result<Option<Result<()>>> {
+    let exit_status = run_training_process(config_path, state.use_blocking);
+
+    match exit_status {
+        Ok(status) if status.success() => {
+            Ok(Some(watch_success(state.attempt, json_output)))
+        }
+        Ok(status) => {
+            let action = handle_crash(
+                config_path, state, status, backoff_initial, backoff_max, json_output,
+            )?;
+            if action == CrashAction::Fatal {
+                Ok(Some(Err(CliError::ValidationFailed("Fatal error".to_string()))))
+            } else {
+                Ok(None)
             }
-            Ok(status) => {
-                let action = handle_crash(
-                    config_path,
-                    &mut state,
-                    status,
-                    backoff_initial,
-                    backoff_max,
-                    json_output,
-                )?;
-                if action == CrashAction::Fatal {
-                    return Err(CliError::ValidationFailed("Fatal error".to_string()));
-                }
-            }
-            Err(e) => {
-                return Err(watch_spawn_failed(e, json_output));
-            }
+        }
+        Err(e) => {
+            Ok(Some(Err(watch_spawn_failed(e, json_output))))
         }
     }
 }
@@ -870,34 +881,12 @@ fn set_yaml_u64(root: &mut serde_yaml::Value, path: &[&str], val: u64) {
 // Archive command (self-contained, no unpublished API deps)
 // ============================================================================
 
-pub(crate) fn run_archive(
+/// Copy checkpoint files to output dir, computing BLAKE3 hashes.
+fn copy_checkpoint_files(
     checkpoint_dir: &std::path::Path,
     output_dir: &std::path::Path,
-    version: Option<&str>,
-    notes: Option<&str>,
     json_output: bool,
-) -> Result<()> {
-    if !checkpoint_dir.is_dir() {
-        return Err(CliError::ValidationFailed(format!(
-            "Not a directory: {}",
-            checkpoint_dir.display()
-        )));
-    }
-
-    std::fs::create_dir_all(output_dir)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot create output dir: {e}")))?;
-
-    if !json_output {
-        output::header("apr train archive — Checkpoint Release Bundle");
-        println!();
-        output::kv("  Source", checkpoint_dir.display().to_string());
-        output::kv("  Output", output_dir.display().to_string());
-        if let Some(v) = version {
-            output::kv("  Version", v);
-        }
-        println!();
-    }
-
+) -> Result<(Vec<serde_json::Value>, u64)> {
     let mut manifest_entries = Vec::new();
     let mut total_bytes: u64 = 0;
 
@@ -937,13 +926,46 @@ pub(crate) fn run_archive(
 
         if !json_output {
             println!(
-                "  [COPY] {} ({}, BLAKE3: {}…)",
+                "  [COPY] {} ({}, BLAKE3: {}...)",
                 filename,
                 format_archive_size(size),
                 &hash[..16]
             );
         }
     }
+    Ok((manifest_entries, total_bytes))
+}
+
+pub(crate) fn run_archive(
+    checkpoint_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    version: Option<&str>,
+    notes: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if !checkpoint_dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "Not a directory: {}",
+            checkpoint_dir.display()
+        )));
+    }
+
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot create output dir: {e}")))?;
+
+    if !json_output {
+        output::header("apr train archive — Checkpoint Release Bundle");
+        println!();
+        output::kv("  Source", checkpoint_dir.display().to_string());
+        output::kv("  Output", output_dir.display().to_string());
+        if let Some(v) = version {
+            output::kv("  Version", v);
+        }
+        println!();
+    }
+
+    let (manifest_entries, total_bytes) =
+        copy_checkpoint_files(checkpoint_dir, output_dir, json_output)?;
 
     let manifest = serde_json::json!({
         "format": "albor-checkpoint-archive",

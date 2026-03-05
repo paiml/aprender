@@ -260,6 +260,20 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
     result
 }
 
+/// Handle a key press event in the experiment browser.
+fn handle_browser_key(app: &mut BrowserApp, code: KeyCode) {
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        KeyCode::Up | KeyCode::Char('k') => app.previous(),
+        KeyCode::Down | KeyCode::Char('j') => app.next(),
+        KeyCode::Home => app.selected = 0,
+        KeyCode::End => {
+            app.selected = app.rows.len().saturating_sub(1);
+        }
+        _ => {}
+    }
+}
+
 fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut BrowserApp,
@@ -275,18 +289,8 @@ fn run_event_loop(
             if let Event::Key(key) = event::read()
                 .map_err(|e| CliError::ValidationFailed(format!("Event read error: {e}")))?
             {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                    KeyCode::Down | KeyCode::Char('j') => app.next(),
-                    KeyCode::Home => app.selected = 0,
-                    KeyCode::End => {
-                        app.selected = app.rows.len().saturating_sub(1);
-                    }
-                    _ => {}
+                if key.kind == KeyEventKind::Press {
+                    handle_browser_key(app, key.code);
                 }
             }
         }
