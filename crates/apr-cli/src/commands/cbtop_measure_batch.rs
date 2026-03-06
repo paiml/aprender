@@ -331,14 +331,16 @@ fn build_and_output_report(
     let score_sum: f64 = brick_reports.iter().map(|b| b.score as f64).sum();
     let pmat_brick_score = (score_sum / n_bricks as f64) as u32;
 
-    let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0);
+    // 1e-9 epsilon: budget derived from same profiler data, so gap ≈ 1.0;
+    // without epsilon, floating-point rounding makes gap 1.0000000000001 → false fail.
+    let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
     // GH-420 Bug 5: status is pass/fail on brick gaps only.
     // Throughput target is hardware-dependent — do not hardcode.
     let status = if all_pass { "PASS" } else { "FAIL" };
     let ci_result = if all_pass { "green" } else { "red" };
 
     // GH-420 Bug 4: Count actual brick pass/fail for falsification summary.
-    let brick_passed = brick_reports.iter().filter(|b| b.gap_factor <= 1.0).count() as u32;
+    let brick_passed = brick_reports.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
     let brick_failed = (n_bricks as u32).saturating_sub(brick_passed);
 
     let report = HeadlessReport {
@@ -404,12 +406,17 @@ fn build_and_output_report(
 /// Compute brick score from actual timing vs budget
 fn compute_brick_score(actual_us: f64, budget_us: f64) -> u32 {
     let gap = actual_us / budget_us;
-    if gap <= 1.0 {
+    // 1e-9 epsilon: budget derived from same profiler data as actual,
+    // so gap ≈ 1.0 always; without epsilon, floating-point rounding
+    // produces 1.0000000000001 which truncates score to 99.
+    if gap <= 1.0 + 1e-9 {
         100
     } else if gap <= 1.2 {
-        (100.0 - (gap - 1.0) * 50.0) as u32
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        { (100.0 - (gap - 1.0) * 50.0) as u32 }
     } else {
-        (100.0 - (gap - 1.0) * 100.0).max(0.0) as u32
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        { (100.0 - (gap - 1.0) * 100.0).max(0.0) as u32 }
     }
 }
 

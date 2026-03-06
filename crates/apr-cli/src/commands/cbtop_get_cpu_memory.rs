@@ -27,7 +27,7 @@ fn get_memory_gb() -> u32 {
 fn score_brick(b: &BrickTiming) -> BrickScore {
     let gap = b.gap_factor();
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let score = if gap <= 1.0 {
+    let score = if gap <= 1.0 + 1e-9 {
         100
     } else if gap <= 1.2 {
         (100.0 - (gap - 1.0) * 50.0) as u32
@@ -110,12 +110,12 @@ fn generate_headless_report_simulated(
     let cv_percent = cv_percent_from_samples(&all_samples);
     let (p50, p99) = pipeline.bricks.first().map_or((0.0, 0.0), percentiles_from_brick);
 
-    let all_pass = brick_scores.iter().all(|b| b.gap_factor <= 1.0);
+    let all_pass = brick_scores.iter().all(|b| b.gap_factor <= 1.0 + 1e-9);
     let pmat_brick_score = weighted_brick_score(&brick_scores);
 
     // GH-425 B14-B18: Derive falsification from brick pass/fail, not hardcoded.
     let n_bricks = brick_scores.len() as u32;
-    let brick_passed = brick_scores.iter().filter(|b| b.gap_factor <= 1.0).count() as u32;
+    let brick_passed = brick_scores.iter().filter(|b| b.gap_factor <= 1.0 + 1e-9).count() as u32;
     let brick_failed = n_bricks.saturating_sub(brick_passed);
 
     HeadlessReport {
