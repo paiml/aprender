@@ -294,6 +294,7 @@
 - [Case Study: Sharded SafeTensors Serving (GH-213)](./examples/sharded-safetensors-serve.md)
 - [Case Study: Model Merge Strategies (GH-245)](./examples/model-merge-strategies.md)
 - [Case Study: Qwen3.5 Hybrid Attention (GH-278)](./examples/qwen3.5-hybrid-attention.md)
+- [Case Study: cbtop Profiling Falsification (GH-420)](./examples/cbtop-profiling-falsification.md)
 
 # Sprint-Based Development
 
