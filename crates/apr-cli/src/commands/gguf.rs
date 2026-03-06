@@ -290,8 +290,11 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     // NOTE: Per-brick timing requires CUDA sync after each brick, which adds overhead
     // We enable it for detailed profiling but acknowledge throughput may be lower
     cuda_model.enable_profiling();
+    // GH-176: Set Immediate sync mode so start/stop_brick actually calls
+    // stream.synchronize() — without this, timings are CPU-side launch latency only.
+    cuda_model.executor_mut().set_profiler_sync_mode(trueno::SyncMode::Immediate);
     cuda_model.reset_profiler();
-    eprintln!("cbtop: BrickProfiler enabled (PAR-073)");
+    eprintln!("cbtop: BrickProfiler enabled (PAR-073, Immediate sync)");
     eprintln!();
 
     // Phase 2: Measure throughput
