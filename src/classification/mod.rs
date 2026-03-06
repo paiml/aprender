@@ -39,10 +39,50 @@ use crate::primitives::{Matrix, Vector};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+/// Class weighting strategy for imbalanced datasets.
+///
+/// # Example
+///
+/// ```
+/// use aprender::classification::{LogisticRegression, ClassWeight};
+/// use aprender::prelude::*;
+///
+/// let mut model = LogisticRegression::new()
+///     .with_class_weight(ClassWeight::Balanced);
+///
+/// // Imbalanced data: 90% class 0, 10% class 1
+/// let x = Matrix::from_vec(10, 2, vec![
+///     0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 0.0, 0.2,
+///     0.1, 0.0, 0.0, 0.1, 0.2, 0.1, 0.1, 0.2,
+///     5.0, 5.0, 5.1, 5.1,
+/// ]).expect("10x2 matrix");
+/// let y = vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1];
+/// model.fit(&x, &y).expect("fit succeeds");
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ClassWeight {
+    /// No class weighting (default, backward compatible).
+    Uniform,
+    /// Automatic sqrt-inverse weighting: `w_k = sqrt(n_total / (n_classes * n_k))`.
+    ///
+    /// Upweights the minority class to counteract imbalanced label distributions.
+    /// Compatible with scikit-learn `class_weight='balanced'` (with sqrt dampening).
+    Balanced,
+    /// Manual per-class weights: `[w_0, w_1]` for binary classification.
+    Manual(Vec<f32>),
+}
+
+impl Default for ClassWeight {
+    fn default() -> Self {
+        Self::Uniform
+    }
+}
+
 /// Logistic Regression classifier for binary classification.
 ///
 /// Uses sigmoid activation and binary cross-entropy loss with
-/// gradient descent optimization.
+/// gradient descent optimization. Supports class weighting for
+/// imbalanced datasets and L2 regularization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogisticRegression {
     /// Model coefficients (weights)
@@ -55,6 +95,10 @@ pub struct LogisticRegression {
     max_iter: usize,
     /// Convergence tolerance
     tol: f32,
+    /// Class weighting strategy
+    class_weight: ClassWeight,
+    /// L2 regularization strength (weight decay). 0.0 = no regularization.
+    l2_penalty: f32,
 }
 
 impl LogisticRegression {
@@ -75,6 +119,8 @@ impl LogisticRegression {
             learning_rate: 0.01,
             max_iter: 1000,
             tol: 1e-4,
+            class_weight: ClassWeight::Uniform,
+            l2_penalty: 0.0,
         }
     }
 
@@ -96,6 +142,46 @@ impl LogisticRegression {
     #[must_use]
     pub fn with_tolerance(mut self, tol: f32) -> Self {
         self.tol = tol;
+        self
+    }
+
+    /// Sets the class weighting strategy for imbalanced datasets.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::classification::{LogisticRegression, ClassWeight};
+    ///
+    /// // Automatic balanced weighting (recommended for imbalanced data)
+    /// let model = LogisticRegression::new()
+    ///     .with_class_weight(ClassWeight::Balanced);
+    ///
+    /// // Manual weights: upweight class 1 by 3x
+    /// let model = LogisticRegression::new()
+    ///     .with_class_weight(ClassWeight::Manual(vec![1.0, 3.0]));
+    /// ```
+    #[must_use]
+    pub fn with_class_weight(mut self, class_weight: ClassWeight) -> Self {
+        self.class_weight = class_weight;
+        self
+    }
+
+    /// Sets L2 regularization strength (weight decay).
+    ///
+    /// Adds `l2_penalty * ||w||^2` to the loss, penalizing large coefficients.
+    /// Typical values: 1e-4 to 1e-2. Default: 0.0 (no regularization).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use aprender::classification::LogisticRegression;
+    ///
+    /// let model = LogisticRegression::new()
+    ///     .with_l2_penalty(1e-4);
+    /// ```
+    #[must_use]
+    pub fn with_l2_penalty(mut self, l2_penalty: f32) -> Self {
+        self.l2_penalty = l2_penalty;
         self
     }
 
@@ -155,17 +241,20 @@ impl LogisticRegression {
         self.coefficients = Some(Vector::from_vec(vec![0.0; n_features]));
         self.intercept = 0.0;
 
+        // Compute per-class sample weights
+        let sample_weights = self.compute_sample_weights(y);
+
         // Gradient descent optimization
         for _ in 0..self.max_iter {
             // Compute predictions (probabilities)
             let probas = self.predict_proba(x);
 
-            // Compute gradients
+            // Compute gradients with class weighting
             let mut coef_grad = vec![0.0; n_features];
             let mut intercept_grad = 0.0;
 
             for i in 0..n_samples {
-                let error = probas[i] - y[i] as f32;
+                let error = sample_weights[i] * (probas[i] - y[i] as f32);
                 intercept_grad += error;
                 for (j, grad) in coef_grad.iter_mut().enumerate() {
                     *grad += error * x.get(i, j);
@@ -179,11 +268,11 @@ impl LogisticRegression {
                 *grad /= n;
             }
 
-            // Update parameters
+            // Update parameters with L2 regularization (weight decay)
             self.intercept -= self.learning_rate * intercept_grad;
             if let Some(ref mut coef) = self.coefficients {
                 for j in 0..n_features {
-                    coef[j] -= self.learning_rate * coef_grad[j];
+                    coef[j] -= self.learning_rate * (coef_grad[j] + self.l2_penalty * coef[j]);
                 }
             }
 
@@ -237,6 +326,33 @@ impl LogisticRegression {
     #[must_use]
     pub fn intercept(&self) -> f32 {
         self.intercept
+    }
+
+    /// Compute per-sample weights from the class weighting strategy.
+    fn compute_sample_weights(&self, y: &[usize]) -> Vec<f32> {
+        match &self.class_weight {
+            ClassWeight::Uniform => vec![1.0; y.len()],
+            ClassWeight::Balanced => {
+                let n = y.len() as f32;
+                let n_class_0 = y.iter().filter(|&&l| l == 0).count() as f32;
+                let n_class_1 = n - n_class_0;
+                if n_class_0 == 0.0 || n_class_1 == 0.0 {
+                    return vec![1.0; y.len()];
+                }
+                // sqrt-inverse weighting: w_k = sqrt(n / (2 * n_k))
+                let w0 = (n / (2.0 * n_class_0)).sqrt();
+                let w1 = (n / (2.0 * n_class_1)).sqrt();
+                y.iter().map(|&l| if l == 0 { w0 } else { w1 }).collect()
+            }
+            ClassWeight::Manual(weights) => {
+                if weights.len() < 2 {
+                    return vec![1.0; y.len()];
+                }
+                y.iter()
+                    .map(|&l| if l < weights.len() { weights[l] } else { 1.0 })
+                    .collect()
+            }
+        }
     }
 
     /// Saves the trained model to `SafeTensors` format.
@@ -354,9 +470,11 @@ impl LogisticRegression {
         Ok(Self {
             coefficients: Some(Vector::from_vec(coef_data)),
             intercept: intercept_data[0],
-            learning_rate: 0.01, // Default value
-            max_iter: 1000,      // Default value
-            tol: 1e-4,           // Default value
+            learning_rate: 0.01,
+            max_iter: 1000,
+            tol: 1e-4,
+            class_weight: ClassWeight::Uniform,
+            l2_penalty: 0.0,
         })
     }
 }
