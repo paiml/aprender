@@ -69,15 +69,14 @@ fn percentiles_from_brick(brick: &BrickTiming) -> (f64, f64) {
 }
 
 fn weighted_brick_score(brick_scores: &[BrickScore]) -> u32 {
-    let weights = [1.5, 6.0, 1.0, 10.0, 3.5, 1.5, 12.2];
-    let weighted_sum: f64 = brick_scores
-        .iter()
-        .zip(weights.iter())
-        .map(|(b, w)| b.score as f64 * w)
-        .sum();
-    let total_weight: f64 = weights.iter().sum();
+    // GH-422 B6b: Equal-weight average across all N bricks.
+    // Previous code used 7 hardcoded weights and silently dropped bricks beyond 7.
+    if brick_scores.is_empty() {
+        return 0;
+    }
+    let sum: f64 = brick_scores.iter().map(|b| b.score as f64).sum();
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    { (weighted_sum / total_weight) as u32 }
+    { (sum / brick_scores.len() as f64) as u32 }
 }
 
 /// Generate headless report from pipeline state (simulated data)
@@ -114,6 +113,11 @@ fn generate_headless_report_simulated(
     let all_pass = brick_scores.iter().all(|b| b.gap_factor <= 1.0);
     let pmat_brick_score = weighted_brick_score(&brick_scores);
 
+    // GH-425 B14-B18: Derive falsification from brick pass/fail, not hardcoded.
+    let n_bricks = brick_scores.len() as u32;
+    let brick_passed = brick_scores.iter().filter(|b| b.gap_factor <= 1.0).count() as u32;
+    let brick_failed = n_bricks.saturating_sub(brick_passed);
+
     HeadlessReport {
         model: model_name.to_string(),
         timestamp,
@@ -130,26 +134,24 @@ fn generate_headless_report_simulated(
             p99_us: p99,
         },
         brick_scores,
+        // GH-425 B14-B16: Report 0 for scores not computed in simulated path.
         pmat_scores: PmatScores {
-            rust_project_score: 173.9,
-            tdg_score: 98.1,
-            cuda_tdg_score: 95.2,
+            rust_project_score: 0.0,
+            tdg_score: 0.0,
+            cuda_tdg_score: 0.0,
             brick_score: pmat_brick_score,
             grade: score_to_grade(pmat_brick_score),
         },
+        // GH-425 B17: Real falsification from brick pass/fail.
         falsification: FalsificationSummary {
-            total_points: 137,
-            passed: 137,
-            failed: 0,
+            total_points: n_bricks,
+            passed: brick_passed,
+            failed: brick_failed,
             blocked: 0,
         },
+        // GH-425 B18: Status from brick pass/fail only — no hardcoded target.
         status: if all_pass { "PASS" } else { "FAIL" }.to_string(),
-        ci_result: if all_pass && pipeline.current_tok_s >= pipeline.target_tok_s {
-            "green"
-        } else {
-            "red"
-        }
-        .to_string(),
+        ci_result: if all_pass { "green" } else { "red" }.to_string(),
     }
 }
 

@@ -379,37 +379,47 @@ fn brick_scores_from_profiler(
     all.sort_by(|a, b| b.total_ns.cmp(&a.total_ns));
 
     let total_ns: u64 = all.iter().map(|s| s.total_ns).sum();
-    let total_tokens = profiler.total_tokens();
+    let total_us = total_ns as f64 / 1000.0;
+
+    // C-GDP-001: Wall coverage — brick time vs wall clock.
+    // total_tokens from profiler counts brick ELEMENTS, not decoded tokens.
+    // Decoded tokens = LmHead.count (exactly 1 LmHead call per decoded token).
+    let decoded_tokens = all.iter()
+        .find(|s| s.name == "LmHead")
+        .map_or(1u64, |s| s.count.max(1));
+
+    let wall_us_per_token = total_us / decoded_tokens as f64;
 
     eprintln!("=== Real Brick Scores (from BrickProfiler) ===");
     eprintln!(
-        "  Total: {:.1}µs across {} tokens ({:.1}µs/tok)",
-        total_ns as f64 / 1000.0,
-        total_tokens,
-        if total_tokens > 0 { total_ns as f64 / 1000.0 / total_tokens as f64 } else { 0.0 }
+        "  Total: {:.1}µs across {} decoded tokens ({:.1}µs/decoded_tok)",
+        total_us, decoded_tokens, wall_us_per_token,
     );
 
     for stats in &all {
         let avg_us = stats.avg_us();
-        let per_token_us = if total_tokens > 0 {
-            stats.total_ns as f64 / 1000.0 / total_tokens as f64
-        } else {
-            avg_us
-        };
+        // Per-decoded-token cost = (count * avg_us) / decoded_tokens
+        let per_decoded_tok_us = (stats.count as f64 * avg_us) / decoded_tokens as f64;
         let pct = if total_ns > 0 { 100.0 * stats.total_ns as f64 / total_ns as f64 } else { 0.0 };
 
         eprintln!(
-            "  {:30} {:8.1}µs/tok ({:5.1}%)  avg={:.1}µs  n={}",
-            stats.name, per_token_us, pct, avg_us, stats.count
+            "  {:30} avg={:8.1}µs  per_tok={:8.1}µs ({:5.1}%)  n={}  calls/tok={}",
+            stats.name, avg_us, per_decoded_tok_us, pct, stats.count,
+            stats.count / decoded_tokens,
         );
+
+        // Score using per-call average vs wall budget fraction
+        let budget_us = wall_us_per_token * (pct / 100.0);
+        let score = compute_brick_score(per_decoded_tok_us, budget_us);
+        let grade = score_to_grade(score);
 
         scores.push(BrickScore {
             name: stats.name.clone(),
-            score: 100,
-            grade: "R".to_string(),
-            budget_us: per_token_us,
-            actual_us: per_token_us,
-            gap_factor: 1.0,
+            score,
+            grade: grade.to_string(),
+            budget_us: per_decoded_tok_us,
+            actual_us: avg_us,
+            gap_factor: if budget_us > 0.0 { per_decoded_tok_us / budget_us } else { 1.0 },
         });
     }
 

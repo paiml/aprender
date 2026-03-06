@@ -325,23 +325,21 @@ fn build_and_output_report(
     let p50 = sorted[sorted.len() / 2];
     let p99 = sorted[(sorted.len() as f64 * 0.99) as usize];
 
-    let weights = [1.5, 6.0, 1.0, 10.0, 3.5, 1.5, 12.2];
-    let weighted_sum: f64 = brick_reports
-        .iter()
-        .zip(weights.iter())
-        .map(|(b, w)| b.score as f64 * w)
-        .sum();
-    let total_weight: f64 = weights.iter().sum();
-    let pmat_brick_score = (weighted_sum / total_weight) as u32;
+    // GH-420 Bug 2: Use equal weights for all bricks (dynamic count).
+    // Previous code used 7 hardcoded weights and silently dropped bricks beyond 7.
+    let n_bricks = brick_reports.len().max(1);
+    let score_sum: f64 = brick_reports.iter().map(|b| b.score as f64).sum();
+    let pmat_brick_score = (score_sum / n_bricks as f64) as u32;
 
     let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0);
-    let target_tok_s = 976.0;
+    // GH-420 Bug 5: status is pass/fail on brick gaps only.
+    // Throughput target is hardware-dependent — do not hardcode.
     let status = if all_pass { "PASS" } else { "FAIL" };
-    let ci_result = if all_pass && tokens_per_sec >= target_tok_s {
-        "green"
-    } else {
-        "red"
-    };
+    let ci_result = if all_pass { "green" } else { "red" };
+
+    // GH-420 Bug 4: Count actual brick pass/fail for falsification summary.
+    let brick_passed = brick_reports.iter().filter(|b| b.gap_factor <= 1.0).count() as u32;
+    let brick_failed = (n_bricks as u32).saturating_sub(brick_passed);
 
     let report = HeadlessReport {
         model: model_name.to_string(),
@@ -359,17 +357,19 @@ fn build_and_output_report(
             p99_us: p99,
         },
         brick_scores: brick_reports,
+        // GH-420 Bug 3: Report 0 for scores not actually computed.
         pmat_scores: PmatScores {
-            rust_project_score: 173.9,
-            tdg_score: 98.1,
-            cuda_tdg_score: 95.2,
+            rust_project_score: 0.0,
+            tdg_score: 0.0,
+            cuda_tdg_score: 0.0,
             brick_score: pmat_brick_score,
             grade: score_to_grade(pmat_brick_score),
         },
+        // GH-420 Bug 4: Real falsification from brick pass/fail counts.
         falsification: FalsificationSummary {
-            total_points: 137,
-            passed: 137,
-            failed: 0,
+            total_points: n_bricks as u32,
+            passed: brick_passed,
+            failed: brick_failed,
             blocked: 0,
         },
         status: status.to_string(),
