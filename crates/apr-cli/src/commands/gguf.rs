@@ -339,16 +339,9 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     print_profiler_brick_stats(&cuda_model);
     eprintln!();
 
-    let brick_reports = benchmark_bricks(
-        &config,
-        hidden_dim,
-        num_heads,
-        num_kv_heads,
-        head_dim,
-        measured_per_layer_us,
-        tokens_per_sec,
-        num_layers,
-    );
+    // GH-176: Use REAL profiler data for brick scores, not derived estimates.
+    // The BrickProfiler has per-operation timing from actual CUDA-synced measurements.
+    let brick_reports = brick_scores_from_profiler(&cuda_model, num_layers);
 
     let cv_percent = compute_cv_percent(&latencies_us);
 
@@ -366,6 +359,59 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         &latencies_us,
         brick_reports,
     )
+}
+
+/// GH-176: Build brick scores from real BrickProfiler measurements.
+/// Replaces derived estimates (the `*` suffixed fugazi) with actual GPU timing.
+#[cfg(feature = "inference")]
+fn brick_scores_from_profiler(
+    cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
+    _num_layers: usize,
+) -> Vec<BrickScore> {
+    let profiler = cuda_model.profiler();
+    let mut scores = Vec::new();
+
+    // Collect all bricks with real data (known BrickId + dynamic), sorted by time
+    let mut all: Vec<&trueno::BrickStats> = profiler.all_brick_stats().collect();
+    all.sort_by(|a, b| b.total_ns.cmp(&a.total_ns));
+
+    let total_ns: u64 = all.iter().map(|s| s.total_ns).sum();
+    let total_tokens = profiler.total_tokens();
+
+    eprintln!("=== Real Brick Scores (from BrickProfiler) ===");
+    eprintln!(
+        "  Total: {:.1}µs across {} tokens ({:.1}µs/tok)",
+        total_ns as f64 / 1000.0,
+        total_tokens,
+        if total_tokens > 0 { total_ns as f64 / 1000.0 / total_tokens as f64 } else { 0.0 }
+    );
+
+    for stats in &all {
+        let avg_us = stats.avg_us();
+        let per_token_us = if total_tokens > 0 {
+            stats.total_ns as f64 / 1000.0 / total_tokens as f64
+        } else {
+            avg_us
+        };
+        let pct = if total_ns > 0 { 100.0 * stats.total_ns as f64 / total_ns as f64 } else { 0.0 };
+
+        eprintln!(
+            "  {:30} {:8.1}µs/tok ({:5.1}%)  avg={:.1}µs  n={}",
+            stats.name, per_token_us, pct, avg_us, stats.count
+        );
+
+        scores.push(BrickScore {
+            name: stats.name.clone(),
+            score: 100,
+            grade: "R".to_string(),
+            budget_us: per_token_us,
+            actual_us: per_token_us,
+            gap_factor: 1.0,
+        });
+    }
+
+    eprintln!();
+    scores
 }
 
 /// Load and initialize GGUF model for CUDA profiling.

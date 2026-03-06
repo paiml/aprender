@@ -101,18 +101,16 @@ fn measure_standard_throughput(
 #[cfg(feature = "inference")]
 fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCuda) {
     let profiler = cuda_model.profiler();
-    #[allow(deprecated)]
-    let all_stats = profiler.all_stats();
-    if all_stats.is_empty() {
+    let mut all: Vec<&trueno::BrickStats> = profiler.all_brick_stats().collect();
+    if all.is_empty() {
         eprintln!("  No per-brick data collected (profiling may need per-brick sync points)");
     } else {
-        eprintln!("Per-Brick Timing (REAL via std::time::Instant + CUDA sync):");
-        let mut sorted_stats: Vec<_> = all_stats.iter().collect();
-        sorted_stats.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
-        for (name, stats) in sorted_stats {
+        eprintln!("Per-Brick Timing (REAL via BrickProfiler):");
+        all.sort_by(|a, b| b.total_ns.cmp(&a.total_ns));
+        for stats in all {
             eprintln!(
                 "  {:20} {:8.2}µs avg, {:8} samples, {:.1} tok/s",
-                name,
+                stats.name,
                 stats.avg_us(),
                 stats.count,
                 stats.tokens_per_sec()
