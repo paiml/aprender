@@ -290,10 +290,11 @@ pub fn p9_ci_fast_first() -> VelocityResult {
     let content = std::fs::read_to_string(ci_path).unwrap_or_default();
 
     // CI should run check/fmt/clippy before full tests, either directly
-    // or via a reusable workflow (clean-room gate pattern)
+    // or via a reusable workflow (unified gate or clean-room gate pattern)
     let has_fast_checks = content.contains("cargo check")
         || content.contains("cargo fmt")
         || content.contains("cargo clippy")
+        || content.contains("unified-gate")
         || content.contains("clean-room-gate")
         || content.contains("clean-room");
 
