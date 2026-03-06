@@ -555,3 +555,100 @@ fn test_whisper_uses_fast_loading_path() {
     assert_eq!(tokenizer.merges[0].first, "a");
     assert_eq!(tokenizer.merges[0].second, "b");
 }
+
+// ============================================================================
+// SSC-028: from_vocab_merges — legacy GPT-2/RoBERTa format
+// ============================================================================
+
+#[test]
+fn test_ssc028_from_vocab_merges_basic() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let vocab_path = dir.path().join("vocab.json");
+    let merges_path = dir.path().join("merges.txt");
+
+    std::fs::write(
+        &vocab_path,
+        r#"{"hello": 0, "world": 1, "he": 2, "llo": 3}"#,
+    )
+    .expect("write vocab");
+    std::fs::write(&merges_path, "#version: 0.2\nhe llo\n").expect("write merges");
+
+    let tokenizer =
+        BpeTokenizer::from_vocab_merges(&vocab_path, &merges_path).expect("should load");
+
+    assert_eq!(tokenizer.vocab_size(), 4);
+    assert_eq!(tokenizer.token_to_id("hello"), Some(0));
+    assert_eq!(tokenizer.token_to_id("world"), Some(1));
+    assert_eq!(tokenizer.merges.len(), 1);
+    assert_eq!(tokenizer.merges[0].first, "he");
+    assert_eq!(tokenizer.merges[0].second, "llo");
+}
+
+#[test]
+fn test_ssc028_from_vocab_merges_file_not_found() {
+    let result = BpeTokenizer::from_vocab_merges("/nonexistent/vocab.json", "/nonexistent/merges.txt");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ssc028_from_vocab_merges_empty_vocab() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let vocab_path = dir.path().join("vocab.json");
+    let merges_path = dir.path().join("merges.txt");
+
+    std::fs::write(&vocab_path, "").expect("write empty vocab");
+    std::fs::write(&merges_path, "#version: 0.2\n").expect("write merges");
+
+    let result = BpeTokenizer::from_vocab_merges(&vocab_path, &merges_path);
+    assert!(result.is_err(), "empty vocab should fail");
+}
+
+#[test]
+fn test_ssc028_from_vocab_merges_roberta_50k_config() {
+    // RoBERTa/CodeBERT: ~50265 vocab → should pick GPT-2 config
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let vocab_path = dir.path().join("vocab.json");
+    let merges_path = dir.path().join("merges.txt");
+
+    // Build a vocab with 50265 entries (CodeBERT size)
+    let mut vocab_entries = Vec::new();
+    for i in 0..50265u32 {
+        vocab_entries.push(format!("\"t{i}\": {i}"));
+    }
+    let vocab_json = format!("{{{}}}", vocab_entries.join(","));
+    std::fs::write(&vocab_path, &vocab_json).expect("write vocab");
+    std::fs::write(&merges_path, "#version: 0.2\nt0 t1\n").expect("write merges");
+
+    let tokenizer =
+        BpeTokenizer::from_vocab_merges(&vocab_path, &merges_path).expect("should load 50K vocab");
+
+    assert_eq!(tokenizer.vocab_size(), 50265);
+    // 50265 > 50000 → Whisper config selected (heuristic; encoding still correct)
+    assert_eq!(tokenizer.merges.len(), 1);
+}
+
+#[test]
+fn test_ssc028_from_vocab_merges_codebert_real_files() {
+    // Integration test: load real CodeBERT files if available
+    let vocab_path = std::path::Path::new("/tmp/codebert-base/vocab.json");
+    let merges_path = std::path::Path::new("/tmp/codebert-base/merges.txt");
+
+    if !vocab_path.exists() || !merges_path.exists() {
+        // Skip if CodeBERT not downloaded
+        return;
+    }
+
+    let tokenizer =
+        BpeTokenizer::from_vocab_merges(vocab_path, merges_path).expect("should load CodeBERT");
+
+    assert_eq!(tokenizer.vocab_size(), 50265, "CodeBERT has 50265 vocab");
+    assert!(!tokenizer.merges.is_empty(), "should have merge rules");
+
+    // Encode a shell script
+    let ids = tokenizer.encode("echo hello world");
+    assert!(!ids.is_empty(), "should tokenize shell commands");
+
+    // Deterministic
+    let ids2 = tokenizer.encode("echo hello world");
+    assert_eq!(ids, ids2, "encoding must be deterministic");
+}

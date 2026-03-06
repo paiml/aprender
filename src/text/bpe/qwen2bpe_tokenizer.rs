@@ -147,6 +147,54 @@ impl BpeTokenizer {
         super::load_from_json(json)
     }
 
+    /// Load tokenizer from legacy GPT-2/RoBERTa format (vocab.json + merges.txt).
+    ///
+    /// CodeBERT and other RoBERTa-family models use this format instead of the
+    /// unified tokenizer.json. The vocab.json maps tokens to IDs, and merges.txt
+    /// contains ordered BPE merge rules (one per line, `#version` header skipped).
+    ///
+    /// # Arguments
+    /// * `vocab_path` - Path to vocab.json (`{"token": id, ...}`)
+    /// * `merges_path` - Path to merges.txt (header + one `pair1 pair2` per line)
+    ///
+    /// # Returns
+    /// A fully loaded `BpeTokenizer` with vocabulary and merge rules.
+    ///
+    /// # Errors
+    /// Returns error if files cannot be read or JSON is malformed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use aprender::text::bpe::BpeTokenizer;
+    ///
+    /// let tokenizer = BpeTokenizer::from_vocab_merges(
+    ///     "path/to/vocab.json",
+    ///     "path/to/merges.txt",
+    /// ).expect("failed to load tokenizer");
+    /// assert!(tokenizer.vocab_size() > 0);
+    /// ```
+    pub fn from_vocab_merges<P: AsRef<std::path::Path>, Q: AsRef<std::path::Path>>(
+        vocab_path: P,
+        merges_path: Q,
+    ) -> Result<Self> {
+        let vocab_json =
+            std::fs::read_to_string(vocab_path.as_ref()).map_err(|e| AprenderError::FormatError {
+                message: format!(
+                    "Failed to read vocab file '{}': {e}",
+                    vocab_path.as_ref().display()
+                ),
+            })?;
+        let merges_txt =
+            std::fs::read_to_string(merges_path.as_ref()).map_err(|e| AprenderError::FormatError {
+                message: format!(
+                    "Failed to read merges file '{}': {e}",
+                    merges_path.as_ref().display()
+                ),
+            })?;
+        super::load_from_files(&vocab_json, &merges_txt)
+    }
+
     /// Create tokenizer with GPT-2 base vocabulary (stub)
     ///
     /// # Note
