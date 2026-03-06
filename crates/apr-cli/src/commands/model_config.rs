@@ -121,6 +121,7 @@ fn read_hf_config_json(dir: &Path) -> Option<entrenar::transformer::TransformerC
         .unwrap_or(false);
 
     Some(entrenar::transformer::TransformerConfig {
+        architecture: entrenar::transformer::ModelArchitecture::Decoder,
         hidden_size,
         num_attention_heads: num_heads,
         num_kv_heads,
@@ -190,6 +191,7 @@ fn transformer_config_from_apr_metadata(
     let use_bias = matches!(architecture, Some(a) if a.starts_with("qwen2"));
 
     Some(entrenar::transformer::TransformerConfig {
+        architecture: entrenar::transformer::ModelArchitecture::Decoder,
         hidden_size: hidden,
         num_attention_heads: heads,
         num_kv_heads: num_kv_heads.unwrap_or(heads),

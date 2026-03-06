@@ -357,5 +357,6 @@ impl Default for AprV2Header {
 include!("header_impl.rs");
 include!("tensor_index_impl.rs");
 include!("writer.rs");
+include!("streaming_writer.rs");
 include!("reader_impl.rs");
 include!("v2format_error.rs");

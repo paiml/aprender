@@ -27,7 +27,7 @@
 use crate::error::{AprenderError, Result};
 use crate::format::gguf::reader::GgufReader;
 use crate::format::rosetta::FormatType;
-use crate::format::v2::{AprV2Reader, TensorIndexEntry};
+use crate::format::v2::{AprV2Reader, AprV2ReaderRef, TensorIndexEntry};
 use crate::format::HEADER_SIZE;
 use std::collections::HashMap;
 use std::fs::File;
@@ -274,6 +274,51 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
 
     Ok(TensorListResult {
         file: String::new(), // Set by caller
+        format_version: "v2".to_string(),
+        tensor_count: total_matching,
+        total_size_bytes: total_size,
+        tensors,
+    })
+}
+
+/// List tensors from APR v2 via mmap (realizar#136 — constant memory)
+///
+/// Uses `AprV2ReaderRef` which borrows the mmap'd slice instead of copying
+/// the entire file into a `Vec<u8>`. Peak RSS = header + index (~180KB).
+fn list_tensors_v2_mmap(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+    let reader = AprV2ReaderRef::from_bytes(data).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to parse APR v2: {e}"),
+    })?;
+
+    let mut tensors = Vec::new();
+    let mut total_size = 0usize;
+    let mut total_matching = 0usize;
+
+    for name in reader.tensor_names() {
+        if let Some(ref pattern) = options.filter {
+            if !name.contains(pattern.as_str()) {
+                continue;
+            }
+        }
+
+        if let Some(entry) = reader.get_tensor(name) {
+            total_size += entry.size as usize;
+            total_matching += 1;
+
+            if tensors.len() < options.limit {
+                let mut info = tensor_info_from_entry(entry);
+                if options.compute_stats {
+                    if let Some(data) = reader.get_tensor_as_f32(name) {
+                        compute_tensor_stats(&mut info, &data);
+                    }
+                }
+                tensors.push(info);
+            }
+        }
+    }
+
+    Ok(TensorListResult {
+        file: String::new(),
         format_version: "v2".to_string(),
         tensor_count: total_matching,
         total_size_bytes: total_size,
