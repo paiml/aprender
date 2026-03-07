@@ -1083,6 +1083,45 @@ pub(crate) fn run_humaneval(
     }
 }
 
+/// Sample a token from logits with temperature.
+/// Temperature=0.0 → greedy argmax. Temperature>0 → softmax sampling.
+fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64) -> u32 {
+    if temperature <= 0.0 || logits.is_empty() {
+        // Greedy argmax
+        return logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map_or(0, |(idx, _)| idx as u32);
+    }
+
+    // Temperature-scaled softmax sampling
+    let inv_temp = 1.0 / temperature;
+    let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| ((l - max_logit) * inv_temp).exp()).collect();
+    let sum: f32 = probs.iter().sum();
+    if sum > 0.0 {
+        for p in &mut probs {
+            *p /= sum;
+        }
+    }
+
+    // xorshift64 for deterministic sampling
+    *rng_state ^= *rng_state << 13;
+    *rng_state ^= *rng_state >> 7;
+    *rng_state ^= *rng_state << 17;
+    let r = (*rng_state as f32) / (u64::MAX as f32);
+
+    let mut cumulative = 0.0f32;
+    for (i, &p) in probs.iter().enumerate() {
+        cumulative += p;
+        if r < cumulative {
+            return i as u32;
+        }
+    }
+    (probs.len() - 1) as u32
+}
+
 /// ALB-084: Run HumanEval with actual model inference + Python test execution.
 #[cfg(feature = "inference")]
 fn run_humaneval_inference(
@@ -1116,6 +1155,10 @@ fn run_humaneval_inference(
 
     let mut passed = 0usize;
     let mut results = Vec::new();
+    // Temperature: 0.0 for pass@1 (greedy), 0.8 for pass@k>1
+    // Currently using greedy; temperature sampling available via sample_token()
+    let temperature = 0.0f32;
+    let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
         let entry = problem
@@ -1149,12 +1192,7 @@ fn run_humaneval_inference(
                 .forward_with_cache(last_tok, &mut cache, pos)
                 .map_err(|e| format!("Generation failed: {e}"))?;
 
-            // Greedy: argmax
-            let next = logits
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map_or(0, |(idx, _)| idx as u32);
+            let next = sample_token(&logits, temperature, &mut rng_state);
 
             tokens.push(next);
 
