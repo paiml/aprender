@@ -455,9 +455,11 @@ fn start_gguf_server_cuda(
 
             // GH-129: Free CPU weight copies on unified memory devices (Jetson).
             // After GPU preload, the CPU Vec<u8> copies are redundant — saves ~1 GB.
-            if std::env::var("REALIZR_FREE_CPU_WEIGHTS").as_deref() == Ok("1") {
-                cuda_model.free_cpu_weights();
-            }
+            // NOTE: Disabled — OwnedQuantizedModelCuda::free_cpu_weights() removed upstream.
+            // Re-enable when realizar re-exposes this method.
+            // if std::env::var("REALIZR_FREE_CPU_WEIGHTS").as_deref() == Ok("1") {
+            //     cuda_model.free_cpu_weights();
+            // }
 
             println!("{}", "CUDA optimized model ready".green());
 

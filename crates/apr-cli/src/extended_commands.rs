@@ -106,6 +106,15 @@ pub enum ExtendedCommands {
         /// Generate HuggingFace model card (README.md) in checkpoint dir
         #[arg(long)]
         generate_card: bool,
+        /// Device for inference: "cpu" (default) or "cuda" (GPU-accelerated, ALB-089)
+        #[arg(long, default_value = "cpu")]
+        device: String,
+        /// Number of samples per problem for pass@k (ALB-088, default: 1)
+        #[arg(long, default_value = "1")]
+        samples: usize,
+        /// Sampling temperature (0.0 = greedy, 0.8 = standard for pass@k>1)
+        #[arg(long, default_value = "0.0")]
+        temperature: f32,
     },
     /// Deep profiling with Roofline analysis
     Profile {
