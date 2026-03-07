@@ -1010,12 +1010,19 @@ pub(crate) fn run_humaneval(
                         serde_json::json!({"k": k, "rate": rate})
                     })
                     .collect();
+                let per_problem: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|(tid, ep, ok)| {
+                        serde_json::json!({"task_id": tid, "entry_point": ep, "passed": ok})
+                    })
+                    .collect();
                 let out = serde_json::json!({
                     "benchmark": "humaneval",
                     "model": model_path.display().to_string(),
                     "problems": total,
                     "passed": passed,
                     "pass_at_k": pass_at_k,
+                    "per_problem_results": per_problem,
                     "elapsed_secs": elapsed,
                     "mode": "inference",
                 });
@@ -1051,12 +1058,19 @@ pub(crate) fn run_humaneval(
                         serde_json::json!({"k": k, "rate": rate})
                     })
                     .collect();
+                let per_problem: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|(tid, ep, ok)| {
+                        serde_json::json!({"task_id": tid, "entry_point": ep, "passed": ok})
+                    })
+                    .collect();
                 let out = serde_json::json!({
                     "benchmark": "humaneval",
                     "model": model_path.display().to_string(),
                     "problems": total,
                     "passed": passed,
                     "pass_at_k": pass_at_k,
+                    "per_problem_results": per_problem,
                     "elapsed_secs": elapsed,
                     "mode": "structural_validation",
                 });
