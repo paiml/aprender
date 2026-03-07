@@ -1391,6 +1391,260 @@ fn compute_pass_at_k(n: usize, c: usize, k: usize) -> f64 {
     1.0 - result
 }
 
+// --- MBPP benchmark evaluation (ALB-085) ---
+
+/// An MBPP problem from JSONL.
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
+struct MbppProblem {
+    /// Natural language description
+    text: String,
+    /// Canonical solution code
+    #[serde(default)]
+    code: Option<String>,
+    /// Task identifier (integer in MBPP)
+    task_id: serde_json::Value,
+    /// Setup code to prepend to tests
+    #[serde(default)]
+    test_setup_code: Option<String>,
+    /// Test assertion strings
+    test_list: Vec<String>,
+    /// Challenge test assertions (harder)
+    #[serde(default)]
+    challenge_test_list: Vec<String>,
+}
+
+/// Run MBPP benchmark evaluation.
+///
+/// Evaluates a model on MBPP-format JSONL. Reports pass@k metrics.
+/// ALB-085: Full inference via realizar — generates completions and executes Python tests.
+pub(crate) fn run_mbpp(
+    model_path: &Path,
+    data_path: Option<&Path>,
+    k_values: &[usize],
+    json_output: bool,
+) -> Result<()> {
+    let data_path = data_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "--data <mbpp.jsonl> is required for MBPP evaluation.\n\
+             Format: Google MBPP JSONL with text, code, task_id, test_list"
+                .to_string(),
+        )
+    })?;
+
+    if !data_path.exists() {
+        return Err(CliError::FileNotFound(data_path.to_path_buf()));
+    }
+    if !model_path.exists() {
+        return Err(CliError::FileNotFound(model_path.to_path_buf()));
+    }
+
+    let content = std::fs::read_to_string(data_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read MBPP data: {e}")))?;
+
+    let problems: Vec<MbppProblem> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .enumerate()
+        .map(|(i, line)| {
+            serde_json::from_str(line).map_err(|e| {
+                CliError::ValidationFailed(format!("Invalid JSON on line {}: {e}", i + 1))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    if problems.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "MBPP file is empty".to_string(),
+        ));
+    }
+
+    if !json_output {
+        output::section("APR MBPP Evaluation");
+        println!();
+        output::kv("Model", model_path.display());
+        output::kv("Benchmark", data_path.display());
+        output::kv("Problems", problems.len());
+        output::kv("k values", format!("{k_values:?}"));
+        println!();
+    }
+
+    let start = Instant::now();
+    let inference_result = run_mbpp_inference(model_path, &problems, k_values, json_output);
+
+    match inference_result {
+        Ok((passed, results)) => {
+            let elapsed = start.elapsed().as_secs_f32();
+            let total = problems.len();
+            if json_output {
+                let pass_at_k: Vec<serde_json::Value> = k_values
+                    .iter()
+                    .map(|&k| {
+                        let rate = compute_pass_at_k(total, passed, k);
+                        serde_json::json!({"k": k, "rate": rate})
+                    })
+                    .collect();
+                let per_problem: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|(tid, _fn_name, ok)| {
+                        serde_json::json!({"task_id": tid, "passed": ok})
+                    })
+                    .collect();
+                let out = serde_json::json!({
+                    "benchmark": "mbpp",
+                    "model": model_path.display().to_string(),
+                    "problems": total,
+                    "passed": passed,
+                    "pass_at_k": pass_at_k,
+                    "per_problem_results": per_problem,
+                    "elapsed_secs": elapsed,
+                    "mode": "inference",
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            } else {
+                print_humaneval_results(&results, total, passed, k_values, elapsed, "inference");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            // No structural fallback for MBPP — inference is required
+            Err(CliError::ValidationFailed(format!(
+                "MBPP inference failed: {e}"
+            )))
+        }
+    }
+}
+
+/// ALB-085: Run MBPP with actual model inference + Python test execution.
+#[cfg(feature = "inference")]
+fn run_mbpp_inference(
+    model_path: &Path,
+    problems: &[MbppProblem],
+    _k_values: &[usize],
+    json_output: bool,
+) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
+    use realizar::apr_transformer::AprKVCache;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    if !json_output {
+        println!("  {} Loading model for inference...", "→".dimmed());
+    }
+    let transformer = SafetensorsToAprConverter::convert(model_path)
+        .map_err(|e| format!("Cannot load model: {e}"))?;
+
+    let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
+        .ok_or_else(|| "No tokenizer found".to_string())?;
+
+    if !json_output {
+        println!(
+            "  {} Model loaded ({} layers, vocab={})",
+            "✓".green(),
+            transformer.config.num_layers,
+            transformer.config.vocab_size
+        );
+    }
+
+    let mut passed = 0usize;
+    let mut results = Vec::new();
+    let temperature = 0.0f32;
+    let mut rng_state: u64 = 42;
+
+    for (i, problem) in problems.iter().enumerate() {
+        let task_id = match &problem.task_id {
+            serde_json::Value::Number(n) => format!("MBPP/{n}"),
+            serde_json::Value::String(s) => s.clone(),
+            v => format!("MBPP/{v}"),
+        };
+
+        // MBPP prompt: natural language description → model writes complete function
+        let prompt = format!("{}\n", problem.text);
+
+        let prompt_tokens = tokenizer.encode(&prompt);
+        if prompt_tokens.is_empty() {
+            results.push((task_id, String::new(), false));
+            continue;
+        }
+
+        // Generate completion (max 512 tokens — MBPP solutions are longer)
+        let mut cache = AprKVCache::new(&transformer.config);
+        let mut tokens = prompt_tokens.clone();
+
+        for (pos, &tok) in prompt_tokens.iter().enumerate() {
+            let _ = transformer.forward_with_cache(tok, &mut cache, pos);
+        }
+
+        let max_new = 512;
+        for step in 0..max_new {
+            let pos = prompt_tokens.len() + step;
+            let last_tok = *tokens.last().unwrap();
+            let logits = transformer
+                .forward_with_cache(last_tok, &mut cache, pos)
+                .map_err(|e| format!("Generation failed: {e}"))?;
+
+            let next = sample_token(&logits, temperature, &mut rng_state);
+            tokens.push(next);
+
+            if next == 0 {
+                break;
+            }
+            if let Some(eos) = transformer.config.eos_token_id {
+                if next == eos {
+                    break;
+                }
+            }
+        }
+
+        let completion_tokens = &tokens[prompt_tokens.len()..];
+        let completion = tokenizer.decode(completion_tokens);
+
+        // Truncate at next top-level definition (same as HumanEval)
+        let completion = truncate_at_function_boundary(&completion);
+
+        // Build test program: completion + setup_code + test assertions
+        let setup = problem
+            .test_setup_code
+            .as_deref()
+            .unwrap_or("")
+            .trim();
+        let tests = problem.test_list.join("\n");
+        let full_program = if setup.is_empty() {
+            format!("{completion}\n{tests}\n")
+        } else {
+            format!("{completion}\n{setup}\n{tests}\n")
+        };
+
+        let ok = execute_python_test(&full_program, 10);
+
+        if ok {
+            passed += 1;
+        }
+
+        results.push((task_id, String::new(), ok));
+
+        if !json_output && (i + 1) % 50 == 0 {
+            println!(
+                "  {} {}/{} problems evaluated ({} passed)",
+                "→".dimmed(),
+                i + 1,
+                problems.len(),
+                passed
+            );
+        }
+    }
+
+    Ok((passed, results))
+}
+
+#[cfg(not(feature = "inference"))]
+fn run_mbpp_inference(
+    _model_path: &Path,
+    _problems: &[MbppProblem],
+    _k_values: &[usize],
+    _json_output: bool,
+) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
+    Err("Inference not available (compile with --features inference)".to_string())
+}
+
 // --- Contamination detection (R-030, survey #64) ---
 
 /// Run benchmark contamination detection.
