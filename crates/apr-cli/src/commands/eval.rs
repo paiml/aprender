@@ -1459,12 +1459,25 @@ pub(crate) fn run_mbpp(
         ));
     }
 
+    // MBPP-sanitized: standard subset uses task_ids 11-510 (inclusive)
+    // Filter to sanitized subset for comparable results
+    let problems: Vec<MbppProblem> = problems
+        .into_iter()
+        .filter(|p| {
+            if let Some(id) = p.task_id.as_u64() {
+                (11..=510).contains(&id)
+            } else {
+                true // Keep non-numeric task_ids
+            }
+        })
+        .collect();
+
     if !json_output {
-        output::section("APR MBPP Evaluation");
+        output::section("APR MBPP Evaluation (sanitized)");
         println!();
         output::kv("Model", model_path.display());
         output::kv("Benchmark", data_path.display());
-        output::kv("Problems", problems.len());
+        output::kv("Problems", format!("{} (sanitized subset)", problems.len()));
         output::kv("k values", format!("{k_values:?}"));
         println!();
     }
@@ -1491,7 +1504,7 @@ pub(crate) fn run_mbpp(
                     })
                     .collect();
                 let out = serde_json::json!({
-                    "benchmark": "mbpp",
+                    "benchmark": "mbpp-sanitized",
                     "model": model_path.display().to_string(),
                     "problems": total,
                     "passed": passed,
@@ -1499,6 +1512,7 @@ pub(crate) fn run_mbpp(
                     "per_problem_results": per_problem,
                     "elapsed_secs": elapsed,
                     "mode": "inference",
+                    "subset": "sanitized (task_id 11-510)",
                 });
                 println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
             } else {
