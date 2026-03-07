@@ -942,8 +942,7 @@ struct HumanEvalProblem {
 /// Run HumanEval benchmark evaluation.
 ///
 /// Evaluates a model on HumanEval-format JSONL. Reports pass@k metrics.
-/// Phase 1: Validates benchmark structure + canonical solutions.
-/// Phase 2 (future): Full inference via realizar.
+/// ALB-084: Full inference via realizar — generates completions and executes Python tests.
 pub(crate) fn run_humaneval(
     model_path: &Path,
     data_path: Option<&Path>,
@@ -995,49 +994,265 @@ pub(crate) fn run_humaneval(
         println!();
     }
 
+    // ALB-084: Try inference mode first, fall back to structural validation
     let start = Instant::now();
+    let inference_result = run_humaneval_inference(model_path, &problems, k_values, json_output);
+
+    match inference_result {
+        Ok((passed, results)) => {
+            let elapsed = start.elapsed().as_secs_f32();
+            let total = problems.len();
+            if json_output {
+                let pass_at_k: Vec<serde_json::Value> = k_values
+                    .iter()
+                    .map(|&k| {
+                        let rate = compute_pass_at_k(total, passed, k);
+                        serde_json::json!({"k": k, "rate": rate})
+                    })
+                    .collect();
+                let out = serde_json::json!({
+                    "benchmark": "humaneval",
+                    "model": model_path.display().to_string(),
+                    "problems": total,
+                    "passed": passed,
+                    "pass_at_k": pass_at_k,
+                    "elapsed_secs": elapsed,
+                    "mode": "inference",
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            } else {
+                print_humaneval_results(&results, total, passed, k_values, elapsed, "inference");
+            }
+            Ok(())
+        }
+        Err(_) => {
+            // Fall back to structural validation
+            let mut passed = 0usize;
+            let mut results = Vec::new();
+            for problem in &problems {
+                let ok = validate_humaneval_problem(problem);
+                if ok {
+                    passed += 1;
+                }
+                let entry = problem
+                    .entry_point
+                    .as_deref()
+                    .or_else(|| extract_function_name(&problem.prompt))
+                    .unwrap_or("unknown");
+                results.push((problem.task_id.clone(), entry.to_string(), ok));
+            }
+            let elapsed = start.elapsed().as_secs_f32();
+            let total = problems.len();
+            if json_output {
+                let pass_at_k: Vec<serde_json::Value> = k_values
+                    .iter()
+                    .map(|&k| {
+                        let rate = compute_pass_at_k(total, passed, k);
+                        serde_json::json!({"k": k, "rate": rate})
+                    })
+                    .collect();
+                let out = serde_json::json!({
+                    "benchmark": "humaneval",
+                    "model": model_path.display().to_string(),
+                    "problems": total,
+                    "passed": passed,
+                    "pass_at_k": pass_at_k,
+                    "elapsed_secs": elapsed,
+                    "mode": "structural_validation",
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            } else {
+                print_humaneval_results(&results, total, passed, k_values, elapsed, "structural");
+            }
+            Ok(())
+        }
+    }
+}
+
+/// ALB-084: Run HumanEval with actual model inference + Python test execution.
+#[cfg(feature = "inference")]
+fn run_humaneval_inference(
+    model_path: &Path,
+    problems: &[HumanEvalProblem],
+    _k_values: &[usize],
+    json_output: bool,
+) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
+    use realizar::apr_transformer::AprKVCache;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    // Load model
+    if !json_output {
+        println!("  {} Loading model for inference...", "→".dimmed());
+    }
+    let transformer = SafetensorsToAprConverter::convert(model_path)
+        .map_err(|e| format!("Cannot load model: {e}"))?;
+
+    // Load tokenizer
+    let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
+        .ok_or_else(|| "No tokenizer found".to_string())?;
+
+    if !json_output {
+        println!(
+            "  {} Model loaded ({} layers, vocab={})",
+            "✓".green(),
+            transformer.config.num_layers,
+            transformer.config.vocab_size
+        );
+    }
+
     let mut passed = 0usize;
     let mut results = Vec::new();
 
-    for problem in &problems {
-        let ok = validate_humaneval_problem(problem);
-        if ok {
-            passed += 1;
-        }
+    for (i, problem) in problems.iter().enumerate() {
         let entry = problem
             .entry_point
             .as_deref()
             .or_else(|| extract_function_name(&problem.prompt))
             .unwrap_or("unknown");
-        results.push((&problem.task_id, entry.to_string(), ok));
+
+        // Tokenize prompt
+        let prompt_tokens = tokenizer.encode(&problem.prompt);
+        if prompt_tokens.is_empty() {
+            results.push((problem.task_id.clone(), entry.to_string(), false));
+            continue;
+        }
+
+        // Generate completion (greedy, max 256 tokens)
+        let mut cache = AprKVCache::new(&transformer.config);
+        let mut tokens = prompt_tokens.clone();
+
+        // Feed prompt through cache
+        for (pos, &tok) in prompt_tokens.iter().enumerate() {
+            let _ = transformer.forward_with_cache(tok, &mut cache, pos);
+        }
+
+        // Generate new tokens
+        let max_new = 256;
+        for step in 0..max_new {
+            let pos = prompt_tokens.len() + step;
+            let last_tok = *tokens.last().unwrap();
+            let logits = transformer
+                .forward_with_cache(last_tok, &mut cache, pos)
+                .map_err(|e| format!("Generation failed: {e}"))?;
+
+            // Greedy: argmax
+            let next = logits
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map_or(0, |(idx, _)| idx as u32);
+
+            tokens.push(next);
+
+            // Stop at EOS or double newline at indent 0 (function boundary)
+            if next == 0 {
+                break;
+            }
+            if let Some(eos) = transformer.config.eos_token_id {
+                if next == eos {
+                    break;
+                }
+            }
+        }
+
+        // Decode completion (only new tokens)
+        let completion_tokens = &tokens[prompt_tokens.len()..];
+        let completion = tokenizer.decode(completion_tokens);
+
+        // Truncate at function boundary (next 'def ' or '\nclass ' at indent 0)
+        let completion = truncate_at_function_boundary(&completion);
+
+        // Build full program: prompt + completion + test + check(entry_point)
+        let full_program = format!(
+            "{}{}\n\n{}\n\ncheck({})\n",
+            problem.prompt, completion, problem.test, entry
+        );
+
+        // Execute Python test
+        let ok = execute_python_test(&full_program, 10);
+
+        if ok {
+            passed += 1;
+        }
+
+        results.push((problem.task_id.clone(), entry.to_string(), ok));
+
+        // Progress
+        if !json_output && (i + 1) % 10 == 0 {
+            println!(
+                "  {} {}/{} problems evaluated ({} passed)",
+                "→".dimmed(),
+                i + 1,
+                problems.len(),
+                passed
+            );
+        }
     }
 
-    let elapsed = start.elapsed().as_secs_f32();
-    let total = problems.len();
+    Ok((passed, results))
+}
 
-    if json_output {
-        let pass_at_k: Vec<serde_json::Value> = k_values
-            .iter()
-            .map(|&k| {
-                let rate = compute_pass_at_k(total, passed, k);
-                serde_json::json!({"k": k, "rate": rate})
-            })
-            .collect();
-        let out = serde_json::json!({
-            "benchmark": "humaneval",
-            "model": model_path.display().to_string(),
-            "problems": total,
-            "passed": passed,
-            "pass_at_k": pass_at_k,
-            "elapsed_secs": elapsed,
-            "mode": "structural_validation",
+#[cfg(not(feature = "inference"))]
+fn run_humaneval_inference(
+    _model_path: &Path,
+    _problems: &[HumanEvalProblem],
+    _k_values: &[usize],
+    _json_output: bool,
+) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
+    Err("Inference not available (compile with --features inference)".to_string())
+}
+
+/// Truncate completion at the next top-level function/class definition.
+fn truncate_at_function_boundary(completion: &str) -> &str {
+    // Find the first '\ndef ' or '\nclass ' that indicates a new top-level definition
+    for pattern in &["\ndef ", "\nclass "] {
+        if let Some(pos) = completion.find(pattern) {
+            return &completion[..pos];
+        }
+    }
+    completion
+}
+
+/// Execute a Python program and check if all assertions pass.
+/// Returns true if exit code is 0, false otherwise.
+/// Enforces a timeout to catch infinite loops (FALSIFY-EVAL-003).
+fn execute_python_test(program: &str, timeout_secs: u64) -> bool {
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    // Write program to a temp file
+    let tmp = std::env::temp_dir().join(format!("apr_eval_{}.py", std::process::id()));
+    if std::fs::write(&tmp, program).is_err() {
+        return false;
+    }
+
+    let result = Command::new("python3")
+        .arg(&tmp)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .and_then(|mut child| {
+            let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+            loop {
+                match child.try_wait()? {
+                    Some(status) => return Ok(status.success()),
+                    None => {
+                        if Instant::now() >= deadline {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Ok(false);
+                        }
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            }
         });
-        println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
-    } else {
-        print_humaneval_results(&results, total, passed, k_values, elapsed);
-    }
 
-    Ok(())
+    // Clean up temp file
+    let _ = std::fs::remove_file(&tmp);
+
+    result.unwrap_or(false)
 }
 
 /// Validate a single HumanEval problem has correct structure.
@@ -1070,11 +1285,12 @@ fn extract_function_name(prompt: &str) -> Option<&str> {
 
 /// Print HumanEval results table.
 fn print_humaneval_results(
-    results: &[(&String, String, bool)],
+    results: &[(String, String, bool)],
     total: usize,
     passed: usize,
     k_values: &[usize],
     elapsed: f32,
+    mode: &str,
 ) {
     for (task_id, entry_point, ok) in results {
         let status = if *ok {
@@ -1094,7 +1310,7 @@ fn print_humaneval_results(
     println!();
     println!(
         "{}",
-        format!("{passed}/{total} problems validated (structural mode)").dimmed()
+        format!("{passed}/{total} problems evaluated ({mode})").dimmed()
     );
 }
 
