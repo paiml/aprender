@@ -499,6 +499,9 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_size,
             num_classes,
             generate_card,
+            device,
+            samples,
+            temperature,
         } => match task.as_deref() {
             Some("classify") => eval::run_classify_eval(
                 file,
@@ -520,12 +523,18 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 data.as_deref(),
                 &[1, 10, 100],
                 cli.json,
+                device,
+                *samples,
+                *temperature,
             ),
             Some("mbpp") => eval::run_mbpp(
                 file,
                 data.as_deref(),
                 &[1, 10, 100],
                 cli.json,
+                device,
+                *samples,
+                *temperature,
             ),
             Some("contamination") => eval::run_contamination(
                 file,
