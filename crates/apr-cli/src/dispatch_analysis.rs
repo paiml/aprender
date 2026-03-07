@@ -521,6 +521,12 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 &[1, 10, 100],
                 cli.json,
             ),
+            Some("mbpp") => eval::run_mbpp(
+                file,
+                data.as_deref(),
+                &[1, 10, 100],
+                cli.json,
+            ),
             Some("contamination") => eval::run_contamination(
                 file,
                 data.as_deref(),
