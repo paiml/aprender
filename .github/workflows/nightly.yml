@@ -1,0 +1,101 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits in last 24h
+        id: check
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          if git log --since="24 hours ago" --oneline | grep -q .; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No new commits in the last 24 hours, skipping build"
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --package apr-cli
+
+      - name: Package (unix)
+        if: matrix.target != 'x86_64-pc-windows-msvc'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../apr-${{ matrix.target }}.tar.gz apr
+          cd ../../..
+
+      - name: Package (windows)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../apr-${{ matrix.target }}.zip apr.exe
+          cd ../../..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apr-${{ matrix.target }}
+          path: apr-${{ matrix.target }}.*
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          make_latest: false
+          body: |
+            Nightly build from `main` branch.
+
+            **Date:** ${{ github.event.repository.updated_at || github.event.head_commit.timestamp }}
+            **Commit:** ${{ needs.check.outputs.sha }}
+          files: artifacts/*
