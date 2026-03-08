@@ -464,9 +464,21 @@ fn start_gguf_server_cuda(
             println!("{}", "CUDA optimized model ready".green());
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                .with_verbose(false) // TODO: restore with_batch_config when realizar API stabilizes
-                .with_verbose(config.verbose);
+                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+
+            // PMAT-044: Spawn continuous batch scheduler for concurrent request handling
+            let cuda_model_arc = state.cuda_model().expect("just created").clone();
+            let batch_config = realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
+            println!(
+                "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
+                batch_config.max_batch, batch_config.window_ms
+            );
+            let batch_tx = realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
+                cuda_model_arc,
+                batch_config,
+            );
+
+            let state = state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose);
 
             let app = create_router(state);
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
