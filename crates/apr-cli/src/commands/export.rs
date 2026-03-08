@@ -105,9 +105,9 @@ fn run_plan_batch(
     let formats: Vec<ExportFormat> = batch_formats
         .split(',')
         .map(|s| {
-            s.trim().parse::<ExportFormat>().map_err(|_| {
-                CliError::ValidationFailed(format!("Unknown format in batch: {s}"))
-            })
+            s.trim()
+                .parse::<ExportFormat>()
+                .map_err(|_| CliError::ValidationFailed(format!("Unknown format in batch: {s}")))
         })
         .collect::<Result<Vec<_>>>()?;
 
@@ -185,7 +185,14 @@ fn run_plan(
     let file_size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
 
     if let Some(batch_formats) = batch {
-        return run_plan_batch(file, file_size, batch_formats, quantize, output, json_output);
+        return run_plan_batch(
+            file,
+            file_size,
+            batch_formats,
+            quantize,
+            output,
+            json_output,
+        );
     }
 
     let effective_output = output.unwrap_or(Path::new("model.safetensors"));

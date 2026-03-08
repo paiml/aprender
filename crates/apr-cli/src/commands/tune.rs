@@ -310,10 +310,26 @@ pub fn run_classify_tune(
     let _scheduler_obj = tuner.build_scheduler();
 
     if json_output {
-        return print_classify_tune_json(&mut searcher, strategy, scheduler, scout, budget, num_classes, max_epochs);
+        return print_classify_tune_json(
+            &mut searcher,
+            strategy,
+            scheduler,
+            scout,
+            budget,
+            num_classes,
+            max_epochs,
+        );
     }
 
-    print_classify_tune_text(&mut searcher, tune_strategy, scout, budget, num_classes, max_epochs, data_path);
+    print_classify_tune_text(
+        &mut searcher,
+        tune_strategy,
+        scout,
+        budget,
+        num_classes,
+        max_epochs,
+        data_path,
+    );
     Ok(())
 }
 
@@ -367,10 +383,24 @@ fn print_classify_tune_text(
     println!();
     output::kv("Task", "classify");
     output::kv("Strategy", format!("{tune_strategy}"));
-    output::kv("Mode", if scout { "scout (1 epoch/trial)" } else { "full" });
+    output::kv(
+        "Mode",
+        if scout {
+            "scout (1 epoch/trial)"
+        } else {
+            "full"
+        },
+    );
     output::kv("Budget", format!("{budget} trials"));
     output::kv("Classes", num_classes.to_string());
-    output::kv("Max epochs", if scout { "1".to_string() } else { max_epochs.to_string() });
+    output::kv(
+        "Max epochs",
+        if scout {
+            "1".to_string()
+        } else {
+            max_epochs.to_string()
+        },
+    );
 
     if let Some(path) = data_path {
         output::kv("Data", path.display().to_string());

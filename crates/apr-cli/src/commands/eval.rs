@@ -745,7 +745,13 @@ pub(crate) fn run_code_eval(
     let elapsed = start.elapsed().as_secs_f32();
 
     print_code_eval_results(
-        model_path, data_path, &problems, &results, elapsed, threshold, json_output,
+        model_path,
+        data_path,
+        &problems,
+        &results,
+        elapsed,
+        threshold,
+        json_output,
     )?;
 
     Ok(())
@@ -979,10 +985,11 @@ fn build_passk_json(
 ) -> serde_json::Value {
     let total = per_problem_correct.len();
     let passed = per_problem_correct.iter().filter(|p| p.2 > 0).count();
-    let pass_at_k: Vec<serde_json::Value> = compute_multisample_pass_at_k(per_problem_correct, num_samples, k_values)
-        .iter()
-        .map(|(k, rate)| serde_json::json!({"k": k, "rate": rate}))
-        .collect();
+    let pass_at_k: Vec<serde_json::Value> =
+        compute_multisample_pass_at_k(per_problem_correct, num_samples, k_values)
+            .iter()
+            .map(|(k, rate)| serde_json::json!({"k": k, "rate": rate}))
+            .collect();
     let per_problem: Vec<serde_json::Value> = per_problem_correct
         .iter()
         .map(|(tid, ep, c)| {
@@ -1032,7 +1039,17 @@ fn emit_eval_results(
     let total = per_problem_correct.len();
     let passed = per_problem_correct.iter().filter(|p| p.2 > 0).count();
     if json_output {
-        let out = build_passk_json(benchmark, model_path, per_problem_correct, num_samples, temperature, k_values, elapsed, mode, extra);
+        let out = build_passk_json(
+            benchmark,
+            model_path,
+            per_problem_correct,
+            num_samples,
+            temperature,
+            k_values,
+            elapsed,
+            mode,
+            extra,
+        );
         println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
     } else {
         let results: Vec<(String, String, bool)> = per_problem_correct
@@ -1177,22 +1194,29 @@ pub(crate) fn run_humaneval(
         })
         .collect();
 
-    let inference_ok = run_multisample_loop(
-        &mut per_problem_correct,
-        num_samples,
-        json_output,
-        || {
+    let inference_ok =
+        run_multisample_loop(&mut per_problem_correct, num_samples, json_output, || {
             if device == "cuda" {
                 run_humaneval_inference_cuda(model_path, &problems, k_values, json_output)
             } else {
                 run_humaneval_inference(model_path, &problems, k_values, json_output)
             }
-        },
-    );
+        });
 
     if inference_ok {
         let elapsed = start.elapsed().as_secs_f32();
-        emit_eval_results("humaneval", model_path, &per_problem_correct, num_samples, temperature, k_values, elapsed, "inference", json_output, None);
+        emit_eval_results(
+            "humaneval",
+            model_path,
+            &per_problem_correct,
+            num_samples,
+            temperature,
+            k_values,
+            elapsed,
+            "inference",
+            json_output,
+            None,
+        );
         return Ok(());
     }
 
@@ -1210,7 +1234,18 @@ pub(crate) fn run_humaneval(
         })
         .collect();
     let elapsed = start.elapsed().as_secs_f32();
-    emit_eval_results("humaneval", model_path, &structural_results, 1, 0.0, k_values, elapsed, "structural_validation", json_output, None);
+    emit_eval_results(
+        "humaneval",
+        model_path,
+        &structural_results,
+        1,
+        0.0,
+        k_values,
+        elapsed,
+        "structural_validation",
+        json_output,
+        None,
+    );
     Ok(())
 }
 
@@ -1229,7 +1264,10 @@ fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64) -> u32 {
     // Temperature-scaled softmax sampling
     let inv_temp = 1.0 / temperature;
     let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let mut probs: Vec<f32> = logits.iter().map(|&l| ((l - max_logit) * inv_temp).exp()).collect();
+    let mut probs: Vec<f32> = logits
+        .iter()
+        .map(|&l| ((l - max_logit) * inv_temp).exp())
+        .collect();
     let sum: f32 = probs.iter().sum();
     if sum > 0.0 {
         for p in &mut probs {
@@ -1410,6 +1448,9 @@ fn load_transformer_config(
         use_bias: v["use_bias"].as_bool().unwrap_or(false),
         head_dim_override: None,
         architecture: Default::default(),
+        hf_architecture: None,
+        hf_model_type: None,
+        tie_word_embeddings: false,
     })
 }
 
@@ -1434,10 +1475,7 @@ fn run_humaneval_inference_cuda(
         );
     }
 
-    let mut trainer =
-        entrenar::train::CudaTransformerTrainer::for_inference(
-            model_path, config,
-        )
+    let mut trainer = entrenar::train::CudaTransformerTrainer::for_inference(model_path, config)
         .map_err(|e| format!("CUDA inference init failed: {e}"))?;
 
     // Load tokenizer
@@ -1732,9 +1770,7 @@ pub(crate) fn run_mbpp(
         .collect::<Result<Vec<_>>>()?;
 
     if problems.is_empty() {
-        return Err(CliError::ValidationFailed(
-            "MBPP file is empty".to_string(),
-        ));
+        return Err(CliError::ValidationFailed("MBPP file is empty".to_string()));
     }
 
     // MBPP-sanitized: standard subset uses task_ids 11-510 (inclusive)
@@ -1774,24 +1810,19 @@ pub(crate) fn run_mbpp(
         .collect();
 
     let mut first_err: Option<String> = None;
-    let any_ok = run_multisample_loop(
-        &mut per_problem_correct,
-        num_samples,
-        json_output,
-        || {
-            let result = if device == "cuda" {
-                run_mbpp_inference_cuda(model_path, &problems, k_values, json_output)
-            } else {
-                run_mbpp_inference(model_path, &problems, k_values, json_output)
-            };
-            if let Err(ref e) = result {
-                if first_err.is_none() {
-                    first_err = Some(format!("{e}"));
-                }
+    let any_ok = run_multisample_loop(&mut per_problem_correct, num_samples, json_output, || {
+        let result = if device == "cuda" {
+            run_mbpp_inference_cuda(model_path, &problems, k_values, json_output)
+        } else {
+            run_mbpp_inference(model_path, &problems, k_values, json_output)
+        };
+        if let Err(ref e) = result {
+            if first_err.is_none() {
+                first_err = Some(format!("{e}"));
             }
-            result
-        },
-    );
+        }
+        result
+    });
 
     if !any_ok {
         return Err(CliError::ValidationFailed(format!(
@@ -1801,7 +1832,18 @@ pub(crate) fn run_mbpp(
     }
 
     let elapsed = start.elapsed().as_secs_f32();
-    emit_eval_results("mbpp-sanitized", model_path, &per_problem_correct, num_samples, temperature, k_values, elapsed, "inference", json_output, Some(("subset", "sanitized (task_id 11-510)")));
+    emit_eval_results(
+        "mbpp-sanitized",
+        model_path,
+        &per_problem_correct,
+        num_samples,
+        temperature,
+        k_values,
+        elapsed,
+        "inference",
+        json_output,
+        Some(("subset", "sanitized (task_id 11-510)")),
+    );
     Ok(())
 }
 
@@ -1891,11 +1933,7 @@ fn run_mbpp_inference(
         let completion = truncate_at_function_boundary(&completion);
 
         // Build test program: completion + setup_code + test assertions
-        let setup = problem
-            .test_setup_code
-            .as_deref()
-            .unwrap_or("")
-            .trim();
+        let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
         let tests = problem.test_list.join("\n");
         let full_program = if setup.is_empty() {
             format!("{completion}\n{tests}\n")
@@ -1953,10 +1991,7 @@ fn run_mbpp_inference_cuda(
         );
     }
 
-    let mut trainer =
-        entrenar::train::CudaTransformerTrainer::for_inference(
-            model_path, config,
-        )
+    let mut trainer = entrenar::train::CudaTransformerTrainer::for_inference(model_path, config)
         .map_err(|e| format!("CUDA inference init failed: {e}"))?;
 
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
@@ -2007,11 +2042,7 @@ fn run_mbpp_inference_cuda(
         let completion = tokenizer.decode(completion_tokens);
         let completion = truncate_at_function_boundary(&completion);
 
-        let setup = problem
-            .test_setup_code
-            .as_deref()
-            .unwrap_or("")
-            .trim();
+        let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
         let tests = problem.test_list.join("\n");
         let full_program = if setup.is_empty() {
             format!("{completion}\n{tests}\n")

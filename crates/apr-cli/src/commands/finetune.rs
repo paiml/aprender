@@ -452,29 +452,69 @@ fn dispatch_finetune_mode(
     vram_gb: f64,
 ) -> Option<Result<()>> {
     if merge_mode {
-        return Some(run_merge(model_path, adapter_path, output_path, json_output));
+        return Some(run_merge(
+            model_path,
+            adapter_path,
+            output_path,
+            json_output,
+        ));
     }
 
     if let Some("classify") = task {
         return Some(run_classify(
-            model_path, model_size, data_path, output_path, num_classes,
-            rank.unwrap_or(16), epochs, learning_rate, plan_only, checkpoint_format,
-            oversample, max_seq_len, quantize_nf4, gpus, gpu_backend, role, bind,
-            coordinator, expect_workers, json_output,
+            model_path,
+            model_size,
+            data_path,
+            output_path,
+            num_classes,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            checkpoint_format,
+            oversample,
+            max_seq_len,
+            quantize_nf4,
+            gpus,
+            gpu_backend,
+            role,
+            bind,
+            coordinator,
+            expect_workers,
+            json_output,
         ));
     }
 
     if !adapters.is_empty() {
         return Some(run_multi_adapter(
-            model_path, model_size, adapters, rank.unwrap_or(16), epochs, learning_rate,
-            plan_only, quantize_nf4, max_seq_len, json_output,
+            model_path,
+            model_size,
+            adapters,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            quantize_nf4,
+            max_seq_len,
+            json_output,
         ));
     }
 
     if let Some("instruct") = task {
         return Some(run_instruct(
-            model_path, model_size, data_path, output_path, rank.unwrap_or(16), epochs,
-            learning_rate, plan_only, json_output, method, quantize_nf4, max_seq_len, vram_gb,
+            model_path,
+            model_size,
+            data_path,
+            output_path,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            json_output,
+            method,
+            quantize_nf4,
+            max_seq_len,
+            vram_gb,
         ));
     }
 
@@ -528,10 +568,32 @@ pub(crate) fn run(
     }
 
     if let Some(dispatched) = dispatch_finetune_mode(
-        merge_mode, model_path, adapter_path, output_path, model_size, data_path,
-        num_classes, rank, epochs, learning_rate, plan_only, checkpoint_format,
-        oversample, max_seq_len, quantize_nf4, gpus, gpu_backend, role, bind,
-        coordinator, expect_workers, adapters, json_output, task, method, vram_gb,
+        merge_mode,
+        model_path,
+        adapter_path,
+        output_path,
+        model_size,
+        data_path,
+        num_classes,
+        rank,
+        epochs,
+        learning_rate,
+        plan_only,
+        checkpoint_format,
+        oversample,
+        max_seq_len,
+        quantize_nf4,
+        gpus,
+        gpu_backend,
+        role,
+        bind,
+        coordinator,
+        expect_workers,
+        adapters,
+        json_output,
+        task,
+        method,
+        vram_gb,
     ) {
         return dispatched;
     }
@@ -557,14 +619,28 @@ pub(crate) fn run(
     let config = plan(model_params, vram_gb, ft_method.into())
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
 
-    display_finetune_plan(&config, model_params, vram_gb, epochs, learning_rate, plan_only, json_output);
+    display_finetune_plan(
+        &config,
+        model_params,
+        vram_gb,
+        epochs,
+        learning_rate,
+        plan_only,
+        json_output,
+    );
 
     if plan_only {
         return Ok(());
     }
 
     run_finetune_training(
-        model_path, data_path, output_path, &config, epochs, learning_rate, json_output,
+        model_path,
+        data_path,
+        output_path,
+        &config,
+        epochs,
+        learning_rate,
+        json_output,
     )
 }
 
@@ -620,7 +696,15 @@ fn display_finetune_plan(
     let req = planner.estimate(config.method, config.rank);
 
     if json_output {
-        display_plan_json(config, &req, model_params, vram_gb, epochs, learning_rate, plan_only);
+        display_plan_json(
+            config,
+            &req,
+            model_params,
+            vram_gb,
+            epochs,
+            learning_rate,
+            plan_only,
+        );
     } else {
         display_plan_text(config, &req, vram_gb);
     }

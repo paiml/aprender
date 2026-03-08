@@ -383,7 +383,13 @@ pub(crate) fn run(
 
     if plan_only {
         return run_plan(
-            teacher_path, student_path, distill_strategy, temperature, alpha, epochs, json_output,
+            teacher_path,
+            student_path,
+            distill_strategy,
+            temperature,
+            alpha,
+            epochs,
+            json_output,
         );
     }
 
@@ -399,7 +405,17 @@ pub(crate) fn run(
         )
     })?;
 
-    print_distill_header(teacher_path, student_path, data_path, distill_strategy, temperature, alpha, epochs, out, json_output);
+    print_distill_header(
+        teacher_path,
+        student_path,
+        data_path,
+        distill_strategy,
+        temperature,
+        alpha,
+        epochs,
+        out,
+        json_output,
+    );
     validate_optional_paths(student_path, data_path)?;
 
     if !json_output {

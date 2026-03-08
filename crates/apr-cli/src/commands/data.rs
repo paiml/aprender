@@ -837,10 +837,7 @@ pub(crate) fn run_decontaminate(
         output::kv("Threshold", format!("{:.2}", report.threshold));
         println!();
         output::kv("Contaminated", format!("{}", report.contaminated_count));
-        output::kv(
-            "Rate",
-            format!("{:.2}%", report.contamination_rate * 100.0),
-        );
+        output::kv("Rate", format!("{:.2}%", report.contamination_rate * 100.0));
         println!();
         if report.contamination_rate < 0.01 {
             println!("{} Contamination rate <1% (AC-016 gate)", "PASS".green());

@@ -66,9 +66,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             println!("{}", "Starting GGUF inference server...".cyan());
             start_gguf_server(model_path, config)
         }
-        ModelFormat::SafeTensors => {
-            start_safetensors_server_with_fallback(model_path, config)
-        }
+        ModelFormat::SafeTensors => start_safetensors_server_with_fallback(model_path, config),
     }
 }
 

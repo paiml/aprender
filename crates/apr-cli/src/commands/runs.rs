@@ -51,7 +51,13 @@ fn sparkline(data: &[f64], width: usize) -> String {
 /// Each character encodes a 2x4 dot matrix (2 columns, 4 rows per cell).
 /// Returns multi-line string with y-axis labels.
 /// Sample data points to fit braille grid, returning y-positions in dot coordinates.
-fn sample_braille_data(data: &[f64], total_dots_x: usize, total_dots_y: usize, min: f64, range: f64) -> Vec<usize> {
+fn sample_braille_data(
+    data: &[f64],
+    total_dots_x: usize,
+    total_dots_y: usize,
+    min: f64,
+    range: f64,
+) -> Vec<usize> {
     let n = data.len();
     let mut samples = Vec::with_capacity(total_dots_x);
     for i in 0..total_dots_x {
@@ -69,7 +75,12 @@ fn sample_braille_data(data: &[f64], total_dots_x: usize, total_dots_y: usize, m
 }
 
 /// Render one row of braille characters from sample data.
-fn render_braille_row(samples: &[usize], row: usize, width: usize, dot_bits: &[[u8; 4]; 2]) -> String {
+fn render_braille_row(
+    samples: &[usize],
+    row: usize,
+    width: usize,
+    dot_bits: &[[u8; 4]; 2],
+) -> String {
     let row_start_y = row * 4;
     let mut row_chars = String::new();
     for col in 0..width {
@@ -105,10 +116,7 @@ fn braille_chart(data: &[f64], width: usize, height: usize) -> String {
 
     let samples = sample_braille_data(data, total_dots_x, total_dots_y, min, range);
 
-    let dot_bits: [[u8; 4]; 2] = [
-        [0, 1, 2, 6],
-        [3, 4, 5, 7],
-    ];
+    let dot_bits: [[u8; 4]; 2] = [[0, 1, 2, 6], [3, 4, 5, 7]];
 
     let y_label_width = format!("{:.2}", max).len().max(format!("{:.2}", min).len());
     let mut lines = Vec::with_capacity(rows + 1);

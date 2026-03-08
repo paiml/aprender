@@ -430,7 +430,13 @@ pub(crate) fn run_watch(
         }
 
         kill_stale_gpu_procs();
-        match handle_watch_iteration(config_path, &mut state, backoff_initial, backoff_max, json_output)? {
+        match handle_watch_iteration(
+            config_path,
+            &mut state,
+            backoff_initial,
+            backoff_max,
+            json_output,
+        )? {
             Some(result) => return result,
             None => continue,
         }
@@ -448,22 +454,25 @@ fn handle_watch_iteration(
     let exit_status = run_training_process(config_path, state.use_blocking);
 
     match exit_status {
-        Ok(status) if status.success() => {
-            Ok(Some(watch_success(state.attempt, json_output)))
-        }
+        Ok(status) if status.success() => Ok(Some(watch_success(state.attempt, json_output))),
         Ok(status) => {
             let action = handle_crash(
-                config_path, state, status, backoff_initial, backoff_max, json_output,
+                config_path,
+                state,
+                status,
+                backoff_initial,
+                backoff_max,
+                json_output,
             )?;
             if action == CrashAction::Fatal {
-                Ok(Some(Err(CliError::ValidationFailed("Fatal error".to_string()))))
+                Ok(Some(Err(CliError::ValidationFailed(
+                    "Fatal error".to_string(),
+                ))))
             } else {
                 Ok(None)
             }
         }
-        Err(e) => {
-            Ok(Some(Err(watch_spawn_failed(e, json_output))))
-        }
+        Err(e) => Ok(Some(Err(watch_spawn_failed(e, json_output)))),
     }
 }
 
