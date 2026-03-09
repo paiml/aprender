@@ -311,8 +311,10 @@ impl AprV2Writer {
         self.header.data_offset = data_section_offset as u64;
         self.header.update_checksum();
 
-        // Build output
-        let mut output = Vec::new();
+        // ALB-099: Pre-allocate output with known total size
+        let total_data_size: usize = self.tensors.iter().map(|(_, d)| align_64(d.len())).sum();
+        let total_size = data_section_offset + total_data_size + 4; // +4 for footer CRC32
+        let mut output = Vec::with_capacity(total_size);
 
         // Header
         output.extend_from_slice(&self.header.to_bytes());

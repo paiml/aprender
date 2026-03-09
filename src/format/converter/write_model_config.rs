@@ -183,6 +183,10 @@ pub(crate) fn write_apr_file_raw(
         rope_theta: model_config.and_then(|c| c.rope_theta),
         rope_type: model_config.and_then(|c| c.rope_type),
         rms_norm_eps: model_config.and_then(|c| c.rms_norm_eps),
+        head_dim: model_config.and_then(|c| c.head_dim),
+        num_experts: model_config.and_then(|c| c.num_experts),
+        num_experts_per_tok: model_config.and_then(|c| c.num_experts_per_tok),
+        moe_intermediate_size: model_config.and_then(|c| c.moe_intermediate_size),
         custom,
     };
 
@@ -192,8 +196,8 @@ pub(crate) fn write_apr_file_raw(
     // GH-202/GH-208: Add tensors with native quantization format.
     // Shape is ALREADY in APR format after enforce_import_contract().
     // GGML data layout is row-major when shape is reversed — no transpose needed.
-    for (name, tensor) in tensors {
-        let apr_dtype = map_gguf_dtype(tensor.dtype, &name)?;
+    for (name, tensor) in tensors.iter() {
+        let apr_dtype = map_gguf_dtype(tensor.dtype, name)?;
         writer.add_tensor(name, apr_dtype, tensor.shape.clone(), tensor.data.clone());
     }
 
