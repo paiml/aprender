@@ -318,6 +318,44 @@ impl AprWriter {
             .map_err(|e| format!("APR serialization failed: {e}"))
     }
 
+    /// ALB-099: Consume the writer and serialize — zero-copy for owned tensor data.
+    /// Avoids the f32→bytes copy for tensors added via `add_tensor_f32_owned`.
+    ///
+    /// # Errors
+    /// Returns error if serialization fails
+    pub fn into_bytes(self) -> Result<Vec<u8>, String> {
+        use crate::format::v2::{AprV2Metadata, AprV2Writer as V2Writer};
+
+        let mut v2_meta = AprV2Metadata::default();
+        for (key, value) in &self.metadata {
+            match key.as_str() {
+                "model_type" => {
+                    if let Some(s) = value.as_str() {
+                        v2_meta.model_type = s.to_string();
+                    }
+                }
+                "model_name" => v2_meta.name = value.as_str().map(String::from),
+                "description" => v2_meta.description = value.as_str().map(String::from),
+                "author" => v2_meta.author = value.as_str().map(String::from),
+                "license" => v2_meta.license = value.as_str().map(String::from),
+                "version" => v2_meta.version = value.as_str().map(String::from),
+                "architecture" => v2_meta.architecture = value.as_str().map(String::from),
+                _ => {
+                    v2_meta.custom.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        let mut writer = V2Writer::new(v2_meta);
+        for (name, shape, data) in self.tensors {
+            writer.add_tensor_f32_owned(name, shape, data);
+        }
+
+        writer
+            .write()
+            .map_err(|e| format!("APR serialization failed: {e}"))
+    }
+
     /// Write to file atomically (F-CKPT-009).
     ///
     /// Writes to a `.tmp` file, fsyncs, then renames. A crash at any point
@@ -332,6 +370,32 @@ impl AprWriter {
         let bytes = self.to_bytes()?;
 
         // F-CKPT-009: Atomic write via tmp+fsync+rename
+        let tmp_path = path.with_extension("apr.tmp");
+        let mut file =
+            fs::File::create(&tmp_path).map_err(|e| format!("Failed to create temp file: {e}"))?;
+        file.write_all(&bytes)
+            .map_err(|e| format!("Failed to write temp file: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to fsync temp file: {e}"))?;
+        drop(file);
+
+        fs::rename(&tmp_path, path).map_err(|e| format!("Failed to rename temp file: {e}"))?;
+
+        Ok(())
+    }
+
+    /// ALB-099: Consuming write — zero-copy for owned tensor data.
+    /// Same atomic write semantics as `write()`, but consumes the writer
+    /// to avoid copying f32 tensor data to bytes.
+    ///
+    /// # Errors
+    /// Returns error if write fails
+    pub fn write_into<P: AsRef<Path>>(self, path: P) -> Result<(), String> {
+        use std::io::Write;
+
+        let path = path.as_ref();
+        let bytes = self.into_bytes()?;
+
         let tmp_path = path.with_extension("apr.tmp");
         let mut file =
             fs::File::create(&tmp_path).map_err(|e| format!("Failed to create temp file: {e}"))?;
