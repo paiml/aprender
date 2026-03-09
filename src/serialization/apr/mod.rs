@@ -261,9 +261,20 @@ impl AprWriter {
         self.metadata.insert(key.into(), value);
     }
 
-    /// Add tensor with f32 data
+    /// Add tensor with f32 data (copies the slice)
     pub fn add_tensor_f32(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
         self.tensors.push((name.into(), shape, data.to_vec()));
+    }
+
+    /// ALB-099: Add tensor with owned f32 data — zero-copy for large tensors.
+    /// Use this when the caller already owns a Vec<f32> to avoid a redundant copy.
+    pub fn add_tensor_f32_owned(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        data: Vec<f32>,
+    ) {
+        self.tensors.push((name.into(), shape, data));
     }
 
     /// Write to bytes using the canonical APR format.
