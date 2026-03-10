@@ -220,6 +220,7 @@
 - [Case Study: Evolutionary Merge Optimization](./examples/evolutionary-merge.md)
 - [Case Study: Advanced Distillation Strategies](./examples/distillation-advanced.md)
 - [Case Study: Continual Pre-Training](./examples/continual-pretraining.md)
+- [Case Study: Direct Preference Optimization](./examples/dpo-preference.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Community Detection with Louvain](./examples/community-detection.md)
 - [Case Study: Comprehensive Graph Algorithms](./examples/graph-algorithms-comprehensive.md)

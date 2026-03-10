@@ -19,6 +19,7 @@ pub mod cpt;
 pub mod curriculum;
 pub mod distillation;
 pub mod distillation_advanced;
+pub mod dpo;
 pub mod drift;
 pub mod orchestrator;
 
