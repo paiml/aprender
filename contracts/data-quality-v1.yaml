@@ -1,0 +1,93 @@
+# Data Quality Pipeline Contract v1.0.0
+# THE SOURCE OF TRUTH for data splitting, JSONL validation, oversampling
+#
+# ENFORCEMENT: aprender/src/data/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Data pipeline: split disjointness, completeness, JSONL validation"
+  references:
+    - "APR-SPEC docs/specifications/components/data.md"
+
+equations:
+  split_disjointness:
+    formula: "train ∩ val == ∅ AND train ∩ test == ∅ AND val ∩ test == ∅"
+    description: "Data splits are pairwise disjoint (no leakage)"
+    invariants:
+      - "No sample appears in more than one split"
+
+  split_completeness:
+    formula: "|train| + |val| + |test| == |dataset|"
+    description: "All samples accounted for across splits"
+    invariants:
+      - "No samples lost during splitting"
+
+  oversample_preservation:
+    formula: "∀ sample ∈ original: sample ∈ balanced"
+    description: "Oversampling only adds duplicates, never removes originals"
+    invariants:
+      - "|balanced| >= |original|"
+
+  jsonl_validation:
+    formula: "∀ line ∈ file: parse_json(line) is Ok OR error reported"
+    description: "Invalid JSON on any line produces explicit error"
+
+proof_obligations:
+  - type: invariant
+    property: "Split disjointness"
+    formal: "train ∩ val == ∅ for all splits"
+    binding: "aprender::data::split_dataset"
+    status: implemented
+
+  - type: invariant
+    property: "Split completeness"
+    formal: "|train| + |val| + |test| == |dataset|"
+    binding: "aprender::data::split_dataset"
+    status: implemented
+
+  - type: invariant
+    property: "Oversample preservation"
+    formal: "∀ sample in original: sample in balanced"
+    binding: "aprender::data::oversample"
+    status: implemented
+
+  - type: completeness
+    property: "JSONL validation"
+    formal: "Invalid JSON line → Err, valid lines → Ok"
+    binding: "aprender::data::validate_jsonl"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-DATA-001
+    rule: "Split disjointness"
+    prediction: "No sample appears in both train and val"
+    if_fails: "Index shuffling has off-by-one or overlap"
+
+  - id: FALSIFY-DATA-002
+    rule: "Split completeness"
+    prediction: "Sum of split sizes equals dataset size"
+    if_fails: "Rounding error in split ratio computation"
+
+  - id: FALSIFY-DATA-003
+    rule: "Oversample preservation"
+    prediction: "All original samples present after oversampling"
+    if_fails: "Oversampling replacing instead of appending"
+
+  - id: FALSIFY-DATA-004
+    rule: "JSONL well-formedness"
+    prediction: "Truncated JSON line → parse error, not silent skip"
+    if_fails: "JSON parser silently ignoring malformed lines"
+
+  - id: FALSIFY-DATA-005
+    rule: "Empty dataset"
+    prediction: "Splitting empty dataset → 3 empty splits, no panic"
+    if_fails: "Division by zero on empty dataset"
+
+kani_harness:
+  - id: KANI-DATA-001
+    property: "Split completeness"
+    bound: 16
+    strategy: exhaustive
+    description: "Verify |train|+|val|+|test| == N for N in [0, 16]"

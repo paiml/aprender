@@ -1,0 +1,133 @@
+# Evaluation Harness Contract v1.0.0
+# THE SOURCE OF TRUTH for evaluation metrics: perplexity, pass@k, F1, determinism
+#
+# ENFORCEMENT: aprender/src/eval/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Evaluation metrics: perplexity bounds, pass@k monotonicity, F1 range, determinism"
+  references:
+    - "APR-SPEC docs/specifications/components/eval.md"
+    - "Chen et al. (2021). Evaluating Large Language Models Trained on Code. arXiv:2107.03374"
+    - "Brown et al. (2020). Language Models are Few-Shot Learners. NeurIPS 2020"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  perplexity_lower_bound:
+    formula: "PPL = exp(H) >= exp(0) = 1.0"
+    description: "Perplexity is the exponentiated cross-entropy, always >= 1.0"
+    invariants:
+      - "H (cross-entropy) >= 0"
+      - "PPL is finite for valid probability distributions"
+      - "Lower PPL = better model"
+
+  pass_at_k_bounds:
+    formula: "pass@k = 1 - C(n-c, k) / C(n, k), where 0 <= pass@k <= 1"
+    description: "pass@k is a probability, bounded in [0, 1]"
+    invariants:
+      - "k <= n (can't sample more than available)"
+      - "c <= n (correct solutions <= total)"
+
+  pass_at_k_monotonic:
+    formula: "pass@(k+1) >= pass@k"
+    description: "More samples can only increase probability of finding a solution"
+    invariants:
+      - "Monotonically non-decreasing in k"
+      - "pass@n = 1 if c >= 1"
+
+  f1_bounds:
+    formula: "F1 = 2 * P * R / (P + R), where 0 <= F1 <= 1"
+    description: "F1 score is harmonic mean of precision and recall"
+    invariants:
+      - "0 <= precision <= 1"
+      - "0 <= recall <= 1"
+      - "F1 == 0 when P == 0 or R == 0"
+      - "F1 == 1 when P == 1 and R == 1"
+
+  deterministic_eval:
+    formula: "eval(model, data, temp=0, seed=s) → same score"
+    description: "Evaluation with temperature 0 is deterministic"
+    invariants:
+      - "Same model + same data + same seed = same output"
+      - "No floating-point non-determinism from parallelism"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - type: bound
+    property: "Perplexity lower bound"
+    formal: "PPL >= 1.0 for any valid probability distribution"
+    binding: "aprender::eval::compute_perplexity"
+    status: implemented
+
+  - type: bound
+    property: "pass@k in [0, 1]"
+    formal: "0 <= pass_at_k <= 1 for all valid inputs"
+    binding: "aprender::eval::pass_at_k"
+    status: implemented
+
+  - type: monotonicity
+    property: "pass@k monotonic in k"
+    formal: "pass@(k+1) >= pass@k for all k < n"
+    binding: "aprender::eval::pass_at_k"
+    status: implemented
+
+  - type: bound
+    property: "F1 in [0, 1]"
+    formal: "0 <= F1 <= 1 for all inputs"
+    binding: "aprender::metrics::f1_score"
+    status: implemented
+
+  - type: determinism
+    property: "Deterministic evaluation"
+    formal: "eval(model, data, temp=0, seed=s) is deterministic"
+    binding: "aprender::eval::evaluate"
+    status: implemented
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-EVAL-001
+    rule: "PPL lower bound"
+    prediction: "PPL >= 1.0 for random logits over valid vocabulary"
+    if_fails: "Cross-entropy computation sign error or exp domain issue"
+
+  - id: FALSIFY-EVAL-002
+    rule: "pass@k bounds"
+    prediction: "0 <= pass@k <= 1 for random n, c, k"
+    if_fails: "Combinatorial formula integer overflow or sign error"
+
+  - id: FALSIFY-EVAL-003
+    rule: "pass@k monotonic"
+    prediction: "pass@(k+1) >= pass@k for all k in [1, n-1]"
+    if_fails: "Combinatorial formula error or rounding issue"
+
+  - id: FALSIFY-EVAL-004
+    rule: "F1 bounds"
+    prediction: "0 <= F1 <= 1 for random precision and recall"
+    if_fails: "Division by zero when P + R == 0"
+
+  - id: FALSIFY-EVAL-005
+    rule: "Deterministic eval"
+    prediction: "Two runs with same seed produce identical scores"
+    if_fails: "Non-deterministic operation in eval pipeline"
+
+# =============================================================================
+# KANI HARNESS
+# =============================================================================
+
+kani_harness:
+  - id: KANI-EVAL-001
+    property: "pass_at_k in [0, 1]"
+    bound: 10
+    strategy: exhaustive
+    description: "Exhaustively verify pass@k bounds for n, c, k in [0, 10]"

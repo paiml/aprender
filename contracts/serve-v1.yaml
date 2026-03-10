@@ -1,0 +1,98 @@
+# Inference Server Contract v1.0.0
+# THE SOURCE OF TRUTH for serve lifecycle: privacy tiers, circuit breakers, streaming
+#
+# ENFORCEMENT: aprender/src/serve/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Inference server: sovereign isolation, circuit breaker FSM, SSE streaming"
+  references:
+    - "APR-SPEC docs/specifications/components/serve.md"
+    - "Nygard (2007). Release It! — Circuit Breaker pattern"
+    - "W3C Server-Sent Events specification"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  sovereign_isolation:
+    formula: "privacy_tier == Sovereign → outbound_connections == 0"
+    description: "Sovereign tier models never make network requests"
+    invariants:
+      - "No DNS lookups"
+      - "No HTTP/HTTPS requests"
+      - "No telemetry or analytics"
+
+  circuit_breaker_fsm:
+    formula: "transitions ∈ {Closed→Open, Open→HalfOpen, HalfOpen→Closed, HalfOpen→Open}"
+    description: "Circuit breaker follows valid state machine transitions"
+    invariants:
+      - "Closed → Open: after N consecutive failures"
+      - "Open → HalfOpen: after timeout expires"
+      - "HalfOpen → Closed: on success"
+      - "HalfOpen → Open: on failure"
+      - "No other transitions are valid"
+
+  streaming_order:
+    formula: "∀ i < j: emit_time(token_i) < emit_time(token_j)"
+    description: "SSE token emission matches generation order"
+    invariants:
+      - "Each event has monotonically increasing sequence number"
+      - "Final event is [DONE] sentinel"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - type: invariant
+    property: "Sovereign network isolation"
+    formal: "privacy_tier == Sovereign → zero outbound connections"
+    binding: "aprender::serve::enforce_privacy_tier"
+    status: implemented
+
+  - type: state_machine
+    property: "Circuit breaker transitions"
+    formal: "Only valid FSM transitions occur"
+    binding: "aprender::serve::failover::CircuitBreaker::check"
+    status: implemented
+
+  - type: ordering
+    property: "Streaming token order"
+    formal: "Token emission order matches generation order"
+    binding: "aprender::serve::stream::emit_token"
+    status: implemented
+
+  - type: liveness
+    property: "Graceful shutdown"
+    formal: "In-flight requests complete before process exit"
+    binding: "aprender::serve::shutdown"
+    status: implemented
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-SERVE-001
+    rule: "Sovereign isolation"
+    prediction: "Sovereign tier rejects any network-requiring request"
+    if_fails: "Privacy tier enforcement missing or bypassable"
+
+  - id: FALSIFY-SERVE-002
+    rule: "Circuit breaker opens"
+    prediction: "N consecutive failures → circuit transitions to Open"
+    if_fails: "Failure counter not incrementing or threshold not checked"
+
+  - id: FALSIFY-SERVE-003
+    rule: "SSE format"
+    prediction: "All SSE events have correct 'data:' prefix and newline format"
+    if_fails: "SSE serialization malformed"
+
+  - id: FALSIFY-SERVE-004
+    rule: "Graceful shutdown"
+    prediction: "In-flight requests complete before server exits"
+    if_fails: "Shutdown signal dropping active connections"

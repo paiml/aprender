@@ -1,0 +1,105 @@
+# BPE Tokenizer Contract v1.0.0
+# THE SOURCE OF TRUTH for BPE encode/decode: roundtrip, vocab size, merge order, special tokens
+#
+# See also: tokenizer-vocab-v1.yaml (vocabulary consistency per model family)
+#
+# ENFORCEMENT: aprender/src/text/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "BPE tokenizer: encode/decode roundtrip, vocab size, merge frequency, special tokens"
+  references:
+    - "APR-SPEC docs/specifications/components/tokenizer.md"
+    - "Sennrich et al. (2016). Neural Machine Translation of Rare Words with Subword Units. ACL 2016"
+    - "contracts/tokenizer-vocab-v1.yaml"
+    - "contracts/special-tokens-registry-v1.yaml"
+
+equations:
+  encode_decode_roundtrip:
+    formula: "decode(encode(text)) == text for valid UTF-8"
+    description: "Encoding then decoding recovers original text"
+    invariants:
+      - "Input must be valid UTF-8"
+      - "No information loss through tokenization"
+
+  vocab_size:
+    formula: "|vocab| == requested_vocab_size"
+    description: "Training produces vocabulary of exact requested size"
+    invariants:
+      - "Initial vocab = byte-level (256 entries)"
+      - "Each merge adds exactly 1 new token"
+      - "Final = 256 + num_merges == requested_vocab_size"
+
+  bpe_merge_order:
+    formula: "merged_pair = argmax(frequency) over adjacent pairs"
+    description: "BPE selects most frequent adjacent pair for each merge"
+    invariants:
+      - "Tie-breaking is deterministic (lexicographic)"
+      - "Frequency recomputed after each merge"
+
+  special_token_isolation:
+    formula: "encode(normal_text) ∩ {BOS, EOS, PAD, UNK} == ∅"
+    description: "Normal text never tokenizes to special token IDs"
+    invariants:
+      - "Special tokens only produced by explicit insertion"
+      - "Encode skips special token bytes"
+
+proof_obligations:
+  - type: roundtrip
+    property: "Encode/decode fidelity"
+    formal: "decode(encode(text)) == text for valid UTF-8"
+    binding: "aprender::text::tokenizer::encode/decode"
+    status: implemented
+
+  - type: bound
+    property: "Vocab size"
+    formal: "|vocab| == requested_vocab_size"
+    binding: "aprender::text::bpe::train_bpe"
+    status: implemented
+
+  - type: invariant
+    property: "Merge frequency"
+    formal: "Each merge selects highest-frequency pair"
+    binding: "aprender::text::bpe::train_bpe"
+    status: implemented
+
+  - type: invariant
+    property: "Special token isolation"
+    formal: "Normal text encode never produces special token IDs"
+    binding: "aprender::text::tokenizer::encode"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-TOK-001
+    rule: "Encode/decode roundtrip"
+    prediction: "decode(encode(text)) == text for random UTF-8 strings"
+    if_fails: "Byte-level fallback missing or merge table corruption"
+
+  - id: FALSIFY-TOK-002
+    rule: "Vocab size"
+    prediction: "|vocab| == requested after training"
+    if_fails: "Merge count off-by-one or duplicate token insertion"
+
+  - id: FALSIFY-TOK-003
+    rule: "Merge frequency"
+    prediction: "Each BPE merge selects the most frequent pair"
+    if_fails: "Frequency counting or priority queue error"
+
+  - id: FALSIFY-TOK-004
+    rule: "Special token isolation"
+    prediction: "ASCII text never encodes to BOS/EOS/PAD IDs"
+    if_fails: "Special token IDs overlap with normal vocab range"
+
+  - id: FALSIFY-TOK-005
+    rule: "Empty string"
+    prediction: "encode('') returns empty token list, decode([]) returns ''"
+    if_fails: "Empty input not handled"
+
+kani_harness:
+  - id: KANI-TOK-001
+    property: "Vocab size arithmetic"
+    bound: 32
+    strategy: exhaustive
+    description: "Verify 256 + num_merges == vocab_size for merges in [0, 32]"

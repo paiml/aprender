@@ -1,0 +1,472 @@
+# Quantization Schemes Contract v1.0.0
+# THE SOURCE OF TRUTH for quantization scheme correctness (int8, int4, fp16, Q4K)
+#
+# Mathematical Foundation:
+#   Symmetric quantization:  q = round(x / scale),  x̂ = q * scale
+#   Asymmetric quantization: q = round(x / scale) + zero_point, x̂ = (q - zero_point) * scale
+#   Q4K blocked:             x̂_i = d * s_j * q_i - dmin * m_j  (see quantized-dot-product-v1.yaml)
+#
+# Error Bound (all schemes):
+#   |dequant(quant(x)) - x| <= scale / 2
+#   (rounding error is at most half a quantization step)
+#
+# Range Bound (symmetric, b-bit):
+#   q ∈ [-2^(b-1), 2^(b-1) - 1]
+#   int8:  q ∈ [-128, 127]
+#   int4:  q ∈ [-8,   7]
+#
+# ENFORCEMENT: aprender/src/quantize/contract_tests.rs
+#
+# References:
+#   GH-458: Quantization scheme formal contract
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Mathematical specification for quantization schemes: int8, int4, fp16, Q4K"
+  references:
+    - "Dettmers et al. (2022). LLM.int8(): 8-bit Matrix Multiplication. NeurIPS 2022"
+    - "Frantar et al. (2022). GPTQ: Accurate Post-Training Quantization. arXiv:2210.17323"
+    - "Jacob et al. (2018). Quantization and Training of Neural Networks for Inference. CVPR 2018"
+    - "Nagel et al. (2021). A White Paper on Neural Network Quantization. arXiv:2106.08295"
+    - "ggerganov/ggml — K-quant 256-element super-blocks with 6-bit packed sub-block scales"
+    - "contracts/quantized-dot-product-v1.yaml (kernel algebra for Q4K blocked format)"
+    - "contracts/tensor-layout-v1.yaml (LAYOUT-001/002: row-major only)"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+#
+# Formal mathematical definitions for each scheme.
+
+equations:
+  symmetric_range:
+    description: "Valid quantized range for a b-bit symmetric scheme"
+    formula: "q ∈ [-2^(b-1), 2^(b-1) - 1]"
+    instances:
+      int8:  "q ∈ [-128, 127]"
+      int4:  "q ∈ [-8, 7]"
+      int16: "q ∈ [-32768, 32767]"
+
+  asymmetric_range:
+    description: "Valid quantized range for a b-bit asymmetric scheme"
+    formula: "q ∈ [0, 2^b - 1]"
+    instances:
+      uint8: "q ∈ [0, 255]"
+      uint4: "q ∈ [0, 15]"
+
+  scale_computation_symmetric:
+    description: "Scale derived from max absolute value of input tensor"
+    formula: "scale = max(|x_i|) / (2^(b-1) - 1)"
+    note: "Ensures the full dynamic range of x is mapped to [-2^(b-1)+1, 2^(b-1)-1]"
+
+  scale_computation_asymmetric:
+    description: "Scale and zero_point derived from [x_min, x_max]"
+    formula: |
+      scale = (x_max - x_min) / (2^b - 1)
+      zero_point = round(-x_min / scale)
+
+  quantize_symmetric:
+    description: "Forward quantization for symmetric scheme"
+    formula: "q = clamp(round(x / scale), -2^(b-1), 2^(b-1) - 1)"
+
+  dequantize_symmetric:
+    description: "Inverse mapping from quantized to float"
+    formula: "x̂ = q * scale"
+
+  quantize_asymmetric:
+    description: "Forward quantization for asymmetric scheme"
+    formula: "q = clamp(round(x / scale) + zero_point, 0, 2^b - 1)"
+
+  dequantize_asymmetric:
+    description: "Inverse mapping from quantized to float"
+    formula: "x̂ = (q - zero_point) * scale"
+
+  dequant_error_bound:
+    description: "Maximum reconstruction error for any input x within representable range"
+    formula: "|dequant(quant(x)) - x| <= scale / 2"
+    proof_sketch: >
+      Rounding introduces at most ±0.5 ulp error in quantized domain.
+      Multiplying by scale maps this to ±scale/2 error in float domain.
+      Clamping does not introduce additional error for inputs within range.
+    note: "Equality holds at the midpoint between two quantization levels"
+
+  q4k_block_bytes:
+    description: "Memory footprint of a Q4K super-block (256 elements)"
+    formula: "block_bytes = ceil(dim / 256) * 144"
+    derivation: |
+      Per super-block layout (from quantized-dot-product-v1.yaml):
+        d      (f16): 2 bytes   — super-block scale
+        dmin   (f16): 2 bytes   — super-block min offset
+        scales (6-bit packed): 12 bytes  — 8 subblock scale + 8 subblock min, packed
+        qs     (4-bit packed): 128 bytes — 256 values × 4 bits / 8 bits per byte
+        ─────────────────────────────────
+        total:                 144 bytes
+    note: "Last partial super-block is padded to full 144 bytes"
+
+  fp16_range:
+    description: "IEEE 754 half-precision representable range"
+    formula: "x ∈ [-65504, 65504]"
+    note: >
+      fp16 is a storage format, not a quantization scheme in the discrete sense.
+      No integer rounding — the error bound applies to the closest representable value.
+      |fp16(x) - x| <= |x| * 2^-11  (half machine epsilon for fp16)
+
+# =============================================================================
+# SCHEME REGISTRY
+# =============================================================================
+#
+# Complete set of quantization schemes recognized by the stack.
+
+schemes:
+  int8:
+    bits: 8
+    signed: true
+    symmetric: true
+    range: "[-128, 127]"
+    scale_granularity: per_tensor_or_per_channel
+    zero_point: 0
+    storage_bytes_per_element: 1
+    error_bound: "scale / 2"
+    stack_types: ["Q8_0"]
+    notes: "LLM.int8() uses per-column scales for outlier handling"
+
+  int4:
+    bits: 4
+    signed: true
+    symmetric: true
+    range: "[-8, 7]"
+    scale_granularity: per_block
+    zero_point: 0
+    storage_bytes_per_element: 0.5   # packed nibbles
+    error_bound: "scale / 2"
+    stack_types: ["Q4_0", "Q4_K"]
+    notes: "Q4_K uses blocked asymmetric (has_dmin=true) — see quantized-dot-product-v1.yaml"
+
+  int4_asymmetric:
+    bits: 4
+    signed: false
+    symmetric: false
+    range: "[0, 15]"
+    scale_granularity: per_block
+    zero_point: variable
+    storage_bytes_per_element: 0.5
+    error_bound: "scale / 2"
+    stack_types: ["Q4_K"]
+    notes: "Q4K sub-blocks use unsigned 4-bit quant with per-sub-block (scale, min) pair"
+
+  int5:
+    bits: 5
+    signed: false
+    symmetric: false
+    range: "[0, 31]"
+    scale_granularity: per_block
+    zero_point: variable
+    storage_bytes_per_element: 0.625
+    error_bound: "scale / 2"
+    stack_types: ["Q5_K"]
+
+  int6:
+    bits: 6
+    signed: true
+    symmetric: true
+    range: "[-32, 31]"
+    scale_granularity: per_block
+    zero_point: 32   # stored unsigned, subtract 32 to center
+    storage_bytes_per_element: 0.75
+    error_bound: "scale / 2"
+    stack_types: ["Q6_K"]
+
+  fp16:
+    bits: 16
+    signed: true
+    symmetric: true
+    range: "[-65504, 65504]"
+    scale_granularity: n/a
+    zero_point: 0
+    storage_bytes_per_element: 2
+    error_bound: "|x| * 2^-11"
+    stack_types: ["f16", "scale fields in Q4_K/Q5_K/Q6_K/Q8_0"]
+    notes: "Used for scales (d, dmin) in all K-quant formats; not a blocked integer scheme"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+#
+# Each obligation is a mathematically necessary property that all implementations
+# must satisfy. Violations indicate implementation bugs.
+
+proof_obligations:
+  - id: PO-QUANT-001
+    name: "Symmetric range bound"
+    statement: >
+      For any b-bit symmetric quantizer with scale s, and any input x:
+        q = clamp(round(x / s), -2^(b-1), 2^(b-1)-1)
+        implies q ∈ [-2^(b-1), 2^(b-1)-1]
+    proof: "By definition of clamp; the output is always within the closed interval."
+    falsification: "Provide x such that |x / s| > 2^(b-1)-1; clamp must saturate, not overflow."
+
+  - id: PO-QUANT-002
+    name: "Dequant error bound"
+    statement: >
+      For any input x representable within the quantizer's range:
+        |dequant(quant(x)) - x| <= scale / 2
+    proof: >
+      Let q = round(x / scale). Then |q - x/scale| <= 0.5 (rounding error).
+      Therefore |q * scale - x| = |q - x/scale| * scale <= 0.5 * scale = scale/2.
+    falsification: >
+      Construct x at midpoint between two quantization levels: x = (k + 0.5) * scale.
+      Then round(x / scale) = k+1 or k (ties-to-even), so error = |k*scale - x| = 0.5*scale.
+      The bound is TIGHT — equality is achieved.
+
+  - id: PO-QUANT-003
+    name: "Shape preservation"
+    statement: >
+      For any tensor T with shape S:
+        dequant(quant(T)).shape == S
+    proof: "Quantization and dequantization are element-wise; no broadcasting or reduction."
+    falsification: >
+      Provide a tensor where blocked packing (Q4K nibble packing) produces a view
+      with wrong shape. Must verify shape after unpacking, not after packing.
+
+  - id: PO-QUANT-004
+    name: "Q4K block size formula"
+    statement: >
+      For a weight tensor of dimension dim (inner dimension):
+        num_superblocks = ceil(dim / 256)
+        block_bytes = num_superblocks * 144
+    proof: >
+      Each super-block covers exactly 256 elements (or fewer for the last block,
+      padded to 144 bytes). The formula follows directly from the layout in
+      quantized-dot-product-v1.yaml: 2+2+12+128 = 144 bytes per super-block.
+    falsification: >
+      Encode a vector of length 257 as Q4K; the result must be exactly 288 bytes
+      (2 super-blocks × 144), not 145 (1 block + 1 element).
+
+  - id: PO-QUANT-005
+    name: "Scale non-negativity"
+    statement: "scale >= 0 for all quantization schemes"
+    proof: "Scale is derived from |x_max| or (x_max - x_min), both non-negative."
+    falsification: "Feed a tensor of all zeros — scale must be 0 or a small epsilon, never negative."
+
+  - id: PO-QUANT-006
+    name: "Monotonicity of quantization"
+    statement: >
+      For a fixed scale s, if x1 <= x2 then quant(x1) <= quant(x2)
+      (excluding saturation at the range boundary)
+    proof: "round(x/s) is non-decreasing in x for any s > 0."
+    falsification: "Provide x1 < x2 where both are within range — quant(x1) must be <= quant(x2)."
+
+  - id: PO-QUANT-007
+    name: "Idempotency of dequant(quant(·)) for quantized inputs"
+    statement: >
+      For any value x that is already a valid dequantized value (i.e. x = k*scale for some integer k):
+        dequant(quant(x)) == x  (exactly, no rounding error)
+    proof: "x / scale = k exactly; round(k) = k; k * scale = x."
+    falsification: "Generate a grid of k*scale values; verify round-trip is exact."
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+#
+# Popperian falsification tests — each makes a concrete prediction that must hold.
+# Failure indicates a real implementation bug.
+
+falsification_tests:
+  - id: FALSIFY-QUANT-001
+    rule: "int8 symmetric range bound holds for all inputs"
+    prediction: >
+      For any f32 input x and any scale s > 0:
+        q = clamp(round(x / s), -128, 127)
+        implies q ∈ [-128, 127]  (never overflows i8)
+    implementation: "aprender/src/quantize/contract_tests.rs"
+    test: >
+      proptest: generate random (x, s) pairs including edge cases
+      (s near 0, x = ±inf, x = NaN → must not produce out-of-range q).
+      Assert i8::try_from(q).is_ok() for all finite inputs.
+    if_fails: "int8 quantizer allows overflow — silent data corruption in matrix multiplication"
+
+  - id: FALSIFY-QUANT-002
+    rule: "Dequant error bound holds for int8 and int4"
+    prediction: >
+      For 1000 random (x, scale) pairs:
+        |dequant(quant(x)) - x| <= scale / 2 + epsilon
+        where epsilon accounts for f32 rounding (1e-6 * scale)
+    implementation: "aprender/src/quantize/contract_tests.rs"
+    test: >
+      proptest: generate x ∈ [-127*scale, 127*scale] for int8,
+      x ∈ [-7*scale, 7*scale] for int4.
+      Verify absolute reconstruction error <= scale/2 + 1e-6*scale.
+    if_fails: "Quantization error exceeds theoretical bound — scale computation is wrong"
+
+  - id: FALSIFY-QUANT-003
+    rule: "Q4K block_bytes formula is exact"
+    prediction: >
+      For dim ∈ {1, 128, 256, 257, 512, 1024, 2048, 4096}:
+        quantize_q4k(zeros(dim)).len() == ceil(dim / 256) * 144
+    implementation: "aprender/src/quantize/contract_tests.rs"
+    test: >
+      For each test dimension: create a zero-filled f32 vec, quantize to Q4K,
+      assert output byte length equals formula.
+      Critical case: dim=257 must produce 288 bytes, not 145.
+    if_fails: "Q4K packer allocates wrong buffer size — read/write beyond allocation in kernels"
+
+  - id: FALSIFY-QUANT-004
+    rule: "Shape is preserved through quantize/dequantize round-trip"
+    prediction: >
+      For any tensor T with shape [rows, cols]:
+        dequant(quant(T)).shape == [rows, cols]
+      for all supported schemes (int8, int4, Q4K)
+    implementation: "aprender/src/quantize/contract_tests.rs"
+    test: >
+      Create tensors with shapes [1,1], [1,256], [4,256], [8,512], [32,1024].
+      Round-trip through each scheme. Assert shape equality.
+      For Q4K, verify that the intermediate packed representation unpacks
+      to the original number of elements.
+    if_fails: >
+      Shape mismatch causes misaligned matrix multiplication — produces garbage output
+      without a panic (silent correctness failure)
+
+  - id: FALSIFY-QUANT-005
+    rule: "Scheme isolation — cross-scheme decoding produces detectable garbage"
+    prediction: >
+      Encoding a vector V as int8 and decoding it as int4 (or vice versa)
+      produces a result whose L2 distance from V is > 10 * scale.
+      This validates that scheme tags are checked before decoding.
+    implementation: "aprender/src/quantize/contract_tests.rs"
+    test: >
+      Encode a random float vector as int8. Attempt to decode the raw bytes
+      as int4. The result must NOT be close to the original vector.
+      Assert L2_distance(decoded_wrong, original) > 10 * correct_scale.
+      Then verify that the tagged API (using scheme enum/type) correctly
+      rejects or panics when scheme tags mismatch.
+    if_fails: >
+      Scheme dispatch is missing or tag is not checked — wrong decoder silently
+      runs and produces plausible-looking garbage (dangerous for production inference)
+
+# =============================================================================
+# KANI HARNESS
+# =============================================================================
+#
+# Bounded model checking via Kani verifier (https://model-checking.github.io/kani/).
+# These harnesses provide formal verification for core correctness properties.
+
+kani_harness:
+  - id: KANI-QUANT-001
+    name: "int8 symmetric range — bounded proof"
+    description: >
+      Formally verify that for any f32 input x (with Kani's symbolic representation)
+      and any positive scale s, the clamped quantized value never exceeds i8 range.
+    property: "q = clamp(round(x / s), -128, 127)  implies  -128 <= q <= 127"
+    rust_sketch: |
+      #[cfg(kani)]
+      #[kani::proof]
+      #[kani::unwind(4)]
+      fn kani_quant_001_int8_range() {
+          let x: f32 = kani::any();
+          let s: f32 = kani::any();
+          kani::assume(s > 0.0);
+          kani::assume(x.is_finite());
+          kani::assume(s.is_finite());
+
+          let raw = (x / s).round();
+          let q = raw.clamp(-128.0, 127.0) as i32;
+
+          kani::assert(q >= -128, "int8 lower bound violated");
+          kani::assert(q <= 127,  "int8 upper bound violated");
+      }
+    location: "aprender/src/quantize/kani_proofs.rs"
+    note: >
+      Kani uses symbolic execution — this proof holds for ALL finite (x, s) pairs,
+      not just sampled ones. Requires `cargo kani --harness kani_quant_001_int8_range`.
+
+  - id: KANI-QUANT-002
+    name: "Dequant error bound — bounded proof for int8 grid values"
+    description: >
+      For inputs that are exact multiples of scale (on the quantization grid),
+      the round-trip error is exactly zero.
+    property: "x = k * scale  implies  dequant(quant(x)) == x  (for |k| <= 127)"
+    rust_sketch: |
+      #[cfg(kani)]
+      #[kani::proof]
+      #[kani::unwind(4)]
+      fn kani_quant_002_grid_roundtrip() {
+          let k: i8 = kani::any();
+          let s: f32 = kani::any();
+          kani::assume(s > 0.0);
+          kani::assume(s.is_finite());
+          kani::assume(s < 1e30_f32);  // avoid subnormal issues
+
+          let x: f32 = (k as f32) * s;
+          let q = (x / s).round().clamp(-128.0, 127.0) as i8;
+          let x_hat: f32 = (q as f32) * s;
+
+          // Grid values must round-trip exactly
+          kani::assert((x_hat - x).abs() < s * 1e-5_f32, "grid round-trip error too large");
+      }
+    location: "aprender/src/quantize/kani_proofs.rs"
+    note: >
+      The 1e-5 tolerance accounts for f32 associativity: (k as f32) * s != k * s
+      in all cases due to floating-point non-associativity.
+
+# =============================================================================
+# ENFORCEMENT RULES
+# =============================================================================
+
+enforcement:
+  range_bound_never_overflows:
+    description: "Quantized values must always fit in the target integer type"
+    check: "FALSIFY-QUANT-001 — proptest with extreme inputs"
+    severity: "ERROR"
+    note: "i8 overflow is UB in C; in Rust it panics in debug, wraps in release — both wrong"
+
+  error_bound_satisfied:
+    description: "Reconstruction error must not exceed scale/2"
+    check: "FALSIFY-QUANT-002 — proptest across both int8 and int4"
+    severity: "ERROR"
+    note: "Violation indicates wrong scale computation (e.g. off-by-one in range computation)"
+
+  q4k_block_size_exact:
+    description: "Q4K buffer allocation must exactly match ceil(dim/256)*144"
+    check: "FALSIFY-QUANT-003 — spot-check key dimensions including dim=257"
+    severity: "ERROR"
+    note: "Under-allocation causes OOB write in kernel; over-allocation wastes memory"
+
+  shape_preserved:
+    description: "Tensor shape must be identical before and after round-trip"
+    check: "FALSIFY-QUANT-004 — matrix shapes including non-power-of-2 dimensions"
+    severity: "ERROR"
+
+  scheme_tags_checked:
+    description: "Decoder must verify scheme tag before decoding raw bytes"
+    check: "FALSIFY-QUANT-005 — cross-scheme decoding must fail loudly"
+    severity: "ERROR"
+    note: "Silent wrong decoding is worse than a panic — produces plausible garbage"
+
+  row_major_only:
+    description: "Quantization operates on row-major tensors (LAYOUT-002)"
+    check: "No colmajor quantization paths exist in aprender quantize module"
+    severity: "ERROR"
+    reference: "contracts/tensor-layout-v1.yaml"
+
+# =============================================================================
+# QA GATE DEFINITION
+# =============================================================================
+
+qa_gate:
+  id: "F-QUANT-001"
+  name: "Quantization Schemes Contract"
+  description: "Validates correctness of int8/int4/fp16/Q4K quantization schemes"
+  checks:
+    - "int8 symmetric range bound: q ∈ [-128, 127] for all inputs (FALSIFY-QUANT-001)"
+    - "Dequant error bound: |x̂ - x| <= scale/2 for int8 and int4 (FALSIFY-QUANT-002)"
+    - "Q4K block bytes formula: ceil(dim/256) * 144 (FALSIFY-QUANT-003)"
+    - "Shape preservation through round-trip (FALSIFY-QUANT-004)"
+    - "Scheme isolation: cross-scheme decoding produces detectable garbage (FALSIFY-QUANT-005)"
+    - "Kani proof: int8 range never overflows i8 (KANI-QUANT-001)"
+  pass_criteria: "All 5 FALSIFY tests pass; KANI-QUANT-001 verifies under bounded model checking"
+  falsification: >
+    Remove the clamp() in int8 quantize — FALSIFY-QUANT-001 must catch the i8 overflow.
+    Change block allocation to dim/256 (integer division, no ceil) — FALSIFY-QUANT-003
+    must catch the off-by-one for dim=257.

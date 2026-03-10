@@ -1,0 +1,533 @@
+# APR Format v2 Binary Contract
+# THE SOURCE OF TRUTH for the APR v2 binary serialization format
+#
+# STATUS: Authoritative — DO NOT GREP THE CODEBASE, READ THIS FILE
+# ISSUE: GH-456
+# CONSUMERS:
+#   - aprender/src/format/v2/mod.rs            (constants, types, header)
+#   - aprender/src/format/v2/header_impl.rs    (AprV2Header::to_bytes, from_bytes, compute_checksum)
+#   - aprender/src/format/v2/tensor_index_impl.rs (TensorIndexEntry::to_bytes, from_bytes)
+#   - aprender/src/format/v2/writer.rs         (AprV2Writer)
+#   - aprender/src/format/v2/reader_impl.rs    (AprV2Reader, AprV2ReaderRef)
+#   - aprender/src/format/kani_proofs.rs       (formal verification)
+#   - realizar/src/apr/mod.rs                  (from_apr_bytes, to_apr_bytes)
+#
+# ENFORCEMENT: Any code that reads or writes .apr files MUST conform to this contract.
+#   - Magic validation at open time (Jidoka: stop the line on bad magic)
+#   - 64-byte alignment enforced by align_up() before writing tensor data
+#   - CRC32 checksum computed over header bytes 0-39 + 44-63 (excluding checksum field)
+#   - LAYOUT_COLUMN_MAJOR flag triggers immediate rejection (Poka-Yoke)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: >
+    Binary format specification for APR v2 (.apr) model files. Covers
+    64-byte alignment invariants, header/metadata/index/data section layout,
+    magic number validation, CRC32 checksum integrity, and full roundtrip
+    fidelity for tensors across all supported dtypes.
+  references:
+    - "aprender/src/format/v2/mod.rs (MAGIC_V2, VERSION_V2, ALIGNMENT, HEADER_SIZE_V2)"
+    - "aprender/src/format/v2/header_impl.rs (AprV2Header serialization)"
+    - "aprender/src/format/kani_proofs.rs (formal alignment proofs)"
+    - "contracts/tensor-layout-v1.yaml (LAYOUT-002: row-major mandate)"
+    - "GH-119: APR format genesis — 64-byte alignment, LZ4 compression, multi-file sharding"
+    - "GH-456: This contract"
+
+# =============================================================================
+# FORMAT OVERVIEW
+# =============================================================================
+#
+# Wire layout (linear byte order):
+#
+#  [0, 64)               Header (64 bytes, always 64-byte aligned by construction)
+#  [64, 64 + meta_size)  JSON Metadata (variable, padded to 64-byte boundary)
+#  [index_offset, ...)   Tensor Index (sorted by name, variable-length entries)
+#  [data_offset, ...)    Tensor Data (each tensor starts on a 64-byte boundary)
+#  (last 4 bytes)        Footer CRC32 (covers all preceding bytes)
+#
+# Key invariant: data_offset = align_64(index_offset + index_size)
+#   Every tensor's byte offset within the data section is 64-byte aligned.
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+constants:
+  MAGIC_V2:
+    value: "[0x41, 0x50, 0x52, 0x00]"
+    ascii: "APR\\0"
+    description: >
+      Four-byte magic number at offset 0. Uniquely identifies an APR v2 file.
+      The null terminator (0x00) distinguishes v2 from v1 (which used 0x4E = 'N').
+    format_rule: "MUST be the first 4 bytes of every valid APR v2 file"
+
+  VERSION_V2:
+    value: "(major=2, minor=0)"
+    wire_offset: "bytes [4, 6) — major at [4], minor at [5]"
+    description: "Format version stored in the header. Determines which fields are valid."
+
+  HEADER_SIZE_V2:
+    value: 64
+    unit: bytes
+    description: >
+      Fixed size of the binary header. Chosen to equal ALIGNMENT so the header
+      itself occupies exactly one alignment block, placing the metadata section
+      at offset 64 with no additional padding.
+
+  ALIGNMENT:
+    value: 64
+    unit: bytes
+    description: >
+      All section start offsets and per-tensor offsets within the data section
+      MUST be multiples of ALIGNMENT. This enables zero-copy mmap access:
+      an aligned pointer to tensor data can be passed directly to SIMD kernels
+      without a memcpy.
+
+  LZ4_BLOCK_SIZE:
+    value: 65536   # 64 * 1024
+    unit: bytes
+    description: "Block size for LZ4 compression. Applied per 64 KB chunk of tensor data."
+
+  MAX_METADATA_SIZE:
+    value: 16777216  # 16 * 1024 * 1024
+    unit: bytes
+    description: "Maximum allowed JSON metadata section size (16 MB). Enforced at read time."
+
+  MAX_TENSOR_NAME_LEN:
+    value: 256
+    unit: bytes
+    description: "Maximum tensor name length in the binary tensor index. Names are UTF-8."
+
+  CRC32_POLYNOMIAL:
+    value: "0xEDB88320"
+    description: "IEEE 802.3 CRC32 reflected polynomial. Standard Ethernet/zlib polynomial."
+
+# =============================================================================
+# HEADER LAYOUT
+# =============================================================================
+
+header_layout:
+  total_size: 64
+  fields:
+    magic:
+      offset: 0
+      size: 4
+      type: "[u8; 4]"
+      value: "MAGIC_V2 = [0x41, 0x50, 0x52, 0x00]"
+      note: "Validated before any other field is read"
+
+    version_major:
+      offset: 4
+      size: 1
+      type: u8
+      value: 2
+      note: "Must equal 2 for v2 format"
+
+    version_minor:
+      offset: 5
+      size: 1
+      type: u8
+      value: 0
+
+    flags:
+      offset: 6
+      size: 2
+      type: u16
+      encoding: little-endian
+      bits:
+        0x0001: LZ4_COMPRESSED     # payload uses LZ4 compression
+        0x0002: ZSTD_COMPRESSED    # payload uses Zstd compression
+        0x0004: ENCRYPTED          # AES-256-GCM encryption
+        0x0008: SIGNED             # Ed25519 digital signature
+        0x0010: SHARDED            # model split across multiple files
+        0x0020: QUANTIZED          # tensors are block-quantized
+        0x0040: HAS_FILTERBANK     # embedded mel filterbank (Whisper models)
+        0x0080: HAS_MODEL_CARD     # embedded model card metadata
+        0x0100: STREAMING          # supports chunked/streaming load
+        0x0200: HAS_VOCAB          # embedded tokenizer vocabulary
+        0x0400: LAYOUT_ROW_MAJOR   # tensors are row-major (LAYOUT-002)
+        0x0800: LAYOUT_COLUMN_MAJOR # FORBIDDEN — triggers Jidoka rejection
+      invariant: "LAYOUT_COLUMN_MAJOR (0x0800) MUST NOT be set in any valid file"
+
+    tensor_count:
+      offset: 8
+      size: 4
+      type: u32
+      encoding: little-endian
+      note: "Number of entries in the tensor index section"
+
+    metadata_offset:
+      offset: 12
+      size: 8
+      type: u64
+      encoding: little-endian
+      invariant: "MUST equal HEADER_SIZE_V2 (64) — metadata immediately follows header"
+
+    metadata_size:
+      offset: 20
+      size: 4
+      type: u32
+      encoding: little-endian
+      note: "Unpadded JSON byte length. Padded form (up to 64-byte boundary) determines tensor_index_offset."
+
+    tensor_index_offset:
+      offset: 24
+      size: 8
+      type: u64
+      encoding: little-endian
+      invariant: "MUST equal align_64(metadata_offset + metadata_size)"
+
+    data_offset:
+      offset: 32
+      size: 8
+      type: u64
+      encoding: little-endian
+      invariant: "MUST equal align_64(tensor_index_offset + index_bytes) and be a multiple of ALIGNMENT"
+
+    checksum:
+      offset: 40
+      size: 4
+      type: u32
+      encoding: little-endian
+      note: "CRC32 of header bytes [0,40) ++ [44,64) — checksum field itself excluded"
+
+    reserved:
+      offset: 44
+      size: 20
+      type: "[u8; 20]"
+      value: "all zeros"
+      note: "Reserved for future extension. Writers MUST zero this field."
+
+# =============================================================================
+# TENSOR INDEX ENTRY LAYOUT
+# =============================================================================
+
+tensor_index_entry_layout:
+  encoding: "variable-length binary, little-endian"
+  fields:
+    name_len:
+      size: 2
+      type: u16
+      note: "Byte length of the name field (0 to MAX_TENSOR_NAME_LEN)"
+
+    name:
+      size: "name_len bytes"
+      type: "UTF-8 string"
+      note: "Tensor name (e.g. 'model.layers.0.self_attn.q_proj.weight')"
+
+    dtype:
+      size: 1
+      type: u8
+      values:
+        0:  F32
+        1:  F16
+        3:  F64
+        4:  I32
+        5:  I64
+        6:  I8
+        7:  U8
+        8:  Q4   # packed nibbles, 2 values/byte
+        9:  Q8   # 8-bit quantized with scale
+        12: Q4K  # GGUF Q4_K super-blocks (256 elements, 144 bytes)
+        14: Q6K  # GGUF Q6_K super-blocks (256 elements, 210 bytes)
+        30: BF16 # bfloat16 (must match GgmlQuantType::BF16 = 30)
+
+    ndim:
+      size: 1
+      type: u8
+      note: "Number of shape dimensions (0 to 8)"
+
+    dims:
+      size: "ndim * 8 bytes"
+      type: "[u64; ndim]"
+      encoding: little-endian
+      note: "Shape dimensions. For 2-D weights: [out_dim, in_dim] (row-major, LAYOUT-002)"
+
+    offset:
+      size: 8
+      type: u64
+      encoding: little-endian
+      invariant: "MUST be a multiple of ALIGNMENT (64) — relative to start of data section"
+
+    size:
+      size: 8
+      type: u64
+      encoding: little-endian
+      note: "Byte length of this tensor's raw data"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  align_up:
+    formula: "align_up(v, a) = (v + a - 1) & !(a - 1)"
+    precondition: "a is a positive power of two"
+    note: "Used for all section-offset calculations"
+
+  align_64:
+    formula: "align_64(v) = align_up(v, 64)"
+    note: "Primary alignment helper for APR v2"
+
+  padding_to_align:
+    formula: "padding(v, a) = align_up(v, a) - v"
+    range: "[0, a)"
+    note: "Bytes of zero-padding written between sections"
+
+  is_aligned_64:
+    formula: "is_aligned_64(v) = (v % 64 == 0)"
+
+  metadata_section_end:
+    formula: "metadata_section_end = metadata_offset + align_64(metadata_size)"
+    note: "metadata_offset is always HEADER_SIZE_V2 = 64"
+
+  tensor_index_offset:
+    formula: "tensor_index_offset = align_64(HEADER_SIZE_V2 + metadata_size)"
+
+  data_offset:
+    formula: "data_offset = align_64(tensor_index_offset + sum(entry.to_bytes().len() for each tensor))"
+
+  per_tensor_data_alignment:
+    formula: "tensor_data_start = data_offset + align_64(cumulative_prior_tensor_sizes)"
+    note: "Each tensor begins on a 64-byte boundary within the data section"
+
+  checksum_coverage:
+    formula: "CRC32(header_bytes[0..40] ++ header_bytes[44..64])"
+    note: "The checksum field at [40,44) is excluded from its own computation"
+
+  roundtrip_fidelity:
+    formula: "from_bytes(to_bytes(x)) == x  for all x: AprV2Header"
+    note: "Exact bitwise equality — no lossy fields"
+
+  tensor_roundtrip_fidelity:
+    formula: "decompress(read_tensor(write_tensor(T))) == T  for all T: TensorIndexEntry + data"
+    note: "Applies to F32/F16 dtypes. Quantized dtypes are exact at the block level."
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - id: PROOF-FMT-001
+    name: "Alignment padding is bounded"
+    statement: "For any v >= 0 and alignment a > 0 with a a power of two: padding(v, a) < a"
+    status: "FORMALLY VERIFIED"
+    verifier: "aprender/src/format/kani_proofs.rs::verify_alignment_padding_bounded"
+    note: "Kani bounds: alignment <= 4096, offset is any u64"
+
+  - id: PROOF-FMT-002
+    name: "Header is exactly HEADER_SIZE_V2 bytes"
+    statement: "AprV2Header::to_bytes() always returns a [u8; 64]"
+    status: "STATICALLY GUARANTEED"
+    mechanism: "Return type is [u8; HEADER_SIZE_V2] — enforced by compiler at all call sites"
+
+  - id: PROOF-FMT-003
+    name: "Tensor element count cannot overflow usize"
+    statement: "For dim0, dim1 <= 2^20: dim0 * dim1 <= usize::MAX on 64-bit targets"
+    status: "FORMALLY VERIFIED"
+    verifier: "aprender/src/format/kani_proofs.rs::verify_tensor_element_count_no_overflow"
+
+  - id: PROOF-FMT-004
+    name: "Magic bytes are mutually exclusive"
+    statement: "MAGIC_V2 != MAGIC_V1 (differ in byte [3]: 0x00 vs 0x4E)"
+    status: "FORMALLY VERIFIED"
+    verifier: "aprender/src/format/kani_proofs.rs::verify_magic_bytes_distinct"
+
+  - id: PROOF-FMT-005
+    name: "Header checksum is idempotent"
+    statement: "update_checksum(); verify_checksum() == true  always holds"
+    status: "ENFORCED BY INVARIANT"
+    mechanism: "update_checksum() sets self.checksum = compute_checksum(); verify_checksum() computes same value"
+
+  - id: PROOF-FMT-006
+    name: "Roundtrip exact equality for header"
+    statement: "from_bytes(to_bytes(h)) == h  for all reachable AprV2Header values"
+    status: "ENFORCED BY CONSTRUCTION"
+    mechanism: "All fields use fixed-size little-endian encoding; no lossy conversion"
+
+  - id: PROOF-FMT-007
+    name: "LAYOUT_COLUMN_MAJOR triggers Jidoka stop"
+    statement: "AprV2Reader::from_bytes returns Err when flags & 0x0800 != 0"
+    status: "ENFORCED BY CONSTRUCTION"
+    mechanism: "AprV2Flags::is_layout_valid() returns false iff LAYOUT_COLUMN_MAJOR is set; reader checks at open"
+    reference: "LAYOUT-002 Jidoka guard tests in tests_layout.rs"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-FMT-001
+    rule: "Magic validation rejects corrupt files"
+    prediction: >
+      AprV2Header::from_bytes() returns Err(V2FormatError::InvalidMagic) for any
+      buffer whose first 4 bytes differ from [0x41, 0x50, 0x52, 0x00].
+    status: "IMPLEMENTED"
+    implementation: "aprender/src/format/v2/tests.rs::test_header_invalid_magic"
+    test: >
+      let bytes = [0xFF; HEADER_SIZE_V2];
+      let result = AprV2Header::from_bytes(&bytes);
+      assert!(matches!(result, Err(V2FormatError::InvalidMagic(_))));
+    additional_cases:
+      - "All-zero buffer (magic [0x00,0x00,0x00,0x00])"
+      - "v1 magic [0x41,0x50,0x52,0x4E] (APRN)"
+      - "Truncated buffer shorter than HEADER_SIZE_V2"
+    if_fails: "Magic check is absent or uses wrong comparison — any file could be opened as APR v2"
+
+  - id: FALSIFY-FMT-002
+    rule: "Checksum detects single-byte corruption in header"
+    prediction: >
+      Flipping any single bit in header bytes [0,40) or [44,64) causes
+      verify_checksum() to return false after the flip.
+    status: "IMPLEMENTED"
+    implementation: "aprender/src/format/v2/tests.rs (checksum tests)"
+    test: >
+      let mut header = AprV2Header::new();
+      header.tensor_count = 42;
+      header.update_checksum();
+      let bytes = header.to_bytes();
+      let parsed = AprV2Header::from_bytes(&bytes).unwrap();
+      assert!(parsed.verify_checksum());
+
+      // Corrupt byte 0 (magic[0])
+      let mut corrupt = bytes;
+      corrupt[0] ^= 0x01;
+      let corrupt_header = AprV2Header::from_bytes(&corrupt);
+      // Either magic rejection or checksum failure — must not succeed silently
+      match corrupt_header {
+          Err(_) => { /* Jidoka: stopped at magic check */ }
+          Ok(h) => assert!(!h.verify_checksum(), "corrupted header passed checksum"),
+      }
+    if_fails: "CRC32 is not covering the corrupted field — silent data corruption possible"
+
+  - id: FALSIFY-FMT-003
+    rule: "Tensor data is 64-byte aligned after write"
+    prediction: >
+      After AprV2Writer::write(), the data_offset field in the written header
+      is a multiple of 64, and the in-memory byte offset of each tensor's data
+      is also a multiple of 64.
+    status: "IMPLEMENTED"
+    implementation: "aprender/src/format/v2/tests.rs (alignment tests, tests_layout.rs)"
+    test: >
+      let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+      writer.add_f32_tensor("w1", vec![128, 64], &data_128x64);
+      writer.add_f32_tensor("w2", vec![64, 32], &data_64x32);
+      let bytes = writer.write().unwrap();
+
+      let header = AprV2Header::from_bytes(&bytes).unwrap();
+      assert_eq!(header.data_offset % 64, 0, "data_offset must be 64-byte aligned");
+
+      // Verify each tensor's absolute file offset is 64-byte aligned
+      let reader = AprV2ReaderRef::from_bytes(&bytes).unwrap();
+      for entry in reader.index() {
+          let abs_offset = header.data_offset + entry.offset;
+          assert_eq!(abs_offset % 64, 0, "tensor '{}' absolute offset not 64-byte aligned", entry.name);
+      }
+    if_fails: "Tensor data is misaligned — zero-copy mmap will trigger SIGBUS on some architectures"
+
+  - id: FALSIFY-FMT-004
+    rule: "Full file roundtrip preserves tensor values exactly"
+    prediction: >
+      Tensors written via AprV2Writer and read back via AprV2Reader have
+      identical byte content to the original data (for uncompressed F32 tensors).
+    status: "IMPLEMENTED"
+    implementation: "aprender/src/format/v2/tests.rs (roundtrip tests)"
+    test: >
+      let original: Vec<f32> = (0..256).map(|i| i as f32 * 0.01).collect();
+      let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+      writer.add_f32_tensor("layer.weight", vec![16, 16], &original);
+      let bytes = writer.write().unwrap();
+
+      let reader = AprV2Reader::from_bytes(&bytes).unwrap();
+      let recovered = reader.get_f32_tensor("layer.weight").unwrap();
+
+      assert_eq!(original.len(), recovered.len());
+      for (i, (&a, &b)) in original.iter().zip(recovered.iter()).enumerate() {
+          assert_eq!(a.to_bits(), b.to_bits(),
+              "tensor value at index {i} changed: {a} -> {b}");
+      }
+
+      // Also verify tensor index entry fields survived roundtrip
+      let entry = reader.index().find(|e| e.name == "layer.weight").unwrap();
+      assert_eq!(entry.shape, vec![16usize, 16]);
+      assert_eq!(entry.dtype, TensorDType::F32);
+    if_fails: "Serialization has an endianness bug, truncation, or off-by-one in size calculation"
+
+# =============================================================================
+# KANI HARNESS
+# =============================================================================
+
+kani_harness:
+  - id: KANI-FMT-001
+    name: "align_64 padding is always in [0, 64)"
+    location: "aprender/src/format/kani_proofs.rs::verify_alignment_padding_bounded"
+    property: >
+      For any u64 offset and any power-of-two alignment in [1, 4096]:
+        padding = (alignment - (offset % alignment)) % alignment
+        ASSERT padding < alignment
+    rationale: >
+      If padding could equal or exceed alignment, a writer could insert more
+      than 63 bytes of zero-padding, making the next tensor's start offset
+      exceed the intended aligned position. This would invalidate all
+      subsequent offsets stored in the tensor index.
+    harness: |
+      #[cfg(kani)]
+      #[kani::proof]
+      fn kani_fmt_001_align_padding_bounded() {
+          let offset: u64 = kani::any();
+          let alignment: u64 = kani::any();
+          kani::assume(alignment > 0);
+          kani::assume(alignment.is_power_of_two());
+          kani::assume(alignment <= 4096);
+
+          let padding = (alignment - (offset % alignment)) % alignment;
+          assert!(padding < alignment);
+      }
+    status: "IMPLEMENTED"
+    verifier: "aprender/src/format/kani_proofs.rs::verify_alignment_padding_bounded"
+
+# =============================================================================
+# QA GATE DEFINITION
+# =============================================================================
+
+qa_gate:
+  id: "F-FMT-V2-001"
+  name: "APR v2 Format Contract"
+  description: "Validates binary format correctness: magic, alignment, checksum, and roundtrip fidelity"
+  checks:
+    - "Magic validation rejects non-APR-v2 buffers"
+    - "CRC32 checksum detects single-byte header corruption"
+    - "All tensor offsets are 64-byte aligned after write"
+    - "F32 tensor roundtrip produces bit-identical values"
+    - "LAYOUT_COLUMN_MAJOR flag triggers Jidoka rejection"
+  pass_criteria: "All 4 FALSIFY tests pass and Kani proof verifies"
+  falsification: "Introduce an off-by-one in align_up() — FALSIFY-FMT-003 must catch it"
+  reference: "GH-456"
+
+# =============================================================================
+# TOYOTA WAY APPLICATION NOTES
+# =============================================================================
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — Magic validation and checksum verification
+    stop the line immediately on the first sign of corruption. No malformed data
+    propagates to tensor deserialization or inference.
+
+  poka_yoke: >
+    "Mistake-proofing" — The LAYOUT_COLUMN_MAJOR flag (0x0800) acts as a
+    physical impossibility marker: any file bearing that flag is structurally
+    invalid and cannot be opened. The writer never sets it; the reader always
+    rejects it. Wrong layout is a hard error, not a warning.
+
+  genchi_genbutsu: >
+    "Go and see" — The four FALSIFY tests require actually writing corrupt
+    bytes into real buffers and asserting on real error variants. We do not
+    assume validation works; we prove it fails on known-bad inputs.
+
+  kaizen: >
+    "Continuous improvement" — GH-456 adds this contract because ad-hoc
+    grepping for alignment constants was error-prone. Every future change
+    to the binary layout MUST update this file first (spec-first engineering).

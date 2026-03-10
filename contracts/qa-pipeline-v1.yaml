@@ -1,0 +1,100 @@
+# QA Pipeline Contract v1.0.0
+# THE SOURCE OF TRUTH for QA gates: independence, regression thresholds, coverage
+#
+# ENFORCEMENT: aprender/src/qa/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "QA gate pipeline: gate independence, regression thresholds, timeout"
+  references:
+    - "APR-SPEC docs/specifications/components/qa.md"
+    - "Toyota Production System — Jidoka (stop on defect)"
+
+equations:
+  gate_independence:
+    formula: "pass(gate_i) is independent of pass(gate_j) for i != j"
+    description: "Each QA gate evaluates independently"
+    invariants:
+      - "No shared mutable state between gates"
+      - "Gate order does not affect individual results"
+
+  regression_threshold:
+    formula: "regression_detected ↔ |metric_new - metric_baseline| > threshold"
+    description: "Regression detection via threshold comparison"
+    invariants:
+      - "threshold > 0"
+      - "Comparison is absolute, not relative"
+
+  gate_coverage:
+    formula: "executed_gates >= min_required_gates"
+    description: "QA qualify requires minimum number of gates to pass"
+    invariants:
+      - "Skipped gates count as not executed"
+      - "min_required_gates <= total_gates"
+
+  timeout_enforcement:
+    formula: "∀ gate: execution_time <= timeout"
+    description: "No gate runs longer than configured timeout"
+    invariants:
+      - "timeout > 0"
+      - "Timed-out gates report as failed, not skipped"
+
+proof_obligations:
+  - type: independence
+    property: "Gate independence"
+    formal: "Reordering gates does not change individual results"
+    binding: "aprender::qa::run_qa_gate"
+    status: implemented
+
+  - type: equivalence
+    property: "Regression detection"
+    formal: "regression ↔ |delta| > threshold"
+    binding: "aprender::qa::check_regression"
+    status: implemented
+
+  - type: bound
+    property: "Gate coverage"
+    formal: "executed >= min_required"
+    binding: "aprender::qa::qualify"
+    status: implemented
+
+  - type: bound
+    property: "Timeout enforcement"
+    formal: "execution_time <= timeout for all gates"
+    binding: "aprender::qa::run_qa_gate"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-QA-001
+    rule: "Gate independence"
+    prediction: "Running gates in reversed order produces same pass/fail per gate"
+    if_fails: "Shared state mutation between gates"
+
+  - id: FALSIFY-QA-002
+    rule: "Regression threshold"
+    prediction: "delta == threshold + epsilon → regression detected"
+    if_fails: "Off-by-one in threshold comparison (< vs <=)"
+
+  - id: FALSIFY-QA-003
+    rule: "Gate coverage"
+    prediction: "Fewer than min_required gates executed → qualify fails"
+    if_fails: "Coverage check not counting correctly"
+
+  - id: FALSIFY-QA-004
+    rule: "Timeout"
+    prediction: "Slow gate killed after timeout, reported as failure"
+    if_fails: "Timeout not enforced or not reported"
+
+  - id: FALSIFY-QA-005
+    rule: "Zero gates"
+    prediction: "QA with zero gates → pass (vacuous truth) or explicit error"
+    if_fails: "Division by zero on empty gate list"
+
+kani_harness:
+  - id: KANI-QA-001
+    property: "Regression iff delta > threshold"
+    bound: 8
+    strategy: bounded_int
+    description: "Verify regression detection for threshold and delta in [0, 8]"

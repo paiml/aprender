@@ -1,0 +1,101 @@
+# Performance Profiling Contract v1.0.0
+# THE SOURCE OF TRUTH for profiling: throughput, warmup, CI assertions, Roofline
+#
+# ENFORCEMENT: aprender/src/profile/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Performance profiling: throughput bounds, warmup exclusion, Roofline model"
+  references:
+    - "APR-SPEC docs/specifications/components/profile.md"
+    - "Williams et al. (2009). Roofline: An Insightful Visual Performance Model. CACM 52(4)"
+
+equations:
+  throughput_positivity:
+    formula: "tps = tokens / elapsed_seconds > 0"
+    description: "Throughput is strictly positive for non-empty inference"
+    invariants:
+      - "tokens > 0 for non-empty inference"
+      - "elapsed_seconds > 0 (wall clock)"
+
+  warmup_exclusion:
+    formula: "measurement_start = iteration[warmup_count]"
+    description: "Warmup iterations excluded from timing measurement"
+    invariants:
+      - "warmup_count >= 0"
+      - "Total iterations > warmup_count"
+
+  ci_exit_code:
+    formula: "assertion_failed → exit(1)"
+    description: "CI mode returns non-zero exit code on assertion failure"
+    invariants:
+      - "All assertions checked before exit"
+      - "Exit code 0 ↔ all assertions passed"
+
+  roofline_classification:
+    formula: "op_intensity < ridge_point → memory_bound, else compute_bound"
+    description: "Roofline model classifies bottleneck type"
+    invariants:
+      - "ridge_point = peak_flops / peak_bandwidth"
+      - "op_intensity = flops / bytes_accessed"
+      - "op_intensity >= 0"
+
+proof_obligations:
+  - type: bound
+    property: "Throughput positivity"
+    formal: "tps > 0 for non-empty inference"
+    binding: "aprender::profile::measure_throughput"
+    status: implemented
+
+  - type: invariant
+    property: "Warmup exclusion"
+    formal: "Warmup iterations not in measurement window"
+    binding: "aprender::profile::run_benchmark"
+    status: implemented
+
+  - type: equivalence
+    property: "CI exit code"
+    formal: "assertion failure → exit(1)"
+    binding: "aprender::profile::check_ci_assertions"
+    status: implemented
+
+  - type: classification
+    property: "Roofline classification"
+    formal: "Correct memory/compute bound classification"
+    binding: "aprender::profile::classify_roofline"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-PROF-001
+    rule: "Throughput positivity"
+    prediction: "tps > 0 for any non-empty model inference"
+    if_fails: "Timer resolution too coarse or division by zero"
+
+  - id: FALSIFY-PROF-002
+    rule: "Warmup exclusion"
+    prediction: "First N iterations not counted in avg throughput"
+    if_fails: "Warmup counter not applied to measurement window"
+
+  - id: FALSIFY-PROF-003
+    rule: "CI exit code"
+    prediction: "Failing assertion → process exits with code 1"
+    if_fails: "Assertion result not propagated to exit code"
+
+  - id: FALSIFY-PROF-004
+    rule: "Roofline classification"
+    prediction: "Low op_intensity → memory_bound classification"
+    if_fails: "Ridge point computation or comparison wrong"
+
+  - id: FALSIFY-PROF-005
+    rule: "Zero iterations"
+    prediction: "Zero measurement iterations → error, not NaN throughput"
+    if_fails: "Division by zero not guarded"
+
+kani_harness:
+  - id: KANI-PROF-001
+    property: "Roofline classification"
+    bound: 16
+    strategy: stub_float
+    description: "Verify correct bound classification for 16 op_intensity values"

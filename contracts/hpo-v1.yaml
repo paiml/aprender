@@ -1,0 +1,111 @@
+# Hyperparameter Optimization Contract v1.0.0
+# THE SOURCE OF TRUTH for HPO budget, ASHA halving, warm-start, monotonicity
+#
+# ENFORCEMENT: entrenar/src/hpo/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "HPO lifecycle: budget enforcement, ASHA promotion, warm-start, best-so-far"
+  references:
+    - "APR-SPEC docs/specifications/components/hpo.md"
+    - "Li et al. (2020). A System for Massively Parallel Hyperparameter Tuning. MLSys 2020"
+    - "Bergstra & Bengio (2012). Random Search for Hyper-Parameter Optimization. JMLR 13"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  budget_enforcement:
+    formula: "total_trials <= budget"
+    description: "Total number of evaluated configurations never exceeds budget"
+    invariants:
+      - "budget > 0"
+      - "trial_count monotonically increases"
+
+  asha_promotion:
+    formula: "promoted <= ceil(candidates / eta)"
+    description: "ASHA successive halving promotes at most 1/eta fraction"
+    invariants:
+      - "eta >= 2 (halving ratio)"
+      - "promoted >= 0"
+      - "candidates >= 0"
+
+  best_so_far_monotonic:
+    formula: "best_score(t) >= best_score(t-1)"
+    description: "Best observed score never decreases over trials"
+    invariants:
+      - "Comparison uses consistent metric direction (max or min)"
+
+  time_limit:
+    formula: "elapsed <= time_limit + grace_period"
+    description: "Total HPO wall-clock time bounded by configured limit"
+    invariants:
+      - "grace_period accounts for in-flight trial completion"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - type: bound
+    property: "Budget enforcement"
+    formal: "total_trials <= budget for all executions"
+    binding: "entrenar::hpo::run_hpo"
+    status: implemented
+
+  - type: bound
+    property: "ASHA promotion fraction"
+    formal: "promoted <= ceil(candidates / eta)"
+    binding: "entrenar::hpo::asha::should_promote"
+    status: implemented
+
+  - type: monotonicity
+    property: "Best-so-far monotonic"
+    formal: "best_score(t) >= best_score(t-1) for all t"
+    binding: "entrenar::hpo::run_hpo"
+    status: implemented
+
+  - type: bound
+    property: "Time limit enforcement"
+    formal: "elapsed <= time_limit + grace"
+    binding: "entrenar::hpo::run_hpo"
+    status: implemented
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-HPO-001
+    rule: "Budget never exceeded"
+    prediction: "trial_count <= budget after HPO completes"
+    if_fails: "Trial counter not checked before launching new trial"
+
+  - id: FALSIFY-HPO-002
+    rule: "ASHA halving correct"
+    prediction: "At each rung, promoted <= ceil(candidates / eta)"
+    if_fails: "Promotion logic not applying halving ratio"
+
+  - id: FALSIFY-HPO-003
+    rule: "Scout warm-start loads results"
+    prediction: "Warm-started HPO resumes from saved trials"
+    if_fails: "Warm-start not reading checkpoint or ignoring prior results"
+
+  - id: FALSIFY-HPO-004
+    rule: "Best score monotonic"
+    prediction: "best_score never decreases across trials"
+    if_fails: "Best tracking comparing wrong direction or resetting"
+
+# =============================================================================
+# KANI HARNESS
+# =============================================================================
+
+kani_harness:
+  - id: KANI-HPO-001
+    property: "trial_count <= budget"
+    bound: 20
+    strategy: bounded_int
+    description: "Exhaustively verify budget enforcement for budget in [1, 20]"

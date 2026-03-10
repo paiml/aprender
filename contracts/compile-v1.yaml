@@ -1,0 +1,76 @@
+# Model Compilation Contract v1.0.0
+# THE SOURCE OF TRUTH for compile: inference parity, self-containment, target format
+#
+# ENFORCEMENT: aprender/src/compile/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Model compilation: inference parity, binary self-containment, target formats"
+  references:
+    - "APR-SPEC §4.16: Model Compilation"
+
+equations:
+  inference_parity:
+    formula: "compiled_binary(prompt, seed) == apr_run(model, prompt, seed)"
+    description: "Compiled binary produces identical output to interpreter"
+    invariants:
+      - "Same sampling parameters"
+      - "Same quantization level"
+      - "Deterministic with fixed seed"
+
+  self_containment:
+    formula: "compiled_binary requires no external model file"
+    description: "Model weights embedded in binary"
+    invariants:
+      - "No file I/O for model loading"
+      - "Binary is standalone executable"
+
+  target_format:
+    formula: "target → expected_binary_format"
+    description: "Correct binary format for each target triple"
+    invariants:
+      - "x86_64-unknown-linux-* → ELF"
+      - "aarch64-apple-darwin → Mach-O"
+      - "wasm32-* → WASM"
+
+proof_obligations:
+  - type: equivalence
+    property: "Inference parity"
+    formal: "compiled(prompt) == interpreted(prompt) for fixed seed"
+    binding: "aprender::compile::compile_model"
+    status: implemented
+
+  - type: invariant
+    property: "Self-containment"
+    formal: "Binary runs without external model file"
+    binding: "aprender::compile::compile_model"
+    status: implemented
+
+  - type: invariant
+    property: "Target format correctness"
+    formal: "Output binary matches target triple format"
+    binding: "aprender::compile::compile_model"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-COMPILE-001
+    rule: "Inference parity"
+    prediction: "Compiled binary output matches apr run output"
+    if_fails: "Weight embedding or kernel codegen error"
+
+  - id: FALSIFY-COMPILE-002
+    rule: "Self-containment"
+    prediction: "Binary runs on clean machine without model file"
+    if_fails: "Runtime file dependency not embedded"
+
+  - id: FALSIFY-COMPILE-003
+    rule: "Target format"
+    prediction: "x86_64 target produces valid ELF binary"
+    if_fails: "Linker configuration wrong for target"
+
+  - id: FALSIFY-COMPILE-004
+    rule: "Invalid target"
+    prediction: "Unsupported target → clear error, not garbage binary"
+    if_fails: "Target validation missing"

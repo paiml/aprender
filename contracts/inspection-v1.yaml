@@ -1,0 +1,96 @@
+# Inspection Contract v1.0.0
+# THE SOURCE OF TRUTH for inspect/validate/diff: quality scoring, NaN detection, diff symmetry
+#
+# ENFORCEMENT: aprender/src/format/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Model inspection: quality score bounds, diff symmetry, NaN detection, lint"
+  references:
+    - "APR-SPEC docs/specifications/components/inspect.md"
+
+equations:
+  quality_score_bounds:
+    formula: "score = sum(gate_i * weight_i * 100 / sum(weight_i)), 0 <= score <= 100"
+    description: "Quality score is weighted sum of binary gates, bounded [0, 100]"
+    invariants:
+      - "Each gate_i ∈ {0, 1}"
+      - "Each weight_i > 0"
+
+  diff_symmetry:
+    formula: "diff(A, B).divergences == diff(B, A).divergences"
+    description: "Model diff is symmetric in divergence count"
+    invariants:
+      - "Tensor names may be listed in different order"
+      - "Statistical differences are symmetric"
+
+  nan_detection:
+    formula: "∀ tensor with NaN or Inf: flagged in validation report"
+    description: "Complete NaN/Inf detection across all tensors"
+    invariants:
+      - "Zero false negatives for NaN"
+      - "Subnormal values not flagged as NaN"
+
+  lint_idempotency:
+    formula: "lint(model) == lint(model) on repeated runs"
+    description: "Same warnings produced every time"
+
+proof_obligations:
+  - type: bound
+    property: "Quality score in [0, 100]"
+    formal: "0 <= score <= 100 for all models"
+    binding: "aprender::scoring::compute_quality_score"
+    status: implemented
+
+  - type: symmetry
+    property: "Diff symmetry"
+    formal: "diff(A,B).divergences == diff(B,A).divergences"
+    binding: "aprender::diff::compute_diff"
+    status: implemented
+
+  - type: completeness
+    property: "NaN detection"
+    formal: "∀ tensor with NaN: flagged"
+    binding: "aprender::validate::check_tensor_sanity"
+    status: implemented
+
+  - type: idempotency
+    property: "Lint idempotency"
+    formal: "lint(model) produces same warnings on repeated runs"
+    binding: "aprender::lint::lint_model"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-INSP-001
+    rule: "Score bounds"
+    prediction: "Quality score always in [0, 100]"
+    if_fails: "Weight normalization error or gate not binary"
+
+  - id: FALSIFY-INSP-002
+    rule: "Diff symmetry"
+    prediction: "diff(A,B) and diff(B,A) report same divergence count"
+    if_fails: "Asymmetric comparison or reference bias"
+
+  - id: FALSIFY-INSP-003
+    rule: "NaN detection complete"
+    prediction: "Model with NaN tensor is flagged"
+    if_fails: "Tensor scan skipping some tensors or using wrong check"
+
+  - id: FALSIFY-INSP-004
+    rule: "Lint idempotency"
+    prediction: "Same warnings on second lint run"
+    if_fails: "Non-deterministic lint rule or state mutation"
+
+  - id: FALSIFY-INSP-005
+    rule: "Empty model"
+    prediction: "Inspecting model with 0 tensors → valid report, not panic"
+    if_fails: "Division by zero or empty iterator unwrap"
+
+kani_harness:
+  - id: KANI-INSP-001
+    property: "Weighted sum in [0, 100]"
+    bound: 10
+    strategy: exhaustive
+    description: "Verify weighted sum of 10 binary gates in [0, 100]"

@@ -1,0 +1,497 @@
+# Model Pruning Contract v1.0.0
+# THE SOURCE OF TRUTH for model pruning methods and sparsity invariants
+#
+# STATUS: Authoritative — all pruning operations MUST follow this contract
+# SPEC: GH-457
+# CONSUMERS:
+#   - aprender/src/pruning/magnitude.rs (magnitude-based weight pruning)
+#   - aprender/src/pruning/wanda.rs (WANDA activation-weighted pruning)
+#   - aprender/src/pruning/depth.rs (depth pruning — layer removal)
+#   - aprender/src/pruning/mod.rs (pruning dispatch and validation)
+#   - tests/contracts/pruning_contract.rs
+#
+# ENFORCEMENT:
+#   - provable_contracts_macros::contract("pruning-v1", equation = "sparsity_ratio")
+#   - Kani verification harness: KANI-PRUNE-001
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Correctness and safety specification for model pruning methods"
+  references:
+    - "GH-457: Pruning contract — magnitude, WANDA, depth prune invariants"
+    - "Sun et al. (2023). A Simple and Effective Pruning Approach for Large Language Models. arXiv:2306.11695"
+    - "Han et al. (2015). Learning both Weights and Connections for Efficient Neural Networks. NeurIPS"
+    - "Frankle & Carlin (2018). The Lottery Ticket Hypothesis. ICLR 2019"
+    - "Michel et al. (2019). Are Sixteen Heads Really Better than One? NeurIPS"
+  issues:
+    - "https://github.com/paiml/aprender/issues/457"
+
+# =============================================================================
+# THEORETICAL FOUNDATION
+# =============================================================================
+#
+# 1. Toyota TPS — Poka-Yoke (mistake-proofing)
+#    Citation: Shingo, S. (1986). Zero Quality Control: Source Inspection
+#              and the Poka-Yoke System. Productivity Press.
+#    Application: ValidatedSparsityRatio private constructor prevents ratios
+#                 outside [0.0, 1.0]. PrunedWeight tracks original shape to
+#                 prevent shape mutation.
+#
+# 2. Popperian Falsificationism — scientific method for software
+#    Citation: Popper, K. (1959). The Logic of Scientific Discovery.
+#              Hutchinson & Co.
+#    Application: Each proof obligation has an explicit falsification test.
+#                 A pruning implementation is correct only if it survives all
+#                 falsification attempts.
+#
+# 3. Type-Driven Development — compile-time correctness
+#    Citation: Brady, E. (2017). Type-Driven Development with Idris.
+#              Manning Publications.
+#    Application: PrunedWeight<W> is a newtype over W that carries proof that
+#                 the sparsity ratio has been enforced and the shape is unchanged.
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  sparsity_ratio:
+    formula: "sparsity(W) = count(W_i == 0) / numel(W)"
+    domain: "W ∈ R^{out × in}, sparsity ∈ [0.0, 1.0]"
+    properties:
+      - identity: "sparsity(W) = 0.0 iff no element is pruned"
+      - full_prune: "sparsity(W) = 1.0 iff all elements are zero"
+      - monotone: "pruning more elements never decreases sparsity"
+
+  magnitude_threshold:
+    formula: "prune_if |W_i| < threshold(W, ratio)"
+    threshold_selection: "threshold = quantile(|W|, ratio)"
+    domain: "ratio ∈ [0.0, 1.0)"
+    properties:
+      - unpruned_dominance: "∀ unpruned i: |W_i| >= threshold"
+      - pruned_magnitude: "∀ pruned i: |W_i| < threshold (at threshold boundary: tie-break by index)"
+      - shape_preservation: "shape(prune(W, ratio)) == shape(W)"
+
+  wanda_score:
+    formula: "score_i = |W_i| * ||X_i||_2"
+    domain: "W ∈ R^{out × in}, X ∈ R^{in × T} (activation matrix over T tokens)"
+    expanded: "score_i = |W_{row,col}| * sqrt( Σ_t X_{col,t}² )"
+    properties:
+      - non_negativity: "score_i >= 0.0 for all i (product of non-negative terms)"
+      - zero_weight_zero_score: "W_i = 0 → score_i = 0"
+      - zero_activation_zero_score: "||X_i||_2 = 0 → score_i = 0"
+    reference: "Sun et al. (2023) arXiv:2306.11695 Equation 1"
+
+  depth_prune_layer_count:
+    formula: "layers_after = num_layers - num_removed"
+    constraint: "num_removed < num_layers (at least one layer must remain)"
+    properties:
+      - strict_reduction: "layers_after < num_layers iff num_removed > 0"
+      - lower_bound: "layers_after >= 1"
+      - exact_count: "layers_after == num_layers - len(removed_indices)"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - id: PO-PRUNE-001
+    name: "Unpruned weight preservation"
+    description: |
+      Weights whose magnitude strictly exceeds the pruning threshold are NEVER
+      zeroed. The pruning operation must be selective: only weights below the
+      threshold are removed.
+    formal: "∀ i: |W_i| > threshold(W, ratio) → pruned(W, ratio)_i = W_i"
+    severity: P0
+    critical: true
+    rationale: |
+      Silently destroying weights above the threshold is a correctness bug that
+      degrades model quality beyond the intended pruning budget. This is the
+      primary poka-yoke for magnitude pruning.
+
+  - id: PO-PRUNE-002
+    name: "Sparsity ratio accuracy"
+    description: |
+      After magnitude pruning at ratio r, the actual fraction of zeros in the
+      output tensor must equal r within a tolerance of 1/numel(W). The tolerance
+      accounts for tie-breaking at the threshold boundary.
+    formal: "| sparsity(prune(W, r)) - r | <= 1 / numel(W)"
+    severity: P0
+    critical: true
+    rationale: |
+      If the caller requests 50% sparsity for a target FLOP budget, a silent
+      deviation of even 1% can violate memory or latency SLOs.
+
+  - id: PO-PRUNE-003
+    name: "Depth prune layer count"
+    description: |
+      After removing n layers by depth pruning, the resulting model contains
+      exactly (original_layers - n) transformer blocks. No layer is silently
+      duplicated or omitted.
+    formal: "len(depth_prune(model, indices).layers) == len(model.layers) - len(indices)"
+    severity: P0
+    critical: true
+    rationale: |
+      Incorrect layer counts corrupt model architecture metadata. Downstream
+      code (KV cache sizing, position embedding bounds) relies on an accurate
+      layer count.
+
+  - id: PO-PRUNE-004
+    name: "WANDA score non-negativity"
+    description: |
+      Every WANDA importance score must be non-negative. The score is the
+      product of a weight magnitude (non-negative) and an L2 activation norm
+      (non-negative), so any negative value indicates a computation error
+      (e.g., incorrect sign extension or integer overflow).
+    formal: "∀ i: wanda_score(W, X)_i >= 0.0"
+    severity: P0
+    critical: true
+    rationale: |
+      Negative scores would invert the pruning order — the most important
+      weights would be pruned first, destroying model quality.
+
+  - id: PO-PRUNE-005
+    name: "Shape preservation"
+    description: |
+      All pruning methods (magnitude, WANDA, structured-magnitude) MUST return
+      a tensor with identical shape to the input. Pruning sets values to zero;
+      it never removes dimensions. Depth pruning is exempt (it removes layers,
+      not weight dimensions within a layer).
+    formal: "shape(prune_weight(W, *)) == shape(W)"
+    severity: P0
+    critical: true
+    rationale: |
+      Shape changes would break all downstream matrix operations. The zero-mask
+      representation is load-bearing: sparse formats and future unstructured
+      kernels depend on the original shape being preserved.
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-PRUNE-001
+    rule: "PO-PRUNE-001 (Unpruned weight preservation)"
+    prediction: |
+      It is impossible for magnitude pruning to zero out a weight whose absolute
+      value strictly exceeds the computed threshold.
+    status: "PENDING"
+    implementation: "tests/contracts/pruning_contract.rs"
+    falsification_test: |
+      #[test]
+      fn falsify_prune_001_unpruned_weight_preservation() {
+          // Construct a weight matrix where we know the threshold will be 0.5
+          // (pruning ratio 0.5 on [0.1, 0.2, 0.6, 0.8] → threshold = 0.2)
+          let weights = vec![0.1f32, 0.2, 0.6, 0.8];
+          let shape = [2usize, 2usize];
+          let ratio = 0.5f32;
+
+          let pruned = magnitude_prune(&weights, &shape, ratio).unwrap();
+
+          // Weights above threshold (0.6 and 0.8) MUST be preserved exactly
+          assert_eq!(pruned[2], 0.6f32, "weight 0.6 above threshold must be preserved");
+          assert_eq!(pruned[3], 0.8f32, "weight 0.8 above threshold must be preserved");
+          // Weights at or below threshold must be zeroed
+          assert_eq!(pruned[0], 0.0f32, "weight 0.1 below threshold must be zeroed");
+      }
+    if_test_fails: "Contract is BROKEN — magnitude pruning destroys weights above threshold"
+
+  - id: FALSIFY-PRUNE-002
+    rule: "PO-PRUNE-002 (Sparsity ratio accuracy)"
+    prediction: |
+      After pruning at ratio r, the actual sparsity of the output tensor lies
+      within 1/numel of r. Deviations larger than this indicate a threshold
+      computation error.
+    status: "PENDING"
+    implementation: "tests/contracts/pruning_contract.rs"
+    falsification_test: |
+      #[test]
+      fn falsify_prune_002_sparsity_ratio_accuracy() {
+          use std::f32;
+
+          // Use a large tensor to make the tolerance tight
+          let n: usize = 1024;
+          let weights: Vec<f32> = (0..n).map(|i| i as f32 / n as f32).collect();
+          let shape = [32usize, 32usize];
+          let ratio = 0.75f32;
+
+          let pruned = magnitude_prune(&weights, &shape, ratio).unwrap();
+
+          let zero_count = pruned.iter().filter(|&&w| w == 0.0).count();
+          let actual_sparsity = zero_count as f32 / n as f32;
+          let tolerance = 1.0f32 / n as f32;
+
+          assert!(
+              (actual_sparsity - ratio).abs() <= tolerance,
+              "sparsity {actual_sparsity} deviates from target {ratio} by more than {tolerance}"
+          );
+      }
+    if_test_fails: "Contract is BROKEN — sparsity ratio not accurately achieved"
+
+  - id: FALSIFY-PRUNE-003
+    rule: "PO-PRUNE-003 (Depth prune layer count)"
+    prediction: |
+      It is impossible for depth_prune to return a model with a layer count
+      other than (original - removed).
+    status: "PENDING"
+    implementation: "tests/contracts/pruning_contract.rs"
+    falsification_test: |
+      #[test]
+      fn falsify_prune_003_depth_prune_layer_count() {
+          let num_layers = 32usize;
+          let model = build_test_model_with_layers(num_layers);
+          let remove_indices = vec![4usize, 8, 16]; // remove 3 layers
+
+          let pruned_model = depth_prune(model, &remove_indices).unwrap();
+
+          assert_eq!(
+              pruned_model.num_layers(),
+              num_layers - remove_indices.len(),
+              "depth_prune must remove exactly {} layers",
+              remove_indices.len()
+          );
+      }
+    if_test_fails: "Contract is BROKEN — depth pruning corrupts layer count"
+
+  - id: FALSIFY-PRUNE-004
+    rule: "PO-PRUNE-004 (WANDA score non-negativity)"
+    prediction: |
+      It is impossible to produce a negative WANDA score from non-negative
+      weight magnitudes and activation norms.
+    status: "PENDING"
+    implementation: "tests/contracts/pruning_contract.rs"
+    falsification_test: |
+      #[test]
+      fn falsify_prune_004_wanda_score_non_negativity() {
+          // Use a weight matrix with mixed signs — magnitudes are always non-negative
+          let out_dim = 8usize;
+          let in_dim = 16usize;
+          let num_tokens = 4usize;
+
+          let weights: Vec<f32> = (0..(out_dim * in_dim))
+              .map(|i| if i % 2 == 0 { 0.3f32 } else { -0.7f32 })
+              .collect();
+          // Activation matrix: [in_dim × num_tokens], all positive
+          let activations: Vec<f32> = vec![0.5f32; in_dim * num_tokens];
+
+          let scores = wanda_scores(&weights, &activations, out_dim, in_dim, num_tokens)
+              .unwrap();
+
+          for (i, &score) in scores.iter().enumerate() {
+              assert!(
+                  score >= 0.0f32,
+                  "WANDA score at index {i} is {score} — must be non-negative"
+              );
+          }
+      }
+    if_test_fails: "Contract is BROKEN — WANDA score computation produces negative values"
+
+  - id: FALSIFY-PRUNE-005
+    rule: "PO-PRUNE-005 (Shape preservation)"
+    prediction: |
+      It is impossible for any weight-level pruning method to return a tensor
+      with a shape different from the input.
+    status: "PENDING"
+    implementation: "tests/contracts/pruning_contract.rs"
+    falsification_test: |
+      #[test]
+      fn falsify_prune_005_shape_preservation() {
+          let original_shape = [128usize, 256usize];
+          let n = original_shape[0] * original_shape[1];
+          let weights: Vec<f32> = (0..n).map(|i| (i as f32).sin()).collect();
+
+          // Test both magnitude pruning and WANDA pruning
+          let mag_pruned = magnitude_prune(&weights, &original_shape, 0.3f32).unwrap();
+          assert_eq!(
+              mag_pruned.len(), n,
+              "magnitude_prune must preserve numel: expected {n}, got {}",
+              mag_pruned.len()
+          );
+
+          let activations: Vec<f32> = vec![1.0f32; original_shape[1] * 32];
+          let wanda_pruned = wanda_prune(
+              &weights, &activations, &original_shape, 32, 0.3f32
+          ).unwrap();
+          assert_eq!(
+              wanda_pruned.len(), n,
+              "wanda_prune must preserve numel: expected {n}, got {}",
+              wanda_pruned.len()
+          );
+      }
+    if_test_fails: "Contract is BROKEN — pruning mutates tensor shape"
+
+# =============================================================================
+# KANI VERIFICATION HARNESS
+# =============================================================================
+#
+# Kani is a Rust model checker that provides bounded formal verification.
+# The harness below proves PO-PRUNE-002 (sparsity ratio accuracy) holds for
+# ALL weight tensors up to a fixed size, not just sampled inputs.
+#
+# Reference: Kani documentation — https://model-checking.github.io/kani/
+# Usage:
+#   cargo kani --harness kani_prune_001_sparsity_ratio_bounded
+#              --unwind 16
+
+kani_harness:
+  - id: KANI-PRUNE-001
+    name: "Sparsity ratio bounded proof"
+    proves: "PO-PRUNE-002"
+    description: |
+      Formal proof that magnitude_prune produces a sparsity ratio within
+      1/numel of the requested ratio for ALL weight tensors of length <= 8.
+      Uses Kani symbolic execution to exhaustively cover all f32 weight
+      configurations (within finite precision) and all ratios in [0.0, 1.0].
+    bounds:
+      max_numel: 8
+      ratio_range: "[0.0, 1.0]"
+      weight_range: "any finite f32 (NaN excluded)"
+    harness: |
+      #[cfg(kani)]
+      #[kani::proof]
+      #[kani::unwind(16)]
+      fn kani_prune_001_sparsity_ratio_bounded() {
+          // Symbolic inputs: small weight tensor (8 elements for tractability)
+          let n: usize = kani::any();
+          kani::assume(n >= 1 && n <= 8);
+
+          let mut weights = vec![0.0f32; n];
+          for w in weights.iter_mut() {
+              *w = kani::any();
+              // Exclude NaN and Inf — pruning is not defined for non-finite values
+              kani::assume(w.is_finite());
+          }
+
+          let ratio: f32 = kani::any();
+          kani::assume(ratio >= 0.0 && ratio < 1.0);
+
+          // magnitude_prune must succeed for finite weights
+          let shape = [1usize, n];
+          let pruned = magnitude_prune(&weights, &shape, ratio)
+              .expect("magnitude_prune must not fail on finite inputs");
+
+          // PO-PRUNE-002: sparsity within 1/n of ratio
+          let zero_count = pruned.iter().filter(|&&w| w == 0.0f32).count();
+          let actual_sparsity = zero_count as f32 / n as f32;
+          let tolerance = 1.0f32 / n as f32;
+
+          // Kani assertion: this must hold for ALL symbolic inputs
+          kani::assert(
+              (actual_sparsity - ratio).abs() <= tolerance + f32::EPSILON,
+              "PO-PRUNE-002: sparsity ratio accuracy violated"
+          );
+
+          // PO-PRUNE-005: shape must be preserved
+          kani::assert(
+              pruned.len() == n,
+              "PO-PRUNE-005: shape must be preserved after magnitude pruning"
+          );
+      }
+    implementation: "tests/contracts/pruning_kani.rs"
+    status: "PENDING"
+    note: |
+      Kani verification is bounded to n <= 8 for tractability. Property-based
+      tests (FALSIFY-PRUNE-002) cover larger tensors via random sampling.
+      Together they provide complementary coverage: Kani proves the property
+      holds universally for small n; proptest increases confidence for large n.
+
+# =============================================================================
+# TYPE ENFORCEMENT (Poka-Yoke)
+# =============================================================================
+
+type_enforcement:
+  principle: "Poka-Yoke via newtype pattern — invalid pruning states unrepresentable"
+
+  validated_types:
+    ValidatedSparsityRatio:
+      inner: "f32"
+      constructor: "fn new(ratio: f32) -> Result<Self, ContractError>"
+      invariants:
+        - "ratio >= 0.0"
+        - "ratio < 1.0 (ratio == 1.0 is forbidden: a fully-zero model is unusable)"
+        - "ratio.is_finite() (NaN and Inf are rejected)"
+      consumers:
+        - "magnitude_prune(weights, shape, ValidatedSparsityRatio)"
+        - "wanda_prune(weights, activations, shape, num_tokens, ValidatedSparsityRatio)"
+      note: "Private inner field — ONLY way to construct a ratio is through validated constructor"
+
+    PrunedWeight:
+      inner: "(Vec<f32>, [usize; 2])"
+      constructor: "fn from_magnitude_prune(weights, shape, ratio) -> Result<Self, ContractError>"
+      invariants:
+        - "inner.0.len() == inner.1[0] * inner.1[1]  (shape preserved)"
+        - "actual_sparsity within 1/numel of requested ratio"
+      consumers:
+        - "AprTransformerLayer pruned weight fields"
+        - "Sparse export pipeline"
+      note: |
+        Carrying the shape inside PrunedWeight makes shape-preservation a
+        compile-time invariant: consumers cannot accidentally reshape a pruned
+        weight without going through a new validated constructor.
+
+    WandaScoreMatrix:
+      inner: "Vec<f32>"
+      constructor: "fn compute(weights, activations, out_dim, in_dim, num_tokens) -> Result<Self, ContractError>"
+      invariants:
+        - "inner.iter().all(|&s| s >= 0.0)  (non-negativity, PO-PRUNE-004)"
+        - "inner.len() == out_dim * in_dim   (shape matches weight tensor)"
+      consumers:
+        - "wanda_prune (ranks weights by WandaScoreMatrix for threshold selection)"
+      note: "Non-negativity enforced at construction — downstream code can assume all scores >= 0"
+
+  compiler_guarantee: |
+    It is IMPOSSIBLE to call wanda_prune with a negative score matrix because:
+    1. WandaScoreMatrix::compute() is the ONLY constructor
+    2. The constructor validates all scores >= 0.0 before returning Ok(...)
+    3. The inner Vec<f32> is private — no direct construction without validation
+
+    It is IMPOSSIBLE to accidentally use an out-of-range sparsity ratio because:
+    1. ValidatedSparsityRatio::new() rejects ratios outside [0.0, 1.0)
+    2. All pruning functions accept ValidatedSparsityRatio, not f32
+    3. From<f32> is NOT implemented — callers must explicitly call ::new()
+
+# =============================================================================
+# TOYOTA WAY PRINCIPLES
+# =============================================================================
+
+toyota_way_principles:
+  jidoka: |
+    "Automation with a human touch" — pruning stops the line immediately when:
+    - The sparsity ratio is out of range
+    - WANDA scores contain negative values
+    - Depth pruning would remove all layers
+    No silently corrupt pruned model propagates to downstream inference.
+
+  poka_yoke: |
+    "Mistake-proofing" — ValidatedSparsityRatio makes it physically impossible
+    to request ratio=1.0 (fully dead model) or ratio=NaN (undefined behavior).
+    PrunedWeight carries its original shape so callers cannot accidentally
+    treat a pruned tensor as having a different dimension count.
+
+  genchi_genbutsu: |
+    "Go and see" — the falsification tests require running pruning functions
+    with known inputs and asserting exact output properties. We do not assume
+    correctness; we prove it fails on bad inputs and succeeds on good ones.
+
+  kaizen: |
+    "Continuous improvement" — when GH-457 revealed that WANDA scores
+    could silently be negative on platforms with aggressive FP optimizations,
+    PO-PRUNE-004 and FALSIFY-PRUNE-004 were added. The contract evolves to
+    prevent every observed failure mode.
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-PRUNE-001"
+  name: "Model Pruning Contract"
+  checks:
+    - "ValidatedSparsityRatio rejects ratio=1.0 and ratio<0.0"
+    - "PrunedWeight carries and enforces original shape invariant"
+    - "WandaScoreMatrix constructor validates non-negativity before returning Ok"
+    - "All FALSIFY-PRUNE-001..005 tests pass"
+    - "KANI-PRUNE-001 harness passes (bounded proof for n<=8)"
+  pass_criteria: "All checks pass"

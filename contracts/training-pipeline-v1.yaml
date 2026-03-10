@@ -1,0 +1,132 @@
+# Training Pipeline Contract v1.0.0
+# THE SOURCE OF TRUTH for train plan/apply/watch lifecycle
+#
+# Covers: checkpoint roundtrip, VRAM estimation, restart limits,
+# expected improvement non-negativity, backoff caps
+#
+# ENFORCEMENT: entrenar/src/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Training pipeline lifecycle: checkpoints, VRAM, restarts, EI, backoff"
+  references:
+    - "APR-SPEC docs/specifications/components/train.md"
+    - "Kingma & Ba (2015). Adam: A Method for Stochastic Optimization. ICLR 2015"
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  checkpoint_roundtrip:
+    formula: "load(save(state)).weights == state.weights"
+    description: "Checkpoint serialization preserves all training state"
+    invariants:
+      - "Optimizer state preserved across save/load"
+      - "Learning rate schedule position preserved"
+      - "Epoch and step counters preserved"
+
+  vram_estimate:
+    formula: "|estimated_vram - actual_vram| / actual_vram < 0.2"
+    description: "VRAM estimation within 20% of actual usage"
+    invariants:
+      - "estimated_vram > 0"
+      - "Accounts for model weights + optimizer state + activations"
+
+  restart_limit:
+    formula: "restart_count <= max_restarts"
+    description: "Training restarts bounded by configured maximum"
+    invariants:
+      - "restart_count monotonically increases"
+      - "max_restarts >= 0"
+
+  expected_improvement:
+    formula: "EI(x) = E[max(f(x) - f_best, 0)] >= 0"
+    description: "Expected improvement is always non-negative"
+    invariants:
+      - "EI == 0 when x is known optimum"
+
+  backoff_cap:
+    formula: "backoff_delay <= backoff_max"
+    description: "Exponential backoff capped at maximum delay"
+    invariants:
+      - "backoff_delay >= backoff_min"
+      - "backoff_delay = min(base * 2^attempt, backoff_max)"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  - type: roundtrip
+    property: "Checkpoint fidelity"
+    formal: "load(save(state)).weights == state.weights bitwise"
+    binding: "entrenar::checkpoint::save/load_checkpoint"
+    status: implemented
+
+  - type: bound
+    property: "VRAM estimate accuracy"
+    formal: "|estimated - actual| / actual < 0.2"
+    binding: "entrenar::plan::estimate_vram"
+    status: implemented
+
+  - type: bound
+    property: "Restart count bounded"
+    formal: "restart_count <= max_restarts for all executions"
+    binding: "entrenar::watch::detect_stale"
+    status: implemented
+
+  - type: invariant
+    property: "Expected improvement non-negative"
+    formal: "EI(x) >= 0 for all x"
+    binding: "entrenar::hpo::expected_improvement"
+    status: implemented
+
+  - type: bound
+    property: "Backoff delay capped"
+    formal: "backoff_delay <= backoff_max"
+    binding: "entrenar::watch::backoff_delay"
+    status: implemented
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-TRAIN-001
+    rule: "Checkpoint roundtrip"
+    prediction: "load(save(state)).weights == state.weights for random state"
+    if_fails: "Serialization losing data or corrupting weights"
+
+  - id: FALSIFY-TRAIN-002
+    rule: "VRAM estimate accuracy"
+    prediction: "Estimate within 20% of actual for supported architectures"
+    if_fails: "VRAM formula missing activation memory or optimizer overhead"
+
+  - id: FALSIFY-TRAIN-003
+    rule: "Restart limit"
+    prediction: "Training stops after max_restarts exceeded"
+    if_fails: "Restart counter not checked or incremented"
+
+  - id: FALSIFY-TRAIN-004
+    rule: "EI non-negativity"
+    prediction: "EI >= 0 for any function value and current best"
+    if_fails: "EI formula sign error or numeric instability"
+
+  - id: FALSIFY-TRAIN-005
+    rule: "Backoff cap"
+    prediction: "Delay never exceeds backoff_max regardless of attempt count"
+    if_fails: "Exponential growth not capped"
+
+# =============================================================================
+# KANI HARNESS
+# =============================================================================
+
+kani_harness:
+  - id: KANI-TRAIN-001
+    property: "restart_count <= max_restarts"
+    bound: 10
+    strategy: bounded_int
+    description: "Exhaustively verify restart limit for max_restarts in [0, 10]"

@@ -1,0 +1,100 @@
+# Inference Contract v1.0.0
+# THE SOURCE OF TRUTH for run/chat inference: sampling, temperature, KV cache
+#
+# ENFORCEMENT: realizar/src/inference/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Inference sampling: greedy determinism, temperature bounds, nucleus subset, KV cache"
+  references:
+    - "APR-SPEC docs/specifications/components/inference.md"
+    - "Holtzman et al. (2020). The Curious Case of Neural Text Degeneration. ICLR 2020"
+
+equations:
+  greedy_determinism:
+    formula: "greedy(logits) = argmax(logits), deterministic"
+    description: "Greedy sampling always returns the highest-probability token"
+    invariants:
+      - "Ties broken consistently (lowest index)"
+      - "No randomness in greedy mode"
+
+  temperature_positivity:
+    formula: "T > 0"
+    description: "Temperature must be strictly positive"
+    invariants:
+      - "T == 0 → use greedy instead"
+      - "Division by T never produces Inf"
+
+  nucleus_subset:
+    formula: "sampled_token ∈ {t : cum_prob(t) <= top_p}"
+    description: "Nucleus sampling restricts to top-p cumulative probability mass"
+    invariants:
+      - "0 < top_p <= 1"
+      - "At least one token always selected"
+
+  kv_cache_consistency:
+    formula: "cache.len() == num_generated_tokens"
+    description: "KV cache grows by one entry per generated token"
+    invariants:
+      - "Cache key and value have matching shapes"
+      - "Cache position matches sequence position"
+
+proof_obligations:
+  - type: determinism
+    property: "Greedy sampling deterministic"
+    formal: "greedy(logits) returns same token for same input"
+    binding: "realizar::inference::sample_greedy"
+    status: implemented
+
+  - type: bound
+    property: "Temperature positivity"
+    formal: "T > 0 enforced at construction"
+    binding: "realizar::inference::SamplingConfig::new"
+    status: implemented
+
+  - type: subset
+    property: "Nucleus sampling subset"
+    formal: "Sampled token within top-p cumulative mass"
+    binding: "realizar::inference::sample_nucleus"
+    status: implemented
+
+  - type: invariant
+    property: "KV cache consistency"
+    formal: "cache.len() == num_generated_tokens"
+    binding: "realizar::gguf::inference::forward_single_with_cache"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-INF-001
+    rule: "Greedy determinism"
+    prediction: "Same logits → same token, every time"
+    if_fails: "Random element in greedy path or floating-point instability"
+
+  - id: FALSIFY-INF-002
+    rule: "Temperature positivity"
+    prediction: "T=0 or T<0 → error or auto-switch to greedy"
+    if_fails: "Division by zero or negative temperature accepted"
+
+  - id: FALSIFY-INF-003
+    rule: "Nucleus subset"
+    prediction: "Sampled token always in top-p probability mass"
+    if_fails: "Sorting or cumulative sum error in nucleus sampling"
+
+  - id: FALSIFY-INF-004
+    rule: "KV cache length"
+    prediction: "After N tokens generated, cache has N entries"
+    if_fails: "Cache not appended to or cleared unexpectedly"
+
+  - id: FALSIFY-INF-005
+    rule: "Logit NaN"
+    prediction: "NaN in logits → error, not silent garbage token"
+    if_fails: "NaN propagation not detected in sampling"
+
+kani_harness:
+  - id: KANI-INF-001
+    property: "argmax unique for distinct logits"
+    bound: 8
+    strategy: stub_float
+    description: "Verify greedy returns unique argmax for 8 distinct logits"

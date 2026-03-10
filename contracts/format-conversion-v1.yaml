@@ -1,0 +1,97 @@
+# Format Conversion Contract v1.0.0
+# THE SOURCE OF TRUTH for import/export: tensor fidelity, row-major, transpose, metadata
+#
+# ENFORCEMENT: aprender/src/format/converter/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-10"
+  author: "PAIML Engineering"
+  description: "Import/export pipeline: tensor fidelity, LAYOUT-002 row-major, transpose"
+  references:
+    - "APR-SPEC docs/specifications/components/format.md"
+    - "contracts/tensor-layout-v1.yaml (LAYOUT-001/002)"
+
+equations:
+  tensor_fidelity:
+    formula: "|imported[i] - original[i]| < epsilon, epsilon = 1e-6"
+    description: "Imported tensor values match original within FP32 tolerance"
+    invariants:
+      - "No NaN or Inf introduced by conversion"
+      - "Tolerance accounts for FP32 rounding"
+
+  row_major_guarantee:
+    formula: "∀ tensor ∈ APR: layout(tensor) == RowMajor"
+    description: "All APR tensors stored in row-major order (LAYOUT-002)"
+    invariants:
+      - "GGUF column-major tensors transposed at import"
+      - "SafeTensors already row-major (no transpose needed)"
+
+  transpose_involution:
+    formula: "transpose(transpose(T)) == T"
+    description: "Double transpose is identity"
+    invariants:
+      - "Shape reversal: [M, N] → [N, M] → [M, N]"
+      - "Data matches original after double transpose"
+
+  metadata_preservation:
+    formula: "import preserves {arch, vocab_size, hidden_size, num_layers}"
+    description: "Critical hyperparameters preserved through conversion"
+
+proof_obligations:
+  - type: bound
+    property: "Tensor value fidelity"
+    formal: "|imported[i] - original[i]| < 1e-6 for all elements"
+    binding: "aprender::format::import_safetensors"
+    status: implemented
+
+  - type: invariant
+    property: "Row-major guarantee"
+    formal: "All APR tensors are row-major"
+    binding: "aprender::format::transpose_gguf_to_rowmajor"
+    status: implemented
+
+  - type: involution
+    property: "Transpose involution"
+    formal: "transpose(transpose(T)) == T bitwise"
+    binding: "aprender::format::transpose_gguf_to_rowmajor"
+    status: implemented
+
+  - type: preservation
+    property: "Metadata preservation"
+    formal: "Arch, vocab_size, hidden_size survive import"
+    binding: "aprender::format::apr_import"
+    status: implemented
+
+falsification_tests:
+  - id: FALSIFY-CONV-001
+    rule: "Tensor fidelity"
+    prediction: "Roundtrip SafeTensors→APR→SafeTensors preserves values to 1e-6"
+    if_fails: "Conversion introducing quantization or truncation"
+
+  - id: FALSIFY-CONV-002
+    rule: "Row-major"
+    prediction: "GGUF import produces row-major APR tensors"
+    if_fails: "Transpose step missing in GGUF pipeline"
+
+  - id: FALSIFY-CONV-003
+    rule: "Transpose involution"
+    prediction: "Double-transposing any tensor recovers original"
+    if_fails: "Transpose not handling non-square tensors correctly"
+
+  - id: FALSIFY-CONV-004
+    rule: "Metadata preservation"
+    prediction: "Imported model has correct arch and hyperparameters"
+    if_fails: "Metadata parsing or mapping incorrect"
+
+  - id: FALSIFY-CONV-005
+    rule: "Unknown format error"
+    prediction: "Importing unsupported format → clear error, not panic"
+    if_fails: "Format detection missing fallback"
+
+kani_harness:
+  - id: KANI-CONV-001
+    property: "Transpose involution"
+    bound: 8
+    strategy: exhaustive
+    description: "Verify transpose(transpose(T)) == T for dimensions up to 8x8"
