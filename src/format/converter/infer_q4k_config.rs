@@ -165,6 +165,13 @@ pub use export::{apr_export, ExportFormat, ExportOptions, ExportReport};
 // Merge functionality extracted to merge.rs (PMAT-197)
 mod merge;
 pub use merge::{apr_merge, MergeOptions, MergeReport, MergeStrategy};
+
+// Evolutionary merge optimization (GH-444)
+pub mod evolutionary_merge;
+pub use evolutionary_merge::{
+    evolutionary_merge as evolutionary_merge_fn, EvolutionaryMergeConfig,
+    EvolutionaryMergeResult,
+};
 // For tests
 
 // Tests extracted to tests.rs (PMAT-197)

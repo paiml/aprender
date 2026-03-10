@@ -217,6 +217,7 @@
 - [Case Study: DataFrame Basics](./examples/dataframe-basics.md)
 - [Case Study: Data Preprocessing with Scalers](./examples/data-preprocessing-scalers.md)
 - [Case Study: PII Filtering for Fine-Tuning](./examples/pii-filtering.md)
+- [Case Study: Evolutionary Merge Optimization](./examples/evolutionary-merge.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Community Detection with Louvain](./examples/community-detection.md)
 - [Case Study: Comprehensive Graph Algorithms](./examples/graph-algorithms-comprehensive.md)
