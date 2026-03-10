@@ -460,7 +460,9 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("phi3small", "phi"), // gegelu + LayerNorm (unique, closest=phi)
     // GELU + RMSNorm variants
     ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
-    // MoE variants — map to mistral (Class A base) with MoE warning
+    // MoE variants — map to base family with MoE warning
+    ("qwen2_moe", "qwen2"),      // MoE: Qwen2 MoE (model_type form)
+    ("qwen2moe", "qwen2"),       // MoE: Qwen2 MoE (arch-stripped form)
     ("qwen3_moe", "mistral"),    // MoE: 128 experts (model_type form)
     ("qwen3moe", "mistral"),     // MoE: 128 experts (arch-stripped form)
     ("qwen3_next", "mistral"),   // MoE: 512 experts (model_type form)
@@ -601,6 +603,7 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
         ("num_hidden_layers", "Transformer depth"),
         ("num_local_experts", "MoE expert routing"),
         ("num_experts", "MoE expert routing"),
+        ("n_routed_experts", "MoE expert routing (DeepSeek)"),
         ("num_experts_per_tok", "MoE active experts per token"),
     ];
 
@@ -662,7 +665,7 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                 _ => None,
             }
         }
-        "num_local_experts" | "num_experts" => {
+        "num_local_experts" | "num_experts" | "n_routed_experts" => {
             let n: u32 = value.parse().unwrap_or(0);
             if n > 0 {
                 Some(format!("MoE with {n} experts (Class E kernel routing)"))
@@ -741,7 +744,8 @@ pub fn detect_constraint_mismatches(
     // Check MoE: config has experts but family class is not E
     let expert_field = config_mapping
         .get("num_local_experts")
-        .or_else(|| config_mapping.get("num_experts"));
+        .or_else(|| config_mapping.get("num_experts"))
+        .or_else(|| config_mapping.get("n_routed_experts"));
     if let Some(ef) = expert_field {
         if family.kernel_class != KernelClass::E {
             warnings.push(format!(
@@ -751,9 +755,14 @@ pub fn detect_constraint_mismatches(
             ));
         }
     } else if family.kernel_class != KernelClass::E {
-        // Detect MoE from display_name (covers architecture string resolution)
+        // Detect MoE from display_name or family name
+        // "mixtral" is a portmanteau of "mixture of experts" + "mistral"
         let dn = family.display_name.to_lowercase();
-        if dn.contains("moe") || dn.contains("mixture") {
+        if dn.contains("moe")
+            || dn.contains("mixture")
+            || dn.contains("mixtral")
+            || family.family.contains("moe")
+        {
             warnings.push(format!(
                 "MoE architecture detected (from name) but mapped to non-MoE class {}. Expert routing kernel not covered.",
                 family.kernel_class.letter()
