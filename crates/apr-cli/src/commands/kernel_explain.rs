@@ -433,6 +433,19 @@ pub fn load_families() -> Vec<FamilyInfo> {
         .collect()
 }
 
+/// Model types without their own family YAML that share a kernel pipeline
+/// with an existing family. Maps model_type → family name.
+const FAMILY_ALIASES: &[(&str, &str)] = &[
+    ("olmo2", "llama"),      // SiLU + RMSNorm + RoPE + SwiGLU (MHA variant)
+    ("granite", "llama"),    // SiLU + RMSNorm + GQA + RoPE
+    ("internlm2", "llama"),  // SiLU + RMSNorm + GQA + RoPE
+    ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
+    ("codellama", "llama"),
+    ("stablelm", "llama"),
+    ("yi", "llama"),
+    ("baichuan", "llama"),
+];
+
 /// Resolve a family string or architecture string to `FamilyInfo`.
 pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     let families = load_families();
@@ -441,6 +454,15 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     // Direct family name match
     if let Some(f) = families.iter().find(|f| f.family == lower) {
         return Some(f.clone());
+    }
+
+    // Alias match (model types sharing kernel pipeline with existing family)
+    if let Some((_, target)) = FAMILY_ALIASES.iter().find(|(alias, _)| *alias == lower) {
+        if let Some(f) = families.iter().find(|f| f.family == *target) {
+            let mut aliased = f.clone();
+            aliased.display_name = format!("{} (via {} kernel pipeline)", lower, f.family);
+            return Some(aliased);
+        }
     }
 
     // Architecture match (e.g., "Qwen2ForCausalLM")

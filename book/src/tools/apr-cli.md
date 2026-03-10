@@ -778,6 +778,113 @@ Explain model architecture: whisper-tiny.safetensors
 - **Layers**: 4
 ```
 
+### Kernel Explainability
+
+Explain which kernel pipeline a model family uses, what architectural constraints drive the selection, and what proof exists for correctness.
+
+```bash
+# Explain kernel pipeline for a model family
+apr explain --kernel llama
+
+# JSON output for tooling integration
+apr explain --kernel qwen2 --json
+
+# Resolve kernel from a config.json file
+apr explain --kernel /path/to/config.json
+
+# Resolve kernel from a HuggingFace repo ID
+apr explain --kernel Qwen/Qwen2.5-Coder-0.5B-Instruct
+
+# Include proof status for each kernel contract
+apr explain --kernel gemma --proof-status
+
+# Verbose output with config.json field mapping
+apr explain --kernel /path/to/config.json --verbose
+```
+
+#### Kernel Equivalence Classes
+
+Models are grouped into kernel equivalence classes (A-F) based on five architectural constraints:
+
+| Class | Constraints | Families |
+|-------|------------|----------|
+| **A** | GQA + RMSNorm + SiLU + SwiGLU + RoPE | llama, qwen2, qwen3, mistral, deepseek, ... |
+| **B** | MHA + LayerNorm + GELU + RoPE/Absolute | gpt2, bert, whisper, rwkv7 |
+| **C** | MQA + LayerNorm + GELU + ALiBi | bloom, falcon-40b |
+| **D** | Mixed LayerNorm + SiLU | phi, moonshine |
+| **E** | MoE variants | mixtral, qwen-moe |
+| **F** | RMSNorm + GELU + GatedMlp + RoPE | gemma, codegemma |
+
+#### Resolution Chain
+
+The `--kernel` flag accepts multiple input types, resolved in order:
+
+1. **Family name** (e.g., `llama`) — direct lookup
+2. **File path** to `config.json` — extracts `model_type` field
+3. **HuggingFace repo ID** (e.g., `Qwen/Qwen2.5-Coder-0.5B-Instruct`) — checks local cache for config.json
+4. **Architecture string** (e.g., `Qwen2ForCausalLM`) — maps to family
+
+#### Example Output
+
+```
+$ apr explain --kernel qwen2
+Kernel Explainability: qwen2
+
+Family:          qwen2
+Kernel Class:    A
+Description:     GQA + RMSNorm + SiLU + SwiGLU + RoPE
+
+Architectural Constraints:
+  attention_type:      GQA
+  norm_type:           RMSNorm
+  activation:          SiLU
+  mlp_type:            SwiGLU
+  positional_encoding: RoPE
+
+Kernel Ops Pipeline:
+  1. RmsNorm         — pre-attention normalization
+  2. RotaryEmbedding — positional encoding via rotation
+  3. GroupedAttention — grouped query attention (fewer KV heads)
+  4. SiluActivation  — SiLU/swish gating
+  5. SwigluMlp       — SwiGLU feed-forward
+  6. RmsNorm         — post-attention normalization
+  7. LinearProjection — output projection
+
+Equivalence Class Members:
+  llama, codellama, qwen2, qwen3, qwen3_5, mistral, deepseek, ...
+
+LAYOUT-002: Row-major tensors required
+```
+
+#### JSON Output
+
+```bash
+apr explain --kernel llama --json
+```
+
+```json
+{
+  "family": "llama",
+  "kernel_class": "A",
+  "description": "GQA + RMSNorm + SiLU + SwiGLU + RoPE",
+  "constraints": {
+    "attention_type": "GQA",
+    "norm_type": "RMSNorm",
+    "activation": "SiLU",
+    "mlp_type": "SwiGLU",
+    "positional_encoding": "RoPE"
+  },
+  "kernel_ops": ["RmsNorm", "RotaryEmbedding", "GroupedAttention", ...],
+  "equivalence_class": ["llama", "codellama", "qwen2", ...],
+  "proof_summary": {
+    "proven": 3,
+    "tested": 2,
+    "documented": 1,
+    "unknown": 0
+  }
+}
+```
+
 ## Pull Command
 
 Download and cache models from HuggingFace with Ollama-style UX.

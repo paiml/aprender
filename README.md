@@ -224,7 +224,7 @@ cargo install apr-cli
 | `apr tensors` | List tensor names, shapes, and statistics |
 | `apr trace` | Layer-by-layer trace analysis |
 | `apr lint` | Check for best practices and conventions |
-| `apr explain` | Explain errors, architecture, and tensors |
+| `apr explain` | Explain errors, architecture, tensors, and kernel pipelines |
 | `apr canary` | Regression testing via tensor statistics |
 | `apr export` | Export to SafeTensors, GGUF formats |
 | `apr import` | Import from HuggingFace, SafeTensors |
@@ -233,6 +233,7 @@ cargo install apr-cli
 | `apr rm` | Remove model from cache |
 | `apr compile` | Compile model into standalone executable (APR-SPEC §4.16) |
 | `apr convert` | Quantization (int8, int4, fp16) and optimization |
+| `apr quantize` | Streaming quantization (int8, int4, fp16, q4k) with plan mode |
 | `apr merge` | Merge models (average, weighted strategies) |
 | `apr tui` | Interactive terminal UI |
 | `apr probar` | Export for visual testing |
@@ -284,9 +285,45 @@ apr canary check optimized.apr --canary canary.json
 # Compile model into standalone binary
 apr compile whisper.apr -o whisper-cli --release --strip
 
+# Streaming quantization — SafeTensors to Q4K APR (bounded memory)
+apr quantize /path/to/sharded-model/ --scheme q4k -o model-q4k.apr
+
 # Publish to HuggingFace Hub
 apr publish ./model-dir/ org/model-name --license mit
 ```
+
+## Streaming Quantization (ALB-093)
+
+Direct SafeTensors to Q4K APR streaming quantization with bounded memory. Quantize models of any size without loading the full model into RAM.
+
+```bash
+# Quantize sharded HuggingFace model directly to Q4K APR
+apr quantize /path/to/safetensors/model/ --scheme q4k -o output.apr
+
+# Plan mode — estimate output size without running
+apr quantize /path/to/model/ --scheme q4k --plan
+
+# Batch quantize to multiple schemes
+apr quantize model.apr --batch int4,int8,q4k -o models/
+```
+
+**How it works:**
+- Reads shards one at a time via mmap (`MappedSafeTensors`)
+- Each tensor flows through: dequant to f32, validate (NaN/Inf), quantize Q4K, stream write
+- Norm, embedding, bias, and small tensors kept at F32 (precision-critical)
+- Peak memory bounded by largest single tensor (~2-4 GB), not model size
+
+**Results on Qwen3-Coder-30B-A3B-Instruct (57 GB, 16 shards, 18,867 tensors):**
+
+| Metric | Value |
+|--------|-------|
+| Input | 57 GB (16 SafeTensors shards) |
+| Output | 17 GB (single Q4K APR file) |
+| Compression | 3.3x |
+| Time | ~4 minutes (NVMe) |
+| Peak RSS | ~3.8 GB |
+
+See [`docs/specifications/streaming-quantize-safetensors-q4k.md`](docs/specifications/streaming-quantize-safetensors-q4k.md) for the full specification.
 
 ## Showcase: Qwen2.5-Coder Inference
 
@@ -392,6 +429,7 @@ See [`docs/claude-code-skills/`](docs/claude-code-skills/) for gate details, deb
 | APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
 | QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
 | Qualify Matrix | [`docs/qualify-matrix.md`](docs/qualify-matrix.md) |
+| Streaming Quantization | [`docs/specifications/streaming-quantize-safetensors-q4k.md`](docs/specifications/streaming-quantize-safetensors-q4k.md) |
 | Claude Code Skills | [`docs/claude-code-skills/`](docs/claude-code-skills/) |
 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 

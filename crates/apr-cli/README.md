@@ -15,6 +15,7 @@ This installs the `apr` binary.
 - **Model Inspection**: View APR model structure, metadata, and weights
 - **Debugging**: Hex dumps, tree visualization, flow analysis
 - **Operations**: List, compare, and validate APR models
+- **Kernel Explainability**: Explain kernel pipelines, equivalence classes (A-F), and proof status
 - **TUI Mode**: Interactive terminal interface for model exploration
 
 ## Usage
@@ -53,6 +54,32 @@ apr chat model.gguf --gpu
 # Adjust generation parameters
 apr chat model.gguf --temperature 0.7 --top-p 0.9 --max-tokens 512
 ```
+
+## Quantization
+
+### Streaming SafeTensors to Q4K APR (ALB-093)
+
+Quantize sharded HuggingFace SafeTensors models directly to Q4K APR format with bounded memory. No intermediate files required.
+
+```bash
+# Quantize sharded SafeTensors model to Q4K APR
+apr quantize /path/to/safetensors/model/ --scheme q4k -o output.apr
+
+# Plan mode — estimate sizes without executing
+apr quantize /path/to/model/ --scheme q4k --plan
+
+# Batch quantize to multiple schemes
+apr quantize model.apr --batch int4,int8,q4k -o models/
+
+# JSON output for CI integration
+apr quantize /path/to/model/ --scheme q4k -o output.apr --json
+```
+
+The streaming pipeline reads shards one at a time via mmap, quantizes each tensor individually, and streams the output. Peak memory is bounded by the largest single tensor (~2-4 GB) regardless of total model size.
+
+**Supported schemes:** `int8` (`i8`, `q8_0`), `int4` (`i4`, `q4_0`), `fp16` (`f16`, `half`), `q4k` (`q4_k`, `q4_k_m`)
+
+**Tensor routing:** Weight matrices (2D, >= 256 elements) are quantized to Q4K. Norm weights, embeddings, biases, and small tensors are kept at F32 for precision.
 
 ## Optional Features
 

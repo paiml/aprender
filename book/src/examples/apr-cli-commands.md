@@ -206,9 +206,14 @@ apr explain E002                                            # Explain error code
 apr explain --tensor encoder.conv1.weight                   # Explain tensor by convention
 apr explain --tensor conv1 --file model.safetensors         # Look up in actual model
 apr explain --file model.apr                                # Analyze architecture
+apr explain --kernel llama                                  # Kernel pipeline for family
+apr explain --kernel qwen2 --json                           # JSON output for tooling
+apr explain --kernel /path/to/config.json --verbose         # Resolve from config.json
+apr explain --kernel Qwen/Qwen2.5-Coder-0.5B-Instruct      # Resolve from HF repo
+apr explain --kernel gemma --proof-status                   # Include proof status
 ```
 
-Provides context-aware explanations for errors, tensors, and model architectures. When `--file` is provided with `--tensor`, looks up the tensor in the actual model via RosettaStone (supports APR, GGUF, SafeTensors).
+Provides context-aware explanations for errors, tensors, model architectures, and kernel pipelines. When `--file` is provided with `--tensor`, looks up the tensor in the actual model via RosettaStone (supports APR, GGUF, SafeTensors). The `--kernel` flag explains which kernel equivalence class (A-F) a model uses, the architectural constraints that drive selection, and the kernel ops pipeline.
 
 ### Interactive
 
