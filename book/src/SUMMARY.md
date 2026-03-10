@@ -222,6 +222,7 @@
 - [Case Study: Continual Pre-Training](./examples/continual-pretraining.md)
 - [Case Study: Direct Preference Optimization](./examples/dpo-preference.md)
 - [Case Study: Evaluation Harness](./examples/eval-harness.md)
+- [Case Study: Advanced Merge Strategies](./examples/advanced-merge.md)
 - [Case Study: Graph Social Network](./examples/graph-social-network.md)
 - [Case Study: Community Detection with Louvain](./examples/community-detection.md)
 - [Case Study: Comprehensive Graph Algorithms](./examples/graph-algorithms-comprehensive.md)

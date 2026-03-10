@@ -75,10 +75,7 @@ fn param_dim(config: &EvolutionaryMergeConfig) -> usize {
 ///
 /// The first `num_models` parameters are raw weights (softmax-normalized).
 /// Optional trailing parameters are density and drop_rate (sigmoid-mapped to (0,1)).
-pub fn decode_params(
-    params: &[f64],
-    config: &EvolutionaryMergeConfig,
-) -> (Vec<f32>, f32, f32) {
+pub fn decode_params(params: &[f64], config: &EvolutionaryMergeConfig) -> (Vec<f32>, f32, f32) {
     let raw_weights = &params[..config.num_models];
     let weights = softmax_normalize(raw_weights);
 
@@ -127,6 +124,8 @@ pub fn build_merge_options(
         drop_rate,
         density,
         seed: config.seed,
+        scales: None,
+        outlier_k: 3.0,
     }
 }
 
@@ -241,7 +240,9 @@ where
     let dim = param_dim(config);
     let space = SearchSpace::continuous(dim, -3.0, 3.0);
 
-    let mut cma = CmaEs::new(dim).with_seed(config.seed).with_sigma(config.sigma);
+    let mut cma = CmaEs::new(dim)
+        .with_seed(config.seed)
+        .with_sigma(config.sigma);
 
     let objective = |params: &[f64]| -> f64 {
         let (weights, _density, _drop_rate) = decode_params(params, config);
@@ -249,7 +250,11 @@ where
         objective_fn(&merged)
     };
 
-    let result = cma.optimize(&objective, &space, Budget::Evaluations(config.max_evaluations));
+    let result = cma.optimize(
+        &objective,
+        &space,
+        Budget::Evaluations(config.max_evaluations),
+    );
 
     let (weights, density, drop_rate) = decode_params(&result.solution, config);
     let merge_options = build_merge_options(config, weights.clone(), density, drop_rate);

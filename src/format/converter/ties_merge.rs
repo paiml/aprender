@@ -1,4 +1,3 @@
-
 // ============================================================================
 // TIES (Trim, Elect Sign, Merge)
 // ============================================================================
@@ -55,10 +54,7 @@ fn ties_merge(
 
 /// Trim elements with magnitude below density * max(|delta|).
 fn ties_trim(delta: &[f32], density: f32) -> Vec<f32> {
-    let max_abs = delta
-        .iter()
-        .map(|x| x.abs())
-        .fold(0.0f32, f32::max);
+    let max_abs = delta.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
 
     if max_abs < 1e-12 {
         return vec![0.0; delta.len()];
@@ -234,6 +230,19 @@ pub fn apr_merge<P: AsRef<Path>>(
                 .unwrap_or(0.5);
             slerp_tensors(&all_tensors[0], &all_tensors[1], t)
         }
+        MergeStrategy::NuSlerp => {
+            let t = options
+                .weights
+                .as_ref()
+                .and_then(|w| w.first().copied())
+                .unwrap_or(0.5);
+            nuslerp_tensors(&all_tensors[0], &all_tensors[1], t)
+        }
+        MergeStrategy::MultiSlerp => {
+            let default_weights = vec![1.0 / inputs.len() as f32; inputs.len()];
+            let weights = options.weights.as_deref().unwrap_or(&default_weights);
+            multi_slerp_tensors(&all_tensors, weights)
+        }
         MergeStrategy::Ties => {
             let base_path = options.base_model.as_ref().expect("validated above");
             let base_tensors = load_model_tensors(base_path)?;
@@ -252,6 +261,39 @@ pub fn apr_merge<P: AsRef<Path>>(
                 options.seed,
                 options.weights.as_deref(),
             )
+        }
+        MergeStrategy::TaskArithmetic => {
+            let base_path = options.base_model.as_ref().expect("validated above");
+            let base_tensors = load_model_tensors(base_path)?;
+            verify_tensor_compatibility(&[base_tensors.clone(), all_tensors[0].clone()])?;
+            let default_scales = vec![1.0f32; all_tensors.len()];
+            let scales = options.scales.as_deref().unwrap_or(&default_scales);
+            task_arithmetic_merge(&base_tensors, &all_tensors, scales)
+        }
+        MergeStrategy::Della => {
+            let base_path = options.base_model.as_ref().expect("validated above");
+            let base_tensors = load_model_tensors(base_path)?;
+            verify_tensor_compatibility(&[base_tensors.clone(), all_tensors[0].clone()])?;
+            della_merge(
+                &base_tensors,
+                &all_tensors,
+                options.drop_rate,
+                options.seed,
+                options.weights.as_deref(),
+            )
+        }
+        MergeStrategy::Breadcrumbs => {
+            let base_path = options.base_model.as_ref().expect("validated above");
+            let base_tensors = load_model_tensors(base_path)?;
+            verify_tensor_compatibility(&[base_tensors.clone(), all_tensors[0].clone()])?;
+            let default_scales = vec![1.0f32; all_tensors.len()];
+            let scales = options.scales.as_deref().unwrap_or(&default_scales);
+            breadcrumbs_merge(&base_tensors, &all_tensors, scales, options.outlier_k)
+        }
+        MergeStrategy::Sce => {
+            let default_weights = vec![1.0 / inputs.len() as f32; inputs.len()];
+            let weights = options.weights.as_deref().unwrap_or(&default_weights);
+            sce_merge(&all_tensors, weights)
         }
     };
 

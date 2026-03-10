@@ -32,6 +32,18 @@ pub enum MergeStrategy {
     Dare,
     /// Spherical linear interpolation
     Slerp,
+    /// Task arithmetic: linear combination of task vectors (GH-442)
+    TaskArithmetic,
+    /// NuSLERP: enhanced SLERP with nlerp fallback (GH-442)
+    NuSlerp,
+    /// MultiSLERP: barycentric SLERP for >2 models (GH-442)
+    MultiSlerp,
+    /// DELLA: adaptive magnitude pruning (GH-442)
+    Della,
+    /// Breadcrumbs: task arithmetic + outlier removal (GH-442)
+    Breadcrumbs,
+    /// SCE: adaptive matrix-level weighting (GH-442)
+    Sce,
 }
 
 impl std::str::FromStr for MergeStrategy {
@@ -44,6 +56,12 @@ impl std::str::FromStr for MergeStrategy {
             "ties" => Ok(Self::Ties),
             "dare" => Ok(Self::Dare),
             "slerp" => Ok(Self::Slerp),
+            "task-arithmetic" | "task_arithmetic" | "taskarithmetic" => Ok(Self::TaskArithmetic),
+            "nuslerp" | "nu-slerp" => Ok(Self::NuSlerp),
+            "multi-slerp" | "multi_slerp" | "multislerp" => Ok(Self::MultiSlerp),
+            "della" => Ok(Self::Della),
+            "breadcrumbs" => Ok(Self::Breadcrumbs),
+            "sce" => Ok(Self::Sce),
             _ => Err(format!("Unknown merge strategy: {s}")),
         }
     }
@@ -55,7 +73,17 @@ impl MergeStrategy {
     pub fn is_supported(&self) -> bool {
         matches!(
             self,
-            Self::Average | Self::Weighted | Self::Slerp | Self::Ties | Self::Dare
+            Self::Average
+                | Self::Weighted
+                | Self::Slerp
+                | Self::Ties
+                | Self::Dare
+                | Self::TaskArithmetic
+                | Self::NuSlerp
+                | Self::MultiSlerp
+                | Self::Della
+                | Self::Breadcrumbs
+                | Self::Sce
         )
     }
 }
@@ -67,14 +95,18 @@ pub struct MergeOptions {
     pub strategy: MergeStrategy,
     /// Weights for weighted merging (must match number of models)
     pub weights: Option<Vec<f32>>,
-    /// Base model path for TIES/DARE (task vectors computed as delta from base)
+    /// Base model path for TIES/DARE/TaskArithmetic (task vectors computed as delta from base)
     pub base_model: Option<PathBuf>,
-    /// DARE drop probability — fraction of delta elements to zero out (default 0.9)
+    /// DARE/DELLA drop probability — fraction of delta elements to zero out (default 0.9)
     pub drop_rate: f32,
     /// TIES trim density — elements with |delta| below density * max(|delta|) are trimmed (default 0.2)
     pub density: f32,
-    /// RNG seed for DARE deterministic dropping (default 42)
+    /// RNG seed for DARE/DELLA deterministic dropping (default 42)
     pub seed: u64,
+    /// Task arithmetic scales per model (default: all 1.0)
+    pub scales: Option<Vec<f32>>,
+    /// Breadcrumbs outlier threshold in std deviations (default 3.0)
+    pub outlier_k: f32,
 }
 
 impl Default for MergeOptions {
@@ -86,6 +118,8 @@ impl Default for MergeOptions {
             drop_rate: 0.9,
             density: 0.2,
             seed: 42,
+            scales: None,
+            outlier_k: 3.0,
         }
     }
 }
@@ -130,24 +164,22 @@ fn validate_merge_options<P: AsRef<Path>>(inputs: &[P], options: &MergeOptions) 
 }
 
 /// Validate strategy-specific constraints.
-fn validate_strategy_specific<P: AsRef<Path>>(
-    inputs: &[P],
-    options: &MergeOptions,
-) -> Result<()> {
+fn validate_strategy_specific<P: AsRef<Path>>(inputs: &[P], options: &MergeOptions) -> Result<()> {
     match options.strategy {
         MergeStrategy::Weighted => validate_weighted_options(inputs, options),
         MergeStrategy::Slerp => validate_slerp_options(inputs),
+        MergeStrategy::NuSlerp => validate_slerp_options(inputs),
         MergeStrategy::Ties => validate_ties_dare_options(options, "TIES"),
         MergeStrategy::Dare => validate_ties_dare_options(options, "DARE"),
-        MergeStrategy::Average => Ok(()),
+        MergeStrategy::TaskArithmetic => validate_ties_dare_options(options, "TaskArithmetic"),
+        MergeStrategy::Della => validate_ties_dare_options(options, "DELLA"),
+        MergeStrategy::Breadcrumbs => validate_ties_dare_options(options, "Breadcrumbs"),
+        MergeStrategy::Average | MergeStrategy::MultiSlerp | MergeStrategy::Sce => Ok(()),
     }
 }
 
 /// Validate weighted merge options.
-fn validate_weighted_options<P: AsRef<Path>>(
-    inputs: &[P],
-    options: &MergeOptions,
-) -> Result<()> {
+fn validate_weighted_options<P: AsRef<Path>>(inputs: &[P], options: &MergeOptions) -> Result<()> {
     match &options.weights {
         Some(weights) if weights.len() != inputs.len() => Err(AprenderError::FormatError {
             message: format!(
@@ -176,13 +208,11 @@ fn validate_slerp_options<P: AsRef<Path>>(inputs: &[P]) -> Result<()> {
     Ok(())
 }
 
-/// Validate TIES/DARE require base model and valid parameters.
+/// Validate strategies that require a base model and possibly specific parameters.
 fn validate_ties_dare_options(options: &MergeOptions, name: &str) -> Result<()> {
     if options.base_model.is_none() {
         return Err(AprenderError::FormatError {
-            message: format!(
-                "{name} merge requires --base-model to compute task vectors"
-            ),
+            message: format!("{name} merge requires --base-model to compute task vectors"),
         });
     }
     let base = options.base_model.as_ref().expect("checked above");
@@ -191,20 +221,18 @@ fn validate_ties_dare_options(options: &MergeOptions, name: &str) -> Result<()> 
             message: format!("Base model not found: {}", base.display()),
         });
     }
-    if name == "DARE" && (options.drop_rate <= 0.0 || options.drop_rate >= 1.0) {
+    if (name == "DARE" || name == "DELLA") && (options.drop_rate <= 0.0 || options.drop_rate >= 1.0)
+    {
         return Err(AprenderError::FormatError {
             message: format!(
-                "DARE drop_rate must be in (0, 1), got {}",
+                "{name} drop_rate must be in (0, 1), got {}",
                 options.drop_rate
             ),
         });
     }
     if name == "TIES" && (options.density <= 0.0 || options.density >= 1.0) {
         return Err(AprenderError::FormatError {
-            message: format!(
-                "TIES density must be in (0, 1), got {}",
-                options.density
-            ),
+            message: format!("TIES density must be in (0, 1), got {}", options.density),
         });
     }
     Ok(())
@@ -418,3 +446,4 @@ fn vector_norm(v: &[f32]) -> f64 {
 }
 
 include!("ties_merge.rs");
+include!("advanced_merge.rs");

@@ -448,3 +448,6 @@ fn test_slerp_vectors_at_t1() {
 
 #[path = "merge_tests_slerp.rs"]
 mod merge_tests_slerp;
+
+#[path = "advanced_merge_tests.rs"]
+mod advanced_merge_tests;
