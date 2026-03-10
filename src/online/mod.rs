@@ -15,6 +15,7 @@
 //! - **Just-in-Time**: Retrain only when drift detected, not on schedule
 
 pub mod corpus;
+pub mod cpt;
 pub mod curriculum;
 pub mod distillation;
 pub mod distillation_advanced;
