@@ -60,6 +60,19 @@ jobs:
       - name: Ensure target is installed
         run: rustup target add ${{ matrix.target }}
 
+      - name: Patch path dependencies for standalone build
+        if: runner.os != 'Windows'
+        run: |
+          sed -i.bak 's|alimentar = { version = "0.2.8", path = "../alimentar", optional = true }|alimentar = { version = "0.2.8", optional = true }|' Cargo.toml
+          sed -i.bak 's|alimentar = { version = "0.2.8", path = "../../../alimentar", default-features = false, features = \["shuffle"\] }|alimentar = { version = "0.2.8", default-features = false, features = ["shuffle"] }|' crates/apr-cli/Cargo.toml
+
+      - name: Patch path dependencies for standalone build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          (Get-Content Cargo.toml) -replace 'alimentar = \{ version = "0.2.8", path = "\.\./alimentar", optional = true \}', 'alimentar = { version = "0.2.8", optional = true }' | Set-Content Cargo.toml
+          (Get-Content crates/apr-cli/Cargo.toml) -replace 'alimentar = \{ version = "0.2.8", path = "\.\./\.\./\.\./alimentar", default-features = false, features = \["shuffle"\] \}', 'alimentar = { version = "0.2.8", default-features = false, features = ["shuffle"] }' | Set-Content crates/apr-cli/Cargo.toml
+
       - name: Install cross (Linux ARM)
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
