@@ -38,13 +38,13 @@ size_variants:
 # No num_attention_heads — intentionally null/absent in config.json.
 # No positional encoding — state carries temporal info via recurrence.
 constraints:
-  attention_type: mha
+  attention_type: ssm
   activation: silu
   norm_type: rmsnorm
   has_bias: false
   tied_embeddings: true
   positional_encoding: none
-  mlp_type: swiglu
+  mlp_type: gated
 
 tensor_template:
   embed_tokens: "backbone.embeddings.weight"

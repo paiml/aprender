@@ -390,8 +390,14 @@ fn derive_kernel_class(c: &Constraints) -> KernelClass {
     let mlp = c.mlp_type.as_str();
     let pos = c.positional_encoding.as_str();
 
-    // Class A: GQA + RMSNorm + SiLU + SwiGLU + RoPE
-    if attn == "gqa" && norm == "rmsnorm" && act == "silu" && mlp == "swiglu" && pos == "rope" {
+    // Class A: GQA/MHA + RMSNorm + SiLU + SwiGLU + RoPE
+    // MHA is a degenerate case of GQA (kv_heads == q_heads), identical kernel dispatch
+    if (attn == "gqa" || attn == "mha")
+        && norm == "rmsnorm"
+        && act == "silu"
+        && mlp == "swiglu"
+        && pos == "rope"
+    {
         return KernelClass::A;
     }
     // Class F: RMSNorm + GELU + GatedMlp + RoPE (check before B/D)
@@ -880,7 +886,8 @@ pub struct KernelExplainJson {
     pub constraints: Constraints,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub config_mapping: BTreeMap<String, ConfigField>,
-    pub proof_summary: ProofSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof_summary: Option<ProofSummary>,
     pub layout: String,
     pub equivalence_class_families: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -952,12 +959,16 @@ pub fn build_json_output(
         kernel_ops: ops,
         constraints: family.constraints.clone(),
         config_mapping,
-        proof_summary: ProofSummary {
-            proven,
-            tested,
-            documented,
-            unknown,
-            total: proofs.len(),
+        proof_summary: if show_proof {
+            Some(ProofSummary {
+                proven,
+                tested,
+                documented,
+                unknown,
+                total: proofs.len(),
+            })
+        } else {
+            None
         },
         layout: "row_major".to_string(),
         equivalence_class_families,
