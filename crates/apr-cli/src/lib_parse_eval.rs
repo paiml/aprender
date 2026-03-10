@@ -28,6 +28,7 @@
                 model_size,
                 num_classes,
                 generate_card,
+                ..
             }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(dataset, "lambada");

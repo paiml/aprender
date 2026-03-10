@@ -262,6 +262,9 @@
             model_size: None,
             num_classes: 5,
             generate_card: false,
+            device: "cpu".to_string(),
+            samples: 1,
+            temperature: 0.0,
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);

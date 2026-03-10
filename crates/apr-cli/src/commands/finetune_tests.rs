@@ -73,7 +73,12 @@ fn test_run_no_model() {
         None,
         None,
         None,
+        0,
+        &[],
+        None,
         false,
+        false,
+        0,
     );
     assert!(result.is_err());
 }
@@ -105,7 +110,12 @@ fn test_run_plan_with_model_size() {
         None,
         None,
         None,
+        0,
+        &[],
+        None,
         false,
+        false,
+        0,
     );
     assert!(result.is_ok());
 }
@@ -137,7 +147,12 @@ fn test_run_plan_json() {
         None,
         None,
         None,
+        0,
+        &[],
+        None,
         true,
+        false,
+        0,
     );
     assert!(result.is_ok());
 }
@@ -171,7 +186,12 @@ fn test_run_with_model_file() {
         None,
         None,
         None,
+        0,
+        &[],
+        None,
         false,
+        false,
+        0,
     );
     assert!(result.is_ok());
 }
@@ -286,7 +306,12 @@ fn test_run_training_creates_adapter() {
         None,
         None,
         None,
+        0,
+        &[],
+        None,
         true,
+        false,
+        0,
     );
     assert!(result.is_ok(), "Training should succeed: {result:?}");
 

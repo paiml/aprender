@@ -288,6 +288,9 @@
             model_size: None,
             num_classes: 5,
             generate_card: false,
+            device: "cpu".to_string(),
+            samples: 1,
+            temperature: 0.0,
         }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Eval should fail with non-existent file");
