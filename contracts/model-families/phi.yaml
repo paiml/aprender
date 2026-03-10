@@ -3,7 +3,8 @@ display_name: "Microsoft Phi"
 vendor: Microsoft
 architectures:
   - PhiForCausalLM
-  - Phi3ForCausalLM
+  # Phi3ForCausalLM removed: Phi-3/4 use SiLU+RMSNorm+GQA+RoPE (Class A),
+  # NOT LayerNorm+GELU+MHA like Phi-2. Resolved via phi3→llama alias.
 hf_pattern: "microsoft/phi-*"
 
 size_variants:
@@ -34,12 +35,12 @@ size_variants:
 
 constraints:
   attention_type: mha
-  activation: silu
+  activation: gelu
   norm_type: layernorm
   has_bias: true
   tied_embeddings: false
   positional_encoding: rope
-  mlp_type: swiglu
+  mlp_type: standard
 
 tensor_template:
   embedding: "model.embed_tokens.weight"

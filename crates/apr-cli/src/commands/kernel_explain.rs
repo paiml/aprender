@@ -450,10 +450,15 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     // GELU + RMSNorm variants
     ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
     // MoE variants — map to mistral (Class A base) with MoE warning
-    ("qwen3_moe", "mistral"), // MoE: 128 experts, SiLU + RMSNorm + GQA + RoPE base
-    ("qwen3_next", "mistral"), // MoE: 512 experts, next-gen routing
+    ("qwen3_moe", "mistral"),    // MoE: 128 experts (model_type form)
+    ("qwen3moe", "mistral"),     // MoE: 128 experts (arch-stripped form)
+    ("qwen3_next", "mistral"),   // MoE: 512 experts (model_type form)
+    ("qwen3next", "mistral"),    // MoE: 512 experts (arch-stripped form)
     ("deepseek_v2", "deepseek"), // MoE: DeepSeek V2 with expert routing
-    ("mixtral", "mistral"),   // MoE: 8 experts, SiLU + RMSNorm + GQA + RoPE base
+    ("deepseekv2", "deepseek"),  // MoE: arch-stripped form
+    ("mixtral", "mistral"),      // MoE: 8 experts
+    // Classic falcon: LayerNorm + GELU + GQA/MHA — closest to bert (Class B)
+    ("falcon", "bert"), // Falcon-7B/40B: LayerNorm + GELU (no RMSNorm, no SiLU)
 ];
 
 /// Resolve a family string or architecture string to `FamilyInfo`.
@@ -489,6 +494,24 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         return Some(f.clone());
     }
 
+    // Architecture string → model_type extraction → alias re-check
+    // e.g., "GraniteForCausalLM" → "granite" → alias → llama
+    let stripped = strip_arch_suffix(lower);
+    if stripped != lower {
+        // Try alias with stripped name
+        if let Some((_, target)) = FAMILY_ALIASES.iter().find(|(alias, _)| *alias == stripped) {
+            if let Some(f) = families.iter().find(|f| f.family == *target) {
+                let mut aliased = f.clone();
+                aliased.display_name = format!("{stripped} (via {target} kernel pipeline)");
+                return Some(aliased);
+            }
+        }
+        // Try direct family match with stripped name
+        if let Some(f) = families.iter().find(|f| f.family == stripped) {
+            return Some(f.clone());
+        }
+    }
+
     // Partial match (e.g., "qwen" matches "qwen2") — require >= 3 chars
     if lower.len() >= 3 {
         return families
@@ -497,6 +520,21 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     }
 
     None
+}
+
+/// Strip HuggingFace architecture suffixes to get model type.
+/// E.g., "graniteforCausalLM" → "granite", "phi3smallforcausallm" → "phi3small"
+fn strip_arch_suffix(s: &str) -> &str {
+    // All known suffixes (lowercase). Order matters: longest first.
+    const SUFFIXES: &[&str] = &["forconditionalgeneration", "forcausallm", "model"];
+    for suffix in SUFFIXES {
+        if let Some(prefix) = s.strip_suffix(suffix) {
+            if !prefix.is_empty() {
+                return prefix;
+            }
+        }
+    }
+    s
 }
 
 /// Try to resolve family from a config.json file.
@@ -698,6 +736,15 @@ pub fn detect_constraint_mismatches(
             warnings.push(format!(
                 "MoE model ({} experts) mapped to non-MoE class {}. Expert routing kernel not covered.",
                 ef.value,
+                family.kernel_class.letter()
+            ));
+        }
+    } else if family.kernel_class != KernelClass::E {
+        // Detect MoE from display_name (covers architecture string resolution)
+        let dn = family.display_name.to_lowercase();
+        if dn.contains("moe") || dn.contains("mixture") {
+            warnings.push(format!(
+                "MoE architecture detected (from name) but mapped to non-MoE class {}. Expert routing kernel not covered.",
                 family.kernel_class.letter()
             ));
         }
