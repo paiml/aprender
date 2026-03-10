@@ -765,16 +765,8 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         v
     };
     if !search_forms.is_empty() {
-        for search in &search_forms {
-            // Use prefix matching, not substring, to avoid spurious matches
-            // (e.g., "mma" ⊂ "gemma" or "lama" ⊂ "llama" via compact form)
-            if let Some(f) = families.iter().find(|f| {
-                f.family.starts_with(*search) || search.starts_with(f.family.as_str())
-            }) {
-                return Some(f.clone());
-            }
-        }
-        // Also partial match against aliases (both forms, prefix only)
+        // Check aliases BEFORE direct families — aliases are more specific
+        // (e.g., "phi3" → llama must win over "phi" family prefix match for "phi3mini")
         for search in &search_forms {
             if let Some((matched_alias, target)) = FAMILY_ALIASES
                 .iter()
@@ -786,6 +778,16 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
                         format!("{} (via {} kernel pipeline)", matched_alias, f.family);
                     return Some(aliased);
                 }
+            }
+        }
+        // Then try direct family prefix matching
+        for search in &search_forms {
+            // Use prefix matching, not substring, to avoid spurious matches
+            // (e.g., "mma" ⊂ "gemma" or "lama" ⊂ "llama" via compact form)
+            if let Some(f) = families.iter().find(|f| {
+                f.family.starts_with(*search) || search.starts_with(f.family.as_str())
+            }) {
+                return Some(f.clone());
             }
         }
     }
@@ -924,6 +926,8 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
         ("num_experts", "MoE expert routing"),
         ("n_routed_experts", "MoE expert routing (DeepSeek)"),
         ("num_experts_per_tok", "MoE active experts per token"),
+        ("moe_intermediate_size", "MoE per-expert MLP width"),
+        ("head_dim", "Explicit attention head dimension"),
         ("tie_word_embeddings", "Weight sharing: embedding ↔ lm_head"),
         ("vocab_size", "Vocabulary size"),
         ("max_position_embeddings", "Maximum sequence length"),
@@ -1060,9 +1064,42 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                     let tied = extract_json_string(json, "tie_word_embeddings")
                         .map_or(false, |v| v == "true");
                     let embed_params = if tied { vocab * n } else { 2 * vocab * n };
+                    // GQA-aware attention: Q+O use full heads, K+V use KV heads
+                    let kv_heads = extract_json_string(json, "num_key_value_heads")
+                        .and_then(|v| v.parse::<u64>().ok());
+                    let head_dim_val = extract_json_string(json, "head_dim")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or_else(|| {
+                            let nh = extract_json_string(json, "num_attention_heads")
+                                .and_then(|v| v.parse::<u64>().ok())
+                                .unwrap_or(1);
+                            if nh > 0 { n / nh } else { 0 }
+                        });
+                    let num_heads = extract_json_string(json, "num_attention_heads")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(1);
+                    let kv_dim = kv_heads.map_or(n, |kv| kv * head_dim_val);
+                    // Attention: Q(h*hd, d) + K(kv*hd, d) + V(kv*hd, d) + O(d, h*hd)
+                    let attn_params = 2 * num_heads * head_dim_val * n + 2 * kv_dim * n;
+                    // MoE expert params (if any)
+                    let n_experts = extract_json_string(json, "num_local_experts")
+                        .or_else(|| extract_json_string(json, "num_experts"))
+                        .or_else(|| extract_json_string(json, "n_routed_experts"))
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let moe_inter = extract_json_string(json, "moe_intermediate_size")
+                        .and_then(|v| v.parse::<u64>().ok());
                     let est = if let Some(i) = inter {
-                        // Per layer: 4d² (QKVO) + 3di (SwiGLU gate+up+down) + 2d (norms)
-                        layers * (4 * n * n + 3 * n * i + 2 * n) + embed_params
+                        let dense_mlp = 3 * n * i; // SwiGLU: gate+up+down
+                        let expert_mlp = if n_experts > 1 {
+                            let ei = moe_inter.unwrap_or(i);
+                            n_experts * 3 * n * ei // per-expert SwiGLU
+                        } else {
+                            0
+                        };
+                        let mlp_total = if n_experts > 1 { expert_mlp + dense_mlp } else { dense_mlp };
+                        // Per layer: attention + MLP + 2d (norms)
+                        layers * (attn_params + mlp_total + 2 * n) + embed_params
                     } else {
                         // Rough estimate assuming 4x MLP (standard FFN: 8d²/layer)
                         layers * 12 * n * n + embed_params
@@ -1266,7 +1303,9 @@ pub fn detect_constraint_mismatches(
                     "mha"
                 };
                 let family_attn = family.constraints.attention_type.to_lowercase();
-                if config_attn != family_attn && !family_attn.is_empty() {
+                // MHA is a degenerate case of GQA (kv_heads == q_heads) — same kernel dispatch
+                let is_mha_gqa_compat = config_attn == "mha" && family_attn == "gqa";
+                if config_attn != family_attn && !family_attn.is_empty() && !is_mha_gqa_compat {
                     warnings.push(format!(
                         "Attention mismatch: config.json implies {} but family '{}' uses {}",
                         config_attn.to_uppercase(),
@@ -1366,15 +1405,20 @@ pub fn detect_constraint_mismatches(
     }
 
     // Check hidden_size divisibility by num_attention_heads (defines head_dim)
-    if let (Some(hs), Some(nh)) = (
-        config_mapping.get("hidden_size"),
-        config_mapping.get("num_attention_heads"),
-    ) {
-        if let (Ok(h), Ok(n)) = (hs.value.parse::<u64>(), nh.value.parse::<u64>()) {
-            if n > 0 && h > 0 && h % n != 0 {
-                warnings.push(format!(
-                    "Invalid config: hidden_size ({h}) not divisible by num_attention_heads ({n}). Head dimension must be an integer."
-                ));
+    // Skip when explicit head_dim is present — some models (e.g., Qwen3.5) use
+    // head_dim * num_heads != hidden_size (attention dim != hidden dim)
+    let has_explicit_head_dim = config_mapping.contains_key("head_dim");
+    if !has_explicit_head_dim {
+        if let (Some(hs), Some(nh)) = (
+            config_mapping.get("hidden_size"),
+            config_mapping.get("num_attention_heads"),
+        ) {
+            if let (Ok(h), Ok(n)) = (hs.value.parse::<u64>(), nh.value.parse::<u64>()) {
+                if n > 0 && h > 0 && h % n != 0 {
+                    warnings.push(format!(
+                        "Invalid config: hidden_size ({h}) not divisible by num_attention_heads ({n}). Head dimension must be an integer."
+                    ));
+                }
             }
         }
     }
