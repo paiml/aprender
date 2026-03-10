@@ -245,6 +245,16 @@ pub fn build_architecture_explanation(
              Maximum KV cache reduction. Cache: {:.1} MB at 4K context.",
             size.num_heads, stats.kv_cache_4k_mb
         ),
+        AttentionType::Ssm => "State Space Model: no attention mechanism. \
+             Uses selective state space recurrence (S6) instead of QKV attention. \
+             No KV cache — linear time complexity in sequence length."
+            .to_string(),
+        AttentionType::Linear => format!(
+            "Linear Attention (WKV recurrence): no softmax attention. \
+             Uses token shift + channel mixing with {} channels. \
+             O(1) state per token — constant memory in sequence length.",
+            size.num_heads
+        ),
     };
 
     let ffn_explanation = match constraints.mlp_type {
