@@ -128,6 +128,11 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
             kernel: "softmax",
             contract: "softmax-kernel-v1",
         },
+        KernelOp {
+            op: "Kernel Fusion",
+            kernel: "fused_matvec_activation",
+            contract: "kernel-fusion-v1",
+        },
     ];
 
     match class {
@@ -857,11 +862,6 @@ pub fn proof_status_for_class(class: KernelClass) -> Vec<ContractProof> {
             seen.push(op.contract);
             proofs.push(proof_status_for_contract(op.contract));
         }
-    }
-
-    // Always include fusion contract
-    if !seen.contains(&"kernel-fusion-v1") {
-        proofs.push(proof_status_for_contract("kernel-fusion-v1"));
     }
 
     proofs
