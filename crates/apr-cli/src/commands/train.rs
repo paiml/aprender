@@ -52,14 +52,9 @@ pub(crate) fn run_plan(
 }
 
 /// Plan for causal LM pre-training from YAML config (ALB-009).
-fn run_plan_pretrain(
-    config_path: Option<&std::path::Path>,
-    json_output: bool,
-) -> Result<()> {
+fn run_plan_pretrain(config_path: Option<&std::path::Path>, json_output: bool) -> Result<()> {
     let config_path = config_path.ok_or_else(|| {
-        CliError::ValidationFailed(
-            "--config <yaml> is required for --task pretrain".to_string(),
-        )
+        CliError::ValidationFailed("--config <yaml> is required for --task pretrain".to_string())
     })?;
 
     if !config_path.exists() {
@@ -100,7 +95,10 @@ fn run_plan_pretrain(
             },
             "verdict": "ready",
         });
-        println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&plan).unwrap_or_default()
+        );
     } else {
         output::header("apr train plan — Pre-training Plan (Causal LM)");
         println!();
@@ -132,7 +130,10 @@ fn run_plan_pretrain(
         }
 
         println!();
-        println!("  {} Config validated, ready for apply", "READY".green().bold());
+        println!(
+            "  {} Config validated, ready for apply",
+            "READY".green().bold()
+        );
     }
 
     Ok(())
@@ -310,9 +311,7 @@ fn run_apply_pretrain(
     seed: Option<u64>,
 ) -> Result<()> {
     let config_path = config_path.ok_or_else(|| {
-        CliError::ValidationFailed(
-            "--config <yaml> is required for --task pretrain".to_string(),
-        )
+        CliError::ValidationFailed("--config <yaml> is required for --task pretrain".to_string())
     })?;
 
     if !config_path.exists() {
@@ -321,8 +320,13 @@ fn run_apply_pretrain(
 
     if !json_output {
         print_pretrain_header(
-            config_path, distributed, world_size, rank, coordinator_addr,
-            deterministic, seed,
+            config_path,
+            distributed,
+            world_size,
+            rank,
+            coordinator_addr,
+            deterministic,
+            seed,
         );
     }
 
@@ -330,10 +334,19 @@ fn run_apply_pretrain(
 
     if needs_patch {
         let temp_path = patch_yaml_config(
-            config_path, distributed, world_size, rank, coordinator_addr,
-            deterministic, seed,
+            config_path,
+            distributed,
+            world_size,
+            rank,
+            coordinator_addr,
+            deterministic,
+            seed,
         )?;
-        let mode = if distributed { "Distributed training" } else { "Training" };
+        let mode = if distributed {
+            "Distributed training"
+        } else {
+            "Training"
+        };
         entrenar::config::train_from_yaml(&temp_path)
             .map_err(|e| CliError::ValidationFailed(format!("{mode} failed: {e}")))?;
         let _ = std::fs::remove_file(&temp_path);
@@ -347,7 +360,11 @@ fn run_apply_pretrain(
         println!("{{\"status\":\"completed\",\"task\":\"pretrain\",\"mode\":\"{mode}\"}}");
     } else {
         println!();
-        let label = if distributed { "Distributed pre-training" } else { "Pre-training" };
+        let label = if distributed {
+            "Distributed pre-training"
+        } else {
+            "Pre-training"
+        };
         println!("  {} {label} completed", "DONE".green().bold());
     }
 
@@ -381,7 +398,14 @@ pub(crate) fn run_watch(
         return Err(CliError::FileNotFound(config_path.to_path_buf()));
     }
 
-    print_watch_header(config_path, max_restarts, _heartbeat_timeout, backoff_initial, backoff_max, json_output);
+    print_watch_header(
+        config_path,
+        max_restarts,
+        _heartbeat_timeout,
+        backoff_initial,
+        backoff_max,
+        json_output,
+    );
 
     let mut state = WatchState {
         attempt: 0,
@@ -397,31 +421,70 @@ pub(crate) fn run_watch(
         }
 
         if !json_output {
-            println!("  {} Starting training (attempt {}/{})", "▶".green(), state.attempt, max_restarts + 1);
+            println!(
+                "  {} Starting training (attempt {}/{})",
+                "▶".green(),
+                state.attempt,
+                max_restarts + 1
+            );
         }
 
         kill_stale_gpu_procs();
-        let exit_status = run_training_process(config_path, state.use_blocking);
-
-        match exit_status {
-            Ok(status) if status.success() => {
-                return watch_success(state.attempt, json_output);
-            }
-            Ok(status) => {
-                let action = handle_crash(config_path, &mut state, status, backoff_initial, backoff_max, json_output)?;
-                if action == CrashAction::Fatal {
-                    return Err(CliError::ValidationFailed("Fatal error".to_string()));
-                }
-            }
-            Err(e) => {
-                return Err(watch_spawn_failed(e, json_output));
-            }
+        match handle_watch_iteration(
+            config_path,
+            &mut state,
+            backoff_initial,
+            backoff_max,
+            json_output,
+        )? {
+            Some(result) => return result,
+            None => continue,
         }
     }
 }
 
+/// Run one iteration of the watch loop. Returns Some(result) to exit, None to continue.
+fn handle_watch_iteration(
+    config_path: &std::path::Path,
+    state: &mut WatchState,
+    backoff_initial: u64,
+    backoff_max: u64,
+    json_output: bool,
+) -> Result<Option<Result<()>>> {
+    let exit_status = run_training_process(config_path, state.use_blocking);
+
+    match exit_status {
+        Ok(status) if status.success() => Ok(Some(watch_success(state.attempt, json_output))),
+        Ok(status) => {
+            let action = handle_crash(
+                config_path,
+                state,
+                status,
+                backoff_initial,
+                backoff_max,
+                json_output,
+            )?;
+            if action == CrashAction::Fatal {
+                Ok(Some(Err(CliError::ValidationFailed(
+                    "Fatal error".to_string(),
+                ))))
+            } else {
+                Ok(None)
+            }
+        }
+        Err(e) => Ok(Some(Err(watch_spawn_failed(e, json_output)))),
+    }
+}
+
 /// Print the watch header.
-fn print_watch_header(config_path: &std::path::Path, max_restarts: usize, heartbeat_timeout: u64, backoff_initial: u64, backoff_max: u64, json_output: bool) {
+fn print_watch_header(
+    config_path: &std::path::Path,
+    max_restarts: usize,
+    heartbeat_timeout: u64,
+    backoff_initial: u64,
+    backoff_max: u64,
+    json_output: bool,
+) {
     if !json_output {
         output::header("apr train watch — Training Supervisor");
         println!();
@@ -450,7 +513,10 @@ fn watch_success(attempt: usize, json_output: bool) -> Result<()> {
         println!("{{\"status\":\"completed\",\"attempts\":{attempt}}}");
     } else {
         println!();
-        println!("  {} Training completed successfully (attempt {attempt})", "DONE".green().bold());
+        println!(
+            "  {} Training completed successfully (attempt {attempt})",
+            "DONE".green().bold()
+        );
     }
     Ok(())
 }
@@ -464,7 +530,10 @@ fn watch_spawn_failed(e: std::io::Error, json_output: bool) -> CliError {
 }
 
 #[derive(PartialEq)]
-enum CrashAction { Restart, Fatal }
+enum CrashAction {
+    Restart,
+    Fatal,
+}
 
 /// Handle a training crash: classify, diagnose, maybe restart.
 fn handle_crash(
@@ -480,7 +549,10 @@ fn handle_crash(
 
     if !json_output {
         println!();
-        println!("  {} Training exited with code {code} ({classification})", "CRASH".red().bold());
+        println!(
+            "  {} Training exited with code {code} ({classification})",
+            "CRASH".red().bold()
+        );
     }
 
     write_crash_report(config_path, state.attempt, code, classification);
@@ -488,7 +560,10 @@ fn handle_crash(
     if classification == "signal" && state.attempt == 1 {
         state.use_blocking = true;
         if !json_output {
-            println!("  {} Enabling CUDA_LAUNCH_BLOCKING for diagnosis", "DIAG".yellow());
+            println!(
+                "  {} Enabling CUDA_LAUNCH_BLOCKING for diagnosis",
+                "DIAG".yellow()
+            );
         }
     }
 
@@ -508,7 +583,11 @@ fn handle_crash(
     state.last_stable = std::time::Instant::now();
 
     if !json_output {
-        println!("  {} Waiting {}s before restart...", "⏳".dimmed(), state.backoff);
+        println!(
+            "  {} Waiting {}s before restart...",
+            "⏳".dimmed(),
+            state.backoff
+        );
     }
     std::thread::sleep(std::time::Duration::from_secs(state.backoff));
     state.backoff = (state.backoff * 2).min(backoff_max);
@@ -538,10 +617,10 @@ fn classify_exit_code(code: i32) -> &'static str {
         0 => "success",
         1 => "error",
         2 => "usage",
-        134 => "sigabrt",    // CUDA assertion
-        135 => "sigbus",     // fatal
-        137 => "oom",        // SIGKILL (OOM killer)
-        139 => "sigsegv",    // CUDA memory corruption
+        134 => "sigabrt", // CUDA assertion
+        135 => "sigbus",  // fatal
+        137 => "oom",     // SIGKILL (OOM killer)
+        139 => "sigsegv", // CUDA memory corruption
         _ if code > 128 => "signal",
         _ => "unknown",
     }
@@ -551,7 +630,10 @@ fn classify_exit_code(code: i32) -> &'static str {
 fn kill_stale_gpu_procs() {
     // Best-effort: find processes using the GPU that match our training pattern
     let _ = std::process::Command::new("bash")
-        .args(["-c", "pgrep -f 'apr.*train.*apply' | grep -v $$ | xargs -r kill 2>/dev/null"])
+        .args([
+            "-c",
+            "pgrep -f 'apr.*train.*apply' | grep -v $$ | xargs -r kill 2>/dev/null",
+        ])
         .status();
 }
 
@@ -589,7 +671,10 @@ fn write_crash_report(
 /// Capture GPU state via nvidia-smi.
 fn capture_gpu_state() -> serde_json::Value {
     let output = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=gpu_name,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=gpu_name,memory.used,memory.total,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ])
         .output();
 
     match output {
@@ -647,14 +732,17 @@ pub(crate) fn run_sweep(
         let filename = output_dir.join(format!("sweep-{i:03}.yaml"));
         let yaml_str = serde_yaml::to_string(config)
             .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
-        std::fs::write(&filename, &yaml_str)
-            .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", filename.display())))?;
+        std::fs::write(&filename, &yaml_str).map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot write {}: {e}", filename.display()))
+        })?;
 
-        let lr = config.get("optimizer")
+        let lr = config
+            .get("optimizer")
             .and_then(|o| o.get("lr"))
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0);
-        let bs = config.get("data")
+        let bs = config
+            .get("data")
             .and_then(|d| d.get("batch_size"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
@@ -666,7 +754,13 @@ pub(crate) fn run_sweep(
         }));
 
         if !json_output {
-            println!("  [{}] {} (lr={:.2e}, bs={})", i, filename.display(), lr, bs);
+            println!(
+                "  [{}] {} (lr={:.2e}, bs={})",
+                i,
+                filename.display(),
+                lr,
+                bs
+            );
         }
     }
 
@@ -677,20 +771,24 @@ pub(crate) fn run_sweep(
             "output_dir": output_dir.display().to_string(),
             "configs": results,
         });
-        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
     } else {
         println!();
-        println!("  {} Generated {} configs", "DONE".green().bold(), configs.len());
+        println!(
+            "  {} Generated {} configs",
+            "DONE".green().bold(),
+            configs.len()
+        );
     }
 
     Ok(())
 }
 
 /// Generate grid search configs over LR x batch_size x weight_decay.
-fn generate_grid_configs(
-    base: &serde_yaml::Value,
-    max_configs: usize,
-) -> Vec<serde_yaml::Value> {
+fn generate_grid_configs(base: &serde_yaml::Value, max_configs: usize) -> Vec<serde_yaml::Value> {
     let lr_values = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3];
     let bs_values: &[u64] = &[2, 4, 8];
     let wd_values = [0.0, 0.01, 0.1];
@@ -752,7 +850,9 @@ fn generate_random_configs(
 
 /// LCG pseudo-random: returns f64 in [0, 1).
 fn lcg_f64(state: &mut u64) -> f64 {
-    *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    *state = state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
     (*state >> 33) as f64 / (1u64 << 31) as f64
 }
 
@@ -790,6 +890,61 @@ fn set_yaml_u64(root: &mut serde_yaml::Value, path: &[&str], val: u64) {
 // Archive command (self-contained, no unpublished API deps)
 // ============================================================================
 
+/// Copy checkpoint files to output dir, computing BLAKE3 hashes.
+fn copy_checkpoint_files(
+    checkpoint_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    json_output: bool,
+) -> Result<(Vec<serde_json::Value>, u64)> {
+    let mut manifest_entries = Vec::new();
+    let mut total_bytes: u64 = 0;
+
+    for entry in std::fs::read_dir(checkpoint_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read dir: {e}")))?
+    {
+        let entry =
+            entry.map_err(|e| CliError::ValidationFailed(format!("Dir entry error: {e}")))?;
+        let src = entry.path();
+        if !src.is_file() {
+            continue;
+        }
+
+        let filename = src
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let dst = output_dir.join(&filename);
+
+        let data = std::fs::read(&src).map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot read {}: {e}", src.display()))
+        })?;
+        let size = data.len() as u64;
+        let hash = blake3::hash(&data).to_hex().to_string();
+
+        std::fs::write(&dst, &data).map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot write {}: {e}", dst.display()))
+        })?;
+
+        manifest_entries.push(serde_json::json!({
+            "file": filename,
+            "size": size,
+            "blake3": hash,
+        }));
+        total_bytes += size;
+
+        if !json_output {
+            println!(
+                "  [COPY] {} ({}, BLAKE3: {}...)",
+                filename,
+                format_archive_size(size),
+                &hash[..16]
+            );
+        }
+    }
+    Ok((manifest_entries, total_bytes))
+}
+
 pub(crate) fn run_archive(
     checkpoint_dir: &std::path::Path,
     output_dir: &std::path::Path,
@@ -799,7 +954,8 @@ pub(crate) fn run_archive(
 ) -> Result<()> {
     if !checkpoint_dir.is_dir() {
         return Err(CliError::ValidationFailed(format!(
-            "Not a directory: {}", checkpoint_dir.display()
+            "Not a directory: {}",
+            checkpoint_dir.display()
         )));
     }
 
@@ -817,41 +973,8 @@ pub(crate) fn run_archive(
         println!();
     }
 
-    let mut manifest_entries = Vec::new();
-    let mut total_bytes: u64 = 0;
-
-    for entry in std::fs::read_dir(checkpoint_dir)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot read dir: {e}")))?
-    {
-        let entry = entry
-            .map_err(|e| CliError::ValidationFailed(format!("Dir entry error: {e}")))?;
-        let src = entry.path();
-        if !src.is_file() {
-            continue;
-        }
-
-        let filename = src.file_name().unwrap_or_default().to_string_lossy().to_string();
-        let dst = output_dir.join(&filename);
-
-        let data = std::fs::read(&src)
-            .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", src.display())))?;
-        let size = data.len() as u64;
-        let hash = blake3::hash(&data).to_hex().to_string();
-
-        std::fs::write(&dst, &data)
-            .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", dst.display())))?;
-
-        manifest_entries.push(serde_json::json!({
-            "file": filename,
-            "size": size,
-            "blake3": hash,
-        }));
-        total_bytes += size;
-
-        if !json_output {
-            println!("  [COPY] {} ({}, BLAKE3: {}…)", filename, format_archive_size(size), &hash[..16]);
-        }
-    }
+    let (manifest_entries, total_bytes) =
+        copy_checkpoint_files(checkpoint_dir, output_dir, json_output)?;
 
     let manifest = serde_json::json!({
         "format": "albor-checkpoint-archive",
@@ -867,13 +990,18 @@ pub(crate) fn run_archive(
     std::fs::write(
         &manifest_path,
         serde_json::to_string_pretty(&manifest).unwrap_or_default(),
-    ).map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
 
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&manifest).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&manifest).unwrap_or_default()
+        );
     } else {
         println!();
-        println!("  [MANIFEST] {} ({} files, {})",
+        println!(
+            "  [MANIFEST] {} ({} files, {})",
             manifest_path.display(),
             manifest_entries.len(),
             format_archive_size(total_bytes),
@@ -936,14 +1064,18 @@ pub(crate) fn run_submit(
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-            "cluster": cluster_path,
-            "model": model_path,
-            "placements": entries,
-            "total_adapters": adapters.len(),
-            "placed": placements.len(),
-            "dry_run": dry_run,
-        })).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "cluster": cluster_path,
+                "model": model_path,
+                "placements": entries,
+                "total_adapters": adapters.len(),
+                "placed": placements.len(),
+                "dry_run": dry_run,
+            }))
+            .unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -961,8 +1093,12 @@ pub(crate) fn run_submit(
         .filter(|j| !placements.iter().any(|p| p.adapter_idx == j.adapter_idx))
         .collect();
     for j in &unplaced {
-        println!("  Adapter {} ({}): {} (no eligible node)",
-            j.adapter_idx, j.label, "UNPLACED".red());
+        println!(
+            "  Adapter {} ({}): {} (no eligible node)",
+            j.adapter_idx,
+            j.label,
+            "UNPLACED".red()
+        );
     }
 
     println!();
@@ -986,17 +1122,17 @@ pub(crate) fn run_submit(
 
     if dry_run {
         println!();
-        println!("  {} (dry run — no jobs launched)", "DRY RUN".yellow().bold());
+        println!(
+            "  {} (dry run — no jobs launched)",
+            "DRY RUN".yellow().bold()
+        );
     }
 
     Ok(())
 }
 
 /// Run `apr train cluster-status` — display cluster node info and capacity.
-pub(crate) fn run_cluster_status(
-    cluster_path: &std::path::Path,
-    json: bool,
-) -> Result<()> {
+pub(crate) fn run_cluster_status(cluster_path: &std::path::Path, json: bool) -> Result<()> {
     use entrenar::gpu::cluster::ClusterConfig;
 
     let cluster = ClusterConfig::from_file(cluster_path)
@@ -1026,17 +1162,24 @@ pub(crate) fn run_cluster_status(
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
-            "cluster_config": cluster_path,
-            "total_nodes": cluster.nodes.len(),
-            "total_adapter_capacity": cluster.total_adapter_capacity(),
-            "nodes": nodes,
-        })).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "cluster_config": cluster_path,
+                "total_nodes": cluster.nodes.len(),
+                "total_adapter_capacity": cluster.total_adapter_capacity(),
+                "nodes": nodes,
+            }))
+            .unwrap_or_default()
+        );
         return Ok(());
     }
 
     println!("{cluster}");
-    println!("Total adapter capacity: {}", cluster.total_adapter_capacity());
+    println!(
+        "Total adapter capacity: {}",
+        cluster.total_adapter_capacity()
+    );
 
     Ok(())
 }

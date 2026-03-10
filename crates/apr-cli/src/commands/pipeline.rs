@@ -136,7 +136,13 @@ mod tests {
 
     #[test]
     fn test_plan_nonexistent_manifest() {
-        let result = run_plan(Path::new("/nonexistent/manifest.yaml"), None, None, false, false);
+        let result = run_plan(
+            Path::new("/nonexistent/manifest.yaml"),
+            None,
+            None,
+            false,
+            false,
+        );
         assert!(result.is_err());
     }
 

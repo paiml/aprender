@@ -48,6 +48,15 @@ pub fn apr_import<P: AsRef<Path>>(
         }
     }
 
+    // realizar#136: Streaming import for sharded SafeTensors (>10B params).
+    // Writes tensors to disk incrementally — peak RAM = 1 shard (~5 GB) instead of full model.
+    let is_sharded_safetensors = local_path
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().ends_with(".index.json"));
+    if is_sharded_safetensors {
+        return streaming_sharded_import(&local_path, output_path, &options);
+    }
+
     // Non-GGUF path: Load tensors as f32, apply quantization during write
     let mut load_result = load_source_tensors(&local_path, &options)?;
 
@@ -544,5 +553,213 @@ fn resolve_url_source(url: &str) -> Result<PathBuf> {
     })
 }
 
+
+/// realizar#136: Streaming import for sharded SafeTensors models.
+///
+/// Processes one shard at a time, writing tensors to disk immediately via
+/// `AprV2StreamingWriter`. Peak RAM = 1 shard's mmap (~5 GB) + streaming
+/// writer's index entries (~180 KB for 1811 tensors).
+///
+/// For Qwen3.5-35B-A3B (67 GB, 14 shards, 1811 tensors), this uses ~5 GB
+/// peak RAM instead of ~134 GB with the non-streaming path.
+fn streaming_sharded_import(
+    index_path: &Path,
+    output_path: &Path,
+    options: &ImportOptions,
+) -> Result<ValidationReport> {
+    use crate::format::v2::{AprV2Metadata, AprV2StreamingWriter};
+
+    let content = fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to read shard index {}: {e}", index_path.display()),
+    })?;
+    let index = ShardIndex::from_json(&content)?;
+
+    if index.shard_count() == 0 {
+        return Err(AprenderError::FormatError {
+            message: "Shard index contains no shard files".to_string(),
+        });
+    }
+
+    let canonical_index =
+        std::fs::canonicalize(index_path).unwrap_or_else(|_| index_path.to_path_buf());
+    let base_dir = canonical_index
+        .parent()
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!(
+                "Cannot determine parent directory of {}",
+                index_path.display()
+            ),
+        })?;
+
+    // Load config.json and tokenizer
+    let sibling_path = base_dir.join("model.safetensors.index.json");
+    let model_config = load_model_config_from_json(&sibling_path);
+    let _tokenizer = load_tokenizer_from_json(&sibling_path);
+
+    if model_config.is_none() && !options.allow_no_config {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "config.json not found at {}. Use --allow-no-config to proceed without it.",
+                base_dir.join("config.json").display()
+            ),
+        });
+    }
+
+    // Infer architecture
+    let metadata_arch = infer_architecture(
+        &options.architecture,
+        model_config
+            .as_ref()
+            .and_then(|c| c.architecture.as_deref()),
+    );
+
+    // Build metadata for APR file
+    let param_count = 0u64; // Computed during finalize from tensor shapes
+    let metadata = AprV2Metadata {
+        model_type: format!("{metadata_arch:?}"),
+        name: Some(
+            output_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("model")
+                .to_string(),
+        ),
+        param_count,
+        architecture: model_config.as_ref().and_then(|c| c.architecture.clone()),
+        hidden_size: model_config.as_ref().and_then(|c| c.hidden_size),
+        num_layers: model_config.as_ref().and_then(|c| c.num_layers),
+        num_heads: model_config.as_ref().and_then(|c| c.num_heads),
+        num_kv_heads: model_config.as_ref().and_then(|c| c.num_kv_heads),
+        vocab_size: model_config.as_ref().and_then(|c| c.vocab_size),
+        intermediate_size: model_config.as_ref().and_then(|c| c.intermediate_size),
+        max_position_embeddings: model_config
+            .as_ref()
+            .and_then(|c| c.max_position_embeddings),
+        rope_theta: model_config.as_ref().and_then(|c| c.rope_theta),
+        rope_type: model_config.as_ref().and_then(|c| c.rope_type),
+        rms_norm_eps: model_config.as_ref().and_then(|c| c.rms_norm_eps),
+        ..Default::default()
+    };
+
+    eprintln!(
+        "[realizar#136] Streaming import: {} shards, {} tensors → {}",
+        index.shard_count(),
+        index.tensor_count(),
+        output_path.display(),
+    );
+
+    let mut writer =
+        AprV2StreamingWriter::new(metadata).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to create streaming writer: {e}"),
+        })?;
+
+    // Process each shard: mmap → extract tensors → write to streaming writer → drop mmap
+    let mut total_tensors = 0usize;
+    let mut f16_passthrough = 0usize;
+
+    for shard_file in index.shard_files() {
+        let shard_path = base_dir.join(shard_file);
+        if !shard_path.exists() {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Shard file {} not found at {}",
+                    shard_file,
+                    shard_path.display()
+                ),
+            });
+        }
+
+        let mapped =
+            MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to mmap shard {shard_file}: {e}"),
+            })?;
+
+        let names: Vec<String> = mapped
+            .tensor_names()
+            .iter()
+            .map(|&s| (*s).to_string())
+            .collect();
+
+        let mut shard_f16 = 0usize;
+
+        for name in &names {
+            if name.starts_with("__") {
+                continue;
+            }
+
+            let meta = mapped
+                .get_metadata(name)
+                .ok_or_else(|| AprenderError::FormatError {
+                    message: format!("Tensor metadata not found for '{name}'"),
+                })?;
+
+            // Map tensor name to canonical APR name
+            let mapped_name = metadata_arch.map_name(name);
+
+            let is_bf16 = meta.dtype == "BF16";
+            if meta.dtype == "F16" || is_bf16 {
+                if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
+                    // Write raw F16/BF16 bytes directly — zero copy from mmap to disk
+                    writer
+                        .add_raw_f16_tensor(&mapped_name, meta.shape.clone(), raw_bytes, is_bf16)
+                        .map_err(|e| AprenderError::FormatError {
+                            message: format!("Failed to write tensor '{mapped_name}': {e}"),
+                        })?;
+                    shard_f16 += 1;
+                    total_tensors += 1;
+                    continue;
+                }
+            }
+
+            // F32 path: convert and write
+            let data = mapped
+                .get_tensor(name)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to extract tensor '{name}': {e}"),
+                })?;
+
+            writer
+                .add_f32_tensor(&mapped_name, meta.shape.clone(), &data)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to write tensor '{mapped_name}': {e}"),
+                })?;
+            total_tensors += 1;
+        }
+
+        f16_passthrough += shard_f16;
+        eprintln!(
+            "[realizar#136] Shard {shard_file}: {} tensors ({shard_f16} F16 passthrough)",
+            names.len(),
+        );
+
+        // mapped (mmap) dropped here — OS reclaims virtual address space
+    }
+
+    eprintln!(
+        "[realizar#136] Streaming write complete: {} tensors ({} F16 passthrough), {:.1} GB data",
+        total_tensors,
+        f16_passthrough,
+        writer.data_bytes_written() as f64 / 1_073_741_824.0,
+    );
+
+    // Finalize: write header + metadata + index + data from temp file
+    writer
+        .finalize(output_path)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to finalize APR file: {e}"),
+        })?;
+
+    let file_size = fs::metadata(output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    eprintln!(
+        "[realizar#136] Written {} ({:.1} GB)",
+        output_path.display(),
+        file_size as f64 / 1_073_741_824.0,
+    );
+
+    // Return a basic validation report
+    Ok(ValidationReport::new())
+}
 
 include!("import_include_01.rs");

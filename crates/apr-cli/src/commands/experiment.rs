@@ -19,11 +19,7 @@ use std::path::{Path, PathBuf};
 type Result<T> = std::result::Result<T, CliError>;
 
 /// Interactive experiment browser — ratatui TUI with loss curves.
-pub(crate) fn experiment_view(
-    db: &Option<PathBuf>,
-    global: bool,
-    json: bool,
-) -> Result<()> {
+pub(crate) fn experiment_view(db: &Option<PathBuf>, global: bool, json: bool) -> Result<()> {
     let store = open_store(db, global)?;
     let experiments = store
         .list_experiments()
@@ -34,9 +30,7 @@ pub(crate) fn experiment_view(
             println!("[]");
         } else {
             println!("No experiments found.");
-            println!(
-                "Run training with `apr train apply` to populate the experiment database."
-            );
+            println!("Run training with `apr train apply` to populate the experiment database.");
         }
         return Ok(());
     }
@@ -119,9 +113,7 @@ fn param_to_json(v: &entrenar::storage::ParameterValue) -> serde_json::Value {
         ParameterValue::Int(i) => serde_json::json!(i),
         ParameterValue::Float(f) => serde_json::json!(f),
         ParameterValue::Bool(b) => serde_json::json!(b),
-        ParameterValue::List(l) => {
-            serde_json::Value::Array(l.iter().map(param_to_json).collect())
-        }
+        ParameterValue::List(l) => serde_json::Value::Array(l.iter().map(param_to_json).collect()),
         ParameterValue::Dict(d) => {
             let mut map = serde_json::Map::new();
             for (k, v) in d {
@@ -268,6 +260,20 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
     result
 }
 
+/// Handle a key press event in the experiment browser.
+fn handle_browser_key(app: &mut BrowserApp, code: KeyCode) {
+    match code {
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        KeyCode::Up | KeyCode::Char('k') => app.previous(),
+        KeyCode::Down | KeyCode::Char('j') => app.next(),
+        KeyCode::Home => app.selected = 0,
+        KeyCode::End => {
+            app.selected = app.rows.len().saturating_sub(1);
+        }
+        _ => {}
+    }
+}
+
 fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut BrowserApp,
@@ -283,18 +289,8 @@ fn run_event_loop(
             if let Event::Key(key) = event::read()
                 .map_err(|e| CliError::ValidationFailed(format!("Event read error: {e}")))?
             {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                    KeyCode::Down | KeyCode::Char('j') => app.next(),
-                    KeyCode::Home => app.selected = 0,
-                    KeyCode::End => {
-                        app.selected = app.rows.len().saturating_sub(1);
-                    }
-                    _ => {}
+                if key.kind == KeyEventKind::Press {
+                    handle_browser_key(app, key.code);
                 }
             }
         }
@@ -377,10 +373,7 @@ fn draw_run_table(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect) 
     f.render_widget(block, area);
 
     if inner.height > 1 {
-        let header_area = ratatui::layout::Rect {
-            height: 1,
-            ..inner
-        };
+        let header_area = ratatui::layout::Rect { height: 1, ..inner };
         let list_area = ratatui::layout::Rect {
             y: inner.y + 1,
             height: inner.height.saturating_sub(1),
@@ -392,8 +385,7 @@ fn draw_run_table(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect) 
         // Scroll to keep selected visible
         let visible = list_area.height as usize;
         let offset = app.selected.saturating_sub(visible.saturating_sub(1));
-        let visible_items: Vec<ListItem> =
-            items.into_iter().skip(offset).take(visible).collect();
+        let visible_items: Vec<ListItem> = items.into_iter().skip(offset).take(visible).collect();
         f.render_widget(List::new(visible_items), list_area);
     }
 }
@@ -460,10 +452,7 @@ fn draw_loss_panel(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect)
         .collect();
 
     // Split inner: sparkline (1 line) + braille (rest)
-    let spark_area = ratatui::layout::Rect {
-        height: 1,
-        ..inner
-    };
+    let spark_area = ratatui::layout::Rect { height: 1, ..inner };
     let braille_area = ratatui::layout::Rect {
         y: inner.y + 1,
         height: inner.height.saturating_sub(1),
@@ -492,11 +481,17 @@ fn draw_loss_panel(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect)
 
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect) {
     let footer = Paragraph::new(Line::from(vec![
-        Span::styled(" ^/v ", Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Span::styled(
+            " ^/v ",
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ),
         Span::styled(" Navigate  ", Style::default().fg(Color::Gray)),
         Span::styled(" q ", Style::default().fg(Color::White).bg(Color::DarkGray)),
         Span::styled(" Quit  ", Style::default().fg(Color::Gray)),
-        Span::styled(" Home/End ", Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Span::styled(
+            " Home/End ",
+            Style::default().fg(Color::White).bg(Color::DarkGray),
+        ),
         Span::styled(" Jump", Style::default().fg(Color::Gray)),
     ]));
     f.render_widget(footer, area);

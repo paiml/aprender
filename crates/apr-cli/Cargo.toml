@@ -70,6 +70,7 @@ inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
+dhat-heap = ["dep:dhat"]
 
 [dependencies]
 # Core aprender library
@@ -153,8 +154,10 @@ entrenar-lora = "0.3.0"
 # ML training engine: classification fine-tuning pipeline (--task classify)
 # ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
 entrenar = { version = "0.7.3", features = ["cuda", "gpu", "parquet"] }
+# Heap profiling (opt-in via --features dhat-heap)
+dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
-alimentar = { version = "0.2.6", default-features = false, features = ["shuffle"] }
+alimentar = { version = "0.2.8", path = "../../../alimentar", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

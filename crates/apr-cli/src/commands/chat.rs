@@ -218,26 +218,26 @@ fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
 }
 
 /// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
-fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
-    // 1a. Hash-prefixed sibling (pacha cache: {hash}.tokenizer.json)
+/// Search for a Qwen tokenizer alongside the model file.
+fn find_qwen_tokenizer_sibling(model_path: &Path) -> Option<Qwen2BpeTokenizer> {
     if let Some(parent) = model_path.parent() {
         if let Some(stem) = model_path.file_stem().and_then(|s| s.to_str()) {
             let prefixed = parent.join(format!("{stem}.tokenizer.json"));
             if let Some(tok) = try_tokenizer_at(&prefixed, " from pacha cache") {
-                return Ok(Some(tok));
+                return Some(tok);
             }
         }
     }
-
-    // 1b. Plain tokenizer.json in model's parent directory
-    if let Some(tok) = model_path
+    model_path
         .parent()
         .and_then(|p| try_tokenizer_at(&p.join("tokenizer.json"), ""))
-    {
+}
+
+fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
+    if let Some(tok) = find_qwen_tokenizer_sibling(model_path) {
         return Ok(Some(tok));
     }
 
-    // 2. HuggingFace + APR caches
     if let Some(home) = dirs::home_dir() {
         if let Some(tok) = search_hf_cache_tokenizer(&home.join(".cache/huggingface/hub")) {
             return Ok(Some(tok));

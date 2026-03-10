@@ -1,34 +1,14 @@
-# Nextest configuration for aprender
-# Canonical pattern from bashrs/trueno
-
-[store]
-dir = "target/nextest"
-
-[profile.default]
-retries = 0
-slow-timeout = { period = "60s", terminate-after = 2 }
-fail-fast = false
-test-threads = "num-cpus"
-
-[profile.coverage]
-# Optimized for coverage runs with LLVM instrumentation overhead
-retries = 0
-slow-timeout = { period = "90s", terminate-after = 2 }
-fail-fast = false
-test-threads = "num-cpus"
-status-level = "pass"
-
-[[profile.coverage.overrides]]
-# Property tests need more time under instrumentation
-filter = 'test(/prop_/)'
-slow-timeout = { period = "120s", terminate-after = 2 }
-
-[[profile.coverage.overrides]]
-# Format/conversion tests can be slow with large test data
-filter = 'test(/format_|import_|export_|convert_/)'
-slow-timeout = { period = "120s", terminate-after = 2 }
+# cargo-nextest CI profile
+# Deployed from paiml/infra — do not edit manually.
+# Spec: docs/specifications/unified-ci-pipeline.md
 
 [profile.ci]
-retries = 1
-slow-timeout = { period = "120s", terminate-after = 2 }
-fail-fast = false
+retries = 0
+fail-fast = true
+slow-warning = "60s"
+status-level = "fail"
+
+[profile.ci.junit]
+path = "target/nextest/ci/junit.xml"
+store-success-output = false
+store-failure-output = true

@@ -30,7 +30,12 @@ pub(crate) fn run(
     let mut recommendations: Vec<Recommendation> = Vec::new();
 
     check_checkpoint_integrity(checkpoint_dir, &mut findings, &mut recommendations)?;
-    let epoch_metrics = check_loss_curve(checkpoint_dir, num_classes, &mut findings, &mut recommendations);
+    let epoch_metrics = check_loss_curve(
+        checkpoint_dir,
+        num_classes,
+        &mut findings,
+        &mut recommendations,
+    );
     let eval_report = run_evaluation(
         checkpoint_dir,
         data_path,
@@ -90,9 +95,10 @@ fn check_checkpoint_integrity(
         let meta_str = std::fs::read_to_string(&meta_path).map_err(|e| {
             CliError::ValidationFailed(format!("Failed to read metadata.json: {e}"))
         })?;
-        Some(serde_json::from_str(&meta_str).map_err(|e| {
-            CliError::ValidationFailed(format!("Invalid metadata.json: {e}"))
-        })?)
+        Some(
+            serde_json::from_str(&meta_str)
+                .map_err(|e| CliError::ValidationFailed(format!("Invalid metadata.json: {e}")))?,
+        )
     } else {
         findings.push(Finding {
             category: "Checkpoint Integrity",
@@ -141,8 +147,7 @@ fn check_data_quality(
     }
 
     if let Ok(dataset) = alimentar::ArrowDataset::from_json(data) {
-        let imbalance = alimentar::imbalance::ImbalanceDetector::new("label")
-            .analyze(&dataset);
+        let imbalance = alimentar::imbalance::ImbalanceDetector::new("label").analyze(&dataset);
         if let Ok(report) = imbalance {
             if report.metrics.imbalance_ratio > 5.0 {
                 findings.push(Finding {
@@ -165,9 +170,7 @@ fn check_data_quality(
 // ── Generate recommendations ─────────────────────────────────────────────────
 
 fn generate_recommendations(findings: &[Finding], recommendations: &mut Vec<Recommendation>) {
-    let has_collapse = findings
-        .iter()
-        .any(|f| f.category == "Prediction Collapse");
+    let has_collapse = findings.iter().any(|f| f.category == "Prediction Collapse");
     if has_collapse {
         recommendations.push(Recommendation {
             priority: "P0",
@@ -175,10 +178,10 @@ fn generate_recommendations(findings: &[Finding], recommendations: &mut Vec<Reco
         });
     }
 
-    if findings.iter().any(|f| {
-        f.category == "Loss Curve"
-            && f.severity == Severity::Error
-    }) {
+    if findings
+        .iter()
+        .any(|f| f.category == "Loss Curve" && f.severity == Severity::Error)
+    {
         recommendations.push(Recommendation {
             priority: "P1",
             action: "Use LR finder to validate learning rate".to_string(),
@@ -215,7 +218,10 @@ fn output_json(
         })).collect::<Vec<_>>(),
         "eval_report": eval_report,
     });
-    println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).unwrap_or_default()
+    );
 }
 
 // ── Output: text ─────────────────────────────────────────────────────────────
@@ -257,11 +263,7 @@ fn output_text(
             Severity::Info => "i ".blue(),
         };
 
-        println!(
-            "{}  WHY {why_num}: {}",
-            severity_icon,
-            cat.white().bold()
-        );
+        println!("{}  WHY {why_num}: {}", severity_icon, cat.white().bold());
         for f in cat_findings {
             println!("     {}", f.message);
         }
@@ -300,12 +302,7 @@ fn output_text(
         let mut recs = recommendations;
         recs.sort_by(|a, b| a.priority.cmp(b.priority));
         for (i, r) in recs.iter().enumerate() {
-            println!(
-                "  {}. [{}] {}",
-                i + 1,
-                r.priority.yellow(),
-                r.action
-            );
+            println!("  {}. [{}] {}", i + 1, r.priority.yellow(), r.action);
         }
     }
 }

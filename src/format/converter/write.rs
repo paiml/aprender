@@ -36,50 +36,51 @@ use std::path::Path;
 /// all-zeros in SafeTensors since the runtime ties it to embed_tokens. We must detect
 /// this and copy the embedding data to lm_head for correct inference.
 /// Returns (possibly modified tensor map, whether tied embeddings were detected).
+/// ALB-099: Only clones tensor map when tied embeddings need synthesis.
+/// Previously cloned unconditionally (~1.4 GB for 350M model).
 fn resolve_f32_tied_embeddings(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-) -> (BTreeMap<String, (Vec<f32>, Vec<usize>)>, bool) {
-    let mut result = tensors.clone();
+) -> (std::borrow::Cow<'_, BTreeMap<String, (Vec<f32>, Vec<usize>)>>, bool) {
     let has_lm_head = tensors.keys().any(|k| k == "lm_head.weight");
 
     // GH-88: Detect degenerate lm_head (tied weights stored as near-zeros in SafeTensors).
-    // HuggingFace models with `tie_word_embeddings: true` store lm_head as zeros or
-    // near-zeros (99.9%+ zero rows) since the runtime ties it to embed_tokens.
     let lm_head_is_zero = has_lm_head
         && tensors
             .get("lm_head.weight")
             .map(|(data, _)| {
                 let zero_count = data.iter().filter(|&&x| x == 0.0).count();
-                // Degenerate if >99.9% of values are zero (allowing a handful of non-zero)
                 data.is_empty() || zero_count * 1000 >= data.len() * 999
             })
             .unwrap_or(false);
 
     let needs_synthesis = !has_lm_head || lm_head_is_zero;
 
-    if needs_synthesis {
-        let embed_key = tensors
-            .keys()
-            .find(|k| {
-                k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
-            })
-            .cloned();
-        if let Some(embed_name) = embed_key {
-            if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
-                if lm_head_is_zero {
-                    eprintln!(
-                        "[GH-88] lm_head.weight is all-zeros (tied embeddings) — replacing with {embed_name}"
-                    );
-                }
-                result.insert(
-                    "lm_head.weight".to_string(),
-                    (embed_data.clone(), embed_shape.clone()),
+    if !needs_synthesis {
+        return (std::borrow::Cow::Borrowed(tensors), false);
+    }
+
+    let mut result = tensors.clone();
+    let embed_key = tensors
+        .keys()
+        .find(|k| {
+            k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
+        })
+        .cloned();
+    if let Some(embed_name) = embed_key {
+        if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
+            if lm_head_is_zero {
+                eprintln!(
+                    "[GH-88] lm_head.weight is all-zeros (tied embeddings) — replacing with {embed_name}"
                 );
             }
+            result.insert(
+                "lm_head.weight".to_string(),
+                (embed_data.clone(), embed_shape.clone()),
+            );
         }
     }
-    let has_tied = needs_synthesis && result.contains_key("lm_head.weight");
-    (result, has_tied)
+    let has_tied = result.contains_key("lm_head.weight");
+    (std::borrow::Cow::Owned(result), has_tied)
 }
 
 /// Insert tokenizer metadata into APR custom fields for F32 tensor import path.
@@ -351,6 +352,10 @@ pub(crate) fn write_apr_file(
         rope_theta: model_config.and_then(|c| c.rope_theta),
         rope_type: model_config.and_then(|c| c.rope_type),
         rms_norm_eps: model_config.and_then(|c| c.rms_norm_eps),
+        head_dim: model_config.and_then(|c| c.head_dim),
+        num_experts: model_config.and_then(|c| c.num_experts),
+        num_experts_per_tok: model_config.and_then(|c| c.num_experts_per_tok),
+        moe_intermediate_size: model_config.and_then(|c| c.moe_intermediate_size),
         ..Default::default()
     };
 
@@ -360,7 +365,7 @@ pub(crate) fn write_apr_file(
     let mut writer = AprV2Writer::new(metadata);
 
     let mut f16_passthrough_count = 0usize;
-    for (name, (data, shape)) in &tensors_with_lm_head {
+    for (name, (data, shape)) in tensors_with_lm_head.iter() {
         if add_f32_tensor_to_writer(
             &mut writer,
             name,
@@ -387,32 +392,36 @@ pub(crate) fn write_apr_file(
 /// when the model doesn't have an output/lm_head weight (GH-202).
 ///
 /// Returns the (possibly modified) tensor map and whether tied embeddings were detected.
+/// ALB-099: Only clones tensor map when tied embeddings need synthesis.
 fn resolve_tied_embeddings(
     tensors: &BTreeMap<String, GgufRawTensor>,
-) -> (BTreeMap<String, GgufRawTensor>, bool) {
+) -> (std::borrow::Cow<'_, BTreeMap<String, GgufRawTensor>>, bool) {
     let original_has_lm_head = tensors
         .keys()
         .any(|k| k == "lm_head.weight" || k == "output.weight");
+
+    if original_has_lm_head {
+        return (std::borrow::Cow::Borrowed(tensors), false);
+    }
+
     let mut result = tensors.clone();
-    if !original_has_lm_head {
-        let embed_key = result
-            .keys()
-            .find(|k| {
-                k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
-            })
-            .cloned();
-        if let Some(embed_name) = embed_key {
-            if let Some(embed_tensor) = result.get(&embed_name).cloned() {
-                eprintln!(
-                    "[GH-202] Synthesizing lm_head.weight from {} (tied embeddings)",
-                    embed_name
-                );
-                result.insert("lm_head.weight".to_string(), embed_tensor);
-            }
+    let embed_key = result
+        .keys()
+        .find(|k| {
+            k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
+        })
+        .cloned();
+    if let Some(embed_name) = embed_key {
+        if let Some(embed_tensor) = result.get(&embed_name).cloned() {
+            eprintln!(
+                "[GH-202] Synthesizing lm_head.weight from {} (tied embeddings)",
+                embed_name
+            );
+            result.insert("lm_head.weight".to_string(), embed_tensor);
         }
     }
-    let has_tied = !original_has_lm_head && result.contains_key("lm_head.weight");
-    (result, has_tied)
+    let has_tied = result.contains_key("lm_head.weight");
+    (std::borrow::Cow::Owned(result), has_tied)
 }
 
 /// Insert common tokenizer fields shared by both import paths.

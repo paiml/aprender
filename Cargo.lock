@@ -124,6 +124,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "alimentar"
+version = "0.2.8"
+dependencies = [
+ "arrow 57.3.0",
+ "arrow-csv",
+ "arrow-json",
+ "bytes",
+ "clap",
+ "crossterm",
+ "lz4_flex",
+ "memmap2",
+ "nu-ansi-term",
+ "parquet 57.3.0",
+ "rand 0.8.5",
+ "reedline",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "unicode-width 0.2.0",
+ "zstd",
+]
+
+[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -241,7 +268,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "apr-cli"
 version = "0.4.10"
 dependencies = [
- "alimentar",
+ "alimentar 0.2.8",
  "aprender 0.27.4",
  "assert_cmd",
  "axum",
@@ -313,7 +340,7 @@ name = "aprender"
 version = "0.27.4"
 dependencies = [
  "aes-gcm",
- "alimentar",
+ "alimentar 0.2.8",
  "alsa",
  "argon2",
  "batuta-common",
@@ -2253,6 +2280,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "serde_yaml_ng",
  "sha2",
  "thiserror 2.0.18",
  "tokio",
@@ -4990,6 +5018,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25d845cee13c0160ff2d644c8bd4b65a8487f894a827d9d0fe23d47980a9fa5"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -6788,6 +6817,7 @@ dependencies = [
  "pollster",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "thiserror 2.0.18",
  "toml",
  "trueno-gpu",

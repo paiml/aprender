@@ -34,6 +34,22 @@ impl AprV2Writer {
         self.add_tensor(name, TensorDType::F32, shape, bytes);
     }
 
+    /// ALB-099: Add f32 tensor from owned Vec — pre-allocated byte conversion.
+    /// Uses capacity-hinted Vec + extend_from_slice instead of flat_map + collect.
+    pub fn add_tensor_f32_owned(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        data: Vec<f32>,
+    ) {
+        let mut bytes = Vec::with_capacity(data.len() * 4);
+        for &f in &data {
+            bytes.extend_from_slice(&f.to_le_bytes());
+        }
+        drop(data);
+        self.add_tensor(name, TensorDType::F32, shape, bytes);
+    }
+
     /// Add f16 tensor (converts f32 → f16, 2 bytes per value)
     ///
     /// This provides true 2x compression over f32 storage with minimal precision loss
@@ -295,8 +311,10 @@ impl AprV2Writer {
         self.header.data_offset = data_section_offset as u64;
         self.header.update_checksum();
 
-        // Build output
-        let mut output = Vec::new();
+        // ALB-099: Pre-allocate output with known total size
+        let total_data_size: usize = self.tensors.iter().map(|(_, d)| align_64(d.len())).sum();
+        let total_size = data_section_offset + total_data_size + 4; // +4 for footer CRC32
+        let mut output = Vec::with_capacity(total_size);
 
         // Header
         output.extend_from_slice(&self.header.to_bytes());
@@ -333,6 +351,16 @@ impl AprV2Writer {
         writer
             .write_all(&bytes)
             .map_err(|e| V2FormatError::IoError(e.to_string()))
+    }
+
+    /// ALB-099: Write directly to a file path — consumes writer.
+    ///
+    /// # Errors
+    /// Returns error if file creation or write fails.
+    pub fn write_into(mut self, path: impl AsRef<std::path::Path>) -> Result<(), V2FormatError> {
+        let mut file = std::fs::File::create(path)
+            .map_err(|e| V2FormatError::IoError(e.to_string()))?;
+        self.write_to(&mut file)
     }
 }
 

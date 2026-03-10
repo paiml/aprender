@@ -78,6 +78,24 @@ impl RosettaStone {
     ///
     /// # Errors
     ///
+    /// ALB-099: Metadata-only validation (no dequantization).
+    /// Checks tensor count and file readability without loading tensor data.
+    /// Used by contract gate in `apr run` to avoid 8 GB heap overhead.
+    pub fn validate_metadata_only<P: AsRef<Path>>(&self, path: P) -> Result<ValidationReport> {
+        let path = path.as_ref();
+        let start = std::time::Instant::now();
+        let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
+
+        let mut report = match format {
+            FormatType::Gguf => self.validate_gguf_metadata_only(path)?,
+            // SafeTensors and APR already use mmap, so full validation is fast
+            FormatType::SafeTensors => self.validate_safetensors(path)?,
+            FormatType::Apr => self.validate_apr(path)?,
+        };
+        report.duration_ms = start.elapsed().as_millis() as u64;
+        Ok(report)
+    }
+
     /// Returns error if file cannot be read or format is unknown
     pub fn validate<P: AsRef<Path>>(&self, path: P) -> Result<ValidationReport> {
         let path = path.as_ref();
@@ -319,6 +337,38 @@ impl RosettaStone {
     // ------------------------------------------------------------------------
     // Validation Methods (GH-175, PMAT-180)
     // ------------------------------------------------------------------------
+
+    /// ALB-099: Metadata-only GGUF validation — reads only 24-byte header.
+    /// Checks magic number and tensor count without loading the file.
+    /// Saves 1.1+ GB of heap allocations vs `GgufReader::from_file`.
+    fn validate_gguf_metadata_only(&self, path: &Path) -> Result<ValidationReport> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path).map_err(AprenderError::Io)?;
+        let mut header = [0u8; 24];
+        file.read_exact(&mut header).map_err(AprenderError::Io)?;
+
+        let magic = u32::from_le_bytes([header[0], header[1], header[2], header[3]]);
+        let tensor_count = u64::from_le_bytes([
+            header[8], header[9], header[10], header[11], header[12], header[13], header[14],
+            header[15],
+        ]) as usize;
+
+        // GGUF magic: 0x46554747 ("GGUF" as little-endian u32)
+        let is_valid = magic == 0x4655_4747 && tensor_count > 0;
+
+        Ok(ValidationReport {
+            format: FormatType::Gguf,
+            file_path: path.display().to_string(),
+            is_valid,
+            tensor_count,
+            failed_tensor_count: 0,
+            total_nan_count: 0,
+            total_inf_count: 0,
+            all_zero_tensors: Vec::new(),
+            tensors: Vec::new(),
+            duration_ms: 0,
+        })
+    }
 
     fn validate_gguf(&self, path: &Path) -> Result<ValidationReport> {
         use crate::format::gguf::GgufReader;

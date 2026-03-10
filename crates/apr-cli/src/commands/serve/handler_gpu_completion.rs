@@ -442,15 +442,43 @@ fn start_gguf_server_cuda(
         "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
     );
 
-    match OwnedQuantizedModelCuda::new(quantized_model, 0) {
+    // GH-129: Allow max_seq_len override for memory-constrained devices (Jetson 7.4 GB unified)
+    let max_seq_len = std::env::var("REALIZR_MAX_SEQ_LEN")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2048);
+    println!("  Max sequence length: {max_seq_len}");
+
+    match OwnedQuantizedModelCuda::with_max_seq_len(quantized_model, 0, max_seq_len) {
         Ok(mut cuda_model) => {
             preload_gpu_weights(&mut cuda_model);
+
+            // GH-129: Free CPU weight copies on unified memory devices (Jetson).
+            // After GPU preload, the CPU Vec<u8> copies are redundant — saves ~1 GB.
+            // NOTE: Disabled — OwnedQuantizedModelCuda::free_cpu_weights() removed upstream.
+            // Re-enable when realizar re-exposes this method.
+            // if std::env::var("REALIZR_FREE_CPU_WEIGHTS").as_deref() == Ok("1") {
+            //     cuda_model.free_cpu_weights();
+            // }
+
             println!("{}", "CUDA optimized model ready".green());
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                .with_verbose(false) // TODO: restore with_batch_config when realizar API stabilizes
-                .with_verbose(config.verbose);
+                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+
+            // PMAT-044: Spawn continuous batch scheduler for concurrent request handling
+            let cuda_model_arc = state.cuda_model().expect("just created").clone();
+            let batch_config = realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
+            println!(
+                "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
+                batch_config.max_batch, batch_config.window_ms
+            );
+            let batch_tx = realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
+                cuda_model_arc,
+                batch_config,
+            );
+
+            let state = state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose);
 
             let app = create_router(state);
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")

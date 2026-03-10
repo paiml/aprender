@@ -29,10 +29,10 @@ pub mod federation;
 // Commands are crate-private, used internally by execute_command
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, data, debug,
-    diagnose, diff, distill, eval, explain, export, finetune, flow, gpu, hex, import, inspect, lint,
-    merge, oracle, pipeline, probar, profile, prune, ptx_explain, publish, pull, qa, qualify, quantize,
-    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, train,
-    tree, tui, tune, validate,
+    diagnose, diff, distill, eval, explain, export, finetune, flow, gpu, hex, import, inspect,
+    lint, merge, oracle, pipeline, probar, profile, prune, ptx_explain, publish, pull, qa, qualify,
+    quantize, rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace,
+    train, tree, tui, tune, validate,
 };
 
 /// apr - APR Model Operations Tool

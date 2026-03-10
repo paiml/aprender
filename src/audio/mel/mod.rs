@@ -342,6 +342,45 @@ pub struct MelFilterbank {
     n_freqs: usize,
     /// Precomputed Hann window
     window: Vec<f32>,
+    /// Sparse filterbank: per-mel (start_freq, end_freq, non-zero values)
+    /// Triangular mel filters have ~10-20 non-zero entries out of 201,
+    /// so sparse representation skips 90%+ of zero multiplies.
+    sparse_filters: Vec<SparseFilter>,
+}
+
+/// Sparse representation of a single mel filter row
+#[derive(Clone, Debug)]
+struct SparseFilter {
+    /// First non-zero frequency bin index
+    start: usize,
+    /// Non-zero filter values (contiguous from `start`)
+    values: Vec<f32>,
+}
+
+/// Pre-allocated scratch buffers for FFT computation (PMAT-014 O4).
+///
+/// Created once per `compute()` call and reused across all frames,
+/// reducing allocations from ~11 per frame to ~5 total.
+struct FftScratch {
+    fft: std::sync::Arc<dyn rustfft::Fft<f32>>,
+    fft_buf: Vec<rustfft::num_complex::Complex<f32>>,
+    fft_scratch: Vec<rustfft::num_complex::Complex<f32>>,
+    power_spec: Vec<f32>,
+}
+
+impl FftScratch {
+    fn new(n_fft: usize, n_freqs: usize) -> Self {
+        use rustfft::{num_complex::Complex, FftPlanner};
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(n_fft);
+        let scratch_len = fft.get_inplace_scratch_len();
+        Self {
+            fft,
+            fft_buf: vec![Complex::new(0.0, 0.0); n_fft],
+            fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
+            power_spec: vec![0.0_f32; n_freqs],
+        }
+    }
 }
 
 include!("filterbank.rs");

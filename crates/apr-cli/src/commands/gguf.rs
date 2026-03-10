@@ -290,8 +290,11 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     // NOTE: Per-brick timing requires CUDA sync after each brick, which adds overhead
     // We enable it for detailed profiling but acknowledge throughput may be lower
     cuda_model.enable_profiling();
+    // GH-176: Set Immediate sync mode so start/stop_brick actually calls
+    // stream.synchronize() — without this, timings are CPU-side launch latency only.
+    cuda_model.executor_mut().set_profiler_sync_mode(trueno::SyncMode::Immediate);
     cuda_model.reset_profiler();
-    eprintln!("cbtop: BrickProfiler enabled (PAR-073)");
+    eprintln!("cbtop: BrickProfiler enabled (PAR-073, Immediate sync)");
     eprintln!();
 
     // Phase 2: Measure throughput
@@ -339,16 +342,9 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     print_profiler_brick_stats(&cuda_model);
     eprintln!();
 
-    let brick_reports = benchmark_bricks(
-        &config,
-        hidden_dim,
-        num_heads,
-        num_kv_heads,
-        head_dim,
-        measured_per_layer_us,
-        tokens_per_sec,
-        num_layers,
-    );
+    // GH-176: Use REAL profiler data for brick scores, not derived estimates.
+    // The BrickProfiler has per-operation timing from actual CUDA-synced measurements.
+    let brick_reports = brick_scores_from_profiler(&cuda_model, num_layers);
 
     let cv_percent = compute_cv_percent(&latencies_us);
 
@@ -366,6 +362,69 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         &latencies_us,
         brick_reports,
     )
+}
+
+/// GH-176: Build brick scores from real BrickProfiler measurements.
+/// Replaces derived estimates (the `*` suffixed fugazi) with actual GPU timing.
+#[cfg(feature = "inference")]
+fn brick_scores_from_profiler(
+    cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
+    _num_layers: usize,
+) -> Vec<BrickScore> {
+    let profiler = cuda_model.profiler();
+    let mut scores = Vec::new();
+
+    // Collect all bricks with real data (known BrickId + dynamic), sorted by time
+    let mut all: Vec<&trueno::BrickStats> = profiler.all_brick_stats().collect();
+    all.sort_by(|a, b| b.total_ns.cmp(&a.total_ns));
+
+    let total_ns: u64 = all.iter().map(|s| s.total_ns).sum();
+    let total_us = total_ns as f64 / 1000.0;
+
+    // C-GDP-001: Wall coverage — brick time vs wall clock.
+    // total_tokens from profiler counts brick ELEMENTS, not decoded tokens.
+    // Decoded tokens = LmHead.count (exactly 1 LmHead call per decoded token).
+    let decoded_tokens = all.iter()
+        .find(|s| s.name == "LmHead")
+        .map_or(1u64, |s| s.count.max(1));
+
+    let wall_us_per_token = total_us / decoded_tokens as f64;
+
+    eprintln!("=== Real Brick Scores (from BrickProfiler) ===");
+    eprintln!(
+        "  Total: {:.1}µs across {} decoded tokens ({:.1}µs/decoded_tok)",
+        total_us, decoded_tokens, wall_us_per_token,
+    );
+
+    for stats in &all {
+        let avg_us = stats.avg_us();
+        // Per-decoded-token cost = (count * avg_us) / decoded_tokens
+        let per_decoded_tok_us = (stats.count as f64 * avg_us) / decoded_tokens as f64;
+        let pct = if total_ns > 0 { 100.0 * stats.total_ns as f64 / total_ns as f64 } else { 0.0 };
+
+        eprintln!(
+            "  {:30} avg={:8.1}µs  per_tok={:8.1}µs ({:5.1}%)  n={}  calls/tok={}",
+            stats.name, avg_us, per_decoded_tok_us, pct, stats.count,
+            stats.count / decoded_tokens,
+        );
+
+        // Score using per-call average vs wall budget fraction
+        let budget_us = wall_us_per_token * (pct / 100.0);
+        let score = compute_brick_score(per_decoded_tok_us, budget_us);
+        let grade = score_to_grade(score);
+
+        scores.push(BrickScore {
+            name: stats.name.clone(),
+            score,
+            grade: grade.to_string(),
+            budget_us: per_decoded_tok_us,
+            actual_us: avg_us,
+            gap_factor: if budget_us > 0.0 { per_decoded_tok_us / budget_us } else { 1.0 },
+        });
+    }
+
+    eprintln!();
+    scores
 }
 
 /// Load and initialize GGUF model for CUDA profiling.

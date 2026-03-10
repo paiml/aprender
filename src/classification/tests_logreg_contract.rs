@@ -125,6 +125,135 @@ fn falsify_logreg_005_probabilities_sum_to_one() {
     }
 }
 
+/// FALSIFY-LOGREG-006: Balanced class weights improve minority recall on imbalanced data
+#[test]
+fn falsify_logreg_006_balanced_class_weight() {
+    // 90% class 0, 10% class 1 — heavily imbalanced
+    let n0 = 90;
+    let n1 = 10;
+    let n = n0 + n1;
+    let mut x_data = Vec::with_capacity(n * 2);
+    let mut y_data = Vec::with_capacity(n);
+
+    // Class 0: cluster around (0, 0) with slight spread
+    for i in 0..n0 {
+        x_data.push(i as f32 * 0.01);
+        x_data.push(i as f32 * 0.005);
+        y_data.push(0);
+    }
+    // Class 1: cluster around (5, 5)
+    for i in 0..n1 {
+        x_data.push(5.0 + i as f32 * 0.1);
+        x_data.push(5.0 + i as f32 * 0.05);
+        y_data.push(1);
+    }
+
+    let x = Matrix::from_vec(n, 2, x_data).expect("valid");
+
+    // Train WITHOUT class weights
+    let mut lr_uniform = LogisticRegression::new().with_max_iter(1000);
+    lr_uniform.fit(&x, &y_data).expect("fit");
+    let preds_uniform = lr_uniform.predict(&x);
+    let recall_uniform = {
+        let tp = preds_uniform.iter().zip(y_data.iter())
+            .filter(|(p, y)| **p == 1 && **y == 1).count();
+        tp as f32 / n1 as f32
+    };
+
+    // Train WITH balanced class weights
+    let mut lr_balanced = LogisticRegression::new()
+        .with_max_iter(1000)
+        .with_class_weight(ClassWeight::Balanced);
+    lr_balanced.fit(&x, &y_data).expect("fit");
+    let preds_balanced = lr_balanced.predict(&x);
+    let recall_balanced = {
+        let tp = preds_balanced.iter().zip(y_data.iter())
+            .filter(|(p, y)| **p == 1 && **y == 1).count();
+        tp as f32 / n1 as f32
+    };
+
+    // Balanced should have at least as good recall on minority class
+    assert!(
+        recall_balanced >= recall_uniform,
+        "FALSIFIED LOGREG-006: balanced recall {recall_balanced} < uniform recall {recall_uniform}"
+    );
+}
+
+/// FALSIFY-LOGREG-007: L2 regularization reduces coefficient magnitudes
+#[test]
+fn falsify_logreg_007_l2_reduces_coefficients() {
+    let x = Matrix::from_vec(
+        6, 2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    ).expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    // Train without L2
+    let mut lr_no_reg = LogisticRegression::new().with_max_iter(1000);
+    lr_no_reg.fit(&x, &y).expect("fit");
+    let norm_no_reg: f32 = (0..lr_no_reg.coefficients().len())
+        .map(|i| lr_no_reg.coefficients()[i].powi(2))
+        .sum::<f32>()
+        .sqrt();
+
+    // Train with strong L2
+    let mut lr_reg = LogisticRegression::new()
+        .with_max_iter(1000)
+        .with_l2_penalty(0.1);
+    lr_reg.fit(&x, &y).expect("fit");
+    let norm_reg: f32 = (0..lr_reg.coefficients().len())
+        .map(|i| lr_reg.coefficients()[i].powi(2))
+        .sum::<f32>()
+        .sqrt();
+
+    assert!(
+        norm_reg < norm_no_reg,
+        "FALSIFIED LOGREG-007: L2 norm {norm_reg} >= unregularized {norm_no_reg}"
+    );
+}
+
+/// FALSIFY-LOGREG-008: Manual class weights are applied correctly
+#[test]
+fn falsify_logreg_008_manual_class_weight() {
+    let x = Matrix::from_vec(
+        6, 2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+    ).expect("valid");
+    let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+    // Manual weights: upweight class 1 by 5x
+    let mut lr = LogisticRegression::new()
+        .with_max_iter(1000)
+        .with_class_weight(ClassWeight::Manual(vec![1.0, 5.0]));
+    lr.fit(&x, &y).expect("fit");
+
+    let preds = lr.predict(&x);
+    // With 5x weight on class 1, all class-1 samples should be correctly classified
+    let class1_correct = preds.iter().zip(y.iter())
+        .filter(|(p, y)| **y == 1 && *p == *y)
+        .count();
+    assert_eq!(
+        class1_correct, 3,
+        "FALSIFIED LOGREG-008: only {class1_correct}/3 class-1 samples correct with 5x weight"
+    );
+}
+
+/// FALSIFY-LOGREG-009: Default backward compatibility (no class weight, no L2)
+#[test]
+fn falsify_logreg_009_backward_compatible() {
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
+    let y = vec![0_usize, 0, 1, 1];
+
+    let mut lr = LogisticRegression::new().with_max_iter(1000);
+    lr.fit(&x, &y).expect("fit");
+
+    let preds = lr.predict(&x);
+    // Should still classify correctly without new features
+    assert_eq!(preds, vec![0, 0, 1, 1],
+        "FALSIFIED LOGREG-009: default model fails on linearly separable data"
+    );
+}
+
 mod logreg_proptest_falsify {
     use super::*;
     use proptest::prelude::*;

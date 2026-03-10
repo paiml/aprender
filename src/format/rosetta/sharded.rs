@@ -199,7 +199,7 @@ impl RosettaStone {
         Ok(())
     }
 
-    #[allow(clippy::only_used_in_recursion)] // Self is needed for recursive convert calls
+    #[allow(clippy::self_only_used_in_recursion)] // Self is needed for recursive convert calls
     fn convert_internal(
         &self,
         source: &Path,

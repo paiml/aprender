@@ -89,7 +89,11 @@ fn merge_adapters_config(
             entrenar::finetune::multi_adapter_pipeline::AdaptersConfigFile::from_file(path)
                 .map_err(CliError::ValidationFailed)?;
         for entry in &config.adapters {
-            all.push(format!("{}:{}", entry.data.display(), entry.checkpoint.display()));
+            all.push(format!(
+                "{}:{}",
+                entry.data.display(),
+                entry.checkpoint.display()
+            ));
         }
         if !json_output {
             eprintln!(
@@ -393,6 +397,130 @@ fn display_adapter_result(
     }
 }
 
+/// Wait for GPU VRAM availability before starting training.
+fn wait_for_gpu_vram(wait_gpu: u64, vram_gb: f64, task: Option<&str>) -> Result<()> {
+    let vram_mb = (vram_gb * 1024.0) as usize;
+    let task_name = task.unwrap_or("finetune");
+    eprintln!("[GPU] Waiting up to {wait_gpu}s for {vram_mb} MB VRAM ({task_name})...");
+    let mut ledger = entrenar::gpu::ledger::auto_ledger();
+    let config = entrenar::gpu::wait::WaitConfig::with_timeout_secs(wait_gpu);
+    let mut profiler = entrenar::gpu::profiler::GpuProfiler::disabled();
+    match entrenar::gpu::wait::wait_for_vram(
+        &mut ledger,
+        vram_mb,
+        task_name,
+        &config,
+        &mut profiler,
+    ) {
+        Ok(id) => {
+            eprintln!("[GPU] VRAM reserved: {vram_mb} MB (id: {id})");
+            Ok(())
+        }
+        Err(e) => Err(CliError::Aprender(format!("VRAM wait failed: {e}"))),
+    }
+}
+
+/// Dispatch to specialized finetune modes (merge, classify, multi-adapter, instruct).
+/// Returns Some(result) if a mode was matched, None to continue to default LoRA path.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_finetune_mode(
+    merge_mode: bool,
+    model_path: Option<&Path>,
+    adapter_path: Option<&Path>,
+    output_path: Option<&Path>,
+    model_size: Option<&str>,
+    data_path: Option<&Path>,
+    num_classes: usize,
+    rank: Option<u32>,
+    epochs: u32,
+    learning_rate: f64,
+    plan_only: bool,
+    checkpoint_format: &str,
+    oversample: bool,
+    max_seq_len: Option<usize>,
+    quantize_nf4: bool,
+    gpus: Option<&str>,
+    gpu_backend: &str,
+    role: Option<&str>,
+    bind: Option<&str>,
+    coordinator: Option<&str>,
+    expect_workers: Option<usize>,
+    adapters: &[String],
+    json_output: bool,
+    task: Option<&str>,
+    method: &str,
+    vram_gb: f64,
+) -> Option<Result<()>> {
+    if merge_mode {
+        return Some(run_merge(
+            model_path,
+            adapter_path,
+            output_path,
+            json_output,
+        ));
+    }
+
+    if let Some("classify") = task {
+        return Some(run_classify(
+            model_path,
+            model_size,
+            data_path,
+            output_path,
+            num_classes,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            checkpoint_format,
+            oversample,
+            max_seq_len,
+            quantize_nf4,
+            gpus,
+            gpu_backend,
+            role,
+            bind,
+            coordinator,
+            expect_workers,
+            json_output,
+        ));
+    }
+
+    if !adapters.is_empty() {
+        return Some(run_multi_adapter(
+            model_path,
+            model_size,
+            adapters,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            quantize_nf4,
+            max_seq_len,
+            json_output,
+        ));
+    }
+
+    if let Some("instruct") = task {
+        return Some(run_instruct(
+            model_path,
+            model_size,
+            data_path,
+            output_path,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            json_output,
+            method,
+            quantize_nf4,
+            max_seq_len,
+            vram_gb,
+        ));
+    }
+
+    None
+}
+
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -428,106 +556,46 @@ pub(crate) fn run(
     experimental_mps: bool,
     gpu_share: u32,
 ) -> Result<()> {
-    // MPS setup (GPU-SHARE §1.5) — must happen before any CUDA context creation
     if experimental_mps {
         setup_mps(gpu_share, json_output)?;
     }
 
-    // Merge --adapters-config TOML entries into the adapters list (GPU-SHARE §2.4)
     let all_adapters = merge_adapters_config(adapters, adapters_config, json_output)?;
     let adapters = &all_adapters;
 
-    // Wait for VRAM if requested (GPU-SHARE-003)
     if wait_gpu > 0 {
-        let vram_mb = (vram_gb * 1024.0) as usize;
-        let task_name = task.unwrap_or("finetune");
-        eprintln!(
-            "[GPU] Waiting up to {wait_gpu}s for {vram_mb} MB VRAM ({task_name})..."
-        );
-        let mut ledger = entrenar::gpu::ledger::auto_ledger();
-        let config =
-            entrenar::gpu::wait::WaitConfig::with_timeout_secs(wait_gpu);
-        let mut profiler = entrenar::gpu::profiler::GpuProfiler::disabled();
-        match entrenar::gpu::wait::wait_for_vram(
-            &mut ledger,
-            vram_mb,
-            task_name,
-            &config,
-            &mut profiler,
-        ) {
-            Ok(id) => eprintln!("[GPU] VRAM reserved: {vram_mb} MB (id: {id})"),
-            Err(e) => {
-                return Err(CliError::Aprender(format!(
-                    "VRAM wait failed: {e}"
-                )));
-            }
-        }
-        // Note: ledger reservation will be released on drop (end of training)
+        wait_for_gpu_vram(wait_gpu, vram_gb, task)?;
     }
 
-    if merge_mode {
-        return run_merge(model_path, adapter_path, output_path, json_output);
-    }
-
-    // Dispatch to classification pipeline when --task classify
-    if let Some("classify") = task {
-        return run_classify(
-            model_path,
-            model_size,
-            data_path,
-            output_path,
-            num_classes,
-            rank.unwrap_or(16),
-            epochs,
-            learning_rate,
-            plan_only,
-            checkpoint_format,
-            oversample,
-            max_seq_len,
-            quantize_nf4,
-            gpus,
-            gpu_backend,
-            role,
-            bind,
-            coordinator,
-            expect_workers,
-            json_output,
-        );
-    }
-
-    // GPU-SHARE Phase 2: Multi-adapter training (GH-206)
-    if !adapters.is_empty() {
-        return run_multi_adapter(
-            model_path,
-            model_size,
-            adapters,
-            rank.unwrap_or(16),
-            epochs,
-            learning_rate,
-            plan_only,
-            quantize_nf4,
-            max_seq_len,
-            json_output,
-        );
-    }
-
-    // Dispatch to instruction fine-tuning pipeline when --task instruct (GH-371)
-    if let Some("instruct") = task {
-        return run_instruct(
-            model_path,
-            model_size,
-            data_path,
-            output_path,
-            rank.unwrap_or(16),
-            epochs,
-            learning_rate,
-            plan_only,
-            json_output,
-            method,
-            quantize_nf4,
-            max_seq_len,
-            vram_gb,
-        );
+    if let Some(dispatched) = dispatch_finetune_mode(
+        merge_mode,
+        model_path,
+        adapter_path,
+        output_path,
+        model_size,
+        data_path,
+        num_classes,
+        rank,
+        epochs,
+        learning_rate,
+        plan_only,
+        checkpoint_format,
+        oversample,
+        max_seq_len,
+        quantize_nf4,
+        gpus,
+        gpu_backend,
+        role,
+        bind,
+        coordinator,
+        expect_workers,
+        adapters,
+        json_output,
+        task,
+        method,
+        vram_gb,
+    ) {
+        return dispatched;
     }
 
     let ft_method: FinetuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
@@ -551,34 +619,49 @@ pub(crate) fn run(
     let config = plan(model_params, vram_gb, ft_method.into())
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
 
-    let planner = MemoryPlanner::new(model_params);
-    let req = planner.estimate(config.method, config.rank);
-
-    if json_output {
-        display_plan_json(
-            &config,
-            &req,
-            model_params,
-            vram_gb,
-            epochs,
-            learning_rate,
-            plan_only,
-        );
-    } else {
-        display_plan_text(&config, &req, vram_gb);
-    }
+    display_finetune_plan(
+        &config,
+        model_params,
+        vram_gb,
+        epochs,
+        learning_rate,
+        plan_only,
+        json_output,
+    );
 
     if plan_only {
         return Ok(());
     }
 
-    let Some(data) = data_path else {
-        display_next_steps(json_output);
-        return Ok(());
+    run_finetune_training(
+        model_path,
+        data_path,
+        output_path,
+        &config,
+        epochs,
+        learning_rate,
+        json_output,
+    )
+}
+
+/// Validate inputs and execute the LoRA training pipeline.
+fn run_finetune_training(
+    model_path: Option<&Path>,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    config: &OptimalConfig,
+    epochs: u32,
+    learning_rate: f64,
+    json_output: bool,
+) -> Result<()> {
+    let data = match data_path {
+        Some(d) if d.exists() => d,
+        Some(d) => return Err(CliError::FileNotFound(d.to_path_buf())),
+        None => {
+            display_next_steps(json_output);
+            return Ok(());
+        }
     };
-    if !data.exists() {
-        return Err(CliError::FileNotFound(data.to_path_buf()));
-    }
 
     if !json_output {
         println!();
@@ -596,7 +679,35 @@ pub(crate) fn run(
     }
 
     let out = output_path.unwrap_or(Path::new("adapter.apr"));
-    execute_training(mp, &config, data, out, epochs, learning_rate, json_output)
+    execute_training(mp, config, data, out, epochs, learning_rate, json_output)
+}
+
+/// Display finetune plan (text or JSON).
+fn display_finetune_plan(
+    config: &OptimalConfig,
+    model_params: u64,
+    vram_gb: f64,
+    epochs: u32,
+    learning_rate: f64,
+    plan_only: bool,
+    json_output: bool,
+) {
+    let planner = MemoryPlanner::new(model_params);
+    let req = planner.estimate(config.method, config.rank);
+
+    if json_output {
+        display_plan_json(
+            config,
+            &req,
+            model_params,
+            vram_gb,
+            epochs,
+            learning_rate,
+            plan_only,
+        );
+    } else {
+        display_plan_text(config, &req, vram_gb);
+    }
 }
 
 /// Display run header with model info.
@@ -713,7 +824,10 @@ fn display_classify_header(
 ) {
     output::kv(
         "Model",
-        format!("{}h x {}L", model_config.hidden_size, model_config.num_hidden_layers),
+        format!(
+            "{}h x {}L",
+            model_config.hidden_size, model_config.num_hidden_layers
+        ),
     );
     output::kv("Classes", num_classes.to_string());
     output::kv("LoRA rank", rank.to_string());
@@ -743,8 +857,11 @@ fn display_device_info(gpu_info: &Option<(String, usize)>, gpu_backend: &str) {
         let device_str = match gpu_backend {
             "wgpu" => "wgpu (GPU)".to_string(),
             "auto" => {
-                if gpu_info.is_some() { "CUDA".to_string() }
-                else { "CPU".to_string() }
+                if gpu_info.is_some() {
+                    "CUDA".to_string()
+                } else {
+                    "CPU".to_string()
+                }
             }
             _ => "CPU".to_string(),
         };
@@ -792,13 +909,26 @@ fn run_classify(
     let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
     let classify_config = build_classify_config(
-        &model_config, num_classes, rank, epochs, learning_rate, max_seq_len, quantize_nf4,
+        &model_config,
+        num_classes,
+        rank,
+        epochs,
+        learning_rate,
+        max_seq_len,
+        quantize_nf4,
     );
 
     if !json_output {
         display_classify_header(
-            &model_config, &classify_config, num_classes, rank, epochs,
-            learning_rate, checkpoint_format, gpu_backend, gpus,
+            &model_config,
+            &classify_config,
+            num_classes,
+            rank,
+            epochs,
+            learning_rate,
+            checkpoint_format,
+            gpu_backend,
+            gpus,
         );
     }
 
@@ -1066,7 +1196,9 @@ fn run_instruct(
 }
 
 /// Parse `--adapters DATA:CHECKPOINT` specs into (data_path, checkpoint_dir) pairs.
-fn parse_adapter_specs(adapters: &[String]) -> Result<Vec<(std::path::PathBuf, std::path::PathBuf)>> {
+fn parse_adapter_specs(
+    adapters: &[String],
+) -> Result<Vec<(std::path::PathBuf, std::path::PathBuf)>> {
     let mut specs = Vec::new();
     for spec in adapters {
         let parts: Vec<&str> = spec.splitn(2, ':').collect();
@@ -1096,8 +1228,9 @@ fn load_adapter_slots(
     use entrenar::finetune::multi_adapter_pipeline::AdapterConfig;
 
     for (i, (data_path, checkpoint_dir)) in adapter_specs.iter().enumerate() {
-        let samples = load_instruct_corpus(data_path)
-            .map_err(|e| CliError::ValidationFailed(format!("Adapter {i}: failed to load corpus: {e}")))?;
+        let samples = load_instruct_corpus(data_path).map_err(|e| {
+            CliError::ValidationFailed(format!("Adapter {i}: failed to load corpus: {e}"))
+        })?;
 
         let total = samples.len();
         let val_split = (total / 10).max(1);
@@ -1112,7 +1245,11 @@ fn load_adapter_slots(
         if !json_output {
             output::kv(
                 &format!("Adapter {i}"),
-                format!("{} train, {} val samples", train_samples.len(), val_samples.len()),
+                format!(
+                    "{} train, {} val samples",
+                    train_samples.len(),
+                    val_samples.len()
+                ),
             );
         }
 
@@ -1134,43 +1271,54 @@ fn load_adapter_slots(
     Ok(())
 }
 
+/// Run one epoch of multi-adapter training, returning per-adapter losses.
+fn run_multi_adapter_epoch(
+    multi: &mut entrenar::finetune::multi_adapter_pipeline::MultiAdapterPipeline,
+    epoch: u32,
+    json_output: bool,
+) {
+    use entrenar::finetune::instruct_pipeline::InstructStepResult;
+
+    multi.reset_epoch(epoch as u64);
+    let mut epoch_losses: Vec<Vec<f32>> = vec![Vec::new(); multi.num_adapters()];
+
+    while !multi.all_exhausted() {
+        if let Some(idx) = multi.select_next_adapter() {
+            if let Some(InstructStepResult { loss, .. }) = multi.train_step_adapter(idx) {
+                epoch_losses[idx].push(loss);
+            }
+        } else {
+            break;
+        }
+    }
+
+    for (i, losses) in epoch_losses.iter().enumerate() {
+        let avg = if losses.is_empty() {
+            0.0
+        } else {
+            losses.iter().sum::<f32>() / losses.len() as f32
+        };
+        if !json_output {
+            output::kv(
+                &format!("Epoch {} Adapter {i}", epoch + 1),
+                format!("avg_loss={avg:.4} ({} steps)", losses.len()),
+            );
+        }
+        if let Err(e) = multi.save_adapter_checkpoint(i, epoch as usize, avg) {
+            eprintln!("Warning: adapter {i} checkpoint failed: {e}");
+        }
+    }
+}
+
 /// Run the multi-adapter training loop and display results.
 fn run_multi_adapter_training(
     multi: &mut entrenar::finetune::multi_adapter_pipeline::MultiAdapterPipeline,
     epochs: u32,
     json_output: bool,
 ) {
-    use entrenar::finetune::instruct_pipeline::InstructStepResult;
-
     let start = std::time::Instant::now();
     for epoch in 0..epochs {
-        multi.reset_epoch(epoch as u64);
-        let mut epoch_losses: Vec<Vec<f32>> = vec![Vec::new(); multi.num_adapters()];
-
-        while !multi.all_exhausted() {
-            if let Some(idx) = multi.select_next_adapter() {
-                if let Some(InstructStepResult { loss, .. }) = multi.train_step_adapter(idx) {
-                    epoch_losses[idx].push(loss);
-                }
-            } else {
-                break;
-            }
-        }
-
-        // Per-adapter epoch logging and checkpointing
-        for (i, losses) in epoch_losses.iter().enumerate() {
-            let avg = if losses.is_empty() { 0.0 } else { losses.iter().sum::<f32>() / losses.len() as f32 };
-            if !json_output {
-                output::kv(
-                    &format!("Epoch {} Adapter {i}", epoch + 1),
-                    format!("avg_loss={avg:.4} ({} steps)", losses.len()),
-                );
-            }
-            // Save per-adapter checkpoint
-            if let Err(e) = multi.save_adapter_checkpoint(i, epoch as usize, avg) {
-                eprintln!("Warning: adapter {i} checkpoint failed: {e}");
-            }
-        }
+        run_multi_adapter_epoch(multi, epoch, json_output);
     }
 
     let elapsed = start.elapsed();
@@ -1183,14 +1331,20 @@ fn run_multi_adapter_training(
             "total_time_ms": elapsed.as_millis() as u64,
             "global_steps": multi.global_step,
         });
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
     } else {
         output::pipeline_stage("Multi-Adapter Training", output::StageStatus::Done);
         println!();
         output::kv("Total steps", multi.global_step.to_string());
         output::kv("Total time", format!("{:.1}s", elapsed.as_secs_f64()));
         for (i, slot) in multi.adapters.iter().enumerate() {
-            output::kv(&format!("Adapter {i} checkpoint"), slot.checkpoint_dir.display().to_string());
+            output::kv(
+                &format!("Adapter {i} checkpoint"),
+                slot.checkpoint_dir.display().to_string(),
+            );
         }
     }
 }
@@ -1224,7 +1378,13 @@ fn run_multi_adapter(
     let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
     if !json_output {
-        output::kv("Model", format!("{}h x {}L (vocab {})", model_config.hidden_size, model_config.num_hidden_layers, model_config.vocab_size));
+        output::kv(
+            "Model",
+            format!(
+                "{}h x {}L (vocab {})",
+                model_config.hidden_size, model_config.num_hidden_layers, model_config.vocab_size
+            ),
+        );
         output::kv("Adapters", adapter_specs.len().to_string());
         output::kv("Method", if quantize_nf4 { "QLoRA (NF4)" } else { "LoRA" });
         output::kv("LoRA rank", rank.to_string());
@@ -1232,7 +1392,10 @@ fn run_multi_adapter(
         output::kv("Learning rate", format!("{learning_rate:.1e}"));
         println!();
         for (i, (data, ckpt)) in adapter_specs.iter().enumerate() {
-            output::kv(&format!("Adapter {i}"), format!("data={} ckpt={}", data.display(), ckpt.display()));
+            output::kv(
+                &format!("Adapter {i}"),
+                format!("data={} ckpt={}", data.display(), ckpt.display()),
+            );
         }
         println!();
     }
@@ -1250,7 +1413,10 @@ fn run_multi_adapter(
     // Instruct pipeline API removed — pending entrenar instruct subsystem publish
     #[allow(unreachable_code)]
     let base_pipeline: entrenar::finetune::InstructPipeline = {
-        return Err(CliError::Aprender("Multi-adapter training requires entrenar instruct subsystem (not yet published)".into()));
+        return Err(CliError::Aprender(
+            "Multi-adapter training requires entrenar instruct subsystem (not yet published)"
+                .into(),
+        ));
     };
 
     if !json_output {
@@ -1275,7 +1441,10 @@ fn run_multi_adapter(
                 "quantize_nf4": quantize_nf4,
                 "epochs": epochs,
             });
-            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            );
         } else {
             output::kv("Status", "plan-only — no training will run");
         }

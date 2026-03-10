@@ -47,7 +47,11 @@ fn main() {
 
     eprintln!("=== BPE Tokenizer Benchmark ===");
     eprintln!("Tokenizer : {path}");
-    eprintln!("Payload   : {} chars, {} bytes", SAMPLE_CODE.len(), SAMPLE_CODE.len());
+    eprintln!(
+        "Payload   : {} chars, {} bytes",
+        SAMPLE_CODE.len(),
+        SAMPLE_CODE.len()
+    );
     eprintln!("Iterations: {ITERATIONS} (warmup: {WARMUP})");
     eprintln!();
 
@@ -100,7 +104,10 @@ fn main() {
     eprintln!("--- Results ({ITERATIONS} iterations) ---");
     eprintln!("Wall time   : {wall_elapsed:.2?}");
     eprintln!("Tokens/sec  : {tokens_per_sec:.0}");
-    eprintln!("Encodes/sec : {:.0}", ITERATIONS as f64 / wall_elapsed.as_secs_f64());
+    eprintln!(
+        "Encodes/sec : {:.0}",
+        ITERATIONS as f64 / wall_elapsed.as_secs_f64()
+    );
     eprintln!();
     eprintln!("Per-encode latency:");
     eprintln!("  mean : {mean:.2?}");

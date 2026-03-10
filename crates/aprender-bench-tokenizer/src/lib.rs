@@ -46,7 +46,10 @@ pub fn find_tokenizer_json() -> Option<PathBuf> {
     }
 
     // 2. Repo root (relative to crates/aprender-bench-tokenizer/)
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().ok()?;
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .ok()?;
 
     let candidates = [
         repo_root.join("tokenizer.json"),

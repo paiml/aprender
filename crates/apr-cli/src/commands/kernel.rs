@@ -6,6 +6,10 @@
 /// - Per-token decode latency with real percentiles (p50, p95, p99)
 /// - Prefill vs decode throughput separated
 ///
+/// PMAT-041: Format-agnostic — supports GGUF, APR (Q4K), and SafeTensors.
+/// All three formats produce OwnedQuantizedModel → OwnedQuantizedModelCuda
+/// with identical fused Q4K/Q6K GPU kernels.
+///
 /// References:
 /// - Williams et al. (2009) "Roofline: An Insightful Visual Performance Model"
 /// - Pope et al. (2023) "Efficiently Scaling Transformer Inference"
@@ -20,23 +24,52 @@ fn profile_gpu_generation(
 
     let format = detect_format(path);
 
-    // Currently GPU generation profiling only for GGUF (primary format)
-    if format != "gguf" {
-        return Err(CliError::ValidationFailed(format!(
-            "GPU generation profiling requires GGUF format (got {format})"
-        )));
-    }
-
     println!(
         "{}",
-        "Loading model for GPU generation profiling...".dimmed()
+        format!("Loading {format} model for GPU generation profiling...").dimmed()
     );
-    let mapped = MappedGGUFModel::from_path(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
-    let architecture = mapped.model.architecture().unwrap_or("unknown").to_string();
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+    // PMAT-041: Format-agnostic model loading — all paths produce OwnedQuantizedModel
+    let (model, architecture) = match format {
+        "gguf" => {
+            let mapped = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+            let arch = mapped.model.architecture().unwrap_or("unknown").to_string();
+            let m = OwnedQuantizedModel::from_mapped(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+            (m, arch)
+        }
+        "apr" => {
+            let mapped = realizar::apr::MappedAprModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+            let arch = mapped.metadata.architecture.clone().unwrap_or_else(|| "unknown".to_string());
+            let m = OwnedQuantizedModel::from_apr(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to create model from APR: {e}")))?;
+            (m, arch)
+        }
+        "safetensors" => {
+            let tmp_apr = std::env::temp_dir().join("profile-safetensors-q4k.apr");
+            let import_opts = aprender::format::ImportOptions {
+                quantize: Some(aprender::format::QuantizationType::Q4K),
+                ..aprender::format::ImportOptions::default()
+            };
+            println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
+            aprender::format::apr_import(&path.display().to_string(), &tmp_apr, import_opts)
+                .map_err(|e| CliError::ValidationFailed(format!("SafeTensors→Q4K failed: {e}")))?;
+            let mapped = realizar::apr::MappedAprModel::from_path(&tmp_apr)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to load temp APR: {e}")))?;
+            let arch = mapped.metadata.architecture.clone().unwrap_or_else(|| "unknown".to_string());
+            let m = OwnedQuantizedModel::from_apr(&mapped)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+            let _ = std::fs::remove_file(&tmp_apr);
+            (m, arch)
+        }
+        _ => {
+            return Err(CliError::ValidationFailed(format!(
+                "GPU profiling unsupported for format '{format}' (expected gguf, apr, or safetensors)"
+            )));
+        }
+    };
 
     let num_layers = model.config().num_layers;
     let vocab_size = model.config().vocab_size;

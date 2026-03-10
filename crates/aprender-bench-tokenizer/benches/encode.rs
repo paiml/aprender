@@ -87,13 +87,9 @@ fn bench_encode_scaling(c: &mut Criterion) {
         if let Some(ref tok) = apr_tok {
             let tokens = tok.encode(&text);
             group.throughput(Throughput::Elements(tokens.len() as u64));
-            group.bench_with_input(
-                BenchmarkId::new("aprender", char_len),
-                &text,
-                |b, input| {
-                    b.iter(|| tok.encode(black_box(input)));
-                },
-            );
+            group.bench_with_input(BenchmarkId::new("aprender", char_len), &text, |b, input| {
+                b.iter(|| tok.encode(black_box(input)));
+            });
         }
 
         if let Some(ref tok) = hf_tok {

@@ -362,7 +362,21 @@ pub fn list_tensors(
         return Ok(result);
     }
 
-    // For APR and GGUF, read into memory and dispatch
+    // For APR v2, use mmap + AprV2ReaderRef (realizar#136 — no full-file read)
+    if let Ok(FormatType::Apr) = FormatType::from_magic(path) {
+        let mut magic = [0u8; 4];
+        let mut f = File::open(path)?;
+        std::io::Read::read_exact(&mut f, &mut magic)?;
+        drop(f);
+        if &magic == b"APR\0" {
+            let mapped = crate::bundle::MappedFile::open(path)?;
+            let mut result = list_tensors_v2_mmap(mapped.as_slice(), options)?;
+            result.file = path.display().to_string();
+            return Ok(result);
+        }
+    }
+
+    // For GGUF and APR v1, read into memory and dispatch
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut data = Vec::new();

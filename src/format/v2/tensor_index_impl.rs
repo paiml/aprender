@@ -251,3 +251,20 @@ pub struct AprV2Writer {
     metadata: AprV2Metadata,
     tensors: Vec<(TensorIndexEntry, Vec<u8>)>,
 }
+
+/// Streaming APR v2 writer — constant-memory import for large models (realizar#136).
+///
+/// Tensor data is written to a temp file incrementally. Only index entries
+/// (~100 bytes each) are kept in RAM. For a 1811-tensor model, the index
+/// is ~180 KB vs 67+ GB of tensor data.
+#[allow(missing_debug_implementations)]
+pub struct AprV2StreamingWriter {
+    header: AprV2Header,
+    metadata: AprV2Metadata,
+    /// Index entries only — tensor data is on disk
+    index_entries: Vec<TensorIndexEntry>,
+    /// Temp file for tensor data
+    data_writer: std::io::BufWriter<std::fs::File>,
+    /// Current offset in the data section
+    data_offset: u64,
+}

@@ -114,9 +114,8 @@ fn load_single_safetensors(
     path: &Path,
     options: &ImportOptions,
 ) -> Result<SourceLoadResult> {
-    // GH-88: When quantization is requested (Q4K, Int4, Int8), we need F32 data for
-    // the quantizer to work on. F16 passthrough skips F32 conversion, which means
-    // dispatch_quantize() gets empty tensors and produces broken output.
+    // GH-88: Quantization (Q4K, Int4, Int8) requires F32 input data.
+    // F16 passthrough mode yields shape-only placeholders, so use F32 loading path instead.
     let needs_f32 = options.quantize.is_some();
     let st_result = if needs_f32 {
         load_safetensors_as_f32(path)?
@@ -398,6 +397,28 @@ pub(crate) struct SafeTensorsLoadResult {
 /// - `tensors`: All tensors as F32 (for backward compatibility and validation)
 /// - `f16_raw_tensors`: Raw F16 bytes for passthrough (only F16 tensors)
 /// - `user_metadata`: User metadata from SafeTensors header
+/// Try F16/BF16 passthrough for a tensor. Returns true if passthrough was used.
+fn try_f16_passthrough(
+    mapped: &MappedSafeTensors,
+    name: &str,
+    dtype: &str,
+    shape: &[usize],
+    tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    f16_raw_tensors: &mut BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
+) -> bool {
+    let is_bf16 = dtype == "BF16";
+    if dtype != "F16" && !is_bf16 {
+        return false;
+    }
+    if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
+        f16_raw_tensors.insert(name.to_string(), (raw_bytes.to_vec(), shape.to_vec(), is_bf16));
+        tensors.insert(name.to_string(), (Vec::new(), shape.to_vec()));
+        true
+    } else {
+        false
+    }
+}
+
 pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeTensorsLoadResult> {
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to mmap SafeTensors: {e}"),
@@ -432,21 +453,11 @@ pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeT
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
 
-        // GH-205 + GH-353: Passthrough for F16/BF16 tensors.
-        // Raw bytes are written directly to APR — skip the expensive F32 conversion
-        // which was never used but consumed 4 bytes/param of RAM (e.g. 32 GB for 8B params).
-        let is_bf16 = meta.dtype == "BF16";
-        if meta.dtype == "F16" || is_bf16 {
-            if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
-                f16_raw_tensors.insert(name.clone(), (raw_bytes.to_vec(), meta.shape.clone(), is_bf16));
-                f16_count += 1;
-                // GH-353: Store shape-only placeholder for metadata callers.
-                tensors.insert(name.clone(), (Vec::new(), meta.shape.clone()));
-                continue;
-            }
+        if try_f16_passthrough(&mapped, name, &meta.dtype, &meta.shape, &mut tensors, &mut f16_raw_tensors) {
+            f16_count += 1;
+            continue;
         }
 
-        // F32 / other dtype path: convert to F32
         let data = mapped
             .get_tensor(name)
             .map_err(|e| AprenderError::FormatError {

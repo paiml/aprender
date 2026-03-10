@@ -118,10 +118,10 @@ constraints:
   attention_type: gqa
   activation: silu
   norm_type: rmsnorm
-  has_bias: "false"
+  has_bias: false
   # NOTE: tied_embeddings varies by size — 0.6B/1.7B/4B=true, 8B/14B/32B=false
   # Per-size override in size_variants where tied_embeddings=true
-  tied_embeddings: "false"
+  tied_embeddings: false
   positional_encoding: rope
   mlp_type: swiglu
   qk_norm: "true"

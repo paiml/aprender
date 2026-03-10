@@ -47,8 +47,8 @@ constraints:
   attention_type: mha
   activation: silu
   norm_type: layernorm
-  has_bias: "false"
-  tied_embeddings: "true"
+  has_bias: false
+  tied_embeddings: true
   positional_encoding: rope
   mlp_type: gated_mlp
 

@@ -236,6 +236,22 @@ pub struct AprV2Metadata {
     #[serde(default)]
     pub rms_norm_eps: Option<f32>,
 
+    /// Explicit head dimension (overrides hidden_size / num_heads for Qwen3+)
+    #[serde(default)]
+    pub head_dim: Option<usize>,
+
+    /// Number of MoE experts
+    #[serde(default)]
+    pub num_experts: Option<usize>,
+
+    /// Number of experts selected per token
+    #[serde(default)]
+    pub num_experts_per_tok: Option<usize>,
+
+    /// MoE expert intermediate/FFN dimension
+    #[serde(default)]
+    pub moe_intermediate_size: Option<usize>,
+
     /// Custom key-value pairs
     #[serde(default, flatten)]
     pub custom: HashMap<String, serde_json::Value>,

@@ -27,11 +27,14 @@ impl MelFilterbank {
         // Precompute Hann window
         let window = Self::hann_window(config.n_fft);
 
+        let sparse_filters = Self::build_sparse_filters(&filters, config.n_mels, n_freqs);
+
         Self {
             config: config.clone(),
             filters,
             n_freqs,
             window,
+            sparse_filters,
         }
     }
 
@@ -60,13 +63,45 @@ impl MelFilterbank {
         );
 
         let window = Self::hann_window(config.n_fft);
+        let sparse_filters = Self::build_sparse_filters(&filters, config.n_mels, n_freqs);
 
         Self {
             config: config.clone(),
             filters,
             n_freqs,
             window,
+            sparse_filters,
         }
+    }
+
+    /// Build sparse filterbank from dense matrix.
+    ///
+    /// Each mel filter is triangular, so only ~10-20 of ~201 frequency bins are non-zero.
+    /// This precomputation enables 10-20x fewer multiplies in the hot loop.
+    fn build_sparse_filters(
+        filters: &[f32],
+        n_mels: usize,
+        n_freqs: usize,
+    ) -> Vec<SparseFilter> {
+        (0..n_mels)
+            .map(|mel_idx| {
+                let row = &filters[mel_idx * n_freqs..(mel_idx + 1) * n_freqs];
+                // Find first and last non-zero entries
+                let first = row.iter().position(|&v| v != 0.0).unwrap_or(0);
+                let last = row.iter().rposition(|&v| v != 0.0).unwrap_or(0);
+                if first > last {
+                    SparseFilter {
+                        start: 0,
+                        values: Vec::new(),
+                    }
+                } else {
+                    SparseFilter {
+                        start: first,
+                        values: row[first..=last].to_vec(),
+                    }
+                }
+            })
+            .collect()
     }
 
     /// Compute the mel filterbank matrix with Slaney area normalization
@@ -216,17 +251,22 @@ impl MelFilterbank {
 
         let mut mel_spec = vec![0.0_f32; n_frames * self.config.n_mels];
 
+        // Pre-allocate FFT planner, plan, and scratch buffers once (PMAT-014 O4)
+        let mut scratch = FftScratch::new(self.config.n_fft, self.n_freqs);
+
         for frame_idx in 0..n_frames {
             let start = frame_idx * hop_length;
-            let power_spec = self.compute_power_spectrum(&padded_audio, start);
+            self.compute_power_spectrum_into(&padded_audio, start, &mut scratch);
 
-            for mel_idx in 0..self.config.n_mels {
+            // Sparse filterbank multiply: only iterate over non-zero filter entries
+            // Triangular mel filters have ~10-20 non-zero entries out of 201 frequency bins
+            let mel_offset = frame_idx * self.config.n_mels;
+            for (mel_idx, sf) in self.sparse_filters.iter().enumerate() {
                 let mut mel_energy = 0.0_f32;
-                for (freq_idx, &power) in power_spec.iter().enumerate() {
-                    mel_energy += self.filters[mel_idx * self.n_freqs + freq_idx] * power;
+                for (i, &coeff) in sf.values.iter().enumerate() {
+                    mel_energy += coeff * scratch.power_spec[sf.start + i];
                 }
-                let log_mel = (mel_energy.max(1e-10)).log10();
-                mel_spec[frame_idx * self.config.n_mels + mel_idx] = log_mel;
+                mel_spec[mel_offset + mel_idx] = (mel_energy.max(1e-10)).log10();
             }
         }
 
@@ -255,23 +295,24 @@ impl MelFilterbank {
         // Output buffer (n_frames x n_mels)
         let mut mel_spec = vec![0.0_f32; n_frames * self.config.n_mels];
 
+        // Pre-allocate FFT planner, plan, and scratch buffers once (PMAT-014 O4)
+        let mut scratch = FftScratch::new(self.config.n_fft, self.n_freqs);
+
         // Process each frame
         for frame_idx in 0..n_frames {
             let start = frame_idx * hop_length;
 
             // Apply window and compute power spectrum
-            let power_spec = self.compute_power_spectrum(audio, start);
+            self.compute_power_spectrum_into(audio, start, &mut scratch);
 
-            // Apply mel filterbank
-            for mel_idx in 0..self.config.n_mels {
+            // Sparse filterbank multiply: only iterate over non-zero filter entries
+            let mel_offset = frame_idx * self.config.n_mels;
+            for (mel_idx, sf) in self.sparse_filters.iter().enumerate() {
                 let mut mel_energy = 0.0_f32;
-                for (freq_idx, &power) in power_spec.iter().enumerate() {
-                    mel_energy += self.filters[mel_idx * self.n_freqs + freq_idx] * power;
+                for (i, &coeff) in sf.values.iter().enumerate() {
+                    mel_energy += coeff * scratch.power_spec[sf.start + i];
                 }
-
-                // Apply log compression with floor to avoid log(0)
-                let log_mel = (mel_energy.max(1e-10)).log10();
-                mel_spec[frame_idx * self.config.n_mels + mel_idx] = log_mel;
+                mel_spec[mel_offset + mel_idx] = (mel_energy.max(1e-10)).log10();
             }
         }
 
@@ -281,34 +322,37 @@ impl MelFilterbank {
         Ok(mel_spec)
     }
 
-    /// Compute power spectrum for a single frame
-    fn compute_power_spectrum(&self, audio: &[f32], start: usize) -> Vec<f32> {
-        use rustfft::{num_complex::Complex, FftPlanner};
+    /// Compute power spectrum for a single frame into pre-allocated buffers.
+    ///
+    /// Writes result into `scratch.power_spec`. Reuses FFT plan and scratch
+    /// buffers across frames to avoid per-frame allocation (PMAT-014 O4).
+    fn compute_power_spectrum_into(
+        &self,
+        audio: &[f32],
+        start: usize,
+        scratch: &mut FftScratch,
+    ) {
+        use rustfft::num_complex::Complex;
 
-        let mut planner = FftPlanner::new();
-        let fft = planner.plan_fft_forward(self.config.n_fft);
+        // Apply window and prepare FFT input (reuse buffer)
+        for i in 0..self.config.n_fft {
+            let sample = if start + i < audio.len() {
+                audio[start + i]
+            } else {
+                0.0
+            };
+            scratch.fft_buf[i] = Complex::new(sample * self.window[i], 0.0);
+        }
 
-        // Apply window and prepare FFT input
-        let mut fft_input: Vec<Complex<f32>> = (0..self.config.n_fft)
-            .map(|i| {
-                let sample = if start + i < audio.len() {
-                    audio[start + i]
-                } else {
-                    0.0
-                };
-                Complex::new(sample * self.window[i], 0.0)
-            })
-            .collect();
+        // Compute FFT using pre-allocated scratch
+        scratch
+            .fft
+            .process_with_scratch(&mut scratch.fft_buf, &mut scratch.fft_scratch);
 
-        // Compute FFT
-        fft.process(&mut fft_input);
-
-        // Compute power spectrum (magnitude squared)
-        fft_input
-            .iter()
-            .take(self.n_freqs)
-            .map(Complex::norm_sqr)
-            .collect()
+        // Compute power spectrum (magnitude squared) into pre-allocated buffer
+        for (i, power) in scratch.power_spec.iter_mut().enumerate() {
+            *power = scratch.fft_buf[i].norm_sqr();
+        }
     }
 
     /// Apply Whisper-style normalization

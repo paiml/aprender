@@ -1,17 +1,14 @@
 # cargo-deny configuration
-# https://embarkstudios.github.io/cargo-deny/
+# Deployed from paiml/infra — do not edit manually.
+# Spec: docs/specifications/unified-ci-pipeline.md
+
+[graph]
+targets = []
+all-features = false
+no-default-features = false
 
 [advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-# Ignore advisories for transitive dependencies we can't control
-ignore = [
-    "RUSTSEC-2024-0384",  # instant unmaintained (via notify/jugar-probar)
-    "RUSTSEC-2024-0436",  # paste unmaintained (via nalgebra/renacer)
-    "RUSTSEC-2025-0119",  # number_prefix unmaintained (via hf-hub/indicatif)
-    "RUSTSEC-2025-0141",  # bincode unmaintained - considered complete by authors
-    "RUSTSEC-2026-0002",  # lru IterMut soundness (via ratatui) - fix not yet propagated
-]
+ignore = []
 
 [licenses]
 allow = [
@@ -20,23 +17,25 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    "CDLA-Permissive-2.0",
     "ISC",
-    "MPL-2.0",
     "Unicode-3.0",
+    "Unicode-DFS-2016",
     "Zlib",
+    "BSL-1.0",
+    "OpenSSL",
+    "0BSD",
+    "CC0-1.0",
+    "MPL-2.0",
 ]
 confidence-threshold = 0.8
 
 [bans]
 multiple-versions = "warn"
-wildcards = "allow"
+wildcards = "deny"
 highlight = "all"
-workspace-default-features = "allow"
-external-default-features = "allow"
 
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-
+allow-git = []

@@ -267,9 +267,7 @@ pub fn run_classify_tune(
     _time_limit: Option<&str>,
     json_output: bool,
 ) -> Result<(), CliError> {
-    use entrenar::finetune::{
-        ClassifyTuner, SchedulerKind, TuneConfig, TuneStrategy,
-    };
+    use entrenar::finetune::{ClassifyTuner, SchedulerKind, TuneConfig, TuneStrategy};
 
     // Parse strategy
     let tune_strategy: TuneStrategy = strategy
@@ -304,57 +302,111 @@ pub fn run_classify_tune(
     };
 
     // Create tuner (validates budget > 0 and num_classes > 0)
-    let tuner = ClassifyTuner::new(tune_config)
-        .map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+    let tuner =
+        ClassifyTuner::new(tune_config).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
 
     // Build searcher and scheduler to verify they work
     let mut searcher = tuner.build_searcher();
     let _scheduler_obj = tuner.build_scheduler();
 
     if json_output {
-        // JSON output: simulate a dry-run showing the search space config
-        let mut trial_configs = Vec::new();
-        let trials_to_show = budget.min(3);
-        for _ in 0..trials_to_show {
-            if let Ok(trial) = searcher.suggest() {
-                trial_configs.push(trial.config);
-            }
-        }
-
-        let json = serde_json::json!({
-            "task": "classify",
-            "strategy": strategy,
-            "scheduler": scheduler,
-            "mode": if scout { "scout" } else { "full" },
-            "budget": budget,
-            "num_classes": num_classes,
-            "max_epochs": if scout { 1 } else { max_epochs },
-            "search_space_params": 9,
-            "sample_configs": trial_configs,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
+        return print_classify_tune_json(
+            &mut searcher,
+            strategy,
+            scheduler,
+            scout,
+            budget,
+            num_classes,
+            max_epochs,
         );
-        return Ok(());
     }
 
-    // Human-readable output
+    print_classify_tune_text(
+        &mut searcher,
+        tune_strategy,
+        scout,
+        budget,
+        num_classes,
+        max_epochs,
+        data_path,
+    );
+    Ok(())
+}
+
+/// Print classify tune results as JSON.
+#[allow(clippy::disallowed_methods)]
+fn print_classify_tune_json(
+    searcher: &mut Box<dyn entrenar::finetune::TuneSearcher>,
+    strategy: &str,
+    scheduler: &str,
+    scout: bool,
+    budget: usize,
+    num_classes: usize,
+    max_epochs: usize,
+) -> Result<(), CliError> {
+    let mut trial_configs = Vec::new();
+    for _ in 0..budget.min(3) {
+        if let Ok(trial) = searcher.suggest() {
+            trial_configs.push(trial.config);
+        }
+    }
+
+    let json = serde_json::json!({
+        "task": "classify",
+        "strategy": strategy,
+        "scheduler": scheduler,
+        "mode": if scout { "scout" } else { "full" },
+        "budget": budget,
+        "num_classes": num_classes,
+        "max_epochs": if scout { 1 } else { max_epochs },
+        "search_space_params": 9,
+        "sample_configs": trial_configs,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
+    Ok(())
+}
+
+/// Print classify tune results as human-readable text.
+fn print_classify_tune_text(
+    searcher: &mut Box<dyn entrenar::finetune::TuneSearcher>,
+    tune_strategy: entrenar::finetune::TuneStrategy,
+    scout: bool,
+    budget: usize,
+    num_classes: usize,
+    max_epochs: usize,
+    data_path: Option<&Path>,
+) {
     output::section("apr tune — Classification HPO (SPEC-TUNE-2026-001)");
     println!();
     output::kv("Task", "classify");
     output::kv("Strategy", format!("{tune_strategy}"));
-    output::kv("Mode", if scout { "scout (1 epoch/trial)" } else { "full" });
+    output::kv(
+        "Mode",
+        if scout {
+            "scout (1 epoch/trial)"
+        } else {
+            "full"
+        },
+    );
     output::kv("Budget", format!("{budget} trials"));
     output::kv("Classes", num_classes.to_string());
-    output::kv("Max epochs", if scout { "1".to_string() } else { max_epochs.to_string() });
+    output::kv(
+        "Max epochs",
+        if scout {
+            "1".to_string()
+        } else {
+            max_epochs.to_string()
+        },
+    );
 
     if let Some(path) = data_path {
         output::kv("Data", path.display().to_string());
     }
     println!();
 
-    // Show search space
     println!("{}", "SEARCH SPACE (9 parameters)".bold());
     println!("{}", "─".repeat(50));
     println!("  learning_rate:      5e-6 .. 5e-4 (log)");
@@ -368,11 +420,9 @@ pub fn run_classify_tune(
     println!("  lr_min_ratio:       0.001 .. 0.1 (log)");
     println!();
 
-    // Show sample configs
     println!("{}", "SAMPLE CONFIGURATIONS".bold());
     println!("{}", "─".repeat(50));
-    let samples = budget.min(3);
-    for i in 0..samples {
+    for i in 0..budget.min(3) {
         if let Ok(trial) = searcher.suggest() {
             let (lr, rank, alpha, batch, warmup, clip, weights, targets, lr_min) =
                 entrenar::finetune::extract_trial_params(&trial.config);
@@ -388,10 +438,11 @@ pub fn run_classify_tune(
         println!("{}", "NEXT STEPS".bold());
         println!("{}", "─".repeat(50));
         println!("  Provide training data to start tuning:");
-        println!("  apr tune --task classify --data corpus.jsonl --budget {budget} {}", if scout { "--scout" } else { "" });
+        println!(
+            "  apr tune --task classify --data corpus.jsonl --budget {budget} {}",
+            if scout { "--scout" } else { "" }
+        );
     }
-
-    Ok(())
 }
 
 /// Format parameter count for display
