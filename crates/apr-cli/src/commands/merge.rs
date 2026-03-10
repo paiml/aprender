@@ -273,6 +273,9 @@ pub(crate) fn run(
         drop_rate,
         density,
         seed,
+        scales: None,
+        outlier_k: 3.0,
+        layer_ranges: None,
     };
 
     // Run merge

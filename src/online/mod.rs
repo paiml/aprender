@@ -17,12 +17,17 @@
 pub mod corpus;
 pub mod cpt;
 pub mod curriculum;
+pub mod dam;
 pub mod distillation;
 pub mod distillation_advanced;
 pub mod dpo;
 pub mod drift;
 pub mod eval_harness;
+pub mod moe_construction;
 pub mod orchestrator;
+pub mod per_layer_merge;
+pub mod rlvr;
+pub mod tokenizer_surgery;
 
 use crate::error::{AprenderError, Result};
 

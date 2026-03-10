@@ -117,6 +117,22 @@ pub struct KernelOp {
     pub contract: &'static str,
 }
 
+/// Get kernel ops for a class, optionally enriched with constraint-specific ops.
+fn kernel_ops_for_family(class: KernelClass, constraints: &Constraints) -> Vec<KernelOp> {
+    let mut ops = kernel_ops_for_class(class);
+    // Add RoPE op for families that use RoPE but whose class doesn't include it
+    // (e.g., Phi: Class B with RoPE positional encoding)
+    let has_rope = ops.iter().any(|o| o.kernel == "rope_forward");
+    if !has_rope && constraints.positional_encoding == "rope" {
+        ops.push(KernelOp {
+            op: "Position Encoding",
+            kernel: "rope_forward",
+            contract: "rope-kernel-v1",
+        });
+    }
+    ops
+}
+
 fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
     // Base ops: MatVec always present. Softmax only for attention-based models (not SSM).
     let mut ops = vec![
@@ -572,6 +588,11 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("bigscience", "bert"), // Org-name resolution
 ];
 
+/// Get all family aliases for display in help/error messages.
+pub fn family_aliases() -> &'static [(&'static str, &'static str)] {
+    FAMILY_ALIASES
+}
+
 /// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
 /// E.g., "falcon-h1" → "falcon_h1", "qwen3.5" → "qwen3_5"
 fn normalize_input(input: &str) -> String {
@@ -779,6 +800,9 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
         ("num_experts", "MoE expert routing"),
         ("n_routed_experts", "MoE expert routing (DeepSeek)"),
         ("num_experts_per_tok", "MoE active experts per token"),
+        ("tie_word_embeddings", "Weight sharing: embedding ↔ lm_head"),
+        ("vocab_size", "Vocabulary size"),
+        ("max_position_embeddings", "Maximum sequence length"),
     ];
 
     for (key, rationale) in &fields {
@@ -864,6 +888,85 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
             let n: u32 = value.parse().unwrap_or(0);
             if n > 0 {
                 Some(format!("{n} active experts per token"))
+            } else {
+                None
+            }
+        }
+        "tie_word_embeddings" => match value {
+            "true" => Some("Shared: embedding == lm_head (saves memory)".to_string()),
+            "false" => Some("Separate embedding and lm_head weights".to_string()),
+            _ => None,
+        },
+        "num_attention_heads" => {
+            let kv = extract_json_string(json, "num_key_value_heads")
+                .and_then(|v| v.parse::<u32>().ok());
+            let n: u32 = value.parse().unwrap_or(0);
+            match kv {
+                Some(kv_n) if kv_n == 1 => Some(format!("{n} query heads, MQA (1 KV head)")),
+                Some(kv_n) if kv_n < n => {
+                    let ratio = n / kv_n;
+                    Some(format!(
+                        "{n} query heads, GQA ({ratio} queries per KV group)"
+                    ))
+                }
+                Some(kv_n) if kv_n == n => Some(format!("{n} heads, MHA (no KV grouping)")),
+                _ => None,
+            }
+        }
+        "hidden_size" => {
+            let n: u64 = value.parse().unwrap_or(0);
+            if n > 0 {
+                let params_est = if let Some(layers) =
+                    extract_json_string(json, "num_hidden_layers")
+                        .and_then(|v| v.parse::<u64>().ok())
+                {
+                    let est = 12 * layers * n * n; // rough transformer param estimate
+                    if est > 1_000_000_000 {
+                        format!(", ~{:.1}B params", est as f64 / 1e9)
+                    } else if est > 1_000_000 {
+                        format!(", ~{:.0}M params", est as f64 / 1e6)
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                };
+                Some(format!("Hidden dim {n}{params_est}"))
+            } else {
+                None
+            }
+        }
+        "num_hidden_layers" => {
+            let n: u32 = value.parse().unwrap_or(0);
+            if n > 0 {
+                Some(format!("{n} transformer layers"))
+            } else {
+                None
+            }
+        }
+        "vocab_size" => {
+            let n: u64 = value.parse().unwrap_or(0);
+            let hidden =
+                extract_json_string(json, "hidden_size").and_then(|v| v.parse::<u64>().ok());
+            if let Some(h) = hidden {
+                let embed_mb = (n * h * 2) as f64 / 1_048_576.0; // fp16
+                Some(format!("{n} tokens (embedding: {embed_mb:.0} MB at fp16)"))
+            } else if n > 0 {
+                Some(format!("{n} tokens"))
+            } else {
+                None
+            }
+        }
+        "max_position_embeddings" => {
+            let n: u64 = value.parse().unwrap_or(0);
+            if n >= 131_072 {
+                Some(format!("{n} max seq len (128K+ context)"))
+            } else if n >= 32_768 {
+                Some(format!("{n} max seq len (32K+ context)"))
+            } else if n >= 8_192 {
+                Some(format!("{n} max seq len (8K+ context)"))
+            } else if n > 0 {
+                Some(format!("{n} max seq len"))
             } else {
                 None
             }
@@ -1001,6 +1104,18 @@ pub fn detect_constraint_mismatches(
             warnings.push(format!(
                 "MoE architecture detected (from name) but mapped to non-MoE class {}. Expert routing kernel not covered.",
                 family.kernel_class.letter()
+            ));
+        }
+    }
+
+    // Check tied_embeddings mismatch
+    if let Some(tied) = config_mapping.get("tie_word_embeddings") {
+        let config_tied = tied.value == "true";
+        let family_tied = family.constraints.tied_embeddings;
+        if config_tied != family_tied {
+            warnings.push(format!(
+                "Tied embeddings mismatch: config.json has tie_word_embeddings={} but family '{}' expects {}",
+                tied.value, family.family, family_tied
             ));
         }
     }
@@ -1152,7 +1267,7 @@ pub fn build_json_output(
     config_mapping: BTreeMap<String, ConfigField>,
     show_proof: bool,
 ) -> KernelExplainJson {
-    let ops = kernel_ops_for_class(family.kernel_class);
+    let ops = kernel_ops_for_family(family.kernel_class, &family.constraints);
     let proofs = if show_proof {
         proof_status_for_class(family.kernel_class)
     } else {
@@ -1234,7 +1349,7 @@ pub fn print_human_output(
         .as_deref()
         .or(family.architectures.first().map(String::as_str))
         .unwrap_or("Unknown");
-    let ops = kernel_ops_for_class(family.kernel_class);
+    let ops = kernel_ops_for_family(family.kernel_class, &family.constraints);
 
     println!("Kernel Explainability Report: {}", family.display_name);
     println!("{}", "═".repeat(50));

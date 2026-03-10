@@ -69,8 +69,7 @@ fn test_slerp_full_merge() {
         weights: Some(vec![0.5]),
         ..Default::default()
     };
-    let report =
-        apr_merge(&[&model_a_path, &model_b_path], &output_path, options).unwrap();
+    let report = apr_merge(&[&model_a_path, &model_b_path], &output_path, options).unwrap();
 
     assert_eq!(report.strategy, MergeStrategy::Slerp);
     assert_eq!(report.model_count, 2);
@@ -105,8 +104,7 @@ fn test_slerp_default_weight_is_half() {
         strategy: MergeStrategy::Slerp,
         ..Default::default()
     };
-    let report =
-        apr_merge(&[&model_a_path, &model_b_path], &output_path, options).unwrap();
+    let report = apr_merge(&[&model_a_path, &model_b_path], &output_path, options).unwrap();
     assert_eq!(report.strategy, MergeStrategy::Slerp);
     assert!(output_path.exists());
 }
@@ -185,8 +183,7 @@ fn test_ties_full_merge() {
         density: 0.2,
         ..Default::default()
     };
-    let report =
-        apr_merge(&[&task1_path, &task2_path], &output_path, options).unwrap();
+    let report = apr_merge(&[&task1_path, &task2_path], &output_path, options).unwrap();
 
     assert_eq!(report.strategy, MergeStrategy::Ties);
     assert_eq!(report.model_count, 2);
@@ -278,12 +275,7 @@ fn test_dare_deterministic_with_seed() {
             seed: 42,
             ..Default::default()
         };
-        apr_merge(
-            &[&task_path, &task2_path],
-            output_path,
-            options,
-        )
-        .unwrap();
+        apr_merge(&[&task_path, &task2_path], output_path, options).unwrap();
     }
 
     let merged1 = load_model_tensors(&output1_path).unwrap();
@@ -293,7 +285,10 @@ fn test_dare_deterministic_with_seed() {
 
     // Same seed → same output
     for (a, b) in data1.iter().zip(data2.iter()) {
-        assert!((a - b).abs() < 1e-6, "Deterministic DARE should produce identical results");
+        assert!(
+            (a - b).abs() < 1e-6,
+            "Deterministic DARE should produce identical results"
+        );
     }
 }
 
@@ -389,8 +384,7 @@ fn test_dare_full_merge() {
         seed: 42,
         ..Default::default()
     };
-    let report =
-        apr_merge(&[&task1_path, &task2_path], &output_path, options).unwrap();
+    let report = apr_merge(&[&task1_path, &task2_path], &output_path, options).unwrap();
 
     assert_eq!(report.strategy, MergeStrategy::Dare);
     assert_eq!(report.model_count, 2);

@@ -261,11 +261,7 @@ where
 }
 
 /// Evaluate a single task.
-fn evaluate_task<F>(
-    task: &EvalTask,
-    score_fn: &F,
-    config: &HarnessConfig,
-) -> Result<TaskMetrics>
+fn evaluate_task<F>(task: &EvalTask, score_fn: &F, config: &HarnessConfig) -> Result<TaskMetrics>
 where
     F: Fn(&str, &str) -> f64,
 {

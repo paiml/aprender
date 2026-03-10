@@ -1,6 +1,8 @@
 use super::*;
 
-fn make_model(tensors: Vec<(&str, Vec<f32>, Vec<usize>)>) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+fn make_model(
+    tensors: Vec<(&str, Vec<f32>, Vec<usize>)>,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
     tensors
         .into_iter()
         .map(|(name, data, shape)| (name.to_string(), (data, shape)))
@@ -192,7 +194,10 @@ fn test_evolutionary_merge_runs() {
     // Objective: minimize L2 norm of merged weight tensor
     let result = evolutionary_merge(&models, &config, |merged| {
         let (w, _) = &merged["weight"];
-        w.iter().map(|&x| (x as f64) * (x as f64)).sum::<f64>().sqrt()
+        w.iter()
+            .map(|&x| (x as f64) * (x as f64))
+            .sum::<f64>()
+            .sqrt()
     });
 
     assert_eq!(result.weights.len(), 2);
@@ -243,7 +248,10 @@ fn test_evolutionary_merge_finds_good_weights() {
     });
 
     // Should find weights that produce something close to target
-    assert!(result.best_score < 2.0, "CMA-ES should optimize toward target");
+    assert!(
+        result.best_score < 2.0,
+        "CMA-ES should optimize toward target"
+    );
 }
 
 // ============================================================================

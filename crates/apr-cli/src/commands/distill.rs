@@ -1585,18 +1585,45 @@ fn run_text_generate(
         output::kv("  Loaded prompts", prompts.len().to_string());
     }
 
-    // Create output file
+    // Resume support: load existing output to skip already-generated prompts
     let output_path = std::path::Path::new(&config.synthetic_data.output);
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let output_file = std::fs::File::create(output_path)?;
-    let mut writer = BufWriter::new(output_file);
-
-    let generate_url = format!("{base_url}/generate");
+    let mut existing_prompts = std::collections::HashSet::new();
     let mut total_tokens = 0u64;
     let mut generated_count = 0u64;
     let mut skipped_count = 0u64;
+    if output_path.exists() {
+        let existing = std::fs::File::open(output_path)?;
+        for line in BufReader::new(existing).lines() {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(p) = parsed.get("prompt").and_then(|v| v.as_str()) {
+                    existing_prompts.insert(p.to_string());
+                }
+                total_tokens += parsed.get("tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                generated_count += 1;
+            }
+        }
+        if !existing_prompts.is_empty() && !json_output {
+            println!(
+                "  Resuming: {} existing records, {} tokens",
+                existing_prompts.len(),
+                total_tokens
+            );
+        }
+    }
+    let output_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(output_path)?;
+    let mut writer = BufWriter::new(output_file);
+
+    let generate_url = format!("{base_url}/generate");
     let target = config.synthetic_data.target_tokens;
     let start_time = std::time::Instant::now();
 
@@ -1612,16 +1639,43 @@ fn run_text_generate(
                 CliError::ValidationFailed(format!("Prompt {} missing 'prompt' field", i))
             })?;
 
-        // POST to /generate endpoint
-        let resp = ureq::post(&generate_url)
-            .send_json(serde_json::json!({
+        // Skip already-generated prompts (resume support)
+        if existing_prompts.contains(prompt_text) {
+            continue;
+        }
+
+        // POST to /generate endpoint (retry up to 3 times on server errors)
+        let mut resp = None;
+        for retry in 0..3 {
+            match ureq::post(&generate_url).send_json(serde_json::json!({
                 "prompt": prompt_text,
                 "max_tokens": config.teacher.max_tokens,
                 "temperature": config.teacher.temperature,
                 "strategy": "top_p",
                 "top_p": config.teacher.top_p,
-            }))
-            .map_err(|e| CliError::NetworkError(format!("Generate request failed: {e}")))?;
+            })) {
+                Ok(r) => {
+                    resp = Some(r);
+                    break;
+                }
+                Err(e) if retry < 2 => {
+                    if !json_output {
+                        eprintln!("  Retry {}/{} for prompt {}: {e}", retry + 1, 3, i);
+                    }
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+                Err(e) => {
+                    if !json_output {
+                        eprintln!("  Skipping prompt {} after 3 retries: {e}", i);
+                    }
+                    skipped_count += 1;
+                    continue;
+                }
+            }
+        }
+        let Some(resp) = resp else {
+            continue;
+        };
 
         let gen_result: serde_json::Value = resp
             .into_json()

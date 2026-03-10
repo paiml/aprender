@@ -163,13 +163,30 @@ fn explain_kernel(
         eprintln!("Error: Could not resolve kernel class for '{input}'");
         eprintln!();
         eprintln!("Available families:");
-        for f in &load_families() {
+        let families = load_families();
+        for f in &families {
             eprintln!(
                 "  {:<12} {} (Class {})",
                 f.family,
                 f.display_name,
                 f.kernel_class.letter()
             );
+        }
+        // Show common aliases
+        let aliases = family_aliases();
+        if !aliases.is_empty() {
+            eprintln!();
+            eprintln!("Also accepted (aliases):");
+            let mut shown: Vec<String> = Vec::new();
+            for (alias, _target) in aliases {
+                if !shown.contains(&alias.to_string()) {
+                    shown.push(alias.to_string());
+                }
+            }
+            // Show in groups of 8 per line
+            for chunk in shown.chunks(8) {
+                eprintln!("  {}", chunk.join(", "));
+            }
         }
         std::process::exit(1);
     };
