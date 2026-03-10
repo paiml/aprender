@@ -581,6 +581,9 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("vicuna", "llama"),   // LMSYS Vicuna
     // Qwen-derived
     ("qwq", "qwen2"), // QwQ reasoning model (Qwen2ForCausalLM)
+    // SmolLM: LlamaForCausalLM architecture
+    ("smollm", "llama"),  // SmolLM (RMSNorm + SiLU + GQA + RoPE)
+    ("smollm2", "llama"), // SmolLM2 (RMSNorm + SiLU + GQA + RoPE)
     // Classic falcon: LayerNorm + GELU + GQA/MHA — closest to bert (Class B)
     ("falcon", "bert"), // Falcon-7B/40B: LayerNorm + GELU (no RMSNorm, no SiLU)
     // Bloom: LayerNorm + GELU + MHA + ALiBi — same kernel dispatch as bert (Class B)
@@ -630,6 +633,11 @@ const ALIAS_ARCHITECTURES: &[(&str, &str)] = &[
     ("deepseek_v2", "DeepseekV2ForCausalLM"),
     ("deepseekv2", "DeepseekV2ForCausalLM"),
     ("qwq", "Qwen2ForCausalLM"),
+    ("bigscience", "BloomForCausalLM"),
+    ("qwen3_next", "Qwen3ForCausalLM"),
+    ("qwen3next", "Qwen3ForCausalLM"),
+    ("smollm", "LlamaForCausalLM"),
+    ("smollm2", "LlamaForCausalLM"),
 ];
 
 /// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
@@ -743,14 +751,20 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
 
     // Partial match against families (e.g., "qwen" matches "qwen2")
     // Try both normalized (with underscores) and compact (without) forms
+    // Each form must be >= 3 chars to avoid spurious matches (e.g., "ab" ⊂ "stablelm")
     let search_forms: Vec<&str> = {
-        let mut v = vec![normalized.as_str()];
+        let mut v = vec![];
+        if normalized.len() >= 3 {
+            v.push(normalized.as_str());
+        }
         if let Some(ref c) = compact {
-            v.push(c.as_str());
+            if c.len() >= 3 {
+                v.push(c.as_str());
+            }
         }
         v
     };
-    if normalized.len() >= 3 {
+    if !search_forms.is_empty() {
         for search in &search_forms {
             if let Some(f) = families
                 .iter()
@@ -1038,11 +1052,19 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                     // otherwise fall back to 12*L*d^2 (assumes 4x MLP ratio)
                     let inter = extract_json_string(json, "intermediate_size")
                         .and_then(|v| v.parse::<u64>().ok());
+                    // Vocab embeddings: vocab_size * d (+ lm_head if not tied)
+                    let vocab = extract_json_string(json, "vocab_size")
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(0);
+                    let tied = extract_json_string(json, "tie_word_embeddings")
+                        .map_or(false, |v| v == "true");
+                    let embed_params = if tied { vocab * n } else { 2 * vocab * n };
                     let est = if let Some(i) = inter {
-                        // 4*d*i + 4*d*d + 2*d per layer + vocab embeddings
-                        layers * (4 * n * i + 4 * n * n + 2 * n)
+                        // Per layer: 4d² (QKVO) + 3di (SwiGLU gate+up+down) + 2d (norms)
+                        layers * (4 * n * n + 3 * n * i + 2 * n) + embed_params
                     } else {
-                        12 * layers * n * n // rough estimate assuming 4x MLP
+                        // Rough estimate assuming 4x MLP (standard FFN: 8d²/layer)
+                        layers * 12 * n * n + embed_params
                     };
                     if est > 1_000_000_000 {
                         format!(", ~{:.1}B params", est as f64 / 1e9)
@@ -1082,7 +1104,13 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
         }
         "max_position_embeddings" => {
             let n: u64 = value.parse().unwrap_or(0);
-            if n >= 131_072 {
+            if n >= 1_048_576 {
+                Some(format!("{n} max seq len (1M+ context)"))
+            } else if n >= 524_288 {
+                Some(format!("{n} max seq len (512K+ context)"))
+            } else if n >= 262_144 {
+                Some(format!("{n} max seq len (256K+ context)"))
+            } else if n >= 131_072 {
                 Some(format!("{n} max seq len (128K+ context)"))
             } else if n >= 32_768 {
                 Some(format!("{n} max seq len (32K+ context)"))
@@ -1147,8 +1175,15 @@ pub fn detect_constraint_mismatches(
             let arch_lower = arch.value.to_lowercase();
             let mt_lower = mt.value.to_lowercase();
             let arch_family = strip_arch_suffix(&arch_lower);
+            // Normalize both sides: remove underscores for comparison
+            // (deepseek_v2 vs deepseekv2 from DeepseekV2ForCausalLM)
+            let mt_compact = mt_lower.replace('_', "");
+            let arch_compact = arch_family.replace('_', "");
             // If the architecture's family name doesn't match the model_type
-            if arch_family != mt_lower && !arch_lower.starts_with(&mt_lower) {
+            if arch_family != mt_lower
+                && arch_compact != mt_compact
+                && !arch_lower.starts_with(&mt_lower)
+            {
                 warnings.push(format!(
                     "model_type '{}' conflicts with architectures ['{}']. Using model_type for dispatch.",
                     mt.value, arch.value
@@ -1215,6 +1250,11 @@ pub fn detect_constraint_mismatches(
             if kv_n > q_n && q_n > 0 {
                 warnings.push(format!(
                     "Invalid attention config: num_key_value_heads ({kv_n}) > num_attention_heads ({q_n}). KV heads cannot exceed query heads."
+                ));
+            } else if kv_n > 0 && q_n > 0 && q_n % kv_n != 0 {
+                // GQA requires query heads divisible by KV heads
+                warnings.push(format!(
+                    "Invalid GQA config: num_attention_heads ({q_n}) not divisible by num_key_value_heads ({kv_n}). GQA requires even grouping."
                 ));
             } else {
                 let config_attn = if kv_n == 1 {
@@ -1319,6 +1359,20 @@ pub fn detect_constraint_mismatches(
             if n > 100_000 {
                 warnings.push(format!(
                     "Implausible hidden_size={n}. Largest known models have hidden_size ~16384."
+                ));
+            }
+        }
+    }
+
+    // Check hidden_size divisibility by num_attention_heads (defines head_dim)
+    if let (Some(hs), Some(nh)) = (
+        config_mapping.get("hidden_size"),
+        config_mapping.get("num_attention_heads"),
+    ) {
+        if let (Ok(h), Ok(n)) = (hs.value.parse::<u64>(), nh.value.parse::<u64>()) {
+            if n > 0 && h > 0 && h % n != 0 {
+                warnings.push(format!(
+                    "Invalid config: hidden_size ({h}) not divisible by num_attention_heads ({n}). Head dimension must be an integer."
                 ));
             }
         }
@@ -1629,16 +1683,14 @@ pub fn print_human_output(
         );
     }
 
-    // Constraint mismatch warnings
-    if !config_mapping.is_empty() {
-        let mismatches = detect_constraint_mismatches(family, config_mapping);
-        let is_alias = family.display_name.contains(" (via ");
-        for warning in &mismatches {
-            println!();
-            eprintln!("  WARNING: {warning}");
-            if is_alias {
-                eprintln!("  This model is mapped via alias. Kernel selection may differ from the family contract.");
-            }
+    // Constraint mismatch warnings (always run — MoE detection works from alias name too)
+    let mismatches = detect_constraint_mismatches(family, config_mapping);
+    let is_alias = family.display_name.contains(" (via ");
+    for warning in &mismatches {
+        println!();
+        eprintln!("  WARNING: {warning}");
+        if is_alias {
+            eprintln!("  This model is mapped via alias. Kernel selection may differ from the family contract.");
         }
     }
 
