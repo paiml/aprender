@@ -473,6 +473,7 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     // Mistral-derived fine-tunes (same architecture: MistralForCausalLM)
     ("codestral", "mistral"),  // Codestral-22B coding model
     ("mathstral", "mistral"),  // Mathstral math model
+    ("pixtral", "mistral"),    // Pixtral vision-language model
     ("zephyr", "mistral"),     // HuggingFace Zephyr fine-tune
     ("openchat", "mistral"),   // OpenChat fine-tune
     ("openhermes", "mistral"), // OpenHermes fine-tune
@@ -582,23 +583,35 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     }
 
     // Partial match against families (e.g., "qwen" matches "qwen2")
-    if normalized.len() >= 3 {
-        if let Some(f) = families
-            .iter()
-            .find(|f| f.family.contains(normalized.as_str()) || normalized.contains(&f.family))
-        {
-            return Some(f.clone());
+    // Try both normalized (with underscores) and compact (without) forms
+    let search_forms: Vec<&str> = {
+        let mut v = vec![normalized.as_str()];
+        if let Some(ref c) = compact {
+            v.push(c.as_str());
         }
-        // Also partial match against aliases
-        if let Some((matched_alias, target)) = FAMILY_ALIASES
-            .iter()
-            .find(|(alias, _)| alias.contains(normalized.as_str()) || normalized.contains(alias))
-        {
-            if let Some(f) = families.iter().find(|f| f.family == *target) {
-                let mut aliased = f.clone();
-                aliased.display_name =
-                    format!("{} (via {} kernel pipeline)", matched_alias, f.family);
-                return Some(aliased);
+        v
+    };
+    if normalized.len() >= 3 {
+        for search in &search_forms {
+            if let Some(f) = families
+                .iter()
+                .find(|f| f.family.contains(*search) || search.contains(&f.family.as_str()))
+            {
+                return Some(f.clone());
+            }
+        }
+        // Also partial match against aliases (both forms)
+        for search in &search_forms {
+            if let Some((matched_alias, target)) = FAMILY_ALIASES
+                .iter()
+                .find(|(alias, _)| alias.contains(*search) || search.contains(alias))
+            {
+                if let Some(f) = families.iter().find(|f| f.family == *target) {
+                    let mut aliased = f.clone();
+                    aliased.display_name =
+                        format!("{} (via {} kernel pipeline)", matched_alias, f.family);
+                    return Some(aliased);
+                }
             }
         }
     }
