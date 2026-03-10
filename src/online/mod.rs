@@ -17,6 +17,7 @@
 pub mod corpus;
 pub mod curriculum;
 pub mod distillation;
+pub mod distillation_advanced;
 pub mod drift;
 pub mod orchestrator;
 
