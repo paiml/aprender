@@ -64,13 +64,13 @@ jobs:
         if: matrix.cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }} --package apr-cli
+
       - name: Build
-        run: |
-          if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} --package apr-cli
-          else
-            cargo build --release --target ${{ matrix.target }} --package apr-cli
-          fi
+        if: ${{ !matrix.cross }}
+        run: cargo build --release --target ${{ matrix.target }} --package apr-cli
 
       - name: Package (unix)
         if: matrix.target != 'x86_64-pc-windows-msvc'
