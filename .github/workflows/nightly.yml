@@ -66,6 +66,8 @@ jobs:
 
       - name: Build (cross)
         if: matrix.cross
+        env:
+          CROSS_NO_WARNINGS: "0"
         run: cross build --release --target ${{ matrix.target }} --package apr-cli
 
       - name: Build
