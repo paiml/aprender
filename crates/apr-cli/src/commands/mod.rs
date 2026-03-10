@@ -30,6 +30,7 @@ pub(crate) mod gpu;
 pub(crate) mod hex;
 pub(crate) mod import;
 pub(crate) mod inspect;
+pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod merge;
 pub(crate) mod model_config;

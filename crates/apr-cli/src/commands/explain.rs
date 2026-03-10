@@ -1,16 +1,20 @@
 use crate::error::Result;
 use std::path::{Path, PathBuf};
 
-/// Explain command - provides documentation about errors, tensors, and models.
+/// Explain command - provides documentation about errors, tensors, kernels, and models.
 ///
 /// The positional argument is auto-detected: if it looks like a file path
 /// (exists on disk or has a model file extension), it's treated as `--file`.
-/// Otherwise it's treated as an error code.
-#[allow(clippy::unnecessary_wraps)]
+/// Otherwise it's treated as an error code or family name.
+#[allow(clippy::unnecessary_wraps, clippy::fn_params_excessive_bools)]
 pub(crate) fn run(
     code_or_file: Option<String>,
     file: Option<PathBuf>,
     tensor: Option<&str>,
+    kernel: bool,
+    json: bool,
+    verbose: bool,
+    proof_status: bool,
 ) -> Result<()> {
     // Auto-detect: is the positional argument a file path or an error code?
     let (code, resolved_file) = match code_or_file {
@@ -25,6 +29,16 @@ pub(crate) fn run(
         None => (None, file),
     };
 
+    if kernel {
+        return explain_kernel(
+            code.as_deref(),
+            resolved_file.as_deref(),
+            json,
+            verbose,
+            proof_status,
+        );
+    }
+
     if let Some(c) = code {
         explain_error_code(&c);
     } else if let Some(t) = tensor {
@@ -32,13 +46,98 @@ pub(crate) fn run(
     } else if let Some(ref f) = resolved_file {
         explain_file(f);
     } else {
-        println!("Please provide an error code, model file path, or --tensor");
+        println!("Please provide an error code, model file path, or --tensor/--kernel");
         println!();
         println!("Usage:");
         println!("  apr explain E001              # explain error code");
         println!("  apr explain model.gguf        # explain model architecture");
         println!("  apr explain --tensor q_proj    # explain tensor role");
+        println!("  apr explain --kernel qwen2     # explain kernel dispatch");
+        println!("  apr explain --kernel model.apr # explain kernel from model file");
     }
+    Ok(())
+}
+
+/// Kernel explainability: resolve family and display kernel dispatch pipeline.
+fn explain_kernel(
+    code_or_family: Option<&str>,
+    file: Option<&Path>,
+    json: bool,
+    verbose: bool,
+    proof_status: bool,
+) -> Result<()> {
+    use super::kernel_explain::*;
+
+    // Resolution chain: file → config.json → family string
+    let family = if let Some(path) = file {
+        if path.extension().map_or(false, |e| e == "json") {
+            // Direct config.json
+            resolve_from_config_json(path)
+        } else {
+            // Model file — try to find config.json in same directory
+            let config_path = path.with_file_name("config.json");
+            if config_path.exists() {
+                resolve_from_config_json(&config_path)
+            } else {
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let family = family.or_else(|| {
+        code_or_family.and_then(|input| {
+            // Try as HF repo pattern (e.g., "hf://Qwen/Qwen2.5-Coder-1.5B")
+            let input = input.strip_prefix("hf://").unwrap_or(input);
+            // Try as config.json path
+            let path = Path::new(input);
+            if path.exists() && path.extension().map_or(false, |e| e == "json") {
+                return resolve_from_config_json(path);
+            }
+            // Try as family name or architecture
+            resolve_family(input)
+        })
+    });
+
+    let Some(family) = family else {
+        let input = code_or_family.unwrap_or("(none)");
+        eprintln!("Error: Could not resolve kernel class for '{input}'");
+        eprintln!();
+        eprintln!("Available families:");
+        for f in &load_families() {
+            eprintln!(
+                "  {:<12} {} (Class {})",
+                f.family,
+                f.display_name,
+                f.kernel_class.letter()
+            );
+        }
+        std::process::exit(1);
+    };
+
+    // Extract config.json mapping if a file was provided
+    let config_mapping = file
+        .map(|p| {
+            let config_path = if p.extension().map_or(false, |e| e == "json") {
+                p.to_path_buf()
+            } else {
+                p.with_file_name("config.json")
+            };
+            extract_config_mapping(&config_path)
+        })
+        .unwrap_or_default();
+
+    if json {
+        let output = build_json_output(&family, config_mapping, proof_status);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+    } else {
+        print_human_output(&family, &config_mapping, verbose, proof_status);
+    }
+
     Ok(())
 }
 
@@ -311,27 +410,34 @@ fn explain_file(path: &Path) {
 mod tests {
     use super::*;
 
+    // Helper: call run() with default flags (no kernel/json/verbose/proof)
+    fn run_default(
+        code_or_file: Option<String>,
+        file: Option<PathBuf>,
+        tensor: Option<&str>,
+    ) -> Result<()> {
+        run(code_or_file, file, tensor, false, false, false, false)
+    }
+
     // ========================================================================
     // Error Code Explanation Tests
     // ========================================================================
 
     #[test]
     fn test_explain_known_error_code_e002() {
-        // E002 is explicitly handled
-        let result = run(Some("E002".to_string()), None, None);
+        let result = run_default(Some("E002".to_string()), None, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_unknown_error_code() {
-        // Unknown error codes should list available codes
-        let result = run(Some("E999".to_string()), None, None);
+        let result = run_default(Some("E999".to_string()), None, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_error_code_e001() {
-        let result = run(Some("E001".to_string()), None, None);
+        let result = run_default(Some("E001".to_string()), None, None);
         assert!(result.is_ok());
     }
 
@@ -341,13 +447,13 @@ mod tests {
 
     #[test]
     fn test_explain_known_tensor() {
-        let result = run(None, None, Some("encoder.conv1.weight"));
+        let result = run_default(None, None, Some("encoder.conv1.weight"));
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_unknown_tensor() {
-        let result = run(None, None, Some("unknown.tensor"));
+        let result = run_default(None, None, Some("unknown.tensor"));
         assert!(result.is_ok());
     }
 
@@ -357,13 +463,13 @@ mod tests {
 
     #[test]
     fn test_explain_file() {
-        let result = run(None, Some(PathBuf::from("/path/to/model.apr")), None);
+        let result = run_default(None, Some(PathBuf::from("/path/to/model.apr")), None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_file_with_gguf_extension() {
-        let result = run(None, Some(PathBuf::from("model.gguf")), None);
+        let result = run_default(None, Some(PathBuf::from("model.gguf")), None);
         assert!(result.is_ok());
     }
 
@@ -373,20 +479,66 @@ mod tests {
 
     #[test]
     fn test_explain_no_arguments() {
-        // Should print help message
-        let result = run(None, None, None);
+        let result = run_default(None, None, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_empty_code() {
-        let result = run(Some(String::new()), None, None);
+        let result = run_default(Some(String::new()), None, None);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_empty_tensor() {
-        let result = run(None, None, Some(""));
+        let result = run_default(None, None, Some(""));
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Kernel Explanation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_explain_kernel_qwen2() {
+        // Should resolve and print kernel info (not fail)
+        let result = run(
+            Some("qwen2".to_string()),
+            None,
+            None,
+            true,
+            false,
+            false,
+            false,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_kernel_json() {
+        let result = run(
+            Some("llama".to_string()),
+            None,
+            None,
+            true,
+            true,
+            false,
+            true,
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_explain_kernel_verbose_proof() {
+        let result = run(
+            Some("gpt2".to_string()),
+            None,
+            None,
+            true,
+            false,
+            true,
+            true,
+        );
         assert!(result.is_ok());
     }
 }

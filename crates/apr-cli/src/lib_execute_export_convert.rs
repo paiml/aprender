@@ -127,6 +127,10 @@
             code_or_file: None,
             file: None,
             tensor: None,
+            kernel: false,
+            json: false,
+            verbose: false,
+            proof_status: false,
         });
         // Explain with no args should still run (shows general help)
         let result = execute_command(&cli);
@@ -140,6 +144,10 @@
             code_or_file: Some("E001".to_string()),
             file: None,
             tensor: None,
+            kernel: false,
+            json: false,
+            verbose: false,
+            proof_status: false,
         });
         let result = execute_command(&cli);
         // Should succeed even for unknown error codes (it prints "unknown error code")

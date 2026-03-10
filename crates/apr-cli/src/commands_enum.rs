@@ -207,9 +207,9 @@ pub enum Commands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
-    /// Explain errors, architecture, and tensors
+    /// Explain errors, architecture, tensors, and kernel dispatch
     Explain {
-        /// Error code or model file path (auto-detected)
+        /// Error code, model file path, or family name (auto-detected)
         #[arg(value_name = "CODE_OR_FILE")]
         code_or_file: Option<String>,
         /// Path to .apr model file (optional context for --tensor)
@@ -218,6 +218,18 @@ pub enum Commands {
         /// Explain a specific tensor
         #[arg(long)]
         tensor: Option<String>,
+        /// Explain kernel dispatch pipeline for architecture
+        #[arg(long)]
+        kernel: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Show kernel contract details and proof obligations
+        #[arg(short, long)]
+        verbose: bool,
+        /// Show per-kernel proof status from contract tests
+        #[arg(long)]
+        proof_status: bool,
     },
     /// Manage canary tests for regression
     Canary {

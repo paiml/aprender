@@ -313,7 +313,7 @@ fn dispatch_smoke_gate(
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
                 let path_str = p.display().to_string();
-                explain::run(Some(path_str), None, None)
+                explain::run(Some(path_str), None, None, false, false, false, false)
             })
         }
         "check" => {

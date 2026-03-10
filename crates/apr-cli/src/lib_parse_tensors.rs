@@ -69,6 +69,7 @@
                 code_or_file,
                 file,
                 tensor,
+                ..
             } => {
                 assert!(code_or_file.is_none());
                 assert_eq!(file, Some(PathBuf::from("model.apr")));

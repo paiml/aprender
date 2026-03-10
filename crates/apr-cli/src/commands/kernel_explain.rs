@@ -1,0 +1,1104 @@
+//! Kernel Explainability: static analysis of model architecture → kernel dispatch.
+//!
+//! Derives kernel equivalence class from family contract constraints without
+//! loading the model or running inference. Pure metadata analysis.
+
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::path::Path;
+
+// ── Family YAML embedding (compile-time) ──────────────────────────────────
+
+macro_rules! embed_family {
+    ($name:expr, $path:expr) => {
+        (
+            $name,
+            include_str!(concat!("../../../../contracts/model-families/", $path)),
+        )
+    };
+}
+
+const FAMILY_YAMLS: &[(&str, &str)] = &[
+    embed_family!("bert", "bert.yaml"),
+    embed_family!("deepseek", "deepseek.yaml"),
+    embed_family!("falcon_h1", "falcon_h1.yaml"),
+    embed_family!("gemma", "gemma.yaml"),
+    embed_family!("gpt2", "gpt2.yaml"),
+    embed_family!("llama", "llama.yaml"),
+    embed_family!("mamba", "mamba.yaml"),
+    embed_family!("mistral", "mistral.yaml"),
+    embed_family!("moonshine", "moonshine.yaml"),
+    embed_family!("openelm", "openelm.yaml"),
+    embed_family!("phi", "phi.yaml"),
+    embed_family!("qwen2", "qwen2.yaml"),
+    embed_family!("qwen3", "qwen3.yaml"),
+    embed_family!("qwen3_5", "qwen3_5.yaml"),
+    embed_family!("rwkv7", "rwkv7.yaml"),
+    embed_family!("whisper", "whisper.yaml"),
+];
+
+// ── Kernel contract embedding ─────────────────────────────────────────────
+
+macro_rules! embed_contract {
+    ($name:expr, $path:expr) => {
+        (
+            $name,
+            include_str!(concat!("../../../../contracts/", $path)),
+        )
+    };
+}
+
+const KERNEL_CONTRACTS: &[(&str, &str)] = &[
+    embed_contract!("matvec-kernel-v1", "matvec-kernel-v1.yaml"),
+    embed_contract!("rope-kernel-v1", "rope-kernel-v1.yaml"),
+    embed_contract!("normalization-kernel-v1", "normalization-kernel-v1.yaml"),
+    embed_contract!("element-wise-ops-v1", "element-wise-ops-v1.yaml"),
+    embed_contract!("softmax-kernel-v1", "softmax-kernel-v1.yaml"),
+    embed_contract!("kernel-fusion-v1", "kernel-fusion-v1.yaml"),
+    embed_contract!("tensor-layout-v1", "tensor-layout-v1.yaml"),
+    embed_contract!("quantized-dot-product-v1", "quantized-dot-product-v1.yaml"),
+    embed_contract!("transpose-kernel-v1", "transpose-kernel-v1.yaml"),
+];
+
+// ── Kernel class taxonomy (A-F) ───────────────────────────────────────────
+
+/// Kernel equivalence class. Models in the same class dispatch identical
+/// kernel pipelines, so once a representative is certified, others only
+/// need dimensional smoke verification (G0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum KernelClass {
+    A, // GQA + RMSNorm + SiLU + SwiGLU + RoPE
+    B, // MHA + LayerNorm + GELU + absolute/none
+    C, // MQA + LayerNorm + GELU + ALiBi
+    D, // mixed: LayerNorm + SiLU or GQA + LayerNorm
+    E, // MoE variants
+    F, // RMSNorm + GELU + GatedMlp + RoPE
+    Unknown,
+}
+
+impl KernelClass {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::A => "A (GQA + RMSNorm + SiLU + SwiGLU + RoPE)",
+            Self::B => "B (MHA + LayerNorm + GELU)",
+            Self::C => "C (MQA + LayerNorm + GELU + ALiBi)",
+            Self::D => "D (GQA + LayerNorm + GELU/SiLU)",
+            Self::E => "E (MoE + GQA + RMSNorm + SwiGLU)",
+            Self::F => "F (RMSNorm + GELU + GatedMlp + RoPE)",
+            Self::Unknown => "Unknown",
+        }
+    }
+
+    pub fn letter(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+            Self::D => "D",
+            Self::E => "E",
+            Self::F => "F",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
+// ── Kernel operations ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize)]
+pub struct KernelOp {
+    pub op: &'static str,
+    pub kernel: &'static str,
+    pub contract: &'static str,
+}
+
+fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
+    let mut ops = vec![
+        KernelOp {
+            op: "MatVec (Q4K)",
+            kernel: "fused_q4k_parallel_matvec",
+            contract: "matvec-kernel-v1",
+        },
+        KernelOp {
+            op: "MatVec (Q6K)",
+            kernel: "fused_q6k_parallel_matvec",
+            contract: "matvec-kernel-v1",
+        },
+        KernelOp {
+            op: "Softmax",
+            kernel: "softmax",
+            contract: "softmax-kernel-v1",
+        },
+    ];
+
+    match class {
+        KernelClass::A => {
+            ops.push(KernelOp {
+                op: "Attention (GQA)",
+                kernel: "gqa_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "rms_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "silu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "MLP",
+                kernel: "swiglu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Position Encoding",
+                kernel: "rope_forward",
+                contract: "rope-kernel-v1",
+            });
+        }
+        KernelClass::B => {
+            ops.push(KernelOp {
+                op: "Attention (MHA)",
+                kernel: "mha_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "layer_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "gelu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "MLP",
+                kernel: "gelu_mlp",
+                contract: "element-wise-ops-v1",
+            });
+        }
+        KernelClass::C => {
+            ops.push(KernelOp {
+                op: "Attention (MQA)",
+                kernel: "mqa_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "layer_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "gelu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Position Encoding",
+                kernel: "alibi",
+                contract: "element-wise-ops-v1",
+            });
+        }
+        KernelClass::D => {
+            ops.push(KernelOp {
+                op: "Attention (GQA/MHA)",
+                kernel: "gqa_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "layer_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "silu/gelu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Position Encoding",
+                kernel: "rope_forward",
+                contract: "rope-kernel-v1",
+            });
+        }
+        KernelClass::E => {
+            ops.push(KernelOp {
+                op: "Attention (GQA)",
+                kernel: "gqa_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "rms_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "MoE Router",
+                kernel: "moe_routing",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "silu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "MLP",
+                kernel: "swiglu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Position Encoding",
+                kernel: "rope_forward",
+                contract: "rope-kernel-v1",
+            });
+        }
+        KernelClass::F => {
+            ops.push(KernelOp {
+                op: "Attention (GQA)",
+                kernel: "gqa_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "rms_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "gelu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "MLP",
+                kernel: "gated_mlp",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Position Encoding",
+                kernel: "rope_forward",
+                contract: "rope-kernel-v1",
+            });
+        }
+        KernelClass::Unknown => {}
+    }
+
+    ops
+}
+
+// ── Constraints extraction ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Constraints {
+    pub attention_type: String,
+    pub activation: String,
+    pub norm_type: String,
+    pub mlp_type: String,
+    pub positional_encoding: String,
+    pub has_bias: bool,
+    pub tied_embeddings: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FamilyInfo {
+    pub family: String,
+    pub display_name: String,
+    pub architectures: Vec<String>,
+    pub constraints: Constraints,
+    pub kernel_class: KernelClass,
+}
+
+/// Extract a YAML string value for a key from raw YAML text (simple line-based parse).
+/// Avoids needing serde_yaml for the family constraint extraction.
+fn yaml_str(text: &str, key: &str) -> Option<String> {
+    let search = format!("{key}:");
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(&search) {
+            let val = trimmed[search.len()..].trim();
+            // Strip quotes
+            let val = val.trim_matches('"').trim_matches('\'');
+            if val.is_empty() || val == "null" {
+                return None;
+            }
+            return Some(val.to_string());
+        }
+    }
+    None
+}
+
+/// Extract a YAML boolean value for a key.
+fn yaml_bool(text: &str, key: &str) -> bool {
+    yaml_str(text, key).map_or(false, |v| v == "true")
+}
+
+/// Extract YAML list items (lines starting with "  - ").
+fn yaml_list(text: &str, key: &str) -> Vec<String> {
+    let search = format!("{key}:");
+    let mut in_section = false;
+    let mut items = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(&search) {
+            in_section = true;
+            continue;
+        }
+        if in_section {
+            if let Some(item) = trimmed.strip_prefix("- ") {
+                items.push(item.trim_matches('"').trim_matches('\'').to_string());
+            } else if !trimmed.is_empty() && !trimmed.starts_with('#') {
+                break;
+            }
+        }
+    }
+    items
+}
+
+/// Extract the constraints section from family YAML text.
+fn extract_constraints(yaml_text: &str) -> Constraints {
+    // Find the constraints: section and extract from there
+    let constraints_section = yaml_text
+        .find("\nconstraints:")
+        .map(|pos| &yaml_text[pos..])
+        .unwrap_or("");
+
+    Constraints {
+        attention_type: yaml_str(constraints_section, "attention_type").unwrap_or_default(),
+        activation: yaml_str(constraints_section, "activation").unwrap_or_default(),
+        norm_type: yaml_str(constraints_section, "norm_type").unwrap_or_default(),
+        mlp_type: yaml_str(constraints_section, "mlp_type").unwrap_or_default(),
+        positional_encoding: yaml_str(constraints_section, "positional_encoding")
+            .unwrap_or_default(),
+        has_bias: yaml_bool(constraints_section, "has_bias"),
+        tied_embeddings: yaml_bool(constraints_section, "tied_embeddings"),
+    }
+}
+
+/// Derive kernel class from constraints (pure function).
+fn derive_kernel_class(c: &Constraints) -> KernelClass {
+    let attn = c.attention_type.as_str();
+    let norm = c.norm_type.as_str();
+    let act = c.activation.as_str();
+    let mlp = c.mlp_type.as_str();
+    let pos = c.positional_encoding.as_str();
+
+    // Class A: GQA + RMSNorm + SiLU + SwiGLU + RoPE
+    if attn == "gqa" && norm == "rmsnorm" && act == "silu" && mlp == "swiglu" && pos == "rope" {
+        return KernelClass::A;
+    }
+    // Class F: RMSNorm + GELU + GatedMlp + RoPE (check before B/D)
+    if norm == "rmsnorm" && act == "gelu" && mlp == "gated_mlp" && pos == "rope" {
+        return KernelClass::F;
+    }
+    // Class B: MHA + LayerNorm + GELU
+    if attn == "mha" && norm == "layernorm" && act == "gelu" {
+        return KernelClass::B;
+    }
+    // Class C: MQA + LayerNorm + GELU + ALiBi
+    if attn == "mqa" && norm == "layernorm" && act == "gelu" && pos == "alibi" {
+        return KernelClass::C;
+    }
+    // Class D: mixed LayerNorm variants with non-standard combos
+    if norm == "layernorm" && (attn == "gqa" || act == "silu") {
+        return KernelClass::D;
+    }
+    // Class E: MoE (would need num_experts field — not in current constraints)
+    // Fall through to Unknown for now
+
+    KernelClass::Unknown
+}
+
+/// Load all family info from embedded YAML.
+pub fn load_families() -> Vec<FamilyInfo> {
+    FAMILY_YAMLS
+        .iter()
+        .map(|(name, yaml_text)| {
+            let constraints = extract_constraints(yaml_text);
+            let kernel_class = derive_kernel_class(&constraints);
+            let display_name =
+                yaml_str(yaml_text, "display_name").unwrap_or_else(|| name.to_string());
+            let architectures = yaml_list(yaml_text, "architectures");
+
+            FamilyInfo {
+                family: (*name).to_string(),
+                display_name,
+                architectures,
+                constraints,
+                kernel_class,
+            }
+        })
+        .collect()
+}
+
+/// Resolve a family string or architecture string to `FamilyInfo`.
+pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
+    let families = load_families();
+    let lower = input.to_lowercase();
+
+    // Direct family name match
+    if let Some(f) = families.iter().find(|f| f.family == lower) {
+        return Some(f.clone());
+    }
+
+    // Architecture match (e.g., "Qwen2ForCausalLM")
+    if let Some(f) = families.iter().find(|f| {
+        f.architectures
+            .iter()
+            .any(|a| a.to_lowercase() == lower || a == input)
+    }) {
+        return Some(f.clone());
+    }
+
+    // Partial match (e.g., "qwen" matches "qwen2")
+    families
+        .into_iter()
+        .find(|f| f.family.contains(&lower) || lower.contains(&f.family))
+}
+
+/// Try to resolve family from a config.json file.
+pub fn resolve_from_config_json(path: &Path) -> Option<FamilyInfo> {
+    let content = std::fs::read_to_string(path).ok()?;
+    // Parse model_type from config.json
+    let model_type = extract_json_string(&content, "model_type")?;
+    resolve_family(&model_type)
+}
+
+/// Simple JSON value extraction (no serde dependency for this hot path).
+/// Handles both string values ("silu") and numeric values (1e-06, 8, 1000000.0).
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let search = format!("\"{key}\"");
+    let pos = json.find(&search)?;
+    let after = &json[pos + search.len()..];
+    // Skip whitespace and colon
+    let after = after.trim_start().strip_prefix(':')?;
+    let after = after.trim_start();
+
+    if let Some(after) = after.strip_prefix('"') {
+        // Quoted string value
+        let end = after.find('"')?;
+        Some(after[..end].to_string())
+    } else {
+        // Numeric or boolean value — read until comma, newline, or }
+        let end = after.find(|c: char| c == ',' || c == '\n' || c == '}' || c == ' ')?;
+        let val = after[..end].trim();
+        if val.is_empty() || val == "null" {
+            None
+        } else {
+            Some(val.to_string())
+        }
+    }
+}
+
+/// Extract config.json fields relevant to kernel dispatch.
+pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
+    let mut map = BTreeMap::new();
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return map;
+    };
+
+    let fields = [
+        ("model_type", "Architecture class dispatch"),
+        ("hidden_act", "Activation kernel selection"),
+        ("rms_norm_eps", "RMSNorm (not LayerNorm)"),
+        ("num_key_value_heads", "GQA vs MHA vs MQA"),
+        ("num_attention_heads", "Number of query heads"),
+        ("rope_theta", "RoPE positional encoding"),
+        ("intermediate_size", "MLP width (SwiGLU detection)"),
+        ("hidden_size", "Model hidden dimension"),
+        ("num_hidden_layers", "Transformer depth"),
+    ];
+
+    for (key, rationale) in &fields {
+        if let Some(val) = extract_json_string(&content, key) {
+            // Enrich rationale with kernel-specific interpretation
+            let enriched = enrich_rationale(key, &val, &content);
+            map.insert(
+                (*key).to_string(),
+                ConfigField {
+                    value: val,
+                    rationale: enriched.unwrap_or_else(|| (*rationale).to_string()),
+                },
+            );
+        }
+    }
+
+    map
+}
+
+/// Enrich config field rationale with kernel-specific interpretation.
+fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
+    match key {
+        "hidden_act" => match value {
+            "silu" => Some("SiLU activation (not GELU)".to_string()),
+            "gelu" | "gelu_new" => Some("GELU activation (not SiLU)".to_string()),
+            _ => None,
+        },
+        "rms_norm_eps" => Some("RMSNorm (not LayerNorm)".to_string()),
+        "num_key_value_heads" => {
+            let num_heads = extract_json_string(json, "num_attention_heads")
+                .and_then(|v| v.parse::<u32>().ok());
+            let kv_heads = value.parse::<u32>().ok();
+            match (num_heads, kv_heads) {
+                (Some(h), Some(kv)) if kv == 1 => Some(format!("MQA ({kv} KV head < {h} Q heads)")),
+                (Some(h), Some(kv)) if kv < h => Some(format!("GQA ({kv} KV heads < {h} Q heads)")),
+                (Some(h), Some(kv)) if kv == h => {
+                    Some(format!("MHA ({kv} KV heads == {h} Q heads)"))
+                }
+                _ => None,
+            }
+        }
+        "rope_theta" => Some("RoPE positional encoding".to_string()),
+        "intermediate_size" => {
+            let hidden =
+                extract_json_string(json, "hidden_size").and_then(|v| v.parse::<f64>().ok());
+            let inter = value.parse::<f64>().ok();
+            match (hidden, inter) {
+                (Some(h), Some(i)) if h > 0.0 => {
+                    let ratio = i / h;
+                    if ratio > 2.5 {
+                        Some(format!("SwiGLU MLP ({i:.0}/{h:.0} = {ratio:.2}x)"))
+                    } else {
+                        Some(format!("Standard FFN ({i:.0}/{h:.0} = {ratio:.2}x)"))
+                    }
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigField {
+    pub value: String,
+    pub rationale: String,
+}
+
+// ── Proof status ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum ProofLevel {
+    Proven,
+    Tested,
+    Documented,
+    Unknown,
+}
+
+impl ProofLevel {
+    pub fn symbol(self) -> &'static str {
+        match self {
+            Self::Proven => "✓",
+            Self::Tested => "◉",
+            Self::Documented => "○",
+            Self::Unknown => "?",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Proven => "Proven",
+            Self::Tested => "Tested",
+            Self::Documented => "Documented",
+            Self::Unknown => "Unknown",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ContractProof {
+    pub contract: String,
+    pub level: ProofLevel,
+    pub evidence: String,
+}
+
+/// Determine proof level for a contract by inspecting its embedded YAML.
+pub fn proof_status_for_contract(contract_name: &str) -> ContractProof {
+    let yaml_text = KERNEL_CONTRACTS
+        .iter()
+        .find(|(name, _)| *name == contract_name)
+        .map(|(_, text)| *text);
+
+    let Some(text) = yaml_text else {
+        return ContractProof {
+            contract: contract_name.to_string(),
+            level: ProofLevel::Unknown,
+            evidence: "No contract YAML found".to_string(),
+        };
+    };
+
+    // Check for kani harnesses or extensive test references
+    let has_kani = text.contains("kani_harness") || text.contains("kani:");
+    let has_falsification = text.contains("FALSIFY-") || text.contains("falsification:");
+    let has_tests_file = text.contains("tests_file:");
+    let has_qa_gate = text.contains("qa_gate:");
+
+    let (level, evidence) = if has_kani {
+        (
+            ProofLevel::Proven,
+            "Kani harness + contract tests".to_string(),
+        )
+    } else if has_falsification && has_tests_file {
+        (
+            ProofLevel::Tested,
+            format!(
+                "Falsification tests in {}",
+                yaml_str(text, "tests_file").unwrap_or_default()
+            ),
+        )
+    } else if has_qa_gate || has_falsification {
+        (ProofLevel::Tested, "Contract tests".to_string())
+    } else {
+        (
+            ProofLevel::Documented,
+            "Contract specification exists".to_string(),
+        )
+    };
+
+    ContractProof {
+        contract: contract_name.to_string(),
+        level,
+        evidence,
+    }
+}
+
+/// Get proof status for all kernel ops in a class.
+pub fn proof_status_for_class(class: KernelClass) -> Vec<ContractProof> {
+    let ops = kernel_ops_for_class(class);
+    let mut seen = Vec::new();
+    let mut proofs = Vec::new();
+
+    for op in &ops {
+        if !seen.contains(&op.contract) {
+            seen.push(op.contract);
+            proofs.push(proof_status_for_contract(op.contract));
+        }
+    }
+
+    // Always include fusion contract
+    if !seen.contains(&"kernel-fusion-v1") {
+        proofs.push(proof_status_for_contract("kernel-fusion-v1"));
+    }
+
+    proofs
+}
+
+// ── JSON output ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct KernelExplainJson {
+    pub architecture: String,
+    pub kernel_class: String,
+    pub kernel_class_label: String,
+    pub family: String,
+    pub display_name: String,
+    pub kernel_ops: Vec<KernelOp>,
+    pub constraints: Constraints,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub config_mapping: BTreeMap<String, ConfigField>,
+    pub proof_summary: ProofSummary,
+    pub layout: String,
+    pub equivalence_class_families: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProofSummary {
+    pub proven: usize,
+    pub tested: usize,
+    pub documented: usize,
+    pub unknown: usize,
+    pub total: usize,
+}
+
+pub fn build_json_output(
+    family: &FamilyInfo,
+    config_mapping: BTreeMap<String, ConfigField>,
+    show_proof: bool,
+) -> KernelExplainJson {
+    let ops = kernel_ops_for_class(family.kernel_class);
+    let proofs = if show_proof {
+        proof_status_for_class(family.kernel_class)
+    } else {
+        Vec::new()
+    };
+
+    let proven = proofs
+        .iter()
+        .filter(|p| p.level == ProofLevel::Proven)
+        .count();
+    let tested = proofs
+        .iter()
+        .filter(|p| p.level == ProofLevel::Tested)
+        .count();
+    let documented = proofs
+        .iter()
+        .filter(|p| p.level == ProofLevel::Documented)
+        .count();
+    let unknown = proofs
+        .iter()
+        .filter(|p| p.level == ProofLevel::Unknown)
+        .count();
+
+    let families = load_families();
+    let equivalence_class_families: Vec<String> = families
+        .iter()
+        .filter(|f| f.kernel_class == family.kernel_class)
+        .map(|f| f.family.clone())
+        .collect();
+
+    let arch = family
+        .architectures
+        .first()
+        .map_or("Unknown", String::as_str)
+        .to_string();
+
+    KernelExplainJson {
+        architecture: arch,
+        kernel_class: family.kernel_class.letter().to_string(),
+        kernel_class_label: family.kernel_class.label().to_string(),
+        family: family.family.clone(),
+        display_name: family.display_name.clone(),
+        kernel_ops: ops,
+        constraints: family.constraints.clone(),
+        config_mapping,
+        proof_summary: ProofSummary {
+            proven,
+            tested,
+            documented,
+            unknown,
+            total: proofs.len(),
+        },
+        layout: "row_major".to_string(),
+        equivalence_class_families,
+    }
+}
+
+// ── Human-readable output ─────────────────────────────────────────────────
+
+pub fn print_human_output(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+    verbose: bool,
+    show_proof: bool,
+) {
+    let arch = family
+        .architectures
+        .first()
+        .map_or("Unknown", String::as_str);
+    let ops = kernel_ops_for_class(family.kernel_class);
+
+    println!("Kernel Explainability Report: {}", family.display_name);
+    println!("{}", "═".repeat(50));
+    println!();
+    println!("Architecture:  {arch}");
+    println!("Kernel Class:  {}", family.kernel_class.label());
+    println!("Family:        {}", family.family);
+    println!();
+
+    // Kernel pipeline table
+    println!("Kernel Pipeline ({} ops)", ops.len());
+    println!(
+        "┌─────────────────────────┬────────────────────────────────┬──────────────────────────┐"
+    );
+    println!(
+        "│ Operation               │ Kernel                         │ Contract                 │"
+    );
+    println!(
+        "├─────────────────────────┼────────────────────────────────┼──────────────────────────┤"
+    );
+    for op in &ops {
+        println!(
+            "│ {:<23} │ {:<30} │ {:<24} │",
+            op.op, op.kernel, op.contract
+        );
+    }
+    println!(
+        "└─────────────────────────┴────────────────────────────────┴──────────────────────────┘"
+    );
+
+    // Config mapping
+    if !config_mapping.is_empty() {
+        println!();
+        println!("Config.json → Kernel Mapping:");
+        for (key, field) in config_mapping {
+            println!("  {key}={:<18} → {}", field.value, field.rationale);
+        }
+    }
+
+    // Constraints (verbose)
+    if verbose {
+        println!();
+        println!("Constraints (from family contract):");
+        println!(
+            "  attention_type:      {}",
+            family.constraints.attention_type
+        );
+        println!("  activation:          {}", family.constraints.activation);
+        println!("  norm_type:           {}", family.constraints.norm_type);
+        println!("  mlp_type:            {}", family.constraints.mlp_type);
+        println!(
+            "  positional_encoding: {}",
+            family.constraints.positional_encoding
+        );
+        println!("  has_bias:            {}", family.constraints.has_bias);
+        println!(
+            "  tied_embeddings:     {}",
+            family.constraints.tied_embeddings
+        );
+    }
+
+    // Layout
+    println!();
+    println!("Layout: Row-major (LAYOUT-002 compliant)");
+    println!("  GGUF→APR conversion transposes at import time.");
+    println!("  Direct GGUF inference uses column-major kernels.");
+
+    // Equivalence class members
+    let families = load_families();
+    let class_members: Vec<&str> = families
+        .iter()
+        .filter(|f| f.kernel_class == family.kernel_class)
+        .map(|f| f.family.as_str())
+        .collect();
+    if class_members.len() > 1 {
+        println!();
+        println!(
+            "Equivalence Class {}: {} families",
+            family.kernel_class.letter(),
+            class_members.len()
+        );
+        println!("  {}", class_members.join(", "));
+    }
+
+    // Proof status
+    if show_proof {
+        let proofs = proof_status_for_class(family.kernel_class);
+        println!();
+        println!("Proof Status:");
+        for proof in &proofs {
+            println!(
+                "  {} {:<28} {} ({})",
+                proof.level.symbol(),
+                proof.contract,
+                proof.level.label(),
+                proof.evidence
+            );
+        }
+
+        let proven = proofs
+            .iter()
+            .filter(|p| p.level == ProofLevel::Proven)
+            .count();
+        let tested = proofs
+            .iter()
+            .filter(|p| p.level == ProofLevel::Tested)
+            .count();
+        let total = proofs.len();
+        println!();
+        println!(
+            "Kernel Class {}: {}/{} contracts verified ({} proven, {} tested).",
+            family.kernel_class.letter(),
+            proven + tested,
+            total,
+            proven,
+            tested
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_derive_kernel_class_a() {
+        let c = Constraints {
+            attention_type: "gqa".into(),
+            activation: "silu".into(),
+            norm_type: "rmsnorm".into(),
+            mlp_type: "swiglu".into(),
+            positional_encoding: "rope".into(),
+            ..Default::default()
+        };
+        assert_eq!(derive_kernel_class(&c), KernelClass::A);
+    }
+
+    #[test]
+    fn test_derive_kernel_class_b() {
+        let c = Constraints {
+            attention_type: "mha".into(),
+            activation: "gelu".into(),
+            norm_type: "layernorm".into(),
+            mlp_type: "gelu_mlp".into(),
+            positional_encoding: "absolute".into(),
+            ..Default::default()
+        };
+        assert_eq!(derive_kernel_class(&c), KernelClass::B);
+    }
+
+    #[test]
+    fn test_derive_kernel_class_f() {
+        let c = Constraints {
+            attention_type: "gqa".into(),
+            activation: "gelu".into(),
+            norm_type: "rmsnorm".into(),
+            mlp_type: "gated_mlp".into(),
+            positional_encoding: "rope".into(),
+            ..Default::default()
+        };
+        assert_eq!(derive_kernel_class(&c), KernelClass::F);
+    }
+
+    #[test]
+    fn test_derive_kernel_class_unknown() {
+        let c = Constraints::default();
+        assert_eq!(derive_kernel_class(&c), KernelClass::Unknown);
+    }
+
+    #[test]
+    fn test_load_families_not_empty() {
+        let families = load_families();
+        assert!(!families.is_empty());
+        // Qwen2 should be Class A
+        let qwen2 = families.iter().find(|f| f.family == "qwen2").unwrap();
+        assert_eq!(qwen2.kernel_class, KernelClass::A);
+    }
+
+    #[test]
+    fn test_resolve_family_direct() {
+        let f = resolve_family("qwen2").unwrap();
+        assert_eq!(f.family, "qwen2");
+        assert_eq!(f.kernel_class, KernelClass::A);
+    }
+
+    #[test]
+    fn test_resolve_family_architecture() {
+        let f = resolve_family("Qwen2ForCausalLM").unwrap();
+        assert_eq!(f.family, "qwen2");
+    }
+
+    #[test]
+    fn test_resolve_family_partial() {
+        let f = resolve_family("llama").unwrap();
+        assert_eq!(f.family, "llama");
+    }
+
+    #[test]
+    fn test_resolve_family_unknown() {
+        let f = resolve_family("nonexistent-family-xyz");
+        assert!(f.is_none());
+    }
+
+    #[test]
+    fn test_kernel_ops_class_a_has_rope() {
+        let ops = kernel_ops_for_class(KernelClass::A);
+        assert!(ops.iter().any(|o| o.kernel == "rope_forward"));
+    }
+
+    #[test]
+    fn test_kernel_ops_class_b_no_rope() {
+        let ops = kernel_ops_for_class(KernelClass::B);
+        assert!(!ops.iter().any(|o| o.kernel == "rope_forward"));
+    }
+
+    #[test]
+    fn test_proof_status_matvec() {
+        let proof = proof_status_for_contract("matvec-kernel-v1");
+        assert_ne!(proof.level, ProofLevel::Unknown);
+    }
+
+    #[test]
+    fn test_proof_status_unknown_contract() {
+        let proof = proof_status_for_contract("nonexistent-v1");
+        assert_eq!(proof.level, ProofLevel::Unknown);
+    }
+
+    #[test]
+    fn test_yaml_str_extraction() {
+        let yaml = "family: qwen2\ndisplay_name: \"Qwen2 / Qwen2.5-Coder\"\n";
+        assert_eq!(yaml_str(yaml, "family"), Some("qwen2".to_string()));
+        assert_eq!(
+            yaml_str(yaml, "display_name"),
+            Some("Qwen2 / Qwen2.5-Coder".to_string())
+        );
+        assert_eq!(yaml_str(yaml, "missing"), None);
+    }
+
+    #[test]
+    fn test_yaml_bool_extraction() {
+        let yaml = "has_bias: true\ntied_embeddings: false\n";
+        assert!(yaml_bool(yaml, "has_bias"));
+        assert!(!yaml_bool(yaml, "tied_embeddings"));
+    }
+
+    #[test]
+    fn test_extract_json_string() {
+        let json = r#"{"model_type": "qwen2", "hidden_act": "silu"}"#;
+        assert_eq!(
+            extract_json_string(json, "model_type"),
+            Some("qwen2".to_string())
+        );
+        assert_eq!(
+            extract_json_string(json, "hidden_act"),
+            Some("silu".to_string())
+        );
+        assert_eq!(extract_json_string(json, "missing"), None);
+    }
+
+    #[test]
+    fn test_deterministic_kernel_class() {
+        // FALSIFY-KE-001: Same constraints always produce same kernel class
+        let c = Constraints {
+            attention_type: "gqa".into(),
+            activation: "silu".into(),
+            norm_type: "rmsnorm".into(),
+            mlp_type: "swiglu".into(),
+            positional_encoding: "rope".into(),
+            ..Default::default()
+        };
+        let class1 = derive_kernel_class(&c);
+        let class2 = derive_kernel_class(&c);
+        assert_eq!(class1, class2);
+    }
+
+    #[test]
+    fn test_class_label_round_trip() {
+        for class in [
+            KernelClass::A,
+            KernelClass::B,
+            KernelClass::C,
+            KernelClass::D,
+            KernelClass::E,
+            KernelClass::F,
+        ] {
+            assert!(!class.label().is_empty());
+            assert!(!class.letter().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_equivalence_class_membership() {
+        let families = load_families();
+        // LLaMA and Qwen2 should be in the same kernel class (A)
+        let llama = families.iter().find(|f| f.family == "llama").unwrap();
+        let qwen2 = families.iter().find(|f| f.family == "qwen2").unwrap();
+        assert_eq!(llama.kernel_class, qwen2.kernel_class);
+        assert_eq!(llama.kernel_class, KernelClass::A);
+    }
+
+    #[test]
+    fn test_gpt2_is_class_b() {
+        let families = load_families();
+        let gpt2 = families.iter().find(|f| f.family == "gpt2").unwrap();
+        assert_eq!(gpt2.kernel_class, KernelClass::B);
+    }
+
+    #[test]
+    fn test_gemma_is_class_f() {
+        let families = load_families();
+        let gemma = families.iter().find(|f| f.family == "gemma").unwrap();
+        assert_eq!(gemma.kernel_class, KernelClass::F);
+    }
+}

@@ -226,6 +226,10 @@
                 code_or_file: None,
                 file: None,
                 tensor: None,
+                kernel: false,
+                json: false,
+                verbose: false,
+                proof_status: false,
             },
             Commands::List,
         ];
