@@ -595,7 +595,12 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
         ("model_type", "Architecture class dispatch"),
         ("hidden_act", "Activation kernel selection"),
         ("rms_norm_eps", "RMSNorm (not LayerNorm)"),
+        ("layer_norm_epsilon", "LayerNorm (not RMSNorm)"),
+        ("layer_norm_eps", "LayerNorm (not RMSNorm)"),
+        ("norm_epsilon", "Normalization epsilon"),
         ("num_key_value_heads", "GQA vs MHA vs MQA"),
+        ("num_kv_heads", "GQA vs MHA (Falcon field name)"),
+        ("multi_query", "MQA flag (Falcon-7B)"),
         ("num_attention_heads", "Number of query heads"),
         ("rope_theta", "RoPE positional encoding"),
         ("intermediate_size", "MLP width (SwiGLU detection)"),
@@ -717,8 +722,11 @@ pub fn detect_constraint_mismatches(
         }
     }
 
-    // Check attention type mismatch
-    if let Some(kv) = config_mapping.get("num_key_value_heads") {
+    // Check attention type mismatch (supports both num_key_value_heads and num_kv_heads)
+    let kv_field = config_mapping
+        .get("num_key_value_heads")
+        .or_else(|| config_mapping.get("num_kv_heads"));
+    if let Some(kv) = kv_field {
         if let Some(q) = config_mapping.get("num_attention_heads") {
             let kv_n: u32 = kv.value.parse().unwrap_or(0);
             let q_n: u32 = q.value.parse().unwrap_or(0);
@@ -734,6 +742,18 @@ pub fn detect_constraint_mismatches(
                 warnings.push(format!(
                     "Attention mismatch: config.json implies {} but family '{}' uses {}",
                     config_attn.to_uppercase(),
+                    family.family,
+                    family.constraints.attention_type.to_uppercase()
+                ));
+            }
+        }
+    } else if let Some(mq) = config_mapping.get("multi_query") {
+        // Falcon-7B uses multi_query: true for MQA
+        if mq.value == "true" {
+            let family_attn = family.constraints.attention_type.to_lowercase();
+            if family_attn != "mqa" && !family_attn.is_empty() {
+                warnings.push(format!(
+                    "Attention mismatch: config.json has multi_query=true (MQA) but family '{}' uses {}",
                     family.family,
                     family.constraints.attention_type.to_uppercase()
                 ));
@@ -755,13 +775,21 @@ pub fn detect_constraint_mismatches(
             ));
         }
     } else if family.kernel_class != KernelClass::E {
-        // Detect MoE from display_name or family name
-        // "mixtral" is a portmanteau of "mixture of experts" + "mistral"
+        // Detect MoE from alias input name or family name.
+        // Only check display_name for aliases (which have "via" in the name).
+        // The raw family display_name "Mistral / Mixtral" would false-positive
+        // on all non-MoE mistral models.
         let dn = family.display_name.to_lowercase();
-        if dn.contains("moe")
-            || dn.contains("mixture")
-            || dn.contains("mixtral")
-            || family.family.contains("moe")
+        let is_alias = dn.contains(" (via ");
+        let alias_name = if is_alias {
+            dn.split(" (via ").next().unwrap_or("")
+        } else {
+            ""
+        };
+        if family.family.contains("moe")
+            || alias_name.contains("moe")
+            || alias_name.contains("mixtral")
+            || alias_name.contains("mixture")
         {
             warnings.push(format!(
                 "MoE architecture detected (from name) but mapped to non-MoE class {}. Expert routing kernel not covered.",
