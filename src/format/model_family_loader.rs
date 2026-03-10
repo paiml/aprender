@@ -280,10 +280,17 @@ fn parse_sequence(lines: &[&str], start: usize, indent: usize) -> Result<(YamlVa
 fn parse_scalar(s: &str) -> YamlValue {
     let s = s.trim();
 
-    // Handle quoted strings
+    // Handle quoted strings (preserve inline comments inside quotes)
     if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         return YamlValue::String(s[1..s.len() - 1].to_string());
     }
+
+    // Strip inline comments from unquoted values (YAML spec: # preceded by space)
+    let s = if let Some(pos) = s.find(" #") {
+        s[..pos].trim()
+    } else {
+        s
+    };
 
     // Handle null
     if s == "null" || s == "~" {
