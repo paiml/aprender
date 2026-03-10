@@ -126,6 +126,7 @@ pub fn build_merge_options(
         seed: config.seed,
         scales: None,
         outlier_k: 3.0,
+        layer_ranges: None,
     }
 }
 

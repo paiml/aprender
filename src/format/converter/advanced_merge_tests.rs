@@ -363,3 +363,142 @@ fn falsify_merge_adv_003_sce_bounded() {
         }
     }
 }
+
+// ============================================================================
+// Passthrough / Frankenmerge tests (GH-443)
+// ============================================================================
+
+fn make_layered_model(layer_count: usize, value: f32) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let mut m = BTreeMap::new();
+    m.insert("embed.weight".to_string(), (vec![value; 4], vec![2, 2]));
+    for i in 0..layer_count {
+        m.insert(
+            format!("model.layers.{}.self_attn.q_proj.weight", i),
+            (vec![value + i as f32; 4], vec![2, 2]),
+        );
+        m.insert(
+            format!("model.layers.{}.mlp.weight", i),
+            (vec![value * 10.0 + i as f32; 4], vec![2, 2]),
+        );
+    }
+    m.insert("lm_head.weight".to_string(), (vec![value; 4], vec![2, 2]));
+    m
+}
+
+#[test]
+fn test_passthrough_basic() {
+    let model_a = make_layered_model(4, 1.0);
+    let model_b = make_layered_model(4, 2.0);
+    let models = vec![model_a, model_b];
+
+    // Take layers 0-2 from model A, layers 2-4 from model B
+    let ranges = vec![(0, 0, 2), (1, 2, 4)];
+    let result = super::passthrough_merge(&models, &ranges);
+
+    // Output should have 4 layers (0,1 from A; 2,3 from B)
+    assert!(result.contains_key("model.layers.0.self_attn.q_proj.weight"));
+    assert!(result.contains_key("model.layers.1.self_attn.q_proj.weight"));
+    assert!(result.contains_key("model.layers.2.self_attn.q_proj.weight"));
+    assert!(result.contains_key("model.layers.3.self_attn.q_proj.weight"));
+
+    // Layer 0 should be from model A (value ~1.0)
+    let (d0, _) = result
+        .get("model.layers.0.self_attn.q_proj.weight")
+        .unwrap();
+    assert!((d0[0] - 1.0).abs() < 0.01, "Layer 0 should be from model A");
+
+    // Layer 2 should be from model B layer 2 (value ~2.0 + 2 = 4.0)
+    let (d2, _) = result
+        .get("model.layers.2.self_attn.q_proj.weight")
+        .unwrap();
+    assert!(
+        (d2[0] - 4.0).abs() < 0.01,
+        "Layer 2 should be from model B layer 2, got {}",
+        d2[0]
+    );
+}
+
+#[test]
+fn test_passthrough_non_layer_tensors() {
+    let model_a = make_layered_model(2, 1.0);
+    let model_b = make_layered_model(2, 2.0);
+    let models = vec![model_a, model_b];
+
+    let ranges = vec![(0, 0, 1), (1, 0, 1)];
+    let result = super::passthrough_merge(&models, &ranges);
+
+    // Non-layer tensors should come from first model
+    let (embed, _) = result.get("embed.weight").unwrap();
+    assert!(
+        (embed[0] - 1.0).abs() < 0.01,
+        "embed should come from model A"
+    );
+    let (lm_head, _) = result.get("lm_head.weight").unwrap();
+    assert!(
+        (lm_head[0] - 1.0).abs() < 0.01,
+        "lm_head should come from model A"
+    );
+}
+
+#[test]
+fn test_parse_layer_tensor_name() {
+    // Standard format
+    let r = super::parse_layer_tensor_name("model.layers.5.self_attn.q_proj.weight");
+    assert_eq!(r, Some((5, "model.layers.", ".self_attn.q_proj.weight")));
+
+    // GGUF format
+    let r = super::parse_layer_tensor_name("blk.12.attn_q.weight");
+    assert_eq!(r, Some((12, "blk.", ".attn_q.weight")));
+
+    // Non-layer tensor
+    let r = super::parse_layer_tensor_name("embed.weight");
+    assert_eq!(r, None);
+
+    // lm_head
+    let r = super::parse_layer_tensor_name("lm_head.weight");
+    assert_eq!(r, None);
+}
+
+#[test]
+fn test_passthrough_gguf_style() {
+    let mut m1 = BTreeMap::new();
+    m1.insert(
+        "blk.0.attn_q.weight".to_string(),
+        (vec![1.0; 4], vec![2, 2]),
+    );
+    m1.insert(
+        "blk.1.attn_q.weight".to_string(),
+        (vec![2.0; 4], vec![2, 2]),
+    );
+    m1.insert("token_embd.weight".to_string(), (vec![0.5; 4], vec![2, 2]));
+
+    let ranges = vec![(0, 0, 2)];
+    let result = super::passthrough_merge(&[m1], &ranges);
+
+    assert!(result.contains_key("blk.0.attn_q.weight"));
+    assert!(result.contains_key("blk.1.attn_q.weight"));
+    assert!(result.contains_key("token_embd.weight"));
+}
+
+/// FALSIFY-PASSTHROUGH-001: Passthrough preserves tensor data exactly.
+#[test]
+fn falsify_passthrough_001_data_preservation() {
+    let model = make_layered_model(3, 7.5);
+    let ranges = vec![(0, 0, 3)];
+    let result = super::passthrough_merge(&[model.clone()], &ranges);
+
+    // Every layer tensor should be exactly preserved
+    for (name, (data, shape)) in &model {
+        if let Some((_, prefix, suffix)) = super::parse_layer_tensor_name(name) {
+            // Find the renamed tensor in result
+            let found = result.iter().any(|(_, (rd, rs))| rd == data && rs == shape);
+            assert!(found, "Tensor {} data should be preserved exactly", name);
+            let _ = (prefix, suffix);
+        } else {
+            // Non-layer tensor preserved with same name
+            let (rd, rs) = result.get(name).unwrap();
+            assert_eq!(rd, data, "Non-layer tensor {} data mismatch", name);
+            assert_eq!(rs, shape, "Non-layer tensor {} shape mismatch", name);
+        }
+    }
+}

@@ -44,6 +44,8 @@ pub enum MergeStrategy {
     Breadcrumbs,
     /// SCE: adaptive matrix-level weighting (GH-442)
     Sce,
+    /// Passthrough: direct tensor copy for layer stacking / frankenmerge (GH-443)
+    Passthrough,
 }
 
 impl std::str::FromStr for MergeStrategy {
@@ -62,6 +64,7 @@ impl std::str::FromStr for MergeStrategy {
             "della" => Ok(Self::Della),
             "breadcrumbs" => Ok(Self::Breadcrumbs),
             "sce" => Ok(Self::Sce),
+            "passthrough" | "frankenmerge" => Ok(Self::Passthrough),
             _ => Err(format!("Unknown merge strategy: {s}")),
         }
     }
@@ -84,6 +87,7 @@ impl MergeStrategy {
                 | Self::Della
                 | Self::Breadcrumbs
                 | Self::Sce
+                | Self::Passthrough
         )
     }
 }
@@ -107,6 +111,8 @@ pub struct MergeOptions {
     pub scales: Option<Vec<f32>>,
     /// Breadcrumbs outlier threshold in std deviations (default 3.0)
     pub outlier_k: f32,
+    /// Passthrough layer ranges: (model_index, start_layer, end_layer) for frankenmerge (GH-443)
+    pub layer_ranges: Option<Vec<(usize, usize, usize)>>,
 }
 
 impl Default for MergeOptions {
@@ -120,6 +126,7 @@ impl Default for MergeOptions {
             seed: 42,
             scales: None,
             outlier_k: 3.0,
+            layer_ranges: None,
         }
     }
 }
@@ -174,6 +181,7 @@ fn validate_strategy_specific<P: AsRef<Path>>(inputs: &[P], options: &MergeOptio
         MergeStrategy::TaskArithmetic => validate_ties_dare_options(options, "TaskArithmetic"),
         MergeStrategy::Della => validate_ties_dare_options(options, "DELLA"),
         MergeStrategy::Breadcrumbs => validate_ties_dare_options(options, "Breadcrumbs"),
+        MergeStrategy::Passthrough => validate_passthrough_options(inputs, options),
         MergeStrategy::Average | MergeStrategy::MultiSlerp | MergeStrategy::Sce => Ok(()),
     }
 }
@@ -236,6 +244,32 @@ fn validate_ties_dare_options(options: &MergeOptions, name: &str) -> Result<()> 
         });
     }
     Ok(())
+}
+
+/// Validate passthrough merge options.
+fn validate_passthrough_options<P: AsRef<Path>>(
+    inputs: &[P],
+    options: &MergeOptions,
+) -> Result<()> {
+    match &options.layer_ranges {
+        None => Err(AprenderError::FormatError {
+            message: "Passthrough merge requires layer_ranges specification".to_string(),
+        }),
+        Some(ranges) => {
+            for &(model_idx, _, _) in ranges {
+                if model_idx >= inputs.len() {
+                    return Err(AprenderError::FormatError {
+                        message: format!(
+                            "Layer range references model index {}, but only {} models provided",
+                            model_idx,
+                            inputs.len()
+                        ),
+                    });
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Load all model tensors from input files.

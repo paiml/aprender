@@ -295,6 +295,10 @@ pub fn apr_merge<P: AsRef<Path>>(
             let weights = options.weights.as_deref().unwrap_or(&default_weights);
             sce_merge(&all_tensors, weights)
         }
+        MergeStrategy::Passthrough => {
+            let ranges = options.layer_ranges.as_ref().expect("validated above");
+            passthrough_merge(&all_tensors, ranges)
+        }
     };
 
     // Save merged model

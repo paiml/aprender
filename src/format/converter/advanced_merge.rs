@@ -339,3 +339,92 @@ pub(crate) fn sce_merge(
 
     merged
 }
+
+// ============================================================================
+// Passthrough / Frankenmerge (GH-443)
+// ============================================================================
+
+/// Passthrough merge: direct tensor copy for layer stacking (frankenmerge).
+///
+/// Takes specific layers from specific models and concatenates them.
+/// Each layer range specifies (model_index, start_layer, end_layer_exclusive).
+/// Non-layer tensors (embed, lm_head, norm) are taken from the first model.
+///
+/// Reference: Inspired by MergeKit's passthrough strategy for creating
+/// "frankenmerge" models with custom layer compositions.
+pub(crate) fn passthrough_merge(
+    all_tensors: &[BTreeMap<String, (Vec<f32>, Vec<usize>)>],
+    layer_ranges: &[(usize, usize, usize)],
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let mut merged = BTreeMap::new();
+
+    // Build output layer mapping: output_layer -> (model_idx, source_layer)
+    let mut layer_map: Vec<(usize, usize)> = Vec::new();
+    for &(model_idx, start, end) in layer_ranges {
+        for layer in start..end {
+            layer_map.push((model_idx, layer));
+        }
+    }
+
+    // Collect all tensor names from all models
+    let mut all_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for model in all_tensors {
+        for name in model.keys() {
+            all_names.insert(name.clone());
+        }
+    }
+
+    for name in &all_names {
+        if let Some((layer_num, prefix, suffix)) = parse_layer_tensor_name(name) {
+            // Find which output position maps from this source layer
+            for (out_idx, &(model_idx, src_layer)) in layer_map.iter().enumerate() {
+                if src_layer == layer_num {
+                    if let Some(model) = all_tensors.get(model_idx) {
+                        if let Some((data, shape)) = model.get(name) {
+                            let out_name = format!("{prefix}{out_idx}{suffix}");
+                            merged.insert(out_name, (data.clone(), shape.clone()));
+                        }
+                    }
+                }
+            }
+        } else {
+            // Non-layer tensor: take from first model that has it
+            for model in all_tensors {
+                if let Some((data, shape)) = model.get(name) {
+                    merged.insert(name.clone(), (data.clone(), shape.clone()));
+                    break;
+                }
+            }
+        }
+    }
+
+    merged
+}
+
+/// Parse a layer tensor name into (layer_number, prefix, suffix).
+/// Returns None for non-layer tensors.
+fn parse_layer_tensor_name(name: &str) -> Option<(usize, &str, &str)> {
+    // Try "layers.N." pattern
+    if let Some(pos) = name.find("layers.") {
+        let after_layers = &name[pos + 7..];
+        if let Some(dot_pos) = after_layers.find('.') {
+            if let Ok(num) = after_layers[..dot_pos].parse::<usize>() {
+                let prefix = &name[..pos + 7];
+                let suffix = &after_layers[dot_pos..];
+                return Some((num, prefix, suffix));
+            }
+        }
+    }
+    // Try "blk.N." pattern (GGUF style)
+    if let Some(pos) = name.find("blk.") {
+        let after_blk = &name[pos + 4..];
+        if let Some(dot_pos) = after_blk.find('.') {
+            if let Ok(num) = after_blk[..dot_pos].parse::<usize>() {
+                let prefix = &name[..pos + 4];
+                let suffix = &after_blk[dot_pos..];
+                return Some((num, prefix, suffix));
+            }
+        }
+    }
+    None
+}
