@@ -158,11 +158,21 @@ fn explain_kernel(
             result
         } else {
             // Model file — try to find config.json in same directory
-            let config_path = path.with_file_name("config.json");
+            // Also try resolving symlinks first for symlinked model files
+            let real_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+            let config_path = real_path.with_file_name("config.json");
             if config_path.exists() {
                 resolve_from_config_json(&config_path)
             } else {
-                None
+                emit_kernel_error(
+                    json,
+                    &format!(
+                        "No config.json found alongside '{}'. \
+                         Kernel analysis requires a HuggingFace config.json in the same directory.",
+                        path.display()
+                    ),
+                );
+                std::process::exit(1);
             }
         }
     } else {
@@ -172,7 +182,7 @@ fn explain_kernel(
     let family = family.or_else(|| {
         code_or_family.and_then(|input| {
             // Try as HF repo pattern (e.g., "hf://Qwen/Qwen2.5-Coder-1.5B")
-            let input = input.strip_prefix("hf://").unwrap_or(input);
+            let input = input.strip_prefix("hf://").unwrap_or(input).trim();
             // Try as config.json path
             let path = Path::new(input);
             if path.exists() && path.extension().map_or(false, |e| e == "json") {
@@ -180,6 +190,10 @@ fn explain_kernel(
             }
             // Try as HF repo ID → look up cached config.json
             if input.contains('/') {
+                // Reject path traversal (defense in depth)
+                if input.contains("..") {
+                    return None;
+                }
                 let cache_base = dirs::home_dir()
                     .unwrap_or_default()
                     .join(".apr/cache/hf")
@@ -195,7 +209,10 @@ fn explain_kernel(
     });
 
     let Some(family) = family else {
-        let raw_input = code_or_family.unwrap_or("(none)");
+        // Strip hf:// prefix for display, trim whitespace
+        let raw_input = code_or_family
+            .map(|s| s.strip_prefix("hf://").unwrap_or(s).trim())
+            .unwrap_or("(none)");
         // Truncate long inputs to prevent terminal flooding
         let input = if raw_input.len() > 80 {
             &raw_input[..raw_input.floor_char_boundary(80)]
