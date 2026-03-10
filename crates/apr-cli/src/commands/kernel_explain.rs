@@ -448,8 +448,13 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
 
 /// Resolve a family string or architecture string to `FamilyInfo`.
 pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
-    let families = load_families();
     let lower = input.to_lowercase();
+    let lower = lower.trim();
+    if lower.is_empty() {
+        return None;
+    }
+
+    let families = load_families();
 
     // Direct family name match
     if let Some(f) = families.iter().find(|f| f.family == lower) {
@@ -474,10 +479,14 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         return Some(f.clone());
     }
 
-    // Partial match (e.g., "qwen" matches "qwen2")
-    families
-        .into_iter()
-        .find(|f| f.family.contains(&lower) || lower.contains(&f.family))
+    // Partial match (e.g., "qwen" matches "qwen2") — require >= 3 chars
+    if lower.len() >= 3 {
+        return families
+            .into_iter()
+            .find(|f| f.family.contains(lower) || lower.contains(&f.family));
+    }
+
+    None
 }
 
 /// Try to resolve family from a config.json file.
@@ -555,8 +564,10 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
     match key {
         "hidden_act" => match value {
             "silu" => Some("SiLU activation (not GELU)".to_string()),
-            "gelu" | "gelu_new" => Some("GELU activation (not SiLU)".to_string()),
-            _ => None,
+            "gelu" | "gelu_new" | "gelu_pytorch_tanh" | "gelu_fast" => {
+                Some(format!("GELU activation: {value} (not SiLU)"))
+            }
+            _ => Some(format!("Activation: {value}")),
         },
         "rms_norm_eps" => Some("RMSNorm (not LayerNorm)".to_string()),
         "num_key_value_heads" => {
@@ -591,6 +602,65 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Extract the first architecture string from a config.json (e.g., "Starcoder2ForCausalLM").
+pub fn extract_architecture_from_config(
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Option<String> {
+    // Check if we stored architectures — fall back to model_type
+    config_mapping.get("model_type").map(|f| f.value.clone())
+}
+
+/// Detect mismatches between config.json values and family constraints.
+pub fn detect_constraint_mismatches(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    // Check activation mismatch
+    if let Some(act) = config_mapping.get("hidden_act") {
+        let config_act = act.value.to_lowercase();
+        let family_act = family.constraints.activation.to_lowercase();
+        let config_is_gelu = config_act.contains("gelu");
+        let family_is_gelu = family_act.contains("gelu");
+        let config_is_silu = config_act == "silu" || config_act == "swish";
+        let family_is_silu = family_act == "silu" || family_act == "swish";
+
+        if (config_is_gelu && family_is_silu) || (config_is_silu && family_is_gelu) {
+            warnings.push(format!(
+                "Activation mismatch: config.json has '{}' but family '{}' uses '{}'",
+                act.value, family.family, family.constraints.activation
+            ));
+        }
+    }
+
+    // Check attention type mismatch
+    if let Some(kv) = config_mapping.get("num_key_value_heads") {
+        if let Some(q) = config_mapping.get("num_attention_heads") {
+            let kv_n: u32 = kv.value.parse().unwrap_or(0);
+            let q_n: u32 = q.value.parse().unwrap_or(0);
+            let config_attn = if kv_n == 1 {
+                "mqa"
+            } else if kv_n < q_n {
+                "gqa"
+            } else {
+                "mha"
+            };
+            let family_attn = family.constraints.attention_type.to_lowercase();
+            if config_attn != family_attn && !family_attn.is_empty() {
+                warnings.push(format!(
+                    "Attention mismatch: config.json implies {} but family '{}' uses {}",
+                    config_attn.to_uppercase(),
+                    family.family,
+                    family.constraints.attention_type.to_uppercase()
+                ));
+            }
+        }
+    }
+
+    warnings
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -723,6 +793,8 @@ pub struct KernelExplainJson {
     pub proof_summary: ProofSummary,
     pub layout: String,
     pub equivalence_class_families: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -770,11 +842,16 @@ pub fn build_json_output(
         .map(|f| f.family.clone())
         .collect();
 
-    let arch = family
-        .architectures
-        .first()
-        .map_or("Unknown", String::as_str)
-        .to_string();
+    // Prefer actual architecture from config.json over family default
+    let arch = extract_architecture_from_config(&config_mapping).unwrap_or_else(|| {
+        family
+            .architectures
+            .first()
+            .map_or("Unknown", String::as_str)
+            .to_string()
+    });
+
+    let warnings = detect_constraint_mismatches(family, &config_mapping);
 
     KernelExplainJson {
         architecture: arch,
@@ -794,6 +871,7 @@ pub fn build_json_output(
         },
         layout: "row_major".to_string(),
         equivalence_class_families,
+        warnings,
     }
 }
 
@@ -805,10 +883,12 @@ pub fn print_human_output(
     verbose: bool,
     show_proof: bool,
 ) {
-    let arch = family
-        .architectures
-        .first()
-        .map_or("Unknown", String::as_str);
+    // Prefer actual architecture from config.json over family default
+    let config_model_type = extract_architecture_from_config(config_mapping);
+    let arch = config_model_type
+        .as_deref()
+        .or(family.architectures.first().map(String::as_str))
+        .unwrap_or("Unknown");
     let ops = kernel_ops_for_class(family.kernel_class);
 
     println!("Kernel Explainability Report: {}", family.display_name);
@@ -869,6 +949,16 @@ pub fn print_human_output(
             "  tied_embeddings:     {}",
             family.constraints.tied_embeddings
         );
+    }
+
+    // Constraint mismatch warnings
+    if !config_mapping.is_empty() {
+        let mismatches = detect_constraint_mismatches(family, config_mapping);
+        for warning in &mismatches {
+            println!();
+            eprintln!("⚠ WARNING: {warning}");
+            eprintln!("  This model is mapped via alias. Kernel selection may differ from the family contract.");
+        }
     }
 
     // Layout

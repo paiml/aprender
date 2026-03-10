@@ -95,6 +95,17 @@ fn explain_kernel(
             if path.exists() && path.extension().map_or(false, |e| e == "json") {
                 return resolve_from_config_json(path);
             }
+            // Try as HF repo ID → look up cached config.json
+            if input.contains('/') {
+                let cache_base = dirs::home_dir()
+                    .unwrap_or_default()
+                    .join(".apr/cache/hf")
+                    .join(input)
+                    .join("config.json");
+                if cache_base.exists() {
+                    return resolve_from_config_json(&cache_base);
+                }
+            }
             // Try as family name or architecture
             resolve_family(input)
         })
@@ -116,7 +127,7 @@ fn explain_kernel(
         std::process::exit(1);
     };
 
-    // Extract config.json mapping if a file was provided
+    // Extract config.json mapping if a file was provided or resolvable from HF cache
     let config_mapping = file
         .map(|p| {
             let config_path = if p.extension().map_or(false, |e| e == "json") {
@@ -125,6 +136,26 @@ fn explain_kernel(
                 p.with_file_name("config.json")
             };
             extract_config_mapping(&config_path)
+        })
+        .or_else(|| {
+            code_or_family.and_then(|input| {
+                let input = input.strip_prefix("hf://").unwrap_or(input);
+                if input.contains('/') {
+                    let cache_path = dirs::home_dir()?
+                        .join(".apr/cache/hf")
+                        .join(input)
+                        .join("config.json");
+                    if cache_path.exists() {
+                        return Some(extract_config_mapping(&cache_path));
+                    }
+                }
+                // Also try if input is a direct path to config.json
+                let path = Path::new(input);
+                if path.exists() && path.extension().map_or(false, |e| e == "json") {
+                    return Some(extract_config_mapping(path));
+                }
+                None
+            })
         })
         .unwrap_or_default();
 
