@@ -411,6 +411,8 @@ fn yaml_str(text: &str, key: &str) -> Option<String> {
         let trimmed = line.trim();
         if trimmed.starts_with(&search) {
             let val = trimmed[search.len()..].trim();
+            // Strip inline comments (# ...)
+            let val = val.split('#').next().unwrap_or(val).trim();
             // Strip quotes
             let val = val.trim_matches('"').trim_matches('\'');
             if val.is_empty() || val == "null" {
@@ -592,6 +594,43 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
 pub fn family_aliases() -> &'static [(&'static str, &'static str)] {
     FAMILY_ALIASES
 }
+
+/// Known HuggingFace architecture class names for common aliases.
+/// Used to display the correct architecture instead of the raw alias string.
+const ALIAS_ARCHITECTURES: &[(&str, &str)] = &[
+    ("bloom", "BloomForCausalLM"),
+    ("bloomz", "BloomForCausalLM"),
+    ("bloom_560m", "BloomForCausalLM"),
+    ("falcon", "FalconForCausalLM"),
+    ("mixtral", "MixtralForCausalLM"),
+    ("phi3", "Phi3ForCausalLM"),
+    ("phi3small", "Phi3SmallForCausalLM"),
+    ("codellama", "LlamaForCausalLM"),
+    ("vicuna", "LlamaForCausalLM"),
+    ("solar", "LlamaForCausalLM"),
+    ("nemotron", "LlamaForCausalLM"),
+    ("olmo", "OlmoForCausalLM"),
+    ("olmo2", "Olmo2ForCausalLM"),
+    ("granite", "GraniteForCausalLM"),
+    ("internlm2", "InternLM2ForCausalLM"),
+    ("yi", "LlamaForCausalLM"),
+    ("baichuan", "BaichuanForCausalLM"),
+    ("stablelm", "StableLmForCausalLM"),
+    ("starcoder2", "Starcoder2ForCausalLM"),
+    ("codestral", "MistralForCausalLM"),
+    ("mathstral", "MistralForCausalLM"),
+    ("pixtral", "LlavaMistralForCausalLM"),
+    ("zephyr", "MistralForCausalLM"),
+    ("openchat", "MistralForCausalLM"),
+    ("openhermes", "MistralForCausalLM"),
+    ("qwen2_moe", "Qwen2MoeForCausalLM"),
+    ("qwen2moe", "Qwen2MoeForCausalLM"),
+    ("qwen3_moe", "Qwen3MoeForCausalLM"),
+    ("qwen3moe", "Qwen3MoeForCausalLM"),
+    ("deepseek_v2", "DeepseekV2ForCausalLM"),
+    ("deepseekv2", "DeepseekV2ForCausalLM"),
+    ("qwq", "Qwen2ForCausalLM"),
+];
 
 /// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
 /// E.g., "falcon-h1" → "falcon_h1", "qwen3.5" → "qwen3_5"
@@ -947,9 +986,13 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
             }
         }
         "num_local_experts" | "num_experts" | "n_routed_experts" => {
-            let n: u32 = value.parse().unwrap_or(0);
-            if n > 0 {
+            let n: i32 = value.parse().unwrap_or(0);
+            if n > 1 {
                 Some(format!("MoE with {n} experts (expert routing kernel)"))
+            } else if n == 1 {
+                Some("1 expert (dense model, not MoE)".to_string())
+            } else if n < 0 {
+                Some(format!("Invalid: {n} experts (negative)"))
             } else {
                 None
             }
@@ -957,7 +1000,8 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
         "num_experts_per_tok" => {
             let n: u32 = value.parse().unwrap_or(0);
             if n > 0 {
-                Some(format!("{n} active experts per token"))
+                let plural = if n == 1 { "expert" } else { "experts" };
+                Some(format!("{n} active {plural} per token"))
             } else {
                 None
             }
@@ -990,7 +1034,16 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                     extract_json_string(json, "num_hidden_layers")
                         .and_then(|v| v.parse::<u64>().ok())
                 {
-                    let est = 12 * layers * n * n; // rough transformer param estimate
+                    // Use intermediate_size if available for better estimate,
+                    // otherwise fall back to 12*L*d^2 (assumes 4x MLP ratio)
+                    let inter = extract_json_string(json, "intermediate_size")
+                        .and_then(|v| v.parse::<u64>().ok());
+                    let est = if let Some(i) = inter {
+                        // 4*d*i + 4*d*d + 2*d per layer + vocab embeddings
+                        layers * (4 * n * i + 4 * n * n + 2 * n)
+                    } else {
+                        12 * layers * n * n // rough estimate assuming 4x MLP
+                    };
                     if est > 1_000_000_000 {
                         format!(", ~{:.1}B params", est as f64 / 1e9)
                     } else if est > 1_000_000 {
@@ -1046,8 +1099,8 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
 }
 
 /// Extract the architecture display string.
-/// Priority: config.json model_type → config.json _architectures → family default.
-/// For aliases, shows the alias source architecture, not the target family's.
+/// Priority: config.json _architectures → config.json model_type → alias arch table → family default.
+/// For aliases, shows the known HF architecture class, not the target family's.
 pub fn extract_architecture_display(
     family: &FamilyInfo,
     config_mapping: &BTreeMap<String, ConfigField>,
@@ -1060,9 +1113,17 @@ pub fn extract_architecture_display(
     if let Some(mt) = config_mapping.get("model_type") {
         return mt.value.clone();
     }
-    // For aliases: extract alias name from display_name and show it as architecture
+    // For aliases: look up known HF architecture class
     if family.display_name.contains(" (via ") {
         if let Some(alias_name) = family.display_name.split(" (via ").next() {
+            // Check the alias architecture table for the canonical HF class name
+            if let Some((_, hf_arch)) = ALIAS_ARCHITECTURES
+                .iter()
+                .find(|(alias, _)| *alias == alias_name)
+            {
+                return (*hf_arch).to_string();
+            }
+            // Fall back to the raw alias name
             return alias_name.to_string();
         }
     }
@@ -1126,7 +1187,11 @@ pub fn detect_constraint_mismatches(
         || config_mapping.contains_key("layer_norm_eps")
         || config_mapping.contains_key("norm_epsilon");
     let family_norm = family.constraints.norm_type.to_lowercase();
-    if has_rms && !has_ln && family_norm == "layernorm" {
+    if has_rms && has_ln {
+        warnings.push(
+            "Conflicting norm config: both rms_norm_eps (RMSNorm) and layer_norm_epsilon (LayerNorm) present. Only one should exist.".to_string()
+        );
+    } else if has_rms && !has_ln && family_norm == "layernorm" {
         warnings.push(format!(
             "Norm mismatch: config.json has rms_norm_eps (RMSNorm) but family '{}' uses LayerNorm",
             family.family
@@ -1190,10 +1255,15 @@ pub fn detect_constraint_mismatches(
         .or_else(|| config_mapping.get("num_experts"))
         .or_else(|| config_mapping.get("n_routed_experts"));
     if let Some(ef) = expert_field {
-        if family.kernel_class != KernelClass::E {
+        let n_experts: i32 = ef.value.parse().unwrap_or(0);
+        if n_experts < 0 {
             warnings.push(format!(
-                "MoE model ({} experts) mapped to non-MoE class {}. Expert routing kernel not covered.",
-                ef.value,
+                "Invalid config: expert count ({}) is negative.",
+                ef.value
+            ));
+        } else if n_experts > 1 && family.kernel_class != KernelClass::E {
+            warnings.push(format!(
+                "MoE model ({n_experts} experts) mapped to non-MoE class {}. Expert routing kernel not covered.",
                 family.kernel_class.letter()
             ));
         }
