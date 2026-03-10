@@ -474,6 +474,16 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("falcon", "bert"), // Falcon-7B/40B: LayerNorm + GELU (no RMSNorm, no SiLU)
 ];
 
+/// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
+/// E.g., "falcon-h1" → "falcon_h1", "qwen3.5" → "qwen3_5"
+fn normalize_input(input: &str) -> String {
+    input
+        .to_lowercase()
+        .trim()
+        .replace('-', "_")
+        .replace('.', "_")
+}
+
 /// Resolve a family string or architecture string to `FamilyInfo`.
 pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     let lower = input.to_lowercase();
@@ -483,17 +493,31 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     }
 
     let families = load_families();
+    // Normalized form for matching (hyphens/dots → underscores)
+    let normalized = normalize_input(input);
 
-    // Direct family name match
-    if let Some(f) = families.iter().find(|f| f.family == lower) {
+    // Direct family name match (try both raw lowercase and normalized)
+    if let Some(f) = families
+        .iter()
+        .find(|f| f.family == lower || f.family == normalized)
+    {
         return Some(f.clone());
     }
 
     // Alias match (model types sharing kernel pipeline with existing family)
-    if let Some((_, target)) = FAMILY_ALIASES.iter().find(|(alias, _)| *alias == lower) {
+    // Try raw lowercase first, then normalized (hyphens/dots → underscores)
+    let alias_match = FAMILY_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == lower)
+        .or_else(|| {
+            FAMILY_ALIASES
+                .iter()
+                .find(|(alias, _)| *alias == normalized.as_str())
+        });
+    if let Some((matched_alias, target)) = alias_match {
         if let Some(f) = families.iter().find(|f| f.family == *target) {
             let mut aliased = f.clone();
-            aliased.display_name = format!("{} (via {} kernel pipeline)", lower, f.family);
+            aliased.display_name = format!("{} (via {} kernel pipeline)", matched_alias, f.family);
             return Some(aliased);
         }
     }
@@ -526,10 +550,10 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     }
 
     // Partial match (e.g., "qwen" matches "qwen2") — require >= 3 chars
-    if lower.len() >= 3 {
+    if normalized.len() >= 3 {
         return families
             .into_iter()
-            .find(|f| f.family.contains(lower) || lower.contains(&f.family));
+            .find(|f| f.family.contains(normalized.as_str()) || normalized.contains(&f.family));
     }
 
     None
