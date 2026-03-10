@@ -1379,17 +1379,9 @@ pub fn detect_constraint_mismatches(
         }
     }
 
-    // Check tied_embeddings mismatch
-    if let Some(tied) = config_mapping.get("tie_word_embeddings") {
-        let config_tied = tied.value == "true";
-        let family_tied = family.constraints.tied_embeddings;
-        if config_tied != family_tied {
-            warnings.push(format!(
-                "Tied embeddings mismatch: config.json has tie_word_embeddings={} but family '{}' expects {}",
-                tied.value, family.family, family_tied
-            ));
-        }
-    }
+    // Note: tied_embeddings mismatch NOT warned about — it varies by model size
+    // within a family (small models often tie, large ones don't) and does not
+    // affect kernel dispatch.
 
     warnings
 }
