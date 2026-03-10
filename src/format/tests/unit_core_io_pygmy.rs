@@ -397,6 +397,7 @@ fn test_gguf_model_config_with_values() {
         rope_theta: Some(10000.0),
         rms_norm_eps: Some(1e-5),
         rope_type: Some(0),
+        ..Default::default()
     };
     assert_eq!(cfg.architecture.as_deref(), Some("llama"));
     assert_eq!(cfg.hidden_size, Some(4096));
@@ -426,6 +427,7 @@ fn test_gguf_model_config_qwen2_style() {
         rope_theta: Some(1000000.0),
         rms_norm_eps: Some(1e-6),
         rope_type: Some(2), // NEOX style for Qwen2.5
+        ..Default::default()
     };
     assert_eq!(cfg.rope_type, Some(2));
     assert_eq!(cfg.architecture.as_deref(), Some("qwen2"));

@@ -742,14 +742,22 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
             let hidden =
                 extract_json_string(json, "hidden_size").and_then(|v| v.parse::<f64>().ok());
             let inter = value.parse::<f64>().ok();
+            let act = extract_json_string(json, "hidden_act")
+                .unwrap_or_default()
+                .to_lowercase();
+            let is_gelu = act.contains("gelu");
             match (hidden, inter) {
                 (Some(h), Some(i)) if h > 0.0 => {
                     let ratio = i / h;
-                    if ratio > 2.5 {
-                        Some(format!("SwiGLU MLP ({i:.0}/{h:.0} = {ratio:.2}x)"))
+                    // GELU models use standard FFN, not SwiGLU
+                    let mlp_type = if is_gelu {
+                        "GELU FFN"
+                    } else if ratio > 2.5 {
+                        "SwiGLU MLP"
                     } else {
-                        Some(format!("Standard FFN ({i:.0}/{h:.0} = {ratio:.2}x)"))
-                    }
+                        "Standard FFN"
+                    };
+                    Some(format!("{mlp_type} ({i:.0}/{h:.0} = {ratio:.2}x)"))
                 }
                 _ => None,
             }
@@ -757,7 +765,7 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
         "num_local_experts" | "num_experts" | "n_routed_experts" => {
             let n: u32 = value.parse().unwrap_or(0);
             if n > 0 {
-                Some(format!("MoE with {n} experts (Class E kernel routing)"))
+                Some(format!("MoE with {n} experts (expert routing kernel)"))
             } else {
                 None
             }
@@ -1221,12 +1229,17 @@ pub fn print_human_output(
         .filter(|f| f.kernel_class == family.kernel_class)
         .map(|f| f.family.as_str())
         .collect();
-    if class_members.len() > 1 {
+    if !class_members.is_empty() {
         println!();
         println!(
-            "Equivalence Class {}: {} families",
+            "Equivalence Class {}: {} {}",
             family.kernel_class.letter(),
-            class_members.len()
+            class_members.len(),
+            if class_members.len() == 1 {
+                "family"
+            } else {
+                "families"
+            }
         );
         println!("  {}", class_members.join(", "));
     }

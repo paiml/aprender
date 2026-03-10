@@ -88,9 +88,10 @@ impl RosettaStone {
 
         let mut report = match format {
             FormatType::Gguf => self.validate_gguf_metadata_only(path)?,
-            // SafeTensors and APR already use mmap, so full validation is fast
-            FormatType::SafeTensors => self.validate_safetensors(path)?,
-            FormatType::Apr => self.validate_apr(path)?,
+            // GH-471: All formats use header-only validation in metadata_only path.
+            // validate_safetensors/validate_apr load+dequantize every tensor — O(file_size).
+            FormatType::SafeTensors => self.validate_safetensors_metadata_only(path)?,
+            FormatType::Apr => self.validate_apr_metadata_only(path)?,
         };
         report.duration_ms = start.elapsed().as_millis() as u64;
         Ok(report)
@@ -358,6 +359,86 @@ impl RosettaStone {
 
         Ok(ValidationReport {
             format: FormatType::Gguf,
+            file_path: path.display().to_string(),
+            is_valid,
+            tensor_count,
+            failed_tensor_count: 0,
+            total_nan_count: 0,
+            total_inf_count: 0,
+            all_zero_tensors: Vec::new(),
+            tensors: Vec::new(),
+            duration_ms: 0,
+        })
+    }
+
+    /// GH-471: Metadata-only SafeTensors validation — reads header JSON only,
+    /// no tensor data. The full validate_safetensors loads and dequantizes every
+    /// tensor which is O(file_size).
+    fn validate_safetensors_metadata_only(&self, path: &Path) -> Result<ValidationReport> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path).map_err(AprenderError::Io)?;
+
+        // SafeTensors: first 8 bytes = JSON header size (u64 LE)
+        let mut size_buf = [0u8; 8];
+        file.read_exact(&mut size_buf).map_err(AprenderError::Io)?;
+        let header_size = u64::from_le_bytes(size_buf) as usize;
+
+        if header_size < 2 || header_size > 100_000_000 {
+            return Ok(ValidationReport {
+                format: FormatType::SafeTensors,
+                file_path: path.display().to_string(),
+                is_valid: false,
+                tensor_count: 0,
+                failed_tensor_count: 0,
+                total_nan_count: 0,
+                total_inf_count: 0,
+                all_zero_tensors: Vec::new(),
+                tensors: Vec::new(),
+                duration_ms: 0,
+            });
+        }
+
+        // Parse JSON header to count tensors (no tensor data loaded)
+        let mut header_buf = vec![0u8; header_size];
+        file.read_exact(&mut header_buf).map_err(AprenderError::Io)?;
+        let header_json: serde_json::Value =
+            serde_json::from_slice(&header_buf).map_err(|e| AprenderError::FormatError {
+                message: format!("SafeTensors header parse failed: {e}"),
+            })?;
+
+        let tensor_count = header_json
+            .as_object()
+            .map(|m| m.keys().filter(|k| *k != "__metadata__").count())
+            .unwrap_or(0);
+
+        Ok(ValidationReport {
+            format: FormatType::SafeTensors,
+            file_path: path.display().to_string(),
+            is_valid: tensor_count > 0,
+            tensor_count,
+            failed_tensor_count: 0,
+            total_nan_count: 0,
+            total_inf_count: 0,
+            all_zero_tensors: Vec::new(),
+            tensors: Vec::new(),
+            duration_ms: 0,
+        })
+    }
+
+    /// GH-471: Metadata-only APR validation — reads only 64-byte header.
+    fn validate_apr_metadata_only(&self, path: &Path) -> Result<ValidationReport> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path).map_err(AprenderError::Io)?;
+        let mut header = [0u8; 64];
+        file.read_exact(&mut header).map_err(AprenderError::Io)?;
+
+        let magic_ok = header[0..4] == [0x41, 0x50, 0x52, 0x00];
+        let tensor_count =
+            u32::from_le_bytes([header[8], header[9], header[10], header[11]]) as usize;
+        let is_valid = magic_ok && tensor_count > 0;
+
+        Ok(ValidationReport {
+            format: FormatType::Apr,
             file_path: path.display().to_string(),
             is_valid,
             tensor_count,

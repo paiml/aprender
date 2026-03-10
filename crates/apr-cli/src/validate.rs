@@ -55,18 +55,11 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         }
         Commands::Export { plan: true, .. } => vec![],
         Commands::Export { file, .. } => file.iter().cloned().collect(),
-        Commands::Serve { command } => match command {
-            ServeCommands::Run { file, .. } => vec![file.clone()],
-            ServeCommands::Plan { model, .. } => {
-                // HF URLs don't have local files to validate
-                let path = PathBuf::from(model);
-                if path.exists() {
-                    vec![path]
-                } else {
-                    vec![]
-                }
-            }
-        },
+        // GH-471: Serve is exempt from pre-dispatch contract validation.
+        // The model loader itself fails fast on corrupt files.
+        // Contract gate was loading 17 GB+ models just to check tensor counts —
+        // O(file_size) compute before serve even starts.
+        Commands::Serve { .. } => vec![],
         Commands::Trace { file, .. }
         | Commands::Convert { file, .. }
         | Commands::Check { file, .. } => vec![file.clone()],

@@ -59,15 +59,7 @@ mod tests_write_import_lint {
         let cfg = GgufModelConfig {
             architecture: Some("llama".to_string()),
             hidden_size: Some(2048),
-            num_layers: None,
-            num_heads: None,
-            num_kv_heads: None,
-            vocab_size: None,
-            intermediate_size: None,
-            max_position_embeddings: None,
-            rope_theta: None,
-            rms_norm_eps: None,
-            rope_type: None,
+            ..Default::default()
         };
         assert_eq!(cfg.architecture.as_deref(), Some("llama"));
         assert_eq!(cfg.hidden_size, Some(2048));
@@ -88,6 +80,7 @@ mod tests_write_import_lint {
             rope_theta: Some(10000.0),
             rms_norm_eps: Some(1e-5),
             rope_type: Some(0),
+            ..Default::default()
         };
         assert_eq!(cfg.architecture.as_deref(), Some("phi"));
         assert_eq!(cfg.num_heads, Some(32));
@@ -107,6 +100,7 @@ mod tests_write_import_lint {
             rope_theta: Some(1000000.0),
             rms_norm_eps: Some(1e-5),
             rope_type: Some(0),
+            ..Default::default()
         };
         assert_eq!(cfg.num_kv_heads, Some(8));
         assert!(cfg.rope_theta.unwrap() > 100000.0);

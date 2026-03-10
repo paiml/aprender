@@ -1,15 +1,32 @@
-/// GH-87 / F-KERNEL-DISPATCH-001: APR GPU serve using fused Q4K kernels.
+/// GH-87 / GH-471: APR GPU serve with Q4K detection.
 ///
-/// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
-/// Uses realizar's built-in AppState + create_router (same as GGUF serve path)
-/// for full Ollama-parity endpoints with fused Q4K/Q6K GEMV kernels.
+/// Two paths:
+///   1. Q4K APR (ALB-095): spawn_apr_q4k_inference_thread → pool allocator → 15 tok/s
+///   2. F32 APR: MappedAprModel → OwnedQuantizedModel → OwnedQuantizedModelCuda (GGUF path)
+///
+/// Try Q4K path first (avoids redundant is_apr_q4k scan). Falls back to F32 on error.
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_apr_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
 ) -> Result<()> {
+    use realizar::api::create_router;
+
+    // GH-471: Try Q4K inference thread first — if model has Q4K tensors, this succeeds.
+    // Avoids redundant is_apr_q4k scan that loads the entire 17 GB APR file just to check dtypes.
+    match start_apr_q4k_server_gpu(model_path, config) {
+        Ok(()) => return Ok(()),
+        Err(e) => {
+            println!(
+                "{}",
+                format!("Q4K GPU path unavailable ({e}), trying F32 dequant path").yellow()
+            );
+        }
+    }
+
+    // F32 APR: fall through to OwnedQuantizedModel path (original GH-87)
+    use realizar::api::AppState;
     use realizar::apr::MappedAprModel;
-    use realizar::api::{create_router, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     println!("{}", "Loading APR model (fused Q4K kernels)...".dimmed());
@@ -75,6 +92,59 @@ fn start_apr_server_gpu(
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "APR GPU (fused Q4K kernels)")
+}
+
+/// GH-471: APR Q4K GPU serve via dedicated inference thread (ALB-095/098).
+///
+/// Uses realizar's spawn_apr_q4k_inference_thread which:
+///   - Pool allocator: single cuMemAlloc for all tensors (~17 GB)
+///   - Dedicated thread: CudaExecutor is !Send, owns GPU context
+///   - Channel-based: HTTP handler → mpsc → inference thread → oneshot → response
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn start_apr_q4k_server_gpu(
+    model_path: &Path,
+    config: &ServerConfig,
+) -> Result<()> {
+    use realizar::api::{apr_q4k_scheduler, create_router, AppState};
+    use realizar::apr::AprV2Model;
+
+    eprintln!("[GH-471] Entering Q4K GPU path for {}", model_path.display());
+    println!("{}", "Loading APR Q4K model (ALB-095 GPU path)...".cyan());
+
+    let model_str = model_path.to_string_lossy();
+
+    // Load tokenizer from sibling file or embedded metadata
+    eprintln!("[GH-471] Loading tokenizer...");
+    let vocab = AprV2Model::load_tokenizer_from_sibling(model_path)
+        .map(|(v, _, _)| v)
+        .or_else(|| {
+            AprV2Model::load(model_path)
+                .ok()
+                .and_then(|m| m.load_embedded_tokenizer())
+                .map(|t| t.id_to_token.clone())
+        })
+        .unwrap_or_else(|| {
+            println!(
+                "{}",
+                "Warning: No vocabulary found, using placeholder tokens".yellow()
+            );
+            (0..151936).map(|i| format!("token{i}")).collect()
+        });
+
+    println!("  Vocab: {} tokens", vocab.len());
+
+    // Spawn Q4K inference thread (loads model, uploads weights to GPU via pool allocator)
+    let q4k_tx = apr_q4k_scheduler::spawn_apr_q4k_inference_thread(&model_str)
+        .map_err(|e| CliError::InferenceFailed(format!("Q4K inference thread failed: {e}")))?;
+
+    let state = AppState::with_apr_q4k_and_vocab(q4k_tx, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+        .with_verbose(config.verbose);
+
+    println!("{}", "Q4K GPU inference ready (ALB-095)".green());
+
+    let app = create_router(state);
+    run_server_async(app, &config.bind_addr(), "APR GPU (Q4K CUDA — ALB-095)")
 }
 
 /// GH-88 / F-KERNEL-DISPATCH-001: SafeTensors GPU serve using fused Q4K kernels.

@@ -304,6 +304,10 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         rope_theta: Some(rope_theta as f32),
         rms_norm_eps: Some(rms_norm_eps as f32),
         rope_type,
+        head_dim: None,
+        num_experts: None,
+        num_experts_per_tok: None,
+        moe_intermediate_size: None,
     })
 }
 

@@ -155,8 +155,11 @@ fn falsify_logreg_006_balanced_class_weight() {
     lr_uniform.fit(&x, &y_data).expect("fit");
     let preds_uniform = lr_uniform.predict(&x);
     let recall_uniform = {
-        let tp = preds_uniform.iter().zip(y_data.iter())
-            .filter(|(p, y)| **p == 1 && **y == 1).count();
+        let tp = preds_uniform
+            .iter()
+            .zip(y_data.iter())
+            .filter(|(p, y)| **p == 1 && **y == 1)
+            .count();
         tp as f32 / n1 as f32
     };
 
@@ -167,8 +170,11 @@ fn falsify_logreg_006_balanced_class_weight() {
     lr_balanced.fit(&x, &y_data).expect("fit");
     let preds_balanced = lr_balanced.predict(&x);
     let recall_balanced = {
-        let tp = preds_balanced.iter().zip(y_data.iter())
-            .filter(|(p, y)| **p == 1 && **y == 1).count();
+        let tp = preds_balanced
+            .iter()
+            .zip(y_data.iter())
+            .filter(|(p, y)| **p == 1 && **y == 1)
+            .count();
         tp as f32 / n1 as f32
     };
 
@@ -183,9 +189,11 @@ fn falsify_logreg_006_balanced_class_weight() {
 #[test]
 fn falsify_logreg_007_l2_reduces_coefficients() {
     let x = Matrix::from_vec(
-        6, 2,
+        6,
+        2,
         vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
-    ).expect("valid");
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     // Train without L2
@@ -216,9 +224,11 @@ fn falsify_logreg_007_l2_reduces_coefficients() {
 #[test]
 fn falsify_logreg_008_manual_class_weight() {
     let x = Matrix::from_vec(
-        6, 2,
+        6,
+        2,
         vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
-    ).expect("valid");
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     // Manual weights: upweight class 1 by 5x
@@ -229,7 +239,9 @@ fn falsify_logreg_008_manual_class_weight() {
 
     let preds = lr.predict(&x);
     // With 5x weight on class 1, all class-1 samples should be correctly classified
-    let class1_correct = preds.iter().zip(y.iter())
+    let class1_correct = preds
+        .iter()
+        .zip(y.iter())
         .filter(|(p, y)| **y == 1 && *p == *y)
         .count();
     assert_eq!(
@@ -249,7 +261,9 @@ fn falsify_logreg_009_backward_compatible() {
 
     let preds = lr.predict(&x);
     // Should still classify correctly without new features
-    assert_eq!(preds, vec![0, 0, 1, 1],
+    assert_eq!(
+        preds,
+        vec![0, 0, 1, 1],
         "FALSIFIED LOGREG-009: default model fails on linearly separable data"
     );
 }

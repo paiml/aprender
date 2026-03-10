@@ -101,6 +101,14 @@ pub struct GgufModelConfig {
     /// RoPE type: 0=NORM (adjacent pairs), 2=NEOX (split halves)
     /// CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
     pub rope_type: Option<u32>,
+    /// Explicit head dimension (overrides hidden_size / num_heads)
+    pub head_dim: Option<usize>,
+    /// Number of MoE experts
+    pub num_experts: Option<usize>,
+    /// Number of experts selected per token
+    pub num_experts_per_tok: Option<usize>,
+    /// MoE expert intermediate/FFN dimension
+    pub moe_intermediate_size: Option<usize>,
 }
 
 impl GgufModelConfig {
@@ -215,6 +223,10 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         rope_theta: reader.rope_theta(),
         rms_norm_eps: reader.rms_norm_eps(),
         rope_type,
+        head_dim: None,
+        num_experts: None,
+        num_experts_per_tok: None,
+        moe_intermediate_size: None,
     };
 
     Ok(GgufLoadResult {
@@ -297,6 +309,10 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         rope_theta: reader.rope_theta(),
         rms_norm_eps: reader.rms_norm_eps(),
         rope_type,
+        head_dim: None,
+        num_experts: None,
+        num_experts_per_tok: None,
+        moe_intermediate_size: None,
     };
 
     Ok(GgufRawLoadResult {

@@ -437,6 +437,7 @@ fn test_gguf_model_config_clone() {
         rope_theta: Some(10000.0),
         rms_norm_eps: Some(1e-6),
         rope_type: Some(0),
+        ..Default::default()
     };
 
     let cloned = config.clone();

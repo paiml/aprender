@@ -180,6 +180,7 @@ fn test_save_model_tensors_with_gguf_config_and_tokenizer_basic() {
         rope_theta: Some(10000.0),
         rms_norm_eps: Some(1e-5),
         rope_type: Some(2),
+        ..Default::default()
     };
 
     let tokenizer = GgufTokenizer {

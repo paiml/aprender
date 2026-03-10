@@ -120,6 +120,7 @@
             rope_theta: Some(10000.0),
             rms_norm_eps: Some(1e-5),
             rope_type: Some(0),
+            ..Default::default()
         };
 
         let options = ImportOptions {
@@ -281,6 +282,7 @@
             rope_theta: Some(10000.0),
             rms_norm_eps: Some(1e-5),
             rope_type: Some(0),
+            ..Default::default()
         };
 
         let options = ImportOptions {

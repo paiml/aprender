@@ -78,6 +78,10 @@ fn build_q4k_metadata(cfg: &InferredQ4kConfig, param_count: u64) -> AprV2Metadat
         rope_theta: Some(1000000.0),          // Default for Qwen2
         rope_type: Some(2),                   // NEOX style for Qwen2 (PMAT-114)
         rms_norm_eps: Some(1e-6),             // Default for Qwen2
+        head_dim: None,
+        num_experts: None,
+        num_experts_per_tok: None,
+        moe_intermediate_size: None,
         custom: std::collections::HashMap::new(),
     }
 }

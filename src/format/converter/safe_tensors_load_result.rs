@@ -67,6 +67,10 @@ pub(crate) fn infer_model_config_from_tensors(
         rope_theta,
         rms_norm_eps: Some(1e-6),
         rope_type,
+        head_dim: None,
+        num_experts: None,
+        num_experts_per_tok: None,
+        moe_intermediate_size: None,
     })
 }
 

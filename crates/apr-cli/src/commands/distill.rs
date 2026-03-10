@@ -207,6 +207,77 @@ fn default_eval_steps() -> usize {
     100
 }
 
+// --- Text-based distillation config (GH-455, ALB-011) ---
+// Matches distill-30b.yaml schema for text-based synthetic data generation.
+// Separate from DistillYamlConfig (logit KD) because vocab mismatch prevents logit alignment.
+
+#[derive(Debug, Clone, Deserialize)]
+struct TextDistillConfig {
+    teacher: TextTeacherConfig,
+    #[serde(default)]
+    student: Option<TextStudentConfig>,
+    synthetic_data: SyntheticDataConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TextTeacherConfig {
+    model: String,
+    #[serde(default)]
+    tokenizer: Option<String>,
+    #[serde(default)]
+    precision: Option<String>,
+    #[serde(default = "default_gpu")]
+    gpu: bool,
+    #[serde(default = "default_max_tokens")]
+    max_tokens: u32,
+    #[serde(default = "default_gen_temperature")]
+    temperature: f32,
+    #[serde(default = "default_top_p")]
+    top_p: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TextStudentConfig {
+    checkpoint: String,
+    tokenizer: String,
+    #[serde(default)]
+    config: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SyntheticDataConfig {
+    prompts: String,
+    output: String,
+    #[serde(default = "default_target_tokens")]
+    target_tokens: u64,
+    #[serde(default = "default_samples_per_prompt")]
+    samples_per_prompt: u32,
+    #[serde(default = "default_min_completion_tokens")]
+    min_completion_tokens: u32,
+}
+
+fn default_gpu() -> bool {
+    true
+}
+fn default_max_tokens() -> u32 {
+    256
+}
+fn default_gen_temperature() -> f32 {
+    0.8
+}
+fn default_top_p() -> f32 {
+    0.95
+}
+fn default_target_tokens() -> u64 {
+    500_000
+}
+fn default_samples_per_prompt() -> u32 {
+    1
+}
+fn default_min_completion_tokens() -> u32 {
+    10
+}
+
 impl DistillYamlConfig {
     fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
@@ -467,6 +538,20 @@ fn run_config_mode(
         return Err(CliError::FileNotFound(config_path.to_path_buf()));
     }
 
+    let content = std::fs::read_to_string(config_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
+
+    // Detect config type: text-based (has synthetic_data) vs logit KD (has distillation/dataset)
+    let raw: serde_json::Value = serde_yaml::from_str(&content)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse YAML: {e}")))?;
+
+    if raw.get("synthetic_data").is_some() {
+        let config: TextDistillConfig = serde_yaml::from_str(&content)
+            .map_err(|e| CliError::ValidationFailed(format!("Config error: {e}")))?;
+        return run_text_config_mode(&config, config_path, stage, plan_only, json_output);
+    }
+
+    // Original logit KD config
     let config = DistillYamlConfig::load(config_path)
         .map_err(|e| CliError::ValidationFailed(format!("Config error: {e}")))?;
 
@@ -487,6 +572,25 @@ fn run_config_mode(
         None => Err(CliError::ValidationFailed(
             "--stage <precompute|train> required with --config. Use --plan to see the plan."
                 .to_string(),
+        )),
+    }
+}
+
+/// Text-based distillation config mode dispatch (GH-455).
+fn run_text_config_mode(
+    config: &TextDistillConfig,
+    config_path: &Path,
+    stage: Option<&str>,
+    _plan_only: bool,
+    json_output: bool,
+) -> Result<()> {
+    match stage {
+        Some("generate") => run_text_generate(config, config_path, json_output),
+        Some(other) => Err(CliError::ValidationFailed(format!(
+            "Unknown stage: {other}. Supported: generate"
+        ))),
+        None => Err(CliError::ValidationFailed(
+            "--stage generate required with text-based distillation config.".to_string(),
         )),
     }
 }
@@ -1349,6 +1453,278 @@ fn run_plan(
         println!(
             "  {} Run without --plan to execute.",
             output::badge_info("INFO"),
+        );
+    }
+
+    Ok(())
+}
+
+/// Stage: Generate synthetic data from teacher model (GH-455).
+///
+/// Spawns `realizar serve --model <teacher.apr> --gpu` as a subprocess,
+/// reads prompts from JSONL, generates completions via HTTP, writes output JSONL.
+#[allow(clippy::disallowed_methods)]
+fn run_text_generate(
+    config: &TextDistillConfig,
+    config_path: &Path,
+    json_output: bool,
+) -> Result<()> {
+    use std::io::{BufRead, BufReader, BufWriter, Write};
+    use std::process::{Command, Stdio};
+
+    let teacher_path = std::path::Path::new(&config.teacher.model);
+    if !teacher_path.exists() {
+        return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
+    }
+
+    let prompts_path = std::path::Path::new(&config.synthetic_data.prompts);
+    if !prompts_path.exists() {
+        return Err(CliError::FileNotFound(prompts_path.to_path_buf()));
+    }
+
+    if !json_output {
+        output::header("apr distill apply — Stage: Generate Synthetic Data (GH-455)");
+        println!();
+        output::kv("  Config", config_path.display().to_string());
+        output::kv("  Teacher", &config.teacher.model);
+        output::kv("  Prompts", &config.synthetic_data.prompts);
+        output::kv("  Output", &config.synthetic_data.output);
+        output::kv(
+            "  Max tokens/completion",
+            config.teacher.max_tokens.to_string(),
+        );
+        output::kv(
+            "  Temperature",
+            format!("{:.2}", config.teacher.temperature),
+        );
+        output::kv(
+            "  Target tokens",
+            config.synthetic_data.target_tokens.to_string(),
+        );
+        println!();
+    }
+
+    // Use apr serve run (sovereign stack) — spawn ourselves as subprocess
+    let apr_bin = std::env::current_exe().map_err(|e| {
+        CliError::ValidationFailed(format!("Cannot determine apr binary path: {e}"))
+    })?;
+
+    if !json_output {
+        output::pipeline_stage("Starting teacher server", output::StageStatus::Running);
+        output::kv("  Binary", apr_bin.display().to_string());
+    }
+
+    // Start `apr serve run <model> --gpu --port 8090` as subprocess
+    let mut server = Command::new(&apr_bin)
+        .args([
+            "serve",
+            "run",
+            &config.teacher.model,
+            "--gpu",
+            "--port",
+            "8090",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to start apr serve: {e}")))?;
+
+    // Wait for server to be ready (up to 180s for 17 GB Q4K model load)
+    let base_url = "http://127.0.0.1:8090";
+    let health_url = format!("{base_url}/health");
+    let mut ready = false;
+    for attempt in 0..180 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Check if server process died
+        if let Ok(Some(status)) = server.try_wait() {
+            let _ = server.kill();
+            return Err(CliError::ValidationFailed(format!(
+                "apr serve exited with status {status} during startup"
+            )));
+        }
+
+        match ureq::get(&health_url).call() {
+            Ok(resp) if resp.status() == 200 => {
+                ready = true;
+                if !json_output {
+                    output::pipeline_stage("Starting teacher server", output::StageStatus::Done);
+                    output::kv("  Ready after", format!("{}s", attempt + 1));
+                    println!();
+                }
+                break;
+            }
+            _ => continue,
+        }
+    }
+
+    if !ready {
+        let _ = server.kill();
+        let _ = server.wait();
+        return Err(CliError::ValidationFailed(
+            "Teacher server did not become ready within 180 seconds".into(),
+        ));
+    }
+
+    // Read prompts from JSONL
+    let prompts_file = std::fs::File::open(prompts_path)?;
+    let reader = BufReader::new(prompts_file);
+    let mut prompts = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&line)
+            .map_err(|e| CliError::ValidationFailed(format!("Invalid prompt JSONL: {e}")))?;
+        prompts.push(parsed);
+    }
+
+    if !json_output {
+        output::pipeline_stage("Generating completions", output::StageStatus::Running);
+        output::kv("  Loaded prompts", prompts.len().to_string());
+    }
+
+    // Create output file
+    let output_path = std::path::Path::new(&config.synthetic_data.output);
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let output_file = std::fs::File::create(output_path)?;
+    let mut writer = BufWriter::new(output_file);
+
+    let generate_url = format!("{base_url}/generate");
+    let mut total_tokens = 0u64;
+    let mut generated_count = 0u64;
+    let mut skipped_count = 0u64;
+    let target = config.synthetic_data.target_tokens;
+    let start_time = std::time::Instant::now();
+
+    for (i, prompt_json) in prompts.iter().enumerate() {
+        if total_tokens >= target {
+            break;
+        }
+
+        let prompt_text = prompt_json
+            .get("prompt")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                CliError::ValidationFailed(format!("Prompt {} missing 'prompt' field", i))
+            })?;
+
+        // POST to /generate endpoint
+        let resp = ureq::post(&generate_url)
+            .send_json(serde_json::json!({
+                "prompt": prompt_text,
+                "max_tokens": config.teacher.max_tokens,
+                "temperature": config.teacher.temperature,
+                "strategy": "top_p",
+                "top_p": config.teacher.top_p,
+            }))
+            .map_err(|e| CliError::NetworkError(format!("Generate request failed: {e}")))?;
+
+        let gen_result: serde_json::Value = resp
+            .into_json()
+            .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?;
+
+        let num_tokens = gen_result
+            .get("num_generated")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let text = gen_result
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        if num_tokens < u64::from(config.synthetic_data.min_completion_tokens) {
+            skipped_count += 1;
+            continue;
+        }
+
+        // Write output JSONL record
+        let record = serde_json::json!({
+            "prompt": prompt_text,
+            "completion": text,
+            "tokens": num_tokens,
+            "source": prompt_json.get("source").and_then(|v| v.as_str()).unwrap_or(""),
+            "kind": prompt_json.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+        });
+        writeln!(
+            writer,
+            "{}",
+            serde_json::to_string(&record)
+                .map_err(|e| CliError::ValidationFailed(format!("JSON serialize error: {e}")))?
+        )?;
+        writer.flush()?; // Flush after each record so output is visible immediately
+
+        total_tokens += num_tokens;
+        generated_count += 1;
+
+        // Progress every 10 prompts
+        if (i + 1) % 10 == 0 && !json_output {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let tok_per_sec = if elapsed > 0.0 {
+                total_tokens as f64 / elapsed
+            } else {
+                0.0
+            };
+            println!(
+                "  [{}/{}] {} tokens generated ({:.0} tok/s), {} skipped",
+                i + 1,
+                prompts.len(),
+                total_tokens,
+                tok_per_sec,
+                skipped_count
+            );
+        }
+    }
+
+    writer.flush()?;
+
+    // Shutdown server
+    let _ = server.kill();
+    let _ = server.wait();
+
+    let elapsed = start_time.elapsed();
+
+    if json_output {
+        let result = serde_json::json!({
+            "stage": "generate",
+            "status": "completed",
+            "prompts_total": prompts.len(),
+            "completions_generated": generated_count,
+            "completions_skipped": skipped_count,
+            "total_tokens": total_tokens,
+            "target_tokens": target,
+            "elapsed_seconds": elapsed.as_secs(),
+            "output": config.synthetic_data.output,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        );
+    } else {
+        use colored::Colorize;
+        output::pipeline_stage("Generating completions", output::StageStatus::Done);
+        println!();
+        output::kv("  Completions", generated_count.to_string());
+        output::kv("  Skipped", skipped_count.to_string());
+        output::kv("  Tokens", total_tokens.to_string());
+        output::kv("  Target", target.to_string());
+        output::kv("  Elapsed", format!("{:.0}s", elapsed.as_secs_f64()));
+        output::kv(
+            "  Throughput",
+            format!(
+                "{:.1} tok/s",
+                total_tokens as f64 / elapsed.as_secs_f64().max(0.001)
+            ),
+        );
+        output::kv("  Output", &config.synthetic_data.output);
+        println!();
+        println!(
+            "  {} Synthetic data generated. Tokenize and train next.",
+            "DONE".green().bold()
         );
     }
 

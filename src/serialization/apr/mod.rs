@@ -238,8 +238,7 @@ impl AprReader {
                 if bytes.len() < 4 {
                     return Err(format!("Tensor '{name}' Q8 data too short"));
                 }
-                let scale =
-                    f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let scale = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
                 Ok(bytes[4..]
                     .iter()
                     .map(|&b| f32::from(b as i8) * scale)

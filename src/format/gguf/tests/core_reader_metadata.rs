@@ -126,6 +126,7 @@ fn test_gguf_model_config_debug() {
         rope_theta: Some(10000.0),
         rms_norm_eps: Some(1e-6),
         rope_type: Some(0), // NORM style for LLaMA
+        ..Default::default()
     };
     assert!(format!("{config:?}").contains("GgufModelConfig"));
 }
@@ -144,19 +145,7 @@ fn test_gguf_load_result_debug() {
             model_name: None,
             ..Default::default()
         },
-        model_config: GgufModelConfig {
-            architecture: None,
-            hidden_size: None,
-            num_layers: None,
-            num_heads: None,
-            num_kv_heads: None,
-            vocab_size: None,
-            intermediate_size: None,
-            max_position_embeddings: None,
-            rope_theta: None,
-            rms_norm_eps: None,
-            rope_type: None,
-        },
+        model_config: GgufModelConfig::default(),
     };
     assert!(format!("{result:?}").contains("GgufLoadResult"));
 }
@@ -185,19 +174,7 @@ fn test_gguf_raw_load_result_debug() {
             model_name: None,
             ..Default::default()
         },
-        model_config: GgufModelConfig {
-            architecture: None,
-            hidden_size: None,
-            num_layers: None,
-            num_heads: None,
-            num_kv_heads: None,
-            vocab_size: None,
-            intermediate_size: None,
-            max_position_embeddings: None,
-            rope_theta: None,
-            rms_norm_eps: None,
-            rope_type: None,
-        },
+        model_config: GgufModelConfig::default(),
     };
     assert!(format!("{result:?}").contains("GgufRawLoadResult"));
 }

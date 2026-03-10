@@ -13,6 +13,7 @@ fn test_gguf_model_config_clone() {
         rope_theta: Some(10000.0),
         rms_norm_eps: Some(1e-5),
         rope_type: Some(0),
+        ..Default::default()
     };
     let cloned = cfg.clone();
     assert_eq!(cloned.architecture, cfg.architecture);
@@ -44,6 +45,7 @@ fn valid_gguf_model_config() -> gguf::GgufModelConfig {
         rope_theta: Some(10_000.0),
         rms_norm_eps: Some(1e-6),
         rope_type: Some(0),
+        ..Default::default()
     }
 }
 

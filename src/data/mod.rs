@@ -256,6 +256,15 @@ pub struct ColumnStats {
     pub max: f32,
 }
 
+// PII detection and redaction (GH-453)
+pub mod pii;
+
+// EvolKit-style instruction evolution (GH-453)
+pub mod evolve;
+
+// Data quality filtering (GH-453)
+pub mod quality_filter;
+
 #[cfg(test)]
 #[path = "data_tests.rs"]
 mod tests;

@@ -160,7 +160,7 @@ pub enum ModelOpsCommands {
         /// YAML config file for two-stage distillation (ALB-011)
         #[arg(long, value_name = "FILE")]
         config: Option<PathBuf>,
-        /// Distillation stage: precompute (extract teacher logits) or train (student KD)
+        /// Distillation stage: precompute, train (logit KD), or generate (text-based, GH-455)
         #[arg(long, value_name = "STAGE")]
         stage: Option<String>,
     },

@@ -586,7 +586,8 @@ fn test_ssc028_from_vocab_merges_basic() {
 
 #[test]
 fn test_ssc028_from_vocab_merges_file_not_found() {
-    let result = BpeTokenizer::from_vocab_merges("/nonexistent/vocab.json", "/nonexistent/merges.txt");
+    let result =
+        BpeTokenizer::from_vocab_merges("/nonexistent/vocab.json", "/nonexistent/merges.txt");
     assert!(result.is_err());
 }
 

@@ -178,20 +178,22 @@ impl BpeTokenizer {
         vocab_path: P,
         merges_path: Q,
     ) -> Result<Self> {
-        let vocab_json =
-            std::fs::read_to_string(vocab_path.as_ref()).map_err(|e| AprenderError::FormatError {
+        let vocab_json = std::fs::read_to_string(vocab_path.as_ref()).map_err(|e| {
+            AprenderError::FormatError {
                 message: format!(
                     "Failed to read vocab file '{}': {e}",
                     vocab_path.as_ref().display()
                 ),
-            })?;
-        let merges_txt =
-            std::fs::read_to_string(merges_path.as_ref()).map_err(|e| AprenderError::FormatError {
+            }
+        })?;
+        let merges_txt = std::fs::read_to_string(merges_path.as_ref()).map_err(|e| {
+            AprenderError::FormatError {
                 message: format!(
                     "Failed to read merges file '{}': {e}",
                     merges_path.as_ref().display()
                 ),
-            })?;
+            }
+        })?;
         super::load_from_files(&vocab_json, &merges_txt)
     }
 
