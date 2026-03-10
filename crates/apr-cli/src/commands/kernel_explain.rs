@@ -623,17 +623,31 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         return None;
     }
 
+    // Strip non-ASCII characters (emoji, CJK, etc.) — family names are ASCII-only
+    let ascii_only: String = lower.chars().filter(|c| c.is_ascii()).collect();
+    let ascii_only = ascii_only.trim();
+    if ascii_only.is_empty() {
+        return None;
+    }
+    // Use the ASCII-stripped version for all matching
+    let lower = ascii_only;
+
     let families = load_families();
     // Normalized form for matching (hyphens/dots → underscores)
-    let normalized = normalize_input(input);
+    let normalized = normalize_input(lower);
     // Compact form for matching (all separators removed: phi_3 → phi3)
     let compact = compact_input(&normalized);
 
-    // Direct family name match (try raw, normalized, and compact)
+    // Direct family name match (try raw, normalized, compact, and cross-compact)
     if let Some(f) = families.iter().find(|f| {
         f.family == lower
             || f.family == normalized
             || compact.as_deref().is_some_and(|c| f.family == c)
+            // Cross-compact: compare compact forms of both sides
+            // e.g., input "qwen-3-5" compact="qwen35", family "qwen3_5" compact="qwen35"
+            || compact
+                .as_deref()
+                .is_some_and(|c| compact_input(&f.family).as_deref() == Some(c))
     }) {
         return Some(f.clone());
     }
@@ -741,10 +755,41 @@ fn strip_arch_suffix(s: &str) -> &str {
 }
 
 /// Try to resolve family from a config.json file.
+/// Returns None if model_type is absent/unresolvable. Returns Err for structural issues.
 pub fn resolve_from_config_json(path: &Path) -> Option<FamilyInfo> {
     let content = std::fs::read_to_string(path).ok()?;
+
+    // Reject JSON arrays — config.json must be an object
+    let trimmed = content.trim();
+    if trimmed.starts_with('[') {
+        return None;
+    }
+
     // Parse model_type from config.json
-    let model_type = extract_json_string(&content, "model_type")?;
+    let model_type = extract_json_string(&content, "model_type");
+
+    // If no model_type, try architectures field as fallback
+    let model_type = match model_type {
+        Some(mt) => mt,
+        None => {
+            // Extract first architecture and strip suffix to get family name
+            let arch = extract_json_string(&content, "architectures").or_else(|| {
+                // architectures is a JSON array — manually extract first element
+                let pos = content.find("\"architectures\"")?;
+                let after = &content[pos..];
+                let bracket = after.find('[')?;
+                let inner = &after[bracket + 1..];
+                let quote_start = inner.find('"')?;
+                let rest = &inner[quote_start + 1..];
+                let quote_end = rest.find('"')?;
+                Some(rest[..quote_end].to_string())
+            })?;
+            // Convert "LlamaForCausalLM" → "llama"
+            let lower = arch.to_lowercase();
+            strip_arch_suffix(&lower).to_string()
+        }
+    };
+
     resolve_family(&model_type)
 }
 
@@ -762,6 +807,9 @@ pub fn extract_json_string(json: &str, key: &str) -> Option<String> {
         // Quoted string value
         let end = after.find('"')?;
         Some(after[..end].to_string())
+    } else if after.starts_with('[') || after.starts_with('{') {
+        // Array or object — not a scalar value
+        None
     } else {
         // Numeric or boolean value — read until comma, newline, or }
         let end = after.find(|c: char| c == ',' || c == '\n' || c == '}' || c == ' ')?;
@@ -780,6 +828,28 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
     let Ok(content) = std::fs::read_to_string(path) else {
         return map;
     };
+
+    // Extract architectures array (for conflict detection)
+    // architectures is a JSON array — manually extract first element
+    if let Some(pos) = content.find("\"architectures\"") {
+        let after = &content[pos..];
+        if let Some(bracket) = after.find('[') {
+            let inner = &after[bracket + 1..];
+            if let Some(quote_start) = inner.find('"') {
+                let rest = &inner[quote_start + 1..];
+                if let Some(quote_end) = rest.find('"') {
+                    let arch = &rest[..quote_end];
+                    map.insert(
+                        "_architectures".to_string(),
+                        ConfigField {
+                            value: arch.to_string(),
+                            rationale: "HuggingFace architecture class".to_string(),
+                        },
+                    );
+                }
+            }
+        }
+    }
 
     let fields = [
         ("model_type", "Architecture class dispatch"),
@@ -975,12 +1045,32 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
     }
 }
 
-/// Extract the first architecture string from a config.json (e.g., "Starcoder2ForCausalLM").
-pub fn extract_architecture_from_config(
+/// Extract the architecture display string.
+/// Priority: config.json model_type → config.json _architectures → family default.
+/// For aliases, shows the alias source architecture, not the target family's.
+pub fn extract_architecture_display(
+    family: &FamilyInfo,
     config_mapping: &BTreeMap<String, ConfigField>,
-) -> Option<String> {
-    // Check if we stored architectures — fall back to model_type
-    config_mapping.get("model_type").map(|f| f.value.clone())
+) -> String {
+    // If config.json has _architectures, prefer that (it's the actual HF arch)
+    if let Some(arch) = config_mapping.get("_architectures") {
+        return arch.value.clone();
+    }
+    // If config.json has model_type, use that
+    if let Some(mt) = config_mapping.get("model_type") {
+        return mt.value.clone();
+    }
+    // For aliases: extract alias name from display_name and show it as architecture
+    if family.display_name.contains(" (via ") {
+        if let Some(alias_name) = family.display_name.split(" (via ").next() {
+            return alias_name.to_string();
+        }
+    }
+    // Fall back to family's first architecture
+    family
+        .architectures
+        .first()
+        .map_or("Unknown".to_string(), Clone::clone)
 }
 
 /// Detect mismatches between config.json values and family constraints.
@@ -989,6 +1079,22 @@ pub fn detect_constraint_mismatches(
     config_mapping: &BTreeMap<String, ConfigField>,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
+
+    // Check model_type vs architectures contradiction (bug 6)
+    if let Some(mt) = config_mapping.get("model_type") {
+        if let Some(arch) = config_mapping.get("_architectures") {
+            let arch_lower = arch.value.to_lowercase();
+            let mt_lower = mt.value.to_lowercase();
+            let arch_family = strip_arch_suffix(&arch_lower);
+            // If the architecture's family name doesn't match the model_type
+            if arch_family != mt_lower && !arch_lower.starts_with(&mt_lower) {
+                warnings.push(format!(
+                    "model_type '{}' conflicts with architectures ['{}']. Using model_type for dispatch.",
+                    mt.value, arch.value
+                ));
+            }
+        }
+    }
 
     // Check activation mismatch
     if let Some(act) = config_mapping.get("hidden_act") {
@@ -1040,21 +1146,28 @@ pub fn detect_constraint_mismatches(
         if let Some(q) = config_mapping.get("num_attention_heads") {
             let kv_n: u32 = kv.value.parse().unwrap_or(0);
             let q_n: u32 = q.value.parse().unwrap_or(0);
-            let config_attn = if kv_n == 1 {
-                "mqa"
-            } else if kv_n < q_n {
-                "gqa"
-            } else {
-                "mha"
-            };
-            let family_attn = family.constraints.attention_type.to_lowercase();
-            if config_attn != family_attn && !family_attn.is_empty() {
+            // Detect physically impossible config: KV heads > Q heads
+            if kv_n > q_n && q_n > 0 {
                 warnings.push(format!(
-                    "Attention mismatch: config.json implies {} but family '{}' uses {}",
-                    config_attn.to_uppercase(),
-                    family.family,
-                    family.constraints.attention_type.to_uppercase()
+                    "Invalid attention config: num_key_value_heads ({kv_n}) > num_attention_heads ({q_n}). KV heads cannot exceed query heads."
                 ));
+            } else {
+                let config_attn = if kv_n == 1 {
+                    "mqa"
+                } else if q_n > 0 && kv_n < q_n {
+                    "gqa"
+                } else {
+                    "mha"
+                };
+                let family_attn = family.constraints.attention_type.to_lowercase();
+                if config_attn != family_attn && !family_attn.is_empty() {
+                    warnings.push(format!(
+                        "Attention mismatch: config.json implies {} but family '{}' uses {}",
+                        config_attn.to_uppercase(),
+                        family.family,
+                        family.constraints.attention_type.to_uppercase()
+                    ));
+                }
             }
         }
     } else if let Some(mq) = config_mapping.get("multi_query") {
@@ -1105,6 +1218,39 @@ pub fn detect_constraint_mismatches(
                 "MoE architecture detected (from name) but mapped to non-MoE class {}. Expert routing kernel not covered.",
                 family.kernel_class.letter()
             ));
+        }
+    }
+
+    // Check for invalid dimensions (negative or zero values)
+    for (key, label) in &[
+        ("hidden_size", "Hidden size"),
+        ("num_attention_heads", "Attention heads"),
+        ("num_hidden_layers", "Hidden layers"),
+        ("vocab_size", "Vocabulary size"),
+    ] {
+        if let Some(field) = config_mapping.get(*key) {
+            if let Ok(n) = field.value.parse::<i64>() {
+                if n < 0 {
+                    warnings.push(format!(
+                        "Invalid config: {label} ({key}={n}) is negative. Must be positive."
+                    ));
+                } else if n == 0 && (*key == "hidden_size" || *key == "num_attention_heads") {
+                    warnings.push(format!(
+                        "Invalid config: {label} ({key}=0) is zero. Would cause division by zero in kernel dispatch."
+                    ));
+                }
+            }
+        }
+    }
+
+    // Check for implausible dimensions
+    if let Some(field) = config_mapping.get("hidden_size") {
+        if let Ok(n) = field.value.parse::<u64>() {
+            if n > 100_000 {
+                warnings.push(format!(
+                    "Implausible hidden_size={n}. Largest known models have hidden_size ~16384."
+                ));
+            }
         }
     }
 
@@ -1264,9 +1410,11 @@ pub struct ProofSummary {
 
 pub fn build_json_output(
     family: &FamilyInfo,
-    config_mapping: BTreeMap<String, ConfigField>,
+    mut config_mapping: BTreeMap<String, ConfigField>,
     show_proof: bool,
 ) -> KernelExplainJson {
+    // Remove internal fields (prefixed with _) from public output
+    config_mapping.retain(|k, _| !k.starts_with('_'));
     let ops = kernel_ops_for_family(family.kernel_class, &family.constraints);
     let proofs = if show_proof {
         proof_status_for_class(family.kernel_class)
@@ -1298,14 +1446,7 @@ pub fn build_json_output(
         .map(|f| f.family.clone())
         .collect();
 
-    // Prefer actual architecture from config.json over family default
-    let arch = extract_architecture_from_config(&config_mapping).unwrap_or_else(|| {
-        family
-            .architectures
-            .first()
-            .map_or("Unknown", String::as_str)
-            .to_string()
-    });
+    let arch = extract_architecture_display(family, &config_mapping);
 
     let warnings = detect_constraint_mismatches(family, &config_mapping);
 
@@ -1343,12 +1484,7 @@ pub fn print_human_output(
     verbose: bool,
     show_proof: bool,
 ) {
-    // Prefer actual architecture from config.json over family default
-    let config_model_type = extract_architecture_from_config(config_mapping);
-    let arch = config_model_type
-        .as_deref()
-        .or(family.architectures.first().map(String::as_str))
-        .unwrap_or("Unknown");
+    let arch = extract_architecture_display(family, config_mapping);
     let ops = kernel_ops_for_family(family.kernel_class, &family.constraints);
 
     println!("Kernel Explainability Report: {}", family.display_name);
@@ -1380,18 +1516,22 @@ pub fn print_human_output(
         "└─────────────────────────┴────────────────────────────────┴──────────────────────────┘"
     );
 
-    // Config mapping
-    if !config_mapping.is_empty() {
+    // Config mapping (skip internal fields prefixed with _)
+    let visible_fields: Vec<_> = config_mapping
+        .iter()
+        .filter(|(k, _)| !k.starts_with('_'))
+        .collect();
+    if !visible_fields.is_empty() {
         println!();
         println!("Config.json → Kernel Mapping:");
         // Calculate alignment width from longest key=value
-        let max_kv_len = config_mapping
+        let max_kv_len = visible_fields
             .iter()
             .map(|(k, f)| k.len() + 1 + f.value.len())
             .max()
             .unwrap_or(20);
         let pad_to = max_kv_len + 2; // 2 extra spaces before arrow
-        for (key, field) in config_mapping {
+        for (key, field) in &visible_fields {
             let kv = format!("{key}={}", field.value);
             println!("  {kv:<pad_to$} → {}", field.rationale);
         }
@@ -1422,10 +1562,13 @@ pub fn print_human_output(
     // Constraint mismatch warnings
     if !config_mapping.is_empty() {
         let mismatches = detect_constraint_mismatches(family, config_mapping);
+        let is_alias = family.display_name.contains(" (via ");
         for warning in &mismatches {
             println!();
-            eprintln!("⚠ WARNING: {warning}");
-            eprintln!("  This model is mapped via alias. Kernel selection may differ from the family contract.");
+            eprintln!("  WARNING: {warning}");
+            if is_alias {
+                eprintln!("  This model is mapped via alias. Kernel selection may differ from the family contract.");
+            }
         }
     }
 

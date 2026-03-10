@@ -58,6 +58,16 @@ pub(crate) fn run(
     Ok(())
 }
 
+/// Emit a kernel error message, respecting --json mode.
+fn emit_kernel_error(json_mode: bool, msg: &str) {
+    if json_mode {
+        let err = serde_json::json!({ "error": msg });
+        println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+    } else {
+        eprintln!("Error: {msg}");
+    }
+}
+
 /// Kernel explainability: resolve family and display kernel dispatch pipeline.
 fn explain_kernel(
     code_or_family: Option<&str>,
@@ -89,32 +99,58 @@ fn explain_kernel(
                 // File exists but couldn't resolve — check why
                 match std::fs::read_to_string(path) {
                     Ok(content) => {
-                        if content.trim().is_empty() {
-                            eprintln!("Error: '{}' is empty", path.display());
+                        let trimmed = content.trim();
+                        if trimmed.is_empty() {
+                            emit_kernel_error(json, &format!("'{}' is empty", path.display()));
+                        } else if trimmed.starts_with('[') {
+                            emit_kernel_error(json, &format!(
+                                "'{}' is a JSON array, not a JSON object. config.json must be a JSON object.",
+                                path.display()
+                            ));
                         } else if !content.contains('{') {
-                            eprintln!("Error: '{}' is not valid JSON", path.display());
+                            emit_kernel_error(
+                                json,
+                                &format!("'{}' is not valid JSON", path.display()),
+                            );
                         } else {
                             // Check if model_type field exists but is unrecognized
                             let model_type = extract_json_string(&content, "model_type");
                             if let Some(mt) = model_type {
-                                eprintln!(
-                                    "Error: Unknown model_type '{}' in '{}'. \
+                                emit_kernel_error(
+                                    json,
+                                    &format!(
+                                        "Unknown model_type '{}' in '{}'. \
                                      Run `apr explain --kernel` for supported families.",
-                                    mt,
-                                    path.display()
+                                        mt,
+                                        path.display()
+                                    ),
                                 );
                             } else {
-                                eprintln!(
-                                    "Error: No \"model_type\" field in '{}'. \
-                                     Ensure the file is a HuggingFace config.json.",
-                                    path.display()
-                                );
+                                // Check if architectures field exists as fallback hint
+                                let has_arch = content.contains("\"architectures\"");
+                                let msg = if has_arch {
+                                    format!(
+                                        "No \"model_type\" field in '{}'. \
+                                         Found \"architectures\" but could not resolve family from it.",
+                                        path.display()
+                                    )
+                                } else {
+                                    format!(
+                                        "No \"model_type\" field in '{}'. \
+                                         Ensure the file is a HuggingFace config.json.",
+                                        path.display()
+                                    )
+                                };
+                                emit_kernel_error(json, &msg);
                             }
                         }
                         std::process::exit(1);
                     }
                     Err(e) => {
-                        eprintln!("Error: Could not read '{}': {e}", path.display());
+                        emit_kernel_error(
+                            json,
+                            &format!("Could not read '{}': {e}", path.display()),
+                        );
                         std::process::exit(1);
                     }
                 }
@@ -159,33 +195,49 @@ fn explain_kernel(
     });
 
     let Some(family) = family else {
-        let input = code_or_family.unwrap_or("(none)");
-        eprintln!("Error: Could not resolve kernel class for '{input}'");
-        eprintln!();
-        eprintln!("Available families:");
-        let families = load_families();
-        for f in &families {
-            eprintln!(
-                "  {:<12} {} (Class {})",
-                f.family,
-                f.display_name,
-                f.kernel_class.letter()
-            );
-        }
-        // Show common aliases
-        let aliases = family_aliases();
-        if !aliases.is_empty() {
+        let raw_input = code_or_family.unwrap_or("(none)");
+        // Truncate long inputs to prevent terminal flooding
+        let input = if raw_input.len() > 80 {
+            &raw_input[..raw_input.floor_char_boundary(80)]
+        } else {
+            raw_input
+        };
+        let suffix = if raw_input.len() > 80 { "..." } else { "" };
+
+        if json {
+            let err = serde_json::json!({
+                "error": format!("Could not resolve kernel class for '{input}{suffix}'"),
+                "available_families": load_families().iter().map(|f| &f.family).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+        } else {
+            eprintln!("Error: Could not resolve kernel class for '{input}{suffix}'");
             eprintln!();
-            eprintln!("Also accepted (aliases):");
-            let mut shown: Vec<String> = Vec::new();
-            for (alias, _target) in aliases {
-                if !shown.contains(&alias.to_string()) {
-                    shown.push(alias.to_string());
-                }
+            eprintln!("Available families:");
+            let families = load_families();
+            for f in &families {
+                eprintln!(
+                    "  {:<12} {} (Class {})",
+                    f.family,
+                    f.display_name,
+                    f.kernel_class.letter()
+                );
             }
-            // Show in groups of 8 per line
-            for chunk in shown.chunks(8) {
-                eprintln!("  {}", chunk.join(", "));
+            // Show common aliases
+            let aliases = family_aliases();
+            if !aliases.is_empty() {
+                eprintln!();
+                eprintln!("Also accepted (aliases):");
+                let mut shown: Vec<String> = Vec::new();
+                for (alias, _target) in aliases {
+                    if !shown.contains(&alias.to_string()) {
+                        shown.push(alias.to_string());
+                    }
+                }
+                // Show in groups of 8 per line
+                for chunk in shown.chunks(8) {
+                    eprintln!("  {}", chunk.join(", "));
+                }
             }
         }
         std::process::exit(1);
