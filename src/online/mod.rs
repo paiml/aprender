@@ -21,6 +21,7 @@ pub mod distillation;
 pub mod distillation_advanced;
 pub mod dpo;
 pub mod drift;
+pub mod eval_harness;
 pub mod orchestrator;
 
 use crate::error::{AprenderError, Result};
