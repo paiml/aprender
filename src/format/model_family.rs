@@ -60,7 +60,9 @@ impl AttentionType {
             "ssm" => Ok(Self::Ssm),
             "linear" => Ok(Self::Linear),
             _ => Err(AprenderError::FormatError {
-                message: format!("Unknown attention type: {s}. Expected: mha, gqa, mqa, ssm, linear"),
+                message: format!(
+                    "Unknown attention type: {s}. Expected: mha, gqa, mqa, ssm, linear"
+                ),
             }),
         }
     }

@@ -4685,3 +4685,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-371
+  github_issue: null
+  item_type: task
+  title: 'Fix nightly CI: patch alimentar path deps for standalone build'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-10T12:56:10Z
+  updated: 2026-03-10T12:56:13.020505189+00:00
+  spec: null
+  acceptance_criteria:
+  - Nightly workflow fails because Cargo.toml has path dependency on ../alimentar which doesn't exist in CI. Add sed/pwsh step to patch path deps before build.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
