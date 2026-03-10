@@ -3664,4 +3664,114 @@ mod tests {
         let json = build_json_output(&family, BTreeMap::new(), false);
         assert!(json.display_name.contains("via"));
     }
+
+    // ── resolve_from_config_json (filesystem tests) ─────────────────────
+
+    #[test]
+    fn resolve_config_json_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"model_type": "qwen2", "hidden_size": 4096}"#).unwrap();
+        let f = resolve_from_config_json(&path).unwrap();
+        assert_eq!(f.family, "qwen2");
+    }
+
+    #[test]
+    fn resolve_config_json_no_model_type_uses_architectures() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"architectures": ["LlamaForCausalLM"], "hidden_size": 4096}"#,
+        )
+        .unwrap();
+        let f = resolve_from_config_json(&path).unwrap();
+        assert_eq!(f.family, "llama");
+    }
+
+    #[test]
+    fn resolve_config_json_missing_file() {
+        assert!(resolve_from_config_json(Path::new("/nonexistent/config.json")).is_none());
+    }
+
+    #[test]
+    fn resolve_config_json_array_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"[{"model_type": "bert"}]"#).unwrap();
+        assert!(resolve_from_config_json(&path).is_none());
+    }
+
+    #[test]
+    fn resolve_config_json_unknown_model_type() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, r#"{"model_type": "totally_unknown_xyz"}"#).unwrap();
+        assert!(resolve_from_config_json(&path).is_none());
+    }
+
+    // ── extract_config_mapping (filesystem tests) ───────────────────────
+
+    #[test]
+    fn config_mapping_extracts_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "model_type": "qwen2",
+                "hidden_act": "silu",
+                "hidden_size": 4096,
+                "num_hidden_layers": 32,
+                "num_attention_heads": 32,
+                "num_key_value_heads": 8,
+                "intermediate_size": 11008,
+                "vocab_size": 32000,
+                "rms_norm_eps": 1e-06,
+                "rope_theta": 10000.0,
+                "architectures": ["Qwen2ForCausalLM"]
+            }"#,
+        )
+        .unwrap();
+        let map = extract_config_mapping(&path);
+        assert!(map.contains_key("model_type"));
+        assert!(map.contains_key("hidden_act"));
+        assert!(map.contains_key("hidden_size"));
+        assert!(map.contains_key("num_attention_heads"));
+        assert!(map.contains_key("num_key_value_heads"));
+        assert!(map.contains_key("rms_norm_eps"));
+        assert!(map.contains_key("_architectures"));
+        // Enriched rationale
+        assert!(map["hidden_act"].rationale.contains("SiLU"));
+    }
+
+    #[test]
+    fn config_mapping_missing_file() {
+        let map = extract_config_mapping(Path::new("/nonexistent/config.json"));
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn config_mapping_enriches_gqa() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(
+            &path,
+            r#"{"num_attention_heads": 32, "num_key_value_heads": 8}"#,
+        )
+        .unwrap();
+        let map = extract_config_mapping(&path);
+        assert!(map["num_key_value_heads"].rationale.contains("GQA"));
+    }
+
+    // ── print_human_output (smoke test) ─────────────────────────────────
+
+    #[test]
+    fn print_human_output_no_panic() {
+        let family = resolve_family("llama").unwrap();
+        let config = BTreeMap::new();
+        // Just verify it doesn't panic — output goes to stdout
+        print_human_output(&family, &config, false, false);
+        print_human_output(&family, &config, true, true);
+    }
 }
