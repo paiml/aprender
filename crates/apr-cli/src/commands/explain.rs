@@ -94,11 +94,22 @@ fn explain_kernel(
                         } else if !content.contains('{') {
                             eprintln!("Error: '{}' is not valid JSON", path.display());
                         } else {
-                            eprintln!(
-                                "Error: Could not resolve model_type from '{}'. \
-                                 Ensure the file contains a \"model_type\" field.",
-                                path.display()
-                            );
+                            // Check if model_type field exists but is unrecognized
+                            let model_type = extract_json_string(&content, "model_type");
+                            if let Some(mt) = model_type {
+                                eprintln!(
+                                    "Error: Unknown model_type '{}' in '{}'. \
+                                     Run `apr explain --kernel` for supported families.",
+                                    mt,
+                                    path.display()
+                                );
+                            } else {
+                                eprintln!(
+                                    "Error: No \"model_type\" field in '{}'. \
+                                     Ensure the file is a HuggingFace config.json.",
+                                    path.display()
+                                );
+                            }
                         }
                         std::process::exit(1);
                     }

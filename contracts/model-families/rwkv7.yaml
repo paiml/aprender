@@ -29,7 +29,7 @@ size_variants:
 # We use gelu activation with gelu_mlp since RWKV uses GELU-based channel mixing.
 # No positional encoding — state carries temporal info via recurrence.
 constraints:
-  attention_type: mha
+  attention_type: linear
   activation: gelu
   norm_type: layernorm
   has_bias: false

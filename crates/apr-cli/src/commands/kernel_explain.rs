@@ -67,13 +67,14 @@ const KERNEL_CONTRACTS: &[(&str, &str)] = &[
 /// need dimensional smoke verification (G0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum KernelClass {
-    A,   // GQA + RMSNorm + SiLU + SwiGLU + RoPE
-    B,   // MHA + LayerNorm + GELU + absolute/none
-    C,   // MQA + LayerNorm + GELU + ALiBi
-    D,   // mixed: LayerNorm + SiLU or GQA + LayerNorm
-    E,   // MoE variants
-    F,   // RMSNorm + GELU + GatedMlp + RoPE
-    Ssm, // State Space Models (no attention, no softmax)
+    A,      // GQA + RMSNorm + SiLU + SwiGLU + RoPE
+    B,      // MHA + LayerNorm + GELU + absolute/none
+    C,      // MQA + LayerNorm + GELU + ALiBi
+    D,      // mixed: LayerNorm + SiLU or GQA + LayerNorm
+    E,      // MoE variants
+    F,      // RMSNorm + GELU + GatedMlp + RoPE
+    Ssm,    // State Space Models (Mamba: selective scan, no attention)
+    Linear, // Linear Attention (RWKV: WKV recurrence, no softmax)
     Unknown,
 }
 
@@ -87,6 +88,7 @@ impl KernelClass {
             Self::E => "E (MoE + GQA + RMSNorm + SwiGLU)",
             Self::F => "F (RMSNorm + GELU + GatedMlp + RoPE)",
             Self::Ssm => "SSM (State Space Model + RMSNorm + SiLU)",
+            Self::Linear => "Linear (WKV Recurrence + LayerNorm + GELU)",
             Self::Unknown => "Unknown",
         }
     }
@@ -100,6 +102,7 @@ impl KernelClass {
             Self::E => "E",
             Self::F => "F",
             Self::Ssm => "SSM",
+            Self::Linear => "Linear",
             Self::Unknown => "Unknown",
         }
     }
@@ -129,8 +132,8 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
         },
     ];
 
-    // Softmax is attention-specific — SSM models don't use it
-    if class != KernelClass::Ssm {
+    // Softmax is attention-specific — SSM and linear attention models don't use it
+    if class != KernelClass::Ssm && class != KernelClass::Linear {
         ops.push(KernelOp {
             op: "Softmax",
             kernel: "softmax",
@@ -329,6 +332,33 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
                 contract: "element-wise-ops-v1",
             });
         }
+        KernelClass::Linear => {
+            ops.push(KernelOp {
+                op: "WKV Recurrence",
+                kernel: "wkv_forward",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Token Shift",
+                kernel: "token_shift",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "layer_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "gelu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Channel Mixing",
+                kernel: "channel_mix",
+                contract: "element-wise-ops-v1",
+            });
+        }
         KernelClass::Unknown => {}
     }
 
@@ -461,6 +491,10 @@ fn derive_kernel_class(c: &Constraints) -> KernelClass {
     if attn == "ssm" {
         return KernelClass::Ssm;
     }
+    // Linear: Linear attention (RWKV WKV recurrence, no softmax)
+    if attn == "linear" {
+        return KernelClass::Linear;
+    }
     // Class E: MoE (would need num_experts field — not in current constraints)
     // Fall through to Unknown for now
 
@@ -493,6 +527,7 @@ pub fn load_families() -> Vec<FamilyInfo> {
 /// with an existing family. Maps model_type → family name.
 const FAMILY_ALIASES: &[(&str, &str)] = &[
     // Class A variants (SiLU + RMSNorm + GQA/MHA + RoPE)
+    ("olmo", "llama"),      // OLMo v1 (LlamaForCausalLM base)
     ("olmo2", "llama"),     // MHA variant
     ("granite", "llama"),   // GQA variant
     ("internlm2", "llama"), // GQA variant
@@ -694,7 +729,7 @@ pub fn resolve_from_config_json(path: &Path) -> Option<FamilyInfo> {
 
 /// Simple JSON value extraction (no serde dependency for this hot path).
 /// Handles both string values ("silu") and numeric values (1e-06, 8, 1000000.0).
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
+pub fn extract_json_string(json: &str, key: &str) -> Option<String> {
     let search = format!("\"{key}\"");
     let pos = json.find(&search)?;
     let after = &json[pos + search.len()..];
