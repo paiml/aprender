@@ -70,9 +70,45 @@ fn explain_kernel(
 
     // Resolution chain: file → config.json → family string
     let family = if let Some(path) = file {
+        // Validate file exists and is readable before attempting resolution
+        if !path.exists() {
+            eprintln!("Error: File not found: {}", path.display());
+            std::process::exit(1);
+        }
+        if path.is_dir() {
+            eprintln!(
+                "Error: '{}' is a directory, not a file. Provide a config.json or model file.",
+                path.display()
+            );
+            std::process::exit(1);
+        }
         if path.extension().map_or(false, |e| e == "json") {
-            // Direct config.json
-            resolve_from_config_json(path)
+            // Direct config.json — validate it's parseable
+            let result = resolve_from_config_json(path);
+            if result.is_none() {
+                // File exists but couldn't resolve — check why
+                match std::fs::read_to_string(path) {
+                    Ok(content) => {
+                        if content.trim().is_empty() {
+                            eprintln!("Error: '{}' is empty", path.display());
+                        } else if !content.contains('{') {
+                            eprintln!("Error: '{}' is not valid JSON", path.display());
+                        } else {
+                            eprintln!(
+                                "Error: Could not resolve model_type from '{}'. \
+                                 Ensure the file contains a \"model_type\" field.",
+                                path.display()
+                            );
+                        }
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("Error: Could not read '{}': {e}", path.display());
+                        std::process::exit(1);
+                    }
+                }
+            }
+            result
         } else {
             // Model file — try to find config.json in same directory
             let config_path = path.with_file_name("config.json");

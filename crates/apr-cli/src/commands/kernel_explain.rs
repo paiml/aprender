@@ -67,12 +67,13 @@ const KERNEL_CONTRACTS: &[(&str, &str)] = &[
 /// need dimensional smoke verification (G0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum KernelClass {
-    A, // GQA + RMSNorm + SiLU + SwiGLU + RoPE
-    B, // MHA + LayerNorm + GELU + absolute/none
-    C, // MQA + LayerNorm + GELU + ALiBi
-    D, // mixed: LayerNorm + SiLU or GQA + LayerNorm
-    E, // MoE variants
-    F, // RMSNorm + GELU + GatedMlp + RoPE
+    A,   // GQA + RMSNorm + SiLU + SwiGLU + RoPE
+    B,   // MHA + LayerNorm + GELU + absolute/none
+    C,   // MQA + LayerNorm + GELU + ALiBi
+    D,   // mixed: LayerNorm + SiLU or GQA + LayerNorm
+    E,   // MoE variants
+    F,   // RMSNorm + GELU + GatedMlp + RoPE
+    Ssm, // State Space Models (no attention, no softmax)
     Unknown,
 }
 
@@ -85,6 +86,7 @@ impl KernelClass {
             Self::D => "D (GQA + LayerNorm + GELU/SiLU)",
             Self::E => "E (MoE + GQA + RMSNorm + SwiGLU)",
             Self::F => "F (RMSNorm + GELU + GatedMlp + RoPE)",
+            Self::Ssm => "SSM (State Space Model + RMSNorm + SiLU)",
             Self::Unknown => "Unknown",
         }
     }
@@ -97,6 +99,7 @@ impl KernelClass {
             Self::D => "D",
             Self::E => "E",
             Self::F => "F",
+            Self::Ssm => "SSM",
             Self::Unknown => "Unknown",
         }
     }
@@ -112,6 +115,7 @@ pub struct KernelOp {
 }
 
 fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
+    // Base ops: MatVec always present. Softmax only for attention-based models (not SSM).
     let mut ops = vec![
         KernelOp {
             op: "MatVec (Q4K)",
@@ -123,17 +127,22 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
             kernel: "fused_q6k_parallel_matvec",
             contract: "matvec-kernel-v1",
         },
-        KernelOp {
+    ];
+
+    // Softmax is attention-specific — SSM models don't use it
+    if class != KernelClass::Ssm {
+        ops.push(KernelOp {
             op: "Softmax",
             kernel: "softmax",
             contract: "softmax-kernel-v1",
-        },
-        KernelOp {
-            op: "Kernel Fusion",
-            kernel: "fused_matvec_activation",
-            contract: "kernel-fusion-v1",
-        },
-    ];
+        });
+    }
+
+    ops.push(KernelOp {
+        op: "Kernel Fusion",
+        kernel: "fused_matvec_activation",
+        contract: "kernel-fusion-v1",
+    });
 
     match class {
         KernelClass::A => {
@@ -224,6 +233,11 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
                 contract: "element-wise-ops-v1",
             });
             ops.push(KernelOp {
+                op: "MLP",
+                kernel: "gated_mlp",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
                 op: "Position Encoding",
                 kernel: "rope_forward",
                 contract: "rope-kernel-v1",
@@ -286,6 +300,33 @@ fn kernel_ops_for_class(class: KernelClass) -> Vec<KernelOp> {
                 op: "Position Encoding",
                 kernel: "rope_forward",
                 contract: "rope-kernel-v1",
+            });
+        }
+        KernelClass::Ssm => {
+            ops.push(KernelOp {
+                op: "SSM Scan",
+                kernel: "selective_scan",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Normalization",
+                kernel: "rms_norm",
+                contract: "normalization-kernel-v1",
+            });
+            ops.push(KernelOp {
+                op: "Activation",
+                kernel: "silu",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "MLP",
+                kernel: "gated_mlp",
+                contract: "element-wise-ops-v1",
+            });
+            ops.push(KernelOp {
+                op: "Conv1d",
+                kernel: "depthwise_conv1d",
+                contract: "element-wise-ops-v1",
             });
         }
         KernelClass::Unknown => {}
@@ -416,6 +457,10 @@ fn derive_kernel_class(c: &Constraints) -> KernelClass {
     if norm == "layernorm" && (attn == "gqa" || act == "silu") {
         return KernelClass::D;
     }
+    // SSM: State Space Models (no attention mechanism)
+    if attn == "ssm" {
+        return KernelClass::Ssm;
+    }
     // Class E: MoE (would need num_experts field — not in current constraints)
     // Fall through to Unknown for now
 
@@ -485,6 +530,11 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("qwq", "qwen2"), // QwQ reasoning model (Qwen2ForCausalLM)
     // Classic falcon: LayerNorm + GELU + GQA/MHA — closest to bert (Class B)
     ("falcon", "bert"), // Falcon-7B/40B: LayerNorm + GELU (no RMSNorm, no SiLU)
+    // Bloom: LayerNorm + GELU + MHA + ALiBi — same kernel dispatch as bert (Class B)
+    ("bloom", "bert"),      // bigscience/bloom: MHA + LayerNorm + GELU
+    ("bloomz", "bert"),     // bigscience/bloomz instruction-tuned variant
+    ("bloom_560m", "bert"), // Bloom size variants
+    ("bigscience", "bert"), // Org-name resolution
 ];
 
 /// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
@@ -746,12 +796,17 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                 .unwrap_or_default()
                 .to_lowercase();
             let is_gelu = act.contains("gelu");
+            let is_silu = act == "silu" || act == "swish";
             match (hidden, inter) {
                 (Some(h), Some(i)) if h > 0.0 => {
                     let ratio = i / h;
-                    // GELU models use standard FFN, not SwiGLU
+                    // SiLU models use SwiGLU MLP regardless of ratio
+                    // (MoE models have lower per-expert intermediate_size)
+                    // GELU models use standard GELU FFN
                     let mlp_type = if is_gelu {
                         "GELU FFN"
+                    } else if is_silu {
+                        "SwiGLU MLP"
                     } else if ratio > 2.5 {
                         "SwiGLU MLP"
                     } else {
@@ -1179,8 +1234,16 @@ pub fn print_human_output(
     if !config_mapping.is_empty() {
         println!();
         println!("Config.json → Kernel Mapping:");
+        // Calculate alignment width from longest key=value
+        let max_kv_len = config_mapping
+            .iter()
+            .map(|(k, f)| k.len() + 1 + f.value.len())
+            .max()
+            .unwrap_or(20);
+        let pad_to = max_kv_len + 2; // 2 extra spaces before arrow
         for (key, field) in config_mapping {
-            println!("  {key}={:<18} → {}", field.value, field.rationale);
+            let kv = format!("{key}={}", field.value);
+            println!("  {kv:<pad_to$} → {}", field.rationale);
         }
     }
 
