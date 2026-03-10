@@ -720,6 +720,31 @@ pub fn detect_constraint_mismatches(
                 act.value, family.family, family.constraints.activation
             ));
         }
+        // gegelu (Gated GELU, used by Phi-3-small) is distinct from standard gelu
+        if config_act == "gegelu" && family_act != "gegelu" {
+            warnings.push(format!(
+                "Activation variant: config.json uses 'gegelu' (Gated GELU) but family '{}' uses '{}'. Different kernel.",
+                family.family, family.constraints.activation
+            ));
+        }
+    }
+
+    // Check normalization mismatch: config.json norm field vs family constraint
+    let has_rms = config_mapping.contains_key("rms_norm_eps");
+    let has_ln = config_mapping.contains_key("layer_norm_epsilon")
+        || config_mapping.contains_key("layer_norm_eps")
+        || config_mapping.contains_key("norm_epsilon");
+    let family_norm = family.constraints.norm_type.to_lowercase();
+    if has_rms && !has_ln && family_norm == "layernorm" {
+        warnings.push(format!(
+            "Norm mismatch: config.json has rms_norm_eps (RMSNorm) but family '{}' uses LayerNorm",
+            family.family
+        ));
+    } else if has_ln && !has_rms && family_norm == "rmsnorm" {
+        warnings.push(format!(
+            "Norm mismatch: config.json has layer_norm_epsilon (LayerNorm) but family '{}' uses RMSNorm",
+            family.family
+        ));
     }
 
     // Check attention type mismatch (supports both num_key_value_heads and num_kv_heads)
