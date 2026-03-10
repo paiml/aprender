@@ -401,6 +401,7 @@ pub(crate) struct SafeTensorsLoadResult {
 /// - `tensors`: All tensors as F32 (for backward compatibility and validation)
 /// - `f16_raw_tensors`: Raw F16 bytes for passthrough (only F16 tensors)
 /// - `user_metadata`: User metadata from SafeTensors header
+///
 /// Try F16/BF16 passthrough for a tensor. Returns true if passthrough was used.
 fn try_f16_passthrough(
     mapped: &MappedSafeTensors,
