@@ -32,6 +32,10 @@ pub enum AttentionType {
     Gqa,
     /// Multi-Query Attention (MQA)
     Mqa,
+    /// State Space Model (no attention — selective scan)
+    Ssm,
+    /// Linear Attention (WKV recurrence, no softmax)
+    Linear,
 }
 
 impl fmt::Display for AttentionType {
@@ -40,6 +44,8 @@ impl fmt::Display for AttentionType {
             Self::Mha => write!(f, "MHA"),
             Self::Gqa => write!(f, "GQA"),
             Self::Mqa => write!(f, "MQA"),
+            Self::Ssm => write!(f, "SSM"),
+            Self::Linear => write!(f, "Linear"),
         }
     }
 }
@@ -51,8 +57,10 @@ impl AttentionType {
             "mha" => Ok(Self::Mha),
             "gqa" => Ok(Self::Gqa),
             "mqa" => Ok(Self::Mqa),
+            "ssm" => Ok(Self::Ssm),
+            "linear" => Ok(Self::Linear),
             _ => Err(AprenderError::FormatError {
-                message: format!("Unknown attention type: {s}. Expected: mha, gqa, mqa"),
+                message: format!("Unknown attention type: {s}. Expected: mha, gqa, mqa, ssm, linear"),
             }),
         }
     }
@@ -191,7 +199,7 @@ impl MlpType {
     pub fn from_str_contract(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "swiglu" => Ok(Self::SwiGlu),
-            "gelu_mlp" | "gelu" => Ok(Self::GeluMlp),
+            "gelu_mlp" | "gelu" | "standard" => Ok(Self::GeluMlp),
             "gated_mlp" | "gated" => Ok(Self::GatedMlp),
             _ => Err(AprenderError::FormatError {
                 message: format!("Unknown MLP type: {s}. Expected: swiglu, gelu_mlp, gated_mlp"),

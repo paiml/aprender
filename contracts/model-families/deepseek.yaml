@@ -32,7 +32,7 @@ size_variants:
     rms_norm_eps: 0.000001
 
 constraints:
-  attention_type: gqa  # MLA (Multi-Latent Attention) dispatches as GQA
+  attention_type: mha  # DeepSeek-V1 1.3B/7B use standard MHA (V2 uses MLA→GQA but needs separate family)
   activation: silu
   norm_type: rmsnorm
   has_bias: false
