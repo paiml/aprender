@@ -436,14 +436,24 @@ pub fn load_families() -> Vec<FamilyInfo> {
 /// Model types without their own family YAML that share a kernel pipeline
 /// with an existing family. Maps model_type → family name.
 const FAMILY_ALIASES: &[(&str, &str)] = &[
-    ("olmo2", "llama"),      // SiLU + RMSNorm + RoPE + SwiGLU (MHA variant)
-    ("granite", "llama"),    // SiLU + RMSNorm + GQA + RoPE
-    ("internlm2", "llama"),  // SiLU + RMSNorm + GQA + RoPE
-    ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
+    // Class A variants (SiLU + RMSNorm + GQA/MHA + RoPE)
+    ("olmo2", "llama"),     // MHA variant
+    ("granite", "llama"),   // GQA variant
+    ("internlm2", "llama"), // GQA variant
+    ("phi3", "llama"),      // Phi-3/4: SiLU + RMSNorm + GQA + RoPE (NOT phi-2)
     ("codellama", "llama"),
     ("stablelm", "llama"),
     ("yi", "llama"),
     ("baichuan", "llama"),
+    // Class D variants
+    ("phi3small", "phi"), // gegelu + LayerNorm (unique, closest=phi)
+    // GELU + RMSNorm variants
+    ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
+    // MoE variants — map to mistral (Class A base) with MoE warning
+    ("qwen3_moe", "mistral"), // MoE: 128 experts, SiLU + RMSNorm + GQA + RoPE base
+    ("qwen3_next", "mistral"), // MoE: 512 experts, next-gen routing
+    ("deepseek_v2", "deepseek"), // MoE: DeepSeek V2 with expert routing
+    ("mixtral", "mistral"),   // MoE: 8 experts, SiLU + RMSNorm + GQA + RoPE base
 ];
 
 /// Resolve a family string or architecture string to `FamilyInfo`.
@@ -540,6 +550,9 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
         ("intermediate_size", "MLP width (SwiGLU detection)"),
         ("hidden_size", "Model hidden dimension"),
         ("num_hidden_layers", "Transformer depth"),
+        ("num_local_experts", "MoE expert routing"),
+        ("num_experts", "MoE expert routing"),
+        ("num_experts_per_tok", "MoE active experts per token"),
     ];
 
     for (key, rationale) in &fields {
@@ -600,6 +613,22 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                 _ => None,
             }
         }
+        "num_local_experts" | "num_experts" => {
+            let n: u32 = value.parse().unwrap_or(0);
+            if n > 0 {
+                Some(format!("MoE with {n} experts (Class E kernel routing)"))
+            } else {
+                None
+            }
+        }
+        "num_experts_per_tok" => {
+            let n: u32 = value.parse().unwrap_or(0);
+            if n > 0 {
+                Some(format!("{n} active experts per token"))
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
@@ -657,6 +686,20 @@ pub fn detect_constraint_mismatches(
                     family.constraints.attention_type.to_uppercase()
                 ));
             }
+        }
+    }
+
+    // Check MoE: config has experts but family class is not E
+    let expert_field = config_mapping
+        .get("num_local_experts")
+        .or_else(|| config_mapping.get("num_experts"));
+    if let Some(ef) = expert_field {
+        if family.kernel_class != KernelClass::E {
+            warnings.push(format!(
+                "MoE model ({} experts) mapped to non-MoE class {}. Expert routing kernel not covered.",
+                ef.value,
+                family.kernel_class.letter()
+            ));
         }
     }
 
