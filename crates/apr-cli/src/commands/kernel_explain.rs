@@ -766,18 +766,19 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     };
     if !search_forms.is_empty() {
         for search in &search_forms {
-            if let Some(f) = families
-                .iter()
-                .find(|f| f.family.contains(*search) || search.contains(&f.family.as_str()))
-            {
+            // Use prefix matching, not substring, to avoid spurious matches
+            // (e.g., "mma" ⊂ "gemma" or "lama" ⊂ "llama" via compact form)
+            if let Some(f) = families.iter().find(|f| {
+                f.family.starts_with(*search) || search.starts_with(f.family.as_str())
+            }) {
                 return Some(f.clone());
             }
         }
-        // Also partial match against aliases (both forms)
+        // Also partial match against aliases (both forms, prefix only)
         for search in &search_forms {
             if let Some((matched_alias, target)) = FAMILY_ALIASES
                 .iter()
-                .find(|(alias, _)| alias.contains(*search) || search.contains(alias))
+                .find(|(alias, _)| alias.starts_with(*search) || search.starts_with(alias))
             {
                 if let Some(f) = families.iter().find(|f| f.family == *target) {
                     let mut aliased = f.clone();
