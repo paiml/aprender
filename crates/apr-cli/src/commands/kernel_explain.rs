@@ -470,6 +470,18 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("deepseek_v2", "deepseek"), // MoE: DeepSeek V2 with expert routing
     ("deepseekv2", "deepseek"),  // MoE: arch-stripped form
     ("mixtral", "mistral"),      // MoE: 8 experts
+    // Mistral-derived fine-tunes (same architecture: MistralForCausalLM)
+    ("codestral", "mistral"),  // Codestral-22B coding model
+    ("mathstral", "mistral"),  // Mathstral math model
+    ("zephyr", "mistral"),     // HuggingFace Zephyr fine-tune
+    ("openchat", "mistral"),   // OpenChat fine-tune
+    ("openhermes", "mistral"), // OpenHermes fine-tune
+    // Llama-derived fine-tunes (same architecture: LlamaForCausalLM)
+    ("nemotron", "llama"), // NVIDIA Nemotron
+    ("solar", "llama"),    // Upstage Solar
+    ("vicuna", "llama"),   // LMSYS Vicuna
+    // Qwen-derived
+    ("qwq", "qwen2"), // QwQ reasoning model (Qwen2ForCausalLM)
     // Classic falcon: LayerNorm + GELU + GQA/MHA — closest to bert (Class B)
     ("falcon", "bert"), // Falcon-7B/40B: LayerNorm + GELU (no RMSNorm, no SiLU)
 ];
@@ -484,6 +496,18 @@ fn normalize_input(input: &str) -> String {
         .replace('.', "_")
 }
 
+/// Secondary normalization: strip all separators between name and version.
+/// E.g., "phi_3" → "phi3", "gpt_2" → "gpt2", "rwkv_7" → "rwkv7"
+/// Returns None if same as input.
+fn compact_input(normalized: &str) -> Option<String> {
+    let compact = normalized.replace('_', "");
+    if compact != normalized {
+        Some(compact)
+    } else {
+        None
+    }
+}
+
 /// Resolve a family string or architecture string to `FamilyInfo`.
 pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     let lower = input.to_lowercase();
@@ -495,17 +519,20 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
     let families = load_families();
     // Normalized form for matching (hyphens/dots → underscores)
     let normalized = normalize_input(input);
+    // Compact form for matching (all separators removed: phi_3 → phi3)
+    let compact = compact_input(&normalized);
 
-    // Direct family name match (try both raw lowercase and normalized)
-    if let Some(f) = families
-        .iter()
-        .find(|f| f.family == lower || f.family == normalized)
-    {
+    // Direct family name match (try raw, normalized, and compact)
+    if let Some(f) = families.iter().find(|f| {
+        f.family == lower
+            || f.family == normalized
+            || compact.as_deref().is_some_and(|c| f.family == c)
+    }) {
         return Some(f.clone());
     }
 
     // Alias match (model types sharing kernel pipeline with existing family)
-    // Try raw lowercase first, then normalized (hyphens/dots → underscores)
+    // Try raw lowercase → normalized → compact forms
     let alias_match = FAMILY_ALIASES
         .iter()
         .find(|(alias, _)| *alias == lower)
@@ -513,6 +540,11 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
             FAMILY_ALIASES
                 .iter()
                 .find(|(alias, _)| *alias == normalized.as_str())
+        })
+        .or_else(|| {
+            compact
+                .as_deref()
+                .and_then(|c| FAMILY_ALIASES.iter().find(|(alias, _)| *alias == c))
         });
     if let Some((matched_alias, target)) = alias_match {
         if let Some(f) = families.iter().find(|f| f.family == *target) {
@@ -549,11 +581,26 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         }
     }
 
-    // Partial match (e.g., "qwen" matches "qwen2") — require >= 3 chars
+    // Partial match against families (e.g., "qwen" matches "qwen2")
     if normalized.len() >= 3 {
-        return families
-            .into_iter()
-            .find(|f| f.family.contains(normalized.as_str()) || normalized.contains(&f.family));
+        if let Some(f) = families
+            .iter()
+            .find(|f| f.family.contains(normalized.as_str()) || normalized.contains(&f.family))
+        {
+            return Some(f.clone());
+        }
+        // Also partial match against aliases
+        if let Some((matched_alias, target)) = FAMILY_ALIASES
+            .iter()
+            .find(|(alias, _)| alias.contains(normalized.as_str()) || normalized.contains(alias))
+        {
+            if let Some(f) = families.iter().find(|f| f.family == *target) {
+                let mut aliased = f.clone();
+                aliased.display_name =
+                    format!("{} (via {} kernel pipeline)", matched_alias, f.family);
+                return Some(aliased);
+            }
+        }
     }
 
     None
