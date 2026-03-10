@@ -550,14 +550,38 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
     ("granite", "llama"),   // GQA variant
     ("internlm2", "llama"), // GQA variant
     ("phi3", "llama"),      // Phi-3/4: SiLU + RMSNorm + GQA + RoPE (NOT phi-2)
+    ("phi4", "llama"),      // Phi-4: same pipeline as Phi-3
     ("codellama", "llama"),
+    ("tinyllama", "llama"), // TinyLlama (LlamaForCausalLM)
     ("stablelm", "llama"),
     ("yi", "llama"),
     ("baichuan", "llama"),
+    // Class B variants (MHA + LayerNorm + GELU)
+    ("gpt_neo", "bert"),     // GPTNeoForCausalLM
+    ("gptneo", "bert"),      // compact form
+    ("gpt_neox", "bert"),    // GPTNeoXForCausalLM
+    ("gptneox", "bert"),     // compact form
+    ("gpt_j", "bert"),       // GPTJForCausalLM
+    ("gptj", "bert"),        // compact form
+    ("gpt_bigcode", "bert"), // GPTBigCodeForCausalLM (StarCoder v1)
+    ("gptbigcode", "bert"),  // compact form
+    ("starcoder1", "bert"),  // StarCoder v1 explicit
+    ("codegen", "bert"),     // CodeGenForCausalLM
+    ("xglm", "bert"),        // XGLMForCausalLM
+    ("opt", "bert"),         // OPTForCausalLM
+    ("galactica", "bert"),   // OPT-based (Meta Galactica)
+    ("roberta", "bert"),     // RoBERTa (BERT variant)
+    ("deberta", "bert"),     // DeBERTa (BERT variant)
+    ("electra", "bert"),     // ELECTRA (BERT variant)
+    ("distilbert", "bert"),  // DistilBERT
     // Class D variants
     ("phi3small", "phi"), // gegelu + LayerNorm (unique, closest=phi)
+    // Class F variants
+    ("codegemma", "gemma"), // CodeGemma (same as Gemma)
+    ("gemma2", "gemma"),    // Gemma 2
+    ("gemma3", "gemma"),    // Gemma 3
     // GELU + RMSNorm variants
-    ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match)
+    ("starcoder2", "qwen2"), // GELU + RMSNorm + GQA + RoPE (closest match; warns on act/norm)
     // MoE variants — map to base family with MoE warning
     ("qwen2_moe", "qwen2"),      // MoE: Qwen2 MoE (model_type form)
     ("qwen2moe", "qwen2"),       // MoE: Qwen2 MoE (arch-stripped form)
@@ -638,6 +662,29 @@ const ALIAS_ARCHITECTURES: &[(&str, &str)] = &[
     ("qwen3next", "Qwen3ForCausalLM"),
     ("smollm", "LlamaForCausalLM"),
     ("smollm2", "LlamaForCausalLM"),
+    // GPT variants
+    ("gpt_neo", "GPTNeoForCausalLM"),
+    ("gptneo", "GPTNeoForCausalLM"),
+    ("gpt_neox", "GPTNeoXForCausalLM"),
+    ("gptneox", "GPTNeoXForCausalLM"),
+    ("gpt_j", "GPTJForCausalLM"),
+    ("gptj", "GPTJForCausalLM"),
+    ("gpt_bigcode", "GPTBigCodeForCausalLM"),
+    ("gptbigcode", "GPTBigCodeForCausalLM"),
+    ("starcoder1", "GPTBigCodeForCausalLM"),
+    ("codegen", "CodeGenForCausalLM"),
+    ("xglm", "XGLMForCausalLM"),
+    ("opt", "OPTForCausalLM"),
+    ("galactica", "OPTForCausalLM"),
+    ("roberta", "RobertaForMaskedLM"),
+    ("deberta", "DebertaV2ForMaskedLM"),
+    ("electra", "ElectraForPreTraining"),
+    ("distilbert", "DistilBertModel"),
+    ("tinyllama", "LlamaForCausalLM"),
+    ("phi4", "Phi3ForCausalLM"),
+    ("codegemma", "CodeGemmaForCausalLM"),
+    ("gemma2", "Gemma2ForCausalLM"),
+    ("gemma3", "Gemma3ForCausalLM"),
 ];
 
 /// Normalize input: lowercase, trim, replace hyphens/dots with underscores.
@@ -765,12 +812,17 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
         v
     };
     if !search_forms.is_empty() {
-        // Check aliases BEFORE direct families — aliases are more specific
-        // (e.g., "phi3" → llama must win over "phi" family prefix match for "phi3mini")
+        // Two-pass partial matching:
+        // Pass 1: search starts_with alias (search is MORE specific, e.g., "phi3mini" starts_with "phi3")
+        //   → Aliases win because they're exact subtypes (phi3 → llama, not phi family)
+        // Pass 2: family starts_with search (search is LESS specific, e.g., "qwen" prefix of "qwen2")
+        //   → Families win because they're direct matches, not accidental alias prefixes
+
+        // Pass 1: search starts_with alias (search is longer/more specific than alias)
         for search in &search_forms {
             if let Some((matched_alias, target)) = FAMILY_ALIASES
                 .iter()
-                .find(|(alias, _)| alias.starts_with(*search) || search.starts_with(alias))
+                .find(|(alias, _)| search.starts_with(alias))
             {
                 if let Some(f) = families.iter().find(|f| f.family == *target) {
                     let mut aliased = f.clone();
@@ -780,14 +832,26 @@ pub fn resolve_family(input: &str) -> Option<FamilyInfo> {
                 }
             }
         }
-        // Then try direct family prefix matching
+        // Pass 2: family starts_with search (search is a prefix of family name)
         for search in &search_forms {
-            // Use prefix matching, not substring, to avoid spurious matches
-            // (e.g., "mma" ⊂ "gemma" or "lama" ⊂ "llama" via compact form)
             if let Some(f) = families.iter().find(|f| {
                 f.family.starts_with(*search) || search.starts_with(f.family.as_str())
             }) {
                 return Some(f.clone());
+            }
+        }
+        // Pass 3: alias starts_with search (search is a prefix of alias name)
+        for search in &search_forms {
+            if let Some((matched_alias, target)) = FAMILY_ALIASES
+                .iter()
+                .find(|(alias, _)| alias.starts_with(*search))
+            {
+                if let Some(f) = families.iter().find(|f| f.family == *target) {
+                    let mut aliased = f.clone();
+                    aliased.display_name =
+                        format!("{} (via {} kernel pipeline)", matched_alias, f.family);
+                    return Some(aliased);
+                }
             }
         }
     }
@@ -1090,10 +1154,17 @@ fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
                     let moe_inter = extract_json_string(json, "moe_intermediate_size")
                         .and_then(|v| v.parse::<u64>().ok());
                     let est = if let Some(i) = inter {
-                        let dense_mlp = 3 * n * i; // SwiGLU: gate+up+down
+                        // SwiGLU/SiLU: 3 MLP matrices (gate+up+down)
+                        // GELU/ReLU: 2 MLP matrices (up+down, no gate)
+                        let act = extract_json_string(json, "hidden_act")
+                            .unwrap_or_default()
+                            .to_lowercase();
+                        let is_gated = act == "silu" || act == "swish" || act.contains("gegelu");
+                        let mlp_factor = if is_gated { 3 } else { 2 };
+                        let dense_mlp = mlp_factor * n * i;
                         let expert_mlp = if n_experts > 1 {
                             let ei = moe_inter.unwrap_or(i);
-                            n_experts * 3 * n * ei // per-expert SwiGLU
+                            n_experts * mlp_factor * n * ei // per-expert MLP
                         } else {
                             0
                         };
