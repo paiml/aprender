@@ -109,47 +109,53 @@ impl ComputationGraph {
     /// * `output_id` - ID of the tensor to differentiate
     /// * `grad_output` - Initial gradient (typically ones for scalar loss)
     pub fn backward(&mut self, output_id: TensorId, grad_output: Tensor) {
-        // Map from tensor ID to accumulated gradient
-        let mut grads: HashMap<TensorId, Tensor> = HashMap::new();
-        grads.insert(output_id, grad_output);
-
         // Process tape in reverse order
-        for entry in self.tape.iter().rev() {
-            // Skip if we don't have a gradient for this output
-            let grad_out = match grads.get(&entry.output_id) {
-                Some(g) => g.clone(),
-                None => continue,
-            };
+        // Wrap in no_grad to prevent operations during backward from recording themselves to the graph
+        super::no_grad(|| {
+            // Map from tensor ID to accumulated gradient
+            let mut grads: HashMap<TensorId, Tensor> = HashMap::new();
+            grads.insert(output_id, grad_output);
 
-            // Compute gradients w.r.t. inputs
-            let input_grads = entry.grad_fn.backward(&grad_out);
+            for entry in self.tape.iter().rev() {
+                // Skip if we don't have a gradient for this output
+                let grad_out = match grads.get(&entry.output_id) {
+                    Some(g) => g.clone(),
+                    None => continue,
+                };
 
-            // Accumulate gradients for each input
-            for (input_id, input_grad) in entry.input_ids.iter().zip(input_grads) {
-                grads
-                    .entry(*input_id)
-                    .and_modify(|existing| {
-                        // Accumulate: existing += input_grad
-                        let new_data: Vec<f32> = existing
-                            .data()
-                            .iter()
-                            .zip(input_grad.data().iter())
-                            .map(|(a, b)| a + b)
-                            .collect();
-                        *existing = Tensor::new(&new_data, existing.shape());
-                    })
-                    .or_insert(input_grad);
-            }
-        }
+                // Compute gradients w.r.t. inputs
+                let input_grads = entry.grad_fn.backward(&grad_out);
 
-        // Store gradients in leaf tensors
-        for (id, grad) in grads {
-            if let Some(tensor) = self.tensors.get_mut(&id) {
-                if tensor.requires_grad_enabled() && tensor.is_leaf() {
-                    tensor.accumulate_grad(grad);
+                // Accumulate gradients for each input
+                for (input_id, input_grad) in entry.input_ids.iter().zip(input_grads) {
+                    grads
+                        .entry(*input_id)
+                        .and_modify(|existing| {
+                            // Accumulate: existing += input_grad
+                            let input_grad_contig = input_grad.contiguous();
+                            let existing_contig = existing.contiguous();
+
+                            let new_data: Vec<f32> = existing_contig
+                                .data()
+                                .iter()
+                                .zip(input_grad_contig.data().iter())
+                                .map(|(a, b)| a + b)
+                                .collect();
+                            *existing = Tensor::new(&new_data, existing_contig.shape());
+                        })
+                        .or_insert(input_grad);
                 }
             }
-        }
+
+            // Store gradients in leaf tensors
+            for (id, grad) in grads {
+                if let Some(tensor) = self.tensors.get_mut(&id) {
+                    if tensor.requires_grad_enabled() && tensor.is_leaf() {
+                        tensor.accumulate_grad(grad);
+                    }
+                }
+            }
+        });
     }
 
     /// Get the number of recorded operations.

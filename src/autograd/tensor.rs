@@ -52,7 +52,10 @@ pub struct Tensor {
     data: Vector<f32>,
 
     /// Shape of the tensor
-    shape: Vec<usize>,
+    pub(crate) shape: Vec<usize>,
+
+    /// Whether the tensor is currently transposed
+    pub(crate) is_transposed: bool,
 
     /// Gradient (populated after `backward()`)
     grad: Option<Box<Tensor>>,
@@ -67,7 +70,7 @@ pub struct Tensor {
     grad_fn: Option<Arc<dyn GradFn>>,
 
     /// Unique identifier for graph construction
-    id: TensorId,
+    pub(crate) id: TensorId,
 }
 
 impl Tensor {
@@ -93,6 +96,7 @@ impl Tensor {
         Self {
             data: Vector::from_slice(data),
             shape: shape.to_vec(),
+            is_transposed: false,
             grad: None,
             requires_grad: false,
             is_leaf: true,
@@ -120,6 +124,7 @@ impl Tensor {
         Self {
             data: Vector::from_vec(data),
             shape: shape.to_vec(),
+            is_transposed: false,
             grad: None,
             requires_grad: false,
             is_leaf: true,
@@ -181,6 +186,12 @@ impl Tensor {
         self.requires_grad
     }
 
+    /// Check if this tensor is lazily transposed.
+    #[must_use]
+    pub fn is_transposed(&self) -> bool {
+        self.is_transposed
+    }
+
     /// Check if this is a leaf tensor (not created by an operation).
     #[must_use]
     pub fn is_leaf(&self) -> bool {
@@ -214,6 +225,10 @@ impl Tensor {
     /// Get a reference to the underlying data.
     #[must_use]
     pub fn data(&self) -> &[f32] {
+        assert!(
+            !self.is_transposed,
+            "Cannot access data of transposed tensor directly. Call contiguous() first."
+        );
         self.data.as_slice()
     }
 
@@ -223,7 +238,50 @@ impl Tensor {
     ///
     /// Modifying data directly may invalidate gradients.
     pub fn data_mut(&mut self) -> &mut [f32] {
+        assert!(
+            !self.is_transposed,
+            "Cannot access data of transposed tensor directly. Call contiguous() first."
+        );
         self.data.as_mut_slice()
+    }
+
+    /// Ensure the tensor is in a contiguous physical layout.
+    ///
+    /// If the tensor is lazily transposed, this will perform a physical
+    /// transpose and return a new tensor with `is_transposed = false`.
+    #[must_use]
+    pub fn contiguous(&self) -> Tensor {
+        if !self.is_transposed {
+            return self.clone();
+        }
+
+        // Perform physical transpose
+        // Note: self.shape is already the logical shape [cols, rows]
+        // The data is in row-major order of the physical shape [rows, cols]
+        let logical_rows = self.shape[0];
+        let logical_cols = self.shape[1];
+        let physical_rows = logical_cols;
+        let physical_cols = logical_rows;
+
+        let src = self.data.as_slice();
+        let mut data = vec![0.0; logical_rows * logical_cols];
+
+        // We want to transpose from [physical_rows, physical_cols] to [logical_rows, logical_cols]
+        for r in 0..physical_rows {
+            for c in 0..physical_cols {
+                // physical index (r, c) becomes logical index (c, r)
+                data[c * physical_rows + r] = src[r * physical_cols + c];
+            }
+        }
+
+        let mut result = Tensor::from_vec(data, &self.shape);
+        result.requires_grad = self.requires_grad;
+        result.is_leaf = self.is_leaf;
+        result.grad_fn = self.grad_fn.clone();
+        // ID should probably stay the same or be different?
+        // In autograd, contiguous usually returns a view or a copy that is still part of the graph.
+        // We'll give it a new ID to be safe, or just use the clone logic.
+        result
     }
 
     /// Get the gradient tensor (if computed).
@@ -281,6 +339,7 @@ impl Tensor {
         Tensor {
             data: self.data.clone(),
             shape: self.shape.clone(),
+            is_transposed: self.is_transposed,
             grad: None,
             requires_grad: false,
             is_leaf: true,

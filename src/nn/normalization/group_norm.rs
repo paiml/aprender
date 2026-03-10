@@ -88,7 +88,8 @@ impl Module for GroupNorm {
         let spatial_size: usize = shape[2..].iter().product();
         let group_size = channels_per_group * spatial_size;
 
-        let input_data = input.data();
+        let input_contig = input.contiguous();
+        let input_data = input_contig.data();
         let mut output_data = vec![0.0; input_data.len()];
 
         for n in 0..batch_size {
@@ -306,8 +307,9 @@ impl Module for RMSNorm {
             crate::nn::functional::rms_norm(input, &self.weight, self.eps)
         } else {
             // Non-affine: normalize without weight
+            let input_contig = input.contiguous();
             let batch_dims: usize = shape[..start_dim].iter().product();
-            let input_data = input.data();
+            let input_data = input_contig.data();
             let mut output_data = vec![0.0; input_data.len()];
 
             for b in 0..batch_dims {

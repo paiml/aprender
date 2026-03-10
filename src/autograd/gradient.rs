@@ -1,15 +1,13 @@
-
 impl GradFn for CrossEntropyBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
-        let (batch, num_classes) = (
-            self.softmax_output.shape()[0],
-            self.softmax_output.shape()[1],
-        );
-        let mut grad_input = self.softmax_output.data().to_vec();
+        let output_contig = self.softmax_output.contiguous();
+        let (batch, num_classes) = (output_contig.shape()[0], output_contig.shape()[1]);
+        let mut grad_input = output_contig.data().to_vec();
 
         // grad = softmax - one_hot(targets)
         // Then multiply by upstream gradient (for reduction)
-        let grad_scale = grad_output.data()[0]; // scalar after mean reduction
+        let input_grad = grad_output.contiguous();
+        let grad_scale = input_grad.data()[0]; // scalar after mean reduction
 
         for b in 0..batch {
             let target = self.targets[b];
@@ -37,14 +35,16 @@ pub(crate) struct SigmoidBackward {
 
 impl GradFn for SigmoidBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let input_grad = grad_output.contiguous();
+        let output_contig = self.output.contiguous();
         // ∂sigmoid(x)/∂x = sigmoid(x) * (1 - sigmoid(x))
-        let grad_data: Vec<f32> = grad_output
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.output.data().iter())
+            .zip(output_contig.data().iter())
             .map(|(&g, &s)| g * s * (1.0 - s))
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -59,14 +59,16 @@ pub(crate) struct TanhBackward {
 
 impl GradFn for TanhBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
+        let input_grad = grad_output.contiguous();
+        let output_contig = self.output.contiguous();
         // ∂tanh(x)/∂x = 1 - tanh²(x)
-        let grad_data: Vec<f32> = grad_output
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.output.data().iter())
+            .zip(output_contig.data().iter())
             .map(|(&g, &t)| g * (1.0 - t * t))
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -125,7 +127,8 @@ pub(crate) struct ViewBackward {
 impl GradFn for ViewBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // Gradient of reshape is just reshaping back to original shape
-        vec![Tensor::new(grad_output.data(), &self.input_shape)]
+        let input_grad = grad_output.contiguous();
+        vec![Tensor::new(input_grad.data(), &self.input_shape)]
     }
 
     fn name(&self) -> &'static str {
@@ -159,15 +162,17 @@ impl GradFn for MatmulBackward {
 
 /// Reduce gradient to scalar by summing all elements.
 fn reduce_to_scalar(grad: &Tensor, target_shape: &[usize]) -> Tensor {
-    let sum: f32 = grad.data().iter().sum();
+    let input = grad.contiguous();
+    let sum: f32 = input.data().iter().sum();
     Tensor::new(&[sum], target_shape)
 }
 
 /// Reduce 2D gradient to 1D by summing over batch dimension.
 fn reduce_batch_to_features(grad: &Tensor, target_shape: &[usize]) -> Tensor {
-    let (rows, cols) = (grad.shape()[0], grad.shape()[1]);
+    let input = grad.contiguous();
+    let (rows, cols) = (input.shape()[0], input.shape()[1]);
     let mut reduced = vec![0.0; cols];
-    let grad_data = grad.data();
+    let grad_data = input.data();
     for i in 0..rows {
         for (j, r) in reduced.iter_mut().enumerate() {
             *r += grad_data[i * cols + j];
@@ -199,7 +204,8 @@ fn maybe_reduce_grad(grad: &Tensor, target_shape: &[usize]) -> Tensor {
 
     // If shapes match in size, just reshape
     if grad.numel() == target_shape.iter().product::<usize>() {
-        return Tensor::new(grad.data(), target_shape);
+        let input = grad.contiguous();
+        return Tensor::new(input.data(), target_shape);
     }
 
     grad.clone()
@@ -207,17 +213,9 @@ fn maybe_reduce_grad(grad: &Tensor, target_shape: &[usize]) -> Tensor {
 
 /// SIMD-friendly 2D matrix transpose using trueno.
 ///
-/// Uses trueno's cache-optimized transpose for better memory access patterns.
+/// Refactored to use lazy transpose for performance.
 fn transpose_2d(t: &Tensor) -> Tensor {
-    assert_eq!(t.ndim(), 2, "transpose_2d requires 2D tensor");
-    let (rows, cols) = (t.shape()[0], t.shape()[1]);
-
-    // Use trueno's Matrix transpose for optimized memory access
-    let matrix =
-        trueno::Matrix::from_vec(rows, cols, t.data().to_vec()).expect("valid matrix dimensions");
-    let transposed = matrix.transpose();
-
-    Tensor::new(transposed.as_slice(), &[cols, rows])
+    t.transpose()
 }
 
 /// SIMD-accelerated 2D matrix multiplication using trueno.
@@ -228,15 +226,18 @@ fn matmul_2d(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(a.ndim(), 2, "matmul_2d requires 2D tensors");
     assert_eq!(b.ndim(), 2, "matmul_2d requires 2D tensors");
 
-    let (m, k1) = (a.shape()[0], a.shape()[1]);
-    let (k2, n) = (b.shape()[0], b.shape()[1]);
+    let input_a = a.contiguous();
+    let input_b = b.contiguous();
+
+    let (m, k1) = (input_a.shape()[0], input_a.shape()[1]);
+    let (k2, n) = (input_b.shape()[0], input_b.shape()[1]);
     assert_eq!(k1, k2, "matmul dimension mismatch: {k1} vs {k2}");
 
     // Use trueno's SIMD-accelerated matmul for performance parity with Ollama
     let a_matrix =
-        trueno::Matrix::from_vec(m, k1, a.data().to_vec()).expect("valid matrix dimensions");
+        trueno::Matrix::from_vec(m, k1, input_a.data().to_vec()).expect("valid matrix dimensions");
     let b_matrix =
-        trueno::Matrix::from_vec(k2, n, b.data().to_vec()).expect("valid matrix dimensions");
+        trueno::Matrix::from_vec(k2, n, input_b.data().to_vec()).expect("valid matrix dimensions");
     let result_matrix = a_matrix.matmul(&b_matrix).expect("matmul should succeed");
 
     Tensor::new(result_matrix.as_slice(), &[m, n])

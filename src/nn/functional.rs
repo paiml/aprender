@@ -38,11 +38,16 @@ pub fn relu_scalar(x: f32) -> f32 {
 /// Leaky `ReLU` activation: `max(negative_slope` * x, x)
 #[must_use]
 pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
-    let src = x.data();
+    let input = x.contiguous();
+    let src = input.data();
     let n = src.len();
     let mut data = vec![0.0f32; n];
     for i in 0..n {
-        data[i] = if src[i] > 0.0 { src[i] } else { negative_slope * src[i] };
+        data[i] = if src[i] > 0.0 {
+            src[i]
+        } else {
+            negative_slope * src[i]
+        };
     }
     Tensor::from_vec(data, x.shape())
 }
@@ -84,7 +89,8 @@ pub fn sigmoid_scalar_f64(x: f64) -> f64 {
 // Contract: silu-kernel-v1, equation = "silu"
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
-    let src = x.data();
+    let input = x.contiguous();
+    let src = input.data();
     let n = src.len();
     let mut data = vec![0.0f32; n];
     for i in 0..n {
@@ -112,8 +118,10 @@ pub fn silu_scalar(x: f32) -> f32 {
 // Contract: swiglu-kernel-v1, equation = "swiglu"
 #[must_use]
 pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
-    let src_x = x.data();
-    let src_g = gate.data();
+    let input_x = x.contiguous();
+    let input_g = gate.contiguous();
+    let src_x = input_x.data();
+    let src_g = input_g.data();
     let n = src_x.len();
     let mut data = vec![0.0f32; n];
     for i in 0..n {
@@ -216,7 +224,8 @@ pub fn tanh(x: &Tensor) -> Tensor {
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     // ONE PATH: Per-element delegates to trueno::gelu_scalar (UCBD §4).
-    let src = x.data();
+    let input = x.contiguous();
+    let src = input.data();
     let n = src.len();
     let mut data = vec![0.0f32; n];
     for i in 0..n {
@@ -236,10 +245,11 @@ pub fn gelu(x: &Tensor) -> Tensor {
 #[provable_contracts_macros::contract("softmax-kernel-v1", equation = "softmax")]
 #[must_use]
 pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
-    let shape = x.shape();
+    let input = x.contiguous();
+    let shape = input.shape();
     let last_dim = shape[shape.len() - 1];
     let batch_size: usize = shape[..shape.len() - 1].iter().product();
-    let data = x.data();
+    let data = input.data();
     let mut output = vec![0.0f32; data.len()];
 
     for b in 0..batch_size {
@@ -282,15 +292,16 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
 #[provable_contracts_macros::contract("cross-entropy-kernel-v1", equation = "log_softmax")]
 #[must_use]
 pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
-    let shape = x.shape();
+    let input = x.contiguous();
+    let shape = input.shape();
     let last_dim = shape[shape.len() - 1];
     let batch_size: usize = shape[..shape.len() - 1].iter().product();
 
-    let mut output = vec![0.0f32; x.data().len()];
+    let mut output = vec![0.0f32; input.data().len()];
 
     for b in 0..batch_size {
         let start = b * last_dim;
-        let row = &x.data()[start..start + last_dim];
+        let row = &input.data()[start..start + last_dim];
 
         let max_val = row.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         let log_sum_exp: f32 = row.iter().map(|&v| (v - max_val).exp()).sum::<f32>().ln();
@@ -314,7 +325,8 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     let mut rng = rand::rng();
     let scale = 1.0 / (1.0 - p);
 
-    let data: Vec<f32> = x
+    let input = x.contiguous();
+    let data: Vec<f32> = input
         .data()
         .iter()
         .map(|&v| {
@@ -339,10 +351,13 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
 /// Contract: layernorm-kernel-v1, equation "layernorm"
 #[must_use]
 pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
-    let shape = x.shape();
-    let data = x.data();
-    let weight_data = weight.data();
-    let bias_data = bias.data();
+    let input = x.contiguous();
+    let w = weight.contiguous();
+    let b_tensor = bias.contiguous();
+    let shape = input.shape();
+    let data = input.data();
+    let weight_data = w.data();
+    let bias_data = b_tensor.data();
 
     // Use weight length as norm dimension to support multi-dim normalized_shape.
     // For single-dim normalized_shape this equals shape[last], for multi-dim
@@ -381,9 +396,11 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
 /// Contract: rmsnorm-kernel-v1, equation "rmsnorm"
 #[must_use]
 pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
-    let shape = x.shape();
-    let data = x.data();
-    let weight_data = weight.data();
+    let input = x.contiguous();
+    let w = weight.contiguous();
+    let shape = input.shape();
+    let data = input.data();
+    let weight_data = w.data();
 
     // Use weight length as norm dimension to support multi-dim normalized_shape.
     // For single-dim normalized_shape this equals shape[last], for multi-dim
@@ -426,12 +443,14 @@ pub fn linear(x: &Tensor, weight: &Tensor, bias: Option<&Tensor>) -> Tensor {
 
 /// Helper: broadcast-add 1D bias to 2D output
 fn broadcast_add_1d(matrix: &Tensor, vector: &Tensor) -> Tensor {
-    let (rows, cols) = (matrix.shape()[0], matrix.shape()[1]);
+    let input_m = matrix.contiguous();
+    let input_v = vector.contiguous();
+    let (rows, cols) = (input_m.shape()[0], input_m.shape()[1]);
     let mut result = vec![0.0; rows * cols];
 
     for i in 0..rows {
         for j in 0..cols {
-            result[i * cols + j] = matrix.data()[i * cols + j] + vector.data()[j];
+            result[i * cols + j] = input_m.data()[i * cols + j] + input_v.data()[j];
         }
     }
 

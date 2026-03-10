@@ -70,8 +70,9 @@ pub(crate) struct SubBackward {
 impl GradFn for SubBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂(x-y)/∂x = 1, ∂(x-y)/∂y = -1
-        let grad_x = maybe_reduce_grad(grad_output, &self.x_shape);
-        let grad_y_data: Vec<f32> = grad_output.data().iter().map(|&g| -g).collect();
+        let input_grad = grad_output.contiguous();
+        let grad_x = maybe_reduce_grad(&input_grad, &self.x_shape);
+        let grad_y_data: Vec<f32> = input_grad.data().iter().map(|&g| -g).collect();
         let grad_y_full = Tensor::new(&grad_y_data, grad_output.shape());
         let grad_y = maybe_reduce_grad(&grad_y_full, &self.y_shape);
         vec![grad_x, grad_y]
@@ -91,16 +92,20 @@ pub(crate) struct MulBackward {
 impl GradFn for MulBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂(x*y)/∂x = y, ∂(x*y)/∂y = x
-        let grad_x_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let y_contig = self.y.contiguous();
+
+        let grad_x_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.y.data().iter())
+            .zip(y_contig.data().iter())
             .map(|(&g, &y)| g * y)
             .collect();
-        let grad_y_data: Vec<f32> = grad_output
+        let grad_y_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| g * x)
             .collect();
 
@@ -129,17 +134,21 @@ pub(crate) struct DivBackward {
 impl GradFn for DivBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂(x/y)/∂x = 1/y, ∂(x/y)/∂y = -x/y²
-        let grad_x_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let y_contig = self.y.contiguous();
+
+        let grad_x_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.y.data().iter())
+            .zip(y_contig.data().iter())
             .map(|(&g, &y)| g / y)
             .collect();
-        let grad_y_data: Vec<f32> = grad_output
+        let grad_y_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
-            .zip(self.y.data().iter())
+            .zip(x_contig.data().iter())
+            .zip(y_contig.data().iter())
             .map(|((&g, &x), &y)| -g * x / (y * y))
             .collect();
 
@@ -165,8 +174,9 @@ pub(crate) struct NegBackward;
 impl GradFn for NegBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂(-x)/∂x = -1
-        let grad_data: Vec<f32> = grad_output.data().iter().map(|&g| -g).collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        let input_grad = grad_output.contiguous();
+        let grad_data: Vec<f32> = input_grad.data().iter().map(|&g| -g).collect();
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -186,13 +196,15 @@ pub(crate) struct ExpBackward {
 impl GradFn for ExpBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂exp(x)/∂x = exp(x)
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let output_contig = self.output.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.output.data().iter())
+            .zip(output_contig.data().iter())
             .map(|(&g, &exp_x)| g * exp_x)
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -208,13 +220,15 @@ pub(crate) struct LogBackward {
 impl GradFn for LogBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂log(x)/∂x = 1/x
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| g / x)
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -231,13 +245,15 @@ pub(crate) struct PowBackward {
 impl GradFn for PowBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂(x^n)/∂x = n * x^(n-1)
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| g * self.n * x.powf(self.n - 1.0))
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -253,13 +269,15 @@ pub(crate) struct SqrtBackward {
 impl GradFn for SqrtBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂sqrt(x)/∂x = 0.5 / sqrt(x)
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let output_contig = self.output.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.output.data().iter())
+            .zip(output_contig.data().iter())
             .map(|(&g, &sqrt_x)| g * 0.5 / sqrt_x)
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -321,13 +339,15 @@ pub(crate) struct ReluBackward {
 impl GradFn for ReluBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂relu(x)/∂x = 1 if x > 0, else 0
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| if x > 0.0 { g } else { 0.0 })
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -344,13 +364,15 @@ pub(crate) struct LeakyReluBackward {
 impl GradFn for LeakyReluBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
         // ∂leaky_relu(x)/∂x = 1 if x > 0, else negative_slope
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| if x > 0.0 { g } else { g * self.negative_slope })
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -372,10 +394,13 @@ impl GradFn for GeluBackward {
         // and inner' = sqrt(2/π) * (1 + 3 * 0.044715 * x²)
         let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
 
-        let grad_data: Vec<f32> = grad_output
+        let input_grad = grad_output.contiguous();
+        let x_contig = self.x.contiguous();
+
+        let grad_data: Vec<f32> = input_grad
             .data()
             .iter()
-            .zip(self.x.data().iter())
+            .zip(x_contig.data().iter())
             .map(|(&g, &x)| {
                 let inner = sqrt_2_over_pi * (x + 0.044715 * x.powi(3));
                 let tanh_inner = inner.tanh();
@@ -385,7 +410,7 @@ impl GradFn for GeluBackward {
                 g * gelu_deriv
             })
             .collect();
-        vec![Tensor::new(&grad_data, grad_output.shape())]
+        vec![Tensor::new(&grad_data, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {
@@ -402,13 +427,15 @@ pub(crate) struct SoftmaxBackward {
 
 impl GradFn for SoftmaxBackward {
     fn backward(&self, grad_output: &Tensor) -> Vec<Tensor> {
-        assert_eq!(self.output.ndim(), 2, "SoftmaxBackward expects 2D tensor");
+        let input_grad = grad_output.contiguous();
+        let output_contig = self.output.contiguous();
+        assert_eq!(output_contig.ndim(), 2, "SoftmaxBackward expects 2D tensor");
 
-        let (batch, features) = (self.output.shape()[0], self.output.shape()[1]);
+        let (batch, features) = (output_contig.shape()[0], output_contig.shape()[1]);
         let mut grad_input = vec![0.0; batch * features];
 
-        let out_data = self.output.data();
-        let grad_data = grad_output.data();
+        let out_data = output_contig.data();
+        let grad_data = input_grad.data();
 
         for b in 0..batch {
             let row_start = b * features;
@@ -426,7 +453,7 @@ impl GradFn for SoftmaxBackward {
             }
         }
 
-        vec![Tensor::new(&grad_input, grad_output.shape())]
+        vec![Tensor::new(&grad_input, input_grad.shape())]
     }
 
     fn name(&self) -> &'static str {

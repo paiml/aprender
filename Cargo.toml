@@ -425,3 +425,6 @@ replace = "## [{{version}}] - {{date}}"
 # GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml.dev-overrides
 # so that `git clone && cargo check` works without sibling repos.
 # See .cargo/config.toml.dev-overrides for full-stack development setup.
+
+[patch.crates-io]
+aprender = { path = "." }

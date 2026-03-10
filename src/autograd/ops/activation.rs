@@ -1,4 +1,3 @@
-
 // ============================================================================
 // Activation Functions
 // ============================================================================
@@ -7,10 +6,9 @@ impl Tensor {
     /// `ReLU` activation: z = max(0, self)
     #[must_use]
     pub fn relu(&self) -> Tensor {
-        // Delegate to trueno's AVX2 SIMD relu with zero-copy allocation.
-        // Contract: provable-contracts/contracts/activation-kernel-v1.yaml
-        let data = trueno::blis::elementwise::relu_alloc(self.data());
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data = trueno::blis::elementwise::relu_alloc(input.data());
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -29,13 +27,14 @@ impl Tensor {
     /// Sigmoid activation: z = 1 / (1 + exp(-self))
     #[must_use]
     pub fn sigmoid(&self) -> Tensor {
-        let src = self.data();
+        let input = self.contiguous();
+        let src = input.data();
         let n = src.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
             data[i] = 1.0 / (1.0 + (-src[i]).exp());
         }
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -56,8 +55,9 @@ impl Tensor {
     /// Tanh activation
     #[must_use]
     pub fn tanh_(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.tanh()).collect();
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data: Vec<f32> = input.data().iter().map(|&a| a.tanh()).collect();
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -82,13 +82,18 @@ impl Tensor {
     /// * `negative_slope` - Controls the angle of the negative slope (default: 0.01)
     #[must_use]
     pub fn leaky_relu(&self, negative_slope: f32) -> Tensor {
-        let src = self.data();
+        let input = self.contiguous();
+        let src = input.data();
         let n = src.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
-            data[i] = if src[i] > 0.0 { src[i] } else { negative_slope * src[i] };
+            data[i] = if src[i] > 0.0 {
+                src[i]
+            } else {
+                negative_slope * src[i]
+            };
         }
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -113,9 +118,10 @@ impl Tensor {
     /// GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
     #[must_use]
     pub fn gelu(&self) -> Tensor {
+        let input = self.contiguous();
         let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
 
-        let src = self.data();
+        let src = input.data();
         let n = src.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
@@ -123,7 +129,7 @@ impl Tensor {
             let inner = sqrt_2_over_pi * (x + 0.044715 * x.powi(3));
             data[i] = 0.5 * x * (1.0 + inner.tanh());
         }
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -146,10 +152,9 @@ impl Tensor {
     /// Uses numerically stable computation with max subtraction.
     #[must_use]
     pub fn softmax(&self) -> Tensor {
-        // ONE PATH: Computation delegates to nn::functional::softmax (UCBD §4).
-        // Gradient tracking is handled here (autograd layer).
-        let computed = crate::nn::functional::softmax(self, -1);
-        let mut result = Tensor::from_vec(computed.data().to_vec(), self.shape());
+        let input = self.contiguous();
+        let computed = crate::nn::functional::softmax(&input, -1);
+        let mut result = Tensor::from_vec(computed.data().to_vec(), &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -185,21 +190,24 @@ impl Tensor {
         assert_eq!(self.ndim(), 2, "matmul requires 2D tensors");
         assert_eq!(other.ndim(), 2, "matmul requires 2D tensors");
 
-        let (m, k1) = (self.shape()[0], self.shape()[1]);
-        let (k2, n) = (other.shape()[0], other.shape()[1]);
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+
+        let (m, k1) = (input_a.shape()[0], input_a.shape()[1]);
+        let (k2, n) = (input_b.shape()[0], input_b.shape()[1]);
         assert_eq!(k1, k2, "matmul dimension mismatch: {k1} vs {k2}");
 
         let data = if m == 1 {
             // GEMV fast path: call trueno's SIMD gemv directly on borrowed slices.
             // Avoids copying the K×N weight matrix (172MB at LLM scale).
             let mut c = vec![0.0f32; n];
-            trueno::blis::gemv::gemv(k1, n, self.data(), other.data(), &mut c);
+            trueno::blis::gemv::gemv(k1, n, input_a.data(), input_b.data(), &mut c);
             c
         } else {
             // General matmul via trueno Matrix (copies data for Matrix ownership)
-            let a_matrix = trueno::Matrix::from_vec(m, k1, self.data().to_vec())
+            let a_matrix = trueno::Matrix::from_vec(m, k1, input_a.data().to_vec())
                 .expect("valid matrix dimensions");
-            let b_matrix = trueno::Matrix::from_vec(k2, n, other.data().to_vec())
+            let b_matrix = trueno::Matrix::from_vec(k2, n, input_b.data().to_vec())
                 .expect("valid matrix dimensions");
             let result_matrix = a_matrix.matmul(&b_matrix).expect("matmul should succeed");
             result_matrix.as_slice().to_vec()
@@ -238,16 +246,10 @@ impl Tensor {
     pub fn transpose(&self) -> Tensor {
         assert_eq!(self.ndim(), 2, "transpose requires 2D tensor");
 
-        let (rows, cols) = (self.shape()[0], self.shape()[1]);
-        let src = self.data();
-        let mut data = vec![0.0; rows * cols];
-
-        // Delegate to trueno's AVX2 8×8 in-register transpose.
-        // Contract: provable-contracts/contracts/transpose-kernel-v1.yaml
-        trueno::blis::transpose::transpose(rows, cols, src, &mut data)
-            .expect("transpose: dimension mismatch (should be impossible)");
-
-        let mut result = Tensor::from_vec(data, &[cols, rows]);
+        let mut result = self.clone();
+        result.id = TensorId::new(); // Ensure unique ID for the result
+        result.shape.swap(0, 1);
+        result.is_transposed = !result.is_transposed;
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -256,7 +258,7 @@ impl Tensor {
 
             with_graph(|graph| {
                 graph.register_tensor(self.clone());
-                graph.record(result.id(), grad_fn, vec![self.id()]);
+                graph.record(result.id, grad_fn, vec![self.id]);
             });
         }
 
@@ -284,26 +286,29 @@ impl Tensor {
     /// ```
     #[must_use]
     pub fn broadcast_add(&self, other: &Tensor) -> Tensor {
-        assert_eq!(self.ndim(), 2, "broadcast_add requires 2D matrix");
-        assert_eq!(other.ndim(), 1, "broadcast_add requires 1D vector");
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+
+        assert_eq!(input_a.ndim(), 2, "broadcast_add requires 2D matrix");
+        assert_eq!(input_b.ndim(), 1, "broadcast_add requires 1D vector");
         assert_eq!(
-            self.shape()[1],
-            other.shape()[0],
+            input_a.shape()[1],
+            input_b.shape()[0],
             "Matrix columns {} must match vector length {}",
-            self.shape()[1],
-            other.shape()[0]
+            input_a.shape()[1],
+            input_b.shape()[0]
         );
 
-        let (rows, cols) = (self.shape()[0], self.shape()[1]);
+        let (rows, cols) = (input_a.shape()[0], input_a.shape()[1]);
         let mut data = vec![0.0; rows * cols];
 
         for i in 0..rows {
             for j in 0..cols {
-                data[i * cols + j] = self.data()[i * cols + j] + other.data()[j];
+                data[i * cols + j] = input_a.data()[i * cols + j] + input_b.data()[j];
             }
         }
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input_a.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -336,14 +341,15 @@ impl Tensor {
     /// ```
     #[must_use]
     pub fn view(&self, new_shape: &[usize]) -> Tensor {
-        let old_numel: usize = self.shape().iter().product();
+        let input = self.contiguous();
+        let old_numel: usize = input.shape().iter().product();
         let new_numel: usize = new_shape.iter().product();
         assert_eq!(
             old_numel, new_numel,
             "view: number of elements must match ({old_numel} vs {new_numel})"
         );
 
-        let mut result = Tensor::new(self.data(), new_shape);
+        let mut result = Tensor::new(input.data(), new_shape);
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);

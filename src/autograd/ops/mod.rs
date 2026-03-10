@@ -14,7 +14,7 @@ use super::grad_fn::{
     SigmoidBackward, SoftmaxBackward, SqrtBackward, SubBackward, SumBackward, TanhBackward,
     TransposeBackward, ViewBackward,
 };
-use super::tensor::Tensor;
+use super::tensor::{Tensor, TensorId};
 use super::{is_grad_enabled, with_graph};
 
 // ============================================================================
@@ -25,10 +25,11 @@ impl Tensor {
     /// Element-wise addition: z = self + other
     #[must_use]
     pub fn add(&self, other: &Tensor) -> Tensor {
-        // Delegate to trueno's AVX2 SIMD add with zero-copy allocation.
-        let data = trueno::blis::elementwise::add_alloc(self.data(), other.data());
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+        let data = trueno::blis::elementwise::add_alloc(input_a.data(), input_b.data());
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input_a.shape());
 
         // Record to graph if needed
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
@@ -52,15 +53,17 @@ impl Tensor {
     /// Element-wise subtraction: z = self - other
     #[must_use]
     pub fn sub(&self, other: &Tensor) -> Tensor {
-        let src_a = self.data();
-        let src_b = other.data();
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+        let src_a = input_a.data();
+        let src_b = input_b.data();
         let n = src_a.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
             data[i] = src_a[i] - src_b[i];
         }
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input_a.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -83,15 +86,17 @@ impl Tensor {
     /// Element-wise multiplication: z = self * other
     #[must_use]
     pub fn mul(&self, other: &Tensor) -> Tensor {
-        let src_a = self.data();
-        let src_b = other.data();
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+        let src_a = input_a.data();
+        let src_b = input_b.data();
         let n = src_a.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
             data[i] = src_a[i] * src_b[i];
         }
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input_a.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -114,15 +119,17 @@ impl Tensor {
     /// Element-wise division: z = self / other
     #[must_use]
     pub fn div(&self, other: &Tensor) -> Tensor {
-        let src_a = self.data();
-        let src_b = other.data();
+        let input_a = self.contiguous();
+        let input_b = other.contiguous();
+        let src_a = input_a.data();
+        let src_b = input_b.data();
         let n = src_a.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
             data[i] = src_a[i] / src_b[i];
         }
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input_a.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -145,14 +152,15 @@ impl Tensor {
     /// Element-wise negation: z = -self
     #[must_use]
     pub fn neg(&self) -> Tensor {
-        let src = self.data();
+        let input = self.contiguous();
+        let src = input.data();
         let n = src.len();
         let mut data = vec![0.0f32; n];
         for i in 0..n {
             data[i] = -src[i];
         }
 
-        let mut result = Tensor::from_vec(data, self.shape());
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -171,9 +179,9 @@ impl Tensor {
     /// Scalar multiplication: z = self * scalar
     #[must_use]
     pub fn mul_scalar(&self, scalar: f32) -> Tensor {
-        // Delegate to trueno's AVX2 SIMD mul_scalar with zero-copy allocation.
-        let data = trueno::blis::elementwise::mul_scalar_alloc(self.data(), scalar);
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data = trueno::blis::elementwise::mul_scalar_alloc(input.data(), scalar);
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -202,8 +210,9 @@ impl Tensor {
     /// Element-wise exponential: z = exp(self)
     #[must_use]
     pub fn exp(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.exp()).collect();
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data: Vec<f32> = input.data().iter().map(|&a| a.exp()).collect();
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -224,8 +233,9 @@ impl Tensor {
     /// Element-wise natural logarithm: z = log(self)
     #[must_use]
     pub fn log(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.ln()).collect();
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data: Vec<f32> = input.data().iter().map(|&a| a.ln()).collect();
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -244,8 +254,9 @@ impl Tensor {
     /// Element-wise power: z = self^n
     #[must_use]
     pub fn pow(&self, n: f32) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.powf(n)).collect();
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data: Vec<f32> = input.data().iter().map(|&a| a.powf(n)).collect();
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -264,8 +275,9 @@ impl Tensor {
     /// Element-wise square root: z = sqrt(self)
     #[must_use]
     pub fn sqrt(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.sqrt()).collect();
-        let mut result = Tensor::from_vec(data, self.shape());
+        let input = self.contiguous();
+        let data: Vec<f32> = input.data().iter().map(|&a| a.sqrt()).collect();
+        let mut result = Tensor::from_vec(data, &input.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -292,7 +304,8 @@ impl Tensor {
     /// Sum all elements: z = sum(self)
     #[must_use]
     pub fn sum(&self) -> Tensor {
-        let sum: f32 = self.data().iter().sum();
+        let input = self.contiguous();
+        let sum: f32 = input.data().iter().sum();
         let mut result = Tensor::new(&[sum], &[1]);
 
         if is_grad_enabled() && self.requires_grad_enabled() {
@@ -314,8 +327,9 @@ impl Tensor {
     /// Mean of all elements: z = mean(self)
     #[must_use]
     pub fn mean(&self) -> Tensor {
-        let sum: f32 = self.data().iter().sum();
-        let mean = sum / self.numel() as f32;
+        let input = self.contiguous();
+        let sum: f32 = input.data().iter().sum();
+        let mean = sum / input.numel() as f32;
         let mut result = Tensor::new(&[mean], &[1]);
 
         if is_grad_enabled() && self.requires_grad_enabled() {

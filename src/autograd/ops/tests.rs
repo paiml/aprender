@@ -24,7 +24,6 @@ where
     Tensor::new(&grad_data, x.shape())
 }
 
-
 pub(super) fn check_gradient<F>(f: F, x: &Tensor, eps: f32, tol: f32) -> bool
 where
     F: Fn(&Tensor) -> Tensor,
@@ -419,9 +418,30 @@ fn test_transpose_forward() {
     let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
     let a_t = a.transpose();
     assert_eq!(a_t.shape(), &[3, 2]);
+    assert!(a_t.is_transposed());
     // Original: [[1, 2, 3], [4, 5, 6]]
     // Transposed: [[1, 4], [2, 5], [3, 6]]
-    assert_eq!(a_t.data(), &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    assert_eq!(a_t.contiguous().data(), &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+}
+
+#[test]
+fn test_lazy_transpose_double() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let a_t_t = a.transpose().transpose();
+    assert_eq!(a_t_t.shape(), &[2, 2]);
+    assert!(!a_t_t.is_transposed());
+    assert_eq!(a_t_t.data(), a.data());
+}
+
+#[test]
+fn test_lazy_transpose_ops() {
+    let a = Tensor::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
+    let a_t = a.transpose();
+
+    // a_t = [[1, 3], [2, 4]]
+    let b = a_t.mul_scalar(2.0);
+    assert_eq!(b.shape(), &[2, 2]);
+    assert_eq!(b.data(), &[2.0, 6.0, 4.0, 8.0]);
 }
 
 #[test]
@@ -433,7 +453,7 @@ fn test_transpose_gradient() {
     z.backward();
     let grad = crate::autograd::get_grad(a_id).expect("grad");
     // Transpose of ones is ones
-    assert_eq!(grad.data(), &[1.0, 1.0, 1.0, 1.0]);
+    assert_eq!(grad.contiguous().data(), &[1.0, 1.0, 1.0, 1.0]);
 }
 
 #[test]
