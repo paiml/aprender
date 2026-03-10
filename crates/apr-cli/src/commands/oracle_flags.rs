@@ -54,6 +54,11 @@ pub fn build_kernel_compatibility(
             "MQA single-KV QKV (row-major): 1 KV, {} Q heads",
             size.num_heads
         ),
+        AttentionType::Ssm => "SSM selective scan (no attention): conv1d + state space recurrence".to_string(),
+        AttentionType::Linear => format!(
+            "Linear attention WKV recurrence (no softmax): {} channels",
+            size.num_heads
+        ),
     };
 
     // FFN kernel description
