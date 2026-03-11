@@ -452,3 +452,4 @@ fn test_server_config_builder_chaining() {
 include!("tests_tests_server_config.rs");
 include!("tests_tests_generate_request.rs");
 include!("validation.rs");
+include!("tests_e2e_http.rs");
