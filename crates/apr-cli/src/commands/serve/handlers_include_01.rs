@@ -114,30 +114,34 @@ fn start_apr_q4k_server_gpu(
     let model_str = model_path.to_string_lossy();
 
     // Load tokenizer from sibling file or embedded metadata
+    // ALB-109: Capture EOS token ID — Qwen3 uses 151643, not 0/2
     eprintln!("[GH-471] Loading tokenizer...");
-    let vocab = AprV2Model::load_tokenizer_from_sibling(model_path)
-        .map(|(v, _, _)| v)
+    let (vocab, eos_id) = AprV2Model::load_tokenizer_from_sibling(model_path)
+        .map(|(v, _, eos)| (v, eos))
         .or_else(|| {
             AprV2Model::load(model_path)
                 .ok()
                 .and_then(|m| m.load_embedded_tokenizer())
-                .map(|t| t.id_to_token.clone())
+                .map(|t| (t.id_to_token.clone(), None))
         })
         .unwrap_or_else(|| {
             println!(
                 "{}",
                 "Warning: No vocabulary found, using placeholder tokens".yellow()
             );
-            (0..151936).map(|i| format!("token{i}")).collect()
+            ((0..151936).map(|i| format!("token{i}")).collect(), None)
         });
 
     println!("  Vocab: {} tokens", vocab.len());
+    if let Some(eos) = eos_id {
+        println!("  EOS token ID: {eos}");
+    }
 
     // Spawn Q4K inference thread (loads model, uploads weights to GPU via pool allocator)
     let q4k_tx = apr_q4k_scheduler::spawn_apr_q4k_inference_thread(&model_str)
         .map_err(|e| CliError::InferenceFailed(format!("Q4K inference thread failed: {e}")))?;
 
-    let state = AppState::with_apr_q4k_and_vocab(q4k_tx, vocab)
+    let state = AppState::with_apr_q4k_and_vocab_eos(q4k_tx, vocab, eos_id)
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
         .with_verbose(config.verbose);
 
