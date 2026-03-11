@@ -100,7 +100,7 @@ fn start_apr_server_gpu(
 ///   - Pool allocator: single cuMemAlloc for all tensors (~17 GB)
 ///   - Dedicated thread: CudaExecutor is !Send, owns GPU context
 ///   - Channel-based: HTTP handler → mpsc → inference thread → oneshot → response
-#[cfg(all(feature = "inference", feature = "cuda"))]
+#[cfg(all(feature = "inference", feature = "cuda-batch"))]
 fn start_apr_q4k_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
@@ -145,6 +145,17 @@ fn start_apr_q4k_server_gpu(
 
     let app = create_router(state);
     run_server_async(app, &config.bind_addr(), "APR GPU (Q4K CUDA — ALB-095)")
+}
+
+/// Stub: Q4K batch scheduler requires cuda-batch feature (realizar >=0.9).
+#[cfg(all(feature = "inference", feature = "cuda", not(feature = "cuda-batch")))]
+fn start_apr_q4k_server_gpu(
+    _model_path: &Path,
+    _config: &ServerConfig,
+) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "Q4K batch scheduler not available (build without cuda-batch feature)".to_string(),
+    ))
 }
 
 /// GH-88 / F-KERNEL-DISPATCH-001: SafeTensors GPU serve using fused Q4K kernels.
