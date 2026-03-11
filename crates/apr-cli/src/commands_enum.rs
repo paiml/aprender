@@ -438,6 +438,7 @@ pub enum Commands {
         json: bool,
     },
     /// GPU status and VRAM reservation management (GPU-SHARE-001)
+    #[cfg(feature = "training")]
     Gpu {
         /// Show reservations as JSON
         #[arg(long)]

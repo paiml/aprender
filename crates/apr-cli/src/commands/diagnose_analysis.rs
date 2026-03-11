@@ -114,6 +114,7 @@ fn analyze_loss_curve(
 
 // ── WHY 3: Run evaluation if data provided ───────────────────────────────────
 
+#[cfg(feature = "training")]
 fn run_evaluation(
     checkpoint_dir: &Path,
     data_path: Option<&Path>,
@@ -188,6 +189,7 @@ fn run_evaluation(
     Ok(eval_report)
 }
 
+#[cfg(feature = "training")]
 fn analyze_eval_report(
     report: &entrenar::finetune::ClassifyEvalReport,
     num_classes: usize,

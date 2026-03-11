@@ -486,6 +486,7 @@ fn resolve_checkpoint_dir(dir: &Path) -> Option<std::path::PathBuf> {
     None
 }
 
+#[cfg(feature = "training")]
 /// Run classification evaluation on a checkpoint directory.
 ///
 /// Loads a saved ClassifyPipeline checkpoint, evaluates against a JSONL test set,
@@ -1426,6 +1427,7 @@ fn run_humaneval_inference(
 // --- ALB-089: GPU-accelerated inference for eval ---
 
 /// Load TransformerConfig from checkpoint dir's config.json.
+#[cfg(all(feature = "cuda", feature = "training"))]
 fn load_transformer_config(
     checkpoint_dir: &Path,
 ) -> std::result::Result<entrenar::transformer::TransformerConfig, String> {
@@ -1458,7 +1460,7 @@ fn load_transformer_config(
 ///
 /// Uses `forward_logits()` for autoregressive generation. No KV cache — each step
 /// reprocesses the full sequence. Still 20-40x faster than CPU for 350M model.
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", feature = "training"))]
 fn run_humaneval_inference_cuda(
     model_path: &Path,
     problems: &[HumanEvalProblem],
@@ -1557,7 +1559,7 @@ fn run_humaneval_inference_cuda(
     Ok((passed, results))
 }
 
-#[cfg(not(feature = "cuda"))]
+#[cfg(not(all(feature = "cuda", feature = "training")))]
 fn run_humaneval_inference_cuda(
     _model_path: &Path,
     _problems: &[HumanEvalProblem],
@@ -1974,7 +1976,7 @@ fn run_mbpp_inference(
 }
 
 /// GPU-accelerated MBPP inference via entrenar CudaTransformerTrainer (ALB-089).
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "cuda", feature = "training"))]
 fn run_mbpp_inference_cuda(
     model_path: &Path,
     problems: &[MbppProblem],
@@ -2071,7 +2073,7 @@ fn run_mbpp_inference_cuda(
     Ok((passed, results))
 }
 
-#[cfg(not(feature = "cuda"))]
+#[cfg(not(all(feature = "cuda", feature = "training")))]
 fn run_mbpp_inference_cuda(
     _model_path: &Path,
     _problems: &[MbppProblem],

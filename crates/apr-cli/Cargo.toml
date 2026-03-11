@@ -63,13 +63,14 @@ name = "apr"
 path = "src/main.rs"
 
 [features]
-default = ["hf-hub", "safetensors-compare", "inference", "cuda", "visualization", "zram"]
+default = ["hf-hub", "safetensors-compare", "inference", "cuda", "visualization", "zram", "training"]
 hf-hub = ["aprender/hf-hub-integration"]
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
-cuda = ["inference", "realizar/cuda"]
+cuda = ["inference", "realizar/cuda", "realizar/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
+training = ["dep:entrenar", "dep:entrenar-lora"]
 dhat-heap = ["dep:dhat"]
 
 [dependencies]
@@ -81,7 +82,7 @@ batuta-common = "0.1"
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
-realizar = { version = "0.8.0", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
+realizar = { version = "0.8", optional = true, default-features = false, features = ["server", "aprender-serve", "cli"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
@@ -150,10 +151,10 @@ pacha = { version = "0.2.4", default-features = false, features = ["remote"] }
 trueno-explain = "0.2.2"
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
-entrenar-lora = "0.3.0"
+entrenar-lora = { version = "0.3.0", optional = true }
 # ML training engine: classification fine-tuning pipeline (--task classify)
 # ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
-entrenar = { version = "0.7.3", features = ["cuda", "gpu", "parquet"] }
+entrenar = { version = "0.7.3", optional = true, features = ["cuda", "gpu", "parquet"] }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)

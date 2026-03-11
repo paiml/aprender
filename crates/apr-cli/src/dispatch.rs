@@ -314,7 +314,9 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             seed,
             plan,
         } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json, *plan),
+        #[cfg(feature = "training")]
         Commands::Gpu { json } => gpu::run(*json),
+        #[cfg(feature = "training")]
         Commands::ModelOps(ModelOpsCommands::Finetune {
             file,
             method,

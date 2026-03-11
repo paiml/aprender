@@ -21,11 +21,14 @@ pub(crate) mod data;
 pub(crate) mod diagnose;
 
 pub(crate) mod eval;
+#[cfg(feature = "training")]
 pub(crate) mod experiment;
 pub(crate) mod explain;
 pub(crate) mod export;
+#[cfg(feature = "training")]
 pub(crate) mod finetune;
 pub(crate) mod flow;
+#[cfg(feature = "training")]
 pub(crate) mod gpu;
 pub(crate) mod hex;
 pub(crate) mod import;
@@ -33,7 +36,9 @@ pub(crate) mod inspect;
 pub(crate) mod kernel_explain;
 pub(crate) mod lint;
 pub(crate) mod merge;
+#[cfg(feature = "training")]
 pub(crate) mod model_config;
+#[cfg(feature = "training")]
 pub(crate) mod monitor;
 pub(crate) mod oracle;
 pub(crate) mod parity;
@@ -51,6 +56,7 @@ pub(crate) mod qualify;
 pub(crate) mod quantize;
 pub(crate) mod rosetta;
 pub(crate) mod run;
+#[cfg(feature = "training")]
 pub(crate) mod runs;
 pub(crate) mod serve;
 pub(crate) mod serve_plan;
@@ -59,8 +65,10 @@ pub(crate) mod showcase;
 pub(crate) mod tensors;
 pub(crate) mod tokenize;
 pub(crate) mod trace;
+#[cfg(feature = "training")]
 pub(crate) mod train;
 pub(crate) mod tree;
 pub(crate) mod tui;
+#[cfg(feature = "training")]
 pub(crate) mod tune;
 pub(crate) mod validate;

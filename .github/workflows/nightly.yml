@@ -40,15 +40,20 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
+            features: hf-hub,safetensors-compare,inference,cuda,zram
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
             cross: true
+            features: hf-hub,safetensors-compare,inference,cuda,zram
           - target: x86_64-apple-darwin
             runner: macos-latest
+            features: hf-hub,safetensors-compare,inference,cuda,zram
           - target: aarch64-apple-darwin
             runner: macos-latest
+            features: hf-hub,safetensors-compare,inference,cuda,zram
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
+            features: hf-hub,safetensors-compare,inference,cuda,zram
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -81,11 +86,11 @@ jobs:
         if: matrix.cross
         env:
           CROSS_NO_WARNINGS: "0"
-        run: cross build --release --target ${{ matrix.target }} --package apr-cli
+        run: cross build --release --target ${{ matrix.target }} --package apr-cli --no-default-features --features ${{ matrix.features }}
 
       - name: Build
         if: ${{ !matrix.cross }}
-        run: cargo build --release --target ${{ matrix.target }} --package apr-cli
+        run: cargo build --release --target ${{ matrix.target }} --package apr-cli --no-default-features --features ${{ matrix.features }}
 
       - name: Package (unix)
         if: matrix.target != 'x86_64-pc-windows-msvc'

@@ -7,11 +7,14 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         return None;
     };
     let result = match ext {
+        #[cfg(feature = "training")]
         ExtendedCommands::Monitor {
             dir, refresh_ms, compact, json, format,
         } => commands::monitor::run(dir.as_deref(), *refresh_ms, *compact, *json, format),
 
+        #[cfg(feature = "training")]
         ExtendedCommands::Runs { command } => dispatch_runs_command(command),
+        #[cfg(feature = "training")]
         ExtendedCommands::Experiment { command } => dispatch_experiment_command(command, cli),
 
         ExtendedCommands::Cbtop {
@@ -68,6 +71,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             oracle::OracleFlags { stats: *stats, explain: *explain, kernels: *kernels, validate: *validate, full: *full },
         ),
 
+        #[cfg(feature = "training")]
         ExtendedCommands::Train { command } => dispatch_train_command(command, cli),
         ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
@@ -82,6 +86,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(result)
 }
 
+#[cfg(feature = "training")]
 /// Dispatch `apr runs` subcommands.
 fn dispatch_runs_command(command: &RunsCommands) -> std::result::Result<(), CliError> {
     match command {
@@ -94,6 +99,7 @@ fn dispatch_runs_command(command: &RunsCommands) -> std::result::Result<(), CliE
     }
 }
 
+#[cfg(feature = "training")]
 /// Dispatch `apr experiment` subcommands.
 fn dispatch_experiment_command(command: &ExperimentCommands, cli: &Cli) -> std::result::Result<(), CliError> {
     match command {
@@ -163,6 +169,7 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
     }
 }
 
+#[cfg(feature = "training")]
 /// Dispatch `apr train` subcommands to entrenar-backed implementations.
 fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Result<(), CliError> {
     match command {
@@ -374,6 +381,7 @@ fn dispatch_pipeline_command(
     }
 }
 
+#[cfg(feature = "training")]
 /// Dispatch tune command — routes between classify-tune and general tune.
 #[allow(clippy::too_many_arguments)]
 fn dispatch_tune_command(
@@ -503,6 +511,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             samples,
             temperature,
         } => match task.as_deref() {
+            #[cfg(feature = "training")]
             Some("classify") => eval::run_classify_eval(
                 file,
                 data.as_deref(),
@@ -671,6 +680,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *verbose || cli.verbose,
         ),
 
+        #[cfg(feature = "training")]
         ExtendedCommands::Tune {
             file, method, rank, vram, plan, model, freeze_base, train_data,
             json, task, budget, strategy, scheduler, scout, data, num_classes,

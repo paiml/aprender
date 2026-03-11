@@ -2,6 +2,7 @@
 #[derive(Subcommand, Debug)]
 pub enum ModelOpsCommands {
     /// Fine-tune model with LoRA/QLoRA (GH-244)
+    #[cfg(feature = "training")]
     Finetune {
         /// Input model file
         #[arg(value_name = "FILE")]

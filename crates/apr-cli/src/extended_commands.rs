@@ -319,6 +319,7 @@ pub enum ExtendedCommands {
         verbose: bool,
     },
     /// ML tuning: LoRA/QLoRA configuration, memory planning, and HPO (GH-176, SPEC-TUNE-2026-001)
+    #[cfg(feature = "training")]
     Tune {
         /// Path to model file (optional if using --model)
         #[arg(value_name = "FILE")]
@@ -382,6 +383,7 @@ pub enum ExtendedCommands {
         time_limit: Option<String>,
     },
     /// Attach live TUI to a running training session
+    #[cfg(feature = "training")]
     Monitor {
         /// Experiment output directory (same as finetune -o)
         #[arg(value_name = "DIR")]
@@ -400,11 +402,13 @@ pub enum ExtendedCommands {
         format: String,
     },
     /// List, show, and compare training experiment runs
+    #[cfg(feature = "training")]
     Runs {
         #[command(subcommand)]
         command: RunsCommands,
     },
     /// Interactive experiment browser (TUI with loss curves)
+    #[cfg(feature = "training")]
     Experiment {
         #[command(subcommand)]
         command: ExperimentCommands,
@@ -603,6 +607,7 @@ pub enum ExtendedCommands {
         skip: Option<Vec<String>>,
     },
     /// Training pipeline (plan/apply) — forjar-style pre-flight validation
+    #[cfg(feature = "training")]
     Train {
         #[command(subcommand)]
         command: TrainCommands,
@@ -642,6 +647,7 @@ pub enum ExtendedCommands {
     Tools(ToolCommands),
 }
 
+#[cfg(feature = "training")]
 /// Subcommands for `apr runs` — experiment run management (ALB-050/051)
 #[derive(Subcommand, Debug)]
 pub enum RunsCommands {
@@ -698,6 +704,7 @@ pub enum RunsCommands {
     },
 }
 
+#[cfg(feature = "training")]
 /// Subcommands for `apr experiment` — interactive experiment browser (ALB-024)
 #[derive(Subcommand, Debug)]
 pub enum ExperimentCommands {

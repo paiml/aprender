@@ -72,6 +72,7 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         Commands::ModelOps(ModelOpsCommands::Distill { teacher, .. }) => {
             teacher.iter().cloned().collect()
         }
+        #[cfg(feature = "training")]
         Commands::ModelOps(ModelOpsCommands::Finetune { file, .. }) => {
             file.iter().cloned().collect()
         }

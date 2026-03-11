@@ -36,6 +36,7 @@ pub(crate) fn run(
         &mut findings,
         &mut recommendations,
     );
+    #[cfg(feature = "training")]
     let eval_report = run_evaluation(
         checkpoint_dir,
         data_path,
@@ -43,6 +44,8 @@ pub(crate) fn run(
         num_classes,
         &mut findings,
     )?;
+    #[cfg(not(feature = "training"))]
+    let eval_report: Option<serde_json::Value> = None;
     check_data_quality(data_path, &mut findings, &mut recommendations);
     generate_recommendations(&findings, &mut recommendations);
 
