@@ -47,13 +47,13 @@ jobs:
             features: hf-hub,safetensors-compare,inference,cuda,zram
           - target: x86_64-apple-darwin
             runner: macos-latest
-            features: hf-hub,safetensors-compare,inference,cuda,zram
+            features: hf-hub,safetensors-compare,inference,zram
           - target: aarch64-apple-darwin
             runner: macos-latest
-            features: hf-hub,safetensors-compare,inference,cuda,zram
+            features: hf-hub,safetensors-compare,inference,zram
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            features: hf-hub,safetensors-compare,inference,cuda,zram
+            features: hf-hub,safetensors-compare,inference,zram
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
