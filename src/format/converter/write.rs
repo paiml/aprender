@@ -84,7 +84,8 @@ fn resolve_f32_tied_embeddings(
 }
 
 /// Insert tokenizer metadata into APR custom fields for F32 tensor import path.
-fn insert_f32_tokenizer_metadata(
+/// GH-478: Made pub(super) for streaming import path access.
+pub(super) fn insert_f32_tokenizer_metadata(
     tok: &GgufTokenizer,
     custom: &mut std::collections::HashMap<String, serde_json::Value>,
 ) {

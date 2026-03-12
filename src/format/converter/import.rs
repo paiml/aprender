@@ -619,7 +619,7 @@ fn streaming_sharded_import(
     // Load config.json and tokenizer
     let sibling_path = base_dir.join("model.safetensors.index.json");
     let model_config = load_model_config_from_json(&sibling_path);
-    let _tokenizer = load_tokenizer_from_json(&sibling_path);
+    let tokenizer = load_tokenizer_from_json(&sibling_path);
 
     if model_config.is_none() && !options.allow_no_config {
         return Err(AprenderError::FormatError {
@@ -640,6 +640,13 @@ fn streaming_sharded_import(
 
     // Build metadata for APR file
     let param_count = 0u64; // Computed during finalize from tensor shapes
+
+    // GH-478: Embed tokenizer in metadata (was previously discarded in streaming path)
+    let mut custom = std::collections::HashMap::new();
+    if let Some(ref tok) = tokenizer {
+        super::write::insert_f32_tokenizer_metadata(tok, &mut custom);
+    }
+
     let metadata = AprV2Metadata {
         model_type: format!("{metadata_arch:?}"),
         name: Some(
@@ -650,6 +657,7 @@ fn streaming_sharded_import(
                 .to_string(),
         ),
         param_count,
+        custom,
         architecture: model_config.as_ref().and_then(|c| c.architecture.clone()),
         hidden_size: model_config.as_ref().and_then(|c| c.hidden_size),
         num_layers: model_config.as_ref().and_then(|c| c.num_layers),
