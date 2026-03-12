@@ -690,6 +690,10 @@ fn streaming_sharded_import(
     let mut total_tensors = 0usize;
     let mut f16_passthrough = 0usize;
 
+    // GH-478: Track weight tying — if no lm_head.weight found, duplicate embedding
+    let mut has_lm_head = false;
+    let mut embed_info: Option<(String, String)> = None; // (shard_file, original_name)
+
     for shard_file in index.shard_files() {
         let shard_path = base_dir.join(shard_file);
         if !shard_path.exists() {
@@ -728,6 +732,17 @@ fn streaming_sharded_import(
 
             // Map tensor name to canonical APR name
             let mapped_name = metadata_arch.map_name(name);
+
+            // GH-478: Track lm_head and embedding for weight tying
+            if mapped_name == "lm_head.weight" || mapped_name == "output.weight" {
+                has_lm_head = true;
+            }
+            if mapped_name.contains("embed_tokens.weight")
+                || mapped_name == "token_embd.weight"
+                || mapped_name == "wte.weight"
+            {
+                embed_info = Some((shard_file.to_string(), name.clone()));
+            }
 
             let is_bf16 = meta.dtype == "BF16";
             let is_f16 = meta.dtype == "F16" || is_bf16;
@@ -776,6 +791,39 @@ fn streaming_sharded_import(
         );
 
         // mapped (mmap) dropped here — OS reclaims virtual address space
+    }
+
+    // GH-478: Weight tying — if no lm_head.weight, duplicate embedding as lm_head
+    if !has_lm_head {
+        if let Some((embed_shard, embed_name)) = &embed_info {
+            let shard_path = base_dir.join(embed_shard);
+            let mapped =
+                MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to re-mmap shard for weight tying: {e}"),
+                })?;
+            let meta = mapped
+                .get_metadata(embed_name)
+                .ok_or_else(|| AprenderError::FormatError {
+                    message: "Embedding tensor metadata not found for weight tying".to_string(),
+                })?;
+            let data = mapped
+                .get_tensor(embed_name)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to extract embedding for weight tying: {e}"),
+                })?;
+            streaming_dispatch_quantize(
+                &mut writer,
+                "lm_head.weight",
+                &data,
+                meta.shape.clone(),
+                options.quantize,
+            )
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to write tied lm_head.weight: {e}"),
+            })?;
+            total_tensors += 1;
+            eprintln!("[realizar#136] Weight tying: duplicated {embed_name} → lm_head.weight");
+        }
     }
 
     let total_quantized = total_tensors - f16_passthrough;
