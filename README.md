@@ -15,7 +15,7 @@
   <a href="https://docs.rs/aprender"><img src="https://docs.rs/aprender/badge.svg" alt="Documentation"></a>
   <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/badge/MSRV-1.70-blue.svg" alt="MSRV: 1.70"></a>
+  <a href="#"><img src="https://img.shields.io/badge/MSRV-1.89-blue.svg" alt="MSRV: 1.89"></a>
 </p>
 
 </div>
