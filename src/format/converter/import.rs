@@ -3,7 +3,8 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::converter_types::{
-    Architecture, ImportError, ImportOptions, Source, TensorExpectation, ValidationConfig,
+    Architecture, ImportError, ImportOptions, QuantizationType, Source, TensorExpectation,
+    ValidationConfig,
 };
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
@@ -554,6 +555,30 @@ fn resolve_url_source(url: &str) -> Result<PathBuf> {
 }
 
 
+/// GH-478: Quantization dispatch for streaming imports.
+///
+/// Mirrors `dispatch_quantize()` in write.rs but operates on `AprV2StreamingWriter`.
+/// Respects `should_skip_quantization` for sensitive tensors (norms, biases, small tensors).
+fn streaming_dispatch_quantize(
+    writer: &mut crate::format::v2::AprV2StreamingWriter,
+    name: &str,
+    data: &[f32],
+    shape: Vec<usize>,
+    quantize: Option<QuantizationType>,
+) -> std::result::Result<(), crate::format::v2::V2FormatError> {
+    let should_skip = super::should_skip_quantization(name, data.len());
+    match quantize {
+        Some(QuantizationType::Fp16) => writer.add_f16_tensor(name, shape, data),
+        Some(QuantizationType::Int8) if !should_skip => writer.add_q8_tensor(name, shape, data),
+        Some(QuantizationType::Int4) if !should_skip => writer.add_q4_tensor(name, shape, data),
+        Some(QuantizationType::Q4K) if !should_skip => {
+            let q4k_bytes = super::quantize_q4_k_matrix(data, &shape);
+            writer.add_q4k_raw_tensor(name, shape, &q4k_bytes)
+        }
+        _ => writer.add_f32_tensor(name, shape, data),
+    }
+}
+
 /// realizar#136: Streaming import for sharded SafeTensors models.
 ///
 /// Processes one shard at a time, writing tensors to disk immediately via
@@ -697,9 +722,12 @@ fn streaming_sharded_import(
             let mapped_name = metadata_arch.map_name(name);
 
             let is_bf16 = meta.dtype == "BF16";
-            if meta.dtype == "F16" || is_bf16 {
+            let is_f16 = meta.dtype == "F16" || is_bf16;
+
+            // GH-478: Only passthrough F16/BF16 when no quantization (or Fp16) is requested.
+            // When user requests Int4/Int8/Q4K, dequantize to F32 and dispatch quantization.
+            if is_f16 && matches!(options.quantize, None | Some(QuantizationType::Fp16)) {
                 if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
-                    // Write raw F16/BF16 bytes directly — zero copy from mmap to disk
                     writer
                         .add_raw_f16_tensor(&mapped_name, meta.shape.clone(), raw_bytes, is_bf16)
                         .map_err(|e| AprenderError::FormatError {
@@ -711,34 +739,43 @@ fn streaming_sharded_import(
                 }
             }
 
-            // F32 path: convert and write
+            // Dequantize to F32 (handles F16/BF16→F32 and native F32)
             let data = mapped
                 .get_tensor(name)
                 .map_err(|e| AprenderError::FormatError {
                     message: format!("Failed to extract tensor '{name}': {e}"),
                 })?;
 
-            writer
-                .add_f32_tensor(&mapped_name, meta.shape.clone(), &data)
-                .map_err(|e| AprenderError::FormatError {
-                    message: format!("Failed to write tensor '{mapped_name}': {e}"),
-                })?;
+            // GH-478: Dispatch quantization for streaming imports
+            streaming_dispatch_quantize(
+                &mut writer,
+                &mapped_name,
+                &data,
+                meta.shape.clone(),
+                options.quantize,
+            )
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to write tensor '{mapped_name}': {e}"),
+            })?;
             total_tensors += 1;
         }
 
+        let shard_quantized = names.len() - shard_f16;
         f16_passthrough += shard_f16;
         eprintln!(
-            "[realizar#136] Shard {shard_file}: {} tensors ({shard_f16} F16 passthrough)",
+            "[realizar#136] Shard {shard_file}: {} tensors ({shard_f16} F16 passthrough, {shard_quantized} quantized)",
             names.len(),
         );
 
         // mapped (mmap) dropped here — OS reclaims virtual address space
     }
 
+    let total_quantized = total_tensors - f16_passthrough;
     eprintln!(
-        "[realizar#136] Streaming write complete: {} tensors ({} F16 passthrough), {:.1} GB data",
+        "[realizar#136] Streaming write complete: {} tensors ({} F16 passthrough, {} quantized), {:.1} GB data",
         total_tensors,
         f16_passthrough,
+        total_quantized,
         writer.data_bytes_written() as f64 / 1_073_741_824.0,
     );
 

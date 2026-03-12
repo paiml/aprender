@@ -105,6 +105,114 @@ impl AprV2StreamingWriter {
         self.add_tensor(name, dtype, shape, data)
     }
 
+    /// Add f16 tensor (converts f32 → f16, streaming).
+    ///
+    /// GH-478: Enables streaming quantization for sharded imports.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if writing fails.
+    pub fn add_f16_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        data: &[f32],
+    ) -> Result<(), V2FormatError> {
+        let bytes: Vec<u8> = data
+            .iter()
+            .flat_map(|&f| f32_to_f16(f).to_le_bytes())
+            .collect();
+        self.add_tensor(name, TensorDType::F16, shape, &bytes)
+    }
+
+    /// Add Q8 tensor (8-bit symmetric quantization, streaming).
+    ///
+    /// GH-478: Enables streaming quantization for sharded imports.
+    /// Format: [scale: f32 (4 bytes)] + [quantized: i8 × n]
+    ///
+    /// # Errors
+    ///
+    /// Returns error if writing fails.
+    pub fn add_q8_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        data: &[f32],
+    ) -> Result<(), V2FormatError> {
+        if data.is_empty() {
+            return self.add_tensor(name, TensorDType::Q8, shape, &[]);
+        }
+        let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+        let scale = if max_abs == 0.0 { 1.0 } else { max_abs / 127.0 };
+        let mut bytes = Vec::with_capacity(4 + data.len());
+        bytes.extend_from_slice(&scale.to_le_bytes());
+        for &v in data {
+            let q = (v / scale).round().clamp(-127.0, 127.0) as i8;
+            bytes.push(q as u8);
+        }
+        self.add_tensor(name, TensorDType::Q8, shape, &bytes)
+    }
+
+    /// Add Q4 tensor (4-bit symmetric quantization, block-wise, streaming).
+    ///
+    /// GH-478: Enables streaming quantization for sharded imports.
+    /// Format: For each block of 32 values:
+    ///   [block_scale: f16 (2 bytes)] + [packed nibbles: 16 bytes]
+    ///
+    /// # Errors
+    ///
+    /// Returns error if writing fails.
+    pub fn add_q4_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        data: &[f32],
+    ) -> Result<(), V2FormatError> {
+        const BLOCK_SIZE: usize = 32;
+        if data.is_empty() {
+            return self.add_tensor(name, TensorDType::Q4, shape, &[]);
+        }
+        let num_blocks = data.len().div_ceil(BLOCK_SIZE);
+        let mut bytes = Vec::with_capacity(num_blocks * 18);
+        for block_start in (0..data.len()).step_by(BLOCK_SIZE) {
+            let block_end = (block_start + BLOCK_SIZE).min(data.len());
+            let block = &data[block_start..block_end];
+            let max_abs = block.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if max_abs == 0.0 { 1.0 } else { max_abs / 7.0 };
+            bytes.extend_from_slice(&f32_to_f16(scale).to_le_bytes());
+            let mut packed_buf = [0u8; 16];
+            let mut packed_idx = 0;
+            for (i, &v) in block.iter().enumerate() {
+                let q = (v / scale).round().clamp(-8.0, 7.0) as i8;
+                let nibble = ((q + 8) as u8) & 0x0F;
+                if i % 2 == 0 {
+                    packed_buf[packed_idx] = nibble;
+                } else {
+                    packed_buf[packed_idx] |= nibble << 4;
+                    packed_idx += 1;
+                }
+            }
+            bytes.extend_from_slice(&packed_buf);
+        }
+        self.add_tensor(name, TensorDType::Q4, shape, &bytes)
+    }
+
+    /// Add raw Q4_K tensor (GGUF-compatible super-block format, streaming).
+    ///
+    /// GH-478: Enables streaming quantization for sharded imports.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if writing fails.
+    pub fn add_q4k_raw_tensor(
+        &mut self,
+        name: impl Into<String>,
+        shape: Vec<usize>,
+        raw_data: &[u8],
+    ) -> Result<(), V2FormatError> {
+        self.add_tensor(name, TensorDType::Q4K, shape, raw_data)
+    }
+
     /// Number of tensors added so far.
     #[must_use]
     pub fn tensor_count(&self) -> usize {
