@@ -466,20 +466,39 @@ fn start_gguf_server_cuda(
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
 
-            // PMAT-044: Spawn continuous batch scheduler for concurrent request handling
+            // PMAT-044/088: Spawn continuous batch scheduler for concurrent request handling
+            // ITERATION_SCHEDULER=1 enables decode-maximal scheduling (Orca/Sarathi-Serve)
             #[cfg(feature = "cuda-batch")]
             let state = {
                 let cuda_model_arc = state.cuda_model().expect("just created").clone();
-                let batch_config = realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
-                println!(
-                    "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
-                    batch_config.max_batch, batch_config.window_ms
-                );
-                let batch_tx = realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
-                    cuda_model_arc,
-                    batch_config,
-                );
-                state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
+                let use_iteration = std::env::var("ITERATION_SCHEDULER").as_deref() == Ok("1");
+                if use_iteration {
+                    let iter_config =
+                        realizar::api::iteration_scheduler::IterationSchedulerConfig::default();
+                    println!(
+                        "  ITERATION SCHEDULER: max_slots={}, prefill_chunk={} (PMAT-088)",
+                        iter_config.max_slots, iter_config.prefill_chunk_size
+                    );
+                    let batch_tx =
+                        realizar::api::iteration_scheduler::spawn_iteration_scheduler(
+                            cuda_model_arc,
+                            iter_config,
+                        );
+                    state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
+                } else {
+                    let batch_config =
+                        realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
+                    println!(
+                        "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
+                        batch_config.max_batch, batch_config.window_ms
+                    );
+                    let batch_tx =
+                        realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
+                            cuda_model_arc,
+                            batch_config,
+                        );
+                    state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
+                }
             };
             #[cfg(not(feature = "cuda-batch"))]
             let state = state.with_verbose(config.verbose);
