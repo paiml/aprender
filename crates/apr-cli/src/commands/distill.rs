@@ -254,6 +254,8 @@ struct SyntheticDataConfig {
     samples_per_prompt: u32,
     #[serde(default = "default_min_completion_tokens")]
     min_completion_tokens: u32,
+    #[serde(default = "default_max_prompt_chars")]
+    max_prompt_chars: usize,
 }
 
 fn default_gpu() -> bool {
@@ -276,6 +278,9 @@ fn default_samples_per_prompt() -> u32 {
 }
 fn default_min_completion_tokens() -> u32 {
     10
+}
+fn default_max_prompt_chars() -> usize {
+    2048
 }
 
 impl DistillYamlConfig {
@@ -1641,6 +1646,20 @@ fn run_text_generate(
 
         // Skip already-generated prompts (resume support)
         if existing_prompts.contains(prompt_text) {
+            continue;
+        }
+
+        // ALB-111: Skip pathologically long prompts (55K char prompt caused hours-long prefill)
+        if prompt_text.len() > config.synthetic_data.max_prompt_chars {
+            if !json_output {
+                eprintln!(
+                    "  Skipping prompt {} ({} chars > {} max)",
+                    i,
+                    prompt_text.len(),
+                    config.synthetic_data.max_prompt_chars,
+                );
+            }
+            skipped_count += 1;
             continue;
         }
 
