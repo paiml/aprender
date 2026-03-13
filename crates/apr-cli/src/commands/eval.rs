@@ -1300,15 +1300,27 @@ fn run_humaneval_inference(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::apr_transformer::AprKVCache;
+    use realizar::apr_transformer::{AprKVCache, AprTransformer};
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-    // Load model
+    // Load model — try APR format first, fall back to SafeTensors
     if !json_output {
         println!("  {} Loading model for inference...", "→".dimmed());
     }
-    let transformer = SafetensorsToAprConverter::convert(model_path)
-        .map_err(|e| format!("Cannot load model: {e}"))?;
+    let transformer: AprTransformer = if model_path.extension().is_some_and(|e| e == "apr")
+        || model_path.join("model-best.apr").exists()
+    {
+        let apr_path = if model_path.is_dir() {
+            model_path.join("model-best.apr")
+        } else {
+            model_path.to_path_buf()
+        };
+        AprTransformer::from_apr_file(&apr_path)
+            .map_err(|e| format!("Cannot load APR model: {e}"))?
+    } else {
+        SafetensorsToAprConverter::convert(model_path)
+            .map_err(|e| format!("Cannot load model: {e}"))?.into_inner()
+    };
 
     // Load tokenizer
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
@@ -1857,14 +1869,26 @@ fn run_mbpp_inference(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    use realizar::apr_transformer::AprKVCache;
+    use realizar::apr_transformer::{AprKVCache, AprTransformer};
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
     if !json_output {
         println!("  {} Loading model for inference...", "→".dimmed());
     }
-    let transformer = SafetensorsToAprConverter::convert(model_path)
-        .map_err(|e| format!("Cannot load model: {e}"))?;
+    let transformer: AprTransformer = if model_path.extension().is_some_and(|e| e == "apr")
+        || model_path.join("model-best.apr").exists()
+    {
+        let apr_path = if model_path.is_dir() {
+            model_path.join("model-best.apr")
+        } else {
+            model_path.to_path_buf()
+        };
+        AprTransformer::from_apr_file(&apr_path)
+            .map_err(|e| format!("Cannot load APR model: {e}"))?
+    } else {
+        SafetensorsToAprConverter::convert(model_path)
+            .map_err(|e| format!("Cannot load model: {e}"))?.into_inner()
+    };
 
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
         .ok_or_else(|| "No tokenizer found".to_string())?;

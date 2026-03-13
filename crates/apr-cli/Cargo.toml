@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.4.10"
+version = "0.4.11"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -76,13 +76,14 @@ dhat-heap = ["dep:dhat"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.27.2", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.27.5", default-features = true, features = ["format-compression"] }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
 
 # Inference engine (crates.io version, with local path for dev)
-# Note: cuda feature enables GPU-accelerated inference via trueno-gpu
+# Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.
+# TODO: Gate all CUDA code in apr-cli with #[cfg(feature = "cuda")] then remove from here.
 realizar = { version = "0.8", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)

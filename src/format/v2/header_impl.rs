@@ -316,7 +316,13 @@ impl AprV2Metadata {
     /// # Errors
     /// Returns error if deserialization fails.
     pub fn from_json(data: &[u8]) -> Result<Self, V2FormatError> {
-        serde_json::from_slice(data).map_err(|e| V2FormatError::MetadataError(e.to_string()))
+        // ALB-107: Parse as Value first to handle duplicate keys in metadata.
+        // Entrenar checkpoints (v1-v9) may have duplicate fields like rms_norm_eps
+        // due to #[serde(flatten)] serializing both struct field (null) and custom
+        // map entry. Value::Object deduplicates (last value wins).
+        let value: serde_json::Value =
+            serde_json::from_slice(data).map_err(|e| V2FormatError::MetadataError(e.to_string()))?;
+        serde_json::from_value(value).map_err(|e| V2FormatError::MetadataError(e.to_string()))
     }
 }
 

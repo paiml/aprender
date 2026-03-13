@@ -401,6 +401,34 @@ impl AprWriter {
                 "license" => v2_meta.license = value.as_str().map(String::from),
                 "version" => v2_meta.version = value.as_str().map(String::from),
                 "architecture" => v2_meta.architecture = value.as_str().map(String::from),
+                // ALB-107: Map transformer config keys to struct fields.
+                // Prevents duplicate keys when #[serde(flatten)] serializes
+                // both struct fields and custom map.
+                "hidden_size" => v2_meta.hidden_size = value.as_u64().map(|v| v as usize),
+                "num_hidden_layers" | "num_layers" => {
+                    v2_meta.num_layers = value.as_u64().map(|v| v as usize);
+                }
+                "num_attention_heads" | "num_heads" => {
+                    v2_meta.num_heads = value.as_u64().map(|v| v as usize);
+                }
+                "num_kv_heads" => v2_meta.num_kv_heads = value.as_u64().map(|v| v as usize),
+                "vocab_size" => v2_meta.vocab_size = value.as_u64().map(|v| v as usize),
+                "intermediate_size" => {
+                    v2_meta.intermediate_size = value.as_u64().map(|v| v as usize);
+                }
+                "max_position_embeddings" => {
+                    v2_meta.max_position_embeddings = value.as_u64().map(|v| v as usize);
+                }
+                "rope_theta" => v2_meta.rope_theta = value.as_f64().map(|v| v as f32),
+                "rms_norm_eps" => v2_meta.rms_norm_eps = value.as_f64().map(|v| v as f32),
+                "head_dim" => v2_meta.head_dim = value.as_u64().map(|v| v as usize),
+                "num_experts" => v2_meta.num_experts = value.as_u64().map(|v| v as usize),
+                "num_experts_per_tok" => {
+                    v2_meta.num_experts_per_tok = value.as_u64().map(|v| v as usize);
+                }
+                "moe_intermediate_size" => {
+                    v2_meta.moe_intermediate_size = value.as_u64().map(|v| v as usize);
+                }
                 _ => {
                     v2_meta.custom.insert(key.clone(), value.clone());
                 }
