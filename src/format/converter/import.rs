@@ -741,7 +741,7 @@ fn streaming_sharded_import(
                 || mapped_name == "token_embd.weight"
                 || mapped_name == "wte.weight"
             {
-                embed_info = Some((shard_file.to_string(), name.clone()));
+                embed_info = Some((shard_file.clone(), name.clone()));
             }
 
             let is_bf16 = meta.dtype == "BF16";
