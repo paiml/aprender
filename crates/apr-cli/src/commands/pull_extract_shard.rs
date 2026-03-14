@@ -73,7 +73,11 @@ fn hf_get(url: &str) -> ureq::Request {
 
 /// GH-355: Format a user-friendly error for HTTP 401 from HuggingFace gated models.
 fn format_gated_model_error(url: &str) -> String {
-    let has_token = resolve_hf_token().is_some();
+    format_gated_model_error_inner(url, resolve_hf_token().is_some())
+}
+
+/// Inner implementation that takes has_token directly (testable without env var races).
+fn format_gated_model_error_inner(url: &str, has_token: bool) -> String {
     if has_token {
         format!(
             "Access denied (HTTP 401) for {url}\n\

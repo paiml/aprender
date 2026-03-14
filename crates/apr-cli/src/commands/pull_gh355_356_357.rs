@@ -5,30 +5,26 @@
 
     #[test]
     fn test_format_gated_model_error_without_token() {
-        // Temporarily ensure no HF_TOKEN
-        let saved = std::env::var("HF_TOKEN").ok();
-        std::env::remove_var("HF_TOKEN");
-
-        let msg = format_gated_model_error("https://huggingface.co/api/models/google/codegemma-7b-it");
+        // Use _inner to avoid env var race conditions in parallel tests.
+        let msg = format_gated_model_error_inner(
+            "https://huggingface.co/api/models/google/codegemma-7b-it",
+            false,
+        );
         assert!(msg.contains("Access denied (HTTP 401)"), "msg: {msg}");
         assert!(msg.contains("HF_TOKEN"), "Should mention HF_TOKEN: {msg}");
         assert!(
             msg.contains("huggingface-cli login"),
             "Should mention login: {msg}"
         );
-
-        // Restore
-        if let Some(token) = saved {
-            std::env::set_var("HF_TOKEN", token);
-        }
     }
 
     #[test]
     fn test_format_gated_model_error_with_token() {
-        let saved = std::env::var("HF_TOKEN").ok();
-        std::env::set_var("HF_TOKEN", "hf_test_token_123");
-
-        let msg = format_gated_model_error("https://huggingface.co/api/models/google/codegemma-7b-it");
+        // Use _inner to avoid env var race conditions in parallel tests.
+        let msg = format_gated_model_error_inner(
+            "https://huggingface.co/api/models/google/codegemma-7b-it",
+            true,
+        );
         assert!(msg.contains("Access denied (HTTP 401)"), "msg: {msg}");
         assert!(
             msg.contains("lacks access"),
@@ -38,12 +34,6 @@
             msg.contains("Request access"),
             "Should suggest requesting access: {msg}"
         );
-
-        // Restore
-        match saved {
-            Some(token) => std::env::set_var("HF_TOKEN", token),
-            None => std::env::remove_var("HF_TOKEN"),
-        }
     }
 
     // =========================================================================
