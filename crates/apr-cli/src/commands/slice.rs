@@ -53,11 +53,16 @@ fn decode_st_slice(
     start: usize,
     end: usize,
 ) -> Result<Vec<f32>, CliError> {
+    if start >= end {
+        return Err(CliError::InvalidFormat(format!(
+            "Invalid slice range: start ({start}) must be less than end ({end})"
+        )));
+    }
     match dtype {
         "F32" => {
             let byte_start = start * 4;
             let byte_end = end * 4;
-            if byte_end > tensor_bytes.len() {
+            if byte_start >= tensor_bytes.len() || byte_end > tensor_bytes.len() {
                 return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
             }
             Ok(tensor_bytes[byte_start..byte_end]
@@ -68,7 +73,7 @@ fn decode_st_slice(
         "F16" => {
             let byte_start = start * 2;
             let byte_end = end * 2;
-            if byte_end > tensor_bytes.len() {
+            if byte_start >= tensor_bytes.len() || byte_end > tensor_bytes.len() {
                 return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
             }
             Ok(tensor_bytes[byte_start..byte_end]
@@ -79,7 +84,7 @@ fn decode_st_slice(
         "BF16" => {
             let byte_start = start * 2;
             let byte_end = end * 2;
-            if byte_end > tensor_bytes.len() {
+            if byte_start >= tensor_bytes.len() || byte_end > tensor_bytes.len() {
                 return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
             }
             Ok(tensor_bytes[byte_start..byte_end]
@@ -107,9 +112,14 @@ fn slice_gguf(
     let (data, shape) = get_gguf_tensor_f32(&opts.file, tensor_name)?;
     let num_elements = data.len();
 
-    if end > num_elements {
+    if start >= end {
         return Err(CliError::InvalidFormat(format!(
-            "Slice end {end} exceeds tensor size {num_elements}"
+            "Invalid slice range: start ({start}) must be less than end ({end})"
+        )));
+    }
+    if start >= num_elements || end > num_elements {
+        return Err(CliError::InvalidFormat(format!(
+            "Slice {start}:{end} exceeds tensor size {num_elements}"
         )));
     }
 
@@ -144,9 +154,14 @@ fn slice_apr(
     })?;
 
     let num_elements = data.len();
-    if end > num_elements {
+    if start >= end {
         return Err(CliError::InvalidFormat(format!(
-            "Slice end {end} exceeds tensor size {num_elements}"
+            "Invalid slice range: start ({start}) must be less than end ({end})"
+        )));
+    }
+    if start >= num_elements || end > num_elements {
+        return Err(CliError::InvalidFormat(format!(
+            "Slice {start}:{end} exceeds tensor size {num_elements}"
         )));
     }
 

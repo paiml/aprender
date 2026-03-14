@@ -3032,9 +3032,14 @@ pub(crate) fn run_decrypt(
         println!();
     }
 
-    // Verify MAC
+    // Verify MAC (constant-time comparison to prevent timing side-channel)
     let computed_mac = compute_mac(&key, &nonce, encrypted);
-    if computed_mac.as_bytes() != &stored_mac {
+    let mac_ok = computed_mac
+        .as_bytes()
+        .iter()
+        .zip(stored_mac.iter())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b));
+    if mac_ok != 0 {
         return Err(CliError::ValidationFailed(
             "MAC verification failed — wrong key or corrupted file".to_string(),
         ));
@@ -3090,13 +3095,24 @@ fn derive_encryption_key(key_file: Option<&Path>) -> Result<[u8; 32]> {
             Ok(blake3::derive_key("albor model encryption 2026", &key_data))
         }
     } else {
-        // Read passphrase from environment or use default context
-        let passphrase = std::env::var("ALBOR_ENCRYPT_KEY").unwrap_or_else(|_| {
-            eprintln!("Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):");
-            let mut input = String::new();
-            let _ = std::io::stdin().read_line(&mut input);
-            input.trim().to_string()
-        });
+        // Read passphrase from environment or stdin
+        let passphrase = match std::env::var("ALBOR_ENCRYPT_KEY") {
+            Ok(key) => key,
+            Err(_) => {
+                eprintln!("Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):");
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input).map_err(|e| {
+                    CliError::ValidationFailed(format!("Failed to read passphrase from stdin: {e}"))
+                })?;
+                let trimmed = input.trim().to_string();
+                if trimmed.is_empty() {
+                    return Err(CliError::ValidationFailed(
+                        "Empty passphrase — aborting. Set ALBOR_ENCRYPT_KEY or provide a non-empty passphrase.".to_string(),
+                    ));
+                }
+                trimmed
+            }
+        };
         Ok(blake3::derive_key(
             "albor model encryption 2026",
             passphrase.as_bytes(),
