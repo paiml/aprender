@@ -1,0 +1,187 @@
+# Matrix-Vector Multiplication (MatVec) Kernel Contract v1.0.0
+# THE SOURCE OF TRUTH for M=1 matvec correctness and performance
+#
+# STATUS: Authoritative — all M=1 matmul paths MUST follow this contract
+# CONSUMERS:
+#   - trueno/src/matrix/ops/arithmetic.rs (matmul_vector_matrix)
+#   - src/autograd/ops/activation.rs (Tensor::matmul dispatches to trueno)
+#   - crates/aprender-bench-compute/benches/matmul.rs
+#
+# Mathematical Foundation:
+#   For M=1: c[j] = Σ_k a[k] * B[k,j]
+#   This is a multi-dot-product: each output element is dot(a, B[:,j])
+#   Equivalent to summing K scaled rows of B: c += a[k] * B[k,:]
+#
+# Performance Model:
+#   Memory-bandwidth bound: reads K*N floats from B, writes N floats
+#   Arithmetic intensity = 2*K*N / (4*(K*N + N)) ≈ 2*K/(4*(K+1)) ≈ K/2
+#   At K=4096: AI ≈ 2048 → compute bound in theory, but limited by
+#   store bandwidth to the result vector (read-modify-write per axpy)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for M=1 matvec"
+  references:
+    - "GH-380: matvec (M=1) 3.4x slower than ndarray at LLM-relevant sizes"
+    - "Van Zee & Van de Geijn (2015). BLIS: A Framework for Rapidly Instantiating BLAS Functionality"
+  issues:
+    - "https://github.com/paiml/aprender/issues/380"
+
+# =============================================================================
+# KERNEL EQUATION
+# =============================================================================
+
+equations:
+  matvec:
+    formula: |
+      For M=1, K columns, N output:
+        c[j] = Σ_{k=0}^{K-1} a[k] * B[k*N + j]    for j = 0..N-1
+    domain: "a ∈ R^K, B ∈ R^{K×N}, c ∈ R^N"
+    properties:
+      - linearity: "matvec(a, B1 + B2) = matvec(a, B1) + matvec(a, B2)"
+      - scaling: "matvec(α*a, B) = α * matvec(a, B)"
+      - identity: "matvec(e_i, B) = B[i,:] (row selection)"
+      - zeros: "matvec(0, B) = 0"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  dispatch:
+    description: "M=1 MUST be detected at dispatch and routed to specialized path"
+    assertion: "Matrix::matmul checks self.rows == 1 before BLIS path"
+    rationale: "BLIS 5-loop has packing overhead that dominates for M=1"
+
+  simd_gemv_delegation:
+    description: "Delegates to trueno GEMV kernel (blis::gemv::gemv)"
+    contract: "trueno/contracts/gemv-kernel-v1.yaml"
+    assertion: "matmul_vector_matrix calls crate::blis::gemv::gemv(k, n, a, b, c)"
+    rationale: |
+      Dedicated AVX2+FMA GEMV kernel with 4-way K-unrolled axpy pattern.
+      At cache-resident sizes: 2.32x FASTER than ndarray (5.88 G vs 2.54 G).
+      At bandwidth-bound sizes: matches scalar auto-vectorized version.
+      Scalar fallback on non-AVX2 platforms.
+
+  k_unrolled_axpy:
+    description: "4-way K-unrolled axpy pattern (both SIMD and scalar paths)"
+    pattern: |
+      Outer loop: K in steps of 4
+      Inner loop: N in steps of 8 (AVX2) or scalar
+        c[:] += a[ki]*B[ki,:] + a[ki+1]*B[ki+1,:] + a[ki+2]*B[ki+2,:] + a[ki+3]*B[ki+3,:]
+    rationale: |
+      4-way unrolling provides 4 independent FMA chains that hide load latency.
+      Axpy pattern (outer K, inner N) matches row-major B: B[k,:] is contiguous.
+
+  no_branch_in_inner_loop:
+    description: "MUST NOT have conditional branches (e.g., zero-check) in inner loop"
+    assertion: "No 'if a_k == 0.0 { continue; }' pattern"
+    rationale: "Branches prevent SIMD auto-vectorization. The zero case is rare."
+
+  from_vec_output:
+    description: "MUST use Matrix::from_vec for output (no pre-allocated zeros)"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/matmul.rs"
+  reference: "ndarray (matrixmultiply crate, hand-tuned SIMD)"
+
+  bounds:
+    matvec_1x1536x1536:
+      description: "Small square matvec — cache-resident, compute-bound"
+      min_ratio_vs_reference: 1.5
+      target_ratio: 3.0
+      measured_ratio: 2.32
+      measured_date: "2026-03-02"
+      note: "FASTER than ndarray — AVX2 GEMV kernel dominates"
+      history:
+        - { date: "2026-03-02", ratio: 2.5, note: "Scalar K-unrolled axpy" }
+        - { date: "2026-03-02", ratio: 2.32, note: "AVX2 SIMD GEMV (5.88 G vs 2.54 G)" }
+
+    matvec_1x4096x11008:
+      description: "LLM FFN matvec (7B model, decode hot path) — bandwidth-bound"
+      min_ratio_vs_reference: 0.25
+      target_ratio: 0.50
+      measured_ratio: 0.32
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.29, note: "Scalar loop with zero-check branch" }
+        - { date: "2026-03-02", ratio: 0.34, note: "4-way K-unrolled axpy, no branch (1.01 G vs 2.95 G)" }
+        - { date: "2026-03-02", ratio: 0.32, note: "AVX2 SIMD GEMV (952 M vs 2.94 G) — bandwidth-bound, SIMD breaks even" }
+
+    matvec_1x4096x4096:
+      description: "LLM attention matvec (7B model)"
+      min_ratio_vs_reference: 0.25
+      target_ratio: 0.50
+      measured_ratio: 0.45
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.44, note: "Scalar loop" }
+        - { date: "2026-03-02", ratio: 0.54, note: "4-way K-unrolled axpy (962 M vs 1.79 G)" }
+        - { date: "2026-03-02", ratio: 0.45, note: "AVX2 SIMD GEMV (951 M vs 2.10 G)" }
+
+  remaining_gap_analysis: |
+    Two regimes identified:
+    1. Cache-resident (K*N*4 < L3 ~16MB): aprender 2.32x FASTER than ndarray
+    2. Bandwidth-bound (K*N*4 >> L3): ~950M vs ndarray ~3.0G (0.32x)
+
+    At LLM sizes (4096×11008), B = 172 MB >> L3. The 3x gap suggests
+    ndarray's matrixmultiply uses:
+    - Software prefetch hints (PREFETCHT0) for B rows
+    - Cache-line-aligned memory allocation
+    - N-blocking for TLB efficiency
+
+    Next optimization: PREFETCHT0 hints in gemv_avx2 inner loop.
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_file: "trueno/src/matrix/tests/matmul.rs"
+
+  FALSIFY-MV-001:
+    name: "Correctness vs naive"
+    assertion: "matvec matches naive O(KN) loop within 1e-4"
+    status: "PASS"
+
+  FALSIFY-MV-002:
+    name: "Identity row selection"
+    assertion: "matvec(e_i, B) == B[i,:] for all i"
+    status: "PASS"
+
+  FALSIFY-MV-003:
+    name: "Zero vector"
+    assertion: "matvec(0, B) == 0"
+    status: "PASS"
+
+  FALSIFY-MV-004:
+    name: "Dimension mismatch"
+    assertion: "Returns error when K doesn't match"
+    status: "PASS"
+
+  FALSIFY-MV-005:
+    name: "Associativity with matmul"
+    assertion: "matmul([[a]], B) == matvec(a, B) reshaped"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-MATVEC-001"
+  name: "MatVec Kernel Contract"
+  checks:
+    - "M=1 dispatch to specialized path"
+    - "4-way K-unrolled axpy (no branches in inner loop)"
+    - "Matrix::from_vec for output"
+    - "Performance >= 0.25x ndarray at all sizes"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"

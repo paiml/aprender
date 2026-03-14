@@ -1,0 +1,99 @@
+family: bert
+display_name: "Google BERT"
+vendor: Google
+architectures:
+  - BertModel
+  - BertForMaskedLM
+  - BertForSequenceClassification
+hf_pattern: "google-bert/bert-*"
+
+size_variants:
+  base:
+    parameters: "110M"
+    hidden_dim: 768
+    num_layers: 12
+    num_heads: 12
+    intermediate_dim: 3072
+    vocab_size: 30522
+    max_position_embeddings: 512
+    head_dim: 64
+  large:
+    parameters: "340M"
+    hidden_dim: 1024
+    num_layers: 24
+    num_heads: 16
+    intermediate_dim: 4096
+    vocab_size: 30522
+    max_position_embeddings: 512
+    head_dim: 64
+
+constraints:
+  attention_type: mha
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: true
+  positional_encoding: absolute
+  mlp_type: gelu_mlp
+
+tensor_template:
+  embeddings:
+    word_embeddings: "bert.embeddings.word_embeddings.weight"
+    position_embeddings: "bert.embeddings.position_embeddings.weight"
+    token_type_embeddings: "bert.embeddings.token_type_embeddings.weight"
+    layer_norm_weight: "bert.embeddings.LayerNorm.weight"
+    layer_norm_bias: "bert.embeddings.LayerNorm.bias"
+  per_layer:
+    self_attn_query_weight: "bert.encoder.layer.{n}.attention.self.query.weight"
+    self_attn_query_bias: "bert.encoder.layer.{n}.attention.self.query.bias"
+    self_attn_key_weight: "bert.encoder.layer.{n}.attention.self.key.weight"
+    self_attn_key_bias: "bert.encoder.layer.{n}.attention.self.key.bias"
+    self_attn_value_weight: "bert.encoder.layer.{n}.attention.self.value.weight"
+    self_attn_value_bias: "bert.encoder.layer.{n}.attention.self.value.bias"
+    attn_output_dense_weight: "bert.encoder.layer.{n}.attention.output.dense.weight"
+    attn_output_dense_bias: "bert.encoder.layer.{n}.attention.output.dense.bias"
+    attn_output_layer_norm_weight: "bert.encoder.layer.{n}.attention.output.LayerNorm.weight"
+    attn_output_layer_norm_bias: "bert.encoder.layer.{n}.attention.output.LayerNorm.bias"
+    intermediate_dense_weight: "bert.encoder.layer.{n}.intermediate.dense.weight"
+    intermediate_dense_bias: "bert.encoder.layer.{n}.intermediate.dense.bias"
+    output_dense_weight: "bert.encoder.layer.{n}.output.dense.weight"
+    output_dense_bias: "bert.encoder.layer.{n}.output.dense.bias"
+    output_layer_norm_weight: "bert.encoder.layer.{n}.output.LayerNorm.weight"
+    output_layer_norm_bias: "bert.encoder.layer.{n}.output.LayerNorm.bias"
+  mlm_head:
+    transform_dense_weight: "cls.predictions.transform.dense.weight"
+    transform_dense_bias: "cls.predictions.transform.dense.bias"
+    transform_layer_norm_weight: "cls.predictions.transform.LayerNorm.weight"
+    transform_layer_norm_bias: "cls.predictions.transform.LayerNorm.bias"
+    predictions_bias: "cls.predictions.bias"
+
+shape_template:
+  embeddings:
+    word_embeddings: "[vocab_size, hidden_dim]"
+    position_embeddings: "[max_position_embeddings, hidden_dim]"
+    token_type_embeddings: "[2, hidden_dim]"
+    layer_norm: "[hidden_dim]"
+  per_layer:
+    self_attn_query: "[hidden_dim, hidden_dim]"
+    self_attn_key: "[hidden_dim, hidden_dim]"
+    self_attn_value: "[hidden_dim, hidden_dim]"
+    attn_output_dense: "[hidden_dim, hidden_dim]"
+    attn_output_layer_norm: "[hidden_dim]"
+    intermediate_dense: "[intermediate_dim, hidden_dim]"
+    output_dense: "[hidden_dim, intermediate_dim]"
+    output_layer_norm: "[hidden_dim]"
+  mlm_head:
+    transform_dense: "[hidden_dim, hidden_dim]"
+    transform_layer_norm: "[hidden_dim]"
+    predictions_bias: "[vocab_size]"
+
+quantizations:
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/bert-{size}.playbook.yaml"
+  csv_family_key: "bert"
+  size_categories:
+    base: small
+    large: medium

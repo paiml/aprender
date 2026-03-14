@@ -1,0 +1,83 @@
+family: mistral
+display_name: "Mistral / Mixtral"
+vendor: Mistral AI
+architectures:
+  - MistralForCausalLM
+hf_pattern: "mistralai/Mistral-*"
+
+size_variants:
+  7b:
+    parameters: "7B"
+    hidden_dim: 4096
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 8
+    intermediate_dim: 14336
+    vocab_size: 32000
+    max_position_embeddings: 32768
+    head_dim: 128
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: false
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: mistral
+  template: "{{ bos_token }}{% for message in messages %}{% if message['role'] == 'user' %}[INST] {{ message['content'] }} [/INST]{% elif message['role'] == 'assistant' %}{{ message['content'] }}{{ eos_token }}{% endif %}{% endfor %}"
+  bos_token: "<s>"
+  eos_token: "</s>"
+  special_tokens:
+    bos: "<s>"
+    eos: "</s>"
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/mistral-{size}.playbook.yaml"
+  csv_family_key: "mistral"
+  size_categories:
+    7b: medium

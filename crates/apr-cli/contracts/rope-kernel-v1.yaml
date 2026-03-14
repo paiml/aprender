@@ -1,0 +1,159 @@
+# Rotary Position Embedding (RoPE) Kernel Contract v1.0.0
+# THE SOURCE OF TRUTH for RoPE correctness and performance
+#
+# STATUS: Authoritative — all RoPE implementations MUST follow this contract
+# CONSUMERS:
+#   - src/nn/transformer/attention_helpers.rs (RotaryPositionEmbedding::apply)
+#   - crates/aprender-bench-compute/benches/rope.rs
+#   - tests/contracts/rope_contract.rs
+#
+# ENFORCEMENT: provable_contracts_macros::contract("rope-kernel-v1", equation = "rope")
+#
+# Mathematical Foundation:
+#   RoPE rotates pairs of features by position-dependent angles:
+#   (q_2i, q_2i+1) = (q_2i cos(mθ_i) - q_2i+1 sin(mθ_i),
+#                      q_2i sin(mθ_i) + q_2i+1 cos(mθ_i))
+#   where m is position and θ_i = base^(-2i/d)
+#
+# Citation: Su et al. (2021). RoFormer: Enhanced Transformer with Rotary
+#   Position Embedding. arXiv:2104.09864
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for RoPE kernels"
+  references:
+    - "GH-389: RoPE prefill 3.6x slower (FIXED — now 2.5x faster)"
+    - "Su et al. (2021). RoFormer: Enhanced Transformer with Rotary Position Embedding. arXiv:2104.09864"
+    - "Press et al. (2022). Train Short, Test Long. ICLR (ALiBi comparison)"
+  issues:
+    - "https://github.com/paiml/aprender/issues/389"
+
+# =============================================================================
+# KERNEL EQUATION
+# =============================================================================
+
+equations:
+  rope:
+    formula: |
+      For each position m, head h, dimension pair i:
+        θ_i = base^(-2i/d)
+        cos_val = cos(m × θ_i)
+        sin_val = sin(m × θ_i)
+        output[..., 2i]   = x[..., 2i] × cos_val - x[..., 2i+1] × sin_val
+        output[..., 2i+1] = x[..., 2i] × sin_val + x[..., 2i+1] × cos_val
+    domain: "x ∈ R^[batch, seq, heads, head_dim], head_dim even"
+    properties:
+      - rotation: "RoPE applies 2D rotation to each (x_2i, x_2i+1) pair"
+      - norm_preserving: "||RoPE(x)|| == ||x|| (rotation preserves L2 norm)"
+      - relative_position: "⟨RoPE(q, m), RoPE(k, n)⟩ depends only on m-n"
+      - precomputable: "cos/sin cache depends only on position, not input"
+      - identity_at_zero: "RoPE(x, pos=0) ≈ x (cos(0)=1, sin(0)=0)"
+
+  inv_freq:
+    formula: "θ_i = 1 / base^(2i / d)"
+    description: "Inverse frequency for dimension i with base (default 10000)"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  precomputed_cache:
+    description: "cos/sin values MUST be precomputed at construction time"
+    assertion: "RotaryPositionEmbedding::new precomputes cos_cache and sin_cache"
+    rationale: "Avoids redundant trig computation during inference"
+
+  zero_copy_output:
+    description: "MUST use Tensor::from_vec for output"
+
+  interleaved_pairs:
+    description: "Rotation operates on interleaved pairs (x_2i, x_2i+1)"
+    assertion: "head_dim must be even"
+
+  input_layout:
+    description: "Input tensor is [batch, seq, heads, head_dim]"
+    note: "This is the standard layout for attention Q/K before head splitting"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/rope.rs"
+  reference: "Handwritten scalar 4-loop with identical precomputed cache"
+
+  bounds:
+    rope_1tok_32heads_128dim:
+      description: "Single token decode (1×32×128)"
+      min_ratio_vs_reference: 1.5
+      target_ratio: 2.5
+      measured_ratio: 2.3
+      measured_date: "2026-03-02"
+      note: "FASTER than reference — aprender RoPE beats scalar ref"
+
+    rope_prefill_512tok_32heads_128dim:
+      description: "Prefill 512 tokens (512×32×128)"
+      min_ratio_vs_reference: 1.5
+      target_ratio: 3.0
+      measured_ratio: 2.5
+      measured_date: "2026-03-02"
+      note: "FASTER than reference — from_vec eliminated allocation overhead"
+      history:
+        - { date: "2026-03-01", ratio: 0.28, note: "Before from_vec (3.6x slower)" }
+        - { date: "2026-03-02", ratio: 2.5, note: "After from_vec (2.5x faster)" }
+
+  status: "RESOLVED — RoPE is faster than reference at all sizes"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_file: "tests/contracts/rope_contract.rs"
+
+  FALSIFY-ROPE-001:
+    name: "Norm preservation"
+    assertion: "||RoPE(x, pos)|| ≈ ||x|| (within 1e-5)"
+    status: "PASS"
+
+  FALSIFY-ROPE-002:
+    name: "Identity at position zero"
+    assertion: "RoPE(x, pos=0) ≈ x (within 1e-6, since cos(0)=1, sin(0)=0)"
+    status: "PASS"
+
+  FALSIFY-ROPE-003:
+    name: "Rotation consistency"
+    assertion: "RoPE(RoPE(x, 1), 1) == RoPE(x, 2) (rotation composes)"
+    status: "PASS"
+
+  FALSIFY-ROPE-004:
+    name: "Head dimension constraint"
+    assertion: "RoPE panics if head_dim is odd"
+    status: "PASS"
+
+  FALSIFY-ROPE-005:
+    name: "Relative position inner product"
+    assertion: "⟨RoPE(q,m), RoPE(k,n)⟩ depends only on m-n for fixed q,k"
+    status: "PASS"
+
+  FALSIFY-ROPE-006:
+    name: "Base frequency effect"
+    assertion: "Higher base → slower rotation → longer effective context"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-ROPE-001"
+  name: "RoPE Kernel Contract"
+  checks:
+    - "Precomputed cos/sin cache (no runtime trig in apply)"
+    - "Tensor::from_vec for output"
+    - "Performance >= reference at all sizes"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"

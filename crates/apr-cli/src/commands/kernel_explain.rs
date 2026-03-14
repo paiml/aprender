@@ -13,7 +13,7 @@ macro_rules! embed_family {
     ($name:expr, $path:expr) => {
         (
             $name,
-            include_str!(concat!("../../../../contracts/model-families/", $path)),
+            include_str!(concat!("../../contracts/model-families/", $path)),
         )
     };
 }
@@ -41,10 +41,7 @@ const FAMILY_YAMLS: &[(&str, &str)] = &[
 
 macro_rules! embed_contract {
     ($name:expr, $path:expr) => {
-        (
-            $name,
-            include_str!(concat!("../../../../contracts/", $path)),
-        )
+        ($name, include_str!(concat!("../../contracts/", $path)))
     };
 }
 

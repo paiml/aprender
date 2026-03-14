@@ -1319,7 +1319,8 @@ fn run_humaneval_inference(
             .map_err(|e| format!("Cannot load APR model: {e}"))?
     } else {
         SafetensorsToAprConverter::convert(model_path)
-            .map_err(|e| format!("Cannot load model: {e}"))?.into_inner()
+            .map_err(|e| format!("Cannot load model: {e}"))?
+            .into_inner()
     };
 
     // Load tokenizer
@@ -1887,7 +1888,8 @@ fn run_mbpp_inference(
             .map_err(|e| format!("Cannot load APR model: {e}"))?
     } else {
         SafetensorsToAprConverter::convert(model_path)
-            .map_err(|e| format!("Cannot load model: {e}"))?.into_inner()
+            .map_err(|e| format!("Cannot load model: {e}"))?
+            .into_inner()
     };
 
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)

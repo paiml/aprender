@@ -1,0 +1,185 @@
+# Normalization Kernel Contract v1.0.0
+# THE SOURCE OF TRUTH for RMSNorm and LayerNorm correctness and performance
+#
+# STATUS: Authoritative — all normalization kernels MUST follow this contract
+# CONSUMERS:
+#   - src/nn/functional.rs (rms_norm, layer_norm)
+#   - src/nn/normalization/mod.rs (LayerNorm::forward, RMSNorm::forward)
+#   - src/nn/normalization/group_norm.rs (RMSNorm)
+#   - tests/contracts/rmsnorm_contract.rs
+#   - tests/contracts/layernorm_contract.rs
+#
+# ENFORCEMENT:
+#   - provable_contracts_macros::contract("layernorm-kernel-v1", equation = "layernorm")
+#   - provable_contracts_macros::contract("rmsnorm-kernel-v1", equation = "rmsnorm")
+#
+# Mathematical Foundation:
+#   LayerNorm: y_i = (x_i - μ) / sqrt(σ² + ε) * γ_i + β_i
+#   RMSNorm:   y_i = x_i / sqrt(mean(x²) + ε) * γ_i
+#   Citation: Ba et al. (2016), Zhang & Sennrich (2019)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for normalization kernels"
+  references:
+    - "GH-381: RMSNorm 4.2x slower than ndarray"
+    - "GH-382: LayerNorm 4.2x slower than ndarray"
+    - "Ba, Kiros & Hinton (2016). Layer Normalization. arXiv:1607.06450"
+    - "Zhang & Sennrich (2019). Root Mean Square Layer Normalization. NeurIPS"
+  issues:
+    - "https://github.com/paiml/aprender/issues/381"
+    - "https://github.com/paiml/aprender/issues/382"
+
+# =============================================================================
+# KERNEL EQUATIONS
+# =============================================================================
+
+equations:
+  rmsnorm:
+    formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    expanded: "y_i = x_i * (1 / sqrt(Σ_j x_j² / n + ε)) * γ_i"
+    domain: "x ∈ R^n, γ ∈ R^n, ε > 0"
+    properties:
+      - scale_equivariant: "rmsnorm(α·x, γ) = sign(α)·rmsnorm(x, γ) for α > 0"
+      - unit_scale: "mean(rmsnorm(x, ones)²) ≈ 1.0"
+      - no_centering: "RMSNorm does NOT subtract mean (unlike LayerNorm)"
+
+  layernorm:
+    formula: "y_i = (x_i - μ) / sqrt(σ² + ε) * γ_i + β_i"
+    expanded: |
+      μ = Σ_j x_j / n
+      σ² = Σ_j (x_j - μ)² / n
+      y_i = (x_i - μ) / sqrt(σ² + ε) * γ_i + β_i
+    domain: "x ∈ R^n, γ ∈ R^n, β ∈ R^n, ε > 0"
+    properties:
+      - zero_mean: "mean(layernorm(x, ones, zeros)) ≈ 0.0"
+      - unit_variance: "var(layernorm(x, ones, zeros)) ≈ 1.0"
+      - shift_invariant: "layernorm(x + c, γ, β) == layernorm(x, γ, β)"
+      - scale_invariant: "layernorm(α·x, γ, β) == layernorm(x, γ, β) for α > 0"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  multi_pass_auto_vectorizable:
+    description: "Norms MUST use multi-pass auto-vectorizable pattern"
+    rmsnorm_pattern: |
+      // Pass 1: sum of squares — auto-vectorizable
+      let mut sum_sq = 0.0f32;
+      for &val in slice { sum_sq += val * val; }
+      let inv_rms = 1.0 / (sum_sq / n as f32 + eps).sqrt();
+      // Pass 2: fused normalize + scale — auto-vectorizable
+      for i in 0..n { out[i] = slice[i] * inv_rms * weight[i]; }
+    layernorm_pattern: |
+      // Pass 1: mean — auto-vectorizable
+      let mut sum = 0.0f32;
+      for &val in slice { sum += val; }
+      let mean = sum / n as f32;
+      // Pass 2: variance — auto-vectorizable
+      let mut var_sum = 0.0f32;
+      for &val in slice { let d = val - mean; var_sum += d * d; }
+      let inv_std = 1.0 / (var_sum / n as f32 + eps).sqrt();
+      // Pass 3: fused normalize + scale + shift — auto-vectorizable
+      for i in 0..n { out[i] = (slice[i] - mean) * inv_std * weight[i] + bias[i]; }
+    rationale: "Explicit indexed loops with pre-allocated output enable LLVM SIMD auto-vectorization"
+
+  pre_allocated_output:
+    description: "MUST pre-allocate output buffer and use Tensor::from_vec"
+    assertion: "No Tensor::new(&data, ...) in norm implementations"
+
+  one_path_rule:
+    description: "Module norms delegate to functional norms (UCBD §4)"
+    canonical_sources:
+      - "src/nn/functional.rs::rms_norm"
+      - "src/nn/functional.rs::layer_norm"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/norms.rs"
+  reference: "ndarray scalar implementation (same 2/3-pass algorithm)"
+
+  bounds:
+    rmsnorm_4096:
+      min_ratio_vs_ndarray: 0.40
+      target_ratio: 0.65
+      measured_ratio: 0.51
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.22, note: "Before auto-vectorizable loops" }
+        - { date: "2026-03-02", ratio: 0.51, note: "After multi-pass + from_vec" }
+
+    layernorm_4096:
+      min_ratio_vs_ndarray: 0.35
+      target_ratio: 0.55
+      measured_ratio: 0.42
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.24, note: "Before auto-vectorizable loops" }
+        - { date: "2026-03-02", ratio: 0.42, note: "After 3-pass + from_vec" }
+
+  remaining_gap_analysis: |
+    2x remaining gap is from ndarray's tighter memory model:
+    - ndarray operates directly on contiguous buffer with zero metadata
+    - Tensor::from_vec still has shape Vec allocation + autograd field setup
+    - ndarray's dot/sum use BLAS-like tight loops with prefetching
+    - Further optimization: fused norm+GEMV at inference time (see kernel-fusion-v1.yaml)
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_files:
+    - "tests/contracts/rmsnorm_contract.rs"
+    - "tests/contracts/layernorm_contract.rs"
+
+  FALSIFY-NORM-001:
+    name: "RMSNorm unit scale"
+    assertion: "mean(rmsnorm(x, ones)²) ≈ 1.0 (within 1e-4)"
+    status: "PASS"
+
+  FALSIFY-NORM-002:
+    name: "LayerNorm zero mean"
+    assertion: "mean(layernorm(x, ones, zeros)) ≈ 0.0 (within 1e-5)"
+    status: "PASS"
+
+  FALSIFY-NORM-003:
+    name: "LayerNorm unit variance"
+    assertion: "var(layernorm(x, ones, zeros)) ≈ 1.0 (within 1e-4)"
+    status: "PASS"
+
+  FALSIFY-NORM-004:
+    name: "LayerNorm shift invariance"
+    assertion: "layernorm(x + 100, γ, β) ≈ layernorm(x, γ, β) (within 1e-4)"
+    status: "PASS"
+
+  FALSIFY-NORM-005:
+    name: "RMSNorm reduces to LayerNorm for zero-mean inputs"
+    assertion: "If mean(x) = 0, rmsnorm ≈ layernorm (up to bias term)"
+    status: "PASS"
+
+  FALSIFY-NORM-006:
+    name: "Numerical stability with large inputs"
+    assertion: "rmsnorm([1e6, 1e6, ...]) produces finite values (no overflow)"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-NORM-001"
+  name: "Normalization Kernel Contract"
+  checks:
+    - "Multi-pass auto-vectorizable pattern used in all norm implementations"
+    - "No Tensor::new(&data, ...) in norm functions"
+    - "Benchmark ratio >= min_ratio for all measured bounds"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"
