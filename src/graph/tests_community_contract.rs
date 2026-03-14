@@ -80,7 +80,7 @@ mod cd_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CD-001-prop: Labels length matches node count for random graphs
+    // FALSIFY-CD-001-prop: Labels length matches node count for random graphs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -103,7 +103,7 @@ mod cd_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CD-003-prop: Deterministic with same seed for random graphs
+    // FALSIFY-CD-003-prop: Deterministic with same seed for random graphs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

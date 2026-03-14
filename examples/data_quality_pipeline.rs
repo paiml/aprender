@@ -78,7 +78,7 @@ fn main() {
         EvolStrategy::DeepenReasoning,
     ]);
 
-    let instructions: Vec<String> = passed.iter().map(|s| s.to_string()).collect();
+    let instructions: Vec<String> = passed.iter().map(|s| (*s).clone()).collect();
     let evolved = evolve_batch(&instructions, &evol_config);
     println!(
         "  Input: {} instructions, {} rounds",

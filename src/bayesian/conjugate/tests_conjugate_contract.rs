@@ -105,7 +105,7 @@ mod by_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-BY-002-prop: BetaBinomial posterior mean in [0, 1]
+    // FALSIFY-BY-002-prop: BetaBinomial posterior mean in [0, 1]
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -127,7 +127,7 @@ mod by_proptest_falsify {
         }
     }
 
-    /// FALSIFY-BY-005-prop: Dirichlet probabilities sum to 1
+    // FALSIFY-BY-005-prop: Dirichlet probabilities sum to 1
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

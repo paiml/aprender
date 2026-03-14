@@ -105,7 +105,7 @@ mod hc_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-HC-001-prop: Labels length matches sample count for random sizes
+    // FALSIFY-HC-001-prop: Labels length matches sample count for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -130,7 +130,7 @@ mod hc_proptest_falsify {
         }
     }
 
-    /// FALSIFY-HC-002-prop: Number of distinct labels equals n_clusters
+    // FALSIFY-HC-002-prop: Number of distinct labels equals n_clusters
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

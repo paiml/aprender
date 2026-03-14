@@ -149,10 +149,9 @@ fn falsify_rext_005_different_base_different_output() {
 }
 
 mod rext_proptest_falsify {
-    use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-REXT-001-prop: Frequencies positive and decreasing for random dims
+    // FALSIFY-REXT-001-prop: Frequencies positive and decreasing for random dims
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -183,7 +182,7 @@ mod rext_proptest_falsify {
         }
     }
 
-    /// FALSIFY-REXT-002-prop: freq_0 = 1.0 for all base and dim combinations
+    // FALSIFY-REXT-002-prop: freq_0 = 1.0 for all base and dim combinations
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

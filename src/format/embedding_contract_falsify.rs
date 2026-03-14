@@ -525,8 +525,8 @@ mod proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-EM-001-prop: Output shape correctness over random seq_len and d_model
-    /// YAML: "proptest with random seq_len in [1, 512] and d_model in {64, 128, 256}"
+    // FALSIFY-EM-001-prop: Output shape correctness over random seq_len and d_model
+    // YAML: "proptest with random seq_len in [1, 512] and d_model in {64, 128, 256}"
     proptest! {
         #[test]
         fn falsify_em_001_prop_output_shape(
@@ -548,8 +548,8 @@ mod proptest_falsify {
         }
     }
 
-    /// FALSIFY-EM-002-prop: OOB panic freedom near vocab_size boundary
-    /// YAML: "proptest with token_ids near vocab_size boundary"
+    // FALSIFY-EM-002-prop: OOB panic freedom near vocab_size boundary
+    // YAML: "proptest with token_ids near vocab_size boundary"
     proptest! {
         #[test]
         fn falsify_em_002_prop_boundary_oob(
@@ -573,8 +573,8 @@ mod proptest_falsify {
         }
     }
 
-    /// FALSIFY-EM-004-prop: All outputs finite when W is finite
-    /// YAML: "proptest with finite embedding table, check output is_finite()"
+    // FALSIFY-EM-004-prop: All outputs finite when W is finite
+    // YAML: "proptest with finite embedding table, check output is_finite()"
     proptest! {
         #[test]
         fn falsify_em_004_prop_finite_output(
@@ -595,8 +595,8 @@ mod proptest_falsify {
         }
     }
 
-    /// FALSIFY-EMB-001-prop: Lookup determinism for random token IDs
-    /// YAML: "proptest: embed(t) == embed(t) for random t"
+    // FALSIFY-EMB-001-prop: Lookup determinism for random token IDs
+    // YAML: "proptest: embed(t) == embed(t) for random t"
     proptest! {
         #[test]
         fn falsify_emb_001_prop_lookup_determinism(
@@ -612,8 +612,8 @@ mod proptest_falsify {
         }
     }
 
-    /// FALSIFY-EMB-002-prop: Shape preservation for random d_model
-    /// YAML: "proptest with random valid token IDs"
+    // FALSIFY-EMB-002-prop: Shape preservation for random d_model
+    // YAML: "proptest with random valid token IDs"
     proptest! {
         #[test]
         fn falsify_emb_002_prop_shape(

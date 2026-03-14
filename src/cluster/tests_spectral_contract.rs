@@ -110,7 +110,7 @@ mod sc_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SC-001-prop: Labels length matches sample count for random sizes
+    // FALSIFY-SC-001-prop: Labels length matches sample count for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -136,7 +136,7 @@ mod sc_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SC-002-prop: Label values in [0, n_clusters) for random data
+    // FALSIFY-SC-002-prop: Label values in [0, n_clusters) for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

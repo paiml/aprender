@@ -62,7 +62,7 @@ mod sigmoid_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SG-001-prop: Sigmoid output in [0, 1] for random inputs
+    // FALSIFY-SG-001-prop: Sigmoid output in [0, 1] for random inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -79,7 +79,7 @@ mod sigmoid_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SG-003-prop: Sigmoid monotone — sigmoid(a) <= sigmoid(b) for a < b
+    // FALSIFY-SG-003-prop: Sigmoid monotone — sigmoid(a) <= sigmoid(b) for a < b
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

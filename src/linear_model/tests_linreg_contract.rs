@@ -96,7 +96,7 @@ mod lr_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LR-001-prop: R² non-negative on random linear data with intercept
+    // FALSIFY-LR-001-prop: R² non-negative on random linear data with intercept
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -124,7 +124,7 @@ mod lr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LR-002-prop: Deterministic predictions for random data
+    // FALSIFY-LR-002-prop: Deterministic predictions for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -157,7 +157,7 @@ mod lr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LR-003-prop: Prediction count matches input for random sizes
+    // FALSIFY-LR-003-prop: Prediction count matches input for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

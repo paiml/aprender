@@ -70,7 +70,7 @@ mod ga_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MH-008-prop: GA solution dimension matches for random dims
+    // FALSIFY-MH-008-prop: GA solution dimension matches for random dims
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -95,7 +95,7 @@ mod ga_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MH-009-prop: GA objective finite for random seeds
+    // FALSIFY-MH-009-prop: GA objective finite for random seeds
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

@@ -82,7 +82,7 @@ mod sgd_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SGD-001-prop: SGD update formula x - lr*g for random values
+    // FALSIFY-SGD-001-prop: SGD update formula x - lr*g for random values
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -106,7 +106,7 @@ mod sgd_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SGD-003-prop: Zero gradient identity for random params
+    // FALSIFY-SGD-003-prop: Zero gradient identity for random params
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

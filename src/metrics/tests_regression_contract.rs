@@ -65,7 +65,7 @@ mod mr_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MR-001-prop: Perfect predictions → R² = 1.0
+    // FALSIFY-MR-001-prop: Perfect predictions → R² = 1.0
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -87,7 +87,7 @@ mod mr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MR-002-prop: R² ≤ 1.0 for any predictions
+    // FALSIFY-MR-002-prop: R² ≤ 1.0 for any predictions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

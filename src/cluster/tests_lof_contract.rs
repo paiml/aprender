@@ -97,7 +97,7 @@ mod lof_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LF-001-prop: LOF scores positive for random data
+    // FALSIFY-LF-001-prop: LOF scores positive for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -126,7 +126,7 @@ mod lof_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LF-003-prop: Scores length matches sample count
+    // FALSIFY-LF-003-prop: Scores length matches sample count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

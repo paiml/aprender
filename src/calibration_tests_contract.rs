@@ -72,7 +72,7 @@ mod cal_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CAL-001-prop: predict_proba sums to ~1 for random logits
+    // FALSIFY-CAL-001-prop: predict_proba sums to ~1 for random logits
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -97,7 +97,7 @@ mod cal_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CAL-002-prop: predict_proba outputs non-negative
+    // FALSIFY-CAL-002-prop: predict_proba outputs non-negative
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

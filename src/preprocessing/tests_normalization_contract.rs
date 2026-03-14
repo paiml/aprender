@@ -130,7 +130,7 @@ mod pn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-PN-002-prop: MinMaxScaler output in [0, 1] for random data
+    // FALSIFY-PN-002-prop: MinMaxScaler output in [0, 1] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -162,7 +162,7 @@ mod pn_proptest_falsify {
         }
     }
 
-    /// FALSIFY-PN-003-prop: Output shape preserved for random sizes
+    // FALSIFY-PN-003-prop: Output shape preserved for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

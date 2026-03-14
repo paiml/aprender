@@ -81,7 +81,7 @@ mod lp_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LP-001-prop: Output shape for random dimensions
+    // FALSIFY-LP-001-prop: Output shape for random dimensions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -103,7 +103,7 @@ mod lp_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LP-002-prop: Homogeneity for random alpha values
+    // FALSIFY-LP-002-prop: Homogeneity for random alpha values
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -140,7 +140,7 @@ mod lp_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LP-004-prop: Zero input produces bias for random bias vectors
+    // FALSIFY-LP-004-prop: Zero input produces bias for random bias vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

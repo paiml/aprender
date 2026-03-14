@@ -185,7 +185,7 @@ fn falsify_aw_006_zero_gradient_weight_decay_only() {
 mod aw_proptest_falsify {
     use proptest::prelude::*;
 
-    /// FALSIFY-AW-002-prop: Second moment non-negative for random gradients
+    // FALSIFY-AW-002-prop: Second moment non-negative for random gradients
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -217,7 +217,7 @@ mod aw_proptest_falsify {
         }
     }
 
-    /// FALSIFY-AW-003-prop: Bias correction > 1 for random betas
+    // FALSIFY-AW-003-prop: Bias correction > 1 for random betas
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -245,7 +245,7 @@ mod aw_proptest_falsify {
         }
     }
 
-    /// FALSIFY-AW-006-prop: Zero gradient → only weight decay for random theta
+    // FALSIFY-AW-006-prop: Zero gradient → only weight decay for random theta
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

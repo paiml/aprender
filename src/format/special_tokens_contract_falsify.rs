@@ -294,7 +294,7 @@ mod special_tokens_contract {
         let (_, arch_mapping) = load_registry();
         let mut violations = Vec::new();
 
-        for (arch, _) in &arch_mapping {
+        for arch in arch_mapping.keys() {
             if SpecialTokens::from_architecture(arch).is_none() {
                 violations.push(format!(
                     "SpecialTokens::from_architecture(\"{arch}\") returns None"

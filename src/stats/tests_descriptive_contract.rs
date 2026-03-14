@@ -73,7 +73,7 @@ mod ds_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-DS-004-prop: Quantile ordering Q1 <= median <= Q3 for random data
+    // FALSIFY-DS-004-prop: Quantile ordering Q1 <= median <= Q3 for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -100,7 +100,7 @@ mod ds_proptest_falsify {
         }
     }
 
-    /// FALSIFY-DS-001-prop: Median in [min, max] for random data
+    // FALSIFY-DS-001-prop: Median in [min, max] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

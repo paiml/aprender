@@ -99,7 +99,7 @@ mod glm_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-GLM-002-prop: Prediction count matches for different data sizes
+    // FALSIFY-GLM-002-prop: Prediction count matches for different data sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -126,7 +126,7 @@ mod glm_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GLM-003-prop: Poisson predictions non-negative for different sizes
+    // FALSIFY-GLM-003-prop: Poisson predictions non-negative for different sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

@@ -70,7 +70,7 @@ mod sampling_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SA-001-prop: Sampled token always in [0, vocab) for random logits
+    // FALSIFY-SA-001-prop: Sampled token always in [0, vocab) for random logits
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -94,7 +94,7 @@ mod sampling_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SA-003-prop: Greedy always returns argmax for random logits
+    // FALSIFY-SA-003-prop: Greedy always returns argmax for random logits
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

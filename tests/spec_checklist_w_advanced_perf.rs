@@ -70,7 +70,7 @@ fn w9_simd_alignment() {
     // Our in-memory Tensor currently uses Vec<f32>, which is usually 8 or 16 byte aligned.
     // This test verifies that we are aware of the alignment status.
     assert!(
-        ptr % 4 == 0,
+        ptr.is_multiple_of(4),
         "W9: Tensor data must at least be 4-byte aligned for f32 (ptr: {:#x})",
         ptr
     );

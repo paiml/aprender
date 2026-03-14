@@ -72,7 +72,7 @@ mod cv_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CV-002-prop: Correlation bounded in [-1, 1] for random data
+    // FALSIFY-CV-002-prop: Correlation bounded in [-1, 1] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -98,7 +98,7 @@ mod cv_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CV-004-prop: Covariance symmetric for random data
+    // FALSIFY-CV-004-prop: Covariance symmetric for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

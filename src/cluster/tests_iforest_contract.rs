@@ -99,7 +99,7 @@ mod iforest_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-IF-001-prop: Anomaly scores in [-1, 0] for random data
+    // FALSIFY-IF-001-prop: Anomaly scores in [-1, 0] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -128,7 +128,7 @@ mod iforest_proptest_falsify {
         }
     }
 
-    /// FALSIFY-IF-003-prop: Predictions length matches sample count
+    // FALSIFY-IF-003-prop: Predictions length matches sample count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

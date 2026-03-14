@@ -79,7 +79,7 @@ mod vector_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-VE-001-prop: Dot product commutativity for random vectors
+    // FALSIFY-VE-001-prop: Dot product commutativity for random vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -107,7 +107,7 @@ mod vector_proptest_falsify {
         }
     }
 
-    /// FALSIFY-VE-003-prop: Cauchy-Schwarz for random vectors
+    // FALSIFY-VE-003-prop: Cauchy-Schwarz for random vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

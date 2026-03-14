@@ -6,8 +6,8 @@
 //! Run: cargo run --example distillation_advanced
 
 use aprender::online::distillation_advanced::{
-    HiddenProjection, HiddenStateConfig, HiddenStateDistiller, OnlineDistillConfig,
-    OnlineDistiller, QuantAwareConfig, QuantAwareDistiller,
+    HiddenStateConfig, HiddenStateDistiller, OnlineDistillConfig, OnlineDistiller,
+    QuantAwareConfig, QuantAwareDistiller,
 };
 
 fn main() {
@@ -80,7 +80,9 @@ fn main() {
     });
     let x: Vec<f64> = (-10..=10).map(|i| i as f64 * 0.5).collect();
     let y: Vec<f64> = x.iter().map(|&xi| 1.0 / (1.0 + (-xi).exp())).collect();
-    let coeffs = d_poly.polynomial_activation_approx(&x, &y).unwrap();
+    let coeffs = d_poly
+        .polynomial_activation_approx(&x, &y)
+        .expect("polynomial activation approximation failed");
     println!(
         "  Sigmoid poly approx (degree 3): {:?}",
         coeffs
@@ -107,8 +109,10 @@ fn main() {
         let teacher_logits = vec![1.5 + step as f64 * 0.1, 2.5 - step as f64 * 0.1, 0.3];
         let loss = online
             .step(&student_logits, &teacher_logits, &labels)
-            .unwrap();
-        let ema = online.ema_logits().unwrap();
+            .expect("online distillation step failed");
+        let ema = online
+            .ema_logits()
+            .expect("EMA logits should be available after step");
         println!("  Step {}: loss={:.4}, EMA[0]={:.4}", step, loss, ema[0]);
     }
     println!("  Total updates: {}", online.update_count());

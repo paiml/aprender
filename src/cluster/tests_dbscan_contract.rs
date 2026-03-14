@@ -127,7 +127,7 @@ mod dbscan_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-DB-003-prop: Labels length matches sample count for random sizes
+    // FALSIFY-DB-003-prop: Labels length matches sample count for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -152,7 +152,7 @@ mod dbscan_proptest_falsify {
         }
     }
 
-    /// FALSIFY-DB-004-prop: Labels >= -1 for random data
+    // FALSIFY-DB-004-prop: Labels >= -1 for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

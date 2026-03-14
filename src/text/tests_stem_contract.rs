@@ -72,7 +72,7 @@ mod st_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-ST-001-prop: Stemming is idempotent for random words
+    // FALSIFY-ST-001-prop: Stemming is idempotent for random words
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -95,7 +95,7 @@ mod st_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ST-002-prop: Stem output not longer than input
+    // FALSIFY-ST-002-prop: Stem output not longer than input
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

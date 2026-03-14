@@ -247,10 +247,7 @@ fn test_writer_write_to_io_error() {
     struct FailWriter;
     impl std::io::Write for FailWriter {
         fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "forced error",
-            ))
+            Err(std::io::Error::other("forced error"))
         }
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())

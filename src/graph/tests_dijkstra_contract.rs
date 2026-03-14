@@ -87,7 +87,7 @@ mod gr_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-GR-003-prop: Self-path returns distance 0 for random chain graphs
+    // FALSIFY-GR-003-prop: Self-path returns distance 0 for random chain graphs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -115,7 +115,7 @@ mod gr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GR-004-prop: BFS finds path in connected chain graph
+    // FALSIFY-GR-004-prop: BFS finds path in connected chain graph
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

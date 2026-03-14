@@ -66,7 +66,7 @@ mod de_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MH-011-prop: DE solution within bounds for random dimensions
+    // FALSIFY-MH-011-prop: DE solution within bounds for random dimensions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -90,7 +90,7 @@ mod de_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MH-012-prop: Solution dimension matches for random dims
+    // FALSIFY-MH-012-prop: Solution dimension matches for random dims
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

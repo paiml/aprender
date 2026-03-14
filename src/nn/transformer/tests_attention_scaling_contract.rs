@@ -29,10 +29,10 @@ fn falsify_ascl_001_variance_preservation() {
 
         // Generate pseudo-random unit-variance data
         let q_data: Vec<f32> = (0..n * d_k)
-            .map(|i| ((i as f32 * 1.6180339887).sin() * 2.0))
+            .map(|i| (i as f32 * 1.6180339887).sin() * 2.0)
             .collect();
         let k_data: Vec<f32> = (0..m * d_k)
-            .map(|i| ((i as f32 * 2.7182818284).cos() * 2.0))
+            .map(|i| (i as f32 * 2.7182818284).cos() * 2.0)
             .collect();
 
         let q = Tensor::new(&q_data, &[1, n, d_k]);
@@ -195,7 +195,7 @@ mod ascl_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-ASCL-003-prop: Entropy non-negative for random attention weights
+    // FALSIFY-ASCL-003-prop: Entropy non-negative for random attention weights
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -246,7 +246,7 @@ mod ascl_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ASCL-007-prop: Entropy upper bound for random kv_len
+    // FALSIFY-ASCL-007-prop: Entropy upper bound for random kv_len
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

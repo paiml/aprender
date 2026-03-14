@@ -177,7 +177,7 @@ mod qwen2_em_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-EM-001-prop: Output shape for random seq lengths
+    // FALSIFY-EM-001-prop: Output shape for random seq lengths
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -201,7 +201,7 @@ mod qwen2_em_proptest_falsify {
         }
     }
 
-    /// FALSIFY-EM-004-prop: Finite output for random token IDs
+    // FALSIFY-EM-004-prop: Finite output for random token IDs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

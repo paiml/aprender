@@ -68,7 +68,7 @@ mod dr_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-DR-001-prop: Identical distributions yield NoDrift
+    // FALSIFY-DR-001-prop: Identical distributions yield NoDrift
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -93,7 +93,7 @@ mod dr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-DR-003-prop: Drift score is non-negative when present
+    // FALSIFY-DR-003-prop: Drift score is non-negative when present
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

@@ -78,7 +78,7 @@ mod lbfgs_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LBFGS-001-prop: L-BFGS converges on quadratic from random starts
+    // FALSIFY-LBFGS-001-prop: L-BFGS converges on quadratic from random starts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -101,7 +101,7 @@ mod lbfgs_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LBFGS-002-prop: L-BFGS objective decreases from random starts
+    // FALSIFY-LBFGS-002-prop: L-BFGS objective decreases from random starts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

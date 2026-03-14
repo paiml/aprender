@@ -112,7 +112,7 @@ mod conv1d_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CV-001-prop: Output shape formula for random parameters
+    // FALSIFY-CV-001-prop: Output shape formula for random parameters
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -142,7 +142,7 @@ mod conv1d_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CV-005-prop: K=1 preserves spatial dimension for random lengths
+    // FALSIFY-CV-005-prop: K=1 preserves spatial dimension for random lengths
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

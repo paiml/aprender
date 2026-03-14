@@ -142,7 +142,7 @@ mod tests {
         use super::super::super::*;
         use proptest::prelude::*;
 
-        /// FALSIFY-CE-001-prop: Non-negativity for random logits and targets
+        // FALSIFY-CE-001-prop: Non-negativity for random logits and targets
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -170,7 +170,7 @@ mod tests {
             }
         }
 
-        /// FALSIFY-CE-003-prop: Numerical stability for random scales
+        // FALSIFY-CE-003-prop: Numerical stability for random scales
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -199,7 +199,7 @@ mod tests {
             }
         }
 
-        /// FALSIFY-CE-006-prop: Perfect prediction approaches zero
+        // FALSIFY-CE-006-prop: Perfect prediction approaches zero
         proptest! {
             #![proptest_config(ProptestConfig::with_cases(100))]
 

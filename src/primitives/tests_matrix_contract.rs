@@ -84,7 +84,7 @@ mod matrix_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MX-001-prop: Transpose involution for random matrices
+    // FALSIFY-MX-001-prop: Transpose involution for random matrices
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -113,7 +113,7 @@ mod matrix_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MX-004-prop: Identity matmul for random square matrices
+    // FALSIFY-MX-004-prop: Identity matmul for random square matrices
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

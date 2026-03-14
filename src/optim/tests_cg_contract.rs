@@ -79,7 +79,7 @@ mod cg_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CG-001-prop: CG converges on shifted quadratic for random starts
+    // FALSIFY-CG-001-prop: CG converges on shifted quadratic for random starts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -105,7 +105,7 @@ mod cg_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CG-003-prop: CG objective decreases from random starts
+    // FALSIFY-CG-003-prop: CG objective decreases from random starts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

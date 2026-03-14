@@ -106,7 +106,7 @@ mod knn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-KNN-002-prop: Prediction count matches input count
+    // FALSIFY-KNN-002-prop: Prediction count matches input count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -152,7 +152,7 @@ mod knn_proptest_falsify {
         }
     }
 
-    /// FALSIFY-KNN-004-prop: Deterministic predictions for random data
+    // FALSIFY-KNN-004-prop: Deterministic predictions for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

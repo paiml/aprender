@@ -203,7 +203,7 @@ mod code_emb_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-EMB-001-prop: Cosine self-similarity = 1.0 for random vectors
+    // FALSIFY-EMB-001-prop: Cosine self-similarity = 1.0 for random vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -226,7 +226,7 @@ mod code_emb_proptest_falsify {
         }
     }
 
-    /// FALSIFY-EMB-006-prop: Cosine bounded [-1, 1] for random pairs
+    // FALSIFY-EMB-006-prop: Cosine bounded [-1, 1] for random pairs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

@@ -265,6 +265,10 @@ fn falsify_iter7_attention_type_matches_head_config() {
                     "ITER7: {family_name} declared MQA but no size has kv_heads == 1"
                 );
             }
+            AttentionType::Ssm | AttentionType::Linear => {
+                // SSM (Mamba) and Linear (RWKV) families don't use standard attention
+                // — no head/kv_head invariants to check
+            }
         }
     }
 }

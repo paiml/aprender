@@ -66,7 +66,7 @@ mod pso_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MH-002-prop: PSO solution dimension matches for random dims
+    // FALSIFY-MH-002-prop: PSO solution dimension matches for random dims
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -89,7 +89,7 @@ mod pso_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MH-003-prop: PSO solution within bounds for random dims/seeds
+    // FALSIFY-MH-003-prop: PSO solution within bounds for random dims/seeds
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

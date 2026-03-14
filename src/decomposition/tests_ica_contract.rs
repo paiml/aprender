@@ -104,7 +104,7 @@ mod ica_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-ICA-001-prop: Output shape matches for random n_components
+    // FALSIFY-ICA-001-prop: Output shape matches for random n_components
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -135,7 +135,7 @@ mod ica_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ICA-002-prop: Transformed values are finite for random data
+    // FALSIFY-ICA-002-prop: Transformed values are finite for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

@@ -270,10 +270,10 @@ fn test_run_harness_perfect_scorer() {
 
     // Perfect scorer: gives highest score to the correct answer
     let report = run_harness(&config, |ctx: &str, completion: &str| {
-        if ctx.contains("sandwich") && completion.contains("butter") {
+        if (ctx.contains("sandwich") && completion.contains("butter"))
+            || (ctx.contains("cat") && completion.contains("purred"))
+        {
             0.0 // Highest (least negative)
-        } else if ctx.contains("cat") && completion.contains("purred") {
-            0.0
         } else {
             -10.0
         }

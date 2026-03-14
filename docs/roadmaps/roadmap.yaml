@@ -4702,3 +4702,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-479
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-479'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-12T10:27:35.676295611+00:00
+  updated: 2026-03-12T10:27:35.676295611+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

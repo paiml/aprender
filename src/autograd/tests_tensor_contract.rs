@@ -88,7 +88,7 @@ mod tensor_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-TN-001-prop: Addition commutativity for random tensors
+    // FALSIFY-TN-001-prop: Addition commutativity for random tensors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -119,7 +119,7 @@ mod tensor_proptest_falsify {
         }
     }
 
-    /// FALSIFY-TN-004-prop: Scalar multiplication for random values
+    // FALSIFY-TN-004-prop: Scalar multiplication for random values
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

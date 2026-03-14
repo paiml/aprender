@@ -142,7 +142,7 @@ mod gq_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-GQ-001-prop: Weight normalization for random GQA configs
+    // FALSIFY-GQ-001-prop: Weight normalization for random GQA configs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -186,7 +186,7 @@ mod gq_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GQ-002-prop: MHA degeneration — shape + finiteness match
+    // FALSIFY-GQ-002-prop: MHA degeneration — shape + finiteness match
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -215,7 +215,7 @@ mod gq_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GQ-006-prop: MQA boundary — kv_heads=1 produces valid output
+    // FALSIFY-GQ-006-prop: MQA boundary — kv_heads=1 produces valid output
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

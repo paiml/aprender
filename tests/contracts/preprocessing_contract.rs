@@ -220,7 +220,7 @@ proptest! {
         for j in 0..cols {
             let mut col: Vec<f32> = (0..rows).map(|i| transformed.get(i, j)).collect();
             col.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let median = if col.len() % 2 == 0 {
+            let median = if col.len().is_multiple_of(2) {
                 (col[col.len() / 2 - 1] + col[col.len() / 2]) / 2.0
             } else {
                 col[col.len() / 2]

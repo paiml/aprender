@@ -83,7 +83,7 @@ mod do_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-DO-001-prop: Eval identity for random inputs
+    // FALSIFY-DO-001-prop: Eval identity for random inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -111,7 +111,7 @@ mod do_proptest_falsify {
         }
     }
 
-    /// FALSIFY-DO-003-prop: Shape preservation for random dims
+    // FALSIFY-DO-003-prop: Shape preservation for random dims
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

@@ -122,7 +122,7 @@ mod gm_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-GM-001-prop: Mixing weights sum to 1.0 for random data
+    // FALSIFY-GM-001-prop: Mixing weights sum to 1.0 for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -158,7 +158,7 @@ mod gm_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GM-002-prop: Labels length matches sample count
+    // FALSIFY-GM-002-prop: Labels length matches sample count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

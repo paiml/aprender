@@ -80,7 +80,7 @@ mod mc_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MC-001-prop: Accuracy in [0, 1] for random labels
+    // FALSIFY-MC-001-prop: Accuracy in [0, 1] for random labels
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -105,7 +105,7 @@ mod mc_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MC-002-prop: Perfect predictions → accuracy = 1.0
+    // FALSIFY-MC-002-prop: Perfect predictions → accuracy = 1.0
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

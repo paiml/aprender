@@ -74,7 +74,7 @@ mod relu_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-AK-001-prop: ReLU non-negativity for random inputs
+    // FALSIFY-AK-001-prop: ReLU non-negativity for random inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -92,7 +92,7 @@ mod relu_proptest_falsify {
         }
     }
 
-    /// FALSIFY-AK-002-prop: ReLU(x) = x for positive inputs
+    // FALSIFY-AK-002-prop: ReLU(x) = x for positive inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

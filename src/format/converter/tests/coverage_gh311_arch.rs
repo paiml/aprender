@@ -214,7 +214,7 @@ fn falsify_gh311_opt_map_non_layer_tensors() {
 #[test]
 fn falsify_gh311_neox_split_qkv_weight() {
     let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
-    let hidden = 4;
+    let _hidden = 4;
     // Shape: [3*hidden, hidden] = [12, 4]
     let data: Vec<f32> = (0..48).map(|i| i as f32).collect();
     tensors.insert(

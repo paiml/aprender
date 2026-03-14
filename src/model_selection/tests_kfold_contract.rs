@@ -94,7 +94,7 @@ mod kf_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-KF-001-prop: KFold produces exactly K splits for random K/n
+    // FALSIFY-KF-001-prop: KFold produces exactly K splits for random K/n
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -115,7 +115,7 @@ mod kf_proptest_falsify {
         }
     }
 
-    /// FALSIFY-KF-002-prop: Every sample appears in exactly one test fold
+    // FALSIFY-KF-002-prop: Every sample appears in exactly one test fold
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

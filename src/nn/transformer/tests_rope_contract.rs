@@ -133,9 +133,9 @@ mod rp_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-RP-001-prop: Norm preservation for random dims/positions
-    ///
-    /// Contract: ‖RoPE(x, m)‖ ≈ ‖x‖ for any x, m
+    // FALSIFY-RP-001-prop: Norm preservation for random dims/positions
+    //
+    // Contract: ‖RoPE(x, m)‖ ≈ ‖x‖ for any x, m
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -168,9 +168,9 @@ mod rp_proptest_falsify {
         }
     }
 
-    /// FALSIFY-RP-004-prop: Zero position identity for random vectors
-    ///
-    /// Contract: RoPE(x, 0) = x
+    // FALSIFY-RP-004-prop: Zero position identity for random vectors
+    //
+    // Contract: RoPE(x, 0) = x
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(200))]
 
@@ -198,9 +198,9 @@ mod rp_proptest_falsify {
         }
     }
 
-    /// FALSIFY-RP-002-prop: Relative position invariance for random offsets
-    ///
-    /// Contract: ⟨RoPE(q,m), RoPE(k,n)⟩ = ⟨RoPE(q,m+d), RoPE(k,n+d)⟩
+    // FALSIFY-RP-002-prop: Relative position invariance for random offsets
+    //
+    // Contract: ⟨RoPE(q,m), RoPE(k,n)⟩ = ⟨RoPE(q,m+d), RoPE(k,n+d)⟩
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

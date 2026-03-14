@@ -147,7 +147,7 @@ mod cma_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-CMA-001-prop: Step size positive for random dimensions
+    // FALSIFY-CMA-001-prop: Step size positive for random dimensions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -169,7 +169,7 @@ mod cma_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CMA-003-prop: Weight normalization for random dimensions
+    // FALSIFY-CMA-003-prop: Weight normalization for random dimensions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -194,7 +194,7 @@ mod cma_proptest_falsify {
         }
     }
 
-    /// FALSIFY-CMA-006-prop: Dimension 1 convergence for random seeds
+    // FALSIFY-CMA-006-prop: Dimension 1 convergence for random seeds
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

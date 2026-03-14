@@ -16,7 +16,7 @@ pub(super) fn rosenbrock(x: &[f64]) -> f64 {
 }
 
 /// Rastrigin function: highly multimodal
-
+#[allow(dead_code)]
 pub(super) fn rastrigin(x: &[f64]) -> f64 {
     let n = f64::from(x.len() as i32);
     10.0 * n

@@ -161,7 +161,7 @@ mod tests_pmat205_sharding_placement_falsification {
     /// JAX-inspired PartitionSpec for multi-GPU inference
     /// Based on spec section 8.1.3
     #[derive(Debug, Clone, PartialEq, Eq)]
-     // SequenceSharded reserved for future use
+    #[allow(dead_code)] // SequenceSharded reserved for future use
     enum PartitionSpec {
         /// Replicate tensor on all devices
         Replicated,

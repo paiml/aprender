@@ -82,7 +82,7 @@ mod arima_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-ARIMA-001-prop: Forecast length matches for random horizons
+    // FALSIFY-ARIMA-001-prop: Forecast length matches for random horizons
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -109,7 +109,7 @@ mod arima_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ARIMA-002-prop: Forecasts are finite for random data
+    // FALSIFY-ARIMA-002-prop: Forecasts are finite for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

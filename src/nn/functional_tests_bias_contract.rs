@@ -145,7 +145,7 @@ mod bias_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-BA-001-prop: Shape preservation for random dimensions
+    // FALSIFY-BA-001-prop: Shape preservation for random dimensions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -172,7 +172,7 @@ mod bias_proptest_falsify {
         }
     }
 
-    /// FALSIFY-BA-004-prop: Broadcast — zero input gives bias for all rows
+    // FALSIFY-BA-004-prop: Broadcast — zero input gives bias for all rows
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

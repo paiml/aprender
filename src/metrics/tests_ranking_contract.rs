@@ -81,7 +81,7 @@ mod rk_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-RK-001-prop: Hit@K is binary for random predictions
+    // FALSIFY-RK-001-prop: Hit@K is binary for random predictions
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -90,7 +90,7 @@ mod rk_proptest_falsify {
             n in 3..=10usize,
             seed in 0..500u32,
         ) {
-            let predictions: Vec<usize> = (0..n).map(|i| ((i + seed as usize) % n)).collect();
+            let predictions: Vec<usize> = (0..n).map(|i| (i + seed as usize) % n).collect();
             let target = seed as usize % n;
 
             for k in 1..=n {
@@ -104,7 +104,7 @@ mod rk_proptest_falsify {
         }
     }
 
-    /// FALSIFY-RK-003-prop: NDCG in [0, 1] for random relevance
+    // FALSIFY-RK-003-prop: NDCG in [0, 1] for random relevance
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

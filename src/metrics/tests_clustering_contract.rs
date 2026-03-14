@@ -74,7 +74,7 @@ mod mcl_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MCL-001-prop: Silhouette score in [-1, 1] for random data
+    // FALSIFY-MCL-001-prop: Silhouette score in [-1, 1] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -98,7 +98,7 @@ mod mcl_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MCL-003-prop: Silhouette is deterministic
+    // FALSIFY-MCL-003-prop: Silhouette is deterministic
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

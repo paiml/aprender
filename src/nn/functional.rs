@@ -706,8 +706,8 @@ mod softmax_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SM-001-prop: Normalization — sum ≈ 1.0 for random vectors
-    /// YAML: "proptest with 10000 random vectors, dim 1..128"
+    // FALSIFY-SM-001-prop: Normalization — sum ≈ 1.0 for random vectors
+    // YAML: "proptest with 10000 random vectors, dim 1..128"
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(1000))]
         #[test]
@@ -723,8 +723,8 @@ mod softmax_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SM-002-prop: Strict positivity for random inputs
-    /// YAML: "proptest with extreme values near f32::MIN/MAX"
+    // FALSIFY-SM-002-prop: Strict positivity for random inputs
+    // YAML: "proptest with extreme values near f32::MIN/MAX"
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(500))]
         #[test]
@@ -745,8 +745,8 @@ mod softmax_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SM-003-prop: Order preservation — argmax(softmax(x)) = argmax(x)
-    /// YAML: "proptest with distinct-element vectors"
+    // FALSIFY-SM-003-prop: Order preservation — argmax(softmax(x)) = argmax(x)
+    // YAML: "proptest with distinct-element vectors"
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(500))]
         #[test]

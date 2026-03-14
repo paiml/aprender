@@ -84,7 +84,7 @@ mod lora_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LORA-001-prop: Output shape matches base weight shape for random ranks
+    // FALSIFY-LORA-001-prop: Output shape matches base weight shape for random ranks
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -108,7 +108,7 @@ mod lora_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LORA-003-prop: LoRA output is finite for random ranks
+    // FALSIFY-LORA-003-prop: LoRA output is finite for random ranks
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

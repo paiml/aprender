@@ -272,7 +272,7 @@ mod logreg_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-LOGREG-003-prop: Probabilities in [0, 1] for random data
+    // FALSIFY-LOGREG-003-prop: Probabilities in [0, 1] for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -305,7 +305,7 @@ mod logreg_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LOGREG-004-prop: Deterministic predictions for random data
+    // FALSIFY-LOGREG-004-prop: Deterministic predictions for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -334,7 +334,7 @@ mod logreg_proptest_falsify {
         }
     }
 
-    /// FALSIFY-LOGREG-005-prop: Probabilities sum to 1 for random data
+    // FALSIFY-LOGREG-005-prop: Probabilities sum to 1 for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

@@ -77,7 +77,7 @@ mod ht_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-HT-001-prop: t-test p-value in [0, 1] for random samples
+    // FALSIFY-HT-001-prop: t-test p-value in [0, 1] for random samples
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -98,7 +98,7 @@ mod ht_proptest_falsify {
         }
     }
 
-    /// FALSIFY-HT-003-prop: t-statistic is finite for random data
+    // FALSIFY-HT-003-prop: t-statistic is finite for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

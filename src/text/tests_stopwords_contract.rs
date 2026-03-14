@@ -85,7 +85,7 @@ mod sw_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SW-004-prop: Filtered output <= input length
+    // FALSIFY-SW-004-prop: Filtered output <= input length
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 
@@ -107,7 +107,7 @@ mod sw_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SW-003-prop: Filtered output is subset of input
+    // FALSIFY-SW-003-prop: Filtered output is subset of input
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

@@ -123,7 +123,7 @@ fn print_epoch_progress(
     x: &Tensor,
     y: &Tensor,
 ) {
-    if epoch % 100 != 0 && epoch != epochs - 1 {
+    if !epoch.is_multiple_of(100) && epoch != epochs - 1 {
         return;
     }
 

@@ -38,16 +38,16 @@ fn main() {
     let report = run_harness(&config, |ctx, completion| {
         // Simple heuristic: shorter completions with common words score higher
         let base = -(completion.len() as f64) * 0.1;
-        // Bonus for sensible completions
-        if ctx.contains("sandwich") && completion.contains("butter") {
-            base + 5.0
-        } else if ctx.contains("cat") && completion.contains("purred") {
+        // Bonus for sensible completions (contextually related pairs)
+        if (ctx.contains("sandwich") && completion.contains("butter"))
+            || (ctx.contains("cat") && completion.contains("purred"))
+        {
             base + 5.0
         } else {
             base
         }
     })
-    .unwrap();
+    .expect("run_harness failed for multiple-choice task");
 
     let mc = &report.tasks[0];
     println!("  Accuracy: {:.1}%", mc.accuracy.unwrap_or(0.0) * 100.0);
@@ -82,7 +82,7 @@ fn main() {
         // Mock log-likelihood: -0.3 per token (reasonable for a decent model)
         -(text.split_whitespace().count() as f64) * 0.3
     })
-    .unwrap();
+    .expect("run_harness failed for perplexity task");
 
     let ppl_metrics = &ppl_report.tasks[0];
     println!(
@@ -118,19 +118,17 @@ fn main() {
     };
 
     let multi_report = run_harness(&multi_config, |ctx, completion| {
-        if ctx.contains("sandwich") && completion.contains("butter") {
-            0.0
-        } else if ctx.contains("cat") && completion.contains("purred") {
-            0.0
-        } else if ctx.contains("great") && completion.contains("positive") {
-            0.0
-        } else if ctx.contains("Terrible") && completion.contains("negative") {
+        let is_good_match = (ctx.contains("sandwich") && completion.contains("butter"))
+            || (ctx.contains("cat") && completion.contains("purred"))
+            || (ctx.contains("great") && completion.contains("positive"))
+            || (ctx.contains("Terrible") && completion.contains("negative"));
+        if is_good_match {
             0.0
         } else {
             -5.0
         }
     })
-    .unwrap();
+    .expect("run_harness failed for multi-task evaluation");
 
     println!("  Tasks evaluated: {}", multi_report.num_tasks);
     println!("  Total examples:  {}", multi_report.total_examples);

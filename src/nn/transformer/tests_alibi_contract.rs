@@ -123,7 +123,7 @@ mod alibi_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-AL-001-prop: Negative bias for random head counts
+    // FALSIFY-AL-001-prop: Negative bias for random head counts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -144,7 +144,7 @@ mod alibi_proptest_falsify {
         }
     }
 
-    /// FALSIFY-AL-002-prop: Slope positivity for random head counts
+    // FALSIFY-AL-002-prop: Slope positivity for random head counts
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

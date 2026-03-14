@@ -27,7 +27,7 @@ fn nb_training_strategy() -> impl Strategy<Value = (Matrix<f32>, Vec<usize>, usi
             let x = Matrix::from_vec(n, d, features).expect("valid matrix dimensions");
             // Assign classes: first samples_per_class to class 0, next to class 1, etc.
             let y: Vec<usize> = (0..k)
-                .flat_map(|c| std::iter::repeat(c).take(samples_per_class))
+                .flat_map(|c| std::iter::repeat_n(c, samples_per_class))
                 .collect();
             (x, y, k)
         })

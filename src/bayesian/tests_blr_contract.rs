@@ -101,7 +101,7 @@ mod blr_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-BLR-002-prop: Prediction count matches input count
+    // FALSIFY-BLR-002-prop: Prediction count matches input count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -132,7 +132,7 @@ mod blr_proptest_falsify {
         }
     }
 
-    /// FALSIFY-BLR-001-prop: Predictions are finite for random data
+    // FALSIFY-BLR-001-prop: Predictions are finite for random data
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

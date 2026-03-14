@@ -100,7 +100,7 @@ mod silu_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SI-002-prop: SiLU(x) > -0.28 for random x
+    // FALSIFY-SI-002-prop: SiLU(x) > -0.28 for random x
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -117,7 +117,7 @@ mod silu_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SI-005-prop: Tensor matches scalar for random values
+    // FALSIFY-SI-005-prop: Tensor matches scalar for random values
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

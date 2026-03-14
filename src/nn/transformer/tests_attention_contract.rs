@@ -187,7 +187,7 @@ mod att_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-ATT-001-prop: Weight normalization for random Q/K
+    // FALSIFY-ATT-001-prop: Weight normalization for random Q/K
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -223,7 +223,7 @@ mod att_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ATT-005-prop: Weights bounded in (0, 1)
+    // FALSIFY-ATT-005-prop: Weights bounded in (0, 1)
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
@@ -256,7 +256,7 @@ mod att_proptest_falsify {
         }
     }
 
-    /// FALSIFY-ATT-002-prop: Output convexity for random V
+    // FALSIFY-ATT-002-prop: Output convexity for random V
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 

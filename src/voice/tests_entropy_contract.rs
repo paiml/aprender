@@ -86,7 +86,7 @@ mod se_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SE-001-prop: Range bound [0, 1] for random magnitudes
+    // FALSIFY-SE-001-prop: Range bound [0, 1] for random magnitudes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -108,7 +108,7 @@ mod se_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SE-003-prop: Peaked < uniform for random sizes
+    // FALSIFY-SE-003-prop: Peaked < uniform for random sizes
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(20))]
 

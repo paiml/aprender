@@ -117,7 +117,7 @@ mod gbm_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-GBM-002-prop: Prediction count matches input count
+    // FALSIFY-GBM-002-prop: Prediction count matches input count
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 
@@ -156,7 +156,7 @@ mod gbm_proptest_falsify {
         }
     }
 
-    /// FALSIFY-GBM-001-prop: Predictions in valid label range
+    // FALSIFY-GBM-001-prop: Predictions in valid label range
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(10))]
 

@@ -59,7 +59,7 @@ fn build_synthetic_gguf_with_tensor(
 
     // Alignment padding
     let padding = padding_for_alignment(data.len(), GGUF_DEFAULT_ALIGNMENT);
-    data.extend(std::iter::repeat(0u8).take(padding));
+    data.extend(std::iter::repeat_n(0u8, padding));
 
     // Tensor data
     data.extend_from_slice(tensor_data);
@@ -153,7 +153,7 @@ fn test_from_bytes_tensor_at_max_dims() {
 
     // Add alignment padding + tiny tensor data (1 element F32 = 4 bytes)
     let padding = padding_for_alignment(data.len(), GGUF_DEFAULT_ALIGNMENT);
-    data.extend(std::iter::repeat(0u8).take(padding));
+    data.extend(std::iter::repeat_n(0u8, padding));
     data.extend_from_slice(&1.0f32.to_le_bytes());
 
     let reader = GgufReader::from_bytes(data).expect("MAX_DIMS should be accepted");

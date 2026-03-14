@@ -113,7 +113,7 @@ mod bn_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-BN-001-prop: Training standardization — per-channel mean ≈ 0
+    // FALSIFY-BN-001-prop: Training standardization — per-channel mean ≈ 0
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -143,7 +143,7 @@ mod bn_proptest_falsify {
         }
     }
 
-    /// FALSIFY-BN-002-prop: Denominator safety — finite output for constant channels
+    // FALSIFY-BN-002-prop: Denominator safety — finite output for constant channels
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 

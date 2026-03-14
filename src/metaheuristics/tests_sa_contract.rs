@@ -70,7 +70,7 @@ mod sa_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-MH-005-prop: SA solution within bounds for random dims/seeds
+    // FALSIFY-MH-005-prop: SA solution within bounds for random dims/seeds
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 
@@ -94,7 +94,7 @@ mod sa_proptest_falsify {
         }
     }
 
-    /// FALSIFY-MH-006-prop: SA objective and solution finite for random seeds
+    // FALSIFY-MH-006-prop: SA objective and solution finite for random seeds
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(15))]
 

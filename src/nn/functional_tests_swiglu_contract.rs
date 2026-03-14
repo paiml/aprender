@@ -125,7 +125,7 @@ mod swiglu_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-SG-003-prop: Decomposition SwiGLU(x,g) = x * SiLU(g) for random inputs
+    // FALSIFY-SG-003-prop: Decomposition SwiGLU(x,g) = x * SiLU(g) for random inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 
@@ -144,7 +144,7 @@ mod swiglu_proptest_falsify {
         }
     }
 
-    /// FALSIFY-SG-004-prop: Finite output for random inputs
+    // FALSIFY-SG-004-prop: Finite output for random inputs
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(50))]
 

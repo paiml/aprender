@@ -21,7 +21,7 @@ fn main() {
         "sce",
     ];
     for name in &strategies {
-        let s: MergeStrategy = name.parse().unwrap();
+        let s: MergeStrategy = name.parse().expect("valid merge strategy name");
         println!("  {:15} → {:?} (supported: {})", name, s, s.is_supported());
     }
 
@@ -45,7 +45,7 @@ fn main() {
     println!(
         "  Strategy: {:?}, t={:.1}",
         opts.strategy,
-        opts.weights.as_ref().unwrap()[0]
+        opts.weights.as_ref().expect("weights should be set")[0]
     );
     println!("  Uses nlerp fallback for near-parallel vectors (faster)");
 

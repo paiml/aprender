@@ -86,7 +86,7 @@ proptest! {
     ) {
         // String of repeated single character
         let c = (b'a' + c_idx) as char;
-        let text: String = std::iter::repeat(c).take(n).collect();
+        let text: String = std::iter::repeat_n(c, n).collect();
         prop_assert!(
             is_garbage(&text),
             "repeated '{}' x {} not detected as garbage", c, n

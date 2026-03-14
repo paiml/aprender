@@ -165,7 +165,7 @@ mod voice_emb_proptest_falsify {
     use super::*;
     use proptest::prelude::*;
 
-    /// FALSIFY-EMB-002-prop: Cosine self-similarity = 1.0 for random vectors
+    // FALSIFY-EMB-002-prop: Cosine self-similarity = 1.0 for random vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
@@ -187,7 +187,7 @@ mod voice_emb_proptest_falsify {
         }
     }
 
-    /// FALSIFY-EMB-005-prop: Normalize produces unit norm for random vectors
+    // FALSIFY-EMB-005-prop: Normalize produces unit norm for random vectors
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(30))]
 
