@@ -9,7 +9,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     let result = match ext {
         #[cfg(feature = "training")]
         ExtendedCommands::Monitor {
-            dir, refresh_ms, compact, json, format,
+            dir,
+            refresh_ms,
+            compact,
+            json,
+            format,
         } => commands::monitor::run(dir.as_deref(), *refresh_ms, *compact, *json, format),
 
         #[cfg(feature = "training")]
@@ -18,78 +22,179 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ExtendedCommands::Experiment { command } => dispatch_experiment_command(command, cli),
 
         ExtendedCommands::Cbtop {
-            model, attach, model_path, headless, json, output, ci,
-            throughput, brick_score, warmup, iterations, speculative,
-            speculation_k, draft_model, concurrent, simulated,
+            model,
+            attach,
+            model_path,
+            headless,
+            json,
+            output,
+            ci,
+            throughput,
+            brick_score,
+            warmup,
+            iterations,
+            speculative,
+            speculation_k,
+            draft_model,
+            concurrent,
+            simulated,
         } => dispatch_cbtop(
-            model.as_deref(), attach.as_deref(), model_path.as_deref(),
-            *headless, *json, output.as_deref(), *ci, *throughput, *brick_score,
-            *warmup, *iterations, *speculative, *speculation_k,
-            draft_model.as_deref(), *concurrent, *simulated,
+            model.as_deref(),
+            attach.as_deref(),
+            model_path.as_deref(),
+            *headless,
+            *json,
+            output.as_deref(),
+            *ci,
+            *throughput,
+            *brick_score,
+            *warmup,
+            *iterations,
+            *speculative,
+            *speculation_k,
+            draft_model.as_deref(),
+            *concurrent,
+            *simulated,
         ),
 
-        ExtendedCommands::Probar { file, output, format, golden, layer } => {
-            crate::error::resolve_model_path(file).and_then(|r| {
-                probar::run(
-                    &r, output, format.parse().unwrap_or(probar::ExportFormat::Both),
-                    golden.as_deref(), layer.as_deref(),
-                )
-            })
-        }
+        ExtendedCommands::Probar {
+            file,
+            output,
+            format,
+            golden,
+            layer,
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            probar::run(
+                &r,
+                output,
+                format.parse().unwrap_or(probar::ExportFormat::Both),
+                golden.as_deref(),
+                layer.as_deref(),
+            )
+        }),
 
-        ExtendedCommands::CompareHf { file, hf, tensor, threshold, json } => {
-            crate::error::resolve_model_path(file).and_then(|r| {
-                compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
-            })
-        }
+        ExtendedCommands::CompareHf {
+            file,
+            hf,
+            tensor,
+            threshold,
+            json,
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
+        }),
 
         ExtendedCommands::Hex {
-            file, tensor, limit, stats, list, json, header, blocks,
-            distribution, contract, entropy, raw, offset, width, slice,
-        } => {
-            crate::error::resolve_model_path(file).and_then(|r| {
-                dispatch_hex(
-                    &r, tensor.as_deref(), *limit, *stats, *list, *json || cli.json,
-                    *header, *blocks, *distribution, *contract, *entropy, *raw,
-                    offset, *width, slice.as_deref(),
-                )
-            })
-        }
+            file,
+            tensor,
+            limit,
+            stats,
+            list,
+            json,
+            header,
+            blocks,
+            distribution,
+            contract,
+            entropy,
+            raw,
+            offset,
+            width,
+            slice,
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            dispatch_hex(
+                &r,
+                tensor.as_deref(),
+                *limit,
+                *stats,
+                *list,
+                *json || cli.json,
+                *header,
+                *blocks,
+                *distribution,
+                *contract,
+                *entropy,
+                *raw,
+                offset,
+                *width,
+                slice.as_deref(),
+            )
+        }),
 
-        ExtendedCommands::Tree { file, filter, format, sizes, depth } => {
-            crate::error::resolve_model_path(file).and_then(|resolved| {
-                let tree_format = if cli.json {
-                    tree::TreeFormat::Json
-                } else {
-                    format.parse().unwrap_or(tree::TreeFormat::Ascii)
-                };
-                tree::run(&resolved, filter.as_deref(), tree_format, *sizes, *depth)
-            })
-        }
+        ExtendedCommands::Tree {
+            file,
+            filter,
+            format,
+            sizes,
+            depth,
+        } => crate::error::resolve_model_path(file).and_then(|resolved| {
+            let tree_format = if cli.json {
+                tree::TreeFormat::Json
+            } else {
+                format.parse().unwrap_or(tree::TreeFormat::Ascii)
+            };
+            tree::run(&resolved, filter.as_deref(), tree_format, *sizes, *depth)
+        }),
 
-        ExtendedCommands::Flow { file, layer, component, verbose, json } => {
-            crate::error::resolve_model_path(file).and_then(|resolved| {
-                flow::run(
-                    &resolved, layer.as_deref(), component.parse().unwrap_or(flow::FlowComponent::Full),
-                    *verbose || cli.verbose, *json || cli.json,
-                )
-            })
-        }
+        ExtendedCommands::Flow {
+            file,
+            layer,
+            component,
+            verbose,
+            json,
+        } => crate::error::resolve_model_path(file).and_then(|resolved| {
+            flow::run(
+                &resolved,
+                layer.as_deref(),
+                component.parse().unwrap_or(flow::FlowComponent::Full),
+                *verbose || cli.verbose,
+                *json || cli.json,
+            )
+        }),
 
-        ExtendedCommands::Qualify { file, tier, timeout, json, verbose, skip } => {
-            crate::error::resolve_model_path(file).and_then(|resolved| {
-                qualify::run(
-                    &resolved, tier, *timeout, *json || cli.json, *verbose || cli.verbose, skip.as_deref(),
-                )
-            })
-        }
+        ExtendedCommands::Qualify {
+            file,
+            tier,
+            timeout,
+            json,
+            verbose,
+            skip,
+        } => crate::error::resolve_model_path(file).and_then(|resolved| {
+            qualify::run(
+                &resolved,
+                tier,
+                *timeout,
+                *json || cli.json,
+                *verbose || cli.verbose,
+                skip.as_deref(),
+            )
+        }),
 
         ExtendedCommands::Tools(ToolCommands::Oracle {
-            source, family, size, compliance, tensors, stats, explain, kernels, validate, full,
+            source,
+            family,
+            size,
+            compliance,
+            tensors,
+            stats,
+            explain,
+            kernels,
+            validate,
+            full,
         }) => oracle::run(
-            source.as_ref(), family.as_ref(), size.as_ref(), *compliance, *tensors,
-            cli.json, cli.verbose, cli.offline,
-            oracle::OracleFlags { stats: *stats, explain: *explain, kernels: *kernels, validate: *validate, full: *full },
+            source.as_ref(),
+            family.as_ref(),
+            size.as_ref(),
+            *compliance,
+            *tensors,
+            cli.json,
+            cli.verbose,
+            cli.offline,
+            oracle::OracleFlags {
+                stats: *stats,
+                explain: *explain,
+                kernels: *kernels,
+                validate: *validate,
+                full: *full,
+            },
         ),
 
         #[cfg(feature = "training")]
@@ -98,8 +203,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
         ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
 
-        ExtendedCommands::Diagnose { checkpoint_dir, data, model_size, num_classes } => diagnose::run(
-            checkpoint_dir, data.as_deref(), model_size.as_deref(), *num_classes, cli.json,
+        ExtendedCommands::Diagnose {
+            checkpoint_dir,
+            data,
+            model_size,
+            num_classes,
+        } => diagnose::run(
+            checkpoint_dir,
+            data.as_deref(),
+            model_size.as_deref(),
+            *num_classes,
+            cli.json,
         ),
 
         _ => return None,
@@ -111,21 +225,39 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Dispatch `apr runs` subcommands.
 fn dispatch_runs_command(command: &RunsCommands) -> std::result::Result<(), CliError> {
     match command {
-        RunsCommands::Ls { dir, global, status, json, limit } =>
-            commands::runs::run_ls(dir, *global, status, *json, *limit),
-        RunsCommands::Show { run_id, dir, global, json } =>
-            commands::runs::run_show(run_id, dir, *global, *json),
-        RunsCommands::Diff { run_a, run_b, dir, global, json } =>
-            commands::runs::run_diff(run_a, run_b, dir, *global, *json),
+        RunsCommands::Ls {
+            dir,
+            global,
+            status,
+            json,
+            limit,
+        } => commands::runs::run_ls(dir, *global, status, *json, *limit),
+        RunsCommands::Show {
+            run_id,
+            dir,
+            global,
+            json,
+        } => commands::runs::run_show(run_id, dir, *global, *json),
+        RunsCommands::Diff {
+            run_a,
+            run_b,
+            dir,
+            global,
+            json,
+        } => commands::runs::run_diff(run_a, run_b, dir, *global, *json),
     }
 }
 
 #[cfg(feature = "training")]
 /// Dispatch `apr experiment` subcommands.
-fn dispatch_experiment_command(command: &ExperimentCommands, cli: &Cli) -> std::result::Result<(), CliError> {
+fn dispatch_experiment_command(
+    command: &ExperimentCommands,
+    cli: &Cli,
+) -> std::result::Result<(), CliError> {
     match command {
-        ExperimentCommands::View { db, global, json } =>
-            commands::experiment::experiment_view(db, *global, *json || cli.json),
+        ExperimentCommands::View { db, global, json } => {
+            commands::experiment::experiment_view(db, *global, *json || cli.json)
+        }
     }
 }
 
@@ -154,16 +286,7 @@ fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Res
             label_column,
             seed,
             output,
-        } => data::run_split(
-            file,
-            label_column,
-            *train,
-            *val,
-            *test,
-            *seed,
-            output,
-            json,
-        ),
+        } => data::run_split(file, label_column, *train, *val, *test, *seed, output, json),
         DataCommands::Balance {
             file,
             strategy,
@@ -298,14 +421,7 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             num_configs,
             output_dir,
             seed,
-        } => train::run_sweep(
-            config,
-            strategy,
-            *num_configs,
-            output_dir,
-            *seed,
-            cli.json,
-        ),
+        } => train::run_sweep(config, strategy, *num_configs, output_dir, *seed, cli.json),
         TrainCommands::Archive {
             checkpoint_dir,
             output,
@@ -327,18 +443,9 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             budget_mb,
             dry_run,
         } => train::run_submit(
-            cluster,
-            model,
-            adapters,
-            *rank,
-            *epochs,
-            *budget_mb,
-            *dry_run,
-            cli.json,
+            cluster, model, adapters, *rank, *epochs, *budget_mb, *dry_run, cli.json,
         ),
-        TrainCommands::ClusterStatus { cluster } => {
-            train::run_cluster_status(cluster, cli.json)
-        }
+        TrainCommands::ClusterStatus { cluster } => train::run_cluster_status(cluster, cli.json),
     }
 }
 
@@ -429,14 +536,30 @@ fn dispatch_tune_command(
 ) -> std::result::Result<(), CliError> {
     if task == Some("classify") {
         tune::run_classify_tune(
-            file, budget, strategy, scheduler, scout,
-            data.or(train_data), num_classes, model_size.or(model),
-            from_scout, max_epochs, time_limit, json,
+            file,
+            budget,
+            strategy,
+            scheduler,
+            scout,
+            data.or(train_data),
+            num_classes,
+            model_size.or(model),
+            from_scout,
+            max_epochs,
+            time_limit,
+            json,
         )
     } else {
         tune::run(
-            file, method.parse().unwrap_or(tune::TuneMethod::Auto),
-            rank, vram, plan, model_size.or(model), freeze_base, train_data, json,
+            file,
+            method.parse().unwrap_or(tune::TuneMethod::Auto),
+            rank,
+            vram,
+            plan,
+            model_size.or(model),
+            freeze_base,
+            train_data,
+            json,
         )
     }
 }
@@ -541,13 +664,9 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *generate_card,
                 cli.json,
             ),
-            Some("code") => eval::run_code_eval(
-                file,
-                data.as_deref(),
-                *max_tokens,
-                *threshold,
-                cli.json,
-            ),
+            Some("code") => {
+                eval::run_code_eval(file, data.as_deref(), *max_tokens, *threshold, cli.json)
+            }
             Some("humaneval") => eval::run_humaneval(
                 file,
                 data.as_deref(),
@@ -566,33 +685,13 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 *samples,
                 *temperature,
             ),
-            Some("contamination") => eval::run_contamination(
-                file,
-                data.as_deref(),
-                None,
-                *threshold / 100.0,
-                cli.json,
-            ),
-            Some("compare") => eval::run_compare(
-                file,
-                data.as_deref(),
-                None,
-                cli.json,
-            ),
-            Some("verify") => eval::run_verify(
-                file,
-                cli.json,
-            ),
-            Some("correlation") => eval::run_correlation(
-                file,
-                data.as_deref(),
-                cli.json,
-            ),
-            Some("human") => eval::run_human_eval(
-                file,
-                data.as_deref(),
-                cli.json,
-            ),
+            Some("contamination") => {
+                eval::run_contamination(file, data.as_deref(), None, *threshold / 100.0, cli.json)
+            }
+            Some("compare") => eval::run_compare(file, data.as_deref(), None, cli.json),
+            Some("verify") => eval::run_verify(file, cli.json),
+            Some("correlation") => eval::run_correlation(file, data.as_deref(), cli.json),
+            Some("human") => eval::run_human_eval(file, data.as_deref(), cli.json),
             Some("plan") => eval::run_eval_plan(
                 file,
                 dataset,
@@ -609,7 +708,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 Some(*threshold),
                 cli.json,
             ),
-        }
+        },
 
         ExtendedCommands::Qa {
             file,
@@ -703,15 +802,47 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         #[cfg(feature = "training")]
         ExtendedCommands::Tune {
-            file, method, rank, vram, plan, model, freeze_base, train_data,
-            json, task, budget, strategy, scheduler, scout, data, num_classes,
-            model_size, from_scout, max_epochs, time_limit,
+            file,
+            method,
+            rank,
+            vram,
+            plan,
+            model,
+            freeze_base,
+            train_data,
+            json,
+            task,
+            budget,
+            strategy,
+            scheduler,
+            scout,
+            data,
+            num_classes,
+            model_size,
+            from_scout,
+            max_epochs,
+            time_limit,
         } => dispatch_tune_command(
-            file.as_deref(), method, *rank, *vram, *plan, model.as_deref(),
-            *freeze_base, train_data.as_deref(), *json || cli.json,
-            task.as_deref(), *budget, strategy, scheduler, *scout,
-            data.as_deref(), *num_classes, model_size.as_deref(),
-            from_scout.as_deref(), *max_epochs, time_limit.as_deref(),
+            file.as_deref(),
+            method,
+            *rank,
+            *vram,
+            *plan,
+            model.as_deref(),
+            *freeze_base,
+            train_data.as_deref(),
+            *json || cli.json,
+            task.as_deref(),
+            *budget,
+            strategy,
+            scheduler,
+            *scout,
+            data.as_deref(),
+            *num_classes,
+            model_size.as_deref(),
+            from_scout.as_deref(),
+            *max_epochs,
+            time_limit.as_deref(),
         ),
 
         _ => return None,
@@ -796,7 +927,9 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *quiet,
         ),
 
-        ExtendedCommands::Tools(ToolCommands::Rosetta { action }) => dispatch_rosetta(action, cli.json),
+        ExtendedCommands::Tools(ToolCommands::Rosetta { action }) => {
+            dispatch_rosetta(action, cli.json)
+        }
 
         ExtendedCommands::Tools(ToolCommands::Publish {
             directory,
@@ -826,31 +959,15 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             file,
             output,
             key_file,
-        }) => {
-            crate::error::resolve_model_path(file).and_then(|r| {
-                eval::run_encrypt(
-                    &r,
-                    output,
-                    key_file.as_deref(),
-                    cli.json,
-                )
-            })
-        }
+        }) => crate::error::resolve_model_path(file)
+            .and_then(|r| eval::run_encrypt(&r, output, key_file.as_deref(), cli.json)),
 
         ExtendedCommands::Tools(ToolCommands::Decrypt {
             file,
             output,
             key_file,
-        }) => {
-            crate::error::resolve_model_path(file).and_then(|r| {
-                eval::run_decrypt(
-                    &r,
-                    output,
-                    key_file.as_deref(),
-                    cli.json,
-                )
-            })
-        }
+        }) => crate::error::resolve_model_path(file)
+            .and_then(|r| eval::run_decrypt(&r, output, key_file.as_deref(), cli.json)),
 
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),
