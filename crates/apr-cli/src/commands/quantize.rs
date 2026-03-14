@@ -309,10 +309,18 @@ fn run_batch(
         .collect::<Result<Vec<_>>>()?;
 
     ensure_output_dir(output_dir)?;
-    print_batch_header(file, &scheme_list, output_dir, json_output);
 
     let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("apr");
+
+    // GH-482: Check overwrite protection for all output files before processing
+    for scheme_name in &scheme_list {
+        let output_file = output_dir.join(format!("{stem}-{scheme_name}.{ext}"));
+        check_overwrite_protection(&output_file, force)?;
+    }
+
+    print_batch_header(file, &scheme_list, output_dir, json_output);
+
     let mut results = Vec::new();
 
     for (scheme_name, scheme) in scheme_list.iter().zip(parsed.iter()) {

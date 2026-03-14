@@ -251,7 +251,14 @@ fn patch_yaml_config(
         }
     }
 
-    let temp_path = std::env::temp_dir().join("apr-patched-config.yaml");
+    let temp_path = std::env::temp_dir().join(format!(
+        "apr-patched-config-{}-{}.yaml",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
     let patched_yaml = serde_yaml::to_string(&yaml_val)
         .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
     std::fs::write(&temp_path, &patched_yaml)

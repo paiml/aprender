@@ -119,20 +119,22 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             trace,
             trace_level,
             profile,
-        } => dispatch_serve(
-            file,
-            *port,
-            host,
-            *no_cors,
-            *no_metrics,
-            *no_gpu,
-            *gpu,
-            *batch,
-            *trace,
-            trace_level,
-            *profile,
-            cli.verbose,
-        ),
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            dispatch_serve(
+                &r,
+                *port,
+                host,
+                *no_cors,
+                *no_metrics,
+                *no_gpu,
+                *gpu,
+                *batch,
+                *trace,
+                trace_level,
+                *profile,
+                cli.verbose,
+            )
+        }),
     }
 }
 
