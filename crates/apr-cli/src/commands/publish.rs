@@ -12,9 +12,11 @@
 
 use crate::error::CliError;
 use aprender::format::model_card::ModelCard;
+#[cfg(feature = "hf-hub")]
 use aprender::hf_hub::{HfHubClient, PushOptions, UploadProgress};
 use std::fs;
 use std::path::Path;
+#[cfg(feature = "hf-hub")]
 use std::sync::Arc;
 
 /// Validate publish inputs: repo ID format, directory exists, model files found.
@@ -45,6 +47,7 @@ fn validate_publish_inputs(
 }
 
 /// Upload model files and README to HuggingFace Hub.
+#[cfg(feature = "hf-hub")]
 fn upload_to_hub(
     client: &HfHubClient,
     repo_id: &str,
@@ -156,39 +159,53 @@ pub fn execute(
         return Ok(());
     }
 
-    let client = HfHubClient::new()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create HF Hub client: {e}")))?;
-
-    if !client.is_authenticated() {
+    #[cfg(not(feature = "hf-hub"))]
+    {
+        let _ = (commit_message, verbose);
         return Err(CliError::ValidationFailed(
-            "HF_TOKEN environment variable not set. Set it with: export HF_TOKEN=hf_...".into(),
+            "Publishing requires the 'hf-hub' feature. Rebuild with: \
+             cargo install --path crates/apr-cli --features hf-hub"
+                .to_string(),
         ));
     }
 
-    let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
+    #[cfg(feature = "hf-hub")]
+    {
+        let client = HfHubClient::new().map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to create HF Hub client: {e}"))
+        })?;
 
-    println!("Publishing to https://huggingface.co/{}", repo_id);
-    let total_size: u64 = files
-        .iter()
-        .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
-        .sum::<u64>()
-        + readme_content.len() as u64;
-    println!(
-        "Total upload size: {:.1} MB",
-        total_size as f64 / 1_000_000.0
-    );
+        if !client.is_authenticated() {
+            return Err(CliError::ValidationFailed(
+                "HF_TOKEN environment variable not set. Set it with: export HF_TOKEN=hf_...".into(),
+            ));
+        }
 
-    upload_to_hub(
-        &client,
-        repo_id,
-        &files,
-        &readme_content,
-        commit_msg,
-        verbose,
-    )?;
+        let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
 
-    println!("\n✓ Published to https://huggingface.co/{}", repo_id);
-    Ok(())
+        println!("Publishing to https://huggingface.co/{}", repo_id);
+        let total_size: u64 = files
+            .iter()
+            .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
+            .sum::<u64>()
+            + readme_content.len() as u64;
+        println!(
+            "Total upload size: {:.1} MB",
+            total_size as f64 / 1_000_000.0
+        );
+
+        upload_to_hub(
+            &client,
+            repo_id,
+            &files,
+            &readme_content,
+            commit_msg,
+            verbose,
+        )?;
+
+        println!("\n✓ Published to https://huggingface.co/{}", repo_id);
+        Ok(())
+    }
 }
 
 /// Find model files in directory

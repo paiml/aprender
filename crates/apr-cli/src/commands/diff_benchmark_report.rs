@@ -166,27 +166,30 @@ pub(crate) fn run_ci(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    #[cfg(feature = "inference")]
-    let results = profile_real_inference_cpu(path, warmup, measure)?;
-
     #[cfg(not(feature = "inference"))]
     {
+        let _ = (format, assertions, warmup, measure);
         output::warn("Inference feature not enabled. Cannot run CI profiling.");
         return Err(CliError::ValidationFailed(
             "Requires --features inference".to_string(),
         ));
     }
 
-    // Build CI report with assertion checks
-    let report = CiProfileReport::from_results(&results, assertions);
+    #[cfg(feature = "inference")]
+    {
+        let results = profile_real_inference_cpu(path, warmup, measure)?;
 
-    // Output based on format
-    match format {
-        OutputFormat::Json => report.print_json(),
-        _ => report.print_human(),
+        // Build CI report with assertion checks
+        let report = CiProfileReport::from_results(&results, assertions);
+
+        // Output based on format
+        match format {
+            OutputFormat::Json => report.print_json(),
+            _ => report.print_human(),
+        }
+
+        Ok(report.passed)
     }
-
-    Ok(report.passed)
 }
 
 // ============================================================================

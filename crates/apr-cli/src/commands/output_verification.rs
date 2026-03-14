@@ -210,7 +210,20 @@ fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
         ))
     } else {
         // SafeTensors or unknown format: try to load config.json from sibling (GAP-UX-002)
-        if let Some(config_path) = realizar::safetensors::find_sibling_file(path, "config.json") {
+        let config_path = {
+            #[cfg(feature = "inference")]
+            {
+                realizar::safetensors::find_sibling_file(path, "config.json")
+            }
+            #[cfg(not(feature = "inference"))]
+            {
+                // Without realizar, manually look for sibling config.json
+                path.parent()
+                    .map(|dir| dir.join("config.json"))
+                    .filter(|p| p.exists())
+            }
+        };
+        if let Some(config_path) = config_path {
             // Read architecture and rope_theta from HF config.json
             let config_str = std::fs::read_to_string(&config_path)
                 .map_err(|e| CliError::ValidationFailed(format!("config.json read failed: {e}")))?;

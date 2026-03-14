@@ -28,22 +28,33 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             draft_model.as_deref(), *concurrent, *simulated,
         ),
 
-        ExtendedCommands::Probar { file, output, format, golden, layer } => probar::run(
-            file, output, format.parse().unwrap_or(probar::ExportFormat::Both),
-            golden.as_deref(), layer.as_deref(),
-        ),
+        ExtendedCommands::Probar { file, output, format, golden, layer } => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                probar::run(
+                    &r, output, format.parse().unwrap_or(probar::ExportFormat::Both),
+                    golden.as_deref(), layer.as_deref(),
+                )
+            })
+        }
 
-        ExtendedCommands::CompareHf { file, hf, tensor, threshold, json } =>
-            compare_hf::run(file, hf, tensor.as_deref(), *threshold, *json || cli.json),
+        ExtendedCommands::CompareHf { file, hf, tensor, threshold, json } => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
+            })
+        }
 
         ExtendedCommands::Hex {
             file, tensor, limit, stats, list, json, header, blocks,
             distribution, contract, entropy, raw, offset, width, slice,
-        } => dispatch_hex(
-            file, tensor.as_deref(), *limit, *stats, *list, *json || cli.json,
-            *header, *blocks, *distribution, *contract, *entropy, *raw,
-            offset, *width, slice.as_deref(),
-        ),
+        } => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                dispatch_hex(
+                    &r, tensor.as_deref(), *limit, *stats, *list, *json || cli.json,
+                    *header, *blocks, *distribution, *contract, *entropy, *raw,
+                    offset, *width, slice.as_deref(),
+                )
+            })
+        }
 
         ExtendedCommands::Tree { file, filter, format, sizes, depth } => {
             crate::error::resolve_model_path(file).and_then(|resolved| {
@@ -815,23 +826,31 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             file,
             output,
             key_file,
-        }) => eval::run_encrypt(
-            file,
-            output,
-            key_file.as_deref(),
-            cli.json,
-        ),
+        }) => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                eval::run_encrypt(
+                    &r,
+                    output,
+                    key_file.as_deref(),
+                    cli.json,
+                )
+            })
+        }
 
         ExtendedCommands::Tools(ToolCommands::Decrypt {
             file,
             output,
             key_file,
-        }) => eval::run_decrypt(
-            file,
-            output,
-            key_file.as_deref(),
-            cli.json,
-        ),
+        }) => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                eval::run_decrypt(
+                    &r,
+                    output,
+                    key_file.as_deref(),
+                    cli.json,
+                )
+            })
+        }
 
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),

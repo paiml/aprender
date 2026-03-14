@@ -422,7 +422,17 @@ fn dispatch_profile(
         }
     } else if let Some(compare_path) = compare {
         // F-PROFILE-011: Cross-format performance comparison
-        profile::run_cross_format_comparison(file, compare_path, warmup, measure, tokens, no_gpu)
+        #[cfg(feature = "inference")]
+        {
+            profile::run_cross_format_comparison(file, compare_path, warmup, measure, tokens, no_gpu)
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            let _ = (compare_path, tokens, no_gpu);
+            Err(CliError::ValidationFailed(
+                "Cross-format comparison requires the 'inference' feature".to_string(),
+            ))
+        }
     } else {
         let profile_focus = focus
             .and_then(|f| f.parse().ok())

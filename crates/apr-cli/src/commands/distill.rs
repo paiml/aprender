@@ -1665,14 +1665,19 @@ fn run_text_generate(
 
         // POST to /generate endpoint (retry up to 3 times on server errors)
         let mut resp = None;
+        let request_body = serde_json::to_string(&serde_json::json!({
+            "prompt": prompt_text,
+            "max_tokens": config.teacher.max_tokens,
+            "temperature": config.teacher.temperature,
+            "strategy": "top_p",
+            "top_p": config.teacher.top_p,
+        }))
+        .expect("JSON serialization cannot fail");
         for retry in 0..3 {
-            match ureq::post(&generate_url).send_json(serde_json::json!({
-                "prompt": prompt_text,
-                "max_tokens": config.teacher.max_tokens,
-                "temperature": config.teacher.temperature,
-                "strategy": "top_p",
-                "top_p": config.teacher.top_p,
-            })) {
+            match ureq::post(&generate_url)
+                .set("Content-Type", "application/json")
+                .send_string(&request_body)
+            {
                 Ok(r) => {
                     resp = Some(r);
                     break;
@@ -1696,9 +1701,13 @@ fn run_text_generate(
             continue;
         };
 
-        let gen_result: serde_json::Value = resp
-            .into_json()
-            .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?;
+        let gen_result: serde_json::Value = {
+            let body = resp.into_string().map_err(|e| {
+                CliError::NetworkError(format!("Failed to read response body: {e}"))
+            })?;
+            serde_json::from_str(&body)
+                .map_err(|e| CliError::NetworkError(format!("Invalid generate response: {e}")))?
+        };
 
         let num_tokens = gen_result
             .get("num_generated")

@@ -69,84 +69,88 @@ pub(crate) fn run_diff_benchmark(
     output::section("Differential Benchmark (PMAT-192 Phase 4)");
     println!();
 
-    output::kv("Profiling Model A", model_a.display());
-    #[cfg(feature = "inference")]
-    let results_a = profile_real_inference_cpu(model_a, warmup, measure)?;
-
     #[cfg(not(feature = "inference"))]
-    return Err(CliError::ValidationFailed(
-        "Requires --features inference".to_string(),
-    ));
-
-    output::kv("Profiling Model B", model_b.display());
-    #[cfg(feature = "inference")]
-    let results_b = profile_real_inference_cpu(model_b, warmup, measure)?;
-
-    let throughput_delta = pct_change(results_a.throughput_tok_s, results_b.throughput_tok_s);
-    let latency_a_ms = results_a.total_inference_us / 1000.0;
-    let latency_b_ms = results_b.total_inference_us / 1000.0;
-    let latency_delta = pct_change(latency_a_ms, latency_b_ms);
-
-    let winner = match results_b
-        .throughput_tok_s
-        .partial_cmp(&results_a.throughput_tok_s)
     {
-        Some(std::cmp::Ordering::Greater) => {
-            format!("Model B ({:.1}% faster)", throughput_delta.abs())
-        }
-        Some(std::cmp::Ordering::Less) => {
-            format!("Model A ({:.1}% faster)", throughput_delta.abs())
-        }
-        _ => "Tie".to_string(),
-    };
-
-    let mut regressions = Vec::new();
-    let mut improvements = Vec::new();
-    let thresh_pct = regression_threshold * 100.0;
-
-    classify_metric(
-        "Throughput",
-        throughput_delta,
-        thresh_pct,
-        results_a.throughput_tok_s,
-        results_b.throughput_tok_s,
-        "tok/s",
-        true,
-        &mut regressions,
-        &mut improvements,
-    );
-    classify_metric(
-        "Latency",
-        latency_delta,
-        thresh_pct,
-        latency_a_ms,
-        latency_b_ms,
-        "ms",
-        false,
-        &mut regressions,
-        &mut improvements,
-    );
-
-    let report = DiffBenchmarkReport {
-        model_a: model_a.display().to_string(),
-        model_b: model_b.display().to_string(),
-        throughput_a: results_a.throughput_tok_s,
-        throughput_b: results_b.throughput_tok_s,
-        throughput_delta_pct: throughput_delta,
-        latency_a_ms,
-        latency_b_ms,
-        latency_delta_pct: latency_delta,
-        winner,
-        regressions: regressions.clone(),
-        improvements,
-    };
-
-    match format {
-        OutputFormat::Json => report.print_json(),
-        _ => report.print_human(),
+        let _ = (format, warmup, measure, regression_threshold);
+        return Err(CliError::ValidationFailed(
+            "Requires --features inference".to_string(),
+        ));
     }
 
-    Ok(regressions.is_empty())
+    #[cfg(feature = "inference")]
+    {
+        output::kv("Profiling Model A", model_a.display());
+        let results_a = profile_real_inference_cpu(model_a, warmup, measure)?;
+
+        output::kv("Profiling Model B", model_b.display());
+        let results_b = profile_real_inference_cpu(model_b, warmup, measure)?;
+
+        let throughput_delta = pct_change(results_a.throughput_tok_s, results_b.throughput_tok_s);
+        let latency_a_ms = results_a.total_inference_us / 1000.0;
+        let latency_b_ms = results_b.total_inference_us / 1000.0;
+        let latency_delta = pct_change(latency_a_ms, latency_b_ms);
+
+        let winner = match results_b
+            .throughput_tok_s
+            .partial_cmp(&results_a.throughput_tok_s)
+        {
+            Some(std::cmp::Ordering::Greater) => {
+                format!("Model B ({:.1}% faster)", throughput_delta.abs())
+            }
+            Some(std::cmp::Ordering::Less) => {
+                format!("Model A ({:.1}% faster)", throughput_delta.abs())
+            }
+            _ => "Tie".to_string(),
+        };
+
+        let mut regressions = Vec::new();
+        let mut improvements = Vec::new();
+        let thresh_pct = regression_threshold * 100.0;
+
+        classify_metric(
+            "Throughput",
+            throughput_delta,
+            thresh_pct,
+            results_a.throughput_tok_s,
+            results_b.throughput_tok_s,
+            "tok/s",
+            true,
+            &mut regressions,
+            &mut improvements,
+        );
+        classify_metric(
+            "Latency",
+            latency_delta,
+            thresh_pct,
+            latency_a_ms,
+            latency_b_ms,
+            "ms",
+            false,
+            &mut regressions,
+            &mut improvements,
+        );
+
+        let report = DiffBenchmarkReport {
+            model_a: model_a.display().to_string(),
+            model_b: model_b.display().to_string(),
+            throughput_a: results_a.throughput_tok_s,
+            throughput_b: results_b.throughput_tok_s,
+            throughput_delta_pct: throughput_delta,
+            latency_a_ms,
+            latency_b_ms,
+            latency_delta_pct: latency_delta,
+            winner,
+            regressions: regressions.clone(),
+            improvements,
+        };
+
+        match format {
+            OutputFormat::Json => report.print_json(),
+            _ => report.print_human(),
+        }
+
+        Ok(regressions.is_empty())
+    }
 }
 
 /// Return focus-area keywords, or `None` for `All` (no filtering).

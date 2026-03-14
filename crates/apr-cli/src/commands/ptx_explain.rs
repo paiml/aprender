@@ -234,6 +234,7 @@ fn run_json(ptx: &str, strict: bool, bugs_only: bool) -> Result<()> {
 ///
 /// Uses Qwen2 7B dimensions by default (hidden=3584, intermediate=18944,
 /// heads=28, head_dim=128). These can be overridden with a model file.
+#[cfg(feature = "inference")]
 fn generate_kernel_ptx(name: &str) -> Result<String> {
     use realizar::ptx_parity::{generate_named_kernel_ptx, KernelDimensions};
 
@@ -253,6 +254,13 @@ fn generate_kernel_ptx(name: &str) -> Result<String> {
         ))
     })?;
     Ok(ptx)
+}
+
+#[cfg(not(feature = "inference"))]
+fn generate_kernel_ptx(_name: &str) -> Result<String> {
+    Err(crate::error::CliError::ValidationFailed(
+        "Kernel PTX generation requires the 'inference' feature (realizar)".to_string(),
+    ))
 }
 
 #[cfg(test)]

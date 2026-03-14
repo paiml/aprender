@@ -368,9 +368,14 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         _ => CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")),
     })?;
 
-    let body: serde_json::Value = response.into_json().map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {e}"))
-    })?;
+    let body: serde_json::Value = {
+        let text = response.into_string().map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to read HuggingFace response: {e}"))
+        })?;
+        serde_json::from_str(&text).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {e}"))
+        })?
+    };
 
     let siblings = body["siblings"]
         .as_array()

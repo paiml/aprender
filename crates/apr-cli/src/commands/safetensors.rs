@@ -89,6 +89,7 @@ fn setup_safetensors_tracer(
     Some(t)
 }
 
+#[cfg(feature = "inference")]
 fn execute_safetensors_inference(
     model_path: &Path,
     input_path: Option<&PathBuf>,

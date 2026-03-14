@@ -63,7 +63,7 @@ name = "apr"
 path = "src/main.rs"
 
 [features]
-default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training"]
+default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu"]
 hf-hub = ["aprender/hf-hub-integration"]
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
@@ -72,6 +72,7 @@ cuda-batch = ["cuda"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora"]
+training-gpu = ["training", "entrenar/cuda", "entrenar/gpu"]
 dhat-heap = ["dep:dhat"]
 
 [dependencies]
@@ -156,7 +157,7 @@ trueno-explain = "0.2.2"
 entrenar-lora = { version = "0.3.0", optional = true }
 # ML training engine: classification fine-tuning pipeline (--task classify)
 # ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
-entrenar = { version = "0.7.3", optional = true, features = ["cuda", "gpu", "parquet"] }
+entrenar = { version = "0.7.3", optional = true, features = ["parquet"] }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)

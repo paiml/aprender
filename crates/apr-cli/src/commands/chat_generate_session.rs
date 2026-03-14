@@ -152,14 +152,8 @@ fn process_repl_input_fallback(
     session: &mut ChatSession,
     config: &ChatConfig,
 ) -> Result<bool, CliError> {
-    if input.starts_with('/') {
-        match handle_command(input, &mut session.history)? {
-            CommandResult::Continue => return Ok(false),
-            CommandResult::Quit => return Ok(true),
-        }
-    }
-    generate_and_print_fallback(session, input, config);
-    Ok(false)
+    let _ = (input, session, config);
+    unreachable!("ChatSession::new always returns Err without inference feature")
 }
 
 #[cfg(not(feature = "inference"))]
@@ -181,15 +175,8 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
 
 /// Generate a response, update history, and print (fallback mode).
 #[cfg(not(feature = "inference"))]
-fn generate_and_print_fallback(session: &mut ChatSession, input: &str, config: &ChatConfig) {
-    let response = session.generate(input, config);
-    session.history.push(format!("user: {input}"));
-    session.history.push(format!("assistant: {response}"));
-    println!("{} {}", "Assistant:".blue().bold(), response);
-    if config.inspect {
-        print_inspection_info(session);
-    }
-    println!();
+fn generate_and_print_fallback(_session: &mut ChatSession, _input: &str, _config: &ChatConfig) {
+    unreachable!("ChatSession::new always returns Err without inference feature")
 }
 
 enum CommandResult {
@@ -198,63 +185,13 @@ enum CommandResult {
 }
 
 #[cfg(not(feature = "inference"))]
-fn handle_command(input: &str, history: &mut Vec<String>) -> Result<CommandResult, CliError> {
-    let parts: Vec<&str> = input.splitn(2, ' ').collect();
-    let cmd = parts[0].to_lowercase();
-
-    match cmd.as_str() {
-        "/quit" | "/exit" | "/q" => {
-            return Ok(CommandResult::Quit);
-        }
-        "/clear" => {
-            history.clear();
-            println!("{}", "Conversation cleared.".yellow());
-        }
-        "/system" => {
-            if parts.len() > 1 {
-                println!("{} {}", "System prompt set:".yellow(), parts[1]);
-            } else {
-                println!("{}", "Usage: /system <prompt>".yellow());
-            }
-        }
-        "/help" | "/h" | "/?" => {
-            println!();
-            println!("{}", "Commands:".white().bold());
-            println!("  /quit, /exit, /q   Exit the chat");
-            println!("  /clear             Clear conversation history");
-            println!("  /system <prompt>   Set system prompt");
-            println!("  /help, /h, /?      Show this help");
-            println!();
-        }
-        _ => {
-            println!("{} {}", "Unknown command:".red(), cmd);
-        }
-    }
-
-    Ok(CommandResult::Continue)
+fn handle_command(_input: &str, _history: &mut Vec<String>) -> Result<CommandResult, CliError> {
+    unreachable!("ChatSession::new always returns Err without inference feature")
 }
 
 #[cfg(not(feature = "inference"))]
-fn print_inspection_info(session: &ChatSession) {
-    println!();
-    println!("{}", "[DEBUG] Session info:".dimmed());
-    println!(
-        "{}",
-        format!(
-            "  Model: {} layers, {} params",
-            session.model.num_layers(),
-            format_params(session.model.num_parameters())
-        )
-        .dimmed()
-    );
-    println!(
-        "{}",
-        format!("  History: {} messages", session.history.len()).dimmed()
-    );
-    println!(
-        "{}",
-        format!("  Vocab: {} tokens", session.tokenizer.vocab_size()).dimmed()
-    );
+fn print_inspection_info(_session: &ChatSession) {
+    unreachable!("ChatSession::new always returns Err without inference feature")
 }
 
 /// Display top-k token probabilities (spec E1)
