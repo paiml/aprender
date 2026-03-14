@@ -46,22 +46,32 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         ),
 
         ExtendedCommands::Tree { file, filter, format, sizes, depth } => {
-            let tree_format = if cli.json {
-                tree::TreeFormat::Json
-            } else {
-                format.parse().unwrap_or(tree::TreeFormat::Ascii)
-            };
-            tree::run(file, filter.as_deref(), tree_format, *sizes, *depth)
+            crate::error::resolve_model_path(file).and_then(|resolved| {
+                let tree_format = if cli.json {
+                    tree::TreeFormat::Json
+                } else {
+                    format.parse().unwrap_or(tree::TreeFormat::Ascii)
+                };
+                tree::run(&resolved, filter.as_deref(), tree_format, *sizes, *depth)
+            })
         }
 
-        ExtendedCommands::Flow { file, layer, component, verbose, json } => flow::run(
-            file, layer.as_deref(), component.parse().unwrap_or(flow::FlowComponent::Full),
-            *verbose || cli.verbose, *json || cli.json,
-        ),
+        ExtendedCommands::Flow { file, layer, component, verbose, json } => {
+            crate::error::resolve_model_path(file).and_then(|resolved| {
+                flow::run(
+                    &resolved, layer.as_deref(), component.parse().unwrap_or(flow::FlowComponent::Full),
+                    *verbose || cli.verbose, *json || cli.json,
+                )
+            })
+        }
 
-        ExtendedCommands::Qualify { file, tier, timeout, json, verbose, skip } => qualify::run(
-            file, tier, *timeout, *json || cli.json, *verbose || cli.verbose, skip.as_deref(),
-        ),
+        ExtendedCommands::Qualify { file, tier, timeout, json, verbose, skip } => {
+            crate::error::resolve_model_path(file).and_then(|resolved| {
+                qualify::run(
+                    &resolved, tier, *timeout, *json || cli.json, *verbose || cli.verbose, skip.as_deref(),
+                )
+            })
+        }
 
         ExtendedCommands::Tools(ToolCommands::Oracle {
             source, family, size, compliance, tensors, stats, explain, kernels, validate, full,
@@ -415,7 +425,7 @@ fn dispatch_tune_command(
     } else {
         tune::run(
             file, method.parse().unwrap_or(tune::TuneMethod::Auto),
-            rank, vram, plan, model, freeze_base, train_data, json,
+            rank, vram, plan, model_size.or(model), freeze_base, train_data, json,
         )
     }
 }

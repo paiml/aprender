@@ -101,8 +101,12 @@ pub fn write_stdout(data: &[u8]) -> Result<(), CliError> {
     Ok(())
 }
 
-/// Run a command with stdin pipe support: if `file` is `-`, buffer stdin
-/// to a tempfile; otherwise pass the path through.
+/// Run a command with stdin pipe support and directory resolution.
+///
+/// - If `file` is `-`, buffer stdin to a tempfile.
+/// - If `file` is a directory, resolve to the model file inside it
+///   (e.g., `model.safetensors`, `*.gguf`, `*.apr`).
+/// - Otherwise pass the path through.
 pub fn with_stdin_support<F>(file: &Path, f: F) -> Result<(), CliError>
 where
     F: FnOnce(&Path) -> Result<(), CliError>,
@@ -112,7 +116,8 @@ where
         let tmp = read_stdin_to_tempfile()?;
         f(tmp.path())
     } else {
-        f(file)
+        let resolved = crate::error::resolve_model_path(file)?;
+        f(&resolved)
     }
 }
 

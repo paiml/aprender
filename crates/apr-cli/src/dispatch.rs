@@ -30,7 +30,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
-        Commands::Check { file, no_gpu, json } => commands::check::run(file, *no_gpu, *json),
+        Commands::Check { file, no_gpu, json } => {
+            crate::error::resolve_model_path(file)
+                .and_then(|r| commands::check::run(&r, *no_gpu, *json))
+        }
         Commands::Run {
             source,
             positional_prompt,
@@ -163,16 +166,18 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             payload,
             diff,
             interactive,
-        } => trace::run(
-            file,
-            layer.as_deref(),
-            reference.as_deref(),
-            *json || cli.json,
-            *verbose || cli.verbose,
-            *payload,
-            *diff,
-            *interactive,
-        ),
+        } => {
+            crate::error::resolve_model_path(file).and_then(|r| trace::run(
+                &r,
+                layer.as_deref(),
+                reference.as_deref(),
+                *json || cli.json,
+                *verbose || cli.verbose,
+                *payload,
+                *diff,
+                *interactive,
+            ))
+        }
 
         Commands::Tensors {
             file,
@@ -194,16 +199,22 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             limit,
             transpose_aware,
             json,
-        } => diff::run(
-            file1,
-            file2,
-            *weights,
-            *values,
-            filter.as_deref(),
-            *limit,
-            *transpose_aware,
-            *json || cli.json,
-        ),
+        } => {
+            crate::error::resolve_model_path(file1).and_then(|r1| {
+                crate::error::resolve_model_path(file2).and_then(|r2| {
+                    diff::run(
+                        &r1,
+                        &r2,
+                        *weights,
+                        *values,
+                        filter.as_deref(),
+                        *limit,
+                        *transpose_aware,
+                        *json || cli.json,
+                    )
+                })
+            })
+        }
 
         _ => return None,
     })

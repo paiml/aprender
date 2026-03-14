@@ -84,6 +84,62 @@ impl From<aprender::error::AprenderError> for CliError {
     }
 }
 
+/// Resolve a model path: if given a directory, look for common model files inside.
+///
+/// HuggingFace models are stored as directories containing `model.safetensors`,
+/// `model-00001-of-NNNNN.safetensors`, or `*.gguf`. This function resolves such
+/// directories to the actual model file, avoiding "Not a file" errors.
+pub fn resolve_model_path(
+    path: &std::path::Path,
+) -> std::result::Result<std::path::PathBuf, CliError> {
+    if !path.exists() {
+        return Err(CliError::FileNotFound(path.to_path_buf()));
+    }
+    if path.is_file() {
+        return Ok(path.to_path_buf());
+    }
+    if path.is_dir() {
+        // Try common model file names in priority order
+        let candidates = [
+            "model.safetensors",
+            "model-00001-of-00001.safetensors",
+            "model-00001-of-00002.safetensors",
+            "model-00001-of-00003.safetensors",
+            "model-00001-of-00004.safetensors",
+        ];
+        for candidate in &candidates {
+            let p = path.join(candidate);
+            if p.is_file() {
+                return Ok(p);
+            }
+        }
+        // Try first .gguf file
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|ext| ext == "gguf") && p.is_file() {
+                    return Ok(p);
+                }
+            }
+        }
+        // Try first .apr file
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.extension().is_some_and(|ext| ext == "apr") && p.is_file() {
+                    return Ok(p);
+                }
+            }
+        }
+        Err(CliError::ValidationFailed(format!(
+            "Directory {} does not contain a model file (expected model.safetensors, *.gguf, or *.apr)",
+            path.display()
+        )))
+    } else {
+        Err(CliError::NotAFile(path.to_path_buf()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,5 +352,61 @@ mod tests {
         ];
         // FileNotFound and NotAFile intentionally share exit code 3
         assert_eq!(codes[0].0, ExitCode::from(3));
+    }
+
+    // ==================== resolve_model_path Tests ====================
+
+    #[test]
+    fn test_resolve_model_path_nonexistent() {
+        let result = resolve_model_path(std::path::Path::new("/nonexistent/path/model.gguf"));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CliError::FileNotFound(_)));
+    }
+
+    #[test]
+    fn test_resolve_model_path_regular_file() {
+        // Create a temp file and resolve it
+        let tmp = std::env::temp_dir().join("apr-test-resolve.safetensors");
+        std::fs::write(&tmp, b"test").expect("write");
+        let result = resolve_model_path(&tmp);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), tmp);
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_resolve_model_path_dir_with_safetensors() {
+        let dir = std::env::temp_dir().join("apr-test-resolve-dir");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let model_file = dir.join("model.safetensors");
+        std::fs::write(&model_file, b"test").expect("write");
+        let result = resolve_model_path(&dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), model_file);
+        std::fs::remove_file(&model_file).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_model_path_dir_with_gguf() {
+        let dir = std::env::temp_dir().join("apr-test-resolve-gguf");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let model_file = dir.join("model-q4.gguf");
+        std::fs::write(&model_file, b"test").expect("write");
+        let result = resolve_model_path(&dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), model_file);
+        std::fs::remove_file(&model_file).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_model_path_empty_dir() {
+        let dir = std::env::temp_dir().join("apr-test-resolve-empty");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let result = resolve_model_path(&dir);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CliError::ValidationFailed(_)));
+        std::fs::remove_dir(&dir).ok();
     }
 }
