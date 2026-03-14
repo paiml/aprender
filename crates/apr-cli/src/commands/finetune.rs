@@ -1016,7 +1016,7 @@ fn run_classify(
         entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name);
     // Wire GPU telemetry into training state for `apr monitor`
     if let Some((ref name, mem)) = gpu_info {
-        writer.set_gpu(name, mem as f32 / 1e9);
+        writer.set_gpu(name, (mem as f64 / 1e9) as f32);
     }
     trainer.set_monitor_writer(writer);
 
