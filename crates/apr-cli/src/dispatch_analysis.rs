@@ -425,12 +425,12 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
         TrainCommands::Archive {
             checkpoint_dir,
             output,
-            version,
+            release_version,
             notes,
         } => train::run_archive(
             checkpoint_dir,
             output,
-            version.as_deref(),
+            release_version.as_deref(),
             notes.as_deref(),
             cli.json,
         ),
@@ -596,30 +596,34 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             ollama,
             no_gpu,
             compare,
-        } => dispatch_profile(
-            file,
-            *granular,
-            format,
-            focus.as_deref(),
-            *detect_naive,
-            *threshold,
-            compare_hf.as_deref(),
-            *energy,
-            *perf_grade,
-            *callgraph,
-            *fail_on_naive,
-            output.as_deref(),
-            *ci,
-            *assert_throughput,
-            *assert_p99,
-            *assert_p50,
-            *warmup,
-            *measure,
-            *tokens,
-            *ollama,
-            *no_gpu,
-            compare.as_deref(),
-        ),
+        } => {
+            crate::error::resolve_model_path(file).and_then(|r| {
+                dispatch_profile(
+                    &r,
+                    *granular,
+                    format,
+                    focus.as_deref(),
+                    *detect_naive,
+                    *threshold,
+                    compare_hf.as_deref(),
+                    *energy,
+                    *perf_grade,
+                    *callgraph,
+                    *fail_on_naive,
+                    output.as_deref(),
+                    *ci,
+                    *assert_throughput,
+                    *assert_p99,
+                    *assert_p50,
+                    *warmup,
+                    *measure,
+                    *tokens,
+                    *ollama,
+                    *no_gpu,
+                    compare.as_deref(),
+                )
+            })
+        }
 
         ExtendedCommands::Bench {
             file,
@@ -629,16 +633,18 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             prompt,
             fast,
             brick,
-        } => bench::run(
-            file,
-            *warmup,
-            *iterations,
-            *max_tokens,
-            prompt.as_deref(),
-            *fast,
-            brick.as_deref(),
-            cli.json,
-        ),
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            bench::run(
+                &r,
+                *warmup,
+                *iterations,
+                *max_tokens,
+                prompt.as_deref(),
+                *fast,
+                brick.as_deref(),
+                cli.json,
+            )
+        }),
 
         ExtendedCommands::Eval {
             file,
@@ -654,61 +660,67 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             device,
             samples,
             temperature,
-        } => match task.as_deref() {
-            #[cfg(feature = "training")]
-            Some("classify") => eval::run_classify_eval(
-                file,
-                data.as_deref(),
-                model_size.as_deref(),
-                *num_classes,
-                *generate_card,
-                cli.json,
-            ),
-            Some("code") => {
-                eval::run_code_eval(file, data.as_deref(), *max_tokens, *threshold, cli.json)
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            match task.as_deref() {
+                #[cfg(feature = "training")]
+                Some("classify") => eval::run_classify_eval(
+                    &r,
+                    data.as_deref(),
+                    model_size.as_deref(),
+                    *num_classes,
+                    *generate_card,
+                    cli.json,
+                ),
+                Some("code") => {
+                    eval::run_code_eval(&r, data.as_deref(), *max_tokens, *threshold, cli.json)
+                }
+                Some("humaneval") => eval::run_humaneval(
+                    &r,
+                    data.as_deref(),
+                    &[1, 10, 100],
+                    cli.json,
+                    device,
+                    *samples,
+                    *temperature,
+                ),
+                Some("mbpp") => eval::run_mbpp(
+                    &r,
+                    data.as_deref(),
+                    &[1, 10, 100],
+                    cli.json,
+                    device,
+                    *samples,
+                    *temperature,
+                ),
+                Some("contamination") => eval::run_contamination(
+                    &r,
+                    data.as_deref(),
+                    None,
+                    *threshold / 100.0,
+                    cli.json,
+                ),
+                Some("compare") => eval::run_compare(&r, data.as_deref(), None, cli.json),
+                Some("verify") => eval::run_verify(&r, cli.json),
+                Some("correlation") => eval::run_correlation(&r, data.as_deref(), cli.json),
+                Some("human") => eval::run_human_eval(&r, data.as_deref(), cli.json),
+                Some("plan") => eval::run_eval_plan(
+                    &r,
+                    dataset,
+                    data.as_deref(),
+                    *max_tokens,
+                    *threshold,
+                    cli.json,
+                ),
+                _ => eval::run(
+                    &r,
+                    dataset,
+                    text.as_deref(),
+                    Some(*max_tokens),
+                    Some(*threshold),
+                    cli.json,
+                ),
             }
-            Some("humaneval") => eval::run_humaneval(
-                file,
-                data.as_deref(),
-                &[1, 10, 100],
-                cli.json,
-                device,
-                *samples,
-                *temperature,
-            ),
-            Some("mbpp") => eval::run_mbpp(
-                file,
-                data.as_deref(),
-                &[1, 10, 100],
-                cli.json,
-                device,
-                *samples,
-                *temperature,
-            ),
-            Some("contamination") => {
-                eval::run_contamination(file, data.as_deref(), None, *threshold / 100.0, cli.json)
-            }
-            Some("compare") => eval::run_compare(file, data.as_deref(), None, cli.json),
-            Some("verify") => eval::run_verify(file, cli.json),
-            Some("correlation") => eval::run_correlation(file, data.as_deref(), cli.json),
-            Some("human") => eval::run_human_eval(file, data.as_deref(), cli.json),
-            Some("plan") => eval::run_eval_plan(
-                file,
-                dataset,
-                data.as_deref(),
-                *max_tokens,
-                *threshold,
-                cli.json,
-            ),
-            _ => eval::run(
-                file,
-                dataset,
-                text.as_deref(),
-                Some(*max_tokens),
-                Some(*threshold),
-                cli.json,
-            ),
-        },
+        }),
 
         ExtendedCommands::Qa {
             file,
@@ -766,7 +778,8 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             file,
             prompt,
             assert,
-        } => commands::parity::run(file, prompt, *assert, cli.verbose),
+        } => crate::error::resolve_model_path(file)
+            .and_then(|r| commands::parity::run(&r, prompt, *assert, cli.verbose)),
 
         ExtendedCommands::PtxMap {
             file,
@@ -775,14 +788,16 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             json,
             verbose,
             prefill,
-        } => commands::ptx_map::run(
-            file,
-            kernel.as_deref(),
-            reverse.as_deref(),
-            *json || cli.json,
-            *verbose || cli.verbose,
-            *prefill,
-        ),
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            commands::ptx_map::run(
+                &r,
+                kernel.as_deref(),
+                reverse.as_deref(),
+                *json || cli.json,
+                *verbose || cli.verbose,
+                *prefill,
+            )
+        }),
 
         ExtendedCommands::Ptx {
             file,
@@ -791,14 +806,23 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             bugs,
             json,
             verbose,
-        } => ptx_explain::run(
-            file.as_deref(),
-            kernel.as_deref(),
-            *strict,
-            *bugs,
-            *json || cli.json,
-            *verbose || cli.verbose,
-        ),
+        } => {
+            match file
+                .as_ref()
+                .map(|f| crate::error::resolve_model_path(f))
+                .transpose()
+            {
+                Ok(resolved) => ptx_explain::run(
+                    resolved.as_deref(),
+                    kernel.as_deref(),
+                    *strict,
+                    *bugs,
+                    *json || cli.json,
+                    *verbose || cli.verbose,
+                ),
+                Err(e) => Err(e),
+            }
+        }
 
         #[cfg(feature = "training")]
         ExtendedCommands::Tune {

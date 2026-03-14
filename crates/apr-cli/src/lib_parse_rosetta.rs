@@ -261,7 +261,8 @@
             },
         };
         let paths = extract_model_paths(&serve_cmd);
-        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+        // GH-471: Serve is exempt from pre-dispatch contract validation
+        assert_eq!(paths, Vec::<PathBuf>::new());
 
         let bench_cmd = Commands::Extended(ExtendedCommands::Bench {
             file: PathBuf::from("model.apr"),

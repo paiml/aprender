@@ -220,8 +220,8 @@ pub enum TrainCommands {
         output: PathBuf,
 
         /// Release version tag (e.g., "v1.0")
-        #[arg(long)]
-        version: Option<String>,
+        #[arg(long = "release-version")]
+        release_version: Option<String>,
 
         /// Release notes
         #[arg(long)]
