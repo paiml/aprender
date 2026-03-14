@@ -283,8 +283,8 @@ fn print_audit_report(r: &AuditResult) {
             "Valid labels",
             format!(
                 "{} ({:.1}%)  {} ({out_of_range} out of range 0..{num_classes})",
-                total - out_of_range,
-                (total - out_of_range) as f64 / total as f64 * 100.0,
+                total.saturating_sub(out_of_range),
+                total.saturating_sub(out_of_range) as f64 / total as f64 * 100.0,
                 "WARN".yellow(),
             ),
         );

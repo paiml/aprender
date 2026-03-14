@@ -30,7 +30,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
         Commands::Check { file, no_gpu, json } => crate::error::resolve_model_path(file)
-            .and_then(|r| commands::check::run(&r, *no_gpu, *json)),
+            .and_then(|r| commands::check::run(&r, *no_gpu, *json || cli.json)),
         Commands::Run {
             source,
             positional_prompt,
@@ -377,7 +377,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             }
         }
         #[cfg(feature = "training")]
-        Commands::Gpu { json } => gpu::run(*json),
+        Commands::Gpu { json } => gpu::run(*json || cli.json),
         #[cfg(feature = "training")]
         Commands::ModelOps(ModelOpsCommands::Finetune {
             file,

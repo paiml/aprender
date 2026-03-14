@@ -415,9 +415,9 @@ fn dispatch_profile(
         };
         match profile::run_ci(file, output_format, &assertions, warmup, measure) {
             Ok(true) => Ok(()),
-            Ok(false) => {
-                std::process::exit(1);
-            }
+            Ok(false) => Err(CliError::ValidationFailed(
+                "CI profile assertions failed".to_string(),
+            )),
             Err(e) => Err(e),
         }
     } else if let Some(compare_path) = compare {
