@@ -390,15 +390,17 @@
     }
 
     #[test]
-    fn test_headless_report_simulated_ci_result_red_low_throughput() {
+    fn test_headless_report_simulated_ci_result_green_low_throughput() {
+        // GH-425 B18: ci_result is derived from brick pass/fail only, not throughput target.
+        // Low throughput alone does not cause "red" if all bricks pass.
         let mut pipeline = PipelineState::new();
         for brick in &mut pipeline.bricks {
             brick.actual_us = brick.budget_us * 0.5; // All pass
         }
-        pipeline.current_tok_s = 500.0; // Below target 976
+        pipeline.current_tok_s = 500.0; // Below target 976, but bricks all pass
         let config = CbtopConfig::default();
-        let report = generate_headless_report_simulated("red-test", &pipeline, &config);
-        assert_eq!(report.ci_result, "red");
+        let report = generate_headless_report_simulated("green-test", &pipeline, &config);
+        assert_eq!(report.ci_result, "green");
     }
 
     #[test]
@@ -426,11 +428,13 @@
 
     #[test]
     fn test_headless_report_simulated_falsification_defaults() {
+        // GH-425 B17: Falsification total_points derived from brick count, not hardcoded.
+        // Default pipeline has 7 bricks; all pass when actual_us = 0.0 (default).
         let pipeline = PipelineState::new();
         let config = CbtopConfig::default();
         let report = generate_headless_report_simulated("fals-test", &pipeline, &config);
-        assert_eq!(report.falsification.total_points, 137);
-        assert_eq!(report.falsification.passed, 137);
+        assert_eq!(report.falsification.total_points, 7);
+        assert_eq!(report.falsification.passed, 7);
         assert_eq!(report.falsification.failed, 0);
         assert_eq!(report.falsification.blocked, 0);
     }
