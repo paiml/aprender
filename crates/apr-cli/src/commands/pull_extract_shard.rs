@@ -1,10 +1,18 @@
 
 /// Extract a shard filename from a "key": "value" pair.
+///
+/// GH-490: Validates that filenames contain no path separators or traversal
+/// sequences to prevent writes outside the cache directory.
 fn extract_shard_filename(kv_pair: &str) -> Option<String> {
     let colon_pos = kv_pair.rfind(':')?;
     let value = kv_pair[colon_pos + 1..].trim();
     let filename = value.trim_matches(|c: char| c == '"' || c.is_whitespace());
-    if filename.ends_with(".safetensors") && !filename.is_empty() {
+    if filename.ends_with(".safetensors")
+        && !filename.is_empty()
+        && !filename.contains('/')
+        && !filename.contains('\\')
+        && !filename.contains("..")
+    {
         Some(filename.to_string())
     } else {
         None

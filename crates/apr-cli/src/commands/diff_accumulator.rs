@@ -228,9 +228,11 @@ impl DiffAccumulator {
     }
 
     fn mean_diff(&self, n: usize) -> f32 {
+        if n == 0 { return 0.0; }
         (self.sum_diff / n as f64) as f32
     }
     fn rmse(&self, n: usize) -> f32 {
+        if n == 0 { return 0.0; }
         ((self.sum_sq_diff / n as f64).sqrt()) as f32
     }
 

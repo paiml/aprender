@@ -355,12 +355,18 @@
 
     #[test]
     fn test_extract_shard_files_values_with_path_separators() {
-        // Filenames shouldn't have path separators, but test robustness
+        // GH-490: Filenames with path separators must be rejected to prevent path traversal
         let json = r#"{"weight_map": {"a": "subdir/model.safetensors"}}"#;
         let shards = extract_shard_files_from_index(json);
-        // Contains "/" so not matching simple pattern, but the function does string trim
-        // It checks ends_with(".safetensors")
-        assert_eq!(shards.len(), 1);
+        assert_eq!(shards.len(), 0);
+
+        let json_traversal = r#"{"weight_map": {"a": "../../etc/model.safetensors"}}"#;
+        let shards = extract_shard_files_from_index(json_traversal);
+        assert_eq!(shards.len(), 0);
+
+        let json_backslash = r#"{"weight_map": {"a": "sub\\model.safetensors"}}"#;
+        let shards = extract_shard_files_from_index(json_backslash);
+        assert_eq!(shards.len(), 0);
     }
 
     #[test]

@@ -409,7 +409,12 @@ fn calculate_benchmark_stats(
 
     let mut sorted_times = iteration_times.clone();
     sorted_times.sort();
-    let median_time = sorted_times[config.iterations / 2];
+    let median_time = if config.iterations % 2 == 0 && config.iterations >= 2 {
+        let mid = config.iterations / 2;
+        (sorted_times[mid - 1] + sorted_times[mid]) / 2
+    } else {
+        sorted_times[config.iterations / 2]
+    };
 
     let mean_ms = mean_time.as_secs_f64() * 1000.0;
     let variance: f64 = iteration_times

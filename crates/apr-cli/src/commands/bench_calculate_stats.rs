@@ -129,8 +129,8 @@
         let result =
             calculate_benchmark_stats(times, 40, Duration::from_millis(25), &config).unwrap();
 
-        // sorted: [100, 200, 300, 400], index 4/2=2 => 300ms
-        assert_eq!(result.median_time, Duration::from_millis(300));
+        // GH-491: sorted [100, 200, 300, 400], even count: avg(200, 300) = 250ms
+        assert_eq!(result.median_time, Duration::from_millis(250));
     }
 
     #[cfg(feature = "inference")]
@@ -221,8 +221,8 @@
 
         // Mean = 500ms
         assert_eq!(result.mean_time, Duration::from_millis(500));
-        // Median: sorted [200, 800], index 2/2=1 => 800ms
-        assert_eq!(result.median_time, Duration::from_millis(800));
+        // GH-491: Median: sorted [200, 800], even count: avg(200, 800) = 500ms
+        assert_eq!(result.median_time, Duration::from_millis(500));
         // Std dev: diffs = [-300, 300], sq = [90000, 90000], var = 90000, std = 300ms
         let std_ms = result.std_dev.as_secs_f64() * 1000.0;
         assert!((std_ms - 300.0).abs() < 1.0);
