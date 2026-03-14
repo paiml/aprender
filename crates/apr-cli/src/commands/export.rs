@@ -468,7 +468,10 @@ fn export_single_format(
     };
 
     if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent).ok();
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Cannot create output directory '{}': {e}", parent.display());
+            return None;
+        }
     }
 
     let options = ExportOptions {

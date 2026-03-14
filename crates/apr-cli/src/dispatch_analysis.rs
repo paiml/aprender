@@ -14,10 +14,10 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             compact,
             json,
             format,
-        } => commands::monitor::run(dir.as_deref(), *refresh_ms, *compact, *json, format),
+        } => commands::monitor::run(dir.as_deref(), *refresh_ms, *compact, *json || cli.json, format),
 
         #[cfg(feature = "training")]
-        ExtendedCommands::Runs { command } => dispatch_runs_command(command),
+        ExtendedCommands::Runs { command } => dispatch_runs_command(command, cli),
         #[cfg(feature = "training")]
         ExtendedCommands::Experiment { command } => dispatch_experiment_command(command, cli),
 
@@ -43,7 +43,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             attach.as_deref(),
             model_path.as_deref(),
             *headless,
-            *json,
+            *json || cli.json,
             output.as_deref(),
             *ci,
             *throughput,
@@ -223,7 +223,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
 #[cfg(feature = "training")]
 /// Dispatch `apr runs` subcommands.
-fn dispatch_runs_command(command: &RunsCommands) -> std::result::Result<(), CliError> {
+fn dispatch_runs_command(command: &RunsCommands, cli: &Cli) -> std::result::Result<(), CliError> {
     match command {
         RunsCommands::Ls {
             dir,
@@ -231,20 +231,20 @@ fn dispatch_runs_command(command: &RunsCommands) -> std::result::Result<(), CliE
             status,
             json,
             limit,
-        } => commands::runs::run_ls(dir, *global, status, *json, *limit),
+        } => commands::runs::run_ls(dir, *global, status, *json || cli.json, *limit),
         RunsCommands::Show {
             run_id,
             dir,
             global,
             json,
-        } => commands::runs::run_show(run_id, dir, *global, *json),
+        } => commands::runs::run_show(run_id, dir, *global, *json || cli.json),
         RunsCommands::Diff {
             run_a,
             run_b,
             dir,
             global,
             json,
-        } => commands::runs::run_diff(run_a, run_b, dir, *global, *json),
+        } => commands::runs::run_diff(run_a, run_b, dir, *global, *json || cli.json),
     }
 }
 
@@ -946,8 +946,8 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *zram,
             *runs,
             *gpu,
-            *json,
-            *verbose,
+            *json || cli.json,
+            *verbose || cli.verbose,
             *quiet,
         ),
 

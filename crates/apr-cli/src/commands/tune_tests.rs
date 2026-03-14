@@ -188,15 +188,19 @@ fn test_format_params_billions() {
 fn test_estimate_params_from_file() {
     let temp_dir = std::env::temp_dir().join("apr_tune_test");
     let _ = fs::create_dir_all(&temp_dir);
-
-    // Create a 1MB file
-    let test_file = temp_dir.join("test_model.bin");
     let data = vec![0u8; 1_000_000];
-    let _ = fs::write(&test_file, &data);
 
-    let params = estimate_params_from_file(&test_file).unwrap();
-    // 1MB file * 2 (Q4 estimate) = 2M params
-    assert_eq!(params, 2_000_000);
+    // GH-484: GGUF files use Q4 estimate (size * 2)
+    let gguf_file = temp_dir.join("test_model.gguf");
+    let _ = fs::write(&gguf_file, &data);
+    let params = estimate_params_from_file(&gguf_file).unwrap();
+    assert_eq!(params, 2_000_000, "GGUF: 1MB * 2 = 2M params (Q4 estimate)");
+
+    // GH-484: Non-GGUF files use fp16 estimate (size / 2)
+    let st_file = temp_dir.join("test_model.safetensors");
+    let _ = fs::write(&st_file, &data);
+    let params = estimate_params_from_file(&st_file).unwrap();
+    assert_eq!(params, 500_000, "SafeTensors: 1MB / 2 = 500K params (fp16)");
 
     let _ = fs::remove_dir_all(&temp_dir);
 }

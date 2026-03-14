@@ -229,16 +229,24 @@ fn parse_model_size(size: &str) -> Result<u64, CliError> {
     Ok((num * multiplier as f64) as u64)
 }
 
-/// Estimate parameters from model file size
+/// Estimate parameters from model file size.
+///
+/// GH-484: Use file extension to pick bytes-per-param ratio instead of
+/// blindly assuming Q4 (which overestimates fp16/bf16 models by 4x).
 fn estimate_params_from_file(path: &Path) -> Result<u64, CliError> {
     let metadata = std::fs::metadata(path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?;
 
     let size_bytes = metadata.len();
 
-    // Rough estimation: 2 bytes per param for fp16, 0.5 for Q4
-    // Use conservative estimate (assume Q4)
-    let estimated_params = size_bytes * 2; // Q4: ~0.5 bytes/param
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    let estimated_params = match ext {
+        // GGUF models are typically quantized (Q4-Q8), ~0.5-1.0 bytes/param
+        "gguf" => size_bytes * 2,
+        // SafeTensors/APR/bin are typically fp16/bf16 (2 bytes/param)
+        _ => size_bytes / 2,
+    };
 
     Ok(estimated_params)
 }
