@@ -317,14 +317,19 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!();
 
     let total_time_us: f64 = latencies_us.iter().sum();
-    let tokens_per_sec = (total_tokens as f64) / (total_time_us / 1_000_000.0);
+    let total_time_s = total_time_us / 1_000_000.0;
+    let tokens_per_sec = if total_time_s > 0.0 {
+        total_tokens as f64 / total_time_s
+    } else {
+        0.0
+    };
 
     eprintln!();
     eprintln!("cbtop: Throughput: {:.1} tok/s (MEASURED)", tokens_per_sec);
 
     // Calculate actual per-layer time from measured throughput
-    let measured_per_token_us = 1_000_000.0 / tokens_per_sec;
-    let measured_per_layer_us = measured_per_token_us / num_layers as f64;
+    let measured_per_token_us = if tokens_per_sec > 0.0 { 1_000_000.0 / tokens_per_sec } else { 0.0 };
+    let measured_per_layer_us = if num_layers > 0 { measured_per_token_us / num_layers as f64 } else { 0.0 };
     let target_per_layer_us = 35.7; // Budget from spec
     eprintln!(
         "cbtop: Per-layer time: {:.1}µs (MEASURED), budget: {:.1}µs ({:.1}x)",
