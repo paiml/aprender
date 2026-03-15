@@ -522,6 +522,9 @@ fn render_braille(data: &[f64], width: usize, height: usize) -> Vec<String> {
 
 /// Build a boolean dot grid from normalized data points.
 fn build_braille_grid(data: &[f64], width: usize, height: usize) -> Vec<Vec<bool>> {
+    if width == 0 || height == 0 || data.is_empty() {
+        return vec![];
+    }
     let total_dots_h = height * 4;
     let num_points = width * 2;
     let step = data.len() as f64 / num_points as f64;
