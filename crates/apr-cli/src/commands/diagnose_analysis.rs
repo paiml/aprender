@@ -213,8 +213,11 @@ fn analyze_eval_report(
         .enumerate()
         .max_by_key(|(_, c)| **c)
         .map_or(0, |(i, _)| i);
-    let max_pred_pct =
-        class_predictions[max_pred_class] as f64 / total_samples as f64;
+    let max_pred_pct = if total_samples > 0 {
+        class_predictions[max_pred_class] as f64 / total_samples as f64
+    } else {
+        0.0
+    };
 
     if max_pred_pct > 0.5 {
         findings.push(Finding {

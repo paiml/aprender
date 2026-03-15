@@ -139,7 +139,11 @@ fn print_results_table(results: &[StageResult]) {
 
         let details = result.details.as_deref().unwrap_or("-");
         let details_truncated = if details.len() > 36 {
-            format!("{}...", &details[..33])
+            let mut end = 33;
+            while end > 0 && !details.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &details[..end])
         } else {
             details.to_string()
         };

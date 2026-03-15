@@ -273,7 +273,11 @@ fn benchmark_bricks(
         1.0 / 35.7,
     ));
 
-    let measured_layer_us = 1_000_000.0 / tokens_per_sec / num_layers as f64;
+    let measured_layer_us = if tokens_per_sec > 0.0 && num_layers > 0 {
+        1_000_000.0 / tokens_per_sec / num_layers as f64
+    } else {
+        0.0
+    };
     let attn_us = measured_layer_us * (10.0 / 35.7);
     let score = compute_brick_score(attn_us, 10.0);
     reports.push(BrickScore {
@@ -322,8 +326,11 @@ fn build_and_output_report(
 ) -> Result<()> {
     let mut sorted = latencies_us.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    if sorted.is_empty() {
+        return Ok(());
+    }
     let p50 = sorted[sorted.len() / 2];
-    let p99 = sorted[(sorted.len() as f64 * 0.99) as usize];
+    let p99 = sorted[(sorted.len() as f64 * 0.99).min((sorted.len() - 1) as f64) as usize];
 
     // GH-420 Bug 2: Use equal weights for all bricks (dynamic count).
     // Previous code used 7 hardcoded weights and silently dropped bricks beyond 7.

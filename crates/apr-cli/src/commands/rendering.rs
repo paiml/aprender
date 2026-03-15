@@ -213,7 +213,13 @@ fn render_status(f: &mut Frame<'_>, area: Rect, app: &App) {
 fn truncate_name(name: &str, max_len: usize) -> String {
     if name.len() <= max_len {
         name.to_string()
+    } else if max_len < 4 {
+        name.chars().take(max_len).collect()
     } else {
-        format!("{}...", &name[..max_len - 3])
+        let mut end = max_len - 3;
+        while end > 0 && !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &name[..end])
     }
 }
