@@ -403,7 +403,11 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
         intermediate_dim: config.intermediate_dim as u32,
         num_heads: config.num_heads as u32,
         num_kv_heads: num_kv_heads as u32,
-        head_dim: (config.hidden_dim / config.num_heads) as u32,
+        head_dim: if config.num_heads > 0 {
+            (config.hidden_dim / config.num_heads) as u32
+        } else {
+            0
+        },
     })
 }
 

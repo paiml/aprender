@@ -343,11 +343,11 @@ fn dequantize_by_dtype(dtype: u8, bytes: &[u8], dims: &[usize]) -> Option<Vec<f3
                 .collect(),
         ),
         12 => {
-            let num_elements: usize = dims.iter().product();
+            let num_elements: usize = dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))?;
             Some(dequantize_q4k_for_stats(bytes, num_elements))
         }
         14 => {
-            let num_elements: usize = dims.iter().product();
+            let num_elements: usize = dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))?;
             Some(dequantize_q6k_for_stats(bytes, num_elements))
         }
         _ => None,

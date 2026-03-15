@@ -323,7 +323,7 @@ async fn handle_gpu_chat_completion(
                 "completion_tokens": tokens_generated,
                 "total_tokens": input_tokens.len() + tokens_generated
             },
-            "_apr_metrics": {"latency_ms": start.elapsed().as_millis(), "tok_per_sec": tok_per_sec}
+            "_apr_metrics": {"latency_ms": start.elapsed().as_millis() as u64, "tok_per_sec": tok_per_sec}
         }))
         .into_response()
     }
