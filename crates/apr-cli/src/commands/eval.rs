@@ -1104,7 +1104,10 @@ where
                     }
                 }
             }
-            Err(_) if sample_idx == 0 => break,
+            Err(_e) if sample_idx == 0 => {
+                eprintln!("  Inference failed (falling back to structural validation)");
+                break;
+            }
             Err(_) => {}
         }
     }
@@ -1480,7 +1483,14 @@ fn run_humaneval_inference_cuda(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    let config = load_transformer_config(model_path)?;
+    // ALB-089: resolve to checkpoint directory (model_path may be a .apr file)
+    let checkpoint_dir = if model_path.is_file() {
+        model_path.parent().unwrap_or(model_path)
+    } else {
+        model_path
+    };
+
+    let config = load_transformer_config(checkpoint_dir)?;
     let max_seq = config.max_position_embeddings;
 
     if !json_output {
@@ -1490,12 +1500,18 @@ fn run_humaneval_inference_cuda(
         );
     }
 
-    let mut trainer = entrenar::train::CudaTransformerTrainer::for_inference(model_path, config)
-        .map_err(|e| format!("CUDA inference init failed: {e}"))?;
+    let mut trainer =
+        entrenar::train::CudaTransformerTrainer::for_inference(checkpoint_dir, config)
+            .map_err(|e| format!("CUDA inference init failed: {e}"))?;
 
-    // Load tokenizer
+    // Load tokenizer — use original model_path (file) for sibling lookup
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
-        .ok_or_else(|| "No tokenizer found in checkpoint dir".to_string())?;
+        .or_else(|| {
+            // Fallback: try tokenizer.json directly in checkpoint dir
+            let tok_path = checkpoint_dir.join("tokenizer.json");
+            realizar::apr::AprV2Model::load_tokenizer_from_path(&tok_path)
+        })
+        .ok_or_else(|| format!("No tokenizer found in {}", checkpoint_dir.display()))?;
 
     if !json_output {
         println!("  {} GPU inference ready", "✓".green());
@@ -2009,7 +2025,14 @@ fn run_mbpp_inference_cuda(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    let config = load_transformer_config(model_path)?;
+    // ALB-089: resolve to checkpoint directory (model_path may be a .apr file)
+    let checkpoint_dir = if model_path.is_file() {
+        model_path.parent().unwrap_or(model_path)
+    } else {
+        model_path
+    };
+
+    let config = load_transformer_config(checkpoint_dir)?;
     let max_seq = config.max_position_embeddings;
 
     if !json_output {
@@ -2019,11 +2042,16 @@ fn run_mbpp_inference_cuda(
         );
     }
 
-    let mut trainer = entrenar::train::CudaTransformerTrainer::for_inference(model_path, config)
-        .map_err(|e| format!("CUDA inference init failed: {e}"))?;
+    let mut trainer =
+        entrenar::train::CudaTransformerTrainer::for_inference(checkpoint_dir, config)
+            .map_err(|e| format!("CUDA inference init failed: {e}"))?;
 
     let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
-        .ok_or_else(|| "No tokenizer found in checkpoint dir".to_string())?;
+        .or_else(|| {
+            let tok_path = checkpoint_dir.join("tokenizer.json");
+            realizar::apr::AprV2Model::load_tokenizer_from_path(&tok_path)
+        })
+        .ok_or_else(|| format!("No tokenizer found in {}", checkpoint_dir.display()))?;
 
     if !json_output {
         println!("  {} GPU inference ready", "✓".green());
