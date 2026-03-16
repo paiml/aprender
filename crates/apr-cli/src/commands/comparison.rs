@@ -199,10 +199,13 @@ fn profile_gpu_or_cpu(
 ) -> Result<RealProfileResults, CliError> {
     #[cfg(feature = "cuda")]
     {
+        // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
+        std::env::set_var("SKIP_PARITY_GATE", "1");
+
         match profile_gpu_generation(path, warmup, measure, tokens) {
             Ok(r) => return Ok(r),
-            Err(_) => {
-                output::info("GPU profiling unavailable, falling back to CPU");
+            Err(e) => {
+                output::info(&format!("GPU profiling failed: {e}, falling back to CPU"));
             }
         }
     }
