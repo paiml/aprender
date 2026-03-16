@@ -81,8 +81,13 @@ impl QualityConfig {
     }
 
     /// Set length bounds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `min` is 0 (would cause division by zero in scoring).
     #[must_use]
     pub fn with_length_bounds(mut self, min: usize, max: usize) -> Self {
+        assert!(min > 0, "min_length must be > 0");
         self.min_length = min;
         self.max_length = max.max(min);
         self
