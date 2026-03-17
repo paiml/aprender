@@ -49,10 +49,9 @@ pub(crate) fn run_plan(
             println!("{json}");
         }
         "yaml" => {
-            // YAML output uses JSON as fallback (serde_yaml not in apr-cli deps)
-            let json = serde_json::to_string_pretty(&plan)
-                .map_err(|e| CliError::InvalidFormat(e.to_string()))?;
-            println!("{json}");
+            return Err(CliError::ValidationFailed(
+                "YAML output not supported. Use --format json or --format text.".to_string(),
+            ));
         }
         _ => print_plan_text(&plan),
     }

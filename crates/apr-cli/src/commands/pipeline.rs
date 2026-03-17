@@ -96,11 +96,12 @@ pub(crate) fn run_apply(
         args.push(t);
     }
 
-    let parallel_str;
-    if let Some(p) = parallel {
-        parallel_str = p.to_string();
-        args.push("-p");
-        args.push(&parallel_str);
+    // GH-506: --parallel removed — forjar has no parallelism flag
+    // (-p is --param KEY=VALUE, not parallelism)
+    if parallel.is_some() {
+        return Err(CliError::ValidationFailed(
+            "--parallel is not supported (forjar does not have a parallelism flag)".to_string(),
+        ));
     }
     if keep_going {
         args.push("--keep-going");
