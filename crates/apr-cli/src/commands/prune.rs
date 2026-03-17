@@ -136,6 +136,13 @@ pub(crate) fn run(
 ) -> Result<()> {
     let prune_method = validate_prune_params(file, method, target_ratio, sparsity)?;
 
+    // GH-513: Reject --calibration since calibration-aware pruning is not yet implemented
+    if calibration.is_some() {
+        return Err(CliError::ValidationFailed(
+            "--calibration is not yet implemented. Use magnitude or depth pruning without calibration data.".to_string(),
+        ));
+    }
+
     // Analyze mode
     if analyze_only {
         return run_analyze(file, prune_method, json_output);

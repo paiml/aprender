@@ -157,10 +157,15 @@ pub(crate) fn run(
     iterations: usize,
     max_tokens: usize,
     prompt: Option<&str>,
-    _fast: bool, // Deprecated: always uses fast path now
+    fast: bool,
     brick: Option<&str>,
     json: bool,
 ) -> Result<()> {
+    // GH-512: Warn on deprecated --fast flag instead of silently ignoring
+    if fast && !json {
+        eprintln!("Warning: --fast is deprecated (always uses fast path now). Flag has no effect.");
+    }
+
     // If --brick is specified, run brick-specific benchmark
     if let Some(brick_name) = brick {
         #[cfg(feature = "inference")]
