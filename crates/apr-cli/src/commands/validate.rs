@@ -44,7 +44,7 @@ pub(crate) fn run(
     match format {
         FormatType::Apr => run_apr_validation(path, quality, strict, min_score, json),
         FormatType::Gguf | FormatType::SafeTensors => {
-            run_rosetta_validation(path, format, quality, json)
+            run_rosetta_validation(path, format, quality, strict, json)
         }
     }
 }
@@ -89,6 +89,7 @@ fn run_rosetta_validation(
     path: &Path,
     format: FormatType,
     quality: bool,
+    strict: bool,
     json: bool,
 ) -> Result<(), CliError> {
     let rosetta = RosettaStone::new();
@@ -97,7 +98,7 @@ fn run_rosetta_validation(
         .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
 
     if json {
-        return print_rosetta_validation_json(path, &report, format);
+        return print_rosetta_validation_json(path, &report, format, quality);
     }
 
     output::header(&format!("Validate: {} (Rosetta Stone)", format));
@@ -129,6 +130,31 @@ fn run_rosetta_validation(
 
     if quality {
         print_quality_constraints(&report);
+    }
+
+    // GH-507: --strict fails on warnings (NaN, Inf, all-zero tensors)
+    if strict
+        && (report.total_nan_count > 0
+            || report.total_inf_count > 0
+            || !report.all_zero_tensors.is_empty())
+    {
+        let mut issues = Vec::new();
+        if report.total_nan_count > 0 {
+            issues.push(format!("{} NaN values", report.total_nan_count));
+        }
+        if report.total_inf_count > 0 {
+            issues.push(format!("{} Inf values", report.total_inf_count));
+        }
+        if !report.all_zero_tensors.is_empty() {
+            issues.push(format!(
+                "{} all-zero tensors",
+                report.all_zero_tensors.len()
+            ));
+        }
+        return Err(CliError::ValidationFailed(format!(
+            "Strict mode: {}",
+            issues.join(", ")
+        )));
     }
 
     if report.is_valid {
@@ -262,6 +288,7 @@ fn print_rosetta_validation_json(
     path: &Path,
     report: &RosettaValidationReport,
     format: FormatType,
+    quality: bool,
 ) -> Result<(), CliError> {
     // GH-251: Include individual tensor checks as a list (same schema as APR path)
     let checks_json: Vec<serde_json::Value> = report
@@ -287,7 +314,7 @@ fn print_rosetta_validation_json(
         FormatType::Gguf => "gguf",
         FormatType::Apr => "apr",
     };
-    let output = serde_json::json!({
+    let mut output = serde_json::json!({
         "model": path.display().to_string(),
         "format": format_str,
         "total_tensors": report.tensor_count,
@@ -300,6 +327,21 @@ fn print_rosetta_validation_json(
         "failed": report.failed_tensor_count,
         "passed": report.is_valid,
     });
+
+    // GH-508: Include quality details when --quality flag is set
+    if quality {
+        let all_zero_names: Vec<&str> =
+            report.all_zero_tensors.iter().map(|s| s.as_str()).collect();
+        output["quality"] = serde_json::json!({
+            "total_nan": report.total_nan_count,
+            "total_inf": report.total_inf_count,
+            "all_zero_tensors": all_zero_names,
+            "all_zero_count": report.all_zero_tensors.len(),
+            "physics_pass": report.total_nan_count == 0
+                && report.total_inf_count == 0
+                && report.all_zero_tensors.is_empty(),
+        });
+    }
     println!(
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()
