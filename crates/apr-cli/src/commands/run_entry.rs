@@ -11,8 +11,8 @@ pub(crate) fn run(
     prompt: Option<&str>,
     max_tokens: usize,
     stream: bool,
-    _language: Option<&str>,
-    _task: Option<&str>,
+    language: Option<&str>,
+    task: Option<&str>,
     output_format: &str,
     no_gpu: bool,
     offline: bool,
@@ -25,6 +25,14 @@ pub(crate) fn run(
     trace_level: &str,
     profile: bool,
 ) -> Result<()> {
+    // GH-516: Warn on --language/--task since whisper integration is not yet wired up
+    if language.is_some() {
+        eprintln!("Warning: --language is not yet supported for inference. Flag ignored.");
+    }
+    if task.is_some() {
+        eprintln!("Warning: --task is not yet supported for inference. Flag ignored.");
+    }
+
     // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
     if output_format != "json" {
         if offline {

@@ -18,17 +18,32 @@ pub(crate) fn run(
     format: OutputFormat,
     focus: ProfileFocus,
     detect_naive: bool,
-    _naive_threshold: f64,
-    _compare_hf: Option<&str>,
-    _energy: bool,
+    naive_threshold: f64,
+    compare_hf: Option<&str>,
+    energy: bool,
     perf_grade: bool,
-    _callgraph: bool,
-    _fail_on_naive: bool,
+    callgraph: bool,
+    fail_on_naive: bool,
     output_path: Option<&Path>,
     tokens: usize,
     ollama: bool,
     no_gpu: bool,
 ) -> Result<(), CliError> {
+    // GH-517: Warn on unimplemented profiler flags (suppress unused warnings)
+    let _ = naive_threshold;
+    if compare_hf.is_some() {
+        eprintln!("Warning: --compare-hf is not yet implemented. Flag ignored.");
+    }
+    if energy {
+        eprintln!("Warning: --energy profiling is not yet implemented. Flag ignored.");
+    }
+    if callgraph {
+        eprintln!("Warning: --callgraph is not yet implemented. Flag ignored.");
+    }
+    if fail_on_naive {
+        eprintln!("Warning: --fail-on-naive is not yet implemented. Flag ignored.");
+    }
+
     // Validate file exists
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));

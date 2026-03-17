@@ -64,10 +64,18 @@ pub fn run(
     vram_gb: f64,
     plan_only: bool,
     model_size: Option<&str>,
-    _freeze_base: bool,
-    _train_data: Option<&Path>,
+    freeze_base: bool,
+    train_data: Option<&Path>,
     json_output: bool,
 ) -> Result<(), CliError> {
+    // GH-518: Warn on unimplemented tuning flags
+    if freeze_base {
+        eprintln!("Warning: --freeze-base is not yet implemented. Flag ignored.");
+    }
+    if train_data.is_some() {
+        eprintln!("Warning: --train-data is not yet implemented. Flag ignored.");
+    }
+
     if !json_output {
         output::section("apr tune (GH-176: ML Tuning via entrenar-lora)");
         println!();
