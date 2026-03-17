@@ -441,7 +441,7 @@ fn slice_safetensors(
     let values = decode_st_slice(tensor_bytes, &dtype, start, end)?;
     let slice_count = end - start;
 
-    output_slice_result(opts, tensor_name, start, end, &dtype, slice_count, &values)
+    output_slice_result(opts, tensor_name, start, end, &dtype, slice_count, &shape, &values)
 }
 
 include!("slice.rs");

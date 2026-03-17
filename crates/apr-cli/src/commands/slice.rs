@@ -131,9 +131,8 @@ fn slice_gguf(
         .find(|t| t.name == tensor_name)
         .map_or("Unknown", |t| ggml_dtype_name(t.dtype));
 
-    let _ = shape; // shape available but not needed for flat slice
     let slice_count = end - start;
-    output_slice_result(opts, tensor_name, start, end, dtype_name, slice_count, &values)
+    output_slice_result(opts, tensor_name, start, end, dtype_name, slice_count, &shape, &values)
 }
 
 /// Slice extraction for APR format.
@@ -166,12 +165,15 @@ fn slice_apr(
     }
 
     let values: Vec<f32> = data[start..end].to_vec();
-    let dtype_name = reader
-        .get_tensor(tensor_name)
+    let entry = reader.get_tensor(tensor_name);
+    let dtype_name = entry
+        .as_ref()
         .map_or_else(|| "Unknown".to_string(), |e| format!("{:?}", e.dtype));
+    let shape: Vec<usize> = entry
+        .map_or_else(Vec::new, |e| e.shape.clone());
 
     let slice_count = end - start;
-    output_slice_result(opts, tensor_name, start, end, &dtype_name, slice_count, &values)
+    output_slice_result(opts, tensor_name, start, end, &dtype_name, slice_count, &shape, &values)
 }
 
 /// Output slice result as JSON or text.
@@ -183,6 +185,7 @@ fn output_slice_result(
     end: usize,
     dtype: &str,
     count: usize,
+    original_shape: &[usize],
     values: &[f32],
 ) -> Result<(), CliError> {
     if opts.json {
@@ -190,7 +193,8 @@ fn output_slice_result(
             "tensor": tensor_name,
             "slice": format!("{start}:{end}"),
             "dtype": dtype,
-            "shape": [count],
+            "shape": original_shape,
+            "slice_count": count,
             "values": values,
         });
         if let Ok(s) = serde_json::to_string_pretty(&json) {

@@ -99,6 +99,17 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
+    // GH-520: Warn on unimplemented trace/profile flags for chat mode
+    if trace_steps.is_some() {
+        eprintln!("Warning: --trace-steps is not yet implemented for chat. Flag ignored.");
+    }
+    if trace_verbose {
+        eprintln!("Warning: --trace-verbose is not yet implemented for chat. Flag ignored.");
+    }
+    if profile {
+        eprintln!("Warning: --profile is not yet implemented for chat. Flag ignored.");
+    }
+
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
         eprintln!(
@@ -120,7 +131,7 @@ pub(crate) fn run(
         }
     }
 
-    // trace_steps, trace_verbose, trace_level, profile reserved for future use
+    // trace_steps, trace_verbose, trace_level reserved for future use
     let _ = (trace_steps, trace_verbose, trace_level, profile);
 
     let config = ChatConfig {
