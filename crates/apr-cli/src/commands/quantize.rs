@@ -93,6 +93,17 @@ pub(crate) fn run(
 
     let quant_scheme: QuantScheme = scheme.parse().map_err(CliError::ValidationFailed)?;
 
+    // GH-502: Check batch before plan_only so --batch --plan works
+    if let Some(schemes) = batch {
+        if plan_only {
+            return run_batch_plan(file, schemes, format, json_output);
+        }
+        let output_path = output_path.ok_or_else(|| {
+            CliError::ValidationFailed("--output is required for batch quantization".to_string())
+        })?;
+        return run_batch(file, schemes, output_path, force, json_output);
+    }
+
     if plan_only {
         return run_plan(file, quant_scheme, format, json_output);
     }
@@ -100,10 +111,6 @@ pub(crate) fn run(
     let output_path = output_path.ok_or_else(|| {
         CliError::ValidationFailed("--output is required (unless --plan is used)".to_string())
     })?;
-
-    if let Some(schemes) = batch {
-        return run_batch(file, schemes, output_path, force, json_output);
-    }
 
     check_overwrite_protection(output_path, force)?;
     print_quantize_header(file, quant_scheme, output_path, json_output);
@@ -281,6 +288,83 @@ fn run_plan(
         println!();
         println!(
             "  {} Run without --plan to execute quantization.",
+            output::badge_info("INFO")
+        );
+    }
+
+    Ok(())
+}
+
+/// Run batch planning mode — show plans for all schemes (GH-502)
+#[allow(clippy::disallowed_methods)]
+fn run_batch_plan(
+    file: &Path,
+    schemes: &str,
+    format: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let scheme_list: Vec<&str> = schemes.split(',').map(str::trim).collect();
+    if scheme_list.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "No quantization schemes specified for batch mode".to_string(),
+        ));
+    }
+
+    let parsed: Vec<QuantScheme> = scheme_list
+        .iter()
+        .map(|s| s.parse::<QuantScheme>().map_err(CliError::ValidationFailed))
+        .collect::<Result<Vec<_>>>()?;
+
+    let file_size = std::fs::metadata(file)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?
+        .len();
+
+    let output_format = format.unwrap_or("apr");
+
+    if json_output {
+        let plans: Vec<serde_json::Value> = scheme_list
+            .iter()
+            .zip(parsed.iter())
+            .map(|(name, scheme)| {
+                let (input_size, output_size, reduction) = estimate_memory(file_size, *scheme);
+                serde_json::json!({
+                    "scheme": name,
+                    "input_size": input_size,
+                    "estimated_output_size": output_size,
+                    "reduction_ratio": reduction,
+                    "peak_memory_estimate": input_size + output_size,
+                })
+            })
+            .collect();
+        let json = serde_json::json!({
+            "plan": true,
+            "batch": true,
+            "input": file.display().to_string(),
+            "output_format": output_format,
+            "schemes": plans,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::header("APR Quantize — Batch Plan");
+        println!("  Input: {}", file.display());
+        println!("  Input size: {}", format_size(file_size, BINARY));
+        println!("  Output format: {output_format}");
+        println!();
+
+        for (name, scheme) in scheme_list.iter().zip(parsed.iter()) {
+            let (_input_size, output_size, reduction) = estimate_memory(file_size, *scheme);
+            println!(
+                "  {name:<8} → {}  ({reduction:.2}x reduction, peak memory: {})",
+                format_size(output_size, BINARY),
+                format_size(file_size + output_size, BINARY),
+            );
+        }
+        println!();
+        println!(
+            "  {} Run without --plan to execute batch quantization.",
             output::badge_info("INFO")
         );
     }
