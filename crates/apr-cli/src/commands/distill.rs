@@ -586,9 +586,14 @@ fn run_text_config_mode(
     config: &TextDistillConfig,
     config_path: &Path,
     stage: Option<&str>,
-    _plan_only: bool,
+    plan_only: bool,
     json_output: bool,
 ) -> Result<()> {
+    // GH-504: Handle --plan for text-based configs
+    if plan_only {
+        return run_text_config_plan(config, config_path, json_output);
+    }
+
     match stage {
         Some("generate") => run_text_generate(config, config_path, json_output),
         Some(other) => Err(CliError::ValidationFailed(format!(
@@ -598,6 +603,80 @@ fn run_text_config_mode(
             "--stage generate required with text-based distillation config.".to_string(),
         )),
     }
+}
+
+/// Plan mode for text-based distillation (GH-504).
+#[allow(clippy::disallowed_methods)]
+fn run_text_config_plan(
+    config: &TextDistillConfig,
+    config_path: &Path,
+    json_output: bool,
+) -> Result<()> {
+    let prompts_path = config_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(&config.synthetic_data.prompts);
+    let prompt_count = if prompts_path.exists() {
+        std::fs::read_to_string(&prompts_path)
+            .map(|s| s.lines().filter(|l| !l.trim().is_empty()).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let estimated_samples =
+        prompt_count as u64 * u64::from(config.synthetic_data.samples_per_prompt);
+    let estimated_tokens = estimated_samples * u64::from(config.teacher.max_tokens);
+
+    if json_output {
+        let json = serde_json::json!({
+            "plan": true,
+            "mode": "text-distillation",
+            "config": config_path.display().to_string(),
+            "teacher_model": config.teacher.model,
+            "prompts_file": config.synthetic_data.prompts,
+            "prompt_count": prompt_count,
+            "samples_per_prompt": config.synthetic_data.samples_per_prompt,
+            "estimated_samples": estimated_samples,
+            "target_tokens": config.synthetic_data.target_tokens,
+            "estimated_tokens": estimated_tokens,
+            "max_tokens_per_sample": config.teacher.max_tokens,
+            "temperature": config.teacher.temperature,
+            "output_dir": config.synthetic_data.output,
+            "stages": ["generate"],
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::header("APR Distill — Text Config Plan");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Config", config_path.display().to_string()),
+                ("Teacher", config.teacher.model.clone()),
+                ("Prompts", config.synthetic_data.prompts.clone()),
+                ("Prompt count", format!("{prompt_count}")),
+                (
+                    "Samples/prompt",
+                    format!("{}", config.synthetic_data.samples_per_prompt),
+                ),
+                ("Est. samples", format!("{estimated_samples}")),
+                ("Est. tokens", format!("{estimated_tokens}")),
+                ("Output", config.synthetic_data.output.clone()),
+            ])
+        );
+        println!();
+        println!("  Stages:");
+        println!("    1. generate — Generate synthetic data from teacher");
+        println!();
+        println!(
+            "  {} Run with --stage generate to execute.",
+            output::badge_info("INFO")
+        );
+    }
+
+    Ok(())
 }
 
 /// Plan mode for config-driven distillation.

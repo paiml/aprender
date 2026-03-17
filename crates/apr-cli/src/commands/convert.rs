@@ -63,6 +63,13 @@ pub(crate) fn run(
     let quant_type = parse_quantization(quantize)?;
     let compress_type = parse_compression(compress)?;
 
+    // GH-503: Reject no-op conversion (neither quantize nor compress specified)
+    if quant_type.is_none() && compress_type.is_none() {
+        return Err(CliError::ValidationFailed(
+            "At least one of --quantize or --compress must be specified".to_string(),
+        ));
+    }
+
     if !json_output {
         output::header("APR Convert");
         println!(
@@ -202,6 +209,27 @@ mod tests {
         input.write_all(b"test data").expect("write");
         let result = run(input.path(), None, None, output.path(), true, false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_no_transform_rejected() {
+        let input = NamedTempFile::with_suffix(".apr").expect("create input");
+        let result = run(
+            input.path(),
+            None,
+            None,
+            Path::new("/tmp/convert-out.apr"),
+            false,
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("--quantize"));
+                assert!(msg.contains("--compress"));
+            }
+            _ => panic!("Expected ValidationFailed error for no-op conversion"),
+        }
     }
 
     #[test]
