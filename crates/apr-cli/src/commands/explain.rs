@@ -40,11 +40,11 @@ pub(crate) fn run(
     }
 
     if let Some(c) = code {
-        explain_error_code(&c);
+        explain_error_code(&c, json);
     } else if let Some(t) = tensor {
-        explain_tensor(t, resolved_file.as_deref());
+        explain_tensor(t, resolved_file.as_deref(), json);
     } else if let Some(ref f) = resolved_file {
-        explain_file(f);
+        explain_file(f, json);
     } else {
         println!("Please provide an error code, model file path, or --tensor/--kernel");
         println!();
@@ -316,7 +316,50 @@ fn is_model_path(arg: &str, path: &Path) -> bool {
     extensions.iter().any(|ext| arg.ends_with(ext))
 }
 
-fn explain_error_code(code: &str) {
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn explain_error_code(code: &str, json: bool) {
+    // GH-510: Respect --json flag for error code explanations
+    if json {
+        let (title, description, troubleshooting) = match code {
+            "E001" => (
+                "Invalid Magic Bytes",
+                "The file does not start with a recognized format header.",
+                vec![
+                    "Run `apr validate <file>` to check format",
+                    "Verify file was not corrupted during download",
+                ],
+            ),
+            "E002" => (
+                "Corrupted Data",
+                "The payload checksum does not match the header.",
+                vec![
+                    "Run `apr validate --checksum` to verify",
+                    "Check source file integrity (MD5/SHA256)",
+                ],
+            ),
+            _ => {
+                let err = serde_json::json!({
+                    "error": format!("Error code '{}' not recognized", code),
+                    "available_codes": ["E001", "E002", "E003", "E004", "E005", "E006"],
+                });
+                println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+                return;
+            }
+        };
+        let output = serde_json::json!({
+            "code": code,
+            "title": title,
+            "description": description,
+            "troubleshooting": troubleshooting,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+        return;
+    }
+
     println!("Explain error code: {code}");
     match code {
         "E001" => {
@@ -355,7 +398,53 @@ fn explain_error_code(code: &str) {
 }
 
 /// PMAT-266: Explain tensor — look up in actual model file via RosettaStone
-fn explain_tensor(tensor_name: &str, file: Option<&Path>) {
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn explain_tensor(tensor_name: &str, file: Option<&Path>, json: bool) {
+    // GH-510: Respect --json flag for tensor explanations
+    if json {
+        let role = TENSOR_ROLES
+            .iter()
+            .find(|(patterns, _)| patterns.iter().any(|p| tensor_name.contains(p)))
+            .map(|(_, desc)| *desc);
+
+        let mut output = serde_json::json!({
+            "tensor": tensor_name,
+            "role": role.unwrap_or("unknown"),
+        });
+
+        // If a file is provided, try to look up the actual tensor
+        if let Some(path) = file {
+            if path.exists() {
+                let rosetta = aprender::format::rosetta::RosettaStone::new();
+                if let Ok(report) = rosetta.inspect(path) {
+                    let matching: Vec<_> = report
+                        .tensors
+                        .iter()
+                        .filter(|t| t.name == tensor_name || t.name.contains(tensor_name))
+                        .map(|t| {
+                            serde_json::json!({
+                                "name": t.name,
+                                "shape": t.shape,
+                                "dtype": format!("{:?}", t.dtype),
+                            })
+                        })
+                        .collect();
+                    if !matching.is_empty() {
+                        output["matches"] = serde_json::json!(matching);
+                    }
+                    output["file"] = serde_json::json!(path.display().to_string());
+                }
+            }
+        }
+
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+        return;
+    }
+
     println!("Explain tensor: {tensor_name}");
 
     // If a file is provided, try to look up the actual tensor
@@ -511,11 +600,16 @@ fn count_layers(tensor_names: &[String]) -> usize {
         .map_or(0, |n| n + 1)
 }
 
-fn explain_file(path: &Path) {
-    println!("Explain model architecture: {}", path.display());
-
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn explain_file(path: &Path, json: bool) {
     if !path.exists() {
-        println!("File not found: {}", path.display());
+        if json {
+            let err = serde_json::json!({ "error": format!("File not found: {}", path.display()) });
+            println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+        } else {
+            println!("File not found: {}", path.display());
+        }
         return;
     }
 
@@ -523,17 +617,19 @@ fn explain_file(path: &Path) {
     let report = match rosetta.inspect(path) {
         Ok(r) => r,
         Err(e) => {
-            println!("Failed to inspect model: {e}");
-            println!(
-                "Run `apr validate {0}` for format diagnostics.",
-                path.display()
-            );
+            if json {
+                let err = serde_json::json!({ "error": format!("Failed to inspect model: {e}") });
+                println!("{}", serde_json::to_string_pretty(&err).unwrap_or_default());
+            } else {
+                println!("Failed to inspect model: {e}");
+                println!(
+                    "Run `apr validate {0}` for format diagnostics.",
+                    path.display()
+                );
+            }
             return;
         }
     };
-
-    println!("- **Format**: {}", report.format);
-    println!("- **Tensors**: {}", report.tensors.len());
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let has_encoder = tensor_names
@@ -559,12 +655,36 @@ fn explain_file(path: &Path) {
         ("Unknown", "")
     };
 
+    let n_layers = count_layers(&tensor_names);
+
+    // GH-510: Respect --json flag for file explanations
+    if json {
+        let mut output = serde_json::json!({
+            "file": path.display().to_string(),
+            "format": format!("{}", report.format),
+            "tensor_count": report.tensors.len(),
+            "architecture": arch,
+        });
+        if !examples.is_empty() {
+            output["examples"] = serde_json::json!(examples);
+        }
+        if n_layers > 0 {
+            output["layers"] = serde_json::json!(n_layers);
+        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+        return;
+    }
+
+    println!("Explain model architecture: {}", path.display());
+    println!("- **Format**: {}", report.format);
+    println!("- **Tensors**: {}", report.tensors.len());
     println!("- **Architecture**: {arch}");
     if !examples.is_empty() {
         println!("- **Examples**: {examples}");
     }
-
-    let n_layers = count_layers(&tensor_names);
     if n_layers > 0 {
         println!("- **Layers**: {n_layers}");
     }

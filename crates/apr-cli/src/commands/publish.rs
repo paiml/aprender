@@ -135,7 +135,7 @@ pub fn execute(
         }
     }
 
-    let model_card = generate_model_card(
+    let (model_card, file_names) = generate_model_card(
         repo_id,
         model_name,
         license,
@@ -144,7 +144,8 @@ pub fn execute(
         tags,
         &files,
     );
-    let readme_content = model_card.to_huggingface_extended(pipeline_tag, library_name, tags);
+    let readme_content =
+        model_card.to_huggingface_extended(pipeline_tag, library_name, tags, &file_names);
 
     if dry_run {
         println!("=== DRY RUN: Would publish to {} ===\n", repo_id);
@@ -240,14 +241,23 @@ fn generate_model_card(
     _pipeline_tag: &str,
     _library_name: Option<&str>,
     _tags: &[String],
-    _files: &[std::path::PathBuf],
-) -> ModelCard {
+    files: &[std::path::PathBuf],
+) -> (ModelCard, Vec<String>) {
     let name = model_name.unwrap_or_else(|| repo_id.split('/').next_back().unwrap_or(repo_id));
 
-    ModelCard::new(repo_id, "1.0.0")
+    // GH-511: Collect actual file names for dynamic formats table
+    let file_names: Vec<String> = files
+        .iter()
+        .filter_map(|f| f.file_name())
+        .map(|f| f.to_string_lossy().to_string())
+        .collect();
+
+    let card = ModelCard::new(repo_id, "1.0.0")
         .with_name(name)
         .with_license(license)
-        .with_description(format!("{} model published via aprender", name))
+        .with_description(format!("{} model published via aprender", name));
+
+    (card, file_names)
 }
 
 // Note: upload_file function removed in APR-PUB-001
@@ -260,6 +270,7 @@ trait ModelCardExt {
         pipeline_tag: &str,
         library_name: Option<&str>,
         extra_tags: &[String],
+        file_names: &[String],
     ) -> String;
 }
 
@@ -269,6 +280,7 @@ impl ModelCardExt for ModelCard {
         pipeline_tag: &str,
         library_name: Option<&str>,
         extra_tags: &[String],
+        file_names: &[String],
     ) -> String {
         use std::fmt::Write;
 
@@ -357,12 +369,28 @@ impl ModelCardExt for ModelCard {
             let _ = writeln!(output, "{}\n", desc);
         }
 
-        // Formats section
+        // GH-511: Formats section generated from actual uploaded files
         output.push_str("## Available Formats\n\n");
         output.push_str("| Format | Description |\n");
         output.push_str("|--------|-------------|\n");
-        output.push_str("| `model.apr` | Native APR format (streaming, WASM-optimized) |\n");
-        output.push_str("| `model.safetensors` | HuggingFace standard format |\n");
+        if file_names.is_empty() {
+            // Fallback if no files (shouldn't happen in practice)
+            output.push_str("| `model.apr` | Native APR format (streaming, WASM-optimized) |\n");
+        } else {
+            for name in file_names {
+                let desc = match std::path::Path::new(name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                {
+                    Some("apr") => "Native APR format (streaming, WASM-optimized)",
+                    Some("safetensors") => "HuggingFace SafeTensors format",
+                    Some("gguf") => "GGUF format (llama.cpp compatible)",
+                    Some("bin") | Some("pt") | Some("pth") => "PyTorch binary format",
+                    _ => "Model file",
+                };
+                let _ = writeln!(output, "| `{}` | {} |", name, desc);
+            }
+        }
         output.push('\n');
 
         // Usage section

@@ -261,7 +261,7 @@ fn test_find_model_files_case_insensitive() {
 
 #[test]
 fn test_generate_model_card() {
-    let card = generate_model_card(
+    let (card, file_names) = generate_model_card(
         "paiml/test-model",
         Some("Test Model"),
         "mit",
@@ -274,11 +274,12 @@ fn test_generate_model_card() {
     assert_eq!(card.model_id, "paiml/test-model");
     assert_eq!(card.name, "Test Model");
     assert_eq!(card.license, Some("mit".to_string()));
+    assert!(file_names.is_empty());
 }
 
 #[test]
 fn test_generate_model_card_default_name() {
-    let card = generate_model_card(
+    let (card, _) = generate_model_card(
         "paiml/my-awesome-model",
         None, // No explicit name
         "apache-2.0",
@@ -294,7 +295,7 @@ fn test_generate_model_card_default_name() {
 
 #[test]
 fn test_generate_model_card_description_generated() {
-    let card = generate_model_card(
+    let (card, _) = generate_model_card(
         "paiml/whisper-tiny",
         Some("Whisper Tiny"),
         "mit",
@@ -306,6 +307,25 @@ fn test_generate_model_card_description_generated() {
 
     assert!(card.description.is_some());
     assert!(card.description.unwrap().contains("Whisper Tiny"));
+}
+
+#[test]
+fn test_generate_model_card_captures_file_names() {
+    let files = vec![
+        std::path::PathBuf::from("/tmp/model.gguf"),
+        std::path::PathBuf::from("/tmp/model.safetensors"),
+    ];
+    let (_, file_names) = generate_model_card(
+        "paiml/test",
+        None,
+        "mit",
+        "text-generation",
+        None,
+        &[],
+        &files,
+    );
+
+    assert_eq!(file_names, vec!["model.gguf", "model.safetensors"]);
 }
 
 // =========================================================================
@@ -322,6 +342,7 @@ fn test_model_card_extended_asr() {
         "automatic-speech-recognition",
         Some("whisper-apr"),
         &["whisper".to_string()],
+        &[],
     );
 
     assert!(output.contains("pipeline_tag: automatic-speech-recognition"));
@@ -340,6 +361,7 @@ fn test_model_card_extended_text_generation() {
         "text-generation",
         Some("aprender"),
         &["transformer".to_string(), "causal-lm".to_string()],
+        &[],
     );
 
     assert!(output.contains("pipeline_tag: text-generation"));
@@ -358,7 +380,7 @@ fn test_model_card_extended_yaml_front_matter() {
         .with_name("Test")
         .with_license("mit");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     // Should start with YAML front matter
     assert!(output.starts_with("---\n"));
@@ -371,7 +393,7 @@ fn test_model_card_extended_contains_sections() {
         .with_name("Test Model")
         .with_license("mit");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     // Should contain all expected sections
     assert!(output.contains("# Test Model"));
@@ -385,7 +407,7 @@ fn test_model_card_extended_contains_sections() {
 fn test_model_card_extended_code_example() {
     let card = ModelCard::new("paiml/test", "1.0.0").with_name("Test");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     // Should contain Rust code example
     assert!(output.contains("```rust"));
@@ -397,7 +419,7 @@ fn test_model_card_extended_code_example() {
 fn test_model_card_extended_bibtex_citation() {
     let card = ModelCard::new("paiml/test", "1.0.0").with_name("Test");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     assert!(output.contains("```bibtex"));
     assert!(output.contains("@software{aprender,"));
@@ -408,7 +430,7 @@ fn test_model_card_extended_bibtex_citation() {
 fn test_model_card_extended_model_index() {
     let card = ModelCard::new("paiml/test-model", "1.0.0").with_name("Test Model");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     assert!(output.contains("model-index:"));
     assert!(output.contains("- name: paiml/test-model"));
@@ -422,6 +444,7 @@ fn test_model_card_extended_no_library_name() {
     let output = card.to_huggingface_extended(
         "text-generation",
         None, // No library name
+        &[],
         &[],
     );
 
@@ -441,6 +464,7 @@ fn test_model_card_extended_deduplicated_tags() {
             "aprender".to_string(), // Already added by default
             "custom".to_string(),   // New tag
         ],
+        &[],
     );
 
     // Count occurrences of "- rust" (should be exactly 1)
@@ -457,7 +481,7 @@ fn test_model_card_extended_deduplicated_tags() {
 fn test_model_card_extended_multilingual_asr() {
     let card = ModelCard::new("paiml/whisper", "1.0.0").with_name("Whisper");
 
-    let output = card.to_huggingface_extended("automatic-speech-recognition", None, &[]);
+    let output = card.to_huggingface_extended("automatic-speech-recognition", None, &[], &[]);
 
     // ASR models should have language specification
     assert!(output.contains("language:"));
@@ -471,8 +495,36 @@ fn test_model_card_extended_with_architecture() {
         .with_name("Test")
         .with_architecture("transformer");
 
-    let output = card.to_huggingface_extended("text-generation", None, &[]);
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
 
     // Architecture should appear in tags
     assert!(output.contains("  - transformer\n"));
+}
+
+// GH-511: Test that Available Formats section uses actual file names
+#[test]
+fn test_model_card_extended_dynamic_formats() {
+    let card = ModelCard::new("paiml/test", "1.0.0").with_name("Test");
+    let file_names = vec!["model.gguf".to_string(), "weights.safetensors".to_string()];
+
+    let output = card.to_huggingface_extended("text-generation", None, &[], &file_names);
+
+    // Should contain actual file names, not hardcoded defaults
+    assert!(output.contains("| `model.gguf` | GGUF format (llama.cpp compatible) |"));
+    assert!(output.contains("| `weights.safetensors` | HuggingFace SafeTensors format |"));
+    // Available Formats table should NOT contain hardcoded model.apr when not in file list
+    // (Note: model.apr still appears in the Usage code example section, so check table specifically)
+    let formats_section = output.split("## Available Formats").nth(1).unwrap();
+    let formats_table = formats_section.split("## Usage").next().unwrap();
+    assert!(!formats_table.contains("model.apr"));
+}
+
+#[test]
+fn test_model_card_extended_empty_files_fallback() {
+    let card = ModelCard::new("paiml/test", "1.0.0").with_name("Test");
+
+    let output = card.to_huggingface_extended("text-generation", None, &[], &[]);
+
+    // Empty file list should show fallback
+    assert!(output.contains("model.apr"));
 }
