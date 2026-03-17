@@ -2952,8 +2952,17 @@ pub(crate) fn run_encrypt(
     input_path: &Path,
     output_path: &Path,
     key_file: Option<&Path>,
+    force: bool,
     json_output: bool,
 ) -> Result<()> {
+    // GH-509: Overwrite protection
+    if output_path.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            output_path.display()
+        )));
+    }
+
     let start = Instant::now();
 
     let key = derive_encryption_key(key_file)?;
@@ -3028,8 +3037,17 @@ pub(crate) fn run_decrypt(
     input_path: &Path,
     output_path: &Path,
     key_file: Option<&Path>,
+    force: bool,
     json_output: bool,
 ) -> Result<()> {
+    // GH-509: Overwrite protection
+    if output_path.exists() && !force {
+        return Err(CliError::ValidationFailed(format!(
+            "Output file '{}' already exists. Use --force to overwrite.",
+            output_path.display()
+        )));
+    }
+
     let start = Instant::now();
 
     let key = derive_encryption_key(key_file)?;

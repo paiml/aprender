@@ -983,15 +983,17 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             file,
             output,
             key_file,
+            force,
         }) => crate::error::resolve_model_path(file)
-            .and_then(|r| eval::run_encrypt(&r, output, key_file.as_deref(), cli.json)),
+            .and_then(|r| eval::run_encrypt(&r, output, key_file.as_deref(), *force, cli.json)),
 
         ExtendedCommands::Tools(ToolCommands::Decrypt {
             file,
             output,
             key_file,
+            force,
         }) => crate::error::resolve_model_path(file)
-            .and_then(|r| eval::run_decrypt(&r, output, key_file.as_deref(), cli.json)),
+            .and_then(|r| eval::run_decrypt(&r, output, key_file.as_deref(), *force, cli.json)),
 
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),

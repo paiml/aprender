@@ -130,6 +130,10 @@ pub enum ToolCommands {
         /// Encryption key file (32 bytes). If omitted, reads passphrase from stdin.
         #[arg(long, value_name = "FILE")]
         key_file: Option<PathBuf>,
+
+        /// Force overwrite if output file exists
+        #[arg(long)]
+        force: bool,
     },
 
     /// Decrypt model weights encrypted with `apr encrypt`.
@@ -145,5 +149,9 @@ pub enum ToolCommands {
         /// Decryption key file (32 bytes). If omitted, reads passphrase from stdin.
         #[arg(long, value_name = "FILE")]
         key_file: Option<PathBuf>,
+
+        /// Force overwrite if output file exists
+        #[arg(long)]
+        force: bool,
     },
 }
