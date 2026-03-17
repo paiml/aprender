@@ -118,7 +118,7 @@ fn display_merge_header(files: &[PathBuf], output_path: &Path) {
 pub(crate) fn run_plan(
     files: &[PathBuf],
     strategy: &str,
-    output: &Path,
+    output: Option<&Path>,
     weights: Option<Vec<f32>>,
     base_model: Option<PathBuf>,
     drop_rate: f32,
@@ -154,7 +154,7 @@ pub(crate) fn run_plan(
             "plan": true,
             "status": "valid",
             "inputs": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
-            "output": output.display().to_string(),
+            "output": output.map(|p| p.display().to_string()).unwrap_or_else(|| "(not specified)".into()),
             "strategy": strategy,
             "model_count": files.len(),
             "total_input_size": total_input_size,
@@ -183,7 +183,9 @@ pub(crate) fn run_plan(
                 ),
             ));
         }
-        pairs.push(("Output", output.display().to_string()));
+        if let Some(out) = output {
+            pairs.push(("Output", out.display().to_string()));
+        }
         pairs.push(("Strategy", format!("{merge_strategy:?}")));
         pairs.push(("Models", files.len().to_string()));
         pairs.push((
@@ -213,7 +215,7 @@ pub(crate) fn run_plan(
 pub(crate) fn run(
     files: &[PathBuf],
     strategy: &str,
-    output: &Path,
+    output: Option<&Path>,
     weights: Option<Vec<f32>>,
     base_model: Option<PathBuf>,
     drop_rate: f32,
@@ -235,6 +237,10 @@ pub(crate) fn run(
             json_output,
         );
     }
+
+    let output = output.ok_or_else(|| {
+        CliError::ValidationFailed("--output is required for merge execution".into())
+    })?;
 
     validate_merge_inputs(files)?;
 

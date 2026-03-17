@@ -321,7 +321,7 @@
                 PathBuf::from("c.apr"),
             ],
             strategy: "average".to_string(),
-            output: PathBuf::from("merged.apr"),
+            output: Some(PathBuf::from("merged.apr")),
             weights: None,
             base_model: None,
             drop_rate: 0.9,

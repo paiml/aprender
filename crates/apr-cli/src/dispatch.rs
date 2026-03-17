@@ -364,7 +364,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 Ok(r) => merge::run(
                     &r,
                     strategy,
-                    output,
+                    output.as_deref(),
                     weights.clone(),
                     base_model.clone(),
                     *drop_rate,

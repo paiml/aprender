@@ -14,7 +14,7 @@ fn test_run_insufficient_files() {
     let result = run(
         &[file.path().to_path_buf()],
         "average",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -37,7 +37,7 @@ fn test_run_empty_files() {
     let result = run(
         &[],
         "average",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -63,7 +63,7 @@ fn test_run_file_not_found() {
             PathBuf::from("/nonexistent/model2.apr"),
         ],
         "average",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -89,7 +89,7 @@ fn test_run_second_file_not_found() {
             PathBuf::from("/nonexistent/model2.apr"),
         ],
         "average",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -113,7 +113,7 @@ fn test_run_unknown_strategy() {
     let result = run(
         &[file1.path().to_path_buf(), file2.path().to_path_buf()],
         "unknown_strategy",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -139,7 +139,7 @@ fn test_run_ties_without_base_model() {
     let result = run(
         &[file1.path().to_path_buf(), file2.path().to_path_buf()],
         "ties",
-        Path::new("/tmp/merged.safetensors"),
+        Some(Path::new("/tmp/merged.safetensors")),
         None,
         None, // no base model
         0.9,
@@ -167,7 +167,7 @@ fn test_run_dare_without_base_model() {
     let result = run(
         &[file1.path().to_path_buf(), file2.path().to_path_buf()],
         "dare",
-        Path::new("/tmp/merged.safetensors"),
+        Some(Path::new("/tmp/merged.safetensors")),
         None,
         None, // no base model
         0.9,
@@ -200,7 +200,7 @@ fn test_run_slerp_with_three_models() {
             file3.path().to_path_buf(),
         ],
         "slerp",
-        Path::new("/tmp/merged.safetensors"),
+        Some(Path::new("/tmp/merged.safetensors")),
         None,
         None,
         0.9,
@@ -269,7 +269,7 @@ fn test_run_invalid_apr_files() {
     let result = run(
         &[file1.path().to_path_buf(), file2.path().to_path_buf()],
         "average",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         None,
         None,
         0.9,
@@ -293,7 +293,7 @@ fn test_run_with_weights() {
     let result = run(
         &[file1.path().to_path_buf(), file2.path().to_path_buf()],
         "weighted",
-        Path::new("/tmp/merged.apr"),
+        Some(Path::new("/tmp/merged.apr")),
         Some(vec![0.7, 0.3]),
         None,
         0.9,

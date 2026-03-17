@@ -338,7 +338,7 @@
             } => {
                 assert_eq!(files.len(), 2);
                 assert_eq!(strategy, "weighted");
-                assert_eq!(output, PathBuf::from("merged.apr"));
+                assert_eq!(output, Some(PathBuf::from("merged.apr")));
                 assert_eq!(weights, Some(vec![0.7, 0.3]));
             }
             _ => panic!("Expected Merge command"),

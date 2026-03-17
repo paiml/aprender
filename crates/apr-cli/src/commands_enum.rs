@@ -370,9 +370,9 @@ pub enum Commands {
         /// Merge strategy (average, weighted, slerp, ties, dare)
         #[arg(long, default_value = "average")]
         strategy: String,
-        /// Output file path
-        #[arg(short, long)]
-        output: PathBuf,
+        /// Output file path (optional in --plan mode)
+        #[arg(short, long, required_unless_present = "plan")]
+        output: Option<PathBuf>,
         /// Weights for weighted merge (comma-separated, e.g., "0.7,0.3")
         #[arg(long, value_delimiter = ',')]
         weights: Option<Vec<f32>>,

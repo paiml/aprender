@@ -487,7 +487,7 @@ pub(crate) fn run_audit(
         let report = serde_json::json!({
             "path": path.display().to_string(),
             "total_samples": total,
-            "num_classes": num_classes,
+            "num_classes": imbalance_report.distribution.counts.len(),
             "out_of_range_labels": out_of_range,
             "class_distribution": imbalance_report.distribution.counts,
             "imbalance_ratio": imbalance_report.metrics.imbalance_ratio,
