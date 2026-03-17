@@ -192,12 +192,20 @@ fn load_tensor_data_apr(path: &Path) -> Result<TensorDataMap> {
 }
 
 /// Create a canary test from a model
-fn create_canary(model_path: &Path, _input_path: &Path, output_path: &Path) -> Result<()> {
+fn create_canary(model_path: &Path, input_path: &Path, output_path: &Path) -> Result<()> {
     use aprender::format::TensorStats;
+
+    // GH-515: Validate --input file exists (was silently ignored before)
+    if !input_path.as_os_str().is_empty() && input_path != Path::new("") {
+        if !input_path.exists() {
+            return Err(CliError::FileNotFound(input_path.to_path_buf()));
+        }
+    }
 
     println!("{}", "=== APR Canary Create ===".cyan().bold());
     println!();
     println!("Model: {}", model_path.display());
+    println!("Input: {}", input_path.display());
     println!("Output: {}", output_path.display());
     println!();
 

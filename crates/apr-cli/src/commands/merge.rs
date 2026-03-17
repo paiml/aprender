@@ -21,6 +21,7 @@ fn validate_merge_weights(
     weights: Option<Vec<f32>>,
     file_count: usize,
     strategy_name: &str,
+    json_output: bool,
 ) -> Result<Option<Vec<f32>>> {
     match merge_strategy {
         MergeStrategy::Weighted => {
@@ -31,14 +32,20 @@ fn validate_merge_weights(
                 )
             })?;
             validate_weight_values(&w, file_count)?;
-            println!("Weights: {:?}", w);
+            // GH-514: Only print weights in text mode to avoid contaminating JSON output
+            if !json_output {
+                println!("Weights: {:?}", w);
+            }
             Ok(Some(w))
         }
         MergeStrategy::Slerp | MergeStrategy::Dare => {
             // SLERP uses first weight as interpolation t (default 0.5)
             // DARE uses weights for per-model scaling (optional)
             if let Some(ref w) = weights {
-                println!("Weights: {:?}", w);
+                // GH-514: Only print weights in text mode
+                if !json_output {
+                    println!("Weights: {:?}", w);
+                }
             }
             Ok(weights)
         }
@@ -140,7 +147,8 @@ pub(crate) fn run_plan(
         )));
     }
 
-    let validated_weights = validate_merge_weights(merge_strategy, weights, files.len(), strategy)?;
+    let validated_weights =
+        validate_merge_weights(merge_strategy, weights, files.len(), strategy, json_output)?;
 
     // Compute total input size
     let total_input_size: u64 = files
@@ -266,7 +274,8 @@ pub(crate) fn run(
         println!("Strategy: {merge_strategy:?}");
     }
 
-    let validated_weights = validate_merge_weights(merge_strategy, weights, files.len(), strategy)?;
+    let validated_weights =
+        validate_merge_weights(merge_strategy, weights, files.len(), strategy, json_output)?;
     if !json_output {
         println!();
     }
