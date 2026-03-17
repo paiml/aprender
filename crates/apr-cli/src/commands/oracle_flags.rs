@@ -185,6 +185,13 @@ pub(crate) fn run(
                 "Cannot query HuggingFace API in --offline mode".to_string(),
             ));
         }
+        // GH-522: Warn when compliance/tensors flags used with HF mode (requires local file)
+        if show_compliance {
+            eprintln!("Warning: --compliance requires a local file. Flag ignored for HuggingFace queries.");
+        }
+        if show_tensors {
+            eprintln!("Warning: --tensors requires a local file. Flag ignored for HuggingFace queries.");
+        }
         return run_hf_mode(source, json_output, verbose, flags);
     }
 
