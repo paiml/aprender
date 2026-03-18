@@ -293,7 +293,13 @@ fn print_encoder_decoder_flow(tensor_names: &[String], verbose: bool) {
 }
 
 /// Print decoder-only (LLaMA/Qwen/GPT) full flow
-fn print_decoder_only_flow(tensor_names: &[String], _verbose: bool) {
+fn print_decoder_only_flow(tensor_names: &[String], verbose: bool) {
+    // GH-530: Warn that verbose flow output is not yet implemented
+    if verbose {
+        eprintln!(
+            "Warning: --verbose is not yet implemented for flow visualization. Flag ignored."
+        );
+    }
     let n_layers =
         count_layers_by_prefixes(tensor_names, &["model.layers.", "blk.", "transformer.h."]);
 
@@ -376,7 +382,11 @@ fn print_decoder_only_flow(tensor_names: &[String], _verbose: bool) {
 }
 
 /// Print encoder flow
-fn print_encoder_flow(_reader: Option<&AprReader>, tensor_names: &[String], verbose: bool) {
+fn print_encoder_flow(reader: Option<&AprReader>, tensor_names: &[String], verbose: bool) {
+    // GH-530: Warn that reader data is not yet used for encoder flow
+    if reader.is_some() {
+        eprintln!("Warning: --verbose with reader data is not yet implemented for encoder flow.");
+    }
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()
@@ -468,7 +478,11 @@ fn print_encoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 /// Print decoder flow
-fn print_decoder_flow(_reader: Option<&AprReader>, tensor_names: &[String], verbose: bool) {
+fn print_decoder_flow(reader: Option<&AprReader>, tensor_names: &[String], verbose: bool) {
+    // GH-530: Warn that reader data is not yet used for decoder flow
+    if reader.is_some() {
+        eprintln!("Warning: --verbose with reader data is not yet implemented for decoder flow.");
+    }
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()

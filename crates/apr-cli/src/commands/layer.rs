@@ -80,7 +80,11 @@ fn extract_layers_from_hyperparameters(
 }
 
 #[allow(clippy::disallowed_methods)] // unwrap_or_default is safe here for empty vec
-fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, _verbose: bool) -> Vec<LayerTrace> {
+fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, verbose: bool) -> Vec<LayerTrace> {
+    // GH-529: Warn that verbose layer tracing is not yet implemented
+    if verbose {
+        eprintln!("Warning: --verbose is not yet implemented for layer tracing. Flag ignored.");
+    }
     let metadata: BTreeMap<String, serde_json::Value> =
         rmp_serde::from_slice(metadata_bytes).unwrap_or_default();
 
@@ -100,9 +104,16 @@ fn trace_layers(metadata_bytes: &[u8], filter: Option<&str>, _verbose: bool) -> 
 fn compare_with_reference(
     model_path: &Path,
     ref_path: &Path,
-    _layers: &[LayerTrace],
+    layers: &[LayerTrace],
     json_output: bool,
 ) -> Result<(), CliError> {
+    // GH-529: Warn that layer data is not yet used in comparison
+    if !layers.is_empty() {
+        eprintln!(
+            "Warning: Layer comparison with {} traced layers is not yet implemented.",
+            layers.len()
+        );
+    }
     validate_path(ref_path)?;
 
     if json_output {

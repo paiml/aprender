@@ -240,13 +240,16 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 /// - Non-cached remote sources are rejected with a clear error
 ///
 /// Per Section 9.2 (Sovereign AI): "apr run --offline is mandatory for production"
-fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<PathBuf> {
+fn resolve_model(source: &ModelSource, force: bool, offline: bool) -> Result<PathBuf> {
     match source {
         ModelSource::Local(path) => Ok(path.clone()),
         ModelSource::HuggingFace { org, repo, file } => {
             // Check multiple cache locations for the model
-            if let Some(path) = find_cached_model(org, repo, file.as_deref()) {
-                return Ok(path);
+            // GH-528: Skip cache when --force is set to re-download
+            if !force {
+                if let Some(path) = find_cached_model(org, repo, file.as_deref()) {
+                    return Ok(path);
+                }
             }
 
             if offline {
@@ -264,7 +267,8 @@ fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<Pa
         }
         ModelSource::Url(url) => {
             let cache_path = source.cache_path();
-            if cache_path.exists() {
+            // GH-528: Skip cache when --force is set
+            if !force && cache_path.exists() {
                 // Cached URLs are allowed even in offline mode
                 find_model_in_dir(&cache_path)
             } else if offline {
