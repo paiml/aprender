@@ -2307,10 +2307,11 @@ fn compute_ngram_overlap(
 pub(crate) fn run_compare(
     model_a: &Path,
     model_b: Option<&Path>,
-    _data_path: Option<&Path>,
+    data_path: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
-    let model_b = model_b.ok_or_else(|| {
+    // GH-525: Use --data as second model if model_b not provided positionally
+    let model_b = model_b.or(data_path).ok_or_else(|| {
         CliError::ValidationFailed(
             "--data <model_b.safetensors> is required as second model for comparison.\n\
              Usage: apr eval <model_a> --task compare --data <model_b>"

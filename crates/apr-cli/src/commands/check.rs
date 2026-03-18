@@ -365,7 +365,12 @@ fn check_gguf_lm_head(mapped: &MappedGGUFModel, vocab_size: usize) -> StageResul
 
 /// Run REAL validation for GGUF models (PMAT-112)
 #[cfg(feature = "inference")]
-fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, CliError> {
+fn run_real_checks_gguf(path: &Path, no_gpu: bool) -> Result<Vec<StageResult>, CliError> {
+    // GH-524: Warn that --no-gpu is not yet implemented for check validation
+    if no_gpu {
+        eprintln!("Warning: --no-gpu is not yet implemented for check validation. Flag ignored.");
+    }
+
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap GGUF: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)

@@ -167,7 +167,12 @@ fn print_report_text(report: &HeadlessReport) {
 }
 
 /// Run TUI mode (original behavior)
-fn run_tui(model: Option<&str>, _attach: Option<&str>) -> Result<()> {
+fn run_tui(model: Option<&str>, attach: Option<&str>) -> Result<()> {
+    // GH-526: Warn that --attach is not yet implemented for TUI mode
+    if attach.is_some() {
+        eprintln!("Warning: --attach is not yet implemented for TUI mode. Flag ignored.");
+    }
+
     // Setup terminal
     enable_raw_mode()
         .map_err(|e| CliError::ValidationFailed(format!("Failed to enable raw mode: {e}")))?;
