@@ -52,6 +52,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             trace_level,
             trace_payload,
             profile,
+            temperature,
+            top_k,
             chat,
             batch_jsonl,
             verbose,
@@ -65,6 +67,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                     source,
                     batch_file,
                     *max_tokens,
+                    *temperature,
+                    *top_k,
                     effective_no_gpu,
                     *verbose || cli.verbose,
                 ));

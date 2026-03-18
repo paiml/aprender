@@ -202,6 +202,8 @@ pub(crate) fn run_batch(
     source: &str,
     batch_file: &Path,
     max_tokens: usize,
+    temperature: f32,
+    top_k: usize,
     no_gpu: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -214,8 +216,8 @@ pub(crate) fn run_batch(
     let config = BatchInferenceConfig {
         model_path,
         max_tokens,
-        temperature: 0.0,
-        top_k: 1,
+        temperature,
+        top_k,
         no_gpu,
         verbose,
         stop_tokens: vec![],
