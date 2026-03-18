@@ -139,13 +139,16 @@ fn ptx_gate_result(
 /// 5. Generate with prompt A again → output_A2
 /// 6. Assert: output_A == output_A2 (state isolation)
 /// 7. Assert: output_A != output_B (model is functional)
-fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateResult> {
+fn run_gpu_state_isolation_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 
     #[cfg(all(feature = "inference", feature = "cuda"))]
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::ModelFormat;
+
+        // GH-532: Warn that QA config is not yet used for GPU state isolation
+        let _ = config;
 
         if !CudaExecutor::is_available() || CudaExecutor::num_devices() == 0 {
             return Ok(GateResult::skipped(
@@ -168,7 +171,7 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
 
     #[cfg(not(all(feature = "inference", feature = "cuda")))]
     {
-        let _ = (path, _config, start);
+        let _ = (path, config, start);
         Ok(GateResult::skipped(
             "gpu_state_isolation",
             "Requires inference+cuda features",

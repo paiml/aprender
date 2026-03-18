@@ -231,9 +231,15 @@ fn print_contract_violations(failures: &[(&str, &str)]) {
 fn print_apr_validation_json(
     path: &Path,
     report: &ValidationReport,
-    _strict: bool,
+    strict: bool,
     min_score: Option<u8>,
 ) -> Result<(), CliError> {
+    // GH-531: Warn that --strict is not yet implemented for APR JSON output
+    if strict {
+        eprintln!(
+            "Warning: --strict is not yet implemented for APR JSON validation. Flag ignored."
+        );
+    }
     let passed =
         report.failed_checks().is_empty() && min_score.is_none_or(|min| report.total_score >= min);
     // GH-251: Only include executed checks (PASS/FAIL) — SKIP/WARN are not actionable
@@ -387,7 +393,13 @@ fn print_check_results(report: &ValidationReport) {
     );
 }
 
-fn print_summary(report: &ValidationReport, _strict: bool) -> Result<(), CliError> {
+fn print_summary(report: &ValidationReport, strict: bool) -> Result<(), CliError> {
+    // GH-531: Warn that --strict is not yet implemented for APR validation summary
+    if strict {
+        eprintln!(
+            "Warning: --strict is not yet implemented for APR validation summary. Flag ignored."
+        );
+    }
     println!();
 
     let failed_checks = report.failed_checks();
