@@ -374,8 +374,12 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 #[cfg(feature = "inference")]
 fn brick_scores_from_profiler(
     cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
-    _num_layers: usize,
+    num_layers: usize,
 ) -> Vec<BrickScore> {
+    // GH-533: Warn that num_layers is not yet used for per-layer normalization
+    if num_layers > 0 {
+        eprintln!("  Layers: {} (per-layer normalization not yet implemented)", num_layers);
+    }
     let profiler = cuda_model.profiler();
     let mut scores = Vec::new();
 
