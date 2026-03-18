@@ -103,8 +103,11 @@ fn profile_gpu_generation(
         )
         .dimmed()
     );
-    for _ in 0..warmup_passes {
-        let _ = cuda_model.generate_gpu_resident(&test_tokens, &gen_config);
+    for i in 0..warmup_passes {
+        // GH-326: Log warmup failures instead of silently discarding
+        if let Err(e) = cuda_model.generate_gpu_resident(&test_tokens, &gen_config) {
+            eprintln!("Warning: GPU warmup pass {i} failed: {e}");
+        }
     }
 
     // Measurement passes — collect per-token timing
@@ -134,7 +137,10 @@ fn profile_gpu_generation(
             stop_tokens: vec![],
             trace: false,
         };
-        let _ = cuda_model.generate_gpu_resident(&test_tokens, &prefill_config);
+        // GH-326: Log prefill failures instead of silently discarding
+        if let Err(e) = cuda_model.generate_gpu_resident(&test_tokens, &prefill_config) {
+            eprintln!("Warning: prefill pass {pass} failed: {e}");
+        }
         let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
         per_pass_prefill_times.push(prefill_ms);
 

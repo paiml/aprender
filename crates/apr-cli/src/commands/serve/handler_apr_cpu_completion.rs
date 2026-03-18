@@ -118,7 +118,9 @@ fn spawn_cpu_streaming_task(
 ) {
     tokio::task::spawn_blocking(move || {
         let Some(transformer) = s.transformer.as_ref() else {
-            let _ = tx.blocking_send(Err("Transformer not loaded".to_string()));
+            if tx.blocking_send(Err("Transformer not loaded".to_string())).is_err() {
+                eprintln!("Warning: failed to send error to client (channel closed)");
+            }
             return;
         };
 
@@ -138,14 +140,18 @@ fn spawn_cpu_streaming_task(
         };
 
         let Ok(t) = transformer.lock() else {
-            let _ = tx.blocking_send(Err("Lock poisoned".to_string()));
+            if tx.blocking_send(Err("Lock poisoned".to_string())).is_err() {
+                eprintln!("Warning: failed to send error to client (channel closed)");
+            }
             return;
         };
 
-        // GH-284: Stream each token via the callback -> mpsc channel
-        let _ = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+        // GH-326: Log generation errors instead of silently discarding
+        if let Err(e) = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
             tx.blocking_send(Ok(token_id)).is_ok()
-        });
+        }) {
+            eprintln!("Warning: streaming generation failed: {e}");
+        }
     });
 }
 

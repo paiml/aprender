@@ -42,7 +42,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             task,
             format,
             no_gpu,
-            gpu: _,
+            gpu,
             offline,
             benchmark,
             trace,
@@ -57,6 +57,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         } => {
             // GH-240: merge global --json flag into output format
             let effective_format = if cli.json { "json" } else { format.as_str() };
+            // GH-326: --gpu overrides --no-gpu when both specified
+            let effective_no_gpu = if *gpu { false } else { *no_gpu };
             dispatch_run(
                 source,
                 positional_prompt.as_ref(),
@@ -67,7 +69,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 language.as_deref(),
                 task.as_deref(),
                 effective_format,
-                *no_gpu,
+                effective_no_gpu,
                 *offline,
                 *benchmark,
                 *verbose || cli.verbose,

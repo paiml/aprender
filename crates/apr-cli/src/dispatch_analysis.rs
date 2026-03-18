@@ -902,28 +902,31 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             system,
             inspect,
             no_gpu,
-            gpu: _,
+            gpu,
             trace,
             trace_steps,
             trace_verbose,
             trace_output,
             trace_level,
             profile,
-        } => chat::run(
+        } => {
+            // GH-326: --gpu overrides --no-gpu when both specified
+            let effective_no_gpu = if *gpu { false } else { *no_gpu };
+            chat::run(
             file,
             *temperature,
             *top_p,
             *max_tokens,
             system.as_deref(),
             *inspect,
-            *no_gpu,
+            effective_no_gpu,
             *trace,
             trace_steps.as_deref(),
             *trace_verbose,
             trace_output.clone(),
             trace_level.as_str(),
             *profile,
-        ),
+        )},
 
         ExtendedCommands::Tools(ToolCommands::Showcase {
             auto_verify,
