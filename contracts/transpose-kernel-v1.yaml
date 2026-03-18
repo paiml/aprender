@@ -169,3 +169,31 @@ qa_gate:
     - "All FALSIFY tests pass"
     - "No naive (non-tiled) transpose in production code"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- type: involution
+  property: Double transpose = identity
+  formal: T(T(A)) = A
+  applies_to: all
+- type: invariant
+  property: Shape reversal
+  formal: shape(T(A)) = rev(shape(A))
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-TRANSPOSE-001
+  rule: Involution
+  prediction: Double = original
+  test: Random matrices
+  if_fails: Index error
+- id: FALSIFY-TRANSPOSE-002
+  rule: Shape
+  prediction: Reversed
+  test: Various shapes
+  if_fails: Dim swap wrong
+
+kani_harnesses:
+- id: transpose-kani-001
+  obligation: Double transpose = identity
+  bound: 4
+  strategy: bounded_int

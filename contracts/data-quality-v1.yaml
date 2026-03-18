@@ -91,3 +91,9 @@ kani_harness:
     bound: 16
     strategy: exhaustive
     description: "Verify |train|+|val|+|test| == N for N in [0, 16]"
+
+kani_harnesses:
+- id: data-quality-v1-kani-001
+  obligation: Audit completeness
+  bound: 4
+  strategy: bounded_int

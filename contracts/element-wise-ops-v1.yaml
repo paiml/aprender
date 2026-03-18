@@ -215,3 +215,90 @@ qa_gate:
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
   falsification: "Revert to Tensor::new — benchmark must show regression"
+
+proof_obligations:
+- type: invariant
+  property: Add commutativity
+  formal: add(a,b)=add(b,a)
+  applies_to: all
+- type: invariant
+  property: ReLU non-negative
+  formal: relu(x)>=0
+  applies_to: all
+- type: bound
+  property: Sigmoid in (0,1)
+  formal: 0<sigmoid(x)<1
+  applies_to: all
+- type: invariant
+  property: Neg involution
+  formal: neg(neg(x))=x
+  applies_to: all
+- type: monotonicity
+  property: ReLU monotonic
+  formal: x1<=x2 => relu(x1)<=relu(x2)
+  applies_to: all
+- type: bound
+  property: Tanh in (-1,1)
+  formal: -1<tanh(x)<1
+  applies_to: all
+- type: equivalence
+  property: SIMD add parity
+  formal: '|simd-scalar|<1ULP'
+  tolerance: 1.0
+  applies_to: simd
+- type: invariant
+  property: Mul commutativity
+  formal: mul(a,b)=mul(b,a)
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-ELEM-001
+  rule: Add commute
+  prediction: add(a,b)==add(b,a)
+  test: Random
+  if_fails: Non-commutative
+- id: FALSIFY-ELEM-002
+  rule: ReLU non-neg
+  prediction: No negatives
+  test: Extremes
+  if_fails: Branch error
+- id: FALSIFY-ELEM-003
+  rule: Sigmoid range
+  prediction: In (0,1)
+  test: Extremes
+  if_fails: Exp overflow
+- id: FALSIFY-ELEM-004
+  rule: Neg invol
+  prediction: Double=original
+  test: Random
+  if_fails: Sign bit
+- id: FALSIFY-ELEM-005
+  rule: ReLU mono
+  prediction: Order preserved
+  test: Sorted
+  if_fails: Conditional
+- id: FALSIFY-ELEM-006
+  rule: Tanh range
+  prediction: In (-1,1)
+  test: Large values
+  if_fails: Overflow
+- id: FALSIFY-ELEM-007
+  rule: SIMD add
+  prediction: Match ULP
+  test: Compare
+  if_fails: Rounding
+- id: FALSIFY-ELEM-008
+  rule: Mul commute
+  prediction: mul(a,b)==mul(b,a)
+  test: Random
+  if_fails: FMA
+
+kani_harnesses:
+- id: elem-kani-001
+  obligation: ReLU non-negative
+  bound: 8
+  strategy: bounded_int
+- id: elem-kani-002
+  obligation: Neg involution
+  bound: 8
+  strategy: bounded_int

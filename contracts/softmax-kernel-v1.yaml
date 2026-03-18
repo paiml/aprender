@@ -154,3 +154,42 @@ qa_gate:
     - "Benchmark ratio >= min_ratio for all measured bounds"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+
+proof_obligations:
+- type: invariant
+  property: Output sums to 1
+  formal: '|sum(softmax(x)) - 1.0| < eps'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: All outputs in (0,1)
+  formal: 0 < softmax(x)_i < 1
+  applies_to: all
+- type: monotonicity
+  property: Order preservation
+  formal: x_i > x_j => softmax(x)_i > softmax(x)_j
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-SOFTMAX-001
+  rule: Normalization
+  prediction: sums to 1.0
+  test: Random vectors
+  if_fails: Exp instability
+- id: FALSIFY-SOFTMAX-002
+  rule: Positivity
+  prediction: All > 0
+  test: Extreme negatives
+  if_fails: Underflow
+- id: FALSIFY-SOFTMAX-003
+  rule: Order
+  prediction: argmax preserved
+  test: Random vectors
+  if_fails: Precision loss
+
+kani_harnesses:
+- id: softmax-kani-001
+  obligation: Output sums to 1
+  bound: 4
+  strategy: stub_float

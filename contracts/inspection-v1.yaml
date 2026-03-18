@@ -94,3 +94,9 @@ kani_harness:
     bound: 10
     strategy: exhaustive
     description: "Verify weighted sum of 10 binary gates in [0, 100]"
+
+kani_harnesses:
+- id: inspection-v1-kani-001
+  obligation: Metadata extraction completeness
+  bound: 4
+  strategy: bounded_int

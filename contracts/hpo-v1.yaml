@@ -109,3 +109,9 @@ kani_harness:
     bound: 20
     strategy: bounded_int
     description: "Exhaustively verify budget enforcement for budget in [1, 20]"
+
+kani_harnesses:
+- id: hpo-v1-kani-001
+  obligation: Search space coverage
+  bound: 4
+  strategy: bounded_int

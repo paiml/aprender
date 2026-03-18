@@ -74,3 +74,9 @@ falsification_tests:
     rule: "Invalid target"
     prediction: "Unsupported target → clear error, not garbage binary"
     if_fails: "Target validation missing"
+
+kani_harnesses:
+- id: compile-v1-kani-001
+  obligation: Compilation idempotency
+  bound: 4
+  strategy: bounded_int

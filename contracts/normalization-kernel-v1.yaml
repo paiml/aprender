@@ -183,3 +183,33 @@ qa_gate:
     - "Benchmark ratio >= min_ratio for all measured bounds"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- type: invariant
+  property: Unit variance
+  formal: var(norm(x)) ~ 1.0
+  tolerance: 1.0e-05
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  formal: '|simd - scalar| < 8 ULP'
+  tolerance: 8.0
+  applies_to: simd
+
+falsification_tests:
+- id: FALSIFY-NORM-001
+  rule: Variance
+  prediction: var ~1.0
+  test: Random vectors
+  if_fails: Scale wrong
+- id: FALSIFY-NORM-002
+  rule: SIMD parity
+  prediction: Match within ULP
+  test: Compare
+  if_fails: FMA divergence
+
+kani_harnesses:
+- id: norm-kani-001
+  obligation: Unit variance
+  bound: 8
+  strategy: stub_float

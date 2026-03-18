@@ -185,3 +185,32 @@ qa_gate:
     - "Performance >= 0.25x ndarray at all sizes"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- type: equivalence
+  property: SIMD matches naive
+  formal: '|simd - naive| < eps'
+  tolerance: 1.0e-05
+  applies_to: simd
+- type: bound
+  property: Output norm bounded
+  formal: '|Ax|_inf <= |A|_inf * |x|_inf'
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-MATVEC-001
+  rule: SIMD parity
+  prediction: Match within eps
+  test: Random matrices
+  if_fails: Accumulation order
+- id: FALSIFY-MATVEC-002
+  rule: Norm bound
+  prediction: Bounded
+  test: Random inputs
+  if_fails: Overflow
+
+kani_harnesses:
+- id: matvec-kani-001
+  obligation: Output norm bounded
+  bound: 4
+  strategy: bounded_int

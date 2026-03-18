@@ -157,3 +157,32 @@ qa_gate:
     - "Performance >= reference at all sizes"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- type: invariant
+  property: Magnitude preservation
+  formal: '|RoPE(x)|_2 = |x|_2'
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  formal: '|simd - scalar| < 8 ULP'
+  tolerance: 8.0
+  applies_to: simd
+
+falsification_tests:
+- id: FALSIFY-ROPE-001
+  rule: Magnitude
+  prediction: L2 unchanged
+  test: Random vectors
+  if_fails: Trig error
+- id: FALSIFY-ROPE-002
+  rule: SIMD parity
+  prediction: Match
+  test: Compare
+  if_fails: FMA trig
+
+kani_harnesses:
+- id: rope-kani-001
+  obligation: Magnitude preservation
+  bound: 4
+  strategy: stub_float

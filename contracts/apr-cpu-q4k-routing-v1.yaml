@@ -181,3 +181,41 @@ qa_gate:
     - ">=20 tok/s on benchmark"
     - "All FALSIFY tests pass"
   pass_criteria: "All checks pass"
+
+proof_obligations:
+- type: ordering
+  property: Q4K before AprTransformer
+  formal: try_quantized called first
+  applies_to: all
+- type: invariant
+  property: GPU path unchanged
+  formal: gpu call site identical
+  applies_to: all
+- type: bound
+  property: Perf >= 20 tok/s
+  formal: benchmark >= 20.0
+  tolerance: 1.0
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-Q4K-001
+  rule: Q4K loads
+  prediction: try_quantized succeeds
+  test: Load Q4K APR
+  if_fails: from_apr fails
+- id: FALSIFY-Q4K-002
+  rule: Fallback
+  prediction: F32 triggers old path
+  test: Load F32 APR
+  if_fails: Fallback broken
+- id: FALSIFY-Q4K-003
+  rule: Perf
+  prediction: '>=20 tok/s'
+  test: Benchmark
+  if_fails: Wrong dispatch
+
+kani_harnesses:
+- id: q4k-kani-001
+  obligation: Q4K before AprTransformer
+  bound: 2
+  strategy: exhaustive
