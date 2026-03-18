@@ -2727,8 +2727,18 @@ pub(crate) fn run_correlation(
 }
 
 /// Collect (ppl, benchmark_score) pairs from experiment logs.
-fn collect_ppl_benchmark_pairs(dir: &Path, _data_path: Option<&Path>) -> Result<Vec<(f64, f64)>> {
+fn collect_ppl_benchmark_pairs(dir: &Path, data_path: Option<&Path>) -> Result<Vec<(f64, f64)>> {
     let mut pairs = Vec::new();
+
+    // GH-527: Strategy 0: Use explicit --data path if provided
+    if let Some(dp) = data_path {
+        if dp.exists() {
+            let explicit_pairs = collect_from_jsonl_logs(dp)?;
+            if !explicit_pairs.is_empty() {
+                return Ok(explicit_pairs);
+            }
+        }
+    }
 
     // Strategy 1: scan JSONL experiment logs
     pairs.extend(collect_from_jsonl_logs(dir)?);
