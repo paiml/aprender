@@ -53,12 +53,25 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             trace_payload,
             profile,
             chat,
+            batch_jsonl,
             verbose,
         } => {
-            // GH-240: merge global --json flag into output format
-            let effective_format = if cli.json { "json" } else { format.as_str() };
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
+
+            // Batch JSONL mode: load model once, process all prompts
+            if let Some(ref batch_file) = batch_jsonl {
+                return Some(run::run_batch(
+                    source,
+                    batch_file,
+                    *max_tokens,
+                    effective_no_gpu,
+                    *verbose || cli.verbose,
+                ));
+            }
+
+            // GH-240: merge global --json flag into output format
+            let effective_format = if cli.json { "json" } else { format.as_str() };
             dispatch_run(
                 source,
                 positional_prompt.as_ref(),

@@ -193,6 +193,63 @@ fn print_run_output(
     Ok(())
 }
 
+/// Batch inference: load model once, process JSONL prompts.
+///
+/// Eliminates per-invocation model load + CUDA JIT overhead by keeping the
+/// model resident across all prompts. Input/output are JSONL.
+#[cfg(feature = "inference")]
+pub(crate) fn run_batch(
+    source: &str,
+    batch_file: &Path,
+    max_tokens: usize,
+    no_gpu: bool,
+    verbose: bool,
+) -> Result<()> {
+    use realizar::{run_batch_inference, BatchInferenceConfig};
+
+    // Resolve model path (same logic as regular run)
+    let model_source = ModelSource::parse(source)?;
+    let model_path = resolve_model(&model_source, false, false)?;
+
+    let config = BatchInferenceConfig {
+        model_path,
+        max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        no_gpu,
+        verbose,
+        stop_tokens: vec![],
+    };
+
+    let file = std::fs::File::open(batch_file).map_err(|_| {
+        CliError::FileNotFound(batch_file.to_path_buf())
+    })?;
+    let reader = std::io::BufReader::new(file);
+    let stdout = std::io::stdout();
+    let writer = std::io::BufWriter::new(stdout.lock());
+
+    let stats = run_batch_inference(&config, reader, writer)
+        .map_err(|e| CliError::InferenceFailed(format!("Batch inference failed: {e}")))?;
+
+    eprintln!(
+        "[batch] Summary: {} prompts, {} ok, {} failed, {:.1} total tokens, {:.1}s model load",
+        stats.total_prompts,
+        stats.successful,
+        stats.failed,
+        stats.total_tokens_generated,
+        stats.model_load_ms / 1000.0,
+    );
+
+    if stats.failed > 0 {
+        eprintln!(
+            "Warning: {} of {} prompts failed",
+            stats.failed, stats.total_prompts
+        );
+    }
+
+    Ok(())
+}
+
 /// Print benchmark results with optional JSON output.
 fn print_benchmark_results(
     result: &RunResult,
