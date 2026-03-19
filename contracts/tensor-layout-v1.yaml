@@ -512,6 +512,7 @@ falsification_tests:
   - id: FALSIFY-001
     rule: "F-DATA-QUALITY-001 (Embedding density)"
     prediction: "It is impossible to construct ValidatedEmbedding with >50% zeros"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # 36 tests in src/format/validated_tensors.rs
     falsification_test: |
       #[test]
@@ -525,6 +526,7 @@ falsification_tests:
   - id: FALSIFY-002
     rule: "Type enforcement (Poka-Yoke)"
     prediction: "It is impossible to construct AprTransformer without ValidatedEmbedding"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # Compile-time enforcement via private fields
     falsification_test: |
       // This code should NOT compile
@@ -540,6 +542,7 @@ falsification_tests:
   - id: FALSIFY-003
     rule: "F-DATA-QUALITY-002 (NaN rejection)"
     prediction: "It is impossible to construct ValidatedWeight containing NaN"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
@@ -554,6 +557,7 @@ falsification_tests:
   - id: FALSIFY-004
     rule: "F-DATA-QUALITY-004 (Spot check)"
     prediction: "It is impossible to load SafeTensors with 94.5% leading zeros"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
@@ -575,6 +579,7 @@ falsification_tests:
   - id: FALSIFY-005
     rule: "F-LAYOUT-CONTRACT-002 (lm_head shape)"
     prediction: "It is impossible to construct AprTransformer with wrong lm_head shape"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
@@ -590,6 +595,7 @@ falsification_tests:
   - id: FALSIFY-006
     rule: "Cross-crate enforcement"
     prediction: "Both aprender AND realizar enforce identical validation"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # 13 tests in apr-cli/tests/falsification_cross_crate_parity.rs
     implementation: "crates/apr-cli/tests/falsification_cross_crate_parity.rs"
     test_count: 13
@@ -622,6 +628,7 @@ falsification_tests:
   - id: FALSIFY-007
     rule: "Quant dispatch exhaustiveness (PMAT-232)"
     prediction: "It is impossible to add a WeightQuantType variant without updating all dispatch sites"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # 1 test in realizar/src/quantize/contract_tests.rs
     implementation: "realizar/src/quantize/contract_tests.rs::falsify_007_no_catch_all_in_dispatch_sites"
     test_count: 1
@@ -645,6 +652,7 @@ falsification_tests:
   - id: FALSIFY-008
     rule: "Quant type → kernel correctness"
     prediction: "Q6K weights dispatched through q4k_gemv_into produce garbage output"
+    if_fails: "Contract violation"
     status: "IMPLEMENTED"  # 2 tests in realizar/src/quantize/contract_tests.rs
     implementation: "realizar/src/quantize/contract_tests.rs::falsify_qdot_008_*"
     test_count: 2

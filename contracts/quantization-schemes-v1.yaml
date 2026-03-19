@@ -199,6 +199,7 @@ schemes:
 
 proof_obligations:
   - id: PO-QUANT-001
+    type: bound
     name: "Symmetric range bound"
     statement: >
       For any b-bit symmetric quantizer with scale s, and any input x:
@@ -208,6 +209,7 @@ proof_obligations:
     falsification: "Provide x such that |x / s| > 2^(b-1)-1; clamp must saturate, not overflow."
 
   - id: PO-QUANT-002
+    type: bound
     name: "Dequant error bound"
     statement: >
       For any input x representable within the quantizer's range:
@@ -221,6 +223,7 @@ proof_obligations:
       The bound is TIGHT — equality is achieved.
 
   - id: PO-QUANT-003
+    type: bound
     name: "Shape preservation"
     statement: >
       For any tensor T with shape S:
@@ -231,6 +234,7 @@ proof_obligations:
       with wrong shape. Must verify shape after unpacking, not after packing.
 
   - id: PO-QUANT-004
+    type: bound
     name: "Q4K block size formula"
     statement: >
       For a weight tensor of dimension dim (inner dimension):
@@ -245,12 +249,14 @@ proof_obligations:
       (2 super-blocks × 144), not 145 (1 block + 1 element).
 
   - id: PO-QUANT-005
+    type: bound
     name: "Scale non-negativity"
     statement: "scale >= 0 for all quantization schemes"
     proof: "Scale is derived from |x_max| or (x_max - x_min), both non-negative."
     falsification: "Feed a tensor of all zeros — scale must be 0 or a small epsilon, never negative."
 
   - id: PO-QUANT-006
+    type: bound
     name: "Monotonicity of quantization"
     statement: >
       For a fixed scale s, if x1 <= x2 then quant(x1) <= quant(x2)
@@ -259,6 +265,7 @@ proof_obligations:
     falsification: "Provide x1 < x2 where both are within range — quant(x1) must be <= quant(x2)."
 
   - id: PO-QUANT-007
+    type: bound
     name: "Idempotency of dequant(quant(·)) for quantized inputs"
     statement: >
       For any value x that is already a valid dequantized value (i.e. x = k*scale for some integer k):

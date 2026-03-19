@@ -130,3 +130,18 @@ kani_harness:
     bound: 10
     strategy: bounded_int
     description: "Exhaustively verify restart limit for max_restarts in [0, 10]"
+
+kani_harnesses:
+  - id: KANI-TRAINING-001
+    obligation: PO-TRAINING-001
+    property: "Training loop convergence for bounded inputs"
+    bound: 4
+    strategy: bounded_int
+    harness: verify_training_convergence
+
+qa_gate:
+  id: QA-TRAINING
+  name: "Training pipeline contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: []

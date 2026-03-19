@@ -54,7 +54,7 @@ proof_obligations:
     binding: "realizar::inference::SamplingConfig::new"
     status: implemented
 
-  - type: subset
+  - type: invariant
     property: "Nucleus sampling subset"
     formal: "Sampled token within top-p cumulative mass"
     binding: "realizar::inference::sample_nucleus"
