@@ -92,6 +92,12 @@ falsification_tests:
     prediction: "NaN in logits → error, not silent garbage token"
     if_fails: "NaN propagation not detected in sampling"
 
+kani_harnesses:
+- id: KANI-INF-001
+  obligation: "Greedy sampling deterministic"
+  bound: 8
+  strategy: stub_float
+
 kani_harness:
   - id: KANI-INF-001
     property: "argmax unique for distinct logits"

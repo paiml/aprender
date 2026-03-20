@@ -200,7 +200,9 @@ schemes:
 proof_obligations:
   - id: PO-QUANT-001
     type: bound
+    property: "Symmetric range bound"
     name: "Symmetric range bound"
+    formal: "q = clamp(round(x / s), -2^(b-1), 2^(b-1)-1) implies q in range"
     statement: >
       For any b-bit symmetric quantizer with scale s, and any input x:
         q = clamp(round(x / s), -2^(b-1), 2^(b-1)-1)
@@ -210,7 +212,9 @@ proof_obligations:
 
   - id: PO-QUANT-002
     type: bound
+    property: "Dequant error bound"
     name: "Dequant error bound"
+    formal: "|dequant(quant(x)) - x| <= scale / 2"
     statement: >
       For any input x representable within the quantizer's range:
         |dequant(quant(x)) - x| <= scale / 2
@@ -224,7 +228,9 @@ proof_obligations:
 
   - id: PO-QUANT-003
     type: bound
+    property: "Shape preservation"
     name: "Shape preservation"
+    formal: "dequant(quant(T)).shape == T.shape"
     statement: >
       For any tensor T with shape S:
         dequant(quant(T)).shape == S
@@ -235,7 +241,9 @@ proof_obligations:
 
   - id: PO-QUANT-004
     type: bound
+    property: "Q4K block size formula"
     name: "Q4K block size formula"
+    formal: "block_bytes = ceil(dim / 256) * 144"
     statement: >
       For a weight tensor of dimension dim (inner dimension):
         num_superblocks = ceil(dim / 256)
@@ -250,14 +258,18 @@ proof_obligations:
 
   - id: PO-QUANT-005
     type: bound
+    property: "Scale non-negativity"
     name: "Scale non-negativity"
+    formal: "scale >= 0"
     statement: "scale >= 0 for all quantization schemes"
     proof: "Scale is derived from |x_max| or (x_max - x_min), both non-negative."
     falsification: "Feed a tensor of all zeros — scale must be 0 or a small epsilon, never negative."
 
   - id: PO-QUANT-006
-    type: bound
+    type: monotonicity
+    property: "Quantization monotonicity"
     name: "Monotonicity of quantization"
+    formal: "x1 <= x2 implies quant(x1) <= quant(x2)"
     statement: >
       For a fixed scale s, if x1 <= x2 then quant(x1) <= quant(x2)
       (excluding saturation at the range boundary)
@@ -265,7 +277,8 @@ proof_obligations:
     falsification: "Provide x1 < x2 where both are within range — quant(x1) must be <= quant(x2)."
 
   - id: PO-QUANT-007
-    type: bound
+    type: idempotency
+    property: "Grid roundtrip idempotency"
     name: "Idempotency of dequant(quant(·)) for quantized inputs"
     statement: >
       For any value x that is already a valid dequantized value (i.e. x = k*scale for some integer k):
@@ -352,12 +365,30 @@ falsification_tests:
       Scheme dispatch is missing or tag is not checked — wrong decoder silently
       runs and produces plausible-looking garbage (dangerous for production inference)
 
+  - id: FALSIFY-QUANT-006
+    rule: "Monotonicity of quantization"
+    prediction: >
+      For x1 < x2 both within range, quant(x1) <= quant(x2)
+    if_fails: "Quantization is non-monotonic — ordering violated"
+
+  - id: FALSIFY-QUANT-007
+    rule: "Grid roundtrip idempotency"
+    prediction: >
+      For values on the quantization grid (x = k * scale), dequant(quant(x)) == x exactly
+    if_fails: "Grid values not preserved through round-trip — scale computation error"
+
 # =============================================================================
 # KANI HARNESS
 # =============================================================================
 #
 # Bounded model checking via Kani verifier (https://model-checking.github.io/kani/).
 # These harnesses provide formal verification for core correctness properties.
+
+kani_harnesses:
+- id: quant-kani-001
+  obligation: Symmetric range bound
+  bound: 8
+  strategy: bounded_int
 
 kani_harness:
   - id: KANI-QUANT-001

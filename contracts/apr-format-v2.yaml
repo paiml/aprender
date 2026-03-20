@@ -311,44 +311,65 @@ equations:
 
 proof_obligations:
   - id: PROOF-FMT-001
+    type: bound
+    property: "Alignment padding bounded"
     name: "Alignment padding is bounded"
+    formal: "padding(v, a) < a"
     statement: "For any v >= 0 and alignment a > 0 with a a power of two: padding(v, a) < a"
     status: "FORMALLY VERIFIED"
     verifier: "aprender/src/format/kani_proofs.rs::verify_alignment_padding_bounded"
     note: "Kani bounds: alignment <= 4096, offset is any u64"
 
   - id: PROOF-FMT-002
+    type: bound
+    property: "Header size fixed"
     name: "Header is exactly HEADER_SIZE_V2 bytes"
+    formal: "len(to_bytes(header)) == 64"
     statement: "AprV2Header::to_bytes() always returns a [u8; 64]"
     status: "STATICALLY GUARANTEED"
     mechanism: "Return type is [u8; HEADER_SIZE_V2] — enforced by compiler at all call sites"
 
   - id: PROOF-FMT-003
+    type: bound
+    property: "Element count no overflow"
     name: "Tensor element count cannot overflow usize"
+    formal: "dim0 * dim1 <= usize::MAX"
     statement: "For dim0, dim1 <= 2^20: dim0 * dim1 <= usize::MAX on 64-bit targets"
     status: "FORMALLY VERIFIED"
     verifier: "aprender/src/format/kani_proofs.rs::verify_tensor_element_count_no_overflow"
 
   - id: PROOF-FMT-004
+    type: invariant
+    property: "Magic bytes distinct"
     name: "Magic bytes are mutually exclusive"
+    formal: "MAGIC_V2 != MAGIC_V1"
     statement: "MAGIC_V2 != MAGIC_V1 (differ in byte [3]: 0x00 vs 0x4E)"
     status: "FORMALLY VERIFIED"
     verifier: "aprender/src/format/kani_proofs.rs::verify_magic_bytes_distinct"
 
   - id: PROOF-FMT-005
+    type: idempotency
+    property: "Checksum idempotent"
     name: "Header checksum is idempotent"
+    formal: "update_checksum(); verify_checksum() == true"
     statement: "update_checksum(); verify_checksum() == true  always holds"
     status: "ENFORCED BY INVARIANT"
     mechanism: "update_checksum() sets self.checksum = compute_checksum(); verify_checksum() computes same value"
 
   - id: PROOF-FMT-006
+    type: roundtrip
+    property: "Header roundtrip"
     name: "Roundtrip exact equality for header"
+    formal: "from_bytes(to_bytes(h)) == h"
     statement: "from_bytes(to_bytes(h)) == h  for all reachable AprV2Header values"
     status: "ENFORCED BY CONSTRUCTION"
     mechanism: "All fields use fixed-size little-endian encoding; no lossy conversion"
 
   - id: PROOF-FMT-007
+    type: invariant
+    property: "Column-major Jidoka stop"
     name: "LAYOUT_COLUMN_MAJOR triggers Jidoka stop"
+    formal: "flags & 0x0800 != 0 → Err"
     statement: "AprV2Reader::from_bytes returns Err when flags & 0x0800 != 0"
     status: "ENFORCED BY CONSTRUCTION"
     mechanism: "AprV2Flags::is_layout_valid() returns false iff LAYOUT_COLUMN_MAJOR is set; reader checks at open"
@@ -455,9 +476,30 @@ falsification_tests:
       assert_eq!(entry.dtype, TensorDType::F32);
     if_fails: "Serialization has an endianness bug, truncation, or off-by-one in size calculation"
 
+  - id: FALSIFY-FMT-005
+    rule: "Header checksum is idempotent"
+    prediction: "update_checksum followed by verify_checksum always returns true"
+    if_fails: "Checksum computation is not deterministic"
+
+  - id: FALSIFY-FMT-006
+    rule: "LAYOUT_COLUMN_MAJOR Jidoka rejection"
+    prediction: "Setting LAYOUT_COLUMN_MAJOR flag causes reader to return Err"
+    if_fails: "Column-major data accepted silently — kernel computes wrong results"
+
+  - id: FALSIFY-FMT-007
+    rule: "Element count no overflow"
+    prediction: "Tensor dimensions within bounds never overflow usize on multiplication"
+    if_fails: "Dimension multiplication overflows causing incorrect allocation size"
+
 # =============================================================================
 # KANI HARNESS
 # =============================================================================
+
+kani_harnesses:
+- id: fmt-kani-001
+  obligation: Alignment padding bounded
+  bound: 4096
+  strategy: bounded_int
 
 kani_harness:
   - id: KANI-FMT-001

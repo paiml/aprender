@@ -26,6 +26,40 @@ metadata:
 # =============================================================================
 # These are absolute requirements — violation means the config is garbage.
 
+proof_obligations:
+- type: bound
+  property: Hidden dim upper bound
+  formal: hidden_dim <= 65536
+  applies_to: all
+- type: invariant
+  property: GQA divisibility
+  formal: num_heads % num_kv_heads == 0
+  applies_to: all
+
+kani_harnesses:
+- id: mb-kani-001
+  obligation: GQA divisibility
+  bound: 16
+  strategy: bounded_int
+
+equations:
+  gqa_ratio:
+    formula: "gqa_ratio = num_heads / num_kv_heads"
+    domain: "num_heads > 0, num_kv_heads > 0, num_heads % num_kv_heads == 0"
+    codomain: "N+ (positive integer)"
+    invariants:
+      - "gqa_ratio >= 1 (at least 1 query head per KV head)"
+      - "gqa_ratio == 1 means MHA (multi-head attention)"
+      - "gqa_ratio > 1 means GQA (grouped-query attention)"
+
+  head_dim:
+    formula: "head_dim = hidden_dim / num_heads (when explicit_head_dim is None)"
+    domain: "hidden_dim > 0, num_heads > 0, hidden_dim % num_heads == 0"
+    codomain: "N+ (per-head dimension)"
+    invariants:
+      - "head_dim > 0"
+      - "head_dim * num_heads == hidden_dim"
+
 structural_invariants:
 
   - id: SI-001

@@ -14,6 +14,43 @@ metadata:
   updated: "2026-02-26"
   author: "PAIML Engineering"
   description: "Contract preventing tracked symlinks, broken lookups, dev artifacts, and binary bloat from publishing"
+  references:
+    - "crates.io publishing guidelines — https://doc.rust-lang.org/cargo/reference/publishing.html"
+
+proof_obligations:
+- type: invariant
+  property: No tracked symlinks
+  formal: count(git ls-files -s | grep 120000) == 0
+  applies_to: all
+- type: invariant
+  property: No config leaks
+  formal: cargo package --list excludes .cargo/config
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-PUB-001
+  rule: No tracked symlinks
+  prediction: Zero files with mode 120000
+  if_fails: Symlink to local path shipped to crates.io
+- id: FALSIFY-PUB-002
+  rule: No config leaks
+  prediction: No .cargo/config in package list
+  if_fails: Dependency resolution failure for users
+
+kani_harnesses:
+- id: pub-kani-001
+  obligation: No tracked symlinks
+  bound: 4
+  strategy: bounded_int
+
+equations:
+  package_safety:
+    formula: "safe(pkg) = symlinks(pkg) == 0 AND config_leaks(pkg) == 0 AND dev_artifacts(pkg) == 0"
+    domain: "pkg: cargo package file listing"
+    codomain: "Boolean"
+    invariants:
+      - "No tracked symlinks (mode 120000)"
+      - "No .cargo/config.toml in published packages"
 
 # =============================================================================
 # BUG CLASS 1: Tracked Symlinks (PMAT-SQI)
@@ -143,19 +180,14 @@ binary_bloat_rule:
 # =============================================================================
 
 enforcement:
-  script: "scripts/check_publish_safety.sh"
-  wired_into:
-    - "make tier3 (pre-push gate)"
-  checks:
-    - rule: PUB-SAFETY-001
-      method: "git ls-files -s | grep '^120000'"
-    - rule: PUB-SAFETY-002
-      method: "cargo package --list | grep .cargo/config"
-    - rule: PUB-SAFETY-003
-      method: "grep for with_file_name anti-pattern in apr-cli"
-    - rule: "Sanity"
-      method: "Verify find_sibling_file is used at least once"
-    - rule: PUB-SAFETY-004
-      method: "git ls-files | grep '.pmat/'"
-    - rule: PUB-SAFETY-005
-      method: "cargo package --list | grep binary extensions"
+  script:
+    path: "scripts/check_publish_safety.sh"
+    language: "bash"
+    description: "Checks for tracked symlinks, cargo config leaks, companion lookup anti-patterns, dev artifacts, and binary bloat before publish"
+    wired_into: "make tier3 (pre-push gate)"
+    checks:
+      - "PUB-SAFETY-001: git ls-files -s | grep '^120000'"
+      - "PUB-SAFETY-002: cargo package --list | grep .cargo/config"
+      - "PUB-SAFETY-003: grep for with_file_name anti-pattern in apr-cli"
+      - "PUB-SAFETY-004: git ls-files | grep '.pmat/'"
+      - "PUB-SAFETY-005: cargo package --list | grep binary extensions"

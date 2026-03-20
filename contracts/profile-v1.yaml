@@ -93,6 +93,12 @@ falsification_tests:
     prediction: "Zero measurement iterations → error, not NaN throughput"
     if_fails: "Division by zero not guarded"
 
+kani_harnesses:
+- id: KANI-PROF-001
+  obligation: "Roofline classification"
+  bound: 16
+  strategy: stub_float
+
 kani_harness:
   - id: KANI-PROF-001
     property: "Roofline classification"

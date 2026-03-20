@@ -224,6 +224,31 @@ invariants:
 # FALSIFICATION TESTS
 # =============================================================================
 
+proof_obligations:
+- type: equivalence
+  property: Cross-contract consistency
+  formal: vocab_size matches special-tokens-registry
+  applies_to: all
+- type: bound
+  property: Token IDs within vocab
+  formal: all non-zero token IDs < vocab_size
+  applies_to: all
+
+kani_harnesses:
+- id: tv-kani-001
+  obligation: Token IDs within vocab
+  bound: 16
+  strategy: bounded_int
+
+equations:
+  vocab_size_consistency:
+    formula: "vocab_size(tokenizer_contract) == vocab_size(special_tokens_contract)"
+    domain: "model family identifier"
+    codomain: "Boolean"
+    invariants:
+      - "Two sources of truth for vocab_size must agree exactly"
+      - "Mismatch indicates one contract was updated without the other"
+
 falsification_tests:
 
   - id: FALSIFY-TV-001

@@ -206,6 +206,39 @@ detection_invariants:
 # Each test attempts to BREAK a contract invariant (Popperian falsification).
 # If the test passes, the contract holds. If it fails, we found a bug.
 
+proof_obligations:
+- type: invariant
+  property: Delimiter balance
+  formal: count(im_start)==count(im_end)+1
+  applies_to: all
+- type: idempotency
+  property: Sanitization idempotent
+  formal: sanitize(sanitize(x))==sanitize(x)
+  applies_to: all
+
+kani_harnesses:
+- id: ct-kani-001
+  obligation: Delimiter balance
+  bound: 8
+  strategy: bounded_int
+
+equations:
+  delimiter_balance:
+    formula: "count(im_start) == count(im_end) + 1 for N messages with generation prompt"
+    domain: "N >= 0 messages"
+    codomain: "N+"
+    invariants:
+      - "Generation prompt adds one unmatched im_start"
+      - "Empty conversation produces exactly one im_start (generation prompt)"
+
+  sanitization_idempotency:
+    formula: "sanitize(sanitize(x)) == sanitize(x)"
+    domain: "x in valid UTF-8 strings"
+    codomain: "valid UTF-8 strings"
+    invariants:
+      - "Sanitization is a projection (idempotent)"
+      - "Sanitized content never contains injection patterns"
+
 falsification_tests:
 
   - id: FALSIFY-CT-001

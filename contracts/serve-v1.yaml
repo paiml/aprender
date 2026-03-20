@@ -66,7 +66,7 @@ proof_obligations:
     binding: "aprender::serve::stream::emit_token"
     status: implemented
 
-  - type: liveness
+  - type: invariant
     property: "Graceful shutdown"
     formal: "In-flight requests complete before process exit"
     binding: "aprender::serve::shutdown"
@@ -75,6 +75,12 @@ proof_obligations:
 # =============================================================================
 # FALSIFICATION TESTS
 # =============================================================================
+
+kani_harnesses:
+- id: serve-kani-001
+  obligation: Sovereign network isolation
+  bound: 4
+  strategy: bounded_int
 
 falsification_tests:
   - id: FALSIFY-SERVE-001

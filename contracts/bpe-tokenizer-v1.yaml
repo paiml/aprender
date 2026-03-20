@@ -97,6 +97,12 @@ falsification_tests:
     prediction: "encode('') returns empty token list, decode([]) returns ''"
     if_fails: "Empty input not handled"
 
+kani_harnesses:
+- id: KANI-TOK-001
+  obligation: "Vocab size"
+  bound: 32
+  strategy: exhaustive
+
 kani_harness:
   - id: KANI-TOK-001
     property: "Vocab size arithmetic"

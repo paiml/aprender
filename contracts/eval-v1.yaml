@@ -125,6 +125,12 @@ falsification_tests:
 # KANI HARNESS
 # =============================================================================
 
+kani_harnesses:
+- id: KANI-EVAL-001
+  obligation: "pass@k in [0, 1]"
+  bound: 10
+  strategy: exhaustive
+
 kani_harness:
   - id: KANI-EVAL-001
     property: "pass_at_k in [0, 1]"

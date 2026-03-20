@@ -92,6 +92,12 @@ falsification_tests:
     prediction: "QA with zero gates → pass (vacuous truth) or explicit error"
     if_fails: "Division by zero on empty gate list"
 
+kani_harnesses:
+- id: KANI-QA-001
+  obligation: "Regression detection"
+  bound: 8
+  strategy: bounded_int
+
 kani_harness:
   - id: KANI-QA-001
     property: "Regression iff delta > threshold"

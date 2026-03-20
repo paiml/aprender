@@ -36,6 +36,43 @@ metadata:
 #    Citation: Brady, E. (2017). Type-Driven Development with Idris.
 #    Application: ValidatedSafetyLabel bounded enum prevents out-of-range labels.
 
+proof_obligations:
+- type: bound
+  property: Logit shape matches classes
+  formal: len(logits) == num_classes
+  applies_to: all
+- type: bound
+  property: Label index in bounds
+  formal: label < num_classes
+  applies_to: all
+
+kani_harnesses:
+- id: class-kani-001
+  obligation: Logit shape matches classes
+  bound: 8
+  strategy: bounded_int
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  cross_entropy_loss:
+    formula: "L = -log(softmax(logits)[y])"
+    domain: "logits in R^C, y in {0, ..., C-1}"
+    codomain: "R+ (non-negative loss)"
+    invariants:
+      - "L >= 0 for all valid inputs"
+      - "L = 0 iff softmax(logits)[y] = 1.0"
+
+  softmax:
+    formula: "softmax(x)_i = exp(x_i) / sum_j(exp(x_j))"
+    domain: "x in R^C"
+    codomain: "[0, 1]^C with sum = 1"
+    invariants:
+      - "sum(softmax(x)) == 1.0 within epsilon"
+      - "softmax(x)_i > 0 for all i"
+
 # =============================================================================
 # TYPE ENFORCEMENT (Poka-Yoke)
 # =============================================================================
@@ -206,6 +243,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-001
     rule: "F-CLASS-001 (Logit shape)"
     prediction: "It is impossible to construct ValidatedClassLogits with wrong number of elements"
+    if_fails: "Logit shape validation not enforced — wrong-shaped logits reach loss computation"
     falsification_test: |
       #[test]
       fn falsify_class_001_logit_shape_mismatch() {
@@ -219,6 +257,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-002
     rule: "F-CLASS-002 (Label bounds)"
     prediction: "It is impossible to construct ValidatedSafetyLabel with index >= num_classes"
+    if_fails: "Label bounds not enforced — out-of-range labels cause OOB in loss computation"
     falsification_test: |
       #[test]
       fn falsify_class_002_label_out_of_range() {
@@ -230,6 +269,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-003
     rule: "F-CLASS-003 (Softmax sum)"
     prediction: "Softmax of any finite logits sums to 1.0 within epsilon"
+    if_fails: "Softmax implementation produces invalid probability distribution"
     falsification_test: |
       #[test]
       fn falsify_class_003_softmax_sum_invariant() {
@@ -242,6 +282,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-004
     rule: "F-CLASS-004 (Classifier weight shape)"
     prediction: "It is impossible to construct ValidatedClassifierWeight with wrong size"
+    if_fails: "Classifier weight shape not enforced — dimension mismatch in forward pass"
     falsification_test: |
       #[test]
       fn falsify_class_004_weight_shape_mismatch() {
@@ -255,6 +296,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-005
     rule: "F-CLASS-001 (NaN rejection)"
     prediction: "It is impossible to construct ValidatedClassLogits containing NaN"
+    if_fails: "NaN validation not enforced — NaN logits produce undefined loss"
     falsification_test: |
       #[test]
       fn falsify_class_005_nan_logits_rejected() {
@@ -267,6 +309,7 @@ falsification_tests:
   - id: FALSIFY-CLASS-006
     rule: "Type enforcement (single-class rejection)"
     prediction: "It is impossible to construct ValidatedClassLogits with num_classes < 2"
+    if_fails: "Minimum class count not enforced — single-class model produces degenerate output"
     falsification_test: |
       #[test]
       fn falsify_class_006_single_class_rejected() {

@@ -155,6 +155,40 @@ layer_steps:
 # PARITY ENFORCEMENT
 # =============================================================================
 
+proof_obligations:
+- type: equivalence
+  property: GPU CPU parity
+  formal: cos(cpu_logits, gpu_logits) >= 0.98
+  tolerance: 0.02
+  applies_to: all
+- type: bound
+  property: Cosine similarity bounded
+  formal: -1 <= cos(a,b) <= 1
+  applies_to: all
+
+kani_harnesses:
+- id: parity-kani-001
+  obligation: Cosine similarity bounded
+  bound: 8
+  strategy: bounded_int
+
+equations:
+  cosine_similarity:
+    formula: "cos(a, b) = dot(a, b) / (||a|| * ||b||)"
+    domain: "a, b in R^n, ||a|| > 0, ||b|| > 0"
+    codomain: "[-1, 1]"
+    invariants:
+      - "cos(a, a) == 1.0 (self-similarity)"
+      - "cos(a, b) >= 0.999 for parity pass"
+
+  parity_gate_threshold:
+    formula: "cos(cpu_logits, gpu_logits) >= 0.98"
+    domain: "logit vectors from CPU and GPU backends for same input"
+    codomain: "Boolean"
+    invariants:
+      - "Failure triggers CudaInitError and CPU fallback"
+      - "DP4A int8 kernels produce ~0.989 cosine vs CPU float"
+
 parity_tool:
   command: "apr parity model.gguf"
   description: |

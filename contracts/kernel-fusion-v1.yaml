@@ -30,6 +30,9 @@ metadata:
   created: "2026-02-09"
   author: "PAIML Engineering"
   description: "Kernel fusion decision contract with Poka-Yoke enforcement"
+  references:
+    - "Shingo, S. (1986). Zero Quality Control. Productivity Press."
+    - "Williams, S., Waterman, A., Patterson, D. (2009). Roofline Model. CACM 52(4)"
   lessons_learned:
     - "PAR-077: Fused RMSNorm+Gate+Up+SwiGLU was 3x slower (shared memory overhead)"
     - "Code comments are not contracts — decisions must be falsifiable"
@@ -67,6 +70,49 @@ metadata:
 #
 # RULE: Any fused kernel in trueno-gpu MUST have a corresponding entry here.
 # If a kernel exists but has no entry, the build MUST fail (Poka-Yoke).
+
+proof_obligations:
+- type: bound
+  property: Fusion speedup positive
+  formal: speedup > 0
+  applies_to: all
+- type: invariant
+  property: Active fusions have call sites
+  formal: all ACTIVE entries have valid call_site
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-FUSION-001
+  rule: Active fusions called
+  prediction: All ACTIVE fusions have valid call sites
+  if_fails: Dead fusion code
+- id: FALSIFY-FUSION-002
+  rule: Blocked fusions benchmarked
+  prediction: All BLOCKED fusions have benchmark data
+  if_fails: Missing evidence for blocking decision
+
+kani_harnesses:
+- id: fusion-kani-001
+  obligation: Fusion speedup positive
+  bound: 8
+  strategy: bounded_int
+
+equations:
+  fusion_speedup:
+    formula: "speedup = unfused_time / fused_time"
+    domain: "unfused_time > 0, fused_time > 0"
+    codomain: "R+ (speedup ratio)"
+    invariants:
+      - "speedup > 1.0 for ACTIVE fusions"
+      - "speedup < 1.0 for BLOCKED fusions (fused is slower)"
+
+  memory_savings:
+    formula: "saved_bytes = intermediate_dim * sizeof(f32)"
+    domain: "intermediate_dim > 0"
+    codomain: "N+ (bytes saved per layer)"
+    invariants:
+      - "Fused kernel eliminates intermediate buffer allocation"
+      - "Total savings = saved_bytes * num_layers"
 
 fusion_decisions:
 

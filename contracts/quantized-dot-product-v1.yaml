@@ -284,6 +284,40 @@ enforcement:
 #             These are GPU-only formats — adding to ALL_FORMAT_IDS requires
 #             corresponding trait impls. Tracked as future GPU→CPU parity work.
 #
+proof_obligations:
+- type: equivalence
+  property: SIMD matches scalar
+  formal: '|simd - scalar| <= ULP_TOLERANCE * epsilon'
+  tolerance: 1.0e-05
+  applies_to: simd
+- type: invariant
+  property: Format isolation
+  formal: wrong-format kernel produces garbage
+  applies_to: all
+
+kani_harnesses:
+- id: qdot-kani-001
+  obligation: SIMD matches scalar
+  bound: 8
+  strategy: bounded_int
+
+equations:
+  dequantization:
+    formula: "x_i = d * s_j * q_i - dmin * m_j"
+    domain: "q_i in quantized domain, d and dmin are f16 scales, s_j and m_j are sub-block scale/min"
+    codomain: "R (reconstructed float)"
+    invariants:
+      - "When has_dmin=false, offset term vanishes: x_i = d * sc[j] * (q_i - zero_offset)"
+      - "Reconstruction error bounded by scale/2 per element"
+
+  dot_product_decomposition:
+    formula: "dot(W, x) = sum_sb[ d_W * d_x * sum_j(s_j * dot(q_W_j, q_x_j)) - dmin_W * d_x * sum_j(m_j * bsum_j) ]"
+    domain: "W in quantized weight, x in f32 activations"
+    codomain: "R (scalar dot product)"
+    invariants:
+      - "Offset term (bsums) depends only on activations, not weights"
+      - "SIMD result matches scalar reference within ULP_TOLERANCE * epsilon"
+
 falsification_tests:
   - id: FALSIFY-QDOT-001
     rule: "SIMD kernels are numerically equivalent to scalar reference"

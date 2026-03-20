@@ -98,6 +98,8 @@ equations:
 
 proof_obligations:
   - id: PO-PRUNE-001
+    type: invariant
+    property: "Unpruned weight preservation"
     name: "Unpruned weight preservation"
     description: |
       Weights whose magnitude strictly exceeds the pruning threshold are NEVER
@@ -112,6 +114,8 @@ proof_obligations:
       primary poka-yoke for magnitude pruning.
 
   - id: PO-PRUNE-002
+    type: bound
+    property: "Sparsity ratio accuracy"
     name: "Sparsity ratio accuracy"
     description: |
       After magnitude pruning at ratio r, the actual fraction of zeros in the
@@ -125,6 +129,8 @@ proof_obligations:
       deviation of even 1% can violate memory or latency SLOs.
 
   - id: PO-PRUNE-003
+    type: bound
+    property: "Depth prune layer count"
     name: "Depth prune layer count"
     description: |
       After removing n layers by depth pruning, the resulting model contains
@@ -139,6 +145,8 @@ proof_obligations:
       layer count.
 
   - id: PO-PRUNE-004
+    type: bound
+    property: "WANDA score non-negativity"
     name: "WANDA score non-negativity"
     description: |
       Every WANDA importance score must be non-negative. The score is the
@@ -153,6 +161,8 @@ proof_obligations:
       weights would be pruned first, destroying model quality.
 
   - id: PO-PRUNE-005
+    type: invariant
+    property: "Shape preservation"
     name: "Shape preservation"
     description: |
       All pruning methods (magnitude, WANDA, structured-magnitude) MUST return
@@ -177,6 +187,7 @@ falsification_tests:
     prediction: |
       It is impossible for magnitude pruning to zero out a weight whose absolute
       value strictly exceeds the computed threshold.
+    if_fails: "Magnitude pruning destroys weights above threshold"
     status: "PENDING"
     implementation: "tests/contracts/pruning_contract.rs"
     falsification_test: |
@@ -204,6 +215,7 @@ falsification_tests:
       After pruning at ratio r, the actual sparsity of the output tensor lies
       within 1/numel of r. Deviations larger than this indicate a threshold
       computation error.
+    if_fails: "Sparsity ratio not accurately achieved — threshold computation error"
     status: "PENDING"
     implementation: "tests/contracts/pruning_contract.rs"
     falsification_test: |
@@ -235,6 +247,7 @@ falsification_tests:
     prediction: |
       It is impossible for depth_prune to return a model with a layer count
       other than (original - removed).
+    if_fails: "Depth pruning corrupts layer count"
     status: "PENDING"
     implementation: "tests/contracts/pruning_contract.rs"
     falsification_test: |
@@ -260,6 +273,7 @@ falsification_tests:
     prediction: |
       It is impossible to produce a negative WANDA score from non-negative
       weight magnitudes and activation norms.
+    if_fails: "WANDA score computation produces negative values"
     status: "PENDING"
     implementation: "tests/contracts/pruning_contract.rs"
     falsification_test: |
@@ -293,6 +307,7 @@ falsification_tests:
     prediction: |
       It is impossible for any weight-level pruning method to return a tensor
       with a shape different from the input.
+    if_fails: "Pruning mutates tensor shape"
     status: "PENDING"
     implementation: "tests/contracts/pruning_contract.rs"
     falsification_test: |
@@ -334,6 +349,12 @@ falsification_tests:
 # Usage:
 #   cargo kani --harness kani_prune_001_sparsity_ratio_bounded
 #              --unwind 16
+
+kani_harnesses:
+- id: prune-kani-001
+  obligation: Sparsity ratio accuracy
+  bound: 8
+  strategy: bounded_int
 
 kani_harness:
   - id: KANI-PRUNE-001

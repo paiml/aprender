@@ -57,7 +57,7 @@ proof_obligations:
     binding: "aprender::format::transpose_gguf_to_rowmajor"
     status: implemented
 
-  - type: preservation
+  - type: invariant
     property: "Metadata preservation"
     formal: "Arch, vocab_size, hidden_size survive import"
     binding: "aprender::format::apr_import"
@@ -88,6 +88,12 @@ falsification_tests:
     rule: "Unknown format error"
     prediction: "Importing unsupported format → clear error, not panic"
     if_fails: "Format detection missing fallback"
+
+kani_harnesses:
+- id: conv-kani-001
+  obligation: Transpose involution
+  bound: 8
+  strategy: exhaustive
 
 kani_harness:
   - id: KANI-CONV-001

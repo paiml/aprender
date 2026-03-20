@@ -20,6 +20,9 @@ metadata:
   updated: "2026-02-05"
   author: "PAIML Engineering"
   description: "Tensor layout and data quality contract with compile-time enforcement"
+  references:
+    - "Shingo, S. (1986). Zero Quality Control: Source Inspection and the Poka-Yoke System. Productivity Press."
+    - "Popper, K. (1959). The Logic of Scientific Discovery. Hutchinson & Co."
   lessons_learned:
     - "GH-202: No canonical spec for shapes - wasted hours grepping"
     - "PMAT-234: SafeTensors 94.5% zeros passed all structural checks but produced garbage"
@@ -672,6 +675,39 @@ falsification_tests:
     if_test_fails: "Block format assumptions are wrong - Q4K and Q6K are more compatible than expected"
 
 # Toyota Way application notes
+proof_obligations:
+- type: invariant
+  property: Transpose involution
+  formal: transpose(transpose(T))==T
+  applies_to: all
+- type: bound
+  property: Density gate
+  formal: zero_pct < 50% for embeddings
+  applies_to: all
+
+kani_harnesses:
+- id: layout-kani-001
+  obligation: Transpose involution
+  bound: 8
+  strategy: bounded_int
+
+equations:
+  transpose_shape:
+    formula: "transpose([M, N]) = [N, M]"
+    domain: "M, N > 0"
+    codomain: "[N, M]"
+    invariants:
+      - "transpose(transpose(T)) == T (involution)"
+      - "numel(transpose(T)) == numel(T)"
+
+  byte_size:
+    formula: "bytes = out_dim * ceil(in_dim / QK_K) * block_bytes"
+    domain: "out_dim > 0, in_dim > 0, QK_K > 0, block_bytes > 0"
+    codomain: "N+"
+    invariants:
+      - "bytes > 0 for any valid tensor"
+      - "bytes is monotonically increasing in out_dim and in_dim"
+
 toyota_way_principles:
   jidoka: |
     "Automation with a human touch" - The validation stops the line immediately
