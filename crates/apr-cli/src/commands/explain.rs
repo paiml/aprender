@@ -46,14 +46,17 @@ pub(crate) fn run(
     } else if let Some(ref f) = resolved_file {
         explain_file(f, json);
     } else {
-        println!("Please provide an error code, model file path, or --tensor/--kernel");
-        println!();
-        println!("Usage:");
-        println!("  apr explain E001              # explain error code");
-        println!("  apr explain model.gguf        # explain model architecture");
-        println!("  apr explain --tensor q_proj    # explain tensor role");
-        println!("  apr explain --kernel qwen2     # explain kernel dispatch");
-        println!("  apr explain --kernel model.apr # explain kernel from model file");
+        eprintln!("Please provide an error code, model file path, or --tensor/--kernel");
+        eprintln!();
+        eprintln!("Usage:");
+        eprintln!("  apr explain E001              # explain error code");
+        eprintln!("  apr explain model.gguf        # explain model architecture");
+        eprintln!("  apr explain --tensor q_proj    # explain tensor role");
+        eprintln!("  apr explain --kernel qwen2     # explain kernel dispatch");
+        eprintln!("  apr explain --kernel model.apr # explain kernel from model file");
+        return Err(crate::error::CliError::ValidationFailed(
+            "No argument provided — see usage above".into(),
+        ));
     }
     Ok(())
 }
