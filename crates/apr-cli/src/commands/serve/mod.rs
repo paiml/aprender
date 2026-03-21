@@ -26,6 +26,13 @@ use crate::error::{CliError, Result};
 
 /// Serve command entry point (blocking)
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    // PMAT-297: Configure rayon thread pool to physical core count.
+    // Default (all threads incl. HT) causes 44% regression from contention.
+    #[cfg(feature = "inference")]
+    if let Err(e) = realizar::inference::configure_optimal_thread_pool() {
+        eprintln!("[PMAT-297] Thread pool config: {e} (may already be initialized)");
+    }
+
     println!("{}", "=== APR Serve ===".cyan().bold());
     println!();
     println!("Model: {}", model_path.display());
