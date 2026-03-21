@@ -112,229 +112,251 @@ pub fn extract_config_mapping(path: &Path) -> BTreeMap<String, ConfigField> {
 /// Enrich config field rationale with kernel-specific interpretation.
 pub(crate) fn enrich_rationale(key: &str, value: &str, json: &str) -> Option<String> {
     match key {
-        "hidden_act" => match value {
-            "silu" => Some("SiLU activation (not GELU)".to_string()),
-            "gelu" | "gelu_new" | "gelu_pytorch_tanh" | "gelu_fast" => {
-                Some(format!("GELU activation: {value} (not SiLU)"))
-            }
-            _ => Some(format!("Activation: {value}")),
-        },
+        "hidden_act" => enrich_activation(value),
         "rms_norm_eps" => Some("RMSNorm (not LayerNorm)".to_string()),
-        "num_key_value_heads" => {
-            let num_heads = extract_json_string(json, "num_attention_heads")
-                .and_then(|v| v.parse::<u32>().ok());
-            let kv_heads = value.parse::<u32>().ok();
-            match (num_heads, kv_heads) {
-                (Some(h), Some(kv)) if kv == 1 => Some(format!("MQA ({kv} KV head < {h} Q heads)")),
-                (Some(h), Some(kv)) if kv < h => Some(format!("GQA ({kv} KV heads < {h} Q heads)")),
-                (Some(h), Some(kv)) if kv == h => {
-                    Some(format!("MHA ({kv} KV heads == {h} Q heads)"))
-                }
-                _ => None,
-            }
-        }
+        "num_key_value_heads" => enrich_kv_heads(value, json),
         "rope_theta" => Some("RoPE positional encoding".to_string()),
-        "intermediate_size" => {
-            let hidden =
-                extract_json_string(json, "hidden_size").and_then(|v| v.parse::<f64>().ok());
-            let inter = value.parse::<f64>().ok();
-            let act = extract_json_string(json, "hidden_act")
-                .unwrap_or_default()
-                .to_lowercase();
-            let is_gelu = act.contains("gelu");
-            let is_silu = act == "silu" || act == "swish";
-            match (hidden, inter) {
-                (Some(h), Some(i)) if h > 0.0 => {
-                    let ratio = i / h;
-                    // SiLU models use SwiGLU MLP regardless of ratio
-                    // (MoE models have lower per-expert intermediate_size)
-                    // GELU models use standard GELU FFN
-                    let mlp_type = if is_gelu {
-                        "GELU FFN"
-                    } else if is_silu {
-                        "SwiGLU MLP"
-                    } else if ratio > 2.5 {
-                        "SwiGLU MLP"
-                    } else {
-                        "Standard FFN"
-                    };
-                    Some(format!("{mlp_type} ({i:.0}/{h:.0} = {ratio:.2}x)"))
-                }
-                _ => None,
-            }
+        "intermediate_size" => enrich_intermediate_size(value, json),
+        "num_local_experts" | "num_experts" | "n_routed_experts" => enrich_experts(value),
+        "num_experts_per_tok" => enrich_experts_per_tok(value),
+        "tie_word_embeddings" => enrich_tie_embeddings(value),
+        "num_attention_heads" => enrich_attention_heads(value, json),
+        "hidden_size" => enrich_hidden_size(value, json),
+        "num_hidden_layers" => enrich_hidden_layers(value),
+        "vocab_size" => enrich_vocab_size(value, json),
+        "max_position_embeddings" => enrich_max_position(value),
+        _ => None,
+    }
+}
+
+fn enrich_activation(value: &str) -> Option<String> {
+    match value {
+        "silu" => Some("SiLU activation (not GELU)".to_string()),
+        "gelu" | "gelu_new" | "gelu_pytorch_tanh" | "gelu_fast" => {
+            Some(format!("GELU activation: {value} (not SiLU)"))
         }
-        "num_local_experts" | "num_experts" | "n_routed_experts" => {
-            let n: i32 = value.parse().unwrap_or(0);
-            if n > 1 {
-                Some(format!("MoE with {n} experts (expert routing kernel)"))
-            } else if n == 1 {
-                Some("1 expert (dense model, not MoE)".to_string())
-            } else if n < 0 {
-                Some(format!("Invalid: {n} experts (negative)"))
+        _ => Some(format!("Activation: {value}")),
+    }
+}
+
+fn enrich_kv_heads(value: &str, json: &str) -> Option<String> {
+    let num_heads =
+        extract_json_string(json, "num_attention_heads").and_then(|v| v.parse::<u32>().ok());
+    let kv_heads = value.parse::<u32>().ok();
+    match (num_heads, kv_heads) {
+        (Some(h), Some(kv)) if kv == 1 => Some(format!("MQA ({kv} KV head < {h} Q heads)")),
+        (Some(h), Some(kv)) if kv < h => Some(format!("GQA ({kv} KV heads < {h} Q heads)")),
+        (Some(h), Some(kv)) if kv == h => Some(format!("MHA ({kv} KV heads == {h} Q heads)")),
+        _ => None,
+    }
+}
+
+fn enrich_intermediate_size(value: &str, json: &str) -> Option<String> {
+    let hidden = extract_json_string(json, "hidden_size").and_then(|v| v.parse::<f64>().ok());
+    let inter = value.parse::<f64>().ok();
+    let act = extract_json_string(json, "hidden_act")
+        .unwrap_or_default()
+        .to_lowercase();
+    let is_gelu = act.contains("gelu");
+    let is_silu = act == "silu" || act == "swish";
+    match (hidden, inter) {
+        (Some(h), Some(i)) if h > 0.0 => {
+            let ratio = i / h;
+            // SiLU models use SwiGLU MLP regardless of ratio
+            // (MoE models have lower per-expert intermediate_size)
+            // GELU models use standard GELU FFN
+            let mlp_type = if is_gelu {
+                "GELU FFN"
+            } else if is_silu {
+                "SwiGLU MLP"
+            } else if ratio > 2.5 {
+                "SwiGLU MLP"
             } else {
-                None
-            }
-        }
-        "num_experts_per_tok" => {
-            let n: u32 = value.parse().unwrap_or(0);
-            if n > 0 {
-                let plural = if n == 1 { "expert" } else { "experts" };
-                Some(format!("{n} active {plural} per token"))
-            } else {
-                None
-            }
-        }
-        "tie_word_embeddings" => match value {
-            "true" => Some("Shared: embedding == lm_head (saves memory)".to_string()),
-            "false" => Some("Separate embedding and lm_head weights".to_string()),
-            _ => None,
-        },
-        "num_attention_heads" => {
-            let kv = extract_json_string(json, "num_key_value_heads")
-                .and_then(|v| v.parse::<u32>().ok());
-            let n: u32 = value.parse().unwrap_or(0);
-            match kv {
-                Some(kv_n) if kv_n == 1 => Some(format!("{n} query heads, MQA (1 KV head)")),
-                Some(kv_n) if kv_n < n => {
-                    let ratio = n / kv_n;
-                    Some(format!(
-                        "{n} query heads, GQA ({ratio} queries per KV group)"
-                    ))
-                }
-                Some(kv_n) if kv_n == n => Some(format!("{n} heads, MHA (no KV grouping)")),
-                _ => None,
-            }
-        }
-        "hidden_size" => {
-            let n: u64 = value.parse().unwrap_or(0);
-            if n > 0 {
-                let params_est = if let Some(layers) =
-                    extract_json_string(json, "num_hidden_layers")
-                        .and_then(|v| v.parse::<u64>().ok())
-                {
-                    // Use intermediate_size if available for better estimate,
-                    // otherwise fall back to 12*L*d^2 (assumes 4x MLP ratio)
-                    let inter = extract_json_string(json, "intermediate_size")
-                        .and_then(|v| v.parse::<u64>().ok());
-                    // Vocab embeddings: vocab_size * d (+ lm_head if not tied)
-                    let vocab = extract_json_string(json, "vocab_size")
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let tied = extract_json_string(json, "tie_word_embeddings")
-                        .map_or(false, |v| v == "true");
-                    let embed_params = if tied { vocab * n } else { 2 * vocab * n };
-                    // GQA-aware attention: Q+O use full heads, K+V use KV heads
-                    let kv_heads = extract_json_string(json, "num_key_value_heads")
-                        .and_then(|v| v.parse::<u64>().ok());
-                    let head_dim_val = extract_json_string(json, "head_dim")
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or_else(|| {
-                            let nh = extract_json_string(json, "num_attention_heads")
-                                .and_then(|v| v.parse::<u64>().ok())
-                                .unwrap_or(1);
-                            if nh > 0 {
-                                n / nh
-                            } else {
-                                0
-                            }
-                        });
-                    let num_heads = extract_json_string(json, "num_attention_heads")
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(1);
-                    let kv_dim = kv_heads.map_or(n, |kv| kv * head_dim_val);
-                    // Attention: Q(h*hd, d) + K(kv*hd, d) + V(kv*hd, d) + O(d, h*hd)
-                    let attn_params = 2 * num_heads * head_dim_val * n + 2 * kv_dim * n;
-                    // MoE expert params (if any)
-                    let n_experts = extract_json_string(json, "num_local_experts")
-                        .or_else(|| extract_json_string(json, "num_experts"))
-                        .or_else(|| extract_json_string(json, "n_routed_experts"))
-                        .and_then(|v| v.parse::<u64>().ok())
-                        .unwrap_or(0);
-                    let moe_inter = extract_json_string(json, "moe_intermediate_size")
-                        .and_then(|v| v.parse::<u64>().ok());
-                    let est = if let Some(i) = inter {
-                        // SwiGLU/SiLU: 3 MLP matrices (gate+up+down)
-                        // GELU/ReLU: 2 MLP matrices (up+down, no gate)
-                        let act = extract_json_string(json, "hidden_act")
-                            .unwrap_or_default()
-                            .to_lowercase();
-                        let is_gated = act == "silu" || act == "swish" || act.contains("gegelu");
-                        let mlp_factor = if is_gated { 3 } else { 2 };
-                        let dense_mlp = mlp_factor * n * i;
-                        let expert_mlp = if n_experts > 1 {
-                            let ei = moe_inter.unwrap_or(i);
-                            n_experts * mlp_factor * n * ei // per-expert MLP
-                        } else {
-                            0
-                        };
-                        let mlp_total = if n_experts > 1 {
-                            expert_mlp + dense_mlp
-                        } else {
-                            dense_mlp
-                        };
-                        // Per layer: attention + MLP + 2d (norms)
-                        layers * (attn_params + mlp_total + 2 * n) + embed_params
-                    } else {
-                        // Rough estimate assuming 4x MLP (standard FFN: 8d^2/layer)
-                        layers * 12 * n * n + embed_params
-                    };
-                    if est > 1_000_000_000 {
-                        format!(", ~{:.1}B params", est as f64 / 1e9)
-                    } else if est > 1_000_000 {
-                        format!(", ~{:.0}M params", est as f64 / 1e6)
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                };
-                Some(format!("Hidden dim {n}{params_est}"))
-            } else {
-                None
-            }
-        }
-        "num_hidden_layers" => {
-            let n: u32 = value.parse().unwrap_or(0);
-            if n > 0 {
-                Some(format!("{n} transformer layers"))
-            } else {
-                None
-            }
-        }
-        "vocab_size" => {
-            let n: u64 = value.parse().unwrap_or(0);
-            let hidden =
-                extract_json_string(json, "hidden_size").and_then(|v| v.parse::<u64>().ok());
-            if let Some(h) = hidden {
-                let embed_mb = (n * h * 2) as f64 / 1_048_576.0; // fp16
-                Some(format!("{n} tokens (embedding: {embed_mb:.0} MB at fp16)"))
-            } else if n > 0 {
-                Some(format!("{n} tokens"))
-            } else {
-                None
-            }
-        }
-        "max_position_embeddings" => {
-            let n: u64 = value.parse().unwrap_or(0);
-            if n >= 1_048_576 {
-                Some(format!("{n} max seq len (1M+ context)"))
-            } else if n >= 524_288 {
-                Some(format!("{n} max seq len (512K+ context)"))
-            } else if n >= 262_144 {
-                Some(format!("{n} max seq len (256K+ context)"))
-            } else if n >= 131_072 {
-                Some(format!("{n} max seq len (128K+ context)"))
-            } else if n >= 32_768 {
-                Some(format!("{n} max seq len (32K+ context)"))
-            } else if n >= 8_192 {
-                Some(format!("{n} max seq len (8K+ context)"))
-            } else if n > 0 {
-                Some(format!("{n} max seq len"))
-            } else {
-                None
-            }
+                "Standard FFN"
+            };
+            Some(format!("{mlp_type} ({i:.0}/{h:.0} = {ratio:.2}x)"))
         }
         _ => None,
+    }
+}
+
+fn enrich_experts(value: &str) -> Option<String> {
+    let n: i32 = value.parse().unwrap_or(0);
+    if n > 1 {
+        Some(format!("MoE with {n} experts (expert routing kernel)"))
+    } else if n == 1 {
+        Some("1 expert (dense model, not MoE)".to_string())
+    } else if n < 0 {
+        Some(format!("Invalid: {n} experts (negative)"))
+    } else {
+        None
+    }
+}
+
+fn enrich_experts_per_tok(value: &str) -> Option<String> {
+    let n: u32 = value.parse().unwrap_or(0);
+    if n > 0 {
+        let plural = if n == 1 { "expert" } else { "experts" };
+        Some(format!("{n} active {plural} per token"))
+    } else {
+        None
+    }
+}
+
+fn enrich_tie_embeddings(value: &str) -> Option<String> {
+    match value {
+        "true" => Some("Shared: embedding == lm_head (saves memory)".to_string()),
+        "false" => Some("Separate embedding and lm_head weights".to_string()),
+        _ => None,
+    }
+}
+
+fn enrich_attention_heads(value: &str, json: &str) -> Option<String> {
+    let kv = extract_json_string(json, "num_key_value_heads").and_then(|v| v.parse::<u32>().ok());
+    let n: u32 = value.parse().unwrap_or(0);
+    match kv {
+        Some(kv_n) if kv_n == 1 => Some(format!("{n} query heads, MQA (1 KV head)")),
+        Some(kv_n) if kv_n < n => {
+            let ratio = n / kv_n;
+            Some(format!(
+                "{n} query heads, GQA ({ratio} queries per KV group)"
+            ))
+        }
+        Some(kv_n) if kv_n == n => Some(format!("{n} heads, MHA (no KV grouping)")),
+        _ => None,
+    }
+}
+
+fn enrich_hidden_size(value: &str, json: &str) -> Option<String> {
+    let n: u64 = value.parse().unwrap_or(0);
+    if n > 0 {
+        let params_est = estimate_params(n, json);
+        Some(format!("Hidden dim {n}{params_est}"))
+    } else {
+        None
+    }
+}
+
+/// Estimate total model parameters from hidden_size and config.json fields.
+fn estimate_params(n: u64, json: &str) -> String {
+    let Some(layers) =
+        extract_json_string(json, "num_hidden_layers").and_then(|v| v.parse::<u64>().ok())
+    else {
+        return String::new();
+    };
+    // Use intermediate_size if available for better estimate,
+    // otherwise fall back to 12*L*d^2 (assumes 4x MLP ratio)
+    let inter = extract_json_string(json, "intermediate_size").and_then(|v| v.parse::<u64>().ok());
+    // Vocab embeddings: vocab_size * d (+ lm_head if not tied)
+    let vocab = extract_json_string(json, "vocab_size")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    let tied = extract_json_string(json, "tie_word_embeddings").map_or(false, |v| v == "true");
+    let embed_params = if tied { vocab * n } else { 2 * vocab * n };
+    // GQA-aware attention: Q+O use full heads, K+V use KV heads
+    let kv_heads =
+        extract_json_string(json, "num_key_value_heads").and_then(|v| v.parse::<u64>().ok());
+    let head_dim_val = extract_json_string(json, "head_dim")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            let nh = extract_json_string(json, "num_attention_heads")
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(1);
+            if nh > 0 {
+                n / nh
+            } else {
+                0
+            }
+        });
+    let num_heads = extract_json_string(json, "num_attention_heads")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1);
+    let kv_dim = kv_heads.map_or(n, |kv| kv * head_dim_val);
+    // Attention: Q(h*hd, d) + K(kv*hd, d) + V(kv*hd, d) + O(d, h*hd)
+    let attn_params = 2 * num_heads * head_dim_val * n + 2 * kv_dim * n;
+    // MoE expert params (if any)
+    let n_experts = extract_json_string(json, "num_local_experts")
+        .or_else(|| extract_json_string(json, "num_experts"))
+        .or_else(|| extract_json_string(json, "n_routed_experts"))
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    let moe_inter =
+        extract_json_string(json, "moe_intermediate_size").and_then(|v| v.parse::<u64>().ok());
+    let est = if let Some(i) = inter {
+        // SwiGLU/SiLU: 3 MLP matrices (gate+up+down)
+        // GELU/ReLU: 2 MLP matrices (up+down, no gate)
+        let act = extract_json_string(json, "hidden_act")
+            .unwrap_or_default()
+            .to_lowercase();
+        let is_gated = act == "silu" || act == "swish" || act.contains("gegelu");
+        let mlp_factor = if is_gated { 3 } else { 2 };
+        let dense_mlp = mlp_factor * n * i;
+        let expert_mlp = if n_experts > 1 {
+            let ei = moe_inter.unwrap_or(i);
+            n_experts * mlp_factor * n * ei // per-expert MLP
+        } else {
+            0
+        };
+        let mlp_total = if n_experts > 1 {
+            expert_mlp + dense_mlp
+        } else {
+            dense_mlp
+        };
+        // Per layer: attention + MLP + 2d (norms)
+        layers * (attn_params + mlp_total + 2 * n) + embed_params
+    } else {
+        // Rough estimate assuming 4x MLP (standard FFN: 8d^2/layer)
+        layers * 12 * n * n + embed_params
+    };
+    if est > 1_000_000_000 {
+        format!(", ~{:.1}B params", est as f64 / 1e9)
+    } else if est > 1_000_000 {
+        format!(", ~{:.0}M params", est as f64 / 1e6)
+    } else {
+        String::new()
+    }
+}
+
+fn enrich_hidden_layers(value: &str) -> Option<String> {
+    let n: u32 = value.parse().unwrap_or(0);
+    if n > 0 {
+        Some(format!("{n} transformer layers"))
+    } else {
+        None
+    }
+}
+
+fn enrich_vocab_size(value: &str, json: &str) -> Option<String> {
+    let n: u64 = value.parse().unwrap_or(0);
+    let hidden = extract_json_string(json, "hidden_size").and_then(|v| v.parse::<u64>().ok());
+    if let Some(h) = hidden {
+        let embed_mb = (n * h * 2) as f64 / 1_048_576.0; // fp16
+        Some(format!("{n} tokens (embedding: {embed_mb:.0} MB at fp16)"))
+    } else if n > 0 {
+        Some(format!("{n} tokens"))
+    } else {
+        None
+    }
+}
+
+fn enrich_max_position(value: &str) -> Option<String> {
+    let n: u64 = value.parse().unwrap_or(0);
+    if n >= 1_048_576 {
+        Some(format!("{n} max seq len (1M+ context)"))
+    } else if n >= 524_288 {
+        Some(format!("{n} max seq len (512K+ context)"))
+    } else if n >= 262_144 {
+        Some(format!("{n} max seq len (256K+ context)"))
+    } else if n >= 131_072 {
+        Some(format!("{n} max seq len (128K+ context)"))
+    } else if n >= 32_768 {
+        Some(format!("{n} max seq len (32K+ context)"))
+    } else if n >= 8_192 {
+        Some(format!("{n} max seq len (8K+ context)"))
+    } else if n > 0 {
+        Some(format!("{n} max seq len"))
+    } else {
+        None
     }
 }
 
@@ -380,8 +402,21 @@ pub fn detect_constraint_mismatches(
     config_mapping: &BTreeMap<String, ConfigField>,
 ) -> Vec<String> {
     let mut warnings = Vec::new();
+    warnings.extend(check_type_mismatch(config_mapping));
+    warnings.extend(check_activation_mismatch(family, config_mapping));
+    warnings.extend(check_normalization_mismatch(family, config_mapping));
+    warnings.extend(check_attention_mismatch(family, config_mapping));
+    warnings.extend(check_moe_mismatch(family, config_mapping));
+    warnings.extend(check_dimension_validity(config_mapping));
+    // Note: tied_embeddings mismatch NOT warned about — it varies by model size
+    // within a family (small models often tie, large ones don't) and does not
+    // affect kernel dispatch.
+    warnings
+}
 
-    // Check model_type vs architectures contradiction (bug 6)
+/// Check model_type vs architectures contradiction (bug 6).
+fn check_type_mismatch(config_mapping: &BTreeMap<String, ConfigField>) -> Vec<String> {
+    let mut warnings = Vec::new();
     if let Some(mt) = config_mapping.get("model_type") {
         if let Some(arch) = config_mapping.get("_architectures") {
             let arch_lower = arch.value.to_lowercase();
@@ -403,8 +438,15 @@ pub fn detect_constraint_mismatches(
             }
         }
     }
+    warnings
+}
 
-    // Check activation mismatch
+/// Check activation mismatch: hidden_act vs family expected activation.
+fn check_activation_mismatch(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
     if let Some(act) = config_mapping.get("hidden_act") {
         let config_act = act.value.to_lowercase();
         let family_act = family.constraints.activation.to_lowercase();
@@ -427,8 +469,15 @@ pub fn detect_constraint_mismatches(
             ));
         }
     }
+    warnings
+}
 
-    // Check normalization mismatch: config.json norm field vs family constraint
+/// Check normalization mismatch: config.json norm field vs family constraint.
+fn check_normalization_mismatch(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
     let has_rms = config_mapping.contains_key("rms_norm_eps");
     let has_ln = config_mapping.contains_key("layer_norm_epsilon")
         || config_mapping.contains_key("layer_norm_eps")
@@ -449,8 +498,15 @@ pub fn detect_constraint_mismatches(
             family.family
         ));
     }
+    warnings
+}
 
-    // Check attention type mismatch (supports both num_key_value_heads and num_kv_heads)
+/// Check attention type mismatch: attention heads / GQA configuration.
+fn check_attention_mismatch(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
     let kv_field = config_mapping
         .get("num_key_value_heads")
         .or_else(|| config_mapping.get("num_kv_heads"));
@@ -502,8 +558,15 @@ pub fn detect_constraint_mismatches(
             }
         }
     }
+    warnings
+}
 
-    // Check MoE: config has experts but family class is not E
+/// Check MoE mismatch: experts vs family kernel class.
+fn check_moe_mismatch(
+    family: &FamilyInfo,
+    config_mapping: &BTreeMap<String, ConfigField>,
+) -> Vec<String> {
+    let mut warnings = Vec::new();
     let expert_field = config_mapping
         .get("num_local_experts")
         .or_else(|| config_mapping.get("num_experts"))
@@ -544,6 +607,12 @@ pub fn detect_constraint_mismatches(
             ));
         }
     }
+    warnings
+}
+
+/// Check invalid/implausible dimensions and divisibility constraints.
+fn check_dimension_validity(config_mapping: &BTreeMap<String, ConfigField>) -> Vec<String> {
+    let mut warnings = Vec::new();
 
     // Check for invalid dimensions (negative or zero values)
     for (key, label) in &[
@@ -596,10 +665,6 @@ pub fn detect_constraint_mismatches(
             }
         }
     }
-
-    // Note: tied_embeddings mismatch NOT warned about — it varies by model size
-    // within a family (small models often tie, large ones don't) and does not
-    // affect kernel dispatch.
 
     warnings
 }
