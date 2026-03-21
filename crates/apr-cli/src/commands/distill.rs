@@ -1548,6 +1548,43 @@ fn run_plan(
 /// Spawns `realizar serve --model <teacher.apr> --gpu` as a subprocess,
 /// reads prompts from JSONL, generates completions via HTTP, writes output JSONL.
 #[allow(clippy::disallowed_methods)]
+fn start_teacher_server(apr_bin: &Path, model: &str) -> Result<std::process::Child> {
+    use std::process::{Command, Stdio};
+    Command::new(apr_bin)
+        .args(["serve", "run", model, "--gpu", "--port", "8090"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to start apr serve: {e}")))
+}
+
+fn wait_for_server_health(server: &mut std::process::Child, json_output: bool) -> Result<()> {
+    let health_url = "http://127.0.0.1:8090/health";
+    for attempt in 0..180 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        if let Ok(Some(status)) = server.try_wait() {
+            let _ = server.kill();
+            return Err(CliError::ValidationFailed(format!(
+                "apr serve exited with status {status} during startup"
+            )));
+        }
+        match ureq::get(health_url).call() {
+            Ok(resp) if resp.status() == 200 => {
+                if !json_output {
+                    output::pipeline_stage("Starting teacher server", output::StageStatus::Done);
+                    output::kv("  Ready after", format!("{}s", attempt + 1));
+                    println!();
+                }
+                return Ok(());
+            }
+            _ => continue,
+        }
+    }
+    let _ = server.kill();
+    let _ = server.wait();
+    Err(CliError::ValidationFailed("Teacher server did not become ready within 180 seconds".into()))
+}
+
 fn run_text_generate(
     config: &TextDistillConfig,
     config_path: &Path,
@@ -1588,7 +1625,6 @@ fn run_text_generate(
         println!();
     }
 
-    // Use apr serve run (sovereign stack) — spawn ourselves as subprocess
     let apr_bin = std::env::current_exe().map_err(|e| {
         CliError::ValidationFailed(format!("Cannot determine apr binary path: {e}"))
     })?;
@@ -1598,57 +1634,10 @@ fn run_text_generate(
         output::kv("  Binary", apr_bin.display().to_string());
     }
 
-    // Start `apr serve run <model> --gpu --port 8090` as subprocess
-    let mut server = Command::new(&apr_bin)
-        .args([
-            "serve",
-            "run",
-            &config.teacher.model,
-            "--gpu",
-            "--port",
-            "8090",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to start apr serve: {e}")))?;
+    let mut server = start_teacher_server(&apr_bin, &config.teacher.model)?;
+    wait_for_server_health(&mut server, json_output)?;
 
-    // Wait for server to be ready (up to 180s for 17 GB Q4K model load)
     let base_url = "http://127.0.0.1:8090";
-    let health_url = format!("{base_url}/health");
-    let mut ready = false;
-    for attempt in 0..180 {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        // Check if server process died
-        if let Ok(Some(status)) = server.try_wait() {
-            let _ = server.kill();
-            return Err(CliError::ValidationFailed(format!(
-                "apr serve exited with status {status} during startup"
-            )));
-        }
-
-        match ureq::get(&health_url).call() {
-            Ok(resp) if resp.status() == 200 => {
-                ready = true;
-                if !json_output {
-                    output::pipeline_stage("Starting teacher server", output::StageStatus::Done);
-                    output::kv("  Ready after", format!("{}s", attempt + 1));
-                    println!();
-                }
-                break;
-            }
-            _ => continue,
-        }
-    }
-
-    if !ready {
-        let _ = server.kill();
-        let _ = server.wait();
-        return Err(CliError::ValidationFailed(
-            "Teacher server did not become ready within 180 seconds".into(),
-        ));
-    }
 
     // Read prompts from JSONL
     let prompts_file = std::fs::File::open(prompts_path)?;
