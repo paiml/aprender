@@ -1,8 +1,5 @@
-# Unified CI — self-hosted clean-room runners for sovereignty (§2.1.1)
-# Spec: docs/specifications/unified-ci-pipeline.md
-#
-# Calls the centralized reusable gate workflow in paiml/.github.
-# Branch protection requires "unified / gate" to pass before merge.
+# CI — test, lint, coverage, security, gate
+# Unified gate runs separately via org ruleset on PRs.
 
 name: CI
 
@@ -19,13 +16,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unified:
-    uses: paiml/.github/.github/workflows/unified-gate.yml@main
-    with:
-      repo: ${{ github.event.repository.name }}
-      pr_sha: ${{ github.event.pull_request.head.sha || github.sha }}
-    secrets: inherit
-
   test:
     runs-on: [self-hosted, clean-room]
     steps:
