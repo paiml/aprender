@@ -375,3 +375,12 @@ batuta oracle --rag-index                   # Reindex (335 docs)
 ```
 
 Use proactively for trueno SIMD patterns, cross-language equivalents, and stack best practices.
+
+## SSC Training Infrastructure Status (2026-03-22)
+
+- **SSC canary eval**: 90% accuracy, SHIP gate PASS — classifier ready to ship
+- **entrenar cuBLAS integration**: GEMM parity verified between CPU and GPU paths
+- **Blackwell (GB10) training**: Blocked by JIT pre-warming bug in custom PTX kernels. Must use fused NF4 kernel path (15.5 tok/s) until trueno 0.4.36 ships with pre-compiled kernels
+- **apr-cli inference NOT affected**: `apr run` / `apr serve` use cuBLAS (GPU) or trueno SIMD (CPU) — pre-compiled, no custom PTX involved
+- **Trained model (LoRA adapter)**: Architecture-independent safetensors — works on any GPU or CPU via standard PEFT loading
+- **Key tickets**: trueno#200 (Blackwell JIT), trueno#203 (pre-compiled kernels), entrenar#300 (cuBLAS backward)
