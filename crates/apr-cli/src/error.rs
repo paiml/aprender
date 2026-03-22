@@ -99,6 +99,12 @@ pub fn resolve_model_path(
         return Ok(path.to_path_buf());
     }
     if path.is_dir() {
+        // PMAT-314: Check sharded SafeTensors index FIRST — individual shard files
+        // only contain a subset of tensors and will fail the architecture gate.
+        let index = path.join("model.safetensors.index.json");
+        if index.is_file() {
+            return Ok(index);
+        }
         // Try common model file names in priority order
         let candidates = [
             "model.safetensors",
@@ -397,6 +403,24 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), model_file);
         std::fs::remove_file(&model_file).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_model_path_dir_with_sharded_safetensors() {
+        // PMAT-314: Sharded models have index.json that MUST take priority
+        // over individual shard files (model-00001-of-00002.safetensors)
+        let dir = std::env::temp_dir().join("apr-test-resolve-sharded");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let index_file = dir.join("model.safetensors.index.json");
+        let shard_file = dir.join("model-00001-of-00002.safetensors");
+        std::fs::write(&index_file, b"{}").expect("write index");
+        std::fs::write(&shard_file, b"test").expect("write shard");
+        let result = resolve_model_path(&dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), index_file, "index.json must take priority over shard files");
+        std::fs::remove_file(&shard_file).ok();
+        std::fs::remove_file(&index_file).ok();
         std::fs::remove_dir(&dir).ok();
     }
 
