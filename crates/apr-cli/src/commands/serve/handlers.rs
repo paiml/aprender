@@ -29,6 +29,41 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
     use realizar::format::{detect_format, ModelFormat};
     use std::io::Read;
 
+    // PMAT-332/333: If --backend wgpu, load model + dequant + WGPU upload
+    if config.backend.as_deref() == Some("wgpu") {
+        println!();
+        println!("{}", "Backend: WGPU (Vulkan/Metal/WebGPU)".cyan());
+        println!("{}", "PMAT-333: Loading model for WGPU inference...".dimmed());
+
+        // Step 1: Load GGUF model
+        use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
+        let mapped = MappedGGUFModel::from_path(model_path)
+            .map_err(|e| CliError::ModelLoadFailed(format!("GGUF load: {e}")))?;
+        let quantized = OwnedQuantizedModel::from_mapped(&mapped)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Quantized model: {e}")))?;
+        let num_layers = quantized.layers().len();
+        println!("{}", format!(
+            "Model: {} layers loaded for WGPU dequantization",
+            num_layers,
+        ).green());
+
+        // Step 2: Dequantize weights
+        let dequant_start = std::time::Instant::now();
+        let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(&quantized)
+            .map_err(|e| CliError::ModelLoadFailed(format!("Dequant: {e}")))?;
+        let total_mb: f64 = weights.iter().map(|(_, d, _, _)| d.len() * 4).sum::<usize>() as f64 / 1e6;
+        println!("{}", format!(
+            "Dequantized {} weights ({:.0} MB) in {:.1}s",
+            weights.len(), total_mb, dequant_start.elapsed().as_secs_f64(),
+        ).dimmed());
+
+        // Step 3: WGPU upload (requires trueno gpu feature — not yet wired as dependency)
+        println!("{}", "WGPU weight upload: trueno gpu dependency not yet in apr-cli Cargo.toml".yellow());
+        println!("{}", "Falling back to CPU inference with same model".yellow());
+        // TODO: Create WgslForwardPass, upload weights, start HTTP server
+        // For now, fall through to CPU to demonstrate the dequant pipeline works
+    }
+
     // GH-213 + PMAT-314: Detect sharded SafeTensors index.json BEFORE reading file bytes.
     // The index.json is a small JSON file that maps tensor names to shard files.
     // Reading it as binary triggers "header too large" DOS protection.

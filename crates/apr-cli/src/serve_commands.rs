@@ -69,5 +69,8 @@ pub enum ServeCommands {
         /// Enable inline Roofline profiling (adds X-Profile headers)
         #[arg(long)]
         profile: bool,
+        /// PMAT-332: Compute backend override (cuda, cpu, wgpu)
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
     },
 }

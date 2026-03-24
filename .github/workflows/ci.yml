@@ -20,3 +20,10 @@ jobs:
       repo: ${{ github.event.repository.name }}
     secrets: inherit
 
+  # Standalone gate check for org ruleset compatibility
+  gate:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "gate pass"
+
