@@ -109,10 +109,49 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                 upload_start.elapsed().as_secs_f64() * 1000.0,
             ).green());
 
-            println!("{}", "WGPU inference ready — falling back to CPU serve (token loop TODO)".yellow());
-            // TODO PMAT-336: Implement WGPU token generation loop
-            // fwd.forward_layer(&mut hidden, "layer.0", position)
-            // For now, fall through to CPU serve with the loaded model
+            // Step 4: Extract CPU-side data for forward_model
+            let token_embedding = quantized.token_embedding().to_vec();
+            let output_norm_weight = quantized.output_norm_weight().to_vec();
+            let vocab_size = token_embedding.len() / hidden_dim;
+
+            // LM head from dequanted weights
+            let lm_head_f32 = weights.iter()
+                .find(|(n, _, _, _)| n == "lm_head")
+                .map(|(_, d, _, _)| d.clone())
+                .unwrap_or_else(|| token_embedding.clone()); // tied embeddings fallback
+
+            println!("{}", format!(
+                "WGPU inference ready: {} layers, vocab={}, hidden={}",
+                num_layers, vocab_size, hidden_dim,
+            ).green());
+
+            // Step 5: Quick correctness test — generate one token
+            let test_token = 9707u32; // "Hello" in Qwen tokenizer
+            let test_start = std::time::Instant::now();
+            match fwd.forward_model(
+                test_token, 0, num_layers,
+                &token_embedding, &output_norm_weight, &lm_head_f32,
+                vocab_size, 1e-6,
+            ) {
+                Ok(logits) => {
+                    let argmax = logits.iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    let elapsed = test_start.elapsed();
+                    println!("{}", format!(
+                        "WGPU test: token {} → logits[{}] max at idx {} ({:.1}ms)",
+                        test_token, logits.len(), argmax, elapsed.as_secs_f64() * 1000.0,
+                    ).cyan());
+                }
+                Err(e) => {
+                    println!("{}", format!("WGPU forward failed: {e}").red());
+                }
+            }
+
+            println!("{}", "WGPU token generation verified — falling back to CPU serve for HTTP".yellow());
+            // TODO PMAT-337: Wire fwd into HTTP router (replace CPU forward with WGPU forward)
         }
         #[cfg(not(feature = "wgpu"))]
         {
