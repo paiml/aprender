@@ -27,8 +27,10 @@ struct WgpuInferenceState {
     output_norm_weight: Vec<f32>,
     lm_head_f32: Vec<f32>,
     vocab: Vec<String>,
-    /// PMAT-340: Token→ID map for encoding
+    /// PMAT-340: Token→ID map for greedy fallback
     token_to_id: std::collections::HashMap<String, u32>,
+    /// PMAT-341: BPE tokenizer with merge rules (None = greedy fallback)
+    bpe_tokenizer: Option<realizar::apr::BpeTokenizer>,
     num_layers: usize,
     vocab_size: usize,
     hidden_dim: usize,
@@ -54,9 +56,12 @@ async fn wgpu_chat_completion(
         prompt
     );
 
-    // Tokenize using vocab lookup (word-level fallback, not full BPE)
-    // For each token in vocab, check if it matches at current position
-    let prompt_ids: Vec<u32> = tokenize_greedy(&chat_text, &state.token_to_id, state.vocab_size);
+    // PMAT-341: Use BPE tokenizer if available, greedy fallback otherwise
+    let prompt_ids: Vec<u32> = if let Some(ref tok) = state.bpe_tokenizer {
+        tok.encode(&chat_text)
+    } else {
+        tokenize_greedy(&chat_text, &state.token_to_id, state.vocab_size)
+    };
 
     let gen_start = std::time::Instant::now();
     let mut output_ids: Vec<u32> = Vec::new();
@@ -325,9 +330,49 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                 if !v.is_empty() { v[0] = "<unk>".to_string(); }
                 v
             });
-            println!("{}", format!("Vocab: {} tokens from GGUF", vocab.len()).dimmed());
+            // PMAT-341: Extract BPE merge rules for proper tokenization
+            let merges = mapped.model.merge_rules().unwrap_or_default();
+            println!("{}", format!(
+                "Vocab: {} tokens, {} merge rules from GGUF",
+                vocab.len(), merges.len()
+            ).dimmed());
 
-            // Build token→ID map for encoding
+            // Create BPE tokenizer with merge rules
+            let bpe_tokenizer = if !merges.is_empty() {
+                match {
+                    let mut t2id = std::collections::HashMap::new();
+                    for (i, tok) in vocab.iter().enumerate() {
+                        t2id.insert(tok.clone(), i as u32);
+                    }
+                    let special: std::collections::HashMap<String, u32> = vocab.iter()
+                        .enumerate()
+                        .filter(|(_, t)| t.starts_with("<|") && t.ends_with("|>"))
+                        .map(|(i, t)| (t.clone(), i as u32))
+                        .collect();
+                    Ok::<_, String>(realizar::apr::BpeTokenizer {
+                        token_to_id: t2id,
+                        id_to_token: vocab.clone(),
+                        merge_rules: merges,
+                        bos_id: None,
+                        eos_id: Some(151645), // Qwen2 EOS
+                        special_tokens: special,
+                    })
+                } {
+                    Ok(tok) => {
+                        println!("{}", "BPE tokenizer created with merge rules".green());
+                        Some(tok)
+                    }
+                    Err(e) => {
+                        eprintln!("BPE tokenizer failed: {e} — falling back to greedy");
+                        None
+                    }
+                }
+            } else {
+                println!("{}", "No merge rules — using greedy tokenizer".yellow());
+                None
+            };
+
+            // Build token→ID map for greedy fallback
             let token_to_id: std::collections::HashMap<String, u32> = vocab.iter()
                 .enumerate()
                 .map(|(i, t)| (t.clone(), i as u32))
@@ -342,6 +387,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                 lm_head_f32,
                 vocab,
                 token_to_id,
+                bpe_tokenizer,
                 num_layers,
                 vocab_size,
                 hidden_dim,
