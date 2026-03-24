@@ -57,11 +57,67 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             weights.len(), total_mb, dequant_start.elapsed().as_secs_f64(),
         ).dimmed());
 
-        // Step 3: WGPU upload (requires trueno gpu feature — not yet wired as dependency)
-        println!("{}", "WGPU weight upload: trueno gpu dependency not yet in apr-cli Cargo.toml".yellow());
-        println!("{}", "Falling back to CPU inference with same model".yellow());
-        // TODO: Create WgslForwardPass, upload weights, start HTTP server
-        // For now, fall through to CPU to demonstrate the dequant pipeline works
+        // Step 3: WGPU upload + serve
+        #[cfg(feature = "wgpu")]
+        {
+            println!("{}", "Initializing WGPU device...".dimmed());
+            let gpu_dev = trueno::backends::gpu::GpuDevice::new()
+                .map_err(|e| CliError::ModelLoadFailed(format!("WGPU init: {e}")))?;
+            println!("{}", "WGPU device ready (Vulkan/Metal)".green());
+
+            // Get model dims from dequanted weights (avoid private config field)
+            // The first Q proj weight has shape [q_dim, hidden_dim]
+            let hidden_dim = weights.iter()
+                .find(|(n, _, _, _)| n.ends_with(".q_proj"))
+                .map(|(_, _, _, cols)| *cols)
+                .unwrap_or(1536);
+            let intermediate_dim = weights.iter()
+                .find(|(n, _, _, _)| n.ends_with(".gate_proj"))
+                .map(|(_, _, rows, _)| *rows)
+                .unwrap_or(8960);
+            // Infer heads from Q proj: q_dim = num_heads * head_dim
+            let q_dim = weights.iter()
+                .find(|(n, _, _, _)| n.ends_with(".q_proj"))
+                .map(|(_, _, rows, _)| *rows)
+                .unwrap_or(hidden_dim);
+            let kv_dim = weights.iter()
+                .find(|(n, _, _, _)| n.ends_with(".k_proj"))
+                .map(|(_, _, rows, _)| *rows)
+                .unwrap_or(256);
+            let head_dim = 128; // Standard for Qwen2
+            let num_heads = q_dim / head_dim;
+            let num_kv_heads = kv_dim / head_dim;
+
+            let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
+                gpu_dev.device.clone(),
+                gpu_dev.queue.clone(),
+                hidden_dim,
+                num_heads,
+                num_kv_heads,
+                head_dim,
+                intermediate_dim,
+            );
+
+            let upload_start = std::time::Instant::now();
+            for (name, data, _rows, _cols) in &weights {
+                fwd.upload_weight(name, data);
+            }
+            println!("{}", format!(
+                "Uploaded {} weights to GPU ({:.1} MB VRAM) in {:.1}ms",
+                weights.len(),
+                fwd.total_vram_bytes() as f64 / 1e6,
+                upload_start.elapsed().as_secs_f64() * 1000.0,
+            ).green());
+
+            println!("{}", "WGPU inference ready — falling back to CPU serve (token loop TODO)".yellow());
+            // TODO PMAT-336: Implement WGPU token generation loop
+            // fwd.forward_layer(&mut hidden, "layer.0", position)
+            // For now, fall through to CPU serve with the loaded model
+        }
+        #[cfg(not(feature = "wgpu"))]
+        {
+            println!("{}", "WGPU feature not enabled. Build with --features wgpu".yellow());
+        }
     }
 
     // GH-213 + PMAT-314: Detect sharded SafeTensors index.json BEFORE reading file bytes.

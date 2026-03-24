@@ -69,6 +69,8 @@ safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "realizar/gpu"]
 cuda-batch = ["cuda"]
+# PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
+wgpu = ["inference", "trueno/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora"]
