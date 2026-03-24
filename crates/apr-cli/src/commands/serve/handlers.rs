@@ -27,6 +27,8 @@ struct WgpuInferenceState {
     output_norm_weight: Vec<f32>,
     lm_head_f32: Vec<f32>,
     vocab: Vec<String>,
+    /// PMAT-340: Token→ID map for encoding
+    token_to_id: std::collections::HashMap<String, u32>,
     num_layers: usize,
     vocab_size: usize,
     hidden_dim: usize,
@@ -40,16 +42,21 @@ async fn wgpu_chat_completion(
     let max_tokens = body["max_tokens"].as_u64().unwrap_or(64) as usize;
     let messages = body["messages"].as_array();
 
-    // Simple tokenization: extract last user message, split on whitespace
-    // TODO: Use proper BPE tokenizer
+    // PMAT-340: Extract prompt and apply Qwen2 chat template
     let prompt = messages
         .and_then(|m| m.last())
         .and_then(|m| m["content"].as_str())
         .unwrap_or("Hello");
 
-    // Very basic character-level tokenization (placeholder)
-    // Real implementation needs the embedded BPE tokenizer
-    let prompt_ids: Vec<u32> = prompt.chars().map(|c| (c as u32).min(state.vocab_size as u32 - 1)).collect();
+    // Qwen2 chat template: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
+    let chat_text = format!(
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+        prompt
+    );
+
+    // Tokenize using vocab lookup (word-level fallback, not full BPE)
+    // For each token in vocab, check if it matches at current position
+    let prompt_ids: Vec<u32> = tokenize_greedy(&chat_text, &state.token_to_id, state.vocab_size);
 
     let gen_start = std::time::Instant::now();
     let mut output_ids: Vec<u32> = Vec::new();
@@ -141,6 +148,40 @@ async fn wgpu_chat_completion(
         "x_wgpu_latency_ms": elapsed.as_secs_f64() * 1000.0,
         "x_wgpu_tok_s": tok_s,
     }))
+}
+
+/// PMAT-340: Greedy longest-match tokenizer using vocab lookup.
+/// Not BPE — just finds the longest token at each position. Works for
+/// special tokens (<|im_start|>) and single characters. Good enough for
+/// inference demo; proper BPE needed for production.
+#[cfg(feature = "wgpu")]
+fn tokenize_greedy(text: &str, token_to_id: &std::collections::HashMap<String, u32>, vocab_size: usize) -> Vec<u32> {
+    let mut ids = Vec::new();
+    let bytes = text.as_bytes();
+    let mut pos = 0;
+    while pos < bytes.len() {
+        let mut best_len = 0;
+        let mut best_id = 0u32; // <unk>
+        // Try longest match first (up to 32 bytes)
+        let max_len = (bytes.len() - pos).min(32);
+        for len in (1..=max_len).rev() {
+            if let Ok(s) = std::str::from_utf8(&bytes[pos..pos + len]) {
+                if let Some(&id) = token_to_id.get(s) {
+                    best_len = len;
+                    best_id = id;
+                    break;
+                }
+            }
+        }
+        if best_len == 0 {
+            // Single byte fallback — use byte value as token ID (capped)
+            best_id = (bytes[pos] as u32).min(vocab_size as u32 - 1);
+            best_len = 1;
+        }
+        ids.push(best_id);
+        pos += best_len;
+    }
+    ids
 }
 
 // ============================================================================
@@ -277,9 +318,19 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             // PMAT-339: WGPU HTTP serve — minimal /v1/chat/completions endpoint
             println!("{}", "Starting WGPU inference server...".cyan());
 
-            // Extract vocab for detokenization (placeholder — proper BPE needed)
-            let vocab: Vec<String> = (0..vocab_size)
-                .map(|i| format!("token{i}"))
+            // PMAT-340: Extract real vocab from GGUF for tokenization/detokenization
+            let vocab: Vec<String> = mapped.model.vocabulary().unwrap_or_else(|| {
+                eprintln!("Warning: No vocabulary in GGUF, using placeholder");
+                let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+                if !v.is_empty() { v[0] = "<unk>".to_string(); }
+                v
+            });
+            println!("{}", format!("Vocab: {} tokens from GGUF", vocab.len()).dimmed());
+
+            // Build token→ID map for encoding
+            let token_to_id: std::collections::HashMap<String, u32> = vocab.iter()
+                .enumerate()
+                .map(|(i, t)| (t.clone(), i as u32))
                 .collect();
 
             // Wrap inference state in Arc for axum handler
@@ -290,6 +341,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                 output_norm_weight,
                 lm_head_f32,
                 vocab,
+                token_to_id,
                 num_layers,
                 vocab_size,
                 hidden_dim,
