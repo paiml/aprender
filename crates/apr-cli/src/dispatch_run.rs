@@ -76,6 +76,7 @@ fn dispatch_serve(
     trace_level: &str,
     profile: bool,
     verbose: bool,
+    backend: &Option<String>,
 ) -> Result<(), CliError> {
     let config = serve::ServerConfig {
         port,
@@ -89,6 +90,7 @@ fn dispatch_serve(
         trace_level: trace_level.to_owned(),
         profile,
         verbose,
+        backend: backend.clone(),
         ..Default::default()
     };
     serve::run(file, &config)
@@ -119,6 +121,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             trace,
             trace_level,
             profile,
+            backend,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,
@@ -133,6 +136,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 trace_level,
                 *profile,
                 cli.verbose,
+                backend,
             )
         }),
     }

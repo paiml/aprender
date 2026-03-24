@@ -52,6 +52,8 @@ pub struct ServerConfig {
     pub profile: bool,
     /// GH-152: Enable verbose request/response logging
     pub verbose: bool,
+    /// PMAT-332: Compute backend override (cuda, cpu, wgpu)
+    pub backend: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -70,6 +72,7 @@ impl Default for ServerConfig {
             trace_level: "basic".to_string(),
             profile: false,
             verbose: false,
+            backend: None,
         }
     }
 }
