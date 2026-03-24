@@ -19,6 +19,130 @@ use std::time::Instant;
 use super::safetensors::{load_safetensors_tokenizer, SafeTensorsTokenizerInfo};
 use super::types::ServerConfig;
 
+// PMAT-339: WGPU inference state + chat completion handler
+#[cfg(feature = "wgpu")]
+struct WgpuInferenceState {
+    fwd: std::sync::Mutex<trueno::backends::gpu::WgslForwardPass>,
+    token_embedding: Vec<f32>,
+    output_norm_weight: Vec<f32>,
+    lm_head_f32: Vec<f32>,
+    vocab: Vec<String>,
+    num_layers: usize,
+    vocab_size: usize,
+    hidden_dim: usize,
+}
+
+#[cfg(feature = "wgpu")]
+async fn wgpu_chat_completion(
+    state: Arc<WgpuInferenceState>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> axum::Json<serde_json::Value> {
+    let max_tokens = body["max_tokens"].as_u64().unwrap_or(64) as usize;
+    let messages = body["messages"].as_array();
+
+    // Simple tokenization: extract last user message, split on whitespace
+    // TODO: Use proper BPE tokenizer
+    let prompt = messages
+        .and_then(|m| m.last())
+        .and_then(|m| m["content"].as_str())
+        .unwrap_or("Hello");
+
+    // Very basic character-level tokenization (placeholder)
+    // Real implementation needs the embedded BPE tokenizer
+    let prompt_ids: Vec<u32> = prompt.chars().map(|c| (c as u32).min(state.vocab_size as u32 - 1)).collect();
+
+    let gen_start = std::time::Instant::now();
+    let mut output_ids: Vec<u32> = Vec::new();
+
+    // Lock the forward pass for inference
+    let fwd = state.fwd.lock().unwrap();
+
+    // Prefill: process all prompt tokens
+    let mut last_logits = Vec::new();
+    for (pos, &token_id) in prompt_ids.iter().enumerate() {
+        match fwd.forward_model(
+            token_id, pos, state.num_layers,
+            &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+            state.vocab_size, 1e-6,
+        ) {
+            Ok(logits) => last_logits = logits,
+            Err(e) => {
+                return axum::Json(serde_json::json!({
+                    "error": format!("Forward failed: {e}")
+                }));
+            }
+        }
+    }
+
+    // Decode: sample tokens autoregressively
+    for step in 0..max_tokens {
+        // Argmax sampling
+        let next_token = last_logits.iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i as u32)
+            .unwrap_or(0);
+
+        // EOS check (Qwen: 151645)
+        if next_token == 151645 || next_token == 0 {
+            break;
+        }
+
+        output_ids.push(next_token);
+
+        let position = prompt_ids.len() + step;
+        match fwd.forward_model(
+            next_token, position, state.num_layers,
+            &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+            state.vocab_size, 1e-6,
+        ) {
+            Ok(logits) => last_logits = logits,
+            Err(e) => break,
+        }
+    }
+    drop(fwd); // Release lock
+
+    let elapsed = gen_start.elapsed();
+
+    // Detokenize using vocab
+    let output_text: String = output_ids.iter()
+        .map(|&id| {
+            if (id as usize) < state.vocab.len() {
+                state.vocab[id as usize].clone()
+            } else {
+                format!("[{}]", id)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
+    let tok_s = if elapsed.as_secs_f64() > 0.0 {
+        output_ids.len() as f64 / elapsed.as_secs_f64()
+    } else { 0.0 };
+
+    axum::Json(serde_json::json!({
+        "id": format!("chatcmpl-wgpu-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
+        "object": "chat.completion",
+        "model": "qwen-wgpu",
+        "choices": [{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": output_text,
+            },
+            "finish_reason": if output_ids.len() >= max_tokens { "length" } else { "stop" },
+        }],
+        "usage": {
+            "prompt_tokens": prompt_ids.len(),
+            "completion_tokens": output_ids.len(),
+            "total_tokens": prompt_ids.len() + output_ids.len(),
+        },
+        "x_wgpu_latency_ms": elapsed.as_secs_f64() * 1000.0,
+        "x_wgpu_tok_s": tok_s,
+    }))
+}
+
 // ============================================================================
 // Format detection and dispatch
 // ============================================================================
@@ -150,8 +274,64 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                 }
             }
 
-            println!("{}", "WGPU token generation verified — falling back to CPU serve for HTTP".yellow());
-            // TODO PMAT-337: Wire fwd into HTTP router (replace CPU forward with WGPU forward)
+            // PMAT-339: WGPU HTTP serve — minimal /v1/chat/completions endpoint
+            println!("{}", "Starting WGPU inference server...".cyan());
+
+            // Extract vocab for detokenization (placeholder — proper BPE needed)
+            let vocab: Vec<String> = (0..vocab_size)
+                .map(|i| format!("token{i}"))
+                .collect();
+
+            // Wrap inference state in Arc for axum handler
+            use std::sync::{Arc, Mutex};
+            let wgpu_state = Arc::new(WgpuInferenceState {
+                fwd: Mutex::new(fwd),
+                token_embedding,
+                output_norm_weight,
+                lm_head_f32,
+                vocab,
+                num_layers,
+                vocab_size,
+                hidden_dim,
+            });
+
+            // Build minimal axum router
+            use axum::{routing::{get, post}, Json, Router};
+
+            let state_health = wgpu_state.clone();
+            let state_chat = wgpu_state.clone();
+
+            let app = Router::new()
+                .route("/health", get(move || async move {
+                    Json(serde_json::json!({
+                        "status": "healthy",
+                        "compute_mode": "wgpu",
+                        "version": env!("CARGO_PKG_VERSION"),
+                    }))
+                }))
+                .route("/v1/chat/completions", post(move |body: Json<serde_json::Value>| {
+                    let state = state_chat.clone();
+                    async move { wgpu_chat_completion(state, body).await }
+                }));
+
+            let bind_addr = config.bind_addr();
+            let runtime = tokio::runtime::Runtime::new()
+                .map_err(|e| CliError::InferenceFailed(format!("Runtime: {e}")))?;
+
+            runtime.block_on(async move {
+                let listener = tokio::net::TcpListener::bind(&bind_addr).await
+                    .map_err(|e| CliError::InferenceFailed(format!("Bind: {e}")))?;
+                println!("{}", format!(
+                    "WGPU inference server listening on http://{}",
+                    bind_addr
+                ).green().bold());
+                println!("  POST /v1/chat/completions - Chat completions (WGPU)");
+                println!("  GET  /health              - Health check");
+                axum::serve(listener, app).await
+                    .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
+                Ok::<(), CliError>(())
+            })?;
+            return Ok(());
         }
         #[cfg(not(feature = "wgpu"))]
         {
