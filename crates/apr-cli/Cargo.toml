@@ -87,7 +87,7 @@ batuta-common = "0.1"
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.
 # TODO: Gate all CUDA code in apr-cli with #[cfg(feature = "cuda")] then remove from here.
-realizar = { version = "0.8", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
+realizar = { version = "0.8", path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
