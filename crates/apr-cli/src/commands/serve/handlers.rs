@@ -8,6 +8,9 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+#[cfg(feature = "wgpu")]
+use axum::response::IntoResponse;
+
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::fmt::Write;
@@ -36,128 +39,166 @@ struct WgpuInferenceState {
     hidden_dim: usize,
 }
 
+/// PMAT-355: Detokenize a single token ID using GPT-2 byte-level BPE.
+#[cfg(feature = "wgpu")]
+fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
+    let token = match vocab.get(id as usize) { Some(t) => t, None => return String::new() };
+    if token.starts_with("<|") && token.ends_with("|>") { return String::new(); }
+    if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
+        if let Ok(b) = u8::from_str_radix(&token[3..5], 16) {
+            return String::from_utf8_lossy(&[b]).into_owned();
+        }
+    }
+    let mut bytes = Vec::new();
+    for c in token.chars() {
+        let cp = c as u32;
+        let byte = if (0x21..=0x7E).contains(&cp) || (0xA1..=0xAC).contains(&cp)
+            || (0xAE..=0xFF).contains(&cp) { cp as u8
+        } else if (0x0100..=0x0143).contains(&cp) {
+            let off = cp - 0x0100;
+            match off { 0..=32 => off as u8, 33 => 0x7F,
+                34..=66 => (0x80 + (off - 34)) as u8, 67 => 0xAD,
+                _ => { bytes.push(b'?'); continue; } }
+        } else { let mut buf = [0u8; 4]; let s = c.encode_utf8(&mut buf);
+            bytes.extend_from_slice(s.as_bytes()); continue; };
+        bytes.push(byte);
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// PMAT-355: WGPU chat completion with streaming SSE support.
 #[cfg(feature = "wgpu")]
 async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
-) -> axum::Json<serde_json::Value> {
+) -> axum::response::Response {
     let max_tokens = body["max_tokens"].as_u64().unwrap_or(64) as usize;
+    let stream = body["stream"].as_bool().unwrap_or(false);
     let messages = body["messages"].as_array();
 
-    // PMAT-340: Extract prompt and apply Qwen2 chat template
     let prompt = messages
         .and_then(|m| m.last())
         .and_then(|m| m["content"].as_str())
         .unwrap_or("Hello");
 
-    // Qwen2 chat template: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
     let chat_text = format!(
         "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
         prompt
     );
 
-    // PMAT-341: Use BPE tokenizer if available, greedy fallback otherwise
     let prompt_ids: Vec<u32> = if let Some(ref tok) = state.bpe_tokenizer {
         tok.encode(&chat_text)
     } else {
         tokenize_greedy(&chat_text, &state.token_to_id, state.vocab_size)
     };
 
-    let gen_start = std::time::Instant::now();
-    let mut output_ids: Vec<u32> = Vec::new();
+    let id = format!("chatcmpl-wgpu-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
 
-    // Lock the forward pass for inference
-    let fwd = state.fwd.lock().unwrap();
+    if stream {
+        // PMAT-355: Streaming SSE via spawn_blocking + channel
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(32);
+        let id_clone = id.clone();
+        let vocab = state.vocab.clone();
+        tokio::task::spawn_blocking(move || {
+            let fwd = state.fwd.lock().unwrap();
+            let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
+            let mut last_logits = Vec::new();
+            // Prefill
+            for (pos, &token_id) in prompt_ids.iter().enumerate() {
+                match fwd.forward_model(
+                    token_id, pos, state.num_layers,
+                    &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+                    state.vocab_size, 1e-6, &mut kv_caches,
+                ) { Ok(l) => last_logits = l, Err(_) => return }
+            }
+            // Decode + send each token
+            for step in 0..max_tokens {
+                let next_token = last_logits.iter().enumerate()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                    .map(|(i, _)| i as u32).unwrap_or(0);
+                if next_token == 151645 || next_token == 0 { break; }
+                let text = wgpu_detokenize_one(next_token, &vocab);
+                let chunk = serde_json::json!({
+                    "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
+                    "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": serde_json::Value::Null}]
+                });
+                if tx.blocking_send(chunk.to_string()).is_err() { break; }
+                let position = prompt_ids.len() + step;
+                match fwd.forward_model(
+                    next_token, position, state.num_layers,
+                    &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+                    state.vocab_size, 1e-6, &mut kv_caches,
+                ) { Ok(l) => last_logits = l, Err(_) => break }
+            }
+            let done = serde_json::json!({
+                "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+            });
+            let _ = tx.blocking_send(done.to_string());
+            let _ = tx.blocking_send("[DONE]".to_string());
+        });
+        let stream = async_stream::stream! {
+            while let Some(data) = rx.recv().await {
+                yield Ok::<_, std::convert::Infallible>(
+                    axum::response::sse::Event::default().data(data)
+                );
+            }
+        };
+        axum::response::sse::Sse::new(stream).into_response()
+    } else {
+        // Non-streaming: original path
+        let gen_start = std::time::Instant::now();
+        let mut output_ids: Vec<u32> = Vec::new();
+        let fwd = state.fwd.lock().unwrap();
+        let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
 
-    // PMAT-344: KV cache for multi-token context
-    let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
-
-    // Prefill: process all prompt tokens (accumulating KV cache)
-    let mut last_logits = Vec::new();
-    for (pos, &token_id) in prompt_ids.iter().enumerate() {
-        match fwd.forward_model(
-            token_id, pos, state.num_layers,
-            &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-            state.vocab_size, 1e-6,
-            &mut kv_caches,
-        ) {
-            Ok(logits) => last_logits = logits,
-            Err(e) => {
-                return axum::Json(serde_json::json!({
-                    "error": format!("Forward failed: {e}")
-                }));
+        let mut last_logits = Vec::new();
+        for (pos, &token_id) in prompt_ids.iter().enumerate() {
+            match fwd.forward_model(
+                token_id, pos, state.num_layers,
+                &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+                state.vocab_size, 1e-6, &mut kv_caches,
+            ) {
+                Ok(logits) => last_logits = logits,
+                Err(e) => return axum::Json(serde_json::json!({"error": format!("{e}")})).into_response(),
             }
         }
-    }
 
-    // Decode: sample tokens autoregressively
-    for step in 0..max_tokens {
-        // Argmax sampling
-        let next_token = last_logits.iter()
-            .enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-            .map(|(i, _)| i as u32)
-            .unwrap_or(0);
-
-        // EOS check (Qwen: 151645)
-        if next_token == 151645 || next_token == 0 {
-            break;
-        }
-
-        output_ids.push(next_token);
-
-        let position = prompt_ids.len() + step;
-        match fwd.forward_model(
-            next_token, position, state.num_layers,
-            &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-            state.vocab_size, 1e-6,
-            &mut kv_caches,
-        ) {
-            Ok(logits) => last_logits = logits,
-            Err(e) => break,
-        }
-    }
-    drop(fwd); // Release lock
-
-    let elapsed = gen_start.elapsed();
-
-    // Detokenize using vocab
-    let output_text: String = output_ids.iter()
-        .map(|&id| {
-            if (id as usize) < state.vocab.len() {
-                state.vocab[id as usize].clone()
-            } else {
-                format!("[{}]", id)
+        for step in 0..max_tokens {
+            let next_token = last_logits.iter().enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i as u32).unwrap_or(0);
+            if next_token == 151645 || next_token == 0 { break; }
+            output_ids.push(next_token);
+            let position = prompt_ids.len() + step;
+            match fwd.forward_model(
+                next_token, position, state.num_layers,
+                &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
+                state.vocab_size, 1e-6, &mut kv_caches,
+            ) {
+                Ok(logits) => last_logits = logits,
+                Err(_) => break,
             }
-        })
-        .collect::<Vec<_>>()
-        .join("");
+        }
+        drop(fwd);
 
-    let tok_s = if elapsed.as_secs_f64() > 0.0 {
-        output_ids.len() as f64 / elapsed.as_secs_f64()
-    } else { 0.0 };
+        let elapsed = gen_start.elapsed();
+        let output_text: String = output_ids.iter()
+            .map(|&id| wgpu_detokenize_one(id, &state.vocab)).collect();
+        let tok_s = if elapsed.as_secs_f64() > 0.0 {
+            output_ids.len() as f64 / elapsed.as_secs_f64()
+        } else { 0.0 };
 
-    axum::Json(serde_json::json!({
-        "id": format!("chatcmpl-wgpu-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis()),
-        "object": "chat.completion",
-        "model": "qwen-wgpu",
-        "choices": [{
-            "index": 0,
-            "message": {
-                "role": "assistant",
-                "content": output_text,
-            },
-            "finish_reason": if output_ids.len() >= max_tokens { "length" } else { "stop" },
-        }],
-        "usage": {
-            "prompt_tokens": prompt_ids.len(),
-            "completion_tokens": output_ids.len(),
-            "total_tokens": prompt_ids.len() + output_ids.len(),
-        },
-        "x_wgpu_latency_ms": elapsed.as_secs_f64() * 1000.0,
-        "x_wgpu_tok_s": tok_s,
-    }))
+        axum::Json(serde_json::json!({
+            "id": id, "object": "chat.completion", "model": "qwen-wgpu",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": output_text},
+                "finish_reason": if output_ids.len() >= max_tokens { "length" } else { "stop" }}],
+            "usage": {"prompt_tokens": prompt_ids.len(), "completion_tokens": output_ids.len(),
+                "total_tokens": prompt_ids.len() + output_ids.len()},
+            "x_wgpu_latency_ms": elapsed.as_secs_f64() * 1000.0, "x_wgpu_tok_s": tok_s,
+        })).into_response()
+    }
 }
 
 /// PMAT-340: Greedy longest-match tokenizer using vocab lookup.
