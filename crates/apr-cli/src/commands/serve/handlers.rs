@@ -69,13 +69,17 @@ async fn wgpu_chat_completion(
     // Lock the forward pass for inference
     let fwd = state.fwd.lock().unwrap();
 
-    // Prefill: process all prompt tokens
+    // PMAT-344: KV cache for multi-token context
+    let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
+
+    // Prefill: process all prompt tokens (accumulating KV cache)
     let mut last_logits = Vec::new();
     for (pos, &token_id) in prompt_ids.iter().enumerate() {
         match fwd.forward_model(
             token_id, pos, state.num_layers,
             &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
             state.vocab_size, 1e-6,
+            &mut kv_caches,
         ) {
             Ok(logits) => last_logits = logits,
             Err(e) => {
@@ -107,6 +111,7 @@ async fn wgpu_chat_completion(
             next_token, position, state.num_layers,
             &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
             state.vocab_size, 1e-6,
+            &mut kv_caches,
         ) {
             Ok(logits) => last_logits = logits,
             Err(e) => break,
@@ -298,10 +303,12 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             // Step 5: Quick correctness test — generate one token
             let test_token = 9707u32; // "Hello" in Qwen tokenizer
             let test_start = std::time::Instant::now();
+            let mut test_kv: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
             match fwd.forward_model(
                 test_token, 0, num_layers,
                 &token_embedding, &output_norm_weight, &lm_head_f32,
                 vocab_size, 1e-6,
+                &mut test_kv,
             ) {
                 Ok(logits) => {
                     let argmax = logits.iter()
