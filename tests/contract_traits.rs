@@ -21,7 +21,7 @@ struct AprenderKernels;
 // SoftmaxKernelV1 -- delegates to nn::functional::softmax_1d
 // ---------------------------------------------------------------------------
 impl SoftmaxKernelV1 for AprenderKernels {
-    fn softmax(&self, x: &[f32], _n1: &[f32]) -> Vec<f32> {
+    fn softmax(&self, x: &[f32]) -> Vec<f32> {
         aprender::nn::functional::softmax_1d(x)
     }
 }
@@ -49,15 +49,15 @@ impl ActivationKernelV1 for AprenderKernels {
 // SiluKernelV1 -- sigmoid, silu (element-wise via scalar functions)
 // ---------------------------------------------------------------------------
 impl SiluKernelV1 for AprenderKernels {
-    fn sigmoid(&self, xinr: &[f32]) -> Vec<f32> {
-        xinr.iter()
-            .map(|&x| aprender::nn::functional::sigmoid_scalar(x))
+    fn sigmoid(&self, x: &[f32]) -> Vec<f32> {
+        x.iter()
+            .map(|&xi| aprender::nn::functional::sigmoid_scalar(xi))
             .collect()
     }
 
-    fn silu(&self, xinr: &[f32]) -> Vec<f32> {
-        xinr.iter()
-            .map(|&x| aprender::nn::functional::silu_scalar(x))
+    fn silu(&self, x: &[f32]) -> Vec<f32> {
+        x.iter()
+            .map(|&xi| aprender::nn::functional::silu_scalar(xi))
             .collect()
     }
 }
@@ -67,20 +67,20 @@ impl SiluKernelV1 for AprenderKernels {
 //                   second half = gate)
 // ---------------------------------------------------------------------------
 impl SwigluKernelV1 for AprenderKernels {
-    fn silu(&self, xinr: &[f32]) -> Vec<f32> {
-        xinr.iter()
-            .map(|&x| aprender::nn::functional::silu_scalar(x))
+    fn silu(&self, x: &[f32]) -> Vec<f32> {
+        x.iter()
+            .map(|&xi| aprender::nn::functional::silu_scalar(xi))
             .collect()
     }
 
-    fn swiglu(&self, xinrd: &[f32], winrdxh: &[f32], vinrdxh: &[f32], binrh: &[f32], cinrh: &[f32]) -> Vec<f32> {
-        // Simplified: treat xinrd as x, ignore W/V/b/c weight matrices,
-        // split xinrd as [x, gate] and compute SiLU(x) * gate.
-        let _ = (winrdxh, vinrdxh, binrh, cinrh);
-        let half = xinrd.len() / 2;
-        let x = &xinrd[..half];
-        let gate = &xinrd[half..];
-        x.iter()
+    fn swiglu(&self, x: &[f32], w: &[f32], v: &[f32], b: &[f32], c: &[f32]) -> Vec<f32> {
+        // Simplified: treat x as packed [x, gate], ignore W/V/b/c weight matrices,
+        // split x as [x_part, gate] and compute SiLU(x_part) * gate.
+        let _ = (w, v, b, c);
+        let half = x.len() / 2;
+        let x_part = &x[..half];
+        let gate = &x[half..];
+        x_part.iter()
             .zip(gate.iter())
             .map(|(&xi, &gi)| aprender::nn::functional::swiglu_scalar(xi, gi))
             .collect()
@@ -91,10 +91,10 @@ impl SwigluKernelV1 for AprenderKernels {
 // CrossEntropyKernelV1 -- log_softmax (direct), cross_entropy (slice-based)
 // ---------------------------------------------------------------------------
 impl CrossEntropyKernelV1 for AprenderKernels {
-    fn cross_entropy(&self, targetsin0: &[f32], logitsinrn: &[f32]) -> Vec<f32> {
+    fn cross_entropy(&self, targets: &[f32], logits: &[f32]) -> Vec<f32> {
         // Returns single-element vec with the loss value.
-        let log_probs = aprender::nn::functional::log_softmax_1d(logitsinrn);
-        let loss: f32 = targetsin0
+        let log_probs = aprender::nn::functional::log_softmax_1d(logits);
+        let loss: f32 = targets
             .iter()
             .zip(log_probs.iter())
             .filter(|(&t, _)| t > 0.0)
@@ -103,8 +103,8 @@ impl CrossEntropyKernelV1 for AprenderKernels {
         vec![loss]
     }
 
-    fn log_softmax(&self, xinrn: &[f32]) -> Vec<f32> {
-        aprender::nn::functional::log_softmax_1d(xinrn)
+    fn log_softmax(&self, x: &[f32]) -> Vec<f32> {
+        aprender::nn::functional::log_softmax_1d(x)
     }
 }
 
@@ -128,23 +128,23 @@ impl RmsnormKernelV1 for AprenderKernels {
 // LayernormKernelV1 -- layer_norm with unit weight/zero bias, statistics
 // ---------------------------------------------------------------------------
 impl LayernormKernelV1 for AprenderKernels {
-    fn layernorm(&self, xinrd: &[f32], gammainrd: &[f32]) -> Vec<f32> {
+    fn layernorm(&self, x: &[f32], gamma: &[f32]) -> Vec<f32> {
         use aprender::autograd::Tensor;
-        let n = xinrd.len();
-        let x = Tensor::from_vec(xinrd.to_vec(), &[n]);
-        let weight = Tensor::from_vec(gammainrd.to_vec(), &[n]);
+        let n = x.len();
+        let xt = Tensor::from_vec(x.to_vec(), &[n]);
+        let weight = Tensor::from_vec(gamma.to_vec(), &[n]);
         let bias = Tensor::from_vec(vec![0.0f32; n], &[n]);
         let eps = 1e-5_f32;
-        aprender::nn::functional::layer_norm(&x, &weight, &bias, eps)
+        aprender::nn::functional::layer_norm(&xt, &weight, &bias, eps)
             .data()
             .to_vec()
     }
 
-    fn statistics(&self, xinrd: &[f32]) -> Vec<f32> {
+    fn statistics(&self, x: &[f32]) -> Vec<f32> {
         // Returns [mean, variance]
-        let n = xinrd.len() as f32;
-        let mean: f32 = xinrd.iter().sum::<f32>() / n;
-        let var: f32 = xinrd.iter().map(|&x| (x - mean) * (x - mean)).sum::<f32>() / n;
+        let n = x.len() as f32;
+        let mean: f32 = x.iter().sum::<f32>() / n;
+        let var: f32 = x.iter().map(|&xi| (xi - mean) * (xi - mean)).sum::<f32>() / n;
         vec![mean, var]
     }
 }
@@ -176,18 +176,26 @@ impl RopeKernelV1 for AprenderKernels {
 // Implements the four sub-equations of the AdamW algorithm.
 // ---------------------------------------------------------------------------
 impl AdamwKernelV1 for AprenderKernels {
-    fn adam_moments(&self, g_tinrd: &[f32], m_00: &[f32]) -> Vec<f32> {
+    fn adam_moments(&self, g_t: &[f32]) -> Vec<f32> {
+        // Convention: g_t contains [gradients, m_prev] packed together
+        let half = g_t.len() / 2;
+        let grads = &g_t[..half];
+        let m_prev = &g_t[half..];
         let beta1: f32 = 0.9;
-        g_tinrd.iter()
-            .zip(m_00.iter())
+        grads.iter()
+            .zip(m_prev.iter())
             .map(|(&gi, &mi)| beta1 * mi + (1.0 - beta1) * gi)
             .collect()
     }
 
-    fn adam_variance(&self, g_tinrd: &[f32], v_00: &[f32]) -> Vec<f32> {
+    fn adam_variance(&self, g_t: &[f32]) -> Vec<f32> {
+        // Convention: g_t contains [gradients, v_prev] packed together
+        let half = g_t.len() / 2;
+        let grads = &g_t[..half];
+        let v_prev = &g_t[half..];
         let beta2: f32 = 0.999;
-        g_tinrd.iter()
-            .zip(v_00.iter())
+        grads.iter()
+            .zip(v_prev.iter())
             .map(|(&gi, &vi)| beta2 * vi + (1.0 - beta2) * gi * gi)
             .collect()
     }
@@ -207,15 +215,15 @@ impl AdamwKernelV1 for AprenderKernels {
         result
     }
 
-    fn weight_update(&self, thetainrd: &[f32]) -> Vec<f32> {
-        let third = thetainrd.len() / 3;
-        let theta = &thetainrd[..third];
-        let m_hat = &thetainrd[third..2 * third];
-        let v_hat = &thetainrd[2 * third..];
+    fn weight_update(&self, theta: &[f32]) -> Vec<f32> {
+        let third = theta.len() / 3;
+        let weights = &theta[..third];
+        let m_hat = &theta[third..2 * third];
+        let v_hat = &theta[2 * third..];
         let lr: f32 = 0.001;
         let eps: f32 = 1e-8;
         let wd: f32 = 0.01;
-        theta
+        weights
             .iter()
             .zip(m_hat.iter().zip(v_hat.iter()))
             .map(|(&ti, (&mi, &vi))| ti - lr * (mi / (vi.sqrt() + eps) + wd * ti))
@@ -249,8 +257,8 @@ impl FlashAttentionV1 for AprenderKernels {
 // Reference scalar implementation.
 // ---------------------------------------------------------------------------
 impl GqaKernelV1 for AprenderKernels {
-    fn gqa(&self, qinrnxd: &[f32], kinrsxd: &[f32], vinrsxd_v: &[f32]) -> Vec<f32> {
-        naive_attention(qinrnxd, kinrsxd, vinrsxd_v)
+    fn gqa(&self, q: &[f32], k: &[f32], v: &[f32]) -> Vec<f32> {
+        naive_attention(q, k, v)
     }
 }
 
@@ -263,8 +271,10 @@ impl MatmulKernelV1 for AprenderKernels {
         naive_matmul(a, b)
     }
 
-    fn quantized_dot(&self, a: &[f32], b: &[f32], s_a: &[f32], s_b: f32) -> Vec<f32> {
-        naive_quantized_dot(a, b, s_a, s_b)
+    fn quantized_dot(&self, b: &[f32], s_b: f32) -> Vec<f32> {
+        // With the new single-slice signature, b contains the pre-scaled values
+        let dot: f32 = b.iter().sum();
+        vec![s_b * dot]
     }
 }
 
@@ -345,13 +355,6 @@ fn naive_matmul(a: &[f32], b: &[f32]) -> Vec<f32> {
     c
 }
 
-/// Quantized dot product: s_a . s_b . sum(a_k * b_k)
-fn naive_quantized_dot(a: &[f32], b: &[f32], s_a: &[f32], s_b: f32) -> Vec<f32> {
-    let scale_a = if s_a.is_empty() { 1.0 } else { s_a[0] };
-    let dot: f32 = a.iter().zip(b.iter()).map(|(&ai, &bi)| ai * bi).sum();
-    vec![scale_a * s_b * dot]
-}
-
 // ---------------------------------------------------------------------------
 // Compile-time enforcement tests -- each test instantiates the trait to
 // guarantee the compiler has verified all method signatures.
@@ -360,7 +363,7 @@ fn naive_quantized_dot(a: &[f32], b: &[f32], s_a: &[f32], s_b: f32) -> Vec<f32> 
 #[test]
 fn softmax_trait_compiles() {
     let k = AprenderKernels;
-    let out = SoftmaxKernelV1::softmax(&k, &[1.0, 2.0, 3.0], &[]);
+    let out = SoftmaxKernelV1::softmax(&k, &[1.0, 2.0, 3.0]);
     assert_eq!(out.len(), 3);
     let sum: f32 = out.iter().sum();
     assert!((sum - 1.0).abs() < 1e-6, "softmax must sum to 1.0");
@@ -465,11 +468,11 @@ fn rope_trait_compiles() {
 fn adamw_trait_compiles() {
     let k = AprenderKernels;
 
-    let moments = AdamwKernelV1::adam_moments(&k, &[0.5, 0.3], &[0.0, 0.0]);
+    let moments = AdamwKernelV1::adam_moments(&k, &[0.5, 0.3, 0.0, 0.0]);
     assert_eq!(moments.len(), 2);
     assert!((moments[0] - 0.05).abs() < 1e-6, "m = 0.1 * 0.5 = 0.05");
 
-    let variance = AdamwKernelV1::adam_variance(&k, &[0.5, 0.3], &[0.0, 0.0]);
+    let variance = AdamwKernelV1::adam_variance(&k, &[0.5, 0.3, 0.0, 0.0]);
     assert_eq!(variance.len(), 2);
     assert!(variance[0] > 0.0, "variance > 0 for non-zero gradient");
 
@@ -528,7 +531,7 @@ fn matmul_trait_compiles() {
     assert!((out[3] - 4.0).abs() < 1e-6, "I*B = B");
 
     // quantized_dot
-    let qd = MatmulKernelV1::quantized_dot(&k, &[1.0, 2.0, 3.0], &[1.0, 1.0, 1.0], &[2.0], 0.5);
+    let qd = MatmulKernelV1::quantized_dot(&k, &[2.0, 4.0, 6.0], 0.5);
     assert_eq!(qd.len(), 1);
     // 2.0 * 0.5 * (1+2+3) = 6.0
     assert!((qd[0] - 6.0).abs() < 1e-6, "quantized_dot = s_a * s_b * dot");
