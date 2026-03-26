@@ -315,17 +315,25 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             );
 
             let upload_start = std::time::Instant::now();
-            for (name, data, _rows, _cols) in &weights {
-                fwd.upload_weight(name, data);
-            }
-            // PMAT-364: Upload raw Q4K bytes for fused dequant+GEMV
-            let q4k_raw = realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(&quantized);
-            for (name, raw_data, _rows, _cols) in &q4k_raw {
-                fwd.upload_q4k_weight(name, raw_data);
-            }
-            if !q4k_raw.is_empty() {
+            // PMAT-367: Q4K mode saves 10× VRAM but ~3× slower (compute-bound nibble extraction)
+            let use_q4k = std::env::var("WGPU_Q4K").is_ok();
+            if use_q4k {
+                let q4k_raw = realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(&quantized);
+                let q4k_names: std::collections::HashSet<String> = q4k_raw.iter()
+                    .map(|(n, _, _, _)| n.clone()).collect();
+                for (name, raw_data, _rows, _cols) in &q4k_raw {
+                    fwd.upload_q4k_weight(name, raw_data);
+                }
+                for (name, data, _rows, _cols) in &weights {
+                    if q4k_names.contains(name.as_str()) { continue; }
+                    fwd.upload_weight(name, data);
+                }
                 let q4k_mb: f64 = q4k_raw.iter().map(|(_, d, _, _)| d.len()).sum::<usize>() as f64 / 1e6;
-                println!("{}", format!("Uploaded {} Q4K weights ({:.1} MB raw) for fused GEMV", q4k_raw.len(), q4k_mb).cyan());
+                println!("{}", format!("Q4K mode: {} Q4K ({:.0} MB) — 10× VRAM savings", q4k_raw.len(), q4k_mb).cyan());
+            } else {
+                for (name, data, _rows, _cols) in &weights {
+                    fwd.upload_weight(name, data);
+                }
             }
             // PMAT-361: Allocate GPU KV cache buffers
             fwd.init_kv_cache(num_layers);
