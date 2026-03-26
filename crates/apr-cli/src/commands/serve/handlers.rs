@@ -318,6 +318,8 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             for (name, data, _rows, _cols) in &weights {
                 fwd.upload_weight(name, data);
             }
+            // PMAT-361: Allocate GPU KV cache buffers
+            fwd.init_kv_cache(num_layers);
             println!("{}", format!(
                 "Uploaded {} weights to GPU ({:.1} MB VRAM) in {:.1}ms",
                 weights.len(),
