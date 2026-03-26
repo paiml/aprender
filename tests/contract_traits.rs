@@ -81,11 +81,13 @@ impl SwigluKernelV1 for AprenderKernels {
             .collect()
     }
 
-    fn swiglu(&self, input: &[f32]) -> Vec<f32> {
-        // Convention: input = [x_0..x_{n/2}, gate_0..gate_{n/2}]
-        let half = input.len() / 2;
-        let x = &input[..half];
-        let gate = &input[half..];
+    fn swiglu(&self, xinrd: &[f32], winrdxh: &[f32], vinrdxh: &[f32], binrh: &[f32], cinrh: &[f32]) -> Vec<f32> {
+        // Simplified: treat xinrd as x, ignore W/V/b/c weight matrices,
+        // split xinrd as [x, gate] and compute SiLU(x) * gate.
+        let _ = (winrdxh, vinrdxh, binrh, cinrh);
+        let half = xinrd.len() / 2;
+        let x = &xinrd[..half];
+        let gate = &xinrd[half..];
         x.iter()
             .zip(gate.iter())
             .map(|(&xi, &gi)| aprender::nn::functional::swiglu_scalar(xi, gi))
@@ -97,14 +99,10 @@ impl SwigluKernelV1 for AprenderKernels {
 // CrossEntropyKernelV1 -- log_softmax (direct), cross_entropy (slice-based)
 // ---------------------------------------------------------------------------
 impl CrossEntropyKernelV1 for AprenderKernels {
-    fn cross_entropy(&self, input: &[f32]) -> Vec<f32> {
-        // Convention: input = [logits_0..logits_{n/2}, targets_0..targets_{n/2}]
+    fn cross_entropy(&self, targetsin0: &[f32], logitsinrn: &[f32]) -> Vec<f32> {
         // Returns single-element vec with the loss value.
-        let half = input.len() / 2;
-        let logits = &input[..half];
-        let targets = &input[half..];
-        let log_probs = aprender::nn::functional::log_softmax_1d(logits);
-        let loss: f32 = targets
+        let log_probs = aprender::nn::functional::log_softmax_1d(logitsinrn);
+        let loss: f32 = targetsin0
             .iter()
             .zip(log_probs.iter())
             .filter(|(&t, _)| t > 0.0)
@@ -138,11 +136,11 @@ impl RmsnormKernelV1 for AprenderKernels {
 // LayernormKernelV1 -- layer_norm with unit weight/zero bias, statistics
 // ---------------------------------------------------------------------------
 impl LayernormKernelV1 for AprenderKernels {
-    fn layernorm(&self, input: &[f32]) -> Vec<f32> {
+    fn layernorm(&self, xinrd: &[f32], gammainrd: &[f32]) -> Vec<f32> {
         use aprender::autograd::Tensor;
-        let n = input.len();
-        let x = Tensor::from_vec(input.to_vec(), &[n]);
-        let weight = Tensor::from_vec(vec![1.0f32; n], &[n]);
+        let n = xinrd.len();
+        let x = Tensor::from_vec(xinrd.to_vec(), &[n]);
+        let weight = Tensor::from_vec(gammainrd.to_vec(), &[n]);
         let bias = Tensor::from_vec(vec![0.0f32; n], &[n]);
         let eps = 1e-5_f32;
         aprender::nn::functional::layer_norm(&x, &weight, &bias, eps)
@@ -213,8 +211,8 @@ fn swiglu_trait_compiles() {
     let silu = SwigluKernelV1::silu(&k, &[0.0, 1.0]);
     assert_eq!(silu.len(), 2);
 
-    // input = [x0, x1, gate0, gate1]
-    let swiglu = SwigluKernelV1::swiglu(&k, &[1.0, 2.0, 0.0, 1.0]);
+    // xinrd = [x0, x1, gate0, gate1], extra params are dummy weight matrices
+    let swiglu = SwigluKernelV1::swiglu(&k, &[1.0, 2.0, 0.0, 1.0], &[], &[], &[], &[]);
     assert_eq!(swiglu.len(), 2);
     // swiglu(x=1, gate=0) = 1 * 0/(1+1) = 0
     assert!(swiglu[0].abs() < 1e-6, "SwiGLU(x=1, gate=0) = 0");
@@ -228,8 +226,8 @@ fn cross_entropy_trait_compiles() {
     assert_eq!(log_sm.len(), 3);
     assert!(log_sm.iter().all(|&v| v <= 0.0), "log_softmax <= 0");
 
-    // input = [logits..., targets...]
-    let ce = CrossEntropyKernelV1::cross_entropy(&k, &[1.0, 2.0, 3.0, 0.0, 0.0, 1.0]);
+    // targets (one-hot on class 2), logits
+    let ce = CrossEntropyKernelV1::cross_entropy(&k, &[0.0, 0.0, 1.0], &[1.0, 2.0, 3.0]);
     assert_eq!(ce.len(), 1);
     assert!(ce[0] >= 0.0, "cross-entropy >= 0");
 }
@@ -244,7 +242,7 @@ fn rmsnorm_trait_compiles() {
 #[test]
 fn layernorm_trait_compiles() {
     let k = AprenderKernels;
-    let out = LayernormKernelV1::layernorm(&k, &[1.0, 2.0, 3.0, 4.0]);
+    let out = LayernormKernelV1::layernorm(&k, &[1.0, 2.0, 3.0, 4.0], &[1.0, 1.0, 1.0, 1.0]);
     assert_eq!(out.len(), 4);
     // With unit weight and zero bias, output should be approximately standardized
     let mean: f32 = out.iter().sum::<f32>() / out.len() as f32;
