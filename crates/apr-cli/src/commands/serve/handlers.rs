@@ -318,6 +318,15 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             for (name, data, _rows, _cols) in &weights {
                 fwd.upload_weight(name, data);
             }
+            // PMAT-364: Upload raw Q4K bytes for fused dequant+GEMV
+            let q4k_raw = realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(&quantized);
+            for (name, raw_data, _rows, _cols) in &q4k_raw {
+                fwd.upload_q4k_weight(name, raw_data);
+            }
+            if !q4k_raw.is_empty() {
+                let q4k_mb: f64 = q4k_raw.iter().map(|(_, d, _, _)| d.len()).sum::<usize>() as f64 / 1e6;
+                println!("{}", format!("Uploaded {} Q4K weights ({:.1} MB raw) for fused GEMV", q4k_raw.len(), q4k_mb).cyan());
+            }
             // PMAT-361: Allocate GPU KV cache buffers
             fwd.init_kv_cache(num_layers);
             println!("{}", format!(
