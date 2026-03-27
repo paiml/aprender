@@ -100,7 +100,9 @@ async fn wgpu_chat_completion(
         let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(32);
         let id_clone = id.clone();
         let vocab = state.vocab.clone();
+        let prompt_len = prompt_ids.len();
         tokio::task::spawn_blocking(move || {
+            let gen_start = std::time::Instant::now();
             let fwd = state.fwd.lock().unwrap();
             let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
             let mut last_logits = Vec::new();
@@ -112,6 +114,7 @@ async fn wgpu_chat_completion(
                     state.vocab_size, 1e-6, &mut kv_caches,
                 ) { Ok(l) => last_logits = l, Err(_) => return }
             }
+            let mut completion_tokens = 0u32;
             // Decode + send each token
             for step in 0..max_tokens {
                 let next_token = last_logits.iter().enumerate()
@@ -123,6 +126,7 @@ async fn wgpu_chat_completion(
                     "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
                     "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": serde_json::Value::Null}]
                 });
+                completion_tokens += 1;
                 if tx.blocking_send(chunk.to_string()).is_err() { break; }
                 let position = prompt_ids.len() + step;
                 match fwd.forward_model(
@@ -131,9 +135,14 @@ async fn wgpu_chat_completion(
                     state.vocab_size, 1e-6, &mut kv_caches,
                 ) { Ok(l) => last_logits = l, Err(_) => break }
             }
+            let elapsed = gen_start.elapsed();
+            let tok_s = if elapsed.as_secs_f64() > 0.0 { completion_tokens as f64 / elapsed.as_secs_f64() } else { 0.0 };
             let done = serde_json::json!({
                 "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": prompt_len, "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_len as u32 + completion_tokens},
+                "x_wgpu_tok_s": tok_s,
             });
             let _ = tx.blocking_send(done.to_string());
             let _ = tx.blocking_send("[DONE]".to_string());
