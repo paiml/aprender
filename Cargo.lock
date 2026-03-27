@@ -271,6 +271,7 @@ dependencies = [
  "alimentar 0.2.8",
  "aprender 0.27.5",
  "assert_cmd",
+ "async-stream",
  "axum",
  "axum-test",
  "batuta-common",

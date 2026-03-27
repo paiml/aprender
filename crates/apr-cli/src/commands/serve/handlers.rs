@@ -68,6 +68,7 @@ fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
 
 /// PMAT-355: WGPU chat completion with streaming SSE support.
 #[cfg(feature = "wgpu")]
+#[provable_contracts_macros::contract("streaming-tpot-v1", equation = "tpot_definition")]
 async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
