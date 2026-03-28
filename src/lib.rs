@@ -69,6 +69,10 @@
 // Tests use unwrap() freely — scoped allow for test builds only.
 #![cfg_attr(test, allow(clippy::disallowed_methods))]
 
+// Contract assertions from YAML (pv codegen)
+#[macro_use]
+#[allow(unused_macros)]
+mod generated_contracts;
 pub mod active_learning;
 /// Audio I/O and signal processing (mel spectrogram, resampling, capture)
 #[cfg(feature = "audio")]

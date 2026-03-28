@@ -240,6 +240,9 @@ pub fn gelu(x: &Tensor) -> Tensor {
 #[provable_contracts_macros::contract("softmax-kernel-v1", equation = "softmax")]
 #[must_use]
 pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
+    // Contract: softmax-kernel-v1.yaml precondition (pv codegen)
+    contract_pre_softmax!(x.data());
+
     let shape = x.shape();
     let last_dim = shape[shape.len() - 1];
     let batch_size: usize = shape[..shape.len() - 1].iter().product();
