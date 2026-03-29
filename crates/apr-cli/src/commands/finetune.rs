@@ -230,10 +230,180 @@ fn display_memory_breakdown(req: &MemoryRequirement, vram_gb: f64) {
 }
 
 /// Execute LoRA adapter creation from model tensors.
+/// §26: Execute QLoRA training via entrenar InstructPipeline bridge.
+///
+/// Five-whys root cause (stub):
+///   1. Why no training? execute_training created adapters, didn't train
+///   2. Why stub? entrenar InstructPipeline wasn't wired to apr CLI
+///   3. Why? Bridge between aprender model loading + entrenar training missing
+///   4. Fix: Use InstructPipeline::from_apr() + InstructTrainer::train()
+///
+/// Contract: qlora-training-loop-v1 (frozen_base, lora_forward, response_only_loss)
+#[cfg(feature = "training")]
 fn execute_training(
     model_path: &Path,
     config: &OptimalConfig,
     data_path: &Path,
+    output_path: &Path,
+    epochs: u32,
+    learning_rate: f64,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::finetune::instruct_corpus::InstructSample;
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    use entrenar::finetune::instruct_pipeline::InstructPipeline;
+    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
+
+    // 1. Resolve model config from APR metadata
+    let model_config = super::model_config::resolve_transformer_config(Some(model_path), None)?;
+
+    if !json_output {
+        println!();
+        output::pipeline_stage("Loading model", output::StageStatus::Running);
+        println!("  Model: {}", model_path.display());
+        println!(
+            "  Architecture: {} layers, hidden={}, vocab={}",
+            model_config.num_hidden_layers, model_config.hidden_size, model_config.vocab_size,
+        );
+    }
+
+    // 2. Load training data from JSONL
+    let corpus: Vec<InstructSample> = {
+        let file = std::fs::File::open(data_path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to open data: {e}")))?;
+        let reader = std::io::BufReader::new(file);
+        let mut samples = Vec::new();
+        for line in std::io::BufRead::lines(reader) {
+            let line = line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
+            let line = line.trim().to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let sample: InstructSample = serde_json::from_str(&line)
+                .map_err(|e| CliError::ValidationFailed(format!("Invalid JSONL: {e}")))?;
+            samples.push(sample);
+        }
+        samples
+    };
+
+    if corpus.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "Training data is empty".to_string(),
+        ));
+    }
+
+    if !json_output {
+        output::pipeline_stage("Loading model", output::StageStatus::Done);
+        println!("  Training samples: {}", corpus.len());
+    }
+
+    // 3. Create InstructPipeline from APR model
+    let instruct_config = InstructConfig {
+        lora_rank: config.rank as usize,
+        lora_alpha: config.alpha,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        max_seq_len: 512,
+        gradient_clip_norm: Some(1.0),
+        quantize_nf4: matches!(config.method, Method::QLoRA),
+    };
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Running);
+        println!("  Method: {:?}", config.method);
+        println!("  Rank: {}, Alpha: {:.1}", config.rank, config.alpha);
+        println!("  Epochs: {epochs}, LR: {learning_rate:.1e}");
+        println!("  Data: {} samples", corpus.len());
+    }
+
+    let pipeline = InstructPipeline::from_apr(model_path, &model_config, instruct_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
+
+    // 4. Create trainer and run
+    let train_config = InstructTrainingConfig {
+        epochs: epochs as usize,
+        val_split: if corpus.len() < 20 { 0.1 } else { 0.2 },
+        save_every: 1,
+        early_stopping_patience: 5,
+        checkpoint_dir: output_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("checkpoints"),
+        seed: 42,
+        log_interval: 1,
+        warmup_fraction: 0.03,
+        lr_min: 1e-6,
+    };
+
+    let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+
+    let result = trainer.train();
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Done);
+        println!();
+        println!("  Epochs completed: {}", result.epoch_metrics.len());
+        println!("  Best epoch: {} (val_loss: {:.4})", result.best_epoch, result.best_val_loss);
+        if let Some(first) = result.epoch_metrics.first() {
+            if let Some(last) = result.epoch_metrics.last() {
+                println!(
+                    "  Loss: {:.4} → {:.4} (train), {:.4} → {:.4} (val)",
+                    first.train_loss, last.train_loss, first.val_loss, last.val_loss,
+                );
+            }
+        }
+        if result.stopped_early {
+            println!("  Early stopping triggered");
+        }
+    }
+
+    // 5. Export trained LoRA adapters to APR
+    // TODO: Export trained weights from pipeline. For now, save the checkpoint dir.
+    // The trainer saves checkpoints to train_config.checkpoint_dir.
+    // A proper export would extract LoRA A/B tensors and write an APR adapter file.
+    if !json_output {
+        output::pipeline_stage("Saving", output::StageStatus::Running);
+    }
+
+    // For now, touch the output file to indicate training completed.
+    // Full APR export requires reading trained LoRA weights from the pipeline
+    // and writing them via AprWriter — this is Phase 3 of §26.
+    let checkpoint_dir = output_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("checkpoints");
+    if !json_output {
+        output::pipeline_stage("Saving", output::StageStatus::Done);
+        println!("  Checkpoints: {}", checkpoint_dir.display());
+        println!();
+        println!("  Training complete. Loss metrics reported above.");
+        println!("  APR adapter export (§26 Phase 3) not yet implemented.");
+        println!("  Checkpoint weights saved by trainer to: {}", checkpoint_dir.display());
+    }
+
+    Ok(())
+}
+
+/// Fallback: adapter-only creation when training feature is disabled.
+#[cfg(not(feature = "training"))]
+fn execute_training(
+    model_path: &Path,
+    config: &OptimalConfig,
+    data_path: &Path,
+    output_path: &Path,
+    epochs: u32,
+    learning_rate: f64,
+    json_output: bool,
+) -> Result<()> {
+    execute_training_stub(model_path, config, data_path, output_path, epochs, learning_rate, json_output)
+}
+
+/// Stub: creates adapter tensors with random init but does NOT train.
+fn execute_training_stub(
+    model_path: &Path,
+    config: &OptimalConfig,
+    _data_path: &Path,
     output_path: &Path,
     epochs: u32,
     learning_rate: f64,
@@ -264,6 +434,7 @@ fn execute_training(
         output::pipeline_stage("Creating adapters", output::StageStatus::Running);
         println!("  LoRA targets: {} layers", lora_targets.len());
         println!("  Rank: {lora_rank}, Alpha: {lora_alpha:.1}");
+        println!("  WARNING: Training feature not enabled. Creating untrained adapter.");
     }
 
     let mut writer = aprender::serialization::apr::AprWriter::new();
@@ -273,7 +444,7 @@ fn execute_training(
         config,
         epochs,
         learning_rate,
-        Some(data_path),
+        None,
     );
 
     let (adapter_count, total_adapter_params) =
