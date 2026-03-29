@@ -206,6 +206,41 @@ pub enum TrainCommands {
         seed: u64,
     },
 
+    /// Run successive halving HPO on sweep configs (C-HPO-001).
+    ///
+    /// Takes a directory of sweep configs (from `apr train sweep`), runs each
+    /// for `--steps-per-round` steps, kills the worst half by val_ppl, doubles
+    /// steps, and repeats for `--rounds` rounds. Reports the winner with
+    /// μTransfer-scaled LR for the target model width.
+    ///
+    /// References: Hyperband (Li et al. 2018, arXiv:1603.06560),
+    /// μTransfer (Yang et al. 2022, arXiv:2203.03466).
+    Halving {
+        /// Directory containing sweep-*.yaml configs (from `apr train sweep`)
+        #[arg(long, value_name = "DIR")]
+        sweep_dir: PathBuf,
+
+        /// Number of halving rounds (default: 3)
+        #[arg(long, default_value = "3")]
+        rounds: usize,
+
+        /// Training steps in first round (doubles each round)
+        #[arg(long, default_value = "500")]
+        steps_per_round: usize,
+
+        /// Proxy model hidden_size (for μTransfer scaling)
+        #[arg(long, default_value = "512")]
+        source_width: usize,
+
+        /// Target model hidden_size (for μTransfer scaling)
+        #[arg(long, default_value = "1024")]
+        target_width: usize,
+
+        /// Output JSON file for results
+        #[arg(long, default_value = "sweeps/hpo-results.json")]
+        output: PathBuf,
+    },
+
     /// Archive a checkpoint into a release bundle.
     ///
     /// Packages model weights, config, training state, and metadata

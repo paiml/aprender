@@ -422,6 +422,22 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             output_dir,
             seed,
         } => train::run_sweep(config, strategy, *num_configs, output_dir, *seed, cli.json),
+        TrainCommands::Halving {
+            sweep_dir,
+            rounds,
+            steps_per_round,
+            source_width,
+            target_width,
+            output,
+        } => train::run_halving(
+            sweep_dir,
+            *rounds,
+            *steps_per_round,
+            *source_width,
+            *target_width,
+            output,
+            cli.json,
+        ),
         TrainCommands::Archive {
             checkpoint_dir,
             output,

@@ -1196,6 +1196,277 @@ pub(crate) fn run_cluster_status(cluster_path: &std::path::Path, json: bool) -> 
     Ok(())
 }
 
+/// Run `apr train halving` — successive halving HPO (C-HPO-001).
+///
+/// Runs sweep configs, ranks by val_ppl, kills worst half each round.
+/// Reports winner with μTransfer-scaled LR for target model width.
+///
+/// References:
+/// - Hyperband: https://arxiv.org/abs/1603.06560
+/// - μTransfer: https://arxiv.org/abs/2203.03466
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_halving(
+    sweep_dir: &std::path::Path,
+    rounds: usize,
+    steps_per_round: usize,
+    source_width: usize,
+    target_width: usize,
+    output_path: &std::path::Path,
+    json_output: bool,
+) -> Result<()> {
+    use std::process::Command;
+
+    if !sweep_dir.exists() {
+        return Err(CliError::FileNotFound(sweep_dir.to_path_buf()));
+    }
+
+    // Discover sweep configs
+    let mut configs: Vec<std::path::PathBuf> = std::fs::read_dir(sweep_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read sweep dir: {e}")))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().starts_with("sweep-") && n.to_string_lossy().ends_with(".yaml"))
+                .unwrap_or(false)
+        })
+        .collect();
+    configs.sort();
+
+    if configs.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "No sweep-*.yaml files found in sweep directory".into(),
+        ));
+    }
+
+    if !json_output {
+        output::header("apr train halving — Successive Halving HPO (C-HPO-001)");
+        println!();
+        output::kv("  Configs", configs.len().to_string());
+        output::kv("  Rounds", rounds.to_string());
+        output::kv("  Steps/round", format!("{steps_per_round} (doubles each round)"));
+        output::kv(
+            "  μTransfer",
+            format!("{source_width} → {target_width}"),
+        );
+        println!();
+    }
+
+    // Parse LR from each config
+    let mut config_lrs: Vec<(std::path::PathBuf, f64, f64, u64)> = Vec::new();
+    for c in &configs {
+        let content = std::fs::read_to_string(c)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", c.display())))?;
+        let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
+            .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML {}: {e}", c.display())))?;
+        let lr = yaml["optimizer"]["lr"].as_f64().unwrap_or(0.0);
+        let wd = yaml["optimizer"]["weight_decay"].as_f64().unwrap_or(0.0);
+        let warmup = yaml["training"]["warmup_steps"].as_u64().unwrap_or(0);
+        config_lrs.push((c.clone(), lr, wd, warmup));
+    }
+
+    // Parse val_ppl from "[eval] step=N val_loss=X val_ppl=Y" lines
+    fn parse_best_ppl(output: &str) -> f64 {
+        let mut best = f64::INFINITY;
+        for line in output.lines() {
+            if let Some(idx) = line.find("val_ppl=") {
+                let rest = &line[idx + 8..];
+                let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(rest.len());
+                if let Ok(ppl) = rest[..end].parse::<f64>() {
+                    if ppl < best {
+                        best = ppl;
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    // Track results: config path → (best_ppl, lr, eliminated_round)
+    let mut results: Vec<(std::path::PathBuf, f64, f64, f64, u64, Option<usize>)> = config_lrs
+        .iter()
+        .map(|(p, lr, wd, warmup)| (p.clone(), f64::INFINITY, *lr, *wd, *warmup, None))
+        .collect();
+
+    let mut survivors: Vec<usize> = (0..configs.len()).collect();
+    let apr_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apr"));
+
+    for round_idx in 0..rounds {
+        let steps = steps_per_round * (1 << round_idx);
+        let n_survive = std::cmp::max(1, survivors.len() / 2);
+
+        if !json_output {
+            println!("═══ Round {round_idx} ═══");
+            println!(
+                "  Survivors: {}, steps: {steps}, keep: {n_survive}",
+                survivors.len()
+            );
+            println!();
+        }
+
+        // Update max_steps in each survivor config
+        for &idx in &survivors {
+            let path = &results[idx].0;
+            let content = std::fs::read_to_string(path).unwrap_or_default();
+            if let Ok(mut yaml) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                set_yaml_u64(&mut yaml, &["training", "max_steps"], steps as u64);
+                // Ensure unique output_dir per config
+                let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+                let out_dir = format!("./checkpoints/halving-{stem}");
+                yaml["training"]["output_dir"] = serde_yaml::Value::String(out_dir);
+                if let Ok(s) = serde_yaml::to_string(&yaml) {
+                    let _ = std::fs::write(path, s);
+                }
+            }
+        }
+
+        // Run each survivor
+        let mut round_scores: Vec<(usize, f64)> = Vec::new();
+        for &idx in &survivors {
+            let path = &results[idx].0;
+            let lr = results[idx].2;
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+
+            if !json_output {
+                print!("  Running {name} (lr={lr:.2e})...");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+            }
+
+            let start = std::time::Instant::now();
+            let output = Command::new(&apr_path)
+                .args(["train", "apply", "--task", "pretrain", "--config"])
+                .arg(path)
+                .output();
+
+            let elapsed = start.elapsed().as_secs();
+
+            let mut best_ppl = f64::INFINITY;
+            if let Ok(out) = output {
+                let combined =
+                    String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+                best_ppl = parse_best_ppl(&combined);
+            }
+
+            if best_ppl < results[idx].1 {
+                results[idx].1 = best_ppl;
+            }
+            round_scores.push((idx, best_ppl));
+
+            if !json_output {
+                if best_ppl.is_finite() {
+                    println!(" val_ppl={best_ppl:.2} ({elapsed}s)");
+                } else {
+                    println!(" no eval ({elapsed}s)");
+                }
+            }
+        }
+
+        // Rank by best_ppl (lower is better), inf sorts last
+        round_scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let kept: Vec<usize> = round_scores.iter().take(n_survive).map(|(i, _)| *i).collect();
+        let eliminated: Vec<usize> = round_scores.iter().skip(n_survive).map(|(i, _)| *i).collect();
+
+        for &idx in &eliminated {
+            results[idx].5 = Some(round_idx);
+        }
+
+        if !json_output {
+            println!();
+            let kept_names: Vec<String> = kept
+                .iter()
+                .map(|i| results[*i].0.file_name().unwrap_or_default().to_string_lossy().to_string())
+                .collect();
+            println!("  Kept: {kept_names:?}");
+            println!();
+        }
+
+        survivors = kept;
+    }
+
+    // Winner
+    let winner_idx = survivors[0];
+    let winner_ppl = results[winner_idx].1;
+    let winner_lr = results[winner_idx].2;
+    let winner_wd = results[winner_idx].3;
+    let winner_warmup = results[winner_idx].4;
+    let target_lr = winner_lr * (source_width as f64 / target_width as f64);
+    let winner_name = results[winner_idx]
+        .0
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    if !json_output {
+        println!("═══ WINNER ═══");
+        println!("  Config: {winner_name}");
+        println!("  Proxy LR: {winner_lr:.4e}");
+        println!("  Best val_ppl: {winner_ppl:.2}");
+        println!("  Weight decay: {winner_wd:.4}");
+        println!("  Warmup steps: {winner_warmup}");
+        println!();
+        println!("  μTransfer LR ({source_width}→{target_width}):");
+        println!("    lr_target = {winner_lr:.4e} × ({source_width}/{target_width})");
+        println!("    lr_target = {target_lr:.4e}");
+        println!();
+    }
+
+    // Save results JSON
+    let all_results: Vec<serde_json::Value> = results
+        .iter()
+        .map(|(p, ppl, lr, wd, warmup, elim)| {
+            serde_json::json!({
+                "config": p.file_name().unwrap_or_default().to_string_lossy(),
+                "lr": lr,
+                "best_ppl": if ppl.is_finite() { serde_json::json!(ppl) } else { serde_json::json!(null) },
+                "weight_decay": wd,
+                "warmup_steps": warmup,
+                "eliminated_round": elim,
+            })
+        })
+        .collect();
+
+    let output_json = serde_json::json!({
+        "winner": {
+            "config": winner_name,
+            "proxy_lr": winner_lr,
+            "target_lr": target_lr,
+            "best_ppl": if winner_ppl.is_finite() { serde_json::json!(winner_ppl) } else { serde_json::json!(null) },
+            "weight_decay": winner_wd,
+            "warmup_steps": winner_warmup,
+            "source_width": source_width,
+            "target_width": target_width,
+        },
+        "all_results": all_results,
+        "settings": {
+            "rounds": rounds,
+            "steps_per_round": steps_per_round,
+        },
+    });
+
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(
+        output_path,
+        serde_json::to_string_pretty(&output_json).unwrap_or_default(),
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Cannot write results: {e}")))?;
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output_json).unwrap_or_default()
+        );
+    } else {
+        println!("  Results saved to {}", output_path.display());
+    }
+
+    Ok(())
+}
+
 fn format_archive_size(bytes: u64) -> String {
     if bytes >= 1_073_741_824 {
         format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
