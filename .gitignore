@@ -74,3 +74,4 @@ probar-export/
 .pmat/context.idx/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
+src/generated_contracts.rs
