@@ -449,17 +449,18 @@ fn execute_training_wgpu(
         .map_err(|e| CliError::ValidationFailed(format!("Dequant: {e}")))?;
 
     let mut lm_head_f32 = Vec::new();
-    let mut embed_f32 = Vec::new();
-    let mut output_norm_f32 = Vec::new();
 
     for (name, data, _rows, _cols) in weights {
-        match name.as_str() {
-            "lm_head" => lm_head_f32 = data,
-            "embed" => embed_f32 = data,
-            "output_norm" => output_norm_f32 = data,
-            _ => fwd.upload_weight(&name, &data),
+        if name == "lm_head" {
+            lm_head_f32 = data;
+        } else {
+            fwd.upload_weight(&name, &data);
         }
     }
+
+    // Get embed + output_norm directly from OwnedQuantizedModel
+    let embed_f32 = q_model.token_embedding().to_vec();
+    let output_norm_f32 = q_model.output_norm_weight().to_vec();
     fwd.init_kv_cache(num_layers);
 
     eprintln!(
