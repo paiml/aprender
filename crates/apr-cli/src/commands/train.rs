@@ -1227,7 +1227,10 @@ pub(crate) fn run_halving(
         .map(|e| e.path())
         .filter(|p| {
             p.file_name()
-                .map(|n| n.to_string_lossy().starts_with("sweep-") && n.to_string_lossy().ends_with(".yaml"))
+                .map(|n| {
+                    n.to_string_lossy().starts_with("sweep-")
+                        && n.to_string_lossy().ends_with(".yaml")
+                })
                 .unwrap_or(false)
         })
         .collect();
@@ -1244,11 +1247,11 @@ pub(crate) fn run_halving(
         println!();
         output::kv("  Configs", configs.len().to_string());
         output::kv("  Rounds", rounds.to_string());
-        output::kv("  Steps/round", format!("{steps_per_round} (doubles each round)"));
         output::kv(
-            "  μTransfer",
-            format!("{source_width} → {target_width}"),
+            "  Steps/round",
+            format!("{steps_per_round} (doubles each round)"),
         );
+        output::kv("  μTransfer", format!("{source_width} → {target_width}"));
         println!();
     }
 
@@ -1257,8 +1260,9 @@ pub(crate) fn run_halving(
     for c in &configs {
         let content = std::fs::read_to_string(c)
             .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", c.display())))?;
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&content)
-            .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML {}: {e}", c.display())))?;
+        let yaml: serde_yaml::Value = serde_yaml::from_str(&content).map_err(|e| {
+            CliError::ValidationFailed(format!("Invalid YAML {}: {e}", c.display()))
+        })?;
         let lr = yaml["optimizer"]["lr"].as_f64().unwrap_or(0.0);
         let wd = yaml["optimizer"]["weight_decay"].as_f64().unwrap_or(0.0);
         let warmup = yaml["training"]["warmup_steps"].as_u64().unwrap_or(0);
@@ -1271,7 +1275,9 @@ pub(crate) fn run_halving(
         for line in output.lines() {
             if let Some(idx) = line.find("val_ppl=") {
                 let rest = &line[idx + 8..];
-                let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(rest.len());
+                let end = rest
+                    .find(|c: char| !c.is_ascii_digit() && c != '.')
+                    .unwrap_or(rest.len());
                 if let Ok(ppl) = rest[..end].parse::<f64>() {
                     if ppl < best {
                         best = ppl;
@@ -1343,8 +1349,8 @@ pub(crate) fn run_halving(
 
             let mut best_ppl = f64::INFINITY;
             if let Ok(out) = output {
-                let combined =
-                    String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+                let combined = String::from_utf8_lossy(&out.stdout).to_string()
+                    + &String::from_utf8_lossy(&out.stderr);
                 best_ppl = parse_best_ppl(&combined);
             }
 
@@ -1365,8 +1371,16 @@ pub(crate) fn run_halving(
         // Rank by best_ppl (lower is better), inf sorts last
         round_scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let kept: Vec<usize> = round_scores.iter().take(n_survive).map(|(i, _)| *i).collect();
-        let eliminated: Vec<usize> = round_scores.iter().skip(n_survive).map(|(i, _)| *i).collect();
+        let kept: Vec<usize> = round_scores
+            .iter()
+            .take(n_survive)
+            .map(|(i, _)| *i)
+            .collect();
+        let eliminated: Vec<usize> = round_scores
+            .iter()
+            .skip(n_survive)
+            .map(|(i, _)| *i)
+            .collect();
 
         for &idx in &eliminated {
             results[idx].5 = Some(round_idx);
@@ -1376,7 +1390,14 @@ pub(crate) fn run_halving(
             println!();
             let kept_names: Vec<String> = kept
                 .iter()
-                .map(|i| results[*i].0.file_name().unwrap_or_default().to_string_lossy().to_string())
+                .map(|i| {
+                    results[*i]
+                        .0
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .collect();
             println!("  Kept: {kept_names:?}");
             println!();

@@ -418,7 +418,11 @@ mod tests {
         std::fs::write(&shard_file, b"test").expect("write shard");
         let result = resolve_model_path(&dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), index_file, "index.json must take priority over shard files");
+        assert_eq!(
+            result.unwrap(),
+            index_file,
+            "index.json must take priority over shard files"
+        );
         std::fs::remove_file(&shard_file).ok();
         std::fs::remove_file(&index_file).ok();
         std::fs::remove_dir(&dir).ok();

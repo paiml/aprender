@@ -42,8 +42,13 @@ struct WgpuInferenceState {
 /// PMAT-355: Detokenize a single token ID using GPT-2 byte-level BPE.
 #[cfg(feature = "wgpu")]
 fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
-    let token = match vocab.get(id as usize) { Some(t) => t, None => return String::new() };
-    if token.starts_with("<|") && token.ends_with("|>") { return String::new(); }
+    let token = match vocab.get(id as usize) {
+        Some(t) => t,
+        None => return String::new(),
+    };
+    if token.starts_with("<|") && token.ends_with("|>") {
+        return String::new();
+    }
     if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
         if let Ok(b) = u8::from_str_radix(&token[3..5], 16) {
             return String::from_utf8_lossy(&[b]).into_owned();
@@ -52,15 +57,29 @@ fn wgpu_detokenize_one(id: u32, vocab: &[String]) -> String {
     let mut bytes = Vec::new();
     for c in token.chars() {
         let cp = c as u32;
-        let byte = if (0x21..=0x7E).contains(&cp) || (0xA1..=0xAC).contains(&cp)
-            || (0xAE..=0xFF).contains(&cp) { cp as u8
+        let byte = if (0x21..=0x7E).contains(&cp)
+            || (0xA1..=0xAC).contains(&cp)
+            || (0xAE..=0xFF).contains(&cp)
+        {
+            cp as u8
         } else if (0x0100..=0x0143).contains(&cp) {
             let off = cp - 0x0100;
-            match off { 0..=32 => off as u8, 33 => 0x7F,
-                34..=66 => (0x80 + (off - 34)) as u8, 67 => 0xAD,
-                _ => { bytes.push(b'?'); continue; } }
-        } else { let mut buf = [0u8; 4]; let s = c.encode_utf8(&mut buf);
-            bytes.extend_from_slice(s.as_bytes()); continue; };
+            match off {
+                0..=32 => off as u8,
+                33 => 0x7F,
+                34..=66 => (0x80 + (off - 34)) as u8,
+                67 => 0xAD,
+                _ => {
+                    bytes.push(b'?');
+                    continue;
+                }
+            }
+        } else {
+            let mut buf = [0u8; 4];
+            let s = c.encode_utf8(&mut buf);
+            bytes.extend_from_slice(s.as_bytes());
+            continue;
+        };
         bytes.push(byte);
     }
     String::from_utf8_lossy(&bytes).into_owned()
@@ -93,8 +112,13 @@ async fn wgpu_chat_completion(
         tokenize_greedy(&chat_text, &state.token_to_id, state.vocab_size)
     };
 
-    let id = format!("chatcmpl-wgpu-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis());
+    let id = format!(
+        "chatcmpl-wgpu-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    );
 
     if stream {
         // PMAT-355: Streaming SSE via spawn_blocking + channel
@@ -110,34 +134,63 @@ async fn wgpu_chat_completion(
             // Prefill
             for (pos, &token_id) in prompt_ids.iter().enumerate() {
                 match fwd.forward_model(
-                    token_id, pos, state.num_layers,
-                    &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-                    state.vocab_size, 1e-6, &mut kv_caches,
-                ) { Ok(l) => last_logits = l, Err(_) => return }
+                    token_id,
+                    pos,
+                    state.num_layers,
+                    &state.token_embedding,
+                    &state.output_norm_weight,
+                    &state.lm_head_f32,
+                    state.vocab_size,
+                    1e-6,
+                    &mut kv_caches,
+                ) {
+                    Ok(l) => last_logits = l,
+                    Err(_) => return,
+                }
             }
             let mut completion_tokens = 0u32;
             // Decode + send each token
             for step in 0..max_tokens {
-                let next_token = last_logits.iter().enumerate()
+                let next_token = last_logits
+                    .iter()
+                    .enumerate()
                     .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-                    .map(|(i, _)| i as u32).unwrap_or(0);
-                if next_token == 151645 || next_token == 0 { break; }
+                    .map(|(i, _)| i as u32)
+                    .unwrap_or(0);
+                if next_token == 151645 || next_token == 0 {
+                    break;
+                }
                 let text = wgpu_detokenize_one(next_token, &vocab);
                 let chunk = serde_json::json!({
                     "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
                     "choices": [{"index": 0, "delta": {"content": text}, "finish_reason": serde_json::Value::Null}]
                 });
                 completion_tokens += 1;
-                if tx.blocking_send(chunk.to_string()).is_err() { break; }
+                if tx.blocking_send(chunk.to_string()).is_err() {
+                    break;
+                }
                 let position = prompt_ids.len() + step;
                 match fwd.forward_model(
-                    next_token, position, state.num_layers,
-                    &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-                    state.vocab_size, 1e-6, &mut kv_caches,
-                ) { Ok(l) => last_logits = l, Err(_) => break }
+                    next_token,
+                    position,
+                    state.num_layers,
+                    &state.token_embedding,
+                    &state.output_norm_weight,
+                    &state.lm_head_f32,
+                    state.vocab_size,
+                    1e-6,
+                    &mut kv_caches,
+                ) {
+                    Ok(l) => last_logits = l,
+                    Err(_) => break,
+                }
             }
             let elapsed = gen_start.elapsed();
-            let tok_s = if elapsed.as_secs_f64() > 0.0 { completion_tokens as f64 / elapsed.as_secs_f64() } else { 0.0 };
+            let tok_s = if elapsed.as_secs_f64() > 0.0 {
+                completion_tokens as f64 / elapsed.as_secs_f64()
+            } else {
+                0.0
+            };
             let done = serde_json::json!({
                 "id": id_clone, "object": "chat.completion.chunk", "model": "qwen-wgpu",
                 "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
@@ -166,26 +219,45 @@ async fn wgpu_chat_completion(
         let mut last_logits = Vec::new();
         for (pos, &token_id) in prompt_ids.iter().enumerate() {
             match fwd.forward_model(
-                token_id, pos, state.num_layers,
-                &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-                state.vocab_size, 1e-6, &mut kv_caches,
+                token_id,
+                pos,
+                state.num_layers,
+                &state.token_embedding,
+                &state.output_norm_weight,
+                &state.lm_head_f32,
+                state.vocab_size,
+                1e-6,
+                &mut kv_caches,
             ) {
                 Ok(logits) => last_logits = logits,
-                Err(e) => return axum::Json(serde_json::json!({"error": format!("{e}")})).into_response(),
+                Err(e) => {
+                    return axum::Json(serde_json::json!({"error": format!("{e}")})).into_response()
+                }
             }
         }
 
         for step in 0..max_tokens {
-            let next_token = last_logits.iter().enumerate()
+            let next_token = last_logits
+                .iter()
+                .enumerate()
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(i, _)| i as u32).unwrap_or(0);
-            if next_token == 151645 || next_token == 0 { break; }
+                .map(|(i, _)| i as u32)
+                .unwrap_or(0);
+            if next_token == 151645 || next_token == 0 {
+                break;
+            }
             output_ids.push(next_token);
             let position = prompt_ids.len() + step;
             match fwd.forward_model(
-                next_token, position, state.num_layers,
-                &state.token_embedding, &state.output_norm_weight, &state.lm_head_f32,
-                state.vocab_size, 1e-6, &mut kv_caches,
+                next_token,
+                position,
+                state.num_layers,
+                &state.token_embedding,
+                &state.output_norm_weight,
+                &state.lm_head_f32,
+                state.vocab_size,
+                1e-6,
+                &mut kv_caches,
             ) {
                 Ok(logits) => last_logits = logits,
                 Err(_) => break,
@@ -194,11 +266,15 @@ async fn wgpu_chat_completion(
         drop(fwd);
 
         let elapsed = gen_start.elapsed();
-        let output_text: String = output_ids.iter()
-            .map(|&id| wgpu_detokenize_one(id, &state.vocab)).collect();
+        let output_text: String = output_ids
+            .iter()
+            .map(|&id| wgpu_detokenize_one(id, &state.vocab))
+            .collect();
         let tok_s = if elapsed.as_secs_f64() > 0.0 {
             output_ids.len() as f64 / elapsed.as_secs_f64()
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         axum::Json(serde_json::json!({
             "id": id, "object": "chat.completion", "model": "qwen-wgpu",
@@ -207,7 +283,8 @@ async fn wgpu_chat_completion(
             "usage": {"prompt_tokens": prompt_ids.len(), "completion_tokens": output_ids.len(),
                 "total_tokens": prompt_ids.len() + output_ids.len()},
             "x_wgpu_latency_ms": elapsed.as_secs_f64() * 1000.0, "x_wgpu_tok_s": tok_s,
-        })).into_response()
+        }))
+        .into_response()
     }
 }
 
@@ -216,14 +293,18 @@ async fn wgpu_chat_completion(
 /// special tokens (<|im_start|>) and single characters. Good enough for
 /// inference demo; proper BPE needed for production.
 #[cfg(feature = "wgpu")]
-fn tokenize_greedy(text: &str, token_to_id: &std::collections::HashMap<String, u32>, vocab_size: usize) -> Vec<u32> {
+fn tokenize_greedy(
+    text: &str,
+    token_to_id: &std::collections::HashMap<String, u32>,
+    vocab_size: usize,
+) -> Vec<u32> {
     let mut ids = Vec::new();
     let bytes = text.as_bytes();
     let mut pos = 0;
     while pos < bytes.len() {
         let mut best_len = 0;
         let mut best_id = 0u32; // <unk>
-        // Try longest match first (up to 32 bytes)
+                                // Try longest match first (up to 32 bytes)
         let max_len = (bytes.len() - pos).min(32);
         for len in (1..=max_len).rev() {
             if let Ok(s) = std::str::from_utf8(&bytes[pos..pos + len]) {
@@ -259,7 +340,10 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
     if config.backend.as_deref() == Some("wgpu") {
         println!();
         println!("{}", "Backend: WGPU (Vulkan/Metal/WebGPU)".cyan());
-        println!("{}", "PMAT-333: Loading model for WGPU inference...".dimmed());
+        println!(
+            "{}",
+            "PMAT-333: Loading model for WGPU inference...".dimmed()
+        );
 
         // Step 1: Load GGUF model
         use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
@@ -268,20 +352,34 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
         let quantized = OwnedQuantizedModel::from_mapped(&mapped)
             .map_err(|e| CliError::ModelLoadFailed(format!("Quantized model: {e}")))?;
         let num_layers = quantized.layers().len();
-        println!("{}", format!(
-            "Model: {} layers loaded for WGPU dequantization",
-            num_layers,
-        ).green());
+        println!(
+            "{}",
+            format!(
+                "Model: {} layers loaded for WGPU dequantization",
+                num_layers,
+            )
+            .green()
+        );
 
         // Step 2: Dequantize weights
         let dequant_start = std::time::Instant::now();
         let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(&quantized)
             .map_err(|e| CliError::ModelLoadFailed(format!("Dequant: {e}")))?;
-        let total_mb: f64 = weights.iter().map(|(_, d, _, _)| d.len() * 4).sum::<usize>() as f64 / 1e6;
-        println!("{}", format!(
-            "Dequantized {} weights ({:.0} MB) in {:.1}s",
-            weights.len(), total_mb, dequant_start.elapsed().as_secs_f64(),
-        ).dimmed());
+        let total_mb: f64 = weights
+            .iter()
+            .map(|(_, d, _, _)| d.len() * 4)
+            .sum::<usize>() as f64
+            / 1e6;
+        println!(
+            "{}",
+            format!(
+                "Dequantized {} weights ({:.0} MB) in {:.1}s",
+                weights.len(),
+                total_mb,
+                dequant_start.elapsed().as_secs_f64(),
+            )
+            .dimmed()
+        );
 
         // Step 3: WGPU upload + serve
         #[cfg(feature = "wgpu")]
@@ -293,20 +391,24 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 
             // Get model dims from dequanted weights (avoid private config field)
             // The first Q proj weight has shape [q_dim, hidden_dim]
-            let hidden_dim = weights.iter()
+            let hidden_dim = weights
+                .iter()
                 .find(|(n, _, _, _)| n.ends_with(".q_proj"))
                 .map(|(_, _, _, cols)| *cols)
                 .unwrap_or(1536);
-            let intermediate_dim = weights.iter()
+            let intermediate_dim = weights
+                .iter()
                 .find(|(n, _, _, _)| n.ends_with(".gate_proj"))
                 .map(|(_, _, rows, _)| *rows)
                 .unwrap_or(8960);
             // Infer heads from Q proj: q_dim = num_heads * head_dim
-            let q_dim = weights.iter()
+            let q_dim = weights
+                .iter()
                 .find(|(n, _, _, _)| n.ends_with(".q_proj"))
                 .map(|(_, _, rows, _)| *rows)
                 .unwrap_or(hidden_dim);
-            let kv_dim = weights.iter()
+            let kv_dim = weights
+                .iter()
                 .find(|(n, _, _, _)| n.ends_with(".k_proj"))
                 .map(|(_, _, rows, _)| *rows)
                 .unwrap_or(256);
@@ -329,17 +431,28 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             let use_q4k = std::env::var("WGPU_Q4K").is_ok();
             if use_q4k {
                 let q4k_raw = realizar::gpu::adapters::wgpu_adapter::raw_q4k_weights(&quantized);
-                let q4k_names: std::collections::HashSet<String> = q4k_raw.iter()
-                    .map(|(n, _, _, _)| n.clone()).collect();
+                let q4k_names: std::collections::HashSet<String> =
+                    q4k_raw.iter().map(|(n, _, _, _)| n.clone()).collect();
                 for (name, raw_data, _rows, _cols) in &q4k_raw {
                     fwd.upload_q4k_weight(name, raw_data);
                 }
                 for (name, data, _rows, _cols) in &weights {
-                    if q4k_names.contains(name.as_str()) { continue; }
+                    if q4k_names.contains(name.as_str()) {
+                        continue;
+                    }
                     fwd.upload_weight(name, data);
                 }
-                let q4k_mb: f64 = q4k_raw.iter().map(|(_, d, _, _)| d.len()).sum::<usize>() as f64 / 1e6;
-                println!("{}", format!("Q4K mode: {} Q4K ({:.0} MB) — 10× VRAM savings", q4k_raw.len(), q4k_mb).cyan());
+                let q4k_mb: f64 =
+                    q4k_raw.iter().map(|(_, d, _, _)| d.len()).sum::<usize>() as f64 / 1e6;
+                println!(
+                    "{}",
+                    format!(
+                        "Q4K mode: {} Q4K ({:.0} MB) — 10× VRAM savings",
+                        q4k_raw.len(),
+                        q4k_mb
+                    )
+                    .cyan()
+                );
             } else {
                 for (name, data, _rows, _cols) in &weights {
                     fwd.upload_weight(name, data);
@@ -347,12 +460,16 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             }
             // PMAT-361: Allocate GPU KV cache buffers
             fwd.init_kv_cache(num_layers);
-            println!("{}", format!(
-                "Uploaded {} weights to GPU ({:.1} MB VRAM) in {:.1}ms",
-                weights.len(),
-                fwd.total_vram_bytes() as f64 / 1e6,
-                upload_start.elapsed().as_secs_f64() * 1000.0,
-            ).green());
+            println!(
+                "{}",
+                format!(
+                    "Uploaded {} weights to GPU ({:.1} MB VRAM) in {:.1}ms",
+                    weights.len(),
+                    fwd.total_vram_bytes() as f64 / 1e6,
+                    upload_start.elapsed().as_secs_f64() * 1000.0,
+                )
+                .green()
+            );
 
             // Step 4: Extract CPU-side data for forward_model
             let token_embedding = quantized.token_embedding().to_vec();
@@ -360,37 +477,55 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             let vocab_size = token_embedding.len() / hidden_dim;
 
             // LM head from dequanted weights
-            let lm_head_f32 = weights.iter()
+            let lm_head_f32 = weights
+                .iter()
                 .find(|(n, _, _, _)| n == "lm_head")
                 .map(|(_, d, _, _)| d.clone())
                 .unwrap_or_else(|| token_embedding.clone()); // tied embeddings fallback
 
-            println!("{}", format!(
-                "WGPU inference ready: {} layers, vocab={}, hidden={}",
-                num_layers, vocab_size, hidden_dim,
-            ).green());
+            println!(
+                "{}",
+                format!(
+                    "WGPU inference ready: {} layers, vocab={}, hidden={}",
+                    num_layers, vocab_size, hidden_dim,
+                )
+                .green()
+            );
 
             // Step 5: Quick correctness test — generate one token
             let test_token = 9707u32; // "Hello" in Qwen tokenizer
             let test_start = std::time::Instant::now();
             let mut test_kv: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
             match fwd.forward_model(
-                test_token, 0, num_layers,
-                &token_embedding, &output_norm_weight, &lm_head_f32,
-                vocab_size, 1e-6,
+                test_token,
+                0,
+                num_layers,
+                &token_embedding,
+                &output_norm_weight,
+                &lm_head_f32,
+                vocab_size,
+                1e-6,
                 &mut test_kv,
             ) {
                 Ok(logits) => {
-                    let argmax = logits.iter()
+                    let argmax = logits
+                        .iter()
                         .enumerate()
                         .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
                         .map(|(i, _)| i)
                         .unwrap_or(0);
                     let elapsed = test_start.elapsed();
-                    println!("{}", format!(
-                        "WGPU test: token {} → logits[{}] max at idx {} ({:.1}ms)",
-                        test_token, logits.len(), argmax, elapsed.as_secs_f64() * 1000.0,
-                    ).cyan());
+                    println!(
+                        "{}",
+                        format!(
+                            "WGPU test: token {} → logits[{}] max at idx {} ({:.1}ms)",
+                            test_token,
+                            logits.len(),
+                            argmax,
+                            elapsed.as_secs_f64() * 1000.0,
+                        )
+                        .cyan()
+                    );
                 }
                 Err(e) => {
                     println!("{}", format!("WGPU forward failed: {e}").red());
@@ -404,15 +539,22 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             let vocab: Vec<String> = mapped.model.vocabulary().unwrap_or_else(|| {
                 eprintln!("Warning: No vocabulary in GGUF, using placeholder");
                 let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
-                if !v.is_empty() { v[0] = "<unk>".to_string(); }
+                if !v.is_empty() {
+                    v[0] = "<unk>".to_string();
+                }
                 v
             });
             // PMAT-341: Extract BPE merge rules for proper tokenization
             let merges = mapped.model.merge_rules().unwrap_or_default();
-            println!("{}", format!(
-                "Vocab: {} tokens, {} merge rules from GGUF",
-                vocab.len(), merges.len()
-            ).dimmed());
+            println!(
+                "{}",
+                format!(
+                    "Vocab: {} tokens, {} merge rules from GGUF",
+                    vocab.len(),
+                    merges.len()
+                )
+                .dimmed()
+            );
 
             // Create BPE tokenizer with merge rules
             let bpe_tokenizer = if !merges.is_empty() {
@@ -421,7 +563,8 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                     for (i, tok) in vocab.iter().enumerate() {
                         t2id.insert(tok.clone(), i as u32);
                     }
-                    let special: std::collections::HashMap<String, u32> = vocab.iter()
+                    let special: std::collections::HashMap<String, u32> = vocab
+                        .iter()
                         .enumerate()
                         .filter(|(_, t)| t.starts_with("<|") && t.ends_with("|>"))
                         .map(|(i, t)| (t.clone(), i as u32))
@@ -450,7 +593,8 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             };
 
             // Build token→ID map for greedy fallback
-            let token_to_id: std::collections::HashMap<String, u32> = vocab.iter()
+            let token_to_id: std::collections::HashMap<String, u32> = vocab
+                .iter()
                 .enumerate()
                 .map(|(i, t)| (t.clone(), i as u32))
                 .collect();
@@ -471,38 +615,51 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
             });
 
             // Build minimal axum router
-            use axum::{routing::{get, post}, Json, Router};
+            use axum::{
+                routing::{get, post},
+                Json, Router,
+            };
 
             let state_health = wgpu_state.clone();
             let state_chat = wgpu_state.clone();
 
             let app = Router::new()
-                .route("/health", get(move || async move {
-                    Json(serde_json::json!({
-                        "status": "healthy",
-                        "compute_mode": "wgpu",
-                        "version": env!("CARGO_PKG_VERSION"),
-                    }))
-                }))
-                .route("/v1/chat/completions", post(move |body: Json<serde_json::Value>| {
-                    let state = state_chat.clone();
-                    async move { wgpu_chat_completion(state, body).await }
-                }));
+                .route(
+                    "/health",
+                    get(move || async move {
+                        Json(serde_json::json!({
+                            "status": "healthy",
+                            "compute_mode": "wgpu",
+                            "version": env!("CARGO_PKG_VERSION"),
+                        }))
+                    }),
+                )
+                .route(
+                    "/v1/chat/completions",
+                    post(move |body: Json<serde_json::Value>| {
+                        let state = state_chat.clone();
+                        async move { wgpu_chat_completion(state, body).await }
+                    }),
+                );
 
             let bind_addr = config.bind_addr();
             let runtime = tokio::runtime::Runtime::new()
                 .map_err(|e| CliError::InferenceFailed(format!("Runtime: {e}")))?;
 
             runtime.block_on(async move {
-                let listener = tokio::net::TcpListener::bind(&bind_addr).await
+                let listener = tokio::net::TcpListener::bind(&bind_addr)
+                    .await
                     .map_err(|e| CliError::InferenceFailed(format!("Bind: {e}")))?;
-                println!("{}", format!(
-                    "WGPU inference server listening on http://{}",
-                    bind_addr
-                ).green().bold());
+                println!(
+                    "{}",
+                    format!("WGPU inference server listening on http://{}", bind_addr)
+                        .green()
+                        .bold()
+                );
                 println!("  POST /v1/chat/completions - Chat completions (WGPU)");
                 println!("  GET  /health              - Health check");
-                axum::serve(listener, app).await
+                axum::serve(listener, app)
+                    .await
                     .map_err(|e| CliError::InferenceFailed(format!("Serve: {e}")))?;
                 Ok::<(), CliError>(())
             })?;
@@ -510,7 +667,10 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
         }
         #[cfg(not(feature = "wgpu"))]
         {
-            println!("{}", "WGPU feature not enabled. Build with --features wgpu".yellow());
+            println!(
+                "{}",
+                "WGPU feature not enabled. Build with --features wgpu".yellow()
+            );
         }
     }
 

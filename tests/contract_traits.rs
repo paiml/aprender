@@ -8,9 +8,9 @@
 //! Run with: `cargo test --test contract_traits`
 
 use provable_contracts::traits::{
-    ActivationKernelV1, AdamwKernelV1, AttentionKernelV1, CrossEntropyKernelV1,
-    FlashAttentionV1, GqaKernelV1, LayernormKernelV1, MatmulKernelV1, RmsnormKernelV1,
-    RopeKernelV1, SiluKernelV1, SoftmaxKernelV1, SwigluKernelV1,
+    ActivationKernelV1, AdamwKernelV1, AttentionKernelV1, CrossEntropyKernelV1, FlashAttentionV1,
+    GqaKernelV1, LayernormKernelV1, MatmulKernelV1, RmsnormKernelV1, RopeKernelV1, SiluKernelV1,
+    SoftmaxKernelV1, SwigluKernelV1,
 };
 
 /// Marker struct: aprender's scalar/slice kernel implementations satisfy
@@ -80,7 +80,8 @@ impl SwigluKernelV1 for AprenderKernels {
         let half = x.len() / 2;
         let x_part = &x[..half];
         let gate = &x[half..];
-        x_part.iter()
+        x_part
+            .iter()
             .zip(gate.iter())
             .map(|(&xi, &gi)| aprender::nn::functional::swiglu_scalar(xi, gi))
             .collect()
@@ -182,7 +183,8 @@ impl AdamwKernelV1 for AprenderKernels {
         let grads = &g_t[..half];
         let m_prev = &g_t[half..];
         let beta1: f32 = 0.9;
-        grads.iter()
+        grads
+            .iter()
             .zip(m_prev.iter())
             .map(|(&gi, &mi)| beta1 * mi + (1.0 - beta1) * gi)
             .collect()
@@ -194,7 +196,8 @@ impl AdamwKernelV1 for AprenderKernels {
         let grads = &g_t[..half];
         let v_prev = &g_t[half..];
         let beta2: f32 = 0.999;
-        grads.iter()
+        grads
+            .iter()
             .zip(v_prev.iter())
             .map(|(&gi, &vi)| beta2 * vi + (1.0 - beta2) * gi * gi)
             .collect()
@@ -460,7 +463,10 @@ fn rope_trait_compiles() {
     let out = RopeKernelV1::rope(&k, input, &[0.0]);
     assert_eq!(out.len(), 4);
     for (i, (&a, &b)) in input.iter().zip(out.iter()).enumerate() {
-        assert!((a - b).abs() < 1e-6, "RoPE at m=0 should be identity, idx={i}");
+        assert!(
+            (a - b).abs() < 1e-6,
+            "RoPE at m=0 should be identity, idx={i}"
+        );
     }
 }
 
@@ -478,7 +484,10 @@ fn adamw_trait_compiles() {
 
     let corrected = AdamwKernelV1::bias_correction(&k, &[0.05, 0.00025]);
     assert_eq!(corrected.len(), 2);
-    assert!(corrected[0].abs() > 0.05, "bias correction amplifies at t=1");
+    assert!(
+        corrected[0].abs() > 0.05,
+        "bias correction amplifies at t=1"
+    );
 
     let updated = AdamwKernelV1::weight_update(&k, &[1.0, 0.5, 0.25, 1.0, 0.5, 0.25]);
     assert_eq!(updated.len(), 2);
@@ -496,7 +505,10 @@ fn attention_trait_compiles() {
     assert_eq!(out.len(), 4);
     // Each output row should be a convex combination of V rows
     let row0_sum: f32 = out[0] + out[1];
-    assert!((row0_sum - 1.0).abs() < 0.1 || row0_sum.is_finite(), "output is finite");
+    assert!(
+        (row0_sum - 1.0).abs() < 0.1 || row0_sum.is_finite(),
+        "output is finite"
+    );
 }
 
 #[test]
@@ -534,5 +546,8 @@ fn matmul_trait_compiles() {
     let qd = MatmulKernelV1::quantized_dot(&k, &[2.0, 4.0, 6.0], 0.5);
     assert_eq!(qd.len(), 1);
     // 2.0 * 0.5 * (1+2+3) = 6.0
-    assert!((qd[0] - 6.0).abs() < 1e-6, "quantized_dot = s_a * s_b * dot");
+    assert!(
+        (qd[0] - 6.0).abs() < 1e-6,
+        "quantized_dot = s_a * s_b * dot"
+    );
 }

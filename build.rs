@@ -250,20 +250,40 @@ fn emit_provable_contract_bindings() {
         if !expected.is_empty() {
             let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
             fn scan_rs(dir: &std::path::Path, found: &mut std::collections::HashSet<String>) {
-                let Ok(entries) = std::fs::read_dir(dir) else { return };
+                let Ok(entries) = std::fs::read_dir(dir) else {
+                    return;
+                };
                 for e in entries.flatten() {
                     let p = e.path();
                     if p.is_dir() {
                         let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if n != "target" && n != ".git" { scan_rs(&p, found); }
+                        if n != "target" && n != ".git" {
+                            scan_rs(&p, found);
+                        }
                     } else if p.extension().and_then(|e| e.to_str()) == Some("rs") {
                         if let Ok(c) = std::fs::read_to_string(&p) {
                             for line in c.lines() {
                                 let t = line.trim();
-                                if t.starts_with("pub fn ") || t.starts_with("pub async fn ") || t.starts_with("pub(crate) fn ") {
-                                    let part = t.trim_start_matches("pub async fn ").trim_start_matches("pub(crate) fn ").trim_start_matches("pub fn ");
-                                    let name = part.split('(').next().unwrap_or("").split('<').next().unwrap_or("").trim().to_lowercase();
-                                    if !name.is_empty() { found.insert(name); }
+                                if t.starts_with("pub fn ")
+                                    || t.starts_with("pub async fn ")
+                                    || t.starts_with("pub(crate) fn ")
+                                {
+                                    let part = t
+                                        .trim_start_matches("pub async fn ")
+                                        .trim_start_matches("pub(crate) fn ")
+                                        .trim_start_matches("pub fn ");
+                                    let name = part
+                                        .split('(')
+                                        .next()
+                                        .unwrap_or("")
+                                        .split('<')
+                                        .next()
+                                        .unwrap_or("")
+                                        .trim()
+                                        .to_lowercase();
+                                    if !name.is_empty() {
+                                        found.insert(name);
+                                    }
                                 }
                             }
                         }
@@ -272,7 +292,10 @@ fn emit_provable_contract_bindings() {
             }
             scan_rs(std::path::Path::new("src"), &mut found);
             scan_rs(std::path::Path::new("crates"), &mut found);
-            let missing: Vec<_> = expected.iter().filter(|n| !found.contains(n.as_str())).collect();
+            let missing: Vec<_> = expected
+                .iter()
+                .filter(|n| !found.contains(n.as_str()))
+                .collect();
             if !missing.is_empty() {
                 println!("cargo:warning=[contract] L2: {} bound function(s) not found in source (soft warning)", missing.len());
             }

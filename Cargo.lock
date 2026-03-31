@@ -293,6 +293,7 @@ dependencies = [
  "pacha",
  "predicates",
  "proptest",
+ "provable-contracts-macros 0.2.1",
  "ratatui",
  "realizar",
  "regex",
@@ -325,7 +326,7 @@ dependencies = [
  "getrandom 0.2.17",
  "memmap2",
  "minijinja",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.1.1",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "rayon",
@@ -363,7 +364,7 @@ dependencies = [
  "minijinja",
  "proptest",
  "provable-contracts",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.1.1",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "rayon",
@@ -385,6 +386,30 @@ dependencies = [
  "wasm-bindgen",
  "x25519-dalek",
  "zstd",
+]
+
+[[package]]
+name = "aprender"
+version = "0.27.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9da5a89a3feab012e453372a90aa7f2c35677953bb160a88f1146c0e5688b17"
+dependencies = [
+ "batuta-common",
+ "bincode",
+ "getrandom 0.2.17",
+ "memmap2",
+ "minijinja",
+ "provable-contracts-macros 0.1.1",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "trueno 0.16.3",
+ "trueno-quant",
 ]
 
 [[package]]
@@ -2298,7 +2323,7 @@ name = "entrenar"
 version = "0.7.6"
 dependencies = [
  "alimentar 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "aprender 0.27.5",
+ "aprender 0.27.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "arrow 57.3.0",
  "bytemuck",
  "chrono",
@@ -2315,7 +2340,7 @@ dependencies = [
  "ndarray",
  "presentar-core",
  "presentar-terminal",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.2.1",
  "rand 0.9.2",
  "regex",
  "rusqlite",
@@ -5149,8 +5174,9 @@ dependencies = [
 [[package]]
 name = "provable-contracts"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25d845cee13c0160ff2d644c8bd4b65a8487f894a827d9d0fe23d47980a9fa5"
 dependencies = [
- "regex",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5160,6 +5186,17 @@ dependencies = [
 [[package]]
 name = "provable-contracts-macros"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "provable-contracts-macros"
+version = "0.2.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5482,7 +5519,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "presentar-terminal",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.2.1",
  "rand 0.8.5",
  "rayon",
  "renacer-core",
@@ -5629,7 +5666,7 @@ version = "0.10.1"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.27.5",
+ "aprender 0.27.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "backtrace",
  "clap",
  "crossbeam",
@@ -7020,7 +7057,7 @@ dependencies = [
  "hostname",
  "num_cpus",
  "pollster",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.2.1",
  "rayon",
  "serde",
  "serde_json",
@@ -7149,6 +7186,8 @@ dependencies = [
 [[package]]
 name = "trueno-viz"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac5b643c0c2924c22d708015dc3393877c992b39e6e67a42b2a26fa301d71b66"
 dependencies = [
  "base64 0.22.1",
  "batuta-common",
@@ -8544,3 +8583,7 @@ checksum = "ec5f41c76397b7da451efd19915684f727d7e1d516384ca6bd0ec43ec94de23c"
 dependencies = [
  "zune-core",
 ]
+
+[[patch.unused]]
+name = "provable-contracts"
+version = "0.2.1"

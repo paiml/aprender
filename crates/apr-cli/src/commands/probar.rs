@@ -114,9 +114,12 @@ pub(crate) fn run(
         eprintln!();
         eprintln!(
             "{}",
-            format!("DIVERGENCE: {} layer(s) exceed tolerance {tolerance}", divergences.len())
-                .red()
-                .bold()
+            format!(
+                "DIVERGENCE: {} layer(s) exceed tolerance {tolerance}",
+                divergences.len()
+            )
+            .red()
+            .bold()
         );
         for d in &divergences {
             eprintln!("  - {}", d);
@@ -131,7 +134,9 @@ pub(crate) fn run(
         eprintln!();
         eprintln!(
             "{}",
-            format!("PASS: all layers within tolerance {tolerance}").green().bold()
+            format!("PASS: all layers within tolerance {tolerance}")
+                .green()
+                .bold()
         );
     }
 
@@ -435,9 +440,21 @@ fn export_png(layers: &[LayerSnapshot], output_dir: &Path) -> Result<(), CliErro
 /// Returns 1.0 for identical vectors (including both-zero).
 /// Returns 0.0 only when one is zero and the other is not.
 fn histogram_cosine_similarity(a: &[u32], b: &[u32]) -> f32 {
-    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| f64::from(x) * f64::from(y)).sum();
-    let norm_a: f64 = a.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
-    let norm_b: f64 = b.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+    let dot: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| f64::from(x) * f64::from(y))
+        .sum();
+    let norm_a: f64 = a
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        .sqrt();
+    let norm_b: f64 = b
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        .sqrt();
     if norm_a < f64::EPSILON && norm_b < f64::EPSILON {
         return 1.0; // Both zero vectors are identical
     }

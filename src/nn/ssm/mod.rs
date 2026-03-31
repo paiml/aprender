@@ -16,13 +16,7 @@
 /// Contract: ssm-kernel-v1 / ssm_discretize
 /// Domain: A ∈ ℝ^{n×n}, B ∈ ℝ^{n×1}, Delta ∈ ℝ_{>0}
 /// Codomain: A_bar ∈ ℝ^{n×n}, B_bar ∈ ℝ^{n×1}
-pub fn ssm_discretize(
-    a_diag: &[f32],
-    b: &[f32],
-    delta: f32,
-    a_bar: &mut [f32],
-    b_bar: &mut [f32],
-) {
+pub fn ssm_discretize(a_diag: &[f32], b: &[f32], delta: f32, a_bar: &mut [f32], b_bar: &mut [f32]) {
     assert_eq!(a_diag.len(), b.len(), "A and B dimension mismatch");
     assert!(delta > 0.0, "Delta must be positive");
 
@@ -42,13 +36,7 @@ pub fn ssm_discretize(
 ///
 /// Contract: ssm-kernel-v1 / ssm_scan
 /// Invariant: Causal — y_t depends only on x_1..x_t
-pub fn ssm_scan(
-    x: &[f32],
-    a_bar: &[f32],
-    b_bar: &[f32],
-    c: &[f32],
-    output: &mut [f32],
-) {
+pub fn ssm_scan(x: &[f32], a_bar: &[f32], b_bar: &[f32], c: &[f32], output: &mut [f32]) {
     let seq_len = x.len();
     let state_dim = a_bar.len();
     assert_eq!(state_dim, b_bar.len());
@@ -98,7 +86,12 @@ pub fn selective_gate(
     assert_eq!(c_out.len(), state_dim);
 
     // Delta = softplus(W_delta . x + b_delta)
-    let z: f32 = w_delta.iter().zip(x.iter()).map(|(w, xi)| w * xi).sum::<f32>() + b_delta;
+    let z: f32 = w_delta
+        .iter()
+        .zip(x.iter())
+        .map(|(w, xi)| w * xi)
+        .sum::<f32>()
+        + b_delta;
     *delta_out = softplus(z);
 
     // B = W_B * x  (matrix-vector product, W_B is state_dim × input_dim)
@@ -183,7 +176,9 @@ mod tests {
         let mut b_out = [0.0; 2];
         let mut c_out = [0.0; 2];
 
-        selective_gate(&x, &w_delta, 0.0, &w_b, &w_c, 2, &mut delta, &mut b_out, &mut c_out);
+        selective_gate(
+            &x, &w_delta, 0.0, &w_b, &w_c, 2, &mut delta, &mut b_out, &mut c_out,
+        );
 
         // Delta must be positive (softplus)
         assert!(delta > 0.0, "Delta must be positive, got {delta}");

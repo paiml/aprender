@@ -1582,7 +1582,9 @@ fn wait_for_server_health(server: &mut std::process::Child, json_output: bool) -
     }
     let _ = server.kill();
     let _ = server.wait();
-    Err(CliError::ValidationFailed("Teacher server did not become ready within 180 seconds".into()))
+    Err(CliError::ValidationFailed(
+        "Teacher server did not become ready within 180 seconds".into(),
+    ))
 }
 
 fn run_text_generate(
