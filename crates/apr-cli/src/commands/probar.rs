@@ -92,9 +92,9 @@ pub(crate) fn run(
     // GH-338: Use RosettaStone for format detection with explicit metadata validation.
     // Corrupt metadata (msgpack, JSON) produces an error here, not silent ignoring.
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let report = rosetta
-        .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect model (corrupt metadata?): {e}")))?;
+    let report = rosetta.inspect(path).map_err(|e| {
+        CliError::InvalidFormat(format!("Failed to inspect model (corrupt metadata?): {e}"))
+    })?;
     if report.tensors.is_empty() {
         return Err(CliError::InvalidFormat(format!(
             "Model {} has no tensors — metadata may be corrupted",

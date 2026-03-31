@@ -544,8 +544,11 @@ fn execute_training_wgpu(
         hidden,
         vocab,
         512, // max_seq_len
-        heads, kv_heads, inter,
-        lora_rank, lora_alpha,
+        heads,
+        kv_heads,
+        inter,
+        lora_rank,
+        lora_alpha,
         eps,
     );
 
