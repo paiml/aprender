@@ -253,7 +253,10 @@ fn test_admm_box_constraints_via_consensus() {
     // ADMM should run without panicking. Convergence may require more
     // iterations for tight tolerances — the key property is that the
     // algorithm produces a finite, bounded solution.
-    assert!(result.iterations > 0, "ADMM should run at least 1 iteration");
+    assert!(
+        result.iterations > 0,
+        "ADMM should run at least 1 iteration"
+    );
 
     // Solution should be finite (no NaN/Inf)
     for i in 0..n {

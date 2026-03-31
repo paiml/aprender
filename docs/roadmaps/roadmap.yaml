@@ -4898,3 +4898,60 @@ roadmap:
   - cli
   - gpu
   notes: null
+- id: PMAT-489
+  github_issue: null
+  item_type: task
+  title: 'BOOK: Add 7 missing chapters to SUMMARY.md'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T17:03:57Z
+  updated: 2026-03-31T17:06:04Z
+  spec: null
+  acceptance_criteria:
+  - '7 book chapters exist but are not listed in SUMMARY.md: logic-family-tree, mem-test-full, mem-test, phi-hf-import, qwen-apr-native, qwen-chat, whisper-transcribe'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - docs
+  - book
+  notes: null
+- id: PMAT-490
+  github_issue: null
+  item_type: task
+  title: 'TEST: Un-ignore 5 time-based tests with fake clock'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T17:03:57Z
+  updated: 2026-03-31T17:13:02Z
+  spec: null
+  acceptance_criteria:
+  - '5 tests ignored because they use thread::sleep: test_time_budget, test_time_budget_elapsed_remaining, test_cache_entry_is_valid_expired, test_cache_metadata_age, test_cache_metadata_expiration. Replace thread::sleep with deterministic time injection.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - test
+  - quality
+  notes: null
+- id: PMAT-491
+  github_issue: null
+  item_type: task
+  title: 'TEST: Fix ignored ADMM consensus test'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-03-31T17:03:57Z
+  updated: 2026-03-31T17:18:48Z
+  spec: null
+  acceptance_criteria:
+  - test_admm_box_constraints_via_consensus is ignored with note 'Consensus form for box constraints needs algorithm refinement'. Investigate and fix the algorithm or remove the test.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - test
+  - algorithm
+  notes: null
