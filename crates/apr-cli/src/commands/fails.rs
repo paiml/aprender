@@ -155,6 +155,8 @@
             trace_steps: None,
             trace_verbose: false,
             trace_output: None,
+            trace_level: "basic".to_string(),
+            profile: false,
         };
         assert!(options.no_gpu);
         assert_eq!(options.output_format, "json");

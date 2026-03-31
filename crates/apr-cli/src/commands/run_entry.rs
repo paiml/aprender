@@ -73,6 +73,8 @@ pub(crate) fn run(
         trace_steps: trace_steps.map(<[std::string::String]>::to_vec),
         trace_verbose,
         trace_output,
+        trace_level: trace_level.to_string(),
+        profile,
     };
 
     let result = run_model(source, &options)?;

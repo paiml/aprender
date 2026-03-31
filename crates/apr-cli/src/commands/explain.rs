@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn test_explain_no_arguments() {
         let result = run_default(None, None, None);
-        assert!(result.is_ok());
+        assert!(result.is_err(), "explain with no args should return error");
     }
 
     #[test]

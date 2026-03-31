@@ -4718,3 +4718,125 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-480
+  github_issue: null
+  item_type: task
+  title: 'SPEC-CLI: Implement --trace and --profile global flags on apr run/chat/serve'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T12:59:31Z
+  updated: 2026-03-31T13:00:02.572146092+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Wire renacer layer tracing (8-step state machine) and trueno BrickProfiler as global flags on all runtime commands. When --trace: emit TensorStats per layer. When --profile: emit per-brick µs timing. Ref: aprender-spec.md §4, components/tracing.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - cli
+  - tracing
+  notes: null
+- id: PMAT-481
+  github_issue: null
+  item_type: task
+  title: 'SPEC-PROBAR: Implement apr probar golden snapshot command'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T12:59:34Z
+  updated: 2026-03-31T12:59:34Z
+  spec: null
+  acceptance_criteria:
+  - 'Add apr probar command for visual regression testing of model activations. Flags: --golden DIR, --assert, --format json|png, --layer PATTERN, --tolerance FLOAT. Compare per-layer activation stats against golden reference. Exit non-zero on divergence. Ref: aprender-spec.md §13, components/testing.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - cli
+  - probar
+  notes: null
+- id: PMAT-482
+  github_issue: null
+  item_type: task
+  title: 'SPEC-BRICK: Implement BrickTracer auto-escalation in apr cbtop'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T12:59:38Z
+  updated: 2026-03-31T12:59:38Z
+  spec: null
+  acceptance_criteria:
+  - 'Wire BrickTracer from renacer into apr cbtop command. Auto-escalate from measurement to full syscall tracing when CV>15% or efficiency<25%. Emit SyscallBreakdown (mmap_us, futex_us, ioctl_us, compute_us). Rate limit 100 traces/sec. Ref: components/tracing.md §3'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - cli
+  - tracing
+  - brick
+  notes: null
+- id: PMAT-483
+  github_issue: null
+  item_type: task
+  title: 'SPEC-CONTRACT: Add provable-contracts equivalence obligations for all 5 compute backends'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T12:59:43Z
+  updated: 2026-03-31T12:59:43Z
+  spec: null
+  acceptance_criteria:
+  - 'Write YAML contracts with equivalence proof obligations for each kernel across SIMD/wgpu/CUDA PTX/cuBLAS/WASM backends. Required: RMSNorm, Q4K GEMV, RoPE, SwiGLU, Attention, LM Head. Each contract: scalar reference + cosine>=0.98 for GPU backends + max_ulp<=2 for SIMD. Ref: components/provable-contracts.md §6, components/compute-backends.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - contracts
+  - backends
+  notes: null
+- id: PMAT-484
+  github_issue: null
+  item_type: task
+  title: 'SPEC-PROBAR-CI: Wire apr probar into tier2/tier3 quality gates'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T12:59:52Z
+  updated: 2026-03-31T12:59:52Z
+  spec: null
+  acceptance_criteria:
+  - 'Add probar golden regression to Makefile tier2 gate (fast: --assert only) and tier3 gate (full: --profile --assert). Golden snapshots stored in tests/golden/. Any weight-modifying PR (merge/finetune/prune/quantize) must pass probar. Ref: components/testing.md §6.2'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - ci
+  - probar
+  notes: null
+- id: PMAT-485
+  github_issue: null
+  item_type: task
+  title: 'SPEC-TRACE-OTLP: Add OTLP export to apr serve for distributed tracing'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T12:59:56Z
+  updated: 2026-03-31T12:59:56Z
+  spec: null
+  acceptance_criteria:
+  - 'Add --otlp-endpoint flag to apr serve. Export W3C Trace Context spans (renacer-core SpanRecord) to Jaeger/Tempo. Each inference request = parent span, each layer = child span with TensorStats. Ref: components/tracing.md §3.5'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - cli
+  - tracing
+  - serve
+  notes: null

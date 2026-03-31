@@ -258,6 +258,7 @@
                 trace: false,
                 trace_level: "basic".to_string(),
                 profile: false,
+                backend: None,
             },
         };
         let paths = extract_model_paths(&serve_cmd);
@@ -302,6 +303,9 @@
             trace_payload: false,
             profile: false,
             chat: false,
+            temperature: 0.0,
+            top_k: 1,
+            batch_jsonl: None,
             verbose: false,
         };
         let paths = extract_model_paths(&cmd);

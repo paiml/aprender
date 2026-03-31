@@ -150,6 +150,10 @@ pub(crate) struct RunOptions {
     pub trace_verbose: bool,
     /// Save trace output to JSON file
     pub trace_output: Option<PathBuf>,
+    /// Trace detail level: none, basic, layer, payload (PMAT-480)
+    pub trace_level: String,
+    /// Enable inline Roofline profiling (PMAT-480)
+    pub profile: bool,
 }
 
 impl Default for RunOptions {
@@ -168,6 +172,8 @@ impl Default for RunOptions {
             trace_steps: None,
             trace_verbose: false,
             trace_output: None,
+            trace_level: "basic".to_string(),
+            profile: false,
         }
     }
 }

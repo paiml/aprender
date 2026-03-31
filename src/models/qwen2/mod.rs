@@ -120,11 +120,15 @@ impl Embedding {
     /// Contract: embedding-algebra-v1, equation "embedding_lookup"
     #[provable_contracts_macros::contract("embedding-algebra-v1", equation = "embedding_lookup")]
     #[must_use]
+    #[allow(unused_variables)] // contract macro binds token_ids internally
     pub fn forward(&self, input_ids: &[u32]) -> Tensor {
+        contract_pre_embedding_lookup!(input_ids);
         let batch_size = 1;
         let mut output = vec![0.0f32; batch_size * input_ids.len() * self.hidden_size];
         self.forward_into(input_ids, &mut output);
-        Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size])
+        let result = Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size]);
+        contract_post_embedding_lookup!(result.data());
+        result
     }
 
     /// Set weights from external tensor.
@@ -182,11 +186,14 @@ impl Qwen2MLP {
     /// Forward pass with `SwiGLU` activation.
     #[must_use]
     pub fn forward(&self, x: &Tensor) -> Tensor {
+        contract_pre_swiglu!(x.data());
         let gate = self.gate_proj.forward(x);
         let gate_activated = silu(&gate);
         let up = self.up_proj.forward(x);
         let hidden = elementwise_mul(&gate_activated, &up);
-        self.down_proj.forward(&hidden)
+        let result = self.down_proj.forward(&hidden);
+        contract_post_swiglu!(result.data());
+        result
     }
 
     /// Get mutable reference to gate projection layer.
@@ -270,6 +277,7 @@ impl Qwen2DecoderLayer {
         _rope: &RotaryPositionEmbedding,
         _attention_mask: Option<&Tensor>,
     ) -> Tensor {
+        contract_pre_residual!(hidden_states.data());
         // Self-attention with pre-norm
         // Note: Attention mask handling is simplified - using None for now
         // Full implementation would reshape mask for multi-head attention

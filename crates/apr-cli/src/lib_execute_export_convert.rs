@@ -120,7 +120,7 @@
         assert!(result.is_ok(), "List should succeed without arguments");
     }
 
-    /// Test execute_command: Explain without args succeeds
+    /// Test execute_command: Explain without args returns validation error
     #[test]
     fn test_execute_explain_no_args() {
         let cli = make_cli(Commands::Explain {
@@ -132,9 +132,9 @@
             verbose: false,
             proof_status: false,
         });
-        // Explain with no args should still run (shows general help)
+        // Explain with no args returns error (shows usage guidance)
         let result = execute_command(&cli);
-        assert!(result.is_ok(), "Explain with no args should succeed");
+        assert!(result.is_err(), "Explain with no args should return error");
     }
 
     /// Test execute_command: Explain with code succeeds
