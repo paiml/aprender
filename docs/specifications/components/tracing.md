@@ -244,8 +244,8 @@ renacer `visualization` feature and further wiring.
 | `chat` | `--trace` | — | `--profile` | — |
 | `serve` | `--trace` | — | `--profile` | — |
 | `bench` | — | — | — | — |
-| `train` | — | — | — | — |
-| `finetune` | — | — | — | — |
+| `train` | — | — | `--profile` | — |
+| `finetune` | — | — | `--profile` | — |
 | `qa` | golden trace | syscall check | — | golden |
 | `cbtop` | — | primary | live bricks | — |
 | `profile` | — | — | primary | — |
@@ -317,7 +317,7 @@ markers, and train/validation split. Rendered via trueno-viz.
 
 | Gap | Description |
 |-----|-------------|
-| No `--profile` on `apr train` | Must use YAML config, not CLI flag |
+| ~~No `--profile` on `apr train`~~ | FIXED (PMAT-486): `--profile` + `--profile-interval N` |
 | No per-layer gradient stats | Only global gnorm, no per-layer distribution |
 | No activation statistics | No dead neuron / saturation detection |
 | No CUDA kernel-level profiling | No nsys/CUPTI integration |

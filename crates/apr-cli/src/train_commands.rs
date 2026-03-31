@@ -144,6 +144,14 @@ pub enum TrainCommands {
         /// Random seed for reproducibility (default: from YAML or 42)
         #[arg(long, value_name = "N")]
         seed: Option<u64>,
+
+        // ── Profiling params (PMAT-486) ──
+        /// Enable StepProfiler for per-phase wall-clock timing (KAIZEN-047)
+        #[arg(long)]
+        profile: bool,
+        /// StepProfiler report interval (every N steps, default: 50)
+        #[arg(long, value_name = "N", default_value = "50")]
+        profile_interval: usize,
     },
 
     /// Watch a training run with automatic restart on crash and hang detection.

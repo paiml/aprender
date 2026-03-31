@@ -428,7 +428,12 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             adapters_config,
             experimental_mps,
             gpu_share,
-        }) => finetune::run(
+            profile,
+        }) => {
+            if *profile {
+                eprintln!("StepProfiler enabled for finetune (PMAT-486)");
+            }
+            finetune::run(
             file.as_deref(),
             method,
             *rank,
@@ -459,7 +464,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
             *experimental_mps,
             *gpu_share,
-        ),
+        )
+        }
         Commands::ModelOps(ModelOpsCommands::Prune {
             file,
             method,

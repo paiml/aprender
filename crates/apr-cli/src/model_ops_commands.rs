@@ -98,6 +98,10 @@ pub enum ModelOpsCommands {
         /// Only effective with --experimental-mps. Default: 50.
         #[arg(long, value_name = "PCT", default_value = "50")]
         gpu_share: u32,
+
+        /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
+        #[arg(long)]
+        profile: bool,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {
