@@ -266,3 +266,61 @@ auto-escalation, and Jaeger/Tempo integration.
 [features]
 visualization = ["renacer", "trueno-viz"]  # Full tracing
 ```
+
+---
+
+## 8. Training Performance Profiling (entrenar)
+
+Entrenar provides its own profiling infrastructure for training loops,
+separate from inference tracing:
+
+### 8.1 StepProfiler (KAIZEN-047)
+
+Per-step wall-clock timing across 11 training phases:
+
+| Phase | What |
+|-------|------|
+| embed | Embedding lookup |
+| h2d | Host → device transfer |
+| forward | Forward pass |
+| norm_lm | Output norm + LM head |
+| loss | Loss computation |
+| grad_h2d | Gradient host → device |
+| lm_bwd | LM head backward |
+| norm_bwd | Norm backward |
+| blk_bwd | Transformer block backward |
+| embed_bwd | Embedding backward |
+| opt | Optimizer step |
+
+Zero overhead when disabled (C-STEPPROF-001). Running statistics with
+p50/p95/p99 percentiles. Configurable report interval.
+
+### 8.2 Per-Step Metrics (R-012)
+
+Every training step emits:
+```
+[batches] step=123 loss=0.45 tok/s=1250 mfu=42.3% gnorm=0.5e-2 gpu=22/80MB step=42ms
+```
+
+- `tok/s`: Tokens per second throughput
+- `mfu`: Model FLOPs Utilization percentage
+- `gnorm`: Global gradient norm (before clipping)
+- GPU memory usage (used_mb / total_mb)
+- Per-step latency with ETA
+
+### 8.3 Loss Curve Visualization
+
+TUI loss curves with exponential moving average smoothing, best value
+markers, and train/validation split. Rendered via trueno-viz.
+
+### 8.4 Gaps vs World-Class (Future Work)
+
+| Gap | Description |
+|-----|-------------|
+| No `--profile` on `apr train` | Must use YAML config, not CLI flag |
+| No per-layer gradient stats | Only global gnorm, no per-layer distribution |
+| No activation statistics | No dead neuron / saturation detection |
+| No CUDA kernel-level profiling | No nsys/CUPTI integration |
+| No flamegraph generation | Profile data exists but no visualization |
+| No roofline classification | MFU computed but no bottleneck taxonomy |
+| No distributed profiling | Single-GPU only, no AllReduce timing |

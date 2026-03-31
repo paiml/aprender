@@ -60,8 +60,8 @@ failed, the system routed to wgpu automatically.
 
 ### 2.1 Implementation
 
-- Uses Rust's `std::simd` (nightly) and auto-vectorization (stable)
-- AVX2 (x86_64), NEON (aarch64), scalar fallback
+- Hand-written SIMD intrinsics: AVX2+FMA, AVX-512, SSE2, NEON
+- BLIS-style microkernels for matmul (avx2.rs, neon.rs)
 - Hand-optimized hot paths for quantized tensor ops
 - Rayon parallelism for matrix operations
 
@@ -120,6 +120,15 @@ wgpu gives us **portability**. CUDA gives us **peak NVIDIA performance**.
 We use both.
 
 ### 3.3 Implemented WGSL Shaders
+
+**trueno** (39 WGSL shaders in `backends/gpu/shaders/`):
+- basic_ops.rs: 19 shaders (matmul 16x16, CUTLASS-style 64x64 GEMM,
+  add, sub, mul, div, dot, scale, clamp, etc.)
+- reductions.rs: 5 shaders (max, sum, softmax exp, workgroup barrier)
+- advanced.rs: 6 shaders (advanced operations)
+- backward.rs: 9 shaders (backward pass for autograd)
+
+**realizar** (inference-specific WGSL):
 
 | Kernel | PMAT | Status |
 |--------|------|--------|
@@ -232,12 +241,21 @@ no handwritten shader can match. Used when:
 - Full training backward pass (GEMM-dominated)
 - FP16/BF16 operations where quantized kernels don't apply
 
-### 5.2 Integration Points
+### 5.2 Implementation
+
+Hand-written FFI bindings (not bindgen) in trueno-gpu:
+- `cublas_sys.rs`: `cublasCreate_v2`, `cublasGemmEx`, data types
+- `cublas.rs`: Safe RAII wrapper with `gemm_f16()`, `gemm_f32()`
+- `cublaslt_sys.rs` + `cublaslt.rs`: cuBLASLt for FP8 E4M3 GEMM
+- FP8 path: Q4K → dequant → FP8 E4M3 → cuBLASLt GEMM → FP16 → FP32
+- Plan caching for (m, n, k) shapes (PMAT-086)
+
+### 5.3 Integration Points
 
 | Crate | Use |
 |-------|-----|
-| realizar | Prefill GEMM, FP16 inference fallback |
-| entrenar | Training backward pass (cuBLAS GEMM parity verified) |
+| realizar | Prefill GEMM, FP8 E4M3 GEMM, FP16 fallback |
+| entrenar | Training backward pass, cuBLAS tensor cores (ALB-075) |
 
 ### 5.3 Relationship to Custom PTX
 
