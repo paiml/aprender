@@ -38,7 +38,7 @@
 
 Aprender ("to learn" in Spanish) is a machine learning library in pure Rust.
 It provides the TOP 10 ML algorithms plus advanced modules (time series, NLP,
-Bayesian, GLM, graph, audio) with 12,587 tests and 96.35% line coverage.
+Bayesian, GLM, graph, audio) with 12,972 tests and 96.35% line coverage.
 
 **The `apr` CLI is the primary interface.** Every capability — inference,
 training, profiling, format conversion, debugging — is accessed through
@@ -72,10 +72,10 @@ arXiv Paper → Equations (YAML) → Contract (proof obligations)
 
 | Level | Guarantee | Mechanism |
 |-------|-----------|-----------|
-| L5 | True for ALL inputs | Lean 4 theorem (64 proved, 0 sorry) |
-| L4 | True for inputs ≤ N | Kani bounded model checking (985 harnesses) |
+| L5 | True for ALL inputs | Lean 4 theorem (provable-contracts repo) |
+| L4 | True for inputs ≤ N | Kani bounded model checking (12 harnesses) |
 | L3 | True for ~10K inputs | `#[contract]` debug_assert (38 functions) |
-| L2 | Specific edge cases | Falsification tests + probar (171 contracts) |
+| L2 | Specific edge cases | Falsification tests + probar (55 contracts) |
 | L1 | By construction | Rust type system (all public APIs) |
 
 Delete a contract YAML → compile error. The compiler itself enforces

@@ -5017,11 +5017,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'CONTRACT-GAP: Implement FALSIFY-NORM-001..003 for normalization-kernel'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-31T17:47:44Z
-  updated: 2026-03-31T18:01:49.120892163+00:00
+  updated: 2026-03-31T20:33:16Z
   spec: null
   acceptance_criteria:
   - normalization-kernel-v1.yaml has 6 FALSIFY-NORM tests defined but zero implemented. Implement NORM-001 (RMSNorm invariant sum), NORM-002 (LayerNorm zero-mean), NORM-003 (NaN propagation).
