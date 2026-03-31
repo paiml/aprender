@@ -322,6 +322,13 @@
 - [Case Study: QA Codebase Verification](./examples/qa-verify.md)
 - [Case Study: Shell Safety Inference](./examples/shell-safety-inference.md)
 - [Case Study: Shell Safety Training](./examples/shell-safety-training.md)
+- [Case Study: Logic Family Tree](./examples/logic-family-tree.md)
+- [Case Study: Memory Test (Full)](./examples/mem-test-full.md)
+- [Case Study: Memory Test](./examples/mem-test.md)
+- [Case Study: Phi HuggingFace Import](./examples/phi-hf-import.md)
+- [Case Study: Qwen APR Native](./examples/qwen-apr-native.md)
+- [Case Study: Qwen Chat](./examples/qwen-chat.md)
+- [Case Study: Whisper Transcribe](./examples/whisper-transcribe.md)
 
 # Sprint-Based Development
 
