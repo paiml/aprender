@@ -3,17 +3,33 @@
 // Validates SIMD kernel equivalence against scalar reference.
 // GPU tests (BE-002..006) require hardware and are in realizar.
 
-use aprender::nn::functional::{rms_norm, softmax};
 use aprender::autograd::Tensor;
+use aprender::nn::functional::{rms_norm, softmax};
 use proptest::prelude::*;
 
 /// Helper: compute cosine similarity between two slices.
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f64 = a.iter().zip(b).map(|(&x, &y)| f64::from(x) * f64::from(y)).sum();
-    let na: f64 = a.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
-    let nb: f64 = b.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+    let dot: f64 = a
+        .iter()
+        .zip(b)
+        .map(|(&x, &y)| f64::from(x) * f64::from(y))
+        .sum();
+    let na: f64 = a
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        .sqrt();
+    let nb: f64 = b
+        .iter()
+        .map(|&x| f64::from(x) * f64::from(x))
+        .sum::<f64>()
+        .sqrt();
     if na < f64::EPSILON || nb < f64::EPSILON {
-        return if na < f64::EPSILON && nb < f64::EPSILON { 1.0 } else { 0.0 };
+        return if na < f64::EPSILON && nb < f64::EPSILON {
+            1.0
+        } else {
+            0.0
+        };
     }
     (dot / (na * nb)) as f32
 }
@@ -22,7 +38,10 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 fn rmsnorm_scalar(x: &[f32], gamma: &[f32], eps: f32) -> Vec<f32> {
     let n = x.len();
     let rms = (x.iter().map(|v| v * v).sum::<f32>() / n as f32 + eps).sqrt();
-    x.iter().zip(gamma).map(|(&xi, &gi)| xi / rms * gi).collect()
+    x.iter()
+        .zip(gamma)
+        .map(|(&xi, &gi)| xi / rms * gi)
+        .collect()
 }
 
 proptest! {

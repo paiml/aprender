@@ -111,3 +111,55 @@ proptest! {
         );
     }
 }
+
+// =========================================================================
+// FALSIFY-NORM-001..003: normalization-kernel-v1.yaml falsification tests
+// =========================================================================
+
+/// FALSIFY-NORM-001: RMSNorm output has unit RMS (variance ≈ 1).
+#[test]
+fn falsify_norm_001_rmsnorm_unit_rms() {
+    let data: Vec<f32> = (0..128).map(|i| (i as f32 - 64.0) * 0.1).collect();
+    let n = data.len();
+    let norm = RMSNorm::new(&[n]);
+    let x = Tensor::new(&data, &[1, n]);
+    let y = norm.forward(&x);
+    let sum_sq: f32 = y.data().iter().map(|v| v * v).sum();
+    let rms = (sum_sq / n as f32).sqrt();
+    assert!(
+        (rms - 1.0).abs() < 0.15,
+        "FALSIFY-NORM-001: RMS={rms}, expected ~1.0"
+    );
+}
+
+/// FALSIFY-NORM-002: RMSNorm zero input produces finite output.
+#[test]
+fn falsify_norm_002_rmsnorm_zero_input() {
+    let n = 64;
+    let norm = RMSNorm::new(&[n]);
+    let x = Tensor::new(&vec![0.0f32; n], &[1, n]);
+    let y = norm.forward(&x);
+    for &v in y.data() {
+        assert!(v.is_finite(), "FALSIFY-NORM-002: NaN/Inf from zero input");
+    }
+}
+
+/// FALSIFY-NORM-003: RMSNorm preserves sign structure.
+#[test]
+fn falsify_norm_003_rmsnorm_sign_preservation() {
+    let data = vec![1.0f32, -1.0, 2.0, -2.0, 0.5, -0.5];
+    let n = data.len();
+    let norm = RMSNorm::new(&[n]);
+    let x = Tensor::new(&data, &[1, n]);
+    let y = norm.forward(&x);
+    // With gamma=1 (default), signs should be preserved
+    for i in 0..n {
+        let input_sign = data[i].signum();
+        let output_sign = y.data()[i].signum();
+        assert_eq!(
+            input_sign, output_sign,
+            "FALSIFY-NORM-003: sign flipped at [{i}]: input={}, output={}",
+            data[i], y.data()[i]
+        );
+    }
+}

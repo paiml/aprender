@@ -4975,3 +4975,60 @@ roadmap:
   - install
   - entrenar
   notes: null
+- id: PMAT-493
+  github_issue: null
+  item_type: task
+  title: 'CONTRACT-GAP: Create 5 highest-priority missing YAML contracts for orphan annotations'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T17:47:44Z
+  updated: 2026-03-31T18:01:23Z
+  spec: null
+  acceptance_criteria:
+  - '23 of 25 #[contract] annotations reference non-existent YAML files. Top 5 by impact: softmax-kernel-v1 (EXISTS), rope-kernel-v1 (EXISTS), rmsnorm-kernel-v1, matmul-kernel-v1, cross-entropy-kernel-v1. Create YAML contracts with equations, proof obligations, and falsification tests.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contracts
+  - quality
+  notes: null
+- id: PMAT-494
+  github_issue: null
+  item_type: task
+  title: 'CONTRACT-GAP: Implement FALSIFY-BE-001..003 for compute-backend-equivalence'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T17:47:44Z
+  updated: 2026-03-31T18:01:23Z
+  spec: null
+  acceptance_criteria:
+  - compute-backend-equivalence-v1.yaml defines 6 falsification tests (FALSIFY-BE-001..006) but zero are implemented in Rust. Implement at least BE-001 (SIMD RMSNorm), BE-002 (wgpu forward), BE-003 (PTX forward pre-Blackwell) as proptest-based tests.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contracts
+  - test
+  notes: null
+- id: PMAT-495
+  github_issue: null
+  item_type: task
+  title: 'CONTRACT-GAP: Implement FALSIFY-NORM-001..003 for normalization-kernel'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-31T17:47:44Z
+  updated: 2026-03-31T18:01:49.120892163+00:00
+  spec: null
+  acceptance_criteria:
+  - normalization-kernel-v1.yaml has 6 FALSIFY-NORM tests defined but zero implemented. Implement NORM-001 (RMSNorm invariant sum), NORM-002 (LayerNorm zero-mean), NORM-003 (NaN propagation).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contracts
+  - test
+  notes: null
