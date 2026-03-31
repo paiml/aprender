@@ -510,12 +510,16 @@ fn execute_training_wgpu(
 
     // 6. Create WgpuInstructPipeline
     let eps = model_config.rms_norm_eps as f32;
+    let lora_rank = config.rank as usize;
+    let lora_alpha = config.alpha;
     let mut pipeline = WgpuInstructPipeline::new(
         fwd, trainer, tokenizer,
         embed_f32, output_norm_f32,
         lm_head_t_chunks, lm_head_chunks,
         num_layers, hidden, vocab,
-        512, // max_seq_len — standard for QLoRA training
+        512, // max_seq_len
+        heads, kv_heads, inter,
+        lora_rank, lora_alpha,
         eps,
     );
 

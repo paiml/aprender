@@ -108,7 +108,8 @@ without CLI exposure are considered incomplete.
 ### Global Flags
 
 Every command respects: `--json`, `--verbose`, `-q/--quiet`, `--offline`,
-`--skip-contract`, `--trace`, `--profile`.
+`--skip-contract`. The `--trace` and `--profile` flags are on `run`,
+`chat`, and `serve` commands only.
 
 ### CLI-First Development Rule
 
@@ -412,7 +413,7 @@ catch both correctness and performance regressions simultaneously.
 
 ```bash
 apr export model.apr --format gguf -o model.gguf
-apr import hf://org/model -o model.apr --trace    # Traced import
+apr import hf://org/model -o model.apr
 apr convert model.safetensors --quantize q4k
 apr compile model.apr --target aarch64
 apr tokenize train corpus.txt --vocab-size 32000

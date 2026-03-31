@@ -230,7 +230,9 @@ apr cbtop model.apr --measure-batch 100
 ```
 
 When anomalies are detected (CV > 15%, efficiency < 25%), cbtop
-auto-escalates to full BrickTracer with syscall breakdown.
+auto-escalates to BrickTracer. Current implementation logs escalation
+reason and enables tracing; full SyscallBreakdown output requires
+renacer `visualization` feature and further wiring.
 
 ---
 
@@ -238,12 +240,12 @@ auto-escalates to full BrickTracer with syscall breakdown.
 
 | `apr` Command | Layer Trace | BrickTracer | BrickProfiler | Probar |
 |---------------|------------|-------------|---------------|--------|
-| `run` | `--trace` | auto-escalate | `--profile` | — |
-| `chat` | `--trace` | auto-escalate | `--profile` | — |
-| `serve` | OTLP export | auto-escalate | `--profile` | — |
-| `bench` | optional | timing | `--profile` | — |
-| `train` | `--trace` | backward pass | `--profile` | — |
-| `finetune` | `--trace` | backward pass | `--profile` | — |
+| `run` | `--trace` | — | `--profile` | — |
+| `chat` | `--trace` | — | `--profile` | — |
+| `serve` | `--trace` | — | `--profile` | — |
+| `bench` | — | — | — | — |
+| `train` | — | — | — | — |
+| `finetune` | — | — | — | — |
 | `qa` | golden trace | syscall check | — | golden |
 | `cbtop` | — | primary | live bricks | — |
 | `profile` | — | — | primary | — |
