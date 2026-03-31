@@ -4955,3 +4955,23 @@ roadmap:
   - test
   - algorithm
   notes: null
+- id: PMAT-492
+  github_issue: null
+  item_type: task
+  title: 'FIX: cargo install apr-cli — entrenar xa_t compile error'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-31T17:36:57Z
+  updated: 2026-03-31T17:37:05Z
+  spec: null
+  acceptance_criteria:
+  - 'entrenar wgpu_pipeline.rs:655 referenced undefined variable xa_t in debug logging. Plus forward_hidden_gpu_then_cpu_lmhead needed #[cfg(feature=cuda)]. Both blocked cargo install --path crates/apr-cli with training-gpu feature.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - fix
+  - install
+  - entrenar
+  notes: null
