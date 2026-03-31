@@ -307,6 +307,21 @@
 - [Case Study: Model Merge Strategies (GH-245)](./examples/model-merge-strategies.md)
 - [Case Study: Qwen3.5 Hybrid Attention (GH-278)](./examples/qwen3.5-hybrid-attention.md)
 - [Case Study: cbtop Profiling Falsification (GH-420)](./examples/cbtop-profiling-falsification.md)
+- [Case Study: APR Checkpoint Lifecycle](./examples/apr-checkpoint-lifecycle.md)
+- [Case Study: BPE Tokenizer Benchmark](./examples/bench-bpe.md)
+- [Case Study: Conv Layout Dogfood](./examples/conv-layout-dogfood.md)
+- [Case Study: Create Test Transformer APR](./examples/create-test-transformer-apr.md)
+- [Case Study: Data Quality Pipeline](./examples/data-quality-pipeline.md)
+- [Case Study: Design by Contract](./examples/design-by-contract.md)
+- [Case Study: GPU Fallback Dogfood](./examples/gpu-fallback-dogfood.md)
+- [Case Study: Publish Shell Safety Model](./examples/publish-shell-safety.md)
+- [Case Study: QA Chat Falsification](./examples/qa-chat.md)
+- [Case Study: QA Infrastructure Falsification](./examples/qa-falsify.md)
+- [Case Study: QA Run Falsification](./examples/qa-run.md)
+- [Case Study: QA Serve Falsification](./examples/qa-serve.md)
+- [Case Study: QA Codebase Verification](./examples/qa-verify.md)
+- [Case Study: Shell Safety Inference](./examples/shell-safety-inference.md)
+- [Case Study: Shell Safety Training](./examples/shell-safety-training.md)
 
 # Sprint-Based Development
 
