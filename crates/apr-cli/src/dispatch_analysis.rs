@@ -936,7 +936,11 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             trace_output,
             trace_level,
             profile,
+            backend,
         } => {
+            if let Some(ref b) = backend {
+                eprintln!("Backend override: {b}");
+            }
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
             chat::run(

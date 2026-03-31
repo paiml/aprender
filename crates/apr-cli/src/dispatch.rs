@@ -57,7 +57,11 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             chat,
             batch_jsonl,
             verbose,
+            backend,
         } => {
+            if let Some(ref b) = backend {
+                eprintln!("Backend override: {b}");
+            }
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
 

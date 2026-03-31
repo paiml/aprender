@@ -84,6 +84,9 @@ pub enum Commands {
         /// Show verbose output (model loading, backend info)
         #[arg(short, long)]
         verbose: bool,
+        /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
     },
     /// Inference server (plan/run)
     Serve {

@@ -49,6 +49,9 @@ pub enum ExtendedCommands {
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
+        /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
+        #[arg(long, value_name = "BACKEND")]
+        backend: Option<String>,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)
     Bench {

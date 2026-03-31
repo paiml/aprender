@@ -308,6 +308,7 @@
             top_k: 1,
             batch_jsonl: None,
             verbose: false,
+            backend: None,
         };
         let paths = extract_model_paths(&cmd);
         assert!(
