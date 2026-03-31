@@ -4222,11 +4222,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-306'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-22T21:14:55.545255322+00:00
-  updated: 2026-02-22T21:14:55.545255322+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4238,11 +4238,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: C-04-hardcoded-eos-chat'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-23T12:58:12.438665538+00:00
-  updated: 2026-02-23T12:58:12.438665538+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4254,11 +4254,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-324'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-23T15:11:27.494301714+00:00
-  updated: 2026-02-23T15:11:27.494301714+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4467,11 +4467,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'FT-DBC-001: Fine-tuning provable Design by Contract parity'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-25T15:43:08Z
-  updated: 2026-02-25T15:43:09.983141554+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - 'Implement docs/specifications/fine-tune-provable-design-by-contract.md: Kani harnesses for classification types, PTX kernels for CE and AdamW, binding.yaml updates, apr qa fine-tuning gate'
@@ -4487,11 +4487,11 @@ roadmap:
   github_issue: 341
   item_type: task
   title: 'chore: publish safety gate + package bloat cleanup (28MB savings)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:12:34.145741206+00:00
-  updated: 2026-02-26T18:12:34.145741206+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4504,11 +4504,11 @@ roadmap:
   github_issue: 336
   item_type: task
   title: 'fix(P2): benchmark silently swallows generate() errors, reports 0 tok/s'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:14:12.757672034+00:00
-  updated: 2026-02-26T18:14:12.757672034+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4521,11 +4521,11 @@ roadmap:
   github_issue: 337
   item_type: task
   title: 'fix(P2): chat server silently degrades to byte-level decode on tokenizer error'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:17:17.543326734+00:00
-  updated: 2026-02-26T18:17:17.543326734+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4538,11 +4538,11 @@ roadmap:
   github_issue: 338
   item_type: task
   title: 'fix(P2): probar silently ignores corrupted msgpack metadata'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:25:24.218479042+00:00
-  updated: 2026-02-26T18:25:24.218479042+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4555,11 +4555,11 @@ roadmap:
   github_issue: 339
   item_type: task
   title: 'fix(P2): chat template failure silently falls back to raw prompt'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:26:49.640389821+00:00
-  updated: 2026-02-26T18:26:49.640389821+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4572,11 +4572,11 @@ roadmap:
   github_issue: 340
   item_type: task
   title: 'fix(P3): safetensors.rs placeholder generation produces fake tokens'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-26T18:28:00.080317052+00:00
-  updated: 2026-02-26T18:28:00.080317052+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4605,11 +4605,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-366'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-01T11:50:50.562288413+00:00
-  updated: 2026-03-01T11:50:50.562288413+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4689,11 +4689,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Fix nightly CI: patch alimentar path deps for standalone build'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-10T12:56:10Z
-  updated: 2026-03-10T12:56:13.020505189+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - Nightly workflow fails because Cargo.toml has path dependency on ../alimentar which doesn't exist in CI. Add sed/pwsh step to patch path deps before build.
@@ -4706,11 +4706,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-479'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-12T10:27:35.676295611+00:00
-  updated: 2026-03-12T10:27:35.676295611+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4722,11 +4722,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SPEC-CLI: Implement --trace and --profile global flags on apr run/chat/serve'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-03-31T12:59:31Z
-  updated: 2026-03-31T13:00:02.572146092+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - 'Wire renacer layer tracing (8-step state machine) and trueno BrickProfiler as global flags on all runtime commands. When --trace: emit TensorStats per layer. When --profile: emit per-brick µs timing. Ref: aprender-spec.md §4, components/tracing.md'
@@ -4844,11 +4844,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SPEC-TRAIN-PROFILE: Add --profile and --trace flags to apr train/finetune'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-03-31T16:23:56Z
-  updated: 2026-03-31T16:23:56Z
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - 'The tracing spec (§8 gaps table) identifies that apr train and apr finetune have NO --profile or --trace flags. Users must edit YAML config to enable StepProfiler. Add CLI flags: --profile (enable StepProfiler), --profile-interval N (report every N steps), --trace (enable layer tracing for forward pass). Wire to entrenar config.profile_interval.'
@@ -4864,11 +4864,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SPEC-DIRTY: Commit pre-existing dirty files with fixes'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-31T16:24:03Z
-  updated: 2026-03-31T16:24:28.548463473+00:00
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - '11 pre-existing dirty files in working tree: distill.rs, finetune.rs, probar.rs, handlers.rs, train.rs, error.rs, ssm/mod.rs, contract_traits.rs, build.rs, Cargo.lock, roadmap.yaml. Review each, fix any issues, commit.'
@@ -4882,11 +4882,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'SPEC-LAYER2-DISPATCH: Add apr backend select/list commands for Layer 2 GPU dispatch'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-03-31T16:24:15Z
-  updated: 2026-03-31T16:24:15Z
+  updated: 2026-03-31T16:59:03Z
   spec: null
   acceptance_criteria:
   - 'The compute-backends spec describes Layer 2 GPU dispatch (PTX vs cuBLAS vs cuBLASLt vs wgpu) but there''s no CLI command to inspect or override which GPU path is active. Add: apr gpu info (show detected backend, SM version, cuBLAS availability), wire existing --backend flag on serve to also work on run/chat.'
