@@ -33,19 +33,18 @@ fn test_early_stopping() {
 }
 
 #[test]
-#[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
 fn test_time_budget() {
     let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
     let result = AutoTuner::new(RandomSearch::new(1000))
         .time_limit_secs(1)
         .maximize(&space, |_| {
-            std::thread::sleep(Duration::from_millis(100));
+            std::thread::sleep(Duration::from_millis(50));
             1.0
         });
 
-    // Should complete within ~1 second
-    assert!(result.elapsed.as_secs() <= 2);
+    // Should complete within ~2 seconds (1s budget + overhead)
+    assert!(result.elapsed.as_secs() <= 3);
     assert!(result.n_trials < 1000);
 }
 
@@ -135,7 +134,6 @@ fn test_early_stopping_min_delta() {
 }
 
 #[test]
-#[ignore = "Uses thread::sleep - run with cargo test -- --ignored"]
 fn test_time_budget_elapsed_remaining() {
     let mut budget = TimeBudget::seconds(10);
 
@@ -147,8 +145,8 @@ fn test_time_budget_elapsed_remaining() {
     let space: SearchSpace<RF> = SearchSpace::new();
     budget.on_start(&space);
 
-    // After start, elapsed > 0
-    std::thread::sleep(Duration::from_millis(10));
+    // After start, elapsed > 0 (no sleep needed — just check Instant::now > start)
+    std::thread::sleep(Duration::from_millis(2));
     assert!(budget.elapsed() > Duration::ZERO);
     assert!(budget.remaining() < Duration::from_secs(10));
 }
