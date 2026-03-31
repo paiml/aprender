@@ -73,13 +73,18 @@ impl std::str::FromStr for ExportFormat {
     }
 }
 
-/// Run the probar command
+/// Run the probar command (PMAT-481)
+///
+/// When `assert_mode` is true, exit non-zero if any layer diverges from
+/// golden reference beyond `tolerance` (cosine similarity threshold).
 pub(crate) fn run(
     path: &Path,
     output_dir: &Path,
     format: ExportFormat,
     golden: Option<&Path>,
     layer_filter: Option<&str>,
+    assert_mode: bool,
+    tolerance: f32,
 ) -> Result<(), CliError> {
     validate_path(path)?;
     fs::create_dir_all(output_dir)?;
@@ -97,13 +102,42 @@ pub(crate) fn run(
 
     export_by_format(format, &manifest, &layers, output_dir)?;
 
+    let mut divergences = Vec::new();
     if let Some(golden_path) = golden {
-        generate_diff(golden_path, &manifest, output_dir)?;
+        divergences = generate_diff_with_tolerance(golden_path, &manifest, output_dir, tolerance)?;
     }
 
     print_summary(path, output_dir, &model_format, &layers, golden);
     print_generated_files(format, output_dir, &layers);
-    print_integration_guide();
+
+    if !divergences.is_empty() {
+        eprintln!();
+        eprintln!(
+            "{}",
+            format!("DIVERGENCE: {} layer(s) exceed tolerance {tolerance}", divergences.len())
+                .red()
+                .bold()
+        );
+        for d in &divergences {
+            eprintln!("  - {}", d);
+        }
+        if assert_mode {
+            return Err(CliError::ValidationFailed(format!(
+                "Probar golden assertion failed: {} layer(s) diverged beyond {tolerance}",
+                divergences.len()
+            )));
+        }
+    } else if golden.is_some() {
+        eprintln!();
+        eprintln!(
+            "{}",
+            format!("PASS: all layers within tolerance {tolerance}").green().bold()
+        );
+    }
+
+    if !assert_mode {
+        print_integration_guide();
+    }
 
     Ok(())
 }
@@ -396,40 +430,65 @@ fn export_png(layers: &[LayerSnapshot], output_dir: &Path) -> Result<(), CliErro
     Ok(())
 }
 
+/// Compute cosine similarity between two histograms.
+///
+/// Returns 1.0 for identical vectors (including both-zero).
+/// Returns 0.0 only when one is zero and the other is not.
+fn histogram_cosine_similarity(a: &[u32], b: &[u32]) -> f32 {
+    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| f64::from(x) * f64::from(y)).sum();
+    let norm_a: f64 = a.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+    let norm_b: f64 = b.iter().map(|&x| f64::from(x) * f64::from(x)).sum::<f64>().sqrt();
+    if norm_a < f64::EPSILON && norm_b < f64::EPSILON {
+        return 1.0; // Both zero vectors are identical
+    }
+    if norm_a < f64::EPSILON || norm_b < f64::EPSILON {
+        return 0.0; // One zero, one non-zero
+    }
+    (dot / (norm_a * norm_b)) as f32
+}
+
+/// Compare current snapshot against golden reference, returning divergence descriptions.
+///
+/// PMAT-481: Returns a list of human-readable divergence strings for layers
+/// that exceed the tolerance threshold.
 #[allow(clippy::disallowed_methods)] // json! macro uses infallible unwrap internally
-fn generate_diff(
+fn generate_diff_with_tolerance(
     golden_path: &Path,
     current: &ProbarManifest,
     output_dir: &Path,
-) -> Result<(), CliError> {
-    // Try to load golden manifest
+    tolerance: f32,
+) -> Result<Vec<String>, CliError> {
     let golden_json = fs::read_to_string(golden_path.join("manifest.json"))
         .map_err(|_| CliError::FileNotFound(golden_path.to_path_buf()))?;
 
     let golden: ProbarManifest = serde_json::from_str(&golden_json)
         .map_err(|e| CliError::InvalidFormat(format!("Invalid golden manifest: {e}")))?;
 
-    // Generate diff report
     let diff_path = output_dir.join("diff_report.json");
-
     let mut diffs = Vec::new();
+    let mut divergences = Vec::new();
 
     for (current_layer, golden_layer) in current.layers.iter().zip(golden.layers.iter()) {
-        if current_layer.name != golden_layer.name {
-            diffs.push(serde_json::json!({
-                "type": "name_mismatch",
-                "current": current_layer.name,
-                "golden": golden_layer.name,
-            }));
-        }
-
+        let cosine = histogram_cosine_similarity(&current_layer.histogram, &golden_layer.histogram);
         let mean_diff = (current_layer.mean - golden_layer.mean).abs();
         let std_diff = (current_layer.std - golden_layer.std).abs();
 
-        if mean_diff > 0.01 || std_diff > 0.01 {
+        let passes = cosine >= tolerance;
+
+        if !passes {
+            divergences.push(format!(
+                "layer {} ({}): cosine={:.4} < {:.2}, Δmean={:.4}, Δstd={:.4}",
+                current_layer.index, current_layer.name, cosine, tolerance, mean_diff, std_diff
+            ));
+        }
+
+        if mean_diff > 0.01 || std_diff > 0.01 || !passes {
             diffs.push(serde_json::json!({
-                "type": "stats_divergence",
                 "layer": current_layer.name,
+                "index": current_layer.index,
+                "cosine": cosine,
+                "passes": passes,
+                "tolerance": tolerance,
                 "mean_diff": mean_diff,
                 "std_diff": std_diff,
             }));
@@ -439,7 +498,10 @@ fn generate_diff(
     let diff_report = serde_json::json!({
         "current_model": current.source_model,
         "golden_model": golden.source_model,
+        "tolerance": tolerance,
         "total_diffs": diffs.len(),
+        "divergences": divergences.len(),
+        "all_pass": divergences.is_empty(),
         "diffs": diffs,
     });
 
@@ -450,7 +512,7 @@ fn generate_diff(
             .as_bytes(),
     )?;
 
-    Ok(())
+    Ok(divergences)
 }
 
 #[cfg(test)]

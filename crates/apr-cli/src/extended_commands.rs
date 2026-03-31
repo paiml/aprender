@@ -464,7 +464,7 @@ pub enum ExtendedCommands {
         #[arg(long)]
         simulated: bool,
     },
-    /// Export for probar visual testing
+    /// Export for probar visual regression testing (PMAT-481)
     Probar {
         /// Path to .apr model file
         #[arg(value_name = "FILE")]
@@ -481,6 +481,12 @@ pub enum ExtendedCommands {
         /// Filter layers by name pattern
         #[arg(long)]
         layer: Option<String>,
+        /// Exit non-zero on golden divergence (CI mode, PMAT-481)
+        #[arg(long)]
+        assert: bool,
+        /// Cosine similarity threshold for golden comparison (default: 0.98)
+        #[arg(long, default_value = "0.98")]
+        tolerance: f32,
     },
     /// Compare APR model against HuggingFace source
     #[command(name = "compare-hf")]

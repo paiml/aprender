@@ -39,7 +39,7 @@ fn test_generate_diff_unequal_layer_counts_zips_shortest() {
         golden_reference: None,
     };
 
-    generate_diff(golden_dir.path(), &current, output_dir.path()).expect("diff");
+    generate_diff_with_tolerance(golden_dir.path(), &current, output_dir.path(), 0.98).expect("diff");
 
     let diff_content =
         fs::read_to_string(output_dir.path().join("diff_report.json")).expect("read");

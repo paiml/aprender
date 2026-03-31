@@ -259,12 +259,16 @@
                 format,
                 golden,
                 layer,
+                assert,
+                tolerance,
             }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(output, PathBuf::from("/tmp/probar"));
                 assert_eq!(format, "json");
                 assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
                 assert_eq!(layer, Some("layer.0".to_string()));
+                assert!(!assert);
+                assert!((tolerance - 0.98).abs() < 0.01);
             }
             _ => panic!("Expected Probar command"),
         }

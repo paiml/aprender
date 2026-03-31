@@ -94,6 +94,8 @@
             format: "both".to_string(),
             golden: None,
             layer: None,
+            assert: false,
+            tolerance: 0.98,
         }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Probar should fail with non-existent file");

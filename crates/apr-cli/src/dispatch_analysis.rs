@@ -63,6 +63,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             format,
             golden,
             layer,
+            assert,
+            tolerance,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             probar::run(
                 &r,
@@ -70,6 +72,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 format.parse().unwrap_or(probar::ExportFormat::Both),
                 golden.as_deref(),
                 layer.as_deref(),
+                *assert,
+                *tolerance,
             )
         }),
 

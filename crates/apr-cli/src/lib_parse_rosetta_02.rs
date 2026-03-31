@@ -206,6 +206,8 @@
             format: "both".to_string(),
             golden: None,
             layer: None,
+            assert: false,
+            tolerance: 0.98,
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);

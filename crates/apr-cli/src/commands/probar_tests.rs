@@ -153,6 +153,8 @@ fn test_run_file_not_found() {
         ExportFormat::Json,
         None,
         None,
+        false,
+        0.98,
     );
     assert!(result.is_err());
 }
@@ -169,6 +171,8 @@ fn test_run_invalid_apr() {
         ExportFormat::Json,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid APR)
     assert!(result.is_err());
@@ -186,6 +190,8 @@ fn test_run_with_png_format() {
         ExportFormat::Png,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid file)
     assert!(result.is_err());
@@ -203,6 +209,8 @@ fn test_run_with_both_format() {
         ExportFormat::Both,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid file)
     assert!(result.is_err());
@@ -222,6 +230,8 @@ fn test_run_with_golden() {
         ExportFormat::Json,
         Some(golden.path()),
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid file)
     assert!(result.is_err());
@@ -239,6 +249,8 @@ fn test_run_with_layer_filter() {
         ExportFormat::Json,
         None,
         Some("encoder"),
+        false,
+        0.98,
     );
     // Should fail (invalid file)
     assert!(result.is_err());
@@ -255,6 +267,8 @@ fn test_run_is_directory() {
         ExportFormat::Json,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (is a directory)
     assert!(result.is_err());
@@ -272,6 +286,8 @@ fn test_run_gguf_format() {
         ExportFormat::Json,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid GGUF)
     assert!(result.is_err());
@@ -289,6 +305,8 @@ fn test_run_safetensors_format() {
         ExportFormat::Json,
         None,
         None,
+        false,
+        0.98,
     );
     // Should fail (invalid SafeTensors)
     assert!(result.is_err());
