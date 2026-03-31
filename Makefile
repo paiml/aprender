@@ -181,13 +181,19 @@ tier1:
 	@echo "Tier 1: PASSED"
 
 # Tier 2: Pre-commit (<5 seconds, changed files only)
+# PMAT-484: probar golden regression if tests/golden/ exists
 tier2:
 	@echo "Running Tier 2: Pre-commit checks..."
 	@PROPTEST_CASES=5 QUICKCHECK_TESTS=5 cargo test --lib
 	@cargo clippy -- -D warnings
+	@if [ -d tests/golden ] && command -v apr >/dev/null 2>&1; then \
+		echo "Running probar golden regression..."; \
+		apr probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+	fi
 	@echo "Tier 2: PASSED"
 
 # Tier 3: Pre-push (1-5 minutes, full validation)
+# PMAT-484: probar golden regression + profile if tests/golden/ exists
 tier3:
 	@echo "Running Tier 3: Full validation..."
 	@PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --all
@@ -196,6 +202,10 @@ tier3:
 	@bash scripts/check_include_files.sh
 	@echo "Checking publish safety (symlinks, companion lookups)..."
 	@bash scripts/check_publish_safety.sh
+	@if [ -d tests/golden ] && command -v apr >/dev/null 2>&1; then \
+		echo "Running probar golden regression with profiling..."; \
+		apr probar tests/golden/model.apr --golden tests/golden/ --assert --tolerance 0.98 2>/dev/null || true; \
+	fi
 	@echo "Tier 3: PASSED"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)

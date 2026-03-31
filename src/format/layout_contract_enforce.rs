@@ -406,3 +406,88 @@ mod architecture_completeness_tests {
         assert!(msg.contains("bias"), "Should require bias for Qwen2: {}", msg);
     }
 }
+
+/// Validate FFN shape symmetry: gate_proj and up_proj must have identical shapes,
+/// down_proj must have reversed dimensions.
+///
+/// PMAT-331: SwiGLU requires gate_proj.shape == up_proj.shape.
+/// Without this gate, swapped weights produce silent garbage.
+///
+/// # Arguments
+/// * `gate_shape` - Shape of gate_proj weight [intermediate, hidden]
+/// * `up_shape` - Shape of up_proj weight [intermediate, hidden]
+/// * `down_shape` - Shape of down_proj weight [hidden, intermediate]
+///
+/// # Errors
+/// Returns `ContractError::ShapeMismatch` if shapes violate SwiGLU constraints.
+pub fn validate_ffn_shape_symmetry(
+    gate_shape: &[usize],
+    up_shape: &[usize],
+    down_shape: &[usize],
+) -> Result<(), ContractError> {
+    // Gate and up must have identical shapes
+    if gate_shape != up_shape {
+        return Err(ContractError::ShapeMismatch {
+            tensor: "ffn_gate_proj/up_proj".to_string(),
+            expected: format!("gate_proj {:?} == up_proj {:?}", gate_shape, up_shape),
+            actual: up_shape.to_vec(),
+        });
+    }
+
+    // Down must be the reverse of gate/up
+    if gate_shape.len() == 2
+        && down_shape.len() == 2
+        && (down_shape[0] != gate_shape[1] || down_shape[1] != gate_shape[0])
+    {
+        return Err(ContractError::ShapeMismatch {
+            tensor: "ffn_down_proj".to_string(),
+            expected: format!(
+                "down_proj [{}, {}] (reversed from gate [{}, {}])",
+                gate_shape[1], gate_shape[0], gate_shape[0], gate_shape[1]
+            ),
+            actual: down_shape.to_vec(),
+        });
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod ffn_shape_tests {
+    use super::*;
+
+    #[test]
+    fn test_ffn_valid_shapes() {
+        let gate = [4864, 896];
+        let up = [4864, 896];
+        let down = [896, 4864];
+        assert!(validate_ffn_shape_symmetry(&gate, &up, &down).is_ok());
+    }
+
+    #[test]
+    fn test_ffn_gate_up_mismatch() {
+        let gate = [4864, 896];
+        let up = [3072, 896]; // wrong intermediate
+        let down = [896, 4864];
+        let result = validate_ffn_shape_symmetry(&gate, &up, &down);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ffn_down_not_reversed() {
+        let gate = [4864, 896];
+        let up = [4864, 896];
+        let down = [4864, 896]; // should be [896, 4864]
+        let result = validate_ffn_shape_symmetry(&gate, &up, &down);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ffn_1d_shapes_accepted() {
+        // 1D shapes skip the reversal check
+        let gate = [4864];
+        let up = [4864];
+        let down = [896];
+        assert!(validate_ffn_shape_symmetry(&gate, &up, &down).is_ok());
+    }
+}

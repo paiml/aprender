@@ -285,7 +285,8 @@ pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptio
 
 // Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
 pub use layout_contract::{
-    block_sizes, contract, validation_rules, ContractError, LayoutContract, TensorContract,
+    block_sizes, contract, validate_ffn_shape_symmetry, validation_rules, ContractError,
+    LayoutContract, TensorContract,
 };
 
 // Re-export validated tensor types (PMAT-235 - Compile-Time Contract Enforcement)
