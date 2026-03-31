@@ -1,0 +1,308 @@
+# Compute Backend Equivalence Contract v1.0.0
+# THE SOURCE OF TRUTH for multi-backend kernel correctness
+#
+# STATUS: Authoritative — all backend dispatch paths MUST satisfy this contract
+# SPEC REF: docs/specifications/components/compute-backends.md §8
+#            docs/specifications/components/provable-contracts.md §6
+#
+# PROBLEM:
+#   5 compute backends (SIMD, wgpu, CUDA PTX, cuBLAS, WASM) implement the same
+#   kernels independently. Without equivalence proofs, backends can silently
+#   diverge — proven by GH-559 (sm_121 JIT bug: cosine = -0.005 vs CPU).
+#
+# SOLUTION:
+#   Each kernel has equivalence obligations per backend. The runtime parity gate
+#   validates correctness before selecting the fastest correct backend.
+#
+# SCIENTIFIC BASIS:
+#   Ivanov et al. (2021) "Data Movement Is All You Need" — bandwidth-bound decode
+#   Chatterjee et al. (2025) "ProofWright" — formal CUDA verification
+#   Arora et al. (2025) "TensorRight" — SMT tensor graph rewrite verification
+#   Gond et al. (2026) "LLM-42" — GPU non-determinism verified rollback
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Multi-backend kernel equivalence across SIMD, wgpu, CUDA PTX, cuBLAS, WASM"
+  references:
+    - "GH-559: sm_121 JIT produces cosine -0.005 vs CPU"
+    - "contracts/layer-parity-v1.yaml (GPU/CPU parity)"
+    - "contracts/normalization-kernel-v1.yaml (RMSNorm)"
+    - "contracts/softmax-kernel-v1.yaml (Softmax)"
+    - "contracts/rope-kernel-v1.yaml (RoPE)"
+    - "Ivanov et al. (2021). Data Movement Is All You Need. MLSys"
+    - "Chatterjee et al. (2025). ProofWright. arXiv:2511.12294"
+    - "Arora et al. (2025). TensorRight. arXiv:2511.17838"
+  depends_on:
+    - "normalization-kernel-v1"
+    - "softmax-kernel-v1"
+    - "rope-kernel-v1"
+    - "matvec-kernel-v1"
+    - "layer-parity-v1"
+  enforcement_level: "standard"
+  locked_level: "standard"
+
+# =============================================================================
+# BACKEND TAXONOMY
+# =============================================================================
+#
+# Backend 0: Scalar (reference implementation, always correct by definition)
+# Backend 1: SIMD   (AVX2/NEON auto-vectorized CPU)
+# Backend 2: wgpu   (WGSL → Vulkan/Metal/DX12/WebGPU)
+# Backend 3: PTX    (Custom CUDA PTX kernels, NVIDIA sm_50+)
+# Backend 4: cuBLAS (NVIDIA FFI GEMM, batched prefill + training)
+# Backend 5: WASM   (wasm32-unknown-unknown, browser target)
+#
+# Tolerance tiers:
+#   - SIMD vs scalar:  max ULP error ≤ 2 (bit-level, same ISA)
+#   - GPU vs CPU:      cosine similarity ≥ 0.98 (cross-device)
+#   - cuBLAS vs CPU:   cosine similarity ≥ 0.98 (FP16 rounding)
+#   - WASM vs scalar:  max ULP error ≤ 2 (same algorithm, different target)
+
+# =============================================================================
+# EQUATIONS
+# =============================================================================
+
+equations:
+  rmsnorm_equivalence:
+    formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    domain: "x ∈ ℝ^n, γ ∈ ℝ^n, ε > 0, n ≥ 1"
+    codomain: "y ∈ ℝ^n"
+    invariants:
+      - "All backends compute the same mathematical function"
+    preconditions:
+      - "x.len() == gamma.len()"
+      - "x.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "result.len() == x.len()"
+      - "result.iter().all(|v| v.is_finite())"
+
+  q4k_gemv_equivalence:
+    formula: "y = W_q4k · x (fused dequantize + matvec)"
+    domain: "W ∈ Q4K^{m×n}, x ∈ ℝ^n"
+    codomain: "y ∈ ℝ^m"
+    invariants:
+      - "Fused dequant+GEMV matches separate dequant then GEMV"
+      - "All backends produce equivalent output for same quantized weights"
+    preconditions:
+      - "weight.cols() == x.len()"
+    postconditions:
+      - "result.len() == weight.rows()"
+
+  rope_equivalence:
+    formula: "q'_2i = q_2i cos(θ_i) - q_{2i+1} sin(θ_i); q'_{2i+1} = q_{2i+1} cos(θ_i) + q_2i sin(θ_i)"
+    domain: "q ∈ ℝ^d, position ∈ ℕ, θ_base > 0"
+    codomain: "q' ∈ ℝ^d"
+    invariants:
+      - "RoPE is invertible: ROPE(ROPE_INV(q)) == q"
+      - "All backends use same theta_base default per architecture"
+
+  swiglu_equivalence:
+    formula: "y = SiLU(gate(x)) ⊙ up(x), where SiLU(z) = z · σ(z)"
+    domain: "x ∈ ℝ^n, gate ∈ ℝ^{m×n}, up ∈ ℝ^{m×n}"
+    codomain: "y ∈ ℝ^m"
+    invariants:
+      - "Fused gate+up matches separate computation"
+
+  attention_equivalence:
+    formula: "attn = softmax(Q·K^T / √d_k) · V"
+    domain: "Q ∈ ℝ^{n×d}, K ∈ ℝ^{s×d}, V ∈ ℝ^{s×d}"
+    codomain: "attn ∈ ℝ^{n×d}"
+    invariants:
+      - "Numerically stable softmax (max-subtraction trick)"
+      - "GQA head grouping matches across backends"
+
+  lm_head_equivalence:
+    formula: "logits = W_lm · hidden"
+    domain: "W_lm ∈ ℝ^{vocab×hidden}, hidden ∈ ℝ^hidden"
+    codomain: "logits ∈ ℝ^vocab"
+    invariants:
+      - "Row-major layout enforced (LAYOUT-002)"
+
+# =============================================================================
+# PROOF OBLIGATIONS
+# =============================================================================
+
+proof_obligations:
+  # SIMD vs scalar (bit-level equivalence)
+  - type: equivalence
+    property: "SIMD RMSNorm matches scalar reference"
+    formal: "max_ulp_error(simd_rmsnorm(x), scalar_rmsnorm(x)) <= 2"
+    applies_to: simd
+
+  - type: equivalence
+    property: "SIMD Q4K GEMV matches scalar reference"
+    formal: "max_ulp_error(simd_q4k_gemv(W,x), scalar_q4k_gemv(W,x)) <= 2"
+    applies_to: simd
+
+  - type: equivalence
+    property: "SIMD RoPE matches scalar reference"
+    formal: "max_ulp_error(simd_rope(q,pos), scalar_rope(q,pos)) <= 2"
+    applies_to: simd
+
+  # wgpu vs CPU (cross-device tolerance)
+  - type: equivalence
+    property: "wgpu RMSNorm matches CPU"
+    formal: "cosine(wgpu_rmsnorm(x), cpu_rmsnorm(x)) >= 0.98"
+    tolerance: 0.98
+    applies_to: wgpu
+
+  - type: equivalence
+    property: "wgpu Q4K GEMV matches CPU"
+    formal: "cosine(wgpu_q4k_gemv(W,x), cpu_q4k_gemv(W,x)) >= 0.98"
+    tolerance: 0.98
+    applies_to: wgpu
+
+  - type: equivalence
+    property: "wgpu Attention matches CPU"
+    formal: "cosine(wgpu_attention(Q,K,V), cpu_attention(Q,K,V)) >= 0.98"
+    tolerance: 0.98
+    applies_to: wgpu
+
+  # CUDA PTX vs CPU (cross-device tolerance)
+  - type: equivalence
+    property: "PTX RMSNorm matches CPU"
+    formal: "cosine(ptx_rmsnorm(x), cpu_rmsnorm(x)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cuda
+
+  - type: equivalence
+    property: "PTX Q4K GEMV matches CPU"
+    formal: "cosine(ptx_q4k_gemv(W,x), cpu_q4k_gemv(W,x)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cuda
+
+  - type: equivalence
+    property: "PTX SwiGLU matches CPU"
+    formal: "cosine(ptx_swiglu(x), cpu_swiglu(x)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cuda
+
+  - type: equivalence
+    property: "PTX Attention matches CPU"
+    formal: "cosine(ptx_attention(Q,K,V), cpu_attention(Q,K,V)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cuda
+
+  - type: equivalence
+    property: "PTX LM Head matches CPU"
+    formal: "cosine(ptx_lm_head(W,h), cpu_lm_head(W,h)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cuda
+
+  # cuBLAS vs CPU (FP16 GEMM tolerance)
+  - type: equivalence
+    property: "cuBLAS GEMM matches CPU GEMM"
+    formal: "cosine(cublas_gemm(A,B), cpu_gemm(A,B)) >= 0.98"
+    tolerance: 0.98
+    applies_to: cublas
+
+  # WASM vs scalar (same algorithm, different target)
+  - type: equivalence
+    property: "WASM RMSNorm matches scalar"
+    formal: "max_ulp_error(wasm_rmsnorm(x), scalar_rmsnorm(x)) <= 2"
+    applies_to: wasm
+
+  # End-to-end parity gate
+  - type: invariant
+    property: "At least one GPU backend passes parity"
+    formal: "∃ b ∈ {wgpu, cuda, nvrtc}: cosine(forward_b(model), forward_cpu(model)) >= 0.98"
+
+  - type: determinism
+    property: "Backend selection is stable"
+    formal: "select(model, device) = select(model, device) for all invocations"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: "FALSIFY-BE-001"
+    rule: "SIMD RMSNorm matches scalar"
+    prediction: "max_ulp_error(simd, scalar) <= 2 for 10K random vectors"
+    test: "proptest 10000 vectors dim 64..4096"
+    if_fails: "SIMD implementation has incorrect reduction or sqrt"
+
+  - id: "FALSIFY-BE-002"
+    rule: "wgpu forward matches CPU"
+    prediction: "cosine(wgpu_forward, cpu_forward) >= 0.98 on Qwen2.5-0.5B"
+    test: "1-token forward pass comparison on wgpu vs CPU"
+    if_fails: "WGSL shader has numerical bug or subgroup reduction error"
+
+  - id: "FALSIFY-BE-003"
+    rule: "PTX forward matches CPU (pre-Blackwell)"
+    prediction: "cosine(ptx_forward, cpu_forward) >= 0.98 on sm_50..sm_90"
+    test: "1-token forward pass comparison on CUDA vs CPU"
+    if_fails: "PTX kernel has register spill or shared memory error"
+
+  - id: "FALSIFY-BE-004"
+    rule: "PTX forward on Blackwell via NVRTC"
+    prediction: "cosine(nvrtc_forward, cpu_forward) >= 0.98 on sm_121"
+    test: "1-token forward pass with NVRTC-compiled CUDA on GB10"
+    if_fails: "NVRTC compiler also produces wrong sm_121 SASS"
+
+  - id: "FALSIFY-BE-005"
+    rule: "cuBLAS GEMM matches CPU"
+    prediction: "cosine(cublas_gemm, cpu_gemm) >= 0.98 for random matrices"
+    test: "proptest 1000 matrix pairs, dims 128..4096"
+    if_fails: "cuBLAS FP16 rounding exceeds tolerance (try FP32)"
+
+  - id: "FALSIFY-BE-006"
+    rule: "Parity gate selects fastest correct backend"
+    prediction: "Selected backend has highest tok/s among passing backends"
+    test: "Run parity gate on model, verify selection order"
+    if_fails: "Backend priority ordering is wrong"
+
+# =============================================================================
+# KANI HARNESSES
+# =============================================================================
+
+kani_harnesses:
+  - id: "KANI-BE-001"
+    obligation: "SIMD RMSNorm matches scalar"
+    property: "ULP error bounded for small vectors"
+    bound: 16
+    strategy: "stub_float"
+    harness: "verify_simd_rmsnorm_equivalence"
+
+  - id: "KANI-BE-002"
+    obligation: "Backend selection is stable"
+    property: "Same inputs always select same backend"
+    bound: 4
+    strategy: "bounded_int"
+    harness: "verify_backend_selection_determinism"
+
+# =============================================================================
+# ENFORCEMENT
+# =============================================================================
+
+enforcement:
+  parity_gate:
+    description: "Runtime parity gate validates each backend against CPU before use"
+    check: "apr parity model.gguf"
+    severity: ERROR
+
+  ci_parity:
+    description: "CI runs parity gate on every PR modifying kernel code"
+    check: "make tier3 (includes parity tests)"
+    severity: ERROR
+
+  probar_golden:
+    description: "Golden activation snapshots detect regression across backends"
+    check: "apr probar model.apr --golden tests/golden/ --assert"
+    severity: ERROR
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-BE-001"
+  name: "Compute Backend Equivalence"
+  checks:
+    - "All SIMD kernels within 2 ULP of scalar"
+    - "All GPU kernels within cosine 0.98 of CPU"
+    - "Parity gate selects correct backend"
+    - "Backend selection is deterministic"
+  pass_criteria: "All falsification tests pass + Kani harnesses verify"
