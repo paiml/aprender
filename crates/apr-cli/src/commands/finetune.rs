@@ -326,8 +326,15 @@ fn execute_training(
 
     if !cuda_ok && trueno::backends::gpu::GpuDevice::is_available() {
         return execute_training_wgpu(
-            model_path, &model_config, config, data_path, output_path,
-            epochs, learning_rate, json_output, corpus,
+            model_path,
+            &model_config,
+            config,
+            data_path,
+            output_path,
+            epochs,
+            learning_rate,
+            json_output,
+            corpus,
         );
     }
 
@@ -359,7 +366,10 @@ fn execute_training(
         output::pipeline_stage("Training", output::StageStatus::Done);
         println!();
         println!("  Epochs completed: {}", result.epoch_metrics.len());
-        println!("  Best epoch: {} (val_loss: {:.4})", result.best_epoch, result.best_val_loss);
+        println!(
+            "  Best epoch: {} (val_loss: {:.4})",
+            result.best_epoch, result.best_val_loss
+        );
         if let Some(first) = result.epoch_metrics.first() {
             if let Some(last) = result.epoch_metrics.last() {
                 println!(
@@ -394,7 +404,10 @@ fn execute_training(
         println!();
         println!("  Training complete. Loss metrics reported above.");
         println!("  APR adapter export (§26 Phase 3) not yet implemented.");
-        println!("  Checkpoint weights saved by trainer to: {}", checkpoint_dir.display());
+        println!(
+            "  Checkpoint weights saved by trainer to: {}",
+            checkpoint_dir.display()
+        );
     }
 
     Ok(())
@@ -426,7 +439,10 @@ fn execute_training_wgpu(
     let q_model = realizar::gguf::OwnedQuantizedModel::from_apr(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Q4K model: {e}")))?;
 
-    eprintln!("[wgpu] Q4K model loaded in {:.1}s", t_start.elapsed().as_secs_f64());
+    eprintln!(
+        "[wgpu] Q4K model loaded in {:.1}s",
+        t_start.elapsed().as_secs_f64()
+    );
 
     // 2. Create GPU device + WgslForwardPass
     let gpu = trueno::backends::gpu::GpuDevice::new()
@@ -440,8 +456,7 @@ fn execute_training_wgpu(
     let num_layers = model_config.num_hidden_layers;
 
     let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
-        gpu.device, gpu.queue,
-        hidden, heads, kv_heads, head_dim, inter,
+        gpu.device, gpu.queue, hidden, heads, kv_heads, head_dim, inter,
     );
 
     // 3. Streaming dequant + upload weights to GPU
@@ -465,12 +480,17 @@ fn execute_training_wgpu(
 
     eprintln!(
         "[wgpu] {} weights uploaded in {:.1}s ({} layers)",
-        fwd.weight_count(), t_start.elapsed().as_secs_f64(), num_layers,
+        fwd.weight_count(),
+        t_start.elapsed().as_secs_f64(),
+        num_layers,
     );
 
-    // 4. Create WgpuTrainer + upload lm_head
-    let trainer = entrenar::autograd::wgpu_training::WgpuTrainer::new()
-        .map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
+    // 4. Create WgpuTrainer sharing SAME device as WgslForwardPass
+    // Contract: single device — no cross-device buffer access
+    let trainer = entrenar::autograd::wgpu_training::WgpuTrainer::from_device(
+        fwd.device_ref().clone(),
+        fwd.queue_ref().clone(),
+    ).map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
 
     // Pre-chunk lm_head into < 2GB pieces (KAIZEN: avoids 189s per-step download)
     let max_binding = 2_000_000_000u64 / 4; // ~500M floats per chunk
@@ -501,7 +521,10 @@ fn execute_training_wgpu(
         row += chunk_k;
     }
 
-    eprintln!("[wgpu] lm_head uploaded in {:.1}s", t_start.elapsed().as_secs_f64());
+    eprintln!(
+        "[wgpu] lm_head uploaded in {:.1}s",
+        t_start.elapsed().as_secs_f64()
+    );
 
     // 5. Load tokenizer
     let tokenizer_path = model_path.with_extension("tokenizer.json");
@@ -513,13 +536,22 @@ fn execute_training_wgpu(
     let lora_rank = config.rank as usize;
     let lora_alpha = config.alpha;
     let mut pipeline = WgpuInstructPipeline::new(
-        fwd, trainer, tokenizer,
-        embed_f32, output_norm_f32,
-        lm_head_t_chunks, lm_head_chunks,
-        num_layers, hidden, vocab,
+        fwd,
+        trainer,
+        tokenizer,
+        embed_f32,
+        output_norm_f32,
+        lm_head_t_chunks,
+        lm_head_chunks,
+        num_layers,
+        hidden,
+        vocab,
         512, // max_seq_len
-        heads, kv_heads, inter,
-        lora_rank, lora_alpha,
+        heads,
+        kv_heads,
+        inter,
+        lora_rank,
+        lora_alpha,
         eps,
     );
 
@@ -543,12 +575,20 @@ fn execute_training_wgpu(
             if !json_output {
                 eprintln!(
                     "  Epoch {}/{} sample {}/{}: loss={:.4}",
-                    epoch + 1, epochs, i + 1, corpus.len(), result.loss,
+                    epoch + 1,
+                    epochs,
+                    i + 1,
+                    corpus.len(),
+                    result.loss,
                 );
             }
         }
 
-        let avg_loss = if total_tokens > 0 { total_loss / total_tokens as f32 } else { 0.0 };
+        let avg_loss = if total_tokens > 0 {
+            total_loss / total_tokens as f32
+        } else {
+            0.0
+        };
         eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
     }
 
@@ -571,7 +611,15 @@ fn execute_training(
     learning_rate: f64,
     json_output: bool,
 ) -> Result<()> {
-    execute_training_stub(model_path, config, data_path, output_path, epochs, learning_rate, json_output)
+    execute_training_stub(
+        model_path,
+        config,
+        data_path,
+        output_path,
+        epochs,
+        learning_rate,
+        json_output,
+    )
 }
 
 /// Stub: creates adapter tensors with random init but does NOT train.
@@ -613,14 +661,7 @@ fn execute_training_stub(
     }
 
     let mut writer = aprender::serialization::apr::AprWriter::new();
-    write_adapter_metadata(
-        &mut writer,
-        model_path,
-        config,
-        epochs,
-        learning_rate,
-        None,
-    );
+    write_adapter_metadata(&mut writer, model_path, config, epochs, learning_rate, None);
 
     let (adapter_count, total_adapter_params) =
         create_lora_tensors(&mut writer, &lora_targets, lora_rank as usize);
