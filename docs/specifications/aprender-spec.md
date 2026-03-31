@@ -290,7 +290,8 @@ brick profiling. Results validated by `apr probar` golden snapshots.
 ## 10. Training Pipeline
 
 **Detail**: [components/train.md](components/train.md),
-[tune.md](components/tune.md), [data.md](components/data.md)
+[tune.md](components/tune.md), [data.md](components/data.md),
+[checkpoints.md](components/checkpoints.md)
 
 ```bash
 apr train plan config.yaml          # Validate, estimate resources
@@ -480,6 +481,7 @@ All format conversions support `--trace` for tensor layout verification.
 | Distill | [components/distill.md](components/distill.md) | Active |
 | Prune | [components/prune.md](components/prune.md) | Active |
 | Quantize | [components/quantize.md](components/quantize.md) | Active |
+| Checkpoints | [components/checkpoints.md](components/checkpoints.md) | Active |
 | Train | [components/train.md](components/train.md) | Active |
 | Tune (HPO) | [components/tune.md](components/tune.md) | Active |
 | Serve | [components/serve.md](components/serve.md) | Active |
@@ -493,8 +495,4 @@ All format conversions support `--trace` for tensor layout verification.
 | Profile | [components/profile.md](components/profile.md) | Active |
 | Tokenize | [components/tokenize.md](components/tokenize.md) | Active |
 
----
-
-## Appendix: Archived Specifications
-
-Legacy specs in `archive/`. Not authoritative.
+Legacy specs archived in `archive/`. Not authoritative.
