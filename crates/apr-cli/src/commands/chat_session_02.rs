@@ -37,15 +37,24 @@ impl ChatSession {
             }
 
             // Detect chat template from model architecture
+            // GH-339: Warn on Raw fallback instead of silent degradation
             let model_name = detect_model_architecture(format, &model_bytes, path);
             let template_format = detect_format_from_name(&model_name);
             let chat_template = auto_detect_template(&model_name);
 
-            println!(
-                "{} {} chat template",
-                "Detected".green(),
-                template_format_name(template_format).cyan()
-            );
+            if matches!(template_format, TemplateFormat::Raw) {
+                eprintln!(
+                    "{} Could not detect chat template for '{}', using raw format (no ChatML/Instruct wrapping)",
+                    "Warning:".yellow(),
+                    model_name.dimmed()
+                );
+            } else {
+                println!(
+                    "{} {} chat template",
+                    "Detected".green(),
+                    template_format_name(template_format).cyan()
+                );
+            }
 
             // GH-224: Eagerly initialize GPU models during "Loading model..." phase
             let model_path_buf = path.to_path_buf();

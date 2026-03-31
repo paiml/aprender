@@ -89,11 +89,18 @@ pub(crate) fn run(
     validate_path(path)?;
     fs::create_dir_all(output_dir)?;
 
-    // Use RosettaStone for universal format detection (GGUF, APR, SafeTensors)
+    // GH-338: Use RosettaStone for format detection with explicit metadata validation.
+    // Corrupt metadata (msgpack, JSON) produces an error here, not silent ignoring.
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect model: {e}")))?;
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect model (corrupt metadata?): {e}")))?;
+    if report.tensors.is_empty() {
+        return Err(CliError::InvalidFormat(format!(
+            "Model {} has no tensors — metadata may be corrupted",
+            path.display()
+        )));
+    }
     let model_format = report.format.to_string();
     let n_layers = detect_layer_count(&report);
 
