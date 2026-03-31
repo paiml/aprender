@@ -424,7 +424,7 @@ All format conversions support `--trace` for tensor layout verification.
 
 | Metric | Target | Current |
 |--------|--------|---------|
-| Test count | — | 12,587 |
+| Test count | — | 12,972 |
 | Line coverage | ≥95% | 96.35% |
 | Mutation score | ≥85% | 85.3% |
 | TDG score | ≥95/100 | 95.2/100 |
