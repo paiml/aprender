@@ -259,6 +259,7 @@
                 trace_level: "basic".to_string(),
                 profile: false,
                 backend: None,
+                otlp_endpoint: None,
             },
         };
         let paths = extract_model_paths(&serve_cmd);

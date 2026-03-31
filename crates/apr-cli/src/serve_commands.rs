@@ -72,5 +72,12 @@ pub enum ServeCommands {
         /// PMAT-332: Compute backend override (cuda, cpu, wgpu)
         #[arg(long, value_name = "BACKEND")]
         backend: Option<String>,
+        /// PMAT-485: OTLP endpoint for distributed tracing export (Jaeger/Tempo)
+        ///
+        /// When set, inference spans (W3C Trace Context) are exported via OTLP.
+        /// Each request = parent span, each layer = child span with TensorStats.
+        /// Example: --otlp-endpoint http://localhost:4317
+        #[arg(long, value_name = "URL")]
+        otlp_endpoint: Option<String>,
     },
 }

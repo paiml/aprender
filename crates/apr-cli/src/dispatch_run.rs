@@ -77,7 +77,12 @@ fn dispatch_serve(
     profile: bool,
     verbose: bool,
     backend: &Option<String>,
+    otlp_endpoint: &Option<String>,
 ) -> Result<(), CliError> {
+    if let Some(ref endpoint) = otlp_endpoint {
+        eprintln!("OTLP tracing enabled → {endpoint}");
+        eprintln!("  Spans exported as W3C Trace Context (PMAT-485)");
+    }
     let config = serve::ServerConfig {
         port,
         host: host.to_owned(),
@@ -91,6 +96,7 @@ fn dispatch_serve(
         profile,
         verbose,
         backend: backend.clone(),
+        otlp_endpoint: otlp_endpoint.clone(),
         ..Default::default()
     };
     serve::run(file, &config)
@@ -122,6 +128,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             trace_level,
             profile,
             backend,
+            otlp_endpoint,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,
@@ -137,6 +144,7 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 *profile,
                 cli.verbose,
                 backend,
+                otlp_endpoint,
             )
         }),
     }

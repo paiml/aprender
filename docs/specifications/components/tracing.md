@@ -150,6 +150,11 @@ apr serve model.apr --otlp-endpoint http://localhost:4317
 Uses `renacer-core` SpanRecord format (Parquet-compatible) with
 LamportClock for causal ordering across distributed traces.
 
+**Status (PMAT-485)**: `--otlp-endpoint` flag added to `apr serve run`.
+Endpoint is passed to `ServerConfig.otlp_endpoint` and announced at
+startup. Full span export requires renacer OTLP sender integration
+(renacer `process_tracer.rs` has the `with_otlp()` builder).
+
 ---
 
 ## 4. Brick Profiling — Per-Kernel Timing

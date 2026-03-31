@@ -54,6 +54,8 @@ pub struct ServerConfig {
     pub verbose: bool,
     /// PMAT-332: Compute backend override (cuda, cpu, wgpu)
     pub backend: Option<String>,
+    /// PMAT-485: OTLP endpoint for distributed tracing (Jaeger/Tempo)
+    pub otlp_endpoint: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -73,6 +75,7 @@ impl Default for ServerConfig {
             profile: false,
             verbose: false,
             backend: None,
+            otlp_endpoint: None,
         }
     }
 }
