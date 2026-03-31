@@ -9,28 +9,37 @@
 
 ## 1. Overview
 
-Trueno provides five compute backends behind a single API. Each kernel is
-implemented per-backend with a **provable equivalence contract** (see
-[provable-contracts.md](provable-contracts.md)) guaranteeing identical
-numerical behavior across all backends. User code is backend-agnostic —
-dispatch is automatic based on hardware availability and contract-validated
-correctness.
+The stack provides compute across two dispatch layers:
+
+**Layer 1 — trueno `Backend` enum (CPU + wgpu):**
+Scalar, SSE2, AVX, AVX2, AVX-512, NEON, WasmSIMD, GPU (wgpu). Auto-
+selects best available at runtime. User code is backend-agnostic.
+
+**Layer 2 — GPU kernel dispatch (realizar + trueno-gpu):**
+Custom CUDA PTX, cuBLAS GEMM, cuBLASLt FP8, wgpu WGSL shaders. Selected
+per-operation within the GPU path. cuBLAS and PTX coexist — PTX for M=1
+decode (bandwidth-bound), cuBLAS for M>1 prefill (compute-bound).
 
 ```rust
 use trueno::{Vector, Matrix, Backend};
 
-// Same code runs on all backends — equivalence is contract-proven
-let result = Matrix::matmul(&a, &b); // Dispatches to best available
+// Layer 1: CPU/wgpu dispatch via Backend enum
+let result = Matrix::matmul(&a, &b); // Auto-selects AVX2/NEON/GPU
 ```
 
-### Backend Selection Priority
+Each kernel has a **provable equivalence contract** (see
+[provable-contracts.md](provable-contracts.md)) guaranteeing identical
+numerical behavior across compute paths.
+
+### Selection Priority
 
 ```
-CUDA PTX (if available + parity contract passes)
-  → cuBLAS (if available, for GEMM ops)
-    → wgpu (if Vulkan/Metal/DX12 available)
-      → SIMD (always available, default)
-        → WASM (browser target)
+Layer 2 GPU (if CUDA available + parity gate passes):
+  Custom PTX (M=1 decode) | cuBLAS (M>1 prefill) | cuBLASLt (FP8)
+Layer 2 GPU (if wgpu available):
+  WGSL compute shaders (all vendors)
+Layer 1 CPU:
+  AVX-512 → AVX2 → AVX → SSE2 → NEON → WasmSIMD → Scalar
 ```
 
 ### Per-Kernel Equivalence Contract
@@ -228,9 +237,11 @@ LLM decode is memory-bandwidth bound, not compute bound.
 
 ---
 
-## 5. cuBLAS Backend (NVIDIA GEMM)
+## 5. cuBLAS Accelerator (NVIDIA GEMM)
 
-**Targets**: NVIDIA GPUs with CUDA toolkit installed.
+**Not a separate backend** — an accelerator within the GPU path. Lives in
+`trueno-gpu/src/driver/{cublas.rs, cublaslt.rs}`. Used alongside custom
+PTX kernels within the same GPU inference pass.
 
 ### 5.1 Purpose
 

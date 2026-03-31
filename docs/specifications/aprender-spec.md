@@ -162,18 +162,8 @@ apr run model.apr --prompt "hello" --trace-output trace.json
 
 ### 4.2 BrickTracer (renacer)
 
-**Automatic escalation** from measurement to deep tracing when anomalies
-are detected:
-
-| Trigger | Threshold | Action |
-|---------|-----------|--------|
-| Unstable timing | CV > 15% | Escalate to syscall tracing |
-| Budget exceeded | Efficiency < 25% | Full SyscallBreakdown |
-| Rate limit | 100 traces/sec | Dapper-style sampling |
-
-SyscallBreakdown categorizes time: `mmap_us`, `futex_us`, `ioctl_us`,
-`read_us`, `write_us`, `compute_us` — pinpoints whether bottleneck is
-memory allocation, thread sync, CUDA driver, I/O, or actual compute.
+Automatic escalation from measurement to tracing when CV > 15% or
+efficiency < 25%. Categorizes time into mmap/futex/ioctl/compute.
 
 ### 4.3 Brick Profiling (trueno BrickProfiler)
 
@@ -199,13 +189,7 @@ individually.
 
 ### 4.4 cbtop — Live ComputeBrick Monitor
 
-```bash
-# Live brick pipeline monitor
-apr cbtop model.apr --brick-score --assert-efficiency 0.5
-```
-
-Detects anomalies (CV > 15%, efficiency < 25%) and auto-escalates to
-BrickTracer with full syscall breakdown.
+`apr cbtop` monitors brick pipeline live with `--brick-score` assertions.
 
 ---
 
@@ -232,17 +216,30 @@ BrickTracer with full syscall breakdown.
 
 **Detail**: [components/compute-backends.md](components/compute-backends.md)
 
-| Backend | Targets | Profiled via |
-|---------|---------|-------------|
-| **SIMD** | All CPUs | BrickProfiler (per-kernel µs) |
-| **wgpu** | AMD, Intel, NVIDIA, Apple | BrickProfiler + renacer |
-| **CUDA PTX** | NVIDIA (sm_50+) | BrickProfiler + PTX-level tracing |
-| **cuBLAS** | NVIDIA | BrickProfiler (GEMM timing) |
-| **WASM** | Browsers | probar (visual regression) |
+Two dispatch layers provide compute across all targets:
 
-Backend correctness validated by contracts. Backend performance validated
-by `apr profile` with BrickProfiler. Anomalies detected by `apr cbtop`
-with automatic BrickTracer escalation.
+**Layer 1 — trueno `Backend` enum (CPU + wgpu):**
+
+| Backend | Targets | ISA |
+|---------|---------|-----|
+| **AVX2+FMA** | x86_64 | 256-bit SIMD + fused multiply-add |
+| **AVX-512** | x86_64 (server) | 512-bit SIMD |
+| **SSE2** | x86_64 (baseline) | 128-bit SIMD |
+| **NEON** | aarch64 | 128-bit ARM SIMD |
+| **WasmSIMD** | Browsers | 128-bit SIMD128 |
+| **GPU** | All vendors | wgpu WGSL shaders (39 in trueno) |
+
+**Layer 2 — GPU kernel dispatch (realizar + trueno-gpu):**
+
+| Path | When | Targets |
+|------|------|---------|
+| **Custom PTX** | M=1 decode (bandwidth-bound) | NVIDIA sm_50+ |
+| **cuBLAS** | M>1 prefill (compute-bound, tensor cores) | NVIDIA |
+| **cuBLASLt** | FP8 E4M3 GEMM | NVIDIA sm_89+ |
+| **wgpu WGSL** | Cross-vendor GPU | AMD, Intel, Apple, NVIDIA |
+
+cuBLAS and PTX coexist within the same inference pass. Backend
+correctness validated by equivalence contracts and parity gate.
 
 ---
 
