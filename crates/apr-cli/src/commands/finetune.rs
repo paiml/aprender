@@ -316,6 +316,21 @@ fn execute_training(
         println!("  Data: {} samples", corpus.len());
     }
 
+    // §26.11.7: Use WgpuInstructPipeline when GPU available and CUDA is not.
+    // Bypasses Transformer::from_apr() (20-min CPU dequant) by loading Q4K
+    // directly to GPU via OwnedQuantizedModel + dequant_model_weights().
+    #[cfg(feature = "cuda")]
+    let cuda_ok = entrenar::autograd::cuda_training::cuda_training_available();
+    #[cfg(not(feature = "cuda"))]
+    let cuda_ok = false;
+
+    if !cuda_ok && trueno::backends::gpu::GpuDevice::is_available() {
+        return execute_training_wgpu(
+            model_path, &model_config, config, data_path, output_path,
+            epochs, learning_rate, json_output, corpus,
+        );
+    }
+
     let pipeline = InstructPipeline::from_apr(model_path, &model_config, instruct_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
@@ -381,6 +396,143 @@ fn execute_training(
         println!("  APR adapter export (§26 Phase 3) not yet implemented.");
         println!("  Checkpoint weights saved by trainer to: {}", checkpoint_dir.display());
     }
+
+    Ok(())
+}
+
+/// §26.11.7: GPU-only training via WgpuInstructPipeline.
+/// Loads Q4K model directly to GPU (no Transformer, no 20-min CPU dequant).
+#[cfg(feature = "training")]
+#[allow(clippy::too_many_arguments)]
+fn execute_training_wgpu(
+    model_path: &Path,
+    model_config: &entrenar::transformer::TransformerConfig,
+    config: &OptimalConfig,
+    data_path: &Path,
+    output_path: &Path,
+    epochs: u32,
+    learning_rate: f64,
+    json_output: bool,
+    corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+) -> Result<()> {
+    use entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline;
+    use entrenar::tokenizer::HfTokenizer;
+
+    let t_start = std::time::Instant::now();
+
+    // 1. Load quantized model (seconds, keeps Q4K)
+    let mapped = realizar::apr::MappedAprModel::from_path(model_path)
+        .map_err(|e| CliError::ValidationFailed(format!("APR load: {e}")))?;
+    let q_model = realizar::gguf::OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Q4K model: {e}")))?;
+
+    eprintln!("[wgpu] Q4K model loaded in {:.1}s", t_start.elapsed().as_secs_f64());
+
+    // 2. Create GPU device + WgslForwardPass
+    let gpu = trueno::backends::gpu::GpuDevice::new()
+        .map_err(|e| CliError::ValidationFailed(format!("GPU: {e}")))?;
+    let hidden = model_config.hidden_size;
+    let heads = model_config.num_attention_heads;
+    let kv_heads = model_config.num_kv_heads;
+    let head_dim = hidden / heads;
+    let inter = model_config.intermediate_size;
+    let vocab = model_config.vocab_size;
+    let num_layers = model_config.num_hidden_layers;
+
+    let mut fwd = trueno::backends::gpu::WgslForwardPass::new(
+        gpu.device, gpu.queue,
+        hidden, heads, kv_heads, head_dim, inter,
+    );
+
+    // 3. Streaming dequant + upload weights to GPU
+    let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(&q_model)
+        .map_err(|e| CliError::ValidationFailed(format!("Dequant: {e}")))?;
+
+    let mut lm_head_f32 = Vec::new();
+    let mut embed_f32 = Vec::new();
+    let mut output_norm_f32 = Vec::new();
+
+    for (name, data, _rows, _cols) in weights {
+        match name.as_str() {
+            "lm_head" => lm_head_f32 = data,
+            "embed" => embed_f32 = data,
+            "output_norm" => output_norm_f32 = data,
+            _ => fwd.upload_weight(&name, &data),
+        }
+    }
+    fwd.init_kv_cache(num_layers);
+
+    eprintln!(
+        "[wgpu] {} weights uploaded in {:.1}s ({} layers)",
+        fwd.weight_count(), t_start.elapsed().as_secs_f64(), num_layers,
+    );
+
+    // 4. Create WgpuTrainer + upload lm_head
+    let trainer = entrenar::autograd::wgpu_training::WgpuTrainer::new()
+        .map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
+
+    // Transpose lm_head for forward: [hidden, vocab]
+    let mut lm_head_t = vec![0.0f32; hidden * vocab];
+    for v in 0..vocab {
+        for h in 0..hidden {
+            lm_head_t[h * vocab + v] = lm_head_f32[v * hidden + h];
+        }
+    }
+    let lm_head_t_gpu = trainer.upload(&lm_head_t);
+    let lm_head_gpu = trainer.upload(&lm_head_f32);
+    drop(lm_head_t);
+
+    eprintln!("[wgpu] lm_head uploaded in {:.1}s", t_start.elapsed().as_secs_f64());
+
+    // 5. Load tokenizer
+    let tokenizer_path = model_path.with_extension("tokenizer.json");
+    let tokenizer = HfTokenizer::from_file(&tokenizer_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Tokenizer: {e}")))?;
+
+    // 6. Create WgpuInstructPipeline
+    let eps = model_config.rms_norm_eps as f32;
+    let mut pipeline = WgpuInstructPipeline::new(
+        fwd, trainer, tokenizer,
+        embed_f32, output_norm_f32,
+        lm_head_t_gpu, lm_head_gpu,
+        num_layers, hidden, vocab,
+        512, // max_seq_len — standard for QLoRA training
+        eps,
+    );
+
+    eprintln!(
+        "[wgpu] Pipeline ready in {:.1}s (fast path, no Transformer)",
+        t_start.elapsed().as_secs_f64(),
+    );
+
+    // 7. Train
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0f32;
+        let mut total_tokens = 0usize;
+
+        for (i, sample) in corpus.iter().enumerate() {
+            let prompt_ids = pipeline.encode(&sample.instruction);
+            let response_ids = pipeline.encode(&sample.response);
+            let result = pipeline.train_step(&prompt_ids, &response_ids);
+            total_loss += result.loss * result.num_response_tokens as f32;
+            total_tokens += result.num_response_tokens;
+
+            if !json_output {
+                eprintln!(
+                    "  Epoch {}/{} sample {}/{}: loss={:.4}",
+                    epoch + 1, epochs, i + 1, corpus.len(), result.loss,
+                );
+            }
+        }
+
+        let avg_loss = if total_tokens > 0 { total_loss / total_tokens as f32 } else { 0.0 };
+        eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
+    }
+
+    eprintln!(
+        "[wgpu] Training complete in {:.1}s",
+        t_start.elapsed().as_secs_f64(),
+    );
 
     Ok(())
 }
