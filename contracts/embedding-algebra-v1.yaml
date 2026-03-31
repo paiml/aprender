@@ -1,0 +1,55 @@
+# Embedding Algebra Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("embedding-algebra-v1")]
+# Consumer: src/models/qwen2/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Embedding lookup correctness and bounds checking"
+  references:
+    - "contracts/special-tokens-registry-v1.yaml (valid token IDs)"
+  enforcement_level: "standard"
+
+equations:
+  embedding_lookup:
+    formula: "E[i] = W[token_ids[i], :] for each i"
+    domain: "token_ids ∈ ℕ^n, W ∈ ℝ^{vocab×hidden}"
+    codomain: "E ∈ ℝ^{n×hidden}"
+    invariants:
+      - "All token IDs must be < vocab_size"
+      - "Output shape: [batch, seq_len, hidden_size]"
+    preconditions:
+      - "!token_ids.is_empty()"
+      - "token_ids.iter().all(|&id| (id as usize) < vocab_size)"
+    postconditions:
+      - "result.len() == token_ids.len() * hidden_size"
+      - "result.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: bound
+    property: "Token ID bounds check"
+    formal: "embedding_lookup panics if any token_id >= vocab_size"
+  - type: invariant
+    property: "Output shape correctness"
+    formal: "output.len() == batch * seq_len * hidden_size"
+  - type: determinism
+    property: "Same input produces same output"
+    formal: "embed(ids) == embed(ids) for all ids"
+
+falsification_tests:
+  - id: "FALSIFY-EMBED-001"
+    rule: "OOB token ID"
+    prediction: "Panics or returns error for token_id >= vocab_size"
+    test: "Token ID = vocab_size (off by one)"
+    if_fails: "Missing bounds check — buffer overread"
+  - id: "FALSIFY-EMBED-002"
+    rule: "Empty input"
+    prediction: "Empty token_ids produces empty output"
+    test: "token_ids = []"
+    if_fails: "Missing empty check"
+  - id: "FALSIFY-EMBED-003"
+    rule: "Output finiteness"
+    prediction: "All output values are finite for valid inputs"
+    test: "proptest with random valid token IDs"
+    if_fails: "NaN in embedding weight matrix"

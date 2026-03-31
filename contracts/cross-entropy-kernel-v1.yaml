@@ -1,0 +1,55 @@
+# Cross-Entropy Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("cross-entropy-kernel-v1")]
+# Consumers: src/nn/functional.rs, src/nn/loss.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Cross-entropy loss correctness for classification and language modeling"
+  references:
+    - "Bishop (2006). Pattern Recognition and Machine Learning. §4.3.4"
+  enforcement_level: "standard"
+
+equations:
+  cross_entropy:
+    formula: "L = -Σ_i t_i * log(softmax(x)_i)"
+    domain: "x ∈ ℝ^C (logits), t ∈ {0,1}^C (one-hot target)"
+    codomain: "L ∈ ℝ_{≥0}"
+    invariants:
+      - "Loss is non-negative"
+      - "Loss is zero iff prediction matches target perfectly"
+    preconditions:
+      - "logits.len() == targets.len()"
+      - "logits.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "result >= 0.0"
+      - "result.is_finite()"
+
+proof_obligations:
+  - type: bound
+    property: "Non-negative loss"
+    formal: "cross_entropy(logits, targets) >= 0.0"
+  - type: invariant
+    property: "Perfect prediction gives zero loss"
+    formal: "cross_entropy([1e6, -1e6], [1, 0]) ≈ 0.0"
+  - type: invariant
+    property: "Numerically stable"
+    formal: "cross_entropy(logits, targets).is_finite() for all finite logits"
+
+falsification_tests:
+  - id: "FALSIFY-CE-001"
+    rule: "Non-negative loss"
+    prediction: "Loss >= 0 for 10000 random logit/target pairs"
+    test: "proptest with uniform random logits"
+    if_fails: "Log of negative value or sign error"
+  - id: "FALSIFY-CE-002"
+    rule: "Numerical stability"
+    prediction: "No NaN/Inf for logits in [-100, 100]"
+    test: "proptest with extreme logits"
+    if_fails: "Missing log-sum-exp trick"
+  - id: "FALSIFY-CE-003"
+    rule: "Gradient correctness"
+    prediction: "Numerical gradient matches analytical gradient within 1e-4"
+    test: "Finite difference check"
+    if_fails: "Backward pass formula wrong"

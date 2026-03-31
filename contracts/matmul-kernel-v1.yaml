@@ -1,0 +1,57 @@
+# Matrix Multiply Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("matmul-kernel-v1")]
+# Consumer: src/autograd/ops/activation.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Matrix multiplication correctness and dimension validation"
+  references:
+    - "contracts/compute-backend-equivalence-v1.yaml (multi-backend)"
+    - "contracts/matvec-kernel-v1.yaml (vector specialization)"
+  enforcement_level: "standard"
+
+equations:
+  matmul:
+    formula: "C = A · B where C[i,j] = Σ_k A[i,k] * B[k,j]"
+    domain: "A ∈ ℝ^{m×k}, B ∈ ℝ^{k×n}"
+    codomain: "C ∈ ℝ^{m×n}"
+    invariants:
+      - "Inner dimensions must match: A.cols == B.rows"
+      - "Output shape: [A.rows, B.cols]"
+    preconditions:
+      - "a.ndim() == 2"
+      - "b.ndim() == 2"
+      - "a.shape()[1] == b.shape()[0]"
+    postconditions:
+      - "result.shape() == [a.shape()[0], b.shape()[1]]"
+      - "result.data().iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Dimension check"
+    formal: "matmul(A, B) panics iff A.cols != B.rows"
+  - type: equivalence
+    property: "GEMV fast path matches general matmul"
+    formal: "matmul([1,k], [k,n]) == gemv(A_row, B)"
+  - type: bound
+    property: "Output bounded"
+    formal: "max(|C|) <= m * max(|A|) * max(|B|)"
+
+falsification_tests:
+  - id: "FALSIFY-MATMUL-001"
+    rule: "Dimension mismatch panics"
+    prediction: "matmul([2,3], [4,5]) panics with dimension mismatch"
+    test: "Mismatched inner dims"
+    if_fails: "Dimension check missing or wrong"
+  - id: "FALSIFY-MATMUL-002"
+    rule: "Identity multiply"
+    prediction: "matmul(A, I) == A for any A"
+    test: "proptest with identity matrix"
+    if_fails: "Basic matmul correctness broken"
+  - id: "FALSIFY-MATMUL-003"
+    rule: "GEMV path equivalence"
+    prediction: "matmul([1,k], B) == gemv result for all k, B"
+    test: "Compare GEMV fast path vs general path"
+    if_fails: "GEMV optimization diverges from general matmul"

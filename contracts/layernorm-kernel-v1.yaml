@@ -1,0 +1,57 @@
+# LayerNorm Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("layernorm-kernel-v1")]
+# Consumer: src/nn/normalization/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Layer Normalization correctness"
+  references:
+    - "Ba, Kiros & Hinton (2016). Layer Normalization. arXiv:1607.06450"
+    - "contracts/normalization-kernel-v1.yaml (parent spec)"
+  enforcement_level: "standard"
+
+equations:
+  layernorm:
+    formula: "y_i = (x_i - μ) / sqrt(σ² + ε) * γ_i + β_i"
+    domain: "x ∈ ℝ^n, γ ∈ ℝ^n, β ∈ ℝ^n, ε > 0"
+    codomain: "y ∈ ℝ^n"
+    invariants:
+      - "Output has zero mean (before affine): mean(y_pre) ≈ 0"
+      - "Output has unit variance (before affine): var(y_pre) ≈ 1"
+    preconditions:
+      - "x.len() == gamma.len()"
+      - "x.len() == beta.len()"
+      - "eps > 0.0"
+    postconditions:
+      - "result.len() == x.len()"
+      - "result.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Zero mean before affine"
+    formal: "|mean((x - μ) / sqrt(σ² + ε))| < 1e-5"
+  - type: invariant
+    property: "Unit variance before affine"
+    formal: "|var((x - μ) / sqrt(σ² + ε)) - 1.0| < 1e-4"
+  - type: equivalence
+    property: "Matches PyTorch nn.LayerNorm"
+    formal: "max_diff(aprender_ln(x), torch_ln(x)) < 1e-5"
+
+falsification_tests:
+  - id: "FALSIFY-LN-001"
+    rule: "Zero mean"
+    prediction: "mean(layernorm(x, ones, zeros, eps)) ≈ 0 for random x"
+    test: "proptest 10000 vectors"
+    if_fails: "Mean subtraction missing or wrong"
+  - id: "FALSIFY-LN-002"
+    rule: "Unit variance"
+    prediction: "var(layernorm(x, ones, zeros, eps)) ≈ 1 for random x with len > 1"
+    test: "proptest 10000 vectors dim 2..256"
+    if_fails: "Variance normalization wrong"
+  - id: "FALSIFY-LN-003"
+    rule: "Constant input"
+    prediction: "layernorm([c,c,c,...], γ, β, ε) = β (constant → zero variance → β)"
+    test: "Constant vectors with various γ, β"
+    if_fails: "Division by zero when variance is zero"

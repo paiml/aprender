@@ -76,3 +76,4 @@ mod swiglu_contract;
 mod tensor_inventory_contract;
 mod tensor_shape_flow_contract;
 mod validated_tensor_contract;
+mod backend_equivalence_contract;

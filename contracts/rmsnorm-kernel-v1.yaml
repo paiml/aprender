@@ -1,0 +1,64 @@
+# RMSNorm Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("rmsnorm-kernel-v1")]
+# Consumer: src/nn/normalization/group_norm.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-31"
+  author: "PAIML Engineering"
+  description: "Root Mean Square Layer Normalization correctness"
+  references:
+    - "Zhang & Sennrich (2019). Root Mean Square Layer Normalization. NeurIPS"
+    - "contracts/normalization-kernel-v1.yaml (parent spec)"
+  enforcement_level: "standard"
+
+equations:
+  rmsnorm:
+    formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    domain: "x ∈ ℝ^n, γ ∈ ℝ^n, ε > 0, n ≥ 1"
+    codomain: "y ∈ ℝ^n"
+    invariants:
+      - "Output has same shape as input"
+      - "Output is finite when input is finite"
+    preconditions:
+      - "x.len() == gamma.len()"
+      - "x.iter().all(|v| v.is_finite())"
+      - "eps > 0.0"
+    postconditions:
+      - "result.len() == x.len()"
+      - "result.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Output shape preserved"
+    formal: "rmsnorm(x, γ, ε).len() == x.len()"
+  - type: bound
+    property: "Output bounded when input bounded"
+    formal: "max(|y|) <= max(|x|) * max(|γ|) / sqrt(ε)"
+  - type: equivalence
+    property: "SIMD matches scalar"
+    formal: "max_ulp_error(simd_rmsnorm(x), scalar_rmsnorm(x)) <= 2"
+
+falsification_tests:
+  - id: "FALSIFY-RMSNORM-001"
+    rule: "Shape preservation"
+    prediction: "rmsnorm(x, γ, ε).len() == x.len() for all valid inputs"
+    test: "proptest 10000 vectors dim 1..4096"
+    if_fails: "Output allocation wrong size"
+  - id: "FALSIFY-RMSNORM-002"
+    rule: "Finite output"
+    prediction: "All output values finite when input finite and ε > 0"
+    test: "proptest with extreme values near f32::MAX"
+    if_fails: "Missing numerical stability (max subtraction trick)"
+  - id: "FALSIFY-RMSNORM-003"
+    rule: "Zero input"
+    prediction: "rmsnorm(zeros, γ, ε) produces finite output"
+    test: "All-zero input vector"
+    if_fails: "Division by sqrt(ε) fails"
+
+kani_harnesses:
+  - id: "KANI-RMSNORM-001"
+    obligation: "Shape preservation"
+    bound: 8
+    strategy: "stub_float"
+    harness: "verify_rmsnorm_shape"
