@@ -472,16 +472,34 @@ fn execute_training_wgpu(
     let trainer = entrenar::autograd::wgpu_training::WgpuTrainer::new()
         .map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
 
-    // Transpose lm_head for forward: [hidden, vocab]
-    let mut lm_head_t = vec![0.0f32; hidden * vocab];
-    for v in 0..vocab {
+    // Pre-chunk lm_head into < 2GB pieces (KAIZEN: avoids 189s per-step download)
+    let max_binding = 2_000_000_000u64 / 4; // ~500M floats per chunk
+    let max_chunk_cols = (max_binding / hidden as u64) as usize;
+
+    // Forward chunks: lm_head_t [hidden, vocab] chunked along vocab (columns)
+    let mut lm_head_t_chunks = Vec::new();
+    let mut col = 0usize;
+    while col < vocab {
+        let chunk_n = (vocab - col).min(max_chunk_cols);
+        let mut chunk = vec![0.0f32; hidden * chunk_n];
         for h in 0..hidden {
-            lm_head_t[h * vocab + v] = lm_head_f32[v * hidden + h];
+            for v in 0..chunk_n {
+                chunk[h * chunk_n + v] = lm_head_f32[(col + v) * hidden + h];
+            }
         }
+        lm_head_t_chunks.push((trainer.upload(&chunk), chunk_n as u32));
+        col += chunk_n;
     }
-    let lm_head_t_gpu = trainer.upload(&lm_head_t);
-    let lm_head_gpu = trainer.upload(&lm_head_f32);
-    drop(lm_head_t);
+
+    // Backward chunks: lm_head [vocab, hidden] chunked along vocab (rows)
+    let mut lm_head_chunks = Vec::new();
+    let mut row = 0usize;
+    while row < vocab {
+        let chunk_k = (vocab - row).min(max_chunk_cols);
+        let chunk = &lm_head_f32[row * hidden..(row + chunk_k) * hidden];
+        lm_head_chunks.push((trainer.upload(chunk), chunk_k as u32));
+        row += chunk_k;
+    }
 
     eprintln!("[wgpu] lm_head uploaded in {:.1}s", t_start.elapsed().as_secs_f64());
 
@@ -495,7 +513,7 @@ fn execute_training_wgpu(
     let mut pipeline = WgpuInstructPipeline::new(
         fwd, trainer, tokenizer,
         embed_f32, output_norm_f32,
-        lm_head_t_gpu, lm_head_gpu,
+        lm_head_t_chunks, lm_head_chunks,
         num_layers, hidden, vocab,
         512, // max_seq_len — standard for QLoRA training
         eps,
