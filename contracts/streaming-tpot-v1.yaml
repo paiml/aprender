@@ -1,0 +1,52 @@
+# Streaming Time-Per-Output-Token Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("streaming-tpot-v1")]
+# Consumer: crates/apr-cli/src/commands/serve/handlers.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Streaming time-per-output-token measurement correctness"
+  references:
+    - "MLPerf Inference v4.0. Offline and Server Scenarios Benchmark Rules"
+  enforcement_level: "standard"
+
+equations:
+  tpot:
+    formula: "TPOT = (1/n) * sum(t_i - t_{i-1}, i=1..n) where t_0 = time_first_token"
+    domain: "t ∈ R^{n+1} monotonically increasing, n >= 1"
+    codomain: "TPOT ∈ (0, +inf) in seconds"
+    invariants:
+      - "TPOT > 0 for any generation with >= 1 output token"
+      - "TPOT excludes time-to-first-token (prefill latency)"
+    preconditions:
+      - "n_output_tokens >= 1"
+      - "timestamps are monotonically increasing"
+    postconditions:
+      - "tpot > 0.0"
+      - "tpot.is_finite()"
+
+  throughput:
+    formula: "tokens_per_second = 1.0 / TPOT"
+    domain: "TPOT > 0"
+    codomain: "tok/s ∈ (0, +inf)"
+
+proof_obligations:
+  - type: invariant
+    property: "TPOT excludes prefill"
+    formal: "TPOT measurement starts at first decoded token, not at request arrival"
+  - type: bound
+    property: "TPOT positivity"
+    formal: "TPOT > 0 when n_tokens >= 1 and wall clock is monotonic"
+
+falsification_tests:
+  - id: "FALSIFY-TPOT-001"
+    rule: "Prefill exclusion"
+    prediction: "TPOT is independent of prompt length for same model and decode count"
+    test: "Generate 32 tokens with prompt lengths 10, 100, 1000; verify TPOT within 20% across all"
+    if_fails: "TPOT timer starts at request arrival instead of first token"
+  - id: "FALSIFY-TPOT-002"
+    rule: "Single token edge case"
+    prediction: "TPOT is well-defined for n=1 output token (returns decode time of that token)"
+    test: "Generate exactly 1 token; verify TPOT > 0 and finite"
+    if_fails: "Division by zero or undefined for single-token generation"

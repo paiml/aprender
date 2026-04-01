@@ -140,7 +140,7 @@ impl AprV2StreamingWriter {
         data: &[f32],
     ) -> Result<(), V2FormatError> {
         if data.is_empty() {
-            return self.add_tensor(name, TensorDType::Q8, shape, &[]);
+            return self.add_tensor(name, TensorDType::AprQ8, shape, &[]);
         }
         let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
         let scale = if max_abs == 0.0 { 1.0 } else { max_abs / 127.0 };
@@ -150,7 +150,7 @@ impl AprV2StreamingWriter {
             let q = (v / scale).round().clamp(-127.0, 127.0) as i8;
             bytes.push(q as u8);
         }
-        self.add_tensor(name, TensorDType::Q8, shape, &bytes)
+        self.add_tensor(name, TensorDType::AprQ8, shape, &bytes)
     }
 
     /// Add Q4 tensor (4-bit symmetric quantization, block-wise, streaming).
@@ -170,7 +170,7 @@ impl AprV2StreamingWriter {
     ) -> Result<(), V2FormatError> {
         const BLOCK_SIZE: usize = 32;
         if data.is_empty() {
-            return self.add_tensor(name, TensorDType::Q4, shape, &[]);
+            return self.add_tensor(name, TensorDType::AprQ4, shape, &[]);
         }
         let num_blocks = data.len().div_ceil(BLOCK_SIZE);
         let mut bytes = Vec::with_capacity(num_blocks * 18);
@@ -194,7 +194,7 @@ impl AprV2StreamingWriter {
             }
             bytes.extend_from_slice(&packed_buf);
         }
-        self.add_tensor(name, TensorDType::Q4, shape, &bytes)
+        self.add_tensor(name, TensorDType::AprQ4, shape, &bytes)
     }
 
     /// Add raw Q4_K tensor (GGUF-compatible super-block format, streaming).

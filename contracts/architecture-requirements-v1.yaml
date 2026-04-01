@@ -1,0 +1,58 @@
+# Architecture Requirements Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("architecture-requirements-v1")]
+# Consumer: src/format/layout_contract_enforce.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Model architecture tensor completeness and shape validation"
+  references:
+    - "contracts/tensor-layout-v1.yaml (layout spec)"
+    - "contracts/model-metadata-bounds-v1.yaml (metadata bounds)"
+  enforcement_level: "standard"
+
+equations:
+  tensor_completeness:
+    formula: "complete(M, A) = required_tensors(A) ⊆ present_tensors(M)"
+    domain: "M = model file, A ∈ {LLaMA, Qwen2, GptNeoX, Opt, ...}"
+    codomain: "bool"
+    invariants:
+      - "Every required tensor for architecture A must be present in model M"
+      - "Tensor shapes must be consistent with model hyperparameters"
+    preconditions:
+      - "Architecture A is known and supported"
+      - "Model file M is valid and readable"
+    postconditions:
+      - "All required tensors present with expected dtypes"
+      - "Shapes satisfy: embed.shape[1] == hidden_size, attn_q.shape[0] == hidden_size"
+
+  shape_consistency:
+    formula: |
+      attn_q.shape == [hidden_size, hidden_size]
+      attn_k.shape == [kv_dim, hidden_size]
+      attn_v.shape == [kv_dim, hidden_size]
+      ffn_gate.shape == [intermediate_size, hidden_size]
+      lm_head.shape == [vocab_size, hidden_size]
+    domain: "hidden_size > 0, n_layers > 0, vocab_size > 0"
+    codomain: "bool (all shapes valid)"
+
+proof_obligations:
+  - type: invariant
+    property: "Required tensor completeness"
+    formal: "For each layer 0..n_layers-1: attn_{q,k,v,o} and ffn_{gate,up,down} exist"
+  - type: bound
+    property: "Shape dimensional consistency"
+    formal: "All weight matrices referencing hidden_size agree on its value"
+
+falsification_tests:
+  - id: "FALSIFY-ARCH-001"
+    rule: "Missing tensor detection"
+    prediction: "Validation fails when any required tensor is absent from model"
+    test: "For each required tensor in LLaMA-7B: remove it, run validate; expect error"
+    if_fails: "Completeness check skips some required tensors"
+  - id: "FALSIFY-ARCH-002"
+    rule: "Shape mismatch detection"
+    prediction: "Validation fails when tensor shape contradicts model hyperparameters"
+    test: "Inject attn_q with shape [4096, 2048] into model with hidden_size=4096; expect error"
+    if_fails: "Shape validation does not cross-check against metadata dimensions"

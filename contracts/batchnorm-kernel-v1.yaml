@@ -1,0 +1,48 @@
+# Batch Normalization Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("batchnorm-kernel-v1")]
+# Consumer: src/nn/normalization/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Batch normalization forward pass correctness"
+  references:
+    - "Ioffe & Szegedy (2015). Batch Normalization: Accelerating Deep Network Training. ICML"
+  enforcement_level: "standard"
+
+equations:
+  batchnorm:
+    formula: "BN(x_i) = gamma * (x_i - mu_B) / sqrt(sigma_B^2 + eps) + beta"
+    domain: "x ∈ R^{B x C}, gamma ∈ R^C, beta ∈ R^C, eps > 0, B >= 1"
+    codomain: "y ∈ R^{B x C}"
+    invariants:
+      - "Output has same shape as input"
+      - "Per-channel output has zero mean and unit variance (training mode)"
+    preconditions:
+      - "batch_size >= 1"
+      - "eps > 0.0"
+      - "x.shape() == [batch_size, channels]"
+    postconditions:
+      - "result.shape() == x.shape()"
+      - "result.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Normalization property"
+    formal: "mean(BN(x)_c) ≈ beta_c and var(BN(x)_c) ≈ gamma_c^2 for each channel c"
+  - type: equivalence
+    property: "Running stats converge to population stats"
+    formal: "|running_mean - E[x]| < delta after sufficient batches"
+
+falsification_tests:
+  - id: "FALSIFY-BATCHNORM-001"
+    rule: "Zero-mean unit-variance output"
+    prediction: "Per-channel mean ≈ beta and variance ≈ gamma^2 after normalization"
+    test: "proptest 1000 batches; verify |mean(BN(x)_c) - beta_c| < 1e-5 per channel"
+    if_fails: "Mean/variance computation or normalization formula incorrect"
+  - id: "FALSIFY-BATCHNORM-002"
+    rule: "Single-element batch"
+    prediction: "BN(x) with batch_size=1 produces finite output (variance = 0 + eps)"
+    test: "Single-sample batch with varying eps values"
+    if_fails: "Division by zero when batch variance is zero"

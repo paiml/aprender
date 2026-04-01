@@ -1,0 +1,55 @@
+# FP16 Conversion Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("f16-conversion-v1")]
+# Consumer: src/format/gguf/dequant.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "FP16 to FP32 and FP32 to FP16 conversion roundtrip fidelity"
+  references:
+    - "IEEE 754-2008. Standard for Floating-Point Arithmetic"
+    - "contracts/format-conversion-v1.yaml (parent spec)"
+  enforcement_level: "standard"
+
+equations:
+  f16_roundtrip:
+    formula: "|f32_to_f16(f16_to_f32(x)) - x| == 0 for all valid f16 x"
+    domain: "x ∈ F16 (IEEE 754 half-precision)"
+    codomain: "y ∈ F32 (IEEE 754 single-precision)"
+    invariants:
+      - "F16 -> F32 -> F16 roundtrip is exact for all representable F16 values"
+      - "NaN, Inf, -Inf preserved through conversion"
+    preconditions:
+      - "Input bytes are valid F16 encoding (including subnormals)"
+    postconditions:
+      - "f16_to_f32(x).is_finite() iff x is finite"
+      - "Roundtrip preserves sign bit"
+
+  f32_to_f16_truncation:
+    formula: "|f16_to_f32(f32_to_f16(x)) - x| <= ulp_f16(x) for representable range"
+    domain: "x ∈ F32 where |x| <= 65504.0"
+    codomain: "y ∈ F16"
+    invariants:
+      - "Values exceeding F16 max saturate to +/-Inf"
+      - "Values below F16 min subnormal flush to +/-0"
+
+proof_obligations:
+  - type: equivalence
+    property: "Exact F16 roundtrip"
+    formal: "f32_to_f16(f16_to_f32(x)) == x for all 65536 valid F16 bit patterns"
+  - type: bound
+    property: "F32 truncation error"
+    formal: "|f16_to_f32(f32_to_f16(x)) - x| <= 2^{-10} * |x| for normal F16 range"
+
+falsification_tests:
+  - id: "FALSIFY-F16-001"
+    rule: "Exhaustive F16 roundtrip"
+    prediction: "All 65536 F16 bit patterns survive F16->F32->F16 roundtrip exactly"
+    test: "Enumerate all u16 values 0..65535; convert F16->F32->F16; assert bitwise equal"
+    if_fails: "Conversion routine mishandles subnormals, NaN payload, or sign bit"
+  - id: "FALSIFY-F16-002"
+    rule: "Overflow saturation"
+    prediction: "f32_to_f16(70000.0) == +Inf and f32_to_f16(-70000.0) == -Inf"
+    test: "Convert F32 values beyond F16 max (65504); verify Inf with correct sign"
+    if_fails: "Overflow handling missing — produces garbage instead of Inf"

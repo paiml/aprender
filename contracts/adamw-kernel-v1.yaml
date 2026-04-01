@@ -1,0 +1,53 @@
+# AdamW Optimizer Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("adamw-kernel-v1")]
+# Consumer: src/nn/optim/rm_sprop.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "AdamW optimizer with decoupled weight decay correctness"
+  references:
+    - "Loshchilov & Hutter (2019). Decoupled Weight Decay Regularization. ICLR"
+  enforcement_level: "standard"
+
+equations:
+  adamw_update:
+    formula: |
+      m_t = beta1 * m_{t-1} + (1 - beta1) * g_t
+      v_t = beta2 * v_{t-1} + (1 - beta2) * g_t^2
+      m_hat = m_t / (1 - beta1^t)
+      v_hat = v_t / (1 - beta2^t)
+      w_t = w_{t-1} - lr * (m_hat / (sqrt(v_hat) + eps) + lambda * w_{t-1})
+    domain: "w, g ∈ R^n, lr > 0, beta1 ∈ (0,1), beta2 ∈ (0,1), eps > 0, lambda >= 0"
+    codomain: "w_t ∈ R^n"
+    invariants:
+      - "Weight shape preserved across updates"
+      - "Moment estimates finite when gradients finite"
+    preconditions:
+      - "0 < beta1 < 1 && 0 < beta2 < 1"
+      - "lr > 0.0 && eps > 0.0"
+      - "gradients.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "weights.len() == original_weights.len()"
+      - "weights.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Decoupled weight decay"
+    formal: "adamw(w, g, lambda) != adam(w, g + lambda*w, 0) for lambda > 0"
+  - type: bound
+    property: "Bias-corrected moments bounded"
+    formal: "m_hat <= max(|g|) / (1 - beta1) && v_hat <= max(g^2) / (1 - beta2)"
+
+falsification_tests:
+  - id: "FALSIFY-ADAMW-001"
+    rule: "Weight decay decoupling"
+    prediction: "AdamW weight decay applied to w directly, not through gradient"
+    test: "Compare AdamW(lambda=0.01) vs Adam(L2=0.01) on convex quadratic; solutions differ"
+    if_fails: "Weight decay is coupled through gradient — not AdamW"
+  - id: "FALSIFY-ADAMW-002"
+    rule: "Bias correction convergence"
+    prediction: "Bias-corrected moments converge to true moments as t -> inf"
+    test: "Run 10000 steps with constant gradient; verify m_hat -> g, v_hat -> g^2"
+    if_fails: "Bias correction formula incorrect"

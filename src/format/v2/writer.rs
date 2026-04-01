@@ -70,7 +70,7 @@ impl AprV2Writer {
     pub fn add_q8_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
         let name = name.into();
         if data.is_empty() {
-            self.add_tensor(name, TensorDType::Q8, shape, Vec::new());
+            self.add_tensor(name, TensorDType::AprQ8, shape, Vec::new());
             return;
         }
 
@@ -116,7 +116,7 @@ impl AprV2Writer {
             );
         }
 
-        self.add_tensor(name, TensorDType::Q8, shape, bytes);
+        self.add_tensor(name, TensorDType::AprQ8, shape, bytes);
     }
 
     /// Add Q4 tensor (4-bit symmetric quantization, block-wise)
@@ -131,7 +131,7 @@ impl AprV2Writer {
 
         let name = name.into();
         if data.is_empty() {
-            self.add_tensor(name, TensorDType::Q4, shape, Vec::new());
+            self.add_tensor(name, TensorDType::AprQ4, shape, Vec::new());
             return;
         }
 
@@ -221,7 +221,7 @@ impl AprV2Writer {
             }
         }
 
-        self.add_tensor(name, TensorDType::Q4, shape, bytes);
+        self.add_tensor(name, TensorDType::AprQ4, shape, bytes);
     }
 
     /// Add raw Q4_K tensor (GGUF-compatible super-block format)

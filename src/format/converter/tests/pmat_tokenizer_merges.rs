@@ -297,7 +297,7 @@ mod tests_gh194_tensor_count_preservation {
         writer.add_tensor("f16", TensorDType::F16, vec![128], vec![0u8; 256]);
         writer.add_tensor("q4k", TensorDType::Q4K, vec![256, 128], vec![0u8; 16512]);
         writer.add_tensor("q6k", TensorDType::Q6K, vec![256, 128], vec![0u8; 26624]);
-        writer.add_tensor("q8", TensorDType::Q8, vec![128], vec![0u8; 132]);
+        writer.add_tensor("q8", TensorDType::AprQ8, vec![128], vec![0u8; 132]);
 
         let bytes = writer.write().expect("write should succeed");
         let tensor_count = u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]);

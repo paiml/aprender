@@ -75,7 +75,7 @@ arXiv Paper → Equations (YAML) → Contract (proof obligations)
 | L5 | True for ALL inputs | Lean 4 theorem (provable-contracts repo) |
 | L4 | True for inputs ≤ N | Kani bounded model checking (12 harnesses) |
 | L3 | True for ~10K inputs | `#[contract]` debug_assert (38 functions) |
-| L2 | Specific edge cases | Falsification tests + probar (63 contracts) |
+| L2 | Specific edge cases | Falsification tests + probar (73 contracts) |
 | L1 | By construction | Rust type system (all public APIs) |
 
 Delete a contract YAML → compile error. The compiler itself enforces

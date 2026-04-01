@@ -1,0 +1,52 @@
+# CMA-ES Optimization Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("cma-es-kernel-v1")]
+# Consumer: src/metaheuristics/cmaes.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Covariance Matrix Adaptation Evolution Strategy correctness"
+  references:
+    - "Hansen & Ostermeier (2001). Completely Derandomized Self-Adaptation in Evolution Strategies. Evolutionary Computation"
+    - "Hansen (2016). The CMA Evolution Strategy: A Tutorial. arXiv:1604.00772"
+  enforcement_level: "standard"
+
+equations:
+  cma_es_update:
+    formula: |
+      m_{g+1} = sum(w_i * x_{i:lambda}, i=1..mu)
+      p_sigma_{g+1} = (1-c_sigma)*p_sigma_g + sqrt(c_sigma*(2-c_sigma)*mu_eff) * C_g^{-1/2} * (m_{g+1}-m_g)/sigma_g
+      C_{g+1} = (1-c_1-c_mu)*C_g + c_1*p_c*p_c^T + c_mu*sum(w_i*(x_{i:lambda}-m_g)*(x_{i:lambda}-m_g)^T/sigma_g^2)
+    domain: "x ∈ R^n, C ∈ R^{n x n} SPD, sigma > 0, lambda >= 2"
+    codomain: "m ∈ R^n, C ∈ R^{n x n} SPD, sigma > 0"
+    invariants:
+      - "Covariance matrix remains symmetric positive definite"
+      - "Step size sigma remains positive"
+    preconditions:
+      - "C is symmetric positive definite"
+      - "sigma > 0.0"
+      - "population_size >= 2"
+    postconditions:
+      - "C_new is symmetric positive definite"
+      - "sigma_new > 0.0"
+
+proof_obligations:
+  - type: invariant
+    property: "Covariance matrix positive definiteness"
+    formal: "eigenvalues(C_{g+1}) > 0 for all generations g"
+  - type: bound
+    property: "Step size bounded"
+    formal: "sigma_min <= sigma_g <= sigma_max for reasonable objective landscapes"
+
+falsification_tests:
+  - id: "FALSIFY-CMAES-001"
+    rule: "SPD preservation"
+    prediction: "Covariance matrix eigenvalues remain positive after update"
+    test: "Run 1000 generations on Rosenbrock; check min eigenvalue > 0 each generation"
+    if_fails: "Covariance update loses positive definiteness — numerical instability"
+  - id: "FALSIFY-CMAES-002"
+    rule: "Convergence on convex"
+    prediction: "CMA-ES converges to global optimum on sphere function within O(n) generations"
+    test: "Sphere function n=10; verify |f(m_best) - f*| < 1e-8 within 5000 evals"
+    if_fails: "Mean/covariance update or step-size adaptation is broken"

@@ -168,7 +168,7 @@ impl AprV2Reader {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q8 => {
+            TensorDType::AprQ8 => {
                 if data.len() < 4 {
                     return None;
                 }
@@ -179,7 +179,7 @@ impl AprV2Reader {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::AprQ4 => Some(dequantize_q4(data, element_count)),
             TensorDType::BF16 => {
                 let floats: Vec<f32> = data
                     .chunks_exact(2)
@@ -369,7 +369,7 @@ impl<'a> AprV2ReaderRef<'a> {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q8 => {
+            TensorDType::AprQ8 => {
                 if data.len() < 4 {
                     return None;
                 }
@@ -380,7 +380,7 @@ impl<'a> AprV2ReaderRef<'a> {
                     .collect();
                 Some(floats)
             }
-            TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::AprQ4 => Some(dequantize_q4(data, element_count)),
             TensorDType::BF16 => {
                 let floats: Vec<f32> = data
                     .chunks_exact(2)

@@ -40,7 +40,7 @@ fn test_pygmy_apr_q8_parsing() {
     // Test that Q8 APR parses correctly
     let tensor = reader.get_tensor("model.layers.0.self_attn.q_proj.weight");
     assert!(tensor.is_some());
-    assert_eq!(tensor.unwrap().dtype, TensorDType::Q8);
+    assert_eq!(tensor.unwrap().dtype, TensorDType::AprQ8);
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn test_pygmy_apr_q4_parsing() {
     // Test that Q4 APR parses correctly
     let tensor = reader.get_tensor("model.layers.0.self_attn.q_proj.weight");
     assert!(tensor.is_some());
-    assert_eq!(tensor.unwrap().dtype, TensorDType::Q4);
+    assert_eq!(tensor.unwrap().dtype, TensorDType::AprQ4);
 }
 
 #[test]
@@ -149,8 +149,8 @@ fn test_tensor_dtype_coverage() {
         TensorDType::I64,
         TensorDType::I8,
         TensorDType::U8,
-        TensorDType::Q4,
-        TensorDType::Q8,
+        TensorDType::AprQ4,
+        TensorDType::AprQ8,
         TensorDType::Q4K,
         TensorDType::Q6K,
     ];

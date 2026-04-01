@@ -179,7 +179,7 @@ fn test_pygmy_apr_quantized_formats() {
         .tensor_names()
         .iter()
         .filter_map(|n| reader.get_tensor(n))
-        .filter(|t| t.dtype == TensorDType::Q8)
+        .filter(|t| t.dtype == TensorDType::AprQ8)
         .collect();
     assert!(!q8_tensors.is_empty(), "Should have Q8 tensors");
 
@@ -190,7 +190,7 @@ fn test_pygmy_apr_quantized_formats() {
         .tensor_names()
         .iter()
         .filter_map(|n| reader.get_tensor(n))
-        .filter(|t| t.dtype == TensorDType::Q4)
+        .filter(|t| t.dtype == TensorDType::AprQ4)
         .collect();
     assert!(!q4_tensors.is_empty(), "Should have Q4 tensors");
 

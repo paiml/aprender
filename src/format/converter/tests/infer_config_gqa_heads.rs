@@ -272,7 +272,7 @@ fn test_gh237_q8_tensor_byte_count_contract() {
         |w| w.add_q8_tensor("test.weight", vec![64, 32], &data),
         "test.weight",
     );
-    assert_eq!(dtype, TensorDType::Q8);
+    assert_eq!(dtype, TensorDType::AprQ8);
     assert_eq!(
         data_len,
         4 + 2048,
@@ -290,7 +290,7 @@ fn test_gh237_q4_tensor_byte_count_contract() {
         |w| w.add_q4_tensor("test.weight", vec![64, 32], &data),
         "test.weight",
     );
-    assert_eq!(dtype, TensorDType::Q4);
+    assert_eq!(dtype, TensorDType::AprQ4);
     let expected_blocks = (2048 + 31) / 32;
     assert_eq!(
         data_len,
@@ -307,7 +307,7 @@ fn test_gh237_q8_empty_tensor_allowed() {
         |w| w.add_q8_tensor("empty.weight", vec![0], &[]),
         "empty.weight",
     );
-    assert_eq!(dtype, TensorDType::Q8);
+    assert_eq!(dtype, TensorDType::AprQ8);
     assert_eq!(data_len, 0);
 }
 
@@ -319,7 +319,7 @@ fn test_gh237_q4_empty_tensor_allowed() {
         |w| w.add_q4_tensor("empty.weight", vec![0], &[]),
         "empty.weight",
     );
-    assert_eq!(dtype, TensorDType::Q4);
+    assert_eq!(dtype, TensorDType::AprQ4);
     assert_eq!(data_len, 0);
 }
 
@@ -364,7 +364,7 @@ fn test_gh237_convert_save_uses_real_q8_packing() {
     // Must be Q8, not F32 (the old broken behavior)
     assert_eq!(
         dtype,
-        TensorDType::Q8,
+        TensorDType::AprQ8,
         "GH-237: Tensor must be packed as Q8, not stored as F32"
     );
     assert_eq!(
@@ -394,7 +394,7 @@ fn test_gh237_convert_save_uses_real_q4_packing() {
 
     assert_eq!(
         dtype,
-        TensorDType::Q4,
+        TensorDType::AprQ4,
         "GH-237: Tensor must be packed as Q4, not stored as F32"
     );
 }
@@ -419,7 +419,7 @@ fn test_gh237_convert_save_skips_quant_for_embeddings() {
 
     assert_eq!(
         dtype,
-        TensorDType::Q8,
+        TensorDType::AprQ8,
         "GH-88: Embedding tensors are now quantized (GGUF compat, GPU kernel requires Q4K)"
     );
 }
@@ -444,7 +444,7 @@ fn test_gh237_convert_save_skips_quant_for_lm_head() {
 
     assert_eq!(
         dtype,
-        TensorDType::Q4,
+        TensorDType::AprQ4,
         "GH-88: lm_head.weight is now quantized (GGUF compat, GPU kernel requires Q4K)"
     );
 }

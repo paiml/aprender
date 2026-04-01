@@ -1,0 +1,58 @@
+# Clustering Metrics Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("metrics-clustering-v1")]
+# Consumer: src/metrics/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Clustering evaluation metrics: silhouette score and adjusted Rand index"
+  references:
+    - "Rousseeuw (1987). Silhouettes: A Graphical Aid. J. Computational and Applied Mathematics"
+    - "Hubert & Arabie (1985). Comparing Partitions. J. Classification"
+  enforcement_level: "standard"
+
+equations:
+  silhouette:
+    formula: |
+      a(i) = mean distance from i to other points in same cluster
+      b(i) = min over clusters C != C_i of mean distance from i to points in C
+      s(i) = (b(i) - a(i)) / max(a(i), b(i))
+    domain: "X ∈ R^{n x d}, labels ∈ {0..k-1}^n, n >= 2, k >= 2"
+    codomain: "s ∈ [-1, 1]"
+    invariants:
+      - "Silhouette score in [-1, 1]"
+      - "Perfect clustering approaches +1"
+    preconditions:
+      - "n_samples >= 2"
+      - "n_clusters >= 2 && n_clusters < n_samples"
+    postconditions:
+      - "-1.0 <= silhouette <= 1.0"
+
+  adjusted_rand_index:
+    formula: "ARI = (RI - E[RI]) / (max(RI) - E[RI])"
+    domain: "labels_true ∈ Z^n, labels_pred ∈ Z^n, n >= 1"
+    codomain: "ARI ∈ [-1, 1], with ARI = 1 for perfect agreement"
+    invariants:
+      - "ARI = 1 when labels_pred == labels_true (up to permutation)"
+      - "E[ARI] = 0 for random labelings"
+
+proof_obligations:
+  - type: bound
+    property: "Silhouette range"
+    formal: "-1 <= s(i) <= 1 for all points i with valid cluster assignments"
+  - type: invariant
+    property: "ARI perfect agreement"
+    formal: "ARI(labels, labels) == 1.0 for any non-trivial labeling"
+
+falsification_tests:
+  - id: "FALSIFY-CLUSTERING-001"
+    rule: "Silhouette bounds"
+    prediction: "Silhouette score in [-1, 1] for all valid clusterings"
+    test: "proptest 1000 random clusterings of 10-100 points in R^5; verify range"
+    if_fails: "Distance computation or max normalization incorrect"
+  - id: "FALSIFY-CLUSTERING-002"
+    rule: "ARI self-agreement"
+    prediction: "ARI(labels, labels) == 1.0 for any labeling with >= 2 clusters"
+    test: "proptest 1000 random labelings; compute ARI(l, l); assert == 1.0"
+    if_fails: "Contingency table or expected value computation wrong"

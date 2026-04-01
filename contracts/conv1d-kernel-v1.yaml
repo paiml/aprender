@@ -1,0 +1,50 @@
+# 1D Convolution Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("conv1d-kernel-v1")]
+# Consumer: src/nn/conv/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "1D convolution forward pass correctness"
+  references:
+    - "Goodfellow et al. (2016). Deep Learning, Chapter 9: Convolutional Networks"
+  enforcement_level: "standard"
+
+equations:
+  conv1d:
+    formula: "y[i] = sum(w[k] * x[i * stride + k], k=0..kernel_size-1) + bias"
+    domain: "x ∈ R^L, w ∈ R^K, bias ∈ R, stride >= 1, K >= 1, L >= K"
+    codomain: "y ∈ R^{floor((L - K) / stride) + 1}"
+    invariants:
+      - "Output length = floor((input_len + 2*padding - kernel_size) / stride) + 1"
+      - "Output finite when input and weights finite"
+    preconditions:
+      - "input.len() >= kernel_size"
+      - "stride >= 1"
+      - "kernel_size >= 1"
+      - "input.iter().all(|v| v.is_finite())"
+      - "weights.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "result.len() == (input.len() + 2*padding - kernel_size) / stride + 1"
+      - "result.iter().all(|v| v.is_finite())"
+
+proof_obligations:
+  - type: invariant
+    property: "Output length formula"
+    formal: "conv1d(x, w, s, p).len() == (x.len() + 2*p - w.len()) / s + 1"
+  - type: equivalence
+    property: "Convolution equals correlation with flipped kernel"
+    formal: "conv1d(x, w) == correlate(x, flip(w))"
+
+falsification_tests:
+  - id: "FALSIFY-CONV1D-001"
+    rule: "Output length"
+    prediction: "Output length matches formula for all valid stride/padding/kernel combinations"
+    test: "proptest input_len 1..1024, kernel 1..64, stride 1..8, padding 0..32"
+    if_fails: "Output length calculation off-by-one or padding logic incorrect"
+  - id: "FALSIFY-CONV1D-002"
+    rule: "Identity kernel"
+    prediction: "conv1d(x, [1.0], stride=1, padding=0) == x"
+    test: "proptest 1000 vectors with unit kernel"
+    if_fails: "Kernel indexing or accumulation is wrong"
