@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -114,7 +114,7 @@ fn x3_trueno_dependency_documented() {
 #[test]
 fn x4_architecture_layers_documented() {
     // Check spec documents layer separation
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -170,7 +170,7 @@ fn x6_no_axum_in_aprender() {
 #[test]
 fn x7_tests_detect_logic_errors() {
     // Verify test coverage is meaningful
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -213,7 +213,7 @@ fn x8_benchmarks_vary_with_input() {
 #[test]
 fn x9_profile_metrics_vary_with_model() {
     // This is a specification check - actual profiling is implementation-dependent
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(

@@ -25,7 +25,7 @@
 //!
 //! - PMAT-194: Load testing infrastructure
 //! - GH-205: Load testing ticket
-//! - docs/specifications/qwen2.5-coder-showcase-demo.md Section 20.3
+//! - docs/specifications/archive/qwen2.5-coder-showcase-demo.md Section 20.3
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;

@@ -40,7 +40,7 @@
 //!
 //! - PMAT-192: Cross-architecture determinism validation
 //! - GH-203: Determinism ticket
-//! - docs/specifications/qwen2.5-coder-showcase-demo.md Section 20.3
+//! - docs/specifications/archive/qwen2.5-coder-showcase-demo.md Section 20.3
 //! - IEEE 754-2008 Section 5.4.1 (FMA rounding)
 
 /// Maximum relative error for logit comparison (FMA variance tolerance)

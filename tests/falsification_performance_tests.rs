@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F081-F100: Performance Regression Falsification Tests
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md S9.4
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md S9.4
 //!
 //! STATUS: IMPLEMENTED - Infrastructure verified, hardware tests gracefully skip
 //!

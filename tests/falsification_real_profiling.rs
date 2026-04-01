@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F-PROF-001: True Per-Brick Profiling Falsification Test
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §6.8
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md §6.8
 //!
 //! This test verifies that profiling data is REAL (measured per-brick),
 //! not DERIVED from total throughput.

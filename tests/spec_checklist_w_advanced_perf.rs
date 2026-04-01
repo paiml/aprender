@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -128,7 +128,7 @@ fn w11_simd_set_verified() {
 #[test]
 fn w2_kernel_autotuning() {
     // Verify auto-tuning mandate
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -142,7 +142,7 @@ fn w2_kernel_autotuning() {
 #[test]
 fn w3_optimal_kernel_selection() {
     // Verify selection logic description
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -156,7 +156,7 @@ fn w3_optimal_kernel_selection() {
 #[test]
 fn w4_tuning_cache() {
     // Verify caching mandate
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -170,7 +170,7 @@ fn w4_tuning_cache() {
 #[test]
 fn w5_arena_allocator() {
     // Verify arena allocator usage
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -184,7 +184,7 @@ fn w5_arena_allocator() {
 #[test]
 fn w6_preallocation_worst_case() {
     // Verify pre-allocation strategy
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -198,7 +198,7 @@ fn w6_preallocation_worst_case() {
 #[test]
 fn w7_speculative_decoding() {
     // Verify speculative decoding mentions
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Speculative decoding might be a planned feature or advanced optimization
@@ -216,7 +216,7 @@ fn w7_speculative_decoding() {
 #[test]
 fn w8_pgo_build_profile() {
     // Verify PGO support
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -230,7 +230,7 @@ fn w8_pgo_build_profile() {
 #[test]
 fn w12_huge_pages_support() {
     // Verify huge pages support
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(

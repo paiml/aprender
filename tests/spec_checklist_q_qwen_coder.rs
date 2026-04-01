@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -80,7 +80,7 @@ fn q3_context_window_8k() {
 #[test]
 fn q4_system_prompt_affects_style() {
     // This is a behavioral test - verify architecture supports it
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -120,7 +120,7 @@ fn q6_code_blocks_extracted() {
 #[test]
 fn q7_generation_speed() {
     // Check performance targets
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -134,7 +134,7 @@ fn q7_generation_speed() {
 #[test]
 fn q8_memory_usage() {
     // Check memory constraints
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(

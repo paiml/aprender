@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F021-F040: Token Budget Compliance Falsification Tests
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md §9.4
 //!
 //! These tests verify brick timing budgets are met.
 //! Target: 2x llama.cpp throughput (976 tok/s for 1.5B model).

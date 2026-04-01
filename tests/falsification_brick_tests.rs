@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F001-F020: Brick Core Invariants Falsification Tests
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md §9.4
 //!
 //! These tests verify the ComputeBrick trait invariants.
 //! Each test is a falsifiable assertion per Popper (1959).

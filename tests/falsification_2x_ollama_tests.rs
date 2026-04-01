@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F101-F108: 2x Ollama Performance Falsification Tests
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §5.0
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md §5.0
 //!
 //! STATUS: ❌ FAILING - These tests MUST FAIL until 2x performance achieved
 //!

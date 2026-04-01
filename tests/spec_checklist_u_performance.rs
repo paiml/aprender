@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -24,7 +24,7 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 #[test]
 fn u1_profile_roofline_output() {
     // Verify Roofline model is documented
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -45,7 +45,7 @@ fn u1_profile_roofline_output() {
 /// Falsification: Output lacks throughput metric
 #[test]
 fn u2_bench_shows_throughput() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -58,7 +58,7 @@ fn u2_bench_shows_throughput() {
 /// Falsification: Output lacks layer breakdown
 #[test]
 fn u3_trace_shows_layer_timing() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -71,7 +71,7 @@ fn u3_trace_shows_layer_timing() {
 /// Falsification: Output lacks "memory_bound" or "compute_bound"
 #[test]
 fn u4_profiler_identifies_bottleneck() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -84,7 +84,7 @@ fn u4_profiler_identifies_bottleneck() {
 /// Falsification: Output lacks ranked hotspots
 #[test]
 fn u5_hotspot_analysis() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -97,7 +97,7 @@ fn u5_hotspot_analysis() {
 /// Falsification: Output lacks "X% of peak"
 #[test]
 fn u6_efficiency_percentage() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -110,7 +110,7 @@ fn u6_efficiency_percentage() {
 /// Falsification: --cuda flag fails or ignored
 #[test]
 fn u7_cuda_profiling_supported() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -158,7 +158,7 @@ fn u8_memory_tracking_accurate() {
 #[test]
 fn u9_warmup_configurable() {
     // Check CLI documentation mentions warmup
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Warmup is a standard profiling practice
@@ -249,7 +249,7 @@ fn u12_comparison_mode() {
 #[test]
 fn u13_regression_detection() {
     // Verify spec mentions regression detection
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -263,7 +263,7 @@ fn u13_regression_detection() {
 #[test]
 fn u14_anti_pattern_detection() {
     // Verify spec documents anti-patterns
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -277,7 +277,7 @@ fn u14_anti_pattern_detection() {
 #[test]
 fn u15_profiler_api_accessible() {
     // Verify profiler API is documented
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(

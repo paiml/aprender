@@ -2,7 +2,7 @@
 //! Popperian Falsification Tests -- Showcase Spec v10.4.0 (119 Gates)
 //!
 //! This file implements ALL 119 falsification gates from:
-//!   docs/specifications/qwen2.5-coder-showcase-demo.md
+//!   docs/specifications/archive/qwen2.5-coder-showcase-demo.md
 //!
 //! **GATED BY `model-tests` FEATURE** — these tests do NOT run with `cargo test`.
 //! Many tests load GGUF/SafeTensors models, start servers, call ollama, and use GPU.

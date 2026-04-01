@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_methods)]
 //! F061-F080: CUDA Kernel Validation Falsification Tests
 //!
-//! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4
+//! Per spec: docs/specifications/archive/qwen2.5-coder-showcase-demo.md §9.4
 //!
 //! STATUS: IMPLEMENTED - Tests run and pass (graceful skip when no CUDA)
 //!

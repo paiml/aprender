@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -16,7 +16,7 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 
 // ============================================================================
 // Section 19: High-Performance APR Inference (TinyLlama & QwenCoder)
-// Spec: docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md
+// Spec: docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md
 // Focus: Verify apr-cli serving capabilities and performance targets
 // ============================================================================
 
@@ -24,7 +24,7 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 /// Falsification: `apr import` fails or produces invalid APR file
 #[test]
 fn z1_tinyllama_imports_to_apr() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify TinyLlama import documented as fixed
@@ -53,7 +53,7 @@ fn z1_tinyllama_imports_to_apr() {
 /// Falsification: `apr import` fails or produces invalid APR file
 #[test]
 fn z2_qwencoder_imports_to_apr() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify Qwen2.5-Coder import documented
@@ -83,7 +83,7 @@ fn z2_qwencoder_imports_to_apr() {
 /// Falsification: `apr serve tinyllama.apr` fails to handle concurrent requests
 #[test]
 fn z3_tinyllama_serving_http() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify serving documented
@@ -113,7 +113,7 @@ fn z3_tinyllama_serving_http() {
 /// Falsification: `apr serve qwencoder.apr` fails code completion request
 #[test]
 fn z4_qwencoder_serving_http() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify code completion use case documented
@@ -135,7 +135,7 @@ fn z4_qwencoder_serving_http() {
 /// Falsification: Decode < 60 tok/s (Av. Desktop)
 #[test]
 fn z5_tinyllama_cpu_performance() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify TinyLlama performance target documented
@@ -162,7 +162,7 @@ fn z5_tinyllama_cpu_performance() {
 /// Falsification: Decode < 70 tok/s (Av. Desktop)
 #[test]
 fn z6_qwencoder_cpu_performance() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify Qwen performance documented
@@ -182,7 +182,7 @@ fn z6_qwencoder_cpu_performance() {
 /// Falsification: TTFT > 50ms (local)
 #[test]
 fn z7_server_latency_ttft() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify TTFT (Time To First Token) latency requirement documented
@@ -202,7 +202,7 @@ fn z7_server_latency_ttft() {
 /// Falsification: Generated code fails basic syntax check
 #[test]
 fn z8_qwencoder_accuracy() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify code generation quality documented
@@ -222,7 +222,7 @@ fn z8_qwencoder_accuracy() {
 /// Falsification: Server crashes under 50 concurrent connections
 #[test]
 fn z9_high_load_stability() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify concurrency/stability documented
@@ -246,7 +246,7 @@ fn z9_high_load_stability() {
 /// Falsification: Serving tokens/sec within 5% of `apr bench`
 #[test]
 fn z10_zero_overhead_serving() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Verify overhead expectations documented

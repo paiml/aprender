@@ -4,7 +4,7 @@
 //! These tests verify claims from the spec's falsification checklist.
 //! Each test is designed to FAIL if the claim is false.
 //!
-//! Reference: docs/specifications/qwen2-0.5b-instruct-interactive-chat-demo.md
+//! Reference: docs/specifications/archive/qwen2-0.5b-instruct-interactive-chat-demo.md
 
 #![allow(unused_imports)]
 
@@ -111,7 +111,7 @@ fn v7_no_crash_reports() {
 #[test]
 fn v4_model_loading_respects_offline() {
     // Verify architecture mandates offline mode
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -125,7 +125,7 @@ fn v4_model_loading_respects_offline() {
 #[test]
 fn v5_cli_warns_on_network() {
     // Verify CLI guidelines
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -139,7 +139,7 @@ fn v5_cli_warns_on_network() {
 #[test]
 fn v6_air_gapped_operation() {
     // Verify mandate for air-gapped operation
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -153,7 +153,7 @@ fn v6_air_gapped_operation() {
 #[test]
 fn v8_update_checks_respect_config() {
     // Verify update check policy
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Should mention updates or telemetry (which covers this)
@@ -168,7 +168,7 @@ fn v8_update_checks_respect_config() {
 #[test]
 fn v9_remote_execution_disabled() {
     // Verify default bind address policy
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -182,7 +182,7 @@ fn v9_remote_execution_disabled() {
 #[test]
 fn v10_wasm_sandbox_no_fetch() {
     // Verify WASM sandbox restrictions
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     assert!(
@@ -278,7 +278,7 @@ fn v13_inference_loop_no_network_imports() {
 /// FALSIFICATION: Spec doesn't mandate network isolation
 #[test]
 fn v14_network_isolation_spec_mandate() {
-    let spec_path = "docs/specifications/apr-whisper-and-cookbook-support-eoy-2025.md";
+    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
     let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
 
     // Must have network isolation section

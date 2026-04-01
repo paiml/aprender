@@ -256,8 +256,10 @@ fn run_humaneval_inference(
             }
             embedded
         } else {
-            realizar::apr::AprV2Model::load_tokenizer(model_path)
-                .ok_or_else(|| "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)".to_string())?
+            realizar::apr::AprV2Model::load_tokenizer(model_path).ok_or_else(|| {
+                "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)"
+                    .to_string()
+            })?
         }
     } else {
         realizar::apr::AprV2Model::load_tokenizer(model_path)
