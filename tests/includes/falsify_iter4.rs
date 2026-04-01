@@ -68,12 +68,11 @@ fn falsify_iter4_all_families_constraints_consistent() {
             );
         }
 
-        // Gated MLP (GeGLU) uses GELU activation
+        // Gated MLP can use GELU (GeGLU) or SiLU (SwiGLU-style gating)
         if constraints.mlp_type == MlpType::GatedMlp {
-            assert_eq!(
-                constraints.activation,
-                Activation::Gelu,
-                "ITER4: {family_name} uses Gated MLP (GeGLU) but activation is {:?}, expected GELU",
+            assert!(
+                matches!(constraints.activation, Activation::Gelu | Activation::Silu),
+                "ITER4: {family_name} uses Gated MLP but activation is {:?}, expected GELU or SiLU",
                 constraints.activation
             );
         }

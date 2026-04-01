@@ -386,9 +386,14 @@ fn falsify_iter4_no_bias_families_have_no_bias_constraint() {
         let config = family.config();
 
         if !constraints.has_bias {
-            // Check that bias-related per_layer entries are None
+            // Check that attention/FFN bias entries are None when has_bias=false.
+            // Conv1D biases (e.g. mixer_conv1d_bias in Mamba) are NOT attention biases.
+            let attention_bias_roles = [
+                "q_proj_bias", "k_proj_bias", "v_proj_bias", "o_proj_bias",
+                "gate_proj_bias", "up_proj_bias", "down_proj_bias",
+            ];
             for (role, pattern) in &config.tensor_template.per_layer {
-                if role.contains("bias") {
+                if attention_bias_roles.contains(&role.as_str()) {
                     assert!(
                         pattern.is_none(),
                         "ITER4: {family_name} declares has_bias=false but per_layer '{role}' is Some('{}')",
@@ -459,7 +464,8 @@ fn falsify_iter4_detect_from_model_type_unknown_returns_none() {
     // STRONG PREDICTION: Unknown model_type should return None
     let registry = build_default_registry();
 
-    let unknown_types = ["gpt2", "falcon", "mamba", "rwkv", "t5", "unknown_model_xyz"];
+    // Only truly unknown model types (registered families removed)
+    let unknown_types = ["t5", "unknown_model_xyz", "imagenet_resnet", "wav2vec"];
     for model_type in &unknown_types {
         let detected = registry.detect_from_model_type(model_type);
         assert!(

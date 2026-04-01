@@ -928,8 +928,9 @@ mod contract_falsification {
             .get("27b")
             .expect("FALSIFIED: qwen3_5 missing '27b' size variant");
 
-        assert_eq!(variant.hidden_dim, 5120,
-            "FALSIFIED QWEN35-008b: hidden_dim={}, expected 5120", variant.hidden_dim);
+        // hidden_dim = num_heads * head_dim = 24 * 256 = 6144
+        assert_eq!(variant.hidden_dim, 6144,
+            "FALSIFIED QWEN35-008b: hidden_dim={}, expected 6144 (24*256)", variant.hidden_dim);
         assert_eq!(variant.num_layers, 64,
             "FALSIFIED QWEN35-008b: num_layers={}, expected 64", variant.num_layers);
         assert_eq!(variant.num_heads, 24,

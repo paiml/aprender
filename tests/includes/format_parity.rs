@@ -208,7 +208,8 @@ fn cc2_trueno_is_compute_backend() {
         .unwrap_or("");
     let has_uncommented_realizar = deps_section.lines().any(|line: &str| {
         let trimmed = line.trim();
-        !trimmed.starts_with('#') && trimmed.contains("realizar")
+        // Check for realizar as a dep key (not just in a comment on another line)
+        !trimmed.starts_with('#') && trimmed.starts_with("realizar")
     });
     assert!(
         !has_uncommented_realizar,

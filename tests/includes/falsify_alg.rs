@@ -239,10 +239,10 @@ fn falsify_alg_006_activation_mlp_consistency_shazeer_2020() {
                 );
             }
             MlpType::GatedMlp => {
-                assert_eq!(
-                    constraints.activation,
-                    Activation::Gelu,
-                    "FALSIFY-ALG-006: {family_name} GatedMlp (GeGLU) requires GELU \
+                // GatedMlp can use GELU (GeGLU) or SiLU (SwiGLU-style gating)
+                assert!(
+                    matches!(constraints.activation, Activation::Gelu | Activation::Silu),
+                    "FALSIFY-ALG-006: {family_name} GatedMlp requires GELU or SiLU \
                      activation, got {:?}",
                     constraints.activation
                 );

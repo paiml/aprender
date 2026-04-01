@@ -206,6 +206,15 @@ impl FamilyRegistry {
     #[must_use]
     pub fn detect_from_model_type(&self, model_type: &str) -> Option<&dyn ModelFamily> {
         let model_type_lower = model_type.to_lowercase();
+
+        // Pass 1: exact family name match (prevents "qwen3_5" matching "qwen3")
+        for family in &self.families {
+            if family.config().family == model_type_lower {
+                return Some(family.as_ref());
+            }
+        }
+
+        // Pass 2: architecture class or substring match
         for family in &self.families {
             let config = family.config();
             for arch in &config.architectures {

@@ -21,7 +21,8 @@ size_variants:
     rms_norm_eps: 0.000001
   27b:
     parameters: "27B"
-    hidden_dim: 5120
+    # hidden_dim = num_heads * head_dim = 24 * 256 = 6144
+    hidden_dim: 6144
     num_layers: 64
     num_heads: 24
     num_kv_heads: 4
