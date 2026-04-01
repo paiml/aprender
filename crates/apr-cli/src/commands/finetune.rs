@@ -488,8 +488,10 @@ fn execute_training_wgpu(
     // 4. Create WgpuTrainer sharing same device as WgslForwardPass
     // Contract: single device — BindGroupLayouts must be on the same device
     let trainer = entrenar::autograd::wgpu_training::WgpuTrainer::from_device(
-        fwd.device_ref().clone(), fwd.queue_ref().clone(),
-    ).map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
+        fwd.device_ref().clone(),
+        fwd.queue_ref().clone(),
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("WgpuTrainer: {e}")))?;
 
     // Pre-chunk lm_head into < 2GB pieces (KAIZEN: avoids 189s per-step download)
     let max_binding = 2_000_000_000u64 / 4; // ~500M floats per chunk

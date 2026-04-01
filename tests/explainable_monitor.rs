@@ -4,6 +4,10 @@
 //! is a separate crate instance from the library. entrenar depends on aprender-lib,
 //! so its generic bounds require aprender-lib's traits. Integration tests use
 //! `aprender::` which refers to the library crate, matching entrenar's dependency.
+//!
+//! NOTE: Requires local entrenar with matching Explainable trait (not crates.io 0.7).
+//! Gated to avoid compile errors when entrenar is from crates.io.
+#![cfg(feature = "explainable-monitor-integration")]
 
 use aprender::classification::LogisticRegression;
 use aprender::explainable::{

@@ -134,6 +134,10 @@ pub(crate) fn run_humaneval(
     if !any_ok {
         // Fallback: structural validation
         if !json_output {
+            // ALB-131: Print the actual inference error instead of swallowing it
+            if let Some(ref err) = first_err {
+                println!("  Inference error: {err}");
+            }
             println!("  Falling back to structural validation (no inference)");
         }
         for (i, problem) in problems.iter().enumerate() {
@@ -236,9 +240,29 @@ fn run_humaneval_inference(
             .into_inner()
     };
 
-    // Load tokenizer
-    let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
-        .ok_or_else(|| "No tokenizer found".to_string())?;
+    // ALB-130/ALB-131: Load tokenizer — try embedded first, then sibling file
+    let apr_file = if model_path.is_dir() {
+        model_path.join("model-best.apr")
+    } else {
+        model_path.to_path_buf()
+    };
+    let tokenizer = if apr_file.extension().is_some_and(|e| e == "apr") {
+        if let Some(embedded) = realizar::apr::AprV2Model::load(&apr_file)
+            .ok()
+            .and_then(|m| m.load_embedded_bpe_tokenizer())
+        {
+            if !json_output {
+                println!("  {} Loaded embedded BPE tokenizer", "✓".green());
+            }
+            embedded
+        } else {
+            realizar::apr::AprV2Model::load_tokenizer(model_path)
+                .ok_or_else(|| "No tokenizer found (no embedded tokenizer and no sibling tokenizer.json)".to_string())?
+        }
+    } else {
+        realizar::apr::AprV2Model::load_tokenizer(model_path)
+            .ok_or_else(|| "No tokenizer found".to_string())?
+    };
 
     if !json_output {
         println!(
