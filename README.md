@@ -43,7 +43,7 @@ Aprender provides implementations of classical machine learning algorithms optim
 - **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 240 tok/s 1.5B single-decode, 851 tok/s 1.5B batched)
 - **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
 - **WebAssembly Ready** — Compile to WASM for browser and edge deployment
-- **11,251 Tests** — 96.35% coverage, zero SATD, TDG 96.9/100 A+
+- **17,573 Tests** — 96.35% coverage, zero SATD, 73 provable contracts, TDG 95.2/100 A+
 
 ## Installation
 

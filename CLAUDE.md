@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.27.0 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 12,587 tests with comprehensive quality gates.
+Aprender is a next-generation machine learning library written in pure Rust. v0.27.5 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 17,573 tests (12,974 lib + 4,154 CLI + 300 contract + 116 oracle + 13 traits + 16 mutation) with comprehensive quality gates. 73 provable YAML contracts, zero orphan annotations.
 
 ## Build Commands
 
 ```bash
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (12587 tests)
+cargo test                   # Full test suite (17573 tests)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -75,8 +75,8 @@ TraceSteps: `Tokenize`, `Embed`, `LayerNorm`, `Attention`, `FFN`, `TransformerBl
 2. **Backend Agnostic** - CPU (SIMD), GPU, WASM via Trueno
 3. **Three-Tier API**: High (`Estimator` trait), Mid (`Optimizer`/`Loss`/`Regularizer`), Low (Trueno primitives)
 
-**Runtime:** `trueno = "0.16.0"` (SIMD-accelerated tensor ops)
-**Dev Tools:** `proptest`, `criterion`, `pmat` v2.216.0, `renacer`, `cargo-mutants`
+**Runtime:** `trueno = "0.16.0"` (SIMD-accelerated tensor ops), `provable-contracts = "0.2"` (contract enforcement)
+**Dev Tools:** `proptest`, `criterion`, `pmat` v3.10.0, `renacer`, `cargo-mutants`, `jugar-probar`
 **Banned:** serde, rayon, tokio, thiserror, ndarray, polars, arrow (see spec)
 
 ## CRITICAL: Realizar-First Architecture
@@ -209,7 +209,7 @@ Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit
 Target: 60% unit, 30% property, 10% integration. Coverage: 96.35% line (target ≥95%).
 
 ```bash
-cargo test                    # All 12587 tests
+cargo test                    # All tests (12,974 lib + 4,599 integration)
 cargo test --lib              # Unit only
 cargo test --test integration # Integration
 cargo test --doc              # Doctests
@@ -246,11 +246,12 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 - `src/format/` - APR format, validation, lint, converter, export
 - `src/text/chat_template.rs` - Chat template engine (6+ formats, sandboxed Jinja2)
 - `crates/apr-cli/` - CLI tool
-- `docs/specifications/APR-SPEC.md` - Full APR format spec
+- `docs/specifications/aprender-spec.md` - Unified spec (single source of truth)
+- `docs/specifications/components/` - 26 component specs (max 500 lines each)
 
 ## APR CLI (`crates/apr-cli/`)
 
-Commands: `run`, `serve`, `compile`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `canary`, `export`, `import`, `convert`, `merge`, `tui`, `probar`, `profile`, `qa`
+53 commands across 9 groups. Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
 apr run hf://openai/whisper-tiny --input audio.wav
@@ -262,7 +263,7 @@ apr import hf://openai/whisper-tiny -o whisper.apr --arch whisper
 apr qa model.gguf --assert-tps 100 --json
 ```
 
-## PMAT Quality Analysis (v2.216.0)
+## PMAT Quality Analysis (v3.10.0)
 
 **Scores:** Project 124/134 (A+), TDG 95.2/100 (A+), Coverage 96.35%, Mutation 85.3%
 **Thresholds:** Coverage ≥95%, Complexity ≤10/fn, SATD 0, TDG ≥95, Mutation ≥85%, 0 unwrap()

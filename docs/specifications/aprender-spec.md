@@ -38,7 +38,7 @@
 
 Aprender ("to learn" in Spanish) is a machine learning library in pure Rust.
 It provides the TOP 10 ML algorithms plus advanced modules (time series, NLP,
-Bayesian, GLM, graph, audio) with 12,972 tests and 96.35% line coverage.
+Bayesian, GLM, graph, audio) with 12,974 tests and 96.35% line coverage.
 
 **The `apr` CLI is the primary interface.** Every capability — inference,
 training, profiling, format conversion, debugging — is accessed through
@@ -92,7 +92,7 @@ correctness — `build.rs` → env vars → `#[contract]` proc macro →
 wrapper — it is the **product**. Features that exist only as library APIs
 without CLI exposure are considered incomplete.
 
-### Command Groups (40+ commands)
+### Command Groups (53 commands)
 
 | Group | Commands | Priority |
 |-------|----------|----------|
