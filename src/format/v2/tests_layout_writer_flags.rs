@@ -113,6 +113,36 @@ fn test_tensor_dtype_bytes_per_element_complete() {
     assert_eq!(TensorDType::Q6K.bytes_per_element(), 0);
 }
 
+/// GH-438: Verify new writes use canonical IDs (128/129), not legacy (8/9)
+#[test]
+fn test_gh438_apr_native_dtype_writes_canonical_ids() {
+    // AprQ4 discriminant should be 128 (not legacy 8)
+    assert_eq!(TensorDType::AprQ4 as u8, 128);
+    // AprQ8 discriminant should be 129 (not legacy 9)
+    assert_eq!(TensorDType::AprQ8 as u8, 129);
+    // GGML-aligned types unchanged
+    assert_eq!(TensorDType::Q4K as u8, 12);
+    assert_eq!(TensorDType::Q6K as u8, 14);
+    assert_eq!(TensorDType::BF16 as u8, 30);
+    assert_eq!(TensorDType::F32 as u8, 0);
+    assert_eq!(TensorDType::F16 as u8, 1);
+}
+
+/// GH-438: Verify roundtrip through to_bytes/from_bytes preserves AprQ4/AprQ8
+#[test]
+fn test_gh438_tensor_index_roundtrip_apr_native() {
+    let entry = TensorIndexEntry::new("test.weight", TensorDType::AprQ4, vec![32, 64], 0, 1000);
+    let bytes = entry.to_bytes();
+    let (parsed, _) = TensorIndexEntry::from_bytes(&bytes).expect("roundtrip parse");
+    assert_eq!(parsed.dtype, TensorDType::AprQ4);
+    assert_eq!(parsed.name, "test.weight");
+
+    let entry = TensorIndexEntry::new("test.bias", TensorDType::AprQ8, vec![64], 1000, 500);
+    let bytes = entry.to_bytes();
+    let (parsed, _) = TensorIndexEntry::from_bytes(&bytes).expect("roundtrip parse");
+    assert_eq!(parsed.dtype, TensorDType::AprQ8);
+}
+
 // ---------------------------------------------------------------------------
 // Header serialization field coverage
 // ---------------------------------------------------------------------------
