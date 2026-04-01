@@ -274,7 +274,7 @@ js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 # UCBD: compile-time contract enforcement via #[contract] proc macro
-provable-contracts-macros = "0.1"
+provable-contracts-macros = "0.2"
 
 # Toyota Way: ONE source of truth for quantization (Step E)
 # NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
@@ -293,7 +293,7 @@ renacer = "0.10"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = "0.1"  # Contract enforcement (dev-only)
+provable-contracts = "0.2"  # Contract enforcement (dev-only)
 entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]
