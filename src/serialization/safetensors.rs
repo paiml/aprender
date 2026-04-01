@@ -276,11 +276,22 @@ fn f32_slice_to_f16_bytes(data: &[f32]) -> Vec<u8> {
 }
 
 /// PMAT-260: Encode tensor data according to dtype, returning (dtype_str, raw_bytes).
+///
+/// GH-439 (poka-yoke): Explicit handling for known dtypes. Unknown dtype strings
+/// emit a warning instead of silently falling back to F32 (the GH-186 pattern).
 fn encode_tensor_for_dtype(data: &[f32], original_dtype: Option<&str>) -> (&'static str, Vec<u8>) {
     match original_dtype {
         Some("BF16") => ("BF16", f32_slice_to_bf16_bytes(data)),
         Some("F16") => ("F16", f32_slice_to_f16_bytes(data)),
-        _ => ("F32", data.iter().flat_map(|f| f.to_le_bytes()).collect()),
+        Some("F32") | None => ("F32", data.iter().flat_map(|f| f.to_le_bytes()).collect()),
+        Some(unknown) => {
+            eprintln!(
+                "[GH-439] encode_tensor_for_dtype: unknown dtype '{}' — \
+                 falling back to F32. This may produce incorrect output.",
+                unknown
+            );
+            ("F32", data.iter().flat_map(|f| f.to_le_bytes()).collect())
+        }
     }
 }
 

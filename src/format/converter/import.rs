@@ -566,6 +566,8 @@ fn streaming_dispatch_quantize(
     shape: Vec<usize>,
     quantize: Option<QuantizationType>,
 ) -> std::result::Result<(), crate::format::v2::V2FormatError> {
+    // GH-439 (poka-yoke): Exhaustive match — no silent fallbacks.
+    // Adding a new QuantizationType variant forces a compile error here.
     let should_skip = super::should_skip_quantization(name, data.len());
     match quantize {
         Some(QuantizationType::Fp16) => writer.add_f16_tensor(name, shape, data),
@@ -575,7 +577,12 @@ fn streaming_dispatch_quantize(
             let q4k_bytes = super::quantize_q4_k_matrix(data, &shape);
             writer.add_q4k_raw_tensor(name, shape, &q4k_bytes)
         }
-        _ => writer.add_f32_tensor(name, shape, data),
+        // Skip quantization: norms, biases, small tensors → store as F32
+        Some(QuantizationType::Int8 | QuantizationType::Int4 | QuantizationType::Q4K) => {
+            writer.add_f32_tensor(name, shape, data)
+        }
+        // No quantization requested → store as F32
+        None => writer.add_f32_tensor(name, shape, data),
     }
 }
 

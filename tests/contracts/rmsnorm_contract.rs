@@ -157,9 +157,11 @@ fn falsify_norm_003_rmsnorm_sign_preservation() {
         let input_sign = data[i].signum();
         let output_sign = y.data()[i].signum();
         assert_eq!(
-            input_sign, output_sign,
+            input_sign,
+            output_sign,
             "FALSIFY-NORM-003: sign flipped at [{i}]: input={}, output={}",
-            data[i], y.data()[i]
+            data[i],
+            y.data()[i]
         );
     }
 }

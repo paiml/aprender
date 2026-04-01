@@ -105,14 +105,14 @@ fn test_tensor_dtype() {
     assert_eq!(TensorDType::F16.bytes_per_element(), 2);
     assert_eq!(TensorDType::F64.bytes_per_element(), 8);
     assert_eq!(TensorDType::I8.bytes_per_element(), 1);
-    assert_eq!(TensorDType::Q4.bytes_per_element(), 0);
+    assert_eq!(TensorDType::AprQ4.bytes_per_element(), 0);
 }
 
 #[test]
 fn test_tensor_dtype_name() {
     assert_eq!(TensorDType::F32.name(), "f32");
     assert_eq!(TensorDType::BF16.name(), "bf16");
-    assert_eq!(TensorDType::Q8.name(), "q8");
+    assert_eq!(TensorDType::AprQ8.name(), "q8");
 }
 
 #[test]

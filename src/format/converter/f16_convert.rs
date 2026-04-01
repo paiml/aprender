@@ -170,6 +170,8 @@ fn add_tensor_with_quantization(
 ) {
     let should_skip = should_skip_quantization(name, data.len());
 
+    // GH-439 (poka-yoke): Exhaustive match — no silent fallbacks.
+    // Adding a new QuantizationType variant forces a compile error here.
     match quantize {
         Some(QuantizationType::Fp16) => {
             writer.add_f16_tensor(name, shape.to_vec(), data);
@@ -184,7 +186,12 @@ fn add_tensor_with_quantization(
             let q4k_bytes = quantize_q4_k(data);
             writer.add_q4k_raw_tensor(name, shape.to_vec(), q4k_bytes);
         }
-        _ => {
+        // Skip quantization: norms, biases, small tensors → store as F32
+        Some(QuantizationType::Int8 | QuantizationType::Int4 | QuantizationType::Q4K) => {
+            writer.add_f32_tensor(name, shape.to_vec(), data);
+        }
+        // No quantization requested → store as F32
+        None => {
             writer.add_f32_tensor(name, shape.to_vec(), data);
         }
     }

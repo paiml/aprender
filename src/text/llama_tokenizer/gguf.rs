@@ -238,13 +238,24 @@ impl LlamaTokenizer {
     }
 
     /// Return the byte size of a single GGUF scalar value for the given type.
+    ///
+    /// GH-439 (poka-yoke): Explicit GGUF spec type codes (0-12).
+    /// Returns 0 for non-scalar types (string=8, array=9) and unknown types.
     fn gguf_scalar_size(val_type: u32) -> usize {
         match val_type {
             0 | 1 | 7 => 1,   // u8, i8, bool
             2 | 3 => 2,       // u16, i16
-            4..=6 => 4,       // u32, i32, f32
-            10..=12 => 8,     // u64, i64, f64
-            _ => 0,
+            4..=6 => 4,        // u32, i32, f32
+            10..=12 => 8,      // u64, i64, f64
+            8 | 9 => 0,       // string, array — not scalar, handled separately
+            _ => {
+                eprintln!(
+                    "[GH-439] gguf_scalar_size: unknown GGUF value type {} — \
+                     returning 0 (will skip value)",
+                    val_type
+                );
+                0
+            }
         }
     }
 
@@ -274,13 +285,22 @@ impl LlamaTokenizer {
         offset
     }
 
+    /// GH-439 (poka-yoke): Explicit GGUF value type handling.
+    /// Unknown types log a warning instead of silently returning unchanged offset.
     fn skip_value(data: &[u8], offset: usize, val_type: u32) -> usize {
         let scalar = Self::gguf_scalar_size(val_type);
         if scalar > 0 { return offset + scalar; }
         match val_type {
             8 => Self::skip_gguf_string(data, offset),
             9 => Self::skip_gguf_array(data, offset),
-            _ => offset,
+            _ => {
+                eprintln!(
+                    "[GH-439] skip_value: unknown GGUF value type {} at offset {} — \
+                     cannot determine size, parsing may be corrupted",
+                    val_type, offset
+                );
+                offset
+            }
         }
     }
 }

@@ -64,12 +64,14 @@ fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
         12 => Ok(TensorDType::Q4K),
         14 => Ok(TensorDType::Q6K),
         2 | 3 | 6 | 8 | 13 => {
+            // GH-439 (poka-yoke): Explicit variant matching — no inner wildcard.
             let (dtype_name, suggestion) = match dtype {
                 2 => ("Q4_0", "q4_k"),
                 3 => ("Q4_1", "q4_k"),
                 6 => ("Q5_0", "q6_k"),
                 8 => ("Q8_0", "q6_k"),
-                _ => ("Q5_K", "q6_k"),
+                13 => ("Q5_K", "q6_k"),
+                _ => unreachable!("outer arm guarantees dtype is 2|3|6|8|13"),
             };
             Err(AprenderError::FormatError {
                 message: format!(

@@ -74,8 +74,13 @@ fn test_flags_default_is_empty() {
 
 #[test]
 fn test_tensor_dtype_from_u8_q4_q8_q4k_q6k() {
-    assert_eq!(TensorDType::from_u8(8), Some(TensorDType::Q4));
-    assert_eq!(TensorDType::from_u8(9), Some(TensorDType::Q8));
+    // GH-438: Legacy IDs 8/9 map to AprQ4/AprQ8 for backwards compat
+    assert_eq!(TensorDType::from_u8(8), Some(TensorDType::AprQ4));
+    assert_eq!(TensorDType::from_u8(9), Some(TensorDType::AprQ8));
+    // New canonical IDs (>=128)
+    assert_eq!(TensorDType::from_u8(128), Some(TensorDType::AprQ4));
+    assert_eq!(TensorDType::from_u8(129), Some(TensorDType::AprQ8));
+    // GGML-aligned types
     assert_eq!(TensorDType::from_u8(12), Some(TensorDType::Q4K));
     assert_eq!(TensorDType::from_u8(14), Some(TensorDType::Q6K));
 }
@@ -87,7 +92,7 @@ fn test_tensor_dtype_names_complete() {
     assert_eq!(TensorDType::I64.name(), "i64");
     assert_eq!(TensorDType::I8.name(), "i8");
     assert_eq!(TensorDType::U8.name(), "u8");
-    assert_eq!(TensorDType::Q4.name(), "q4");
+    assert_eq!(TensorDType::AprQ4.name(), "q4");
     assert_eq!(TensorDType::Q4K.name(), "q4_k");
     assert_eq!(TensorDType::Q6K.name(), "q6_k");
 }
@@ -102,8 +107,8 @@ fn test_tensor_dtype_bytes_per_element_complete() {
     assert_eq!(TensorDType::I64.bytes_per_element(), 8);
     assert_eq!(TensorDType::I8.bytes_per_element(), 1);
     assert_eq!(TensorDType::U8.bytes_per_element(), 1);
-    assert_eq!(TensorDType::Q8.bytes_per_element(), 1);
-    assert_eq!(TensorDType::Q4.bytes_per_element(), 0);
+    assert_eq!(TensorDType::AprQ8.bytes_per_element(), 1);
+    assert_eq!(TensorDType::AprQ4.bytes_per_element(), 0);
     assert_eq!(TensorDType::Q4K.bytes_per_element(), 0);
     assert_eq!(TensorDType::Q6K.bytes_per_element(), 0);
 }

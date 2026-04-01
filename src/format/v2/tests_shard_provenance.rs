@@ -246,7 +246,7 @@ fn test_q8_tensor_roundtrip() {
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let entry = reader.get_tensor("weights").expect("tensor exists");
-    assert_eq!(entry.dtype, TensorDType::Q8);
+    assert_eq!(entry.dtype, TensorDType::AprQ8);
     // Q8 = 4 bytes scale + 1 byte per element = 132 bytes
     assert_eq!(entry.size, 132);
 
@@ -279,7 +279,7 @@ fn test_q4_tensor_roundtrip() {
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let entry = reader.get_tensor("weights").expect("tensor exists");
-    assert_eq!(entry.dtype, TensorDType::Q4);
+    assert_eq!(entry.dtype, TensorDType::AprQ4);
     // Q4 = 2 blocks × 18 bytes/block = 36 bytes
     assert_eq!(entry.size, 36);
 

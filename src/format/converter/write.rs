@@ -200,6 +200,8 @@ fn build_f32_custom_metadata(
 /// directly to avoid precision loss. Returns `true` if passthrough was used.
 /// Dispatch quantization for a single tensor. Shared by both native F32 and
 /// dequantized-F16 paths to avoid duplicating the match logic.
+/// GH-439 (poka-yoke): Exhaustive match — no silent fallbacks.
+/// Adding a new QuantizationType variant forces a compile error here.
 fn dispatch_quantize(
     writer: &mut AprV2Writer,
     name: &str,
@@ -225,7 +227,12 @@ fn dispatch_quantize(
             let q4k_bytes = super::quantize_q4_k_matrix(data, &shape);
             writer.add_q4k_raw_tensor(name, shape, q4k_bytes);
         }
-        _ => {
+        // Skip quantization: norms, biases, small tensors → store as F32
+        Some(QuantizationType::Int8 | QuantizationType::Int4 | QuantizationType::Q4K) => {
+            writer.add_f32_tensor(name, shape, data);
+        }
+        // No quantization requested → store as F32
+        None => {
             writer.add_f32_tensor(name, shape, data);
         }
     }

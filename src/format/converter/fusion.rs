@@ -94,16 +94,28 @@ fn build_fused_tensors_f32(
 /// For each fusion rule and each layer, reads raw tensor bytes from the APR reader,
 /// concatenates them, and returns fused GGUF tensors.
 /// Map APR tensor dtype to GGML type for raw byte fusion.
-fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> crate::format::gguf::GgmlType {
+///
+/// GH-439 (poka-yoke): Returns `None` for dtypes with no GGUF equivalent,
+/// instead of silently falling back to F32 (the GH-186 pattern).
+fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> Option<crate::format::gguf::GgmlType> {
     use crate::format::gguf::GgmlType;
     use crate::format::v2::TensorDType;
     match dtype {
-        TensorDType::F32 => GgmlType::F32,
-        TensorDType::F16 => GgmlType::F16,
-        TensorDType::Q4K => GgmlType::Q4K,
-        TensorDType::Q6K => GgmlType::Q6K,
-        TensorDType::Q8 => GgmlType::Q8_0,
-        _ => GgmlType::F32,
+        TensorDType::F32 => Some(GgmlType::F32),
+        TensorDType::F16 => Some(GgmlType::F16),
+        TensorDType::Q4K => Some(GgmlType::Q4K),
+        TensorDType::Q6K => Some(GgmlType::Q6K),
+        TensorDType::AprQ8 => Some(GgmlType::Q8_0),
+        TensorDType::BF16 | TensorDType::F64 | TensorDType::I32
+        | TensorDType::I64 | TensorDType::I8 | TensorDType::U8
+        | TensorDType::AprQ4 => {
+            eprintln!(
+                "[GH-439] apr_dtype_to_ggml: unsupported dtype {:?} — \
+                 no GGUF equivalent, skipping tensor",
+                dtype
+            );
+            None
+        }
     }
 }
 

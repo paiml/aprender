@@ -127,39 +127,78 @@ impl TensorIndexEntry {
     }
 }
 
-/// Tensor data type
+/// Tensor data type for APR v2 format.
+///
+/// # GGML Standard Compliance (GH-438)
+///
+/// CRITICAL: IDs in the 0–31 range MUST match the GGML standard (llama.cpp ggml.h).
+/// realizar's `GgmlQuantType::from_id()` decodes these bytes directly.
+///
+/// GGML standard reference (authoritative: ggml.h `enum ggml_type`):
+///   F32=0, F16=1, Q4_0=2, Q4_1=3, Q5_0=6, Q5_1=7, Q8_0=8, Q8_1=9,
+///   Q2_K=10, Q3_K=11, Q4_K=12, Q5_K=13, Q6_K=14, Q8_K=15,
+///   IQ2_XXS=16, IQ2_XS=17, ..., BF16=30
+///
+/// APR-native quantization types (AprQ4, AprQ8) use IDs >= 128 to avoid
+/// collision with the GGML ID space. These have different block formats
+/// than any GGML type and must NOT share IDs with GGML types.
+///
+/// Legacy note: APR files written before GH-438 used IDs 8 (Q4) and 9 (Q8),
+/// which collide with GGML Q8_0=8 and Q8_1=9. `from_u8()` accepts both
+/// old and new IDs for backwards compatibility.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum TensorDType {
-    /// 32-bit float
+    /// 32-bit float (GGML type 0)
     F32 = 0,
-    /// 16-bit float (half precision)
+    /// 16-bit float (GGML type 1)
     F16 = 1,
-    /// Brain float 16 (GGML type 30 — must match GgmlQuantType::BF16)
+    /// Brain float 16 (GGML type 30)
     BF16 = 30,
-    /// 64-bit float
+    /// 64-bit float (APR extension, not in GGML)
     F64 = 3,
-    /// 32-bit signed integer
+    /// 32-bit signed integer (APR extension, not in GGML)
     I32 = 4,
-    /// 64-bit signed integer
+    /// 64-bit signed integer (APR extension, not in GGML)
     I64 = 5,
-    /// 8-bit signed integer (quantized)
+    /// 8-bit signed integer (APR extension, not in GGML)
     I8 = 6,
-    /// 8-bit unsigned integer
+    /// 8-bit unsigned integer (APR extension, not in GGML)
     U8 = 7,
-    /// 4-bit quantized (packed, 2 values per byte)
-    Q4 = 8,
-    /// 8-bit quantized with scale
-    Q8 = 9,
-    /// GGUF Q4_K format (raw super-blocks, ~4.5 bits/weight)
+    /// APR-native 4-bit symmetric block quantization (NOT GGML Q4_0/Q4_K).
+    /// Format: per-32-block [scale: f16 (2B)] + [16 packed nibble bytes]
+    /// ID 128: outside GGML range to prevent collision.
+    /// Legacy: was ID 8 (collided with GGML Q8_0). See GH-438.
+    AprQ4 = 128,
+    /// APR-native 8-bit single-scale quantization (NOT GGML Q8_0/Q8_1).
+    /// Format: [scale: f32 (4B)] + [i8 x N] (single whole-tensor scale)
+    /// ID 129: outside GGML range to prevent collision.
+    /// Legacy: was ID 9 (collided with GGML Q8_1). See GH-438.
+    AprQ8 = 129,
+    /// GGUF Q4_K format (GGML type 12, raw super-blocks, ~4.5 bits/weight)
     /// Format: 256-element blocks with super-block scales
     Q4K = 12,
-    /// GGUF Q6_K format (raw super-blocks, ~6.5 bits/weight)
+    /// GGUF Q6_K format (GGML type 14, raw super-blocks, ~6.5 bits/weight)
     Q6K = 14,
 }
 
+// ============================================================================
+// Compile-time assertions: GGML-aligned IDs must match the standard (GH-438)
+// ============================================================================
+const _: () = assert!(TensorDType::F32 as u8 == 0, "F32 must be GGML type 0");
+const _: () = assert!(TensorDType::F16 as u8 == 1, "F16 must be GGML type 1");
+const _: () = assert!(TensorDType::BF16 as u8 == 30, "BF16 must be GGML type 30");
+const _: () = assert!(TensorDType::Q4K as u8 == 12, "Q4K must be GGML type 12 (Q4_K)");
+const _: () = assert!(TensorDType::Q6K as u8 == 14, "Q6K must be GGML type 14 (Q6_K)");
+// APR-native types must be outside GGML range (>=128)
+const _: () = assert!(TensorDType::AprQ4 as u8 >= 128, "AprQ4 must be outside GGML range");
+const _: () = assert!(TensorDType::AprQ8 as u8 >= 128, "AprQ8 must be outside GGML range");
+
 impl TensorDType {
-    /// Convert from u8
+    /// Convert from u8.
+    ///
+    /// Accepts both current IDs (128=AprQ4, 129=AprQ8) and legacy IDs
+    /// (8=AprQ4, 9=AprQ8) for backwards compatibility with pre-GH-438 APR files.
     #[must_use]
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
@@ -171,8 +210,9 @@ impl TensorDType {
             5 => Some(Self::I64),
             6 => Some(Self::I8),
             7 => Some(Self::U8),
-            8 => Some(Self::Q4),
-            9 => Some(Self::Q8),
+            // GH-438: Legacy IDs 8/9 (collided with GGML Q8_0/Q8_1)
+            8 | 128 => Some(Self::AprQ4),
+            9 | 129 => Some(Self::AprQ8),
             12 => Some(Self::Q4K),
             14 => Some(Self::Q6K),
             _ => None,
@@ -186,8 +226,8 @@ impl TensorDType {
             Self::F32 | Self::I32 => 4,
             Self::F16 | Self::BF16 => 2,
             Self::F64 | Self::I64 => 8,
-            Self::I8 | Self::U8 | Self::Q8 => 1,
-            Self::Q4 | Self::Q4K | Self::Q6K => 0, // Packed/block formats, need special handling
+            Self::I8 | Self::U8 | Self::AprQ8 => 1,
+            Self::AprQ4 | Self::Q4K | Self::Q6K => 0, // Packed/block formats, need special handling
         }
     }
 
@@ -203,8 +243,8 @@ impl TensorDType {
             Self::I64 => "i64",
             Self::I8 => "i8",
             Self::U8 => "u8",
-            Self::Q4 => "q4",
-            Self::Q8 => "q8",
+            Self::AprQ4 => "q4",
+            Self::AprQ8 => "q8",
             Self::Q4K => "q4_k",
             Self::Q6K => "q6_k",
         }

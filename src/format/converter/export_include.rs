@@ -16,7 +16,7 @@ fn collect_raw_fusion_sources(
 
         all_bytes.extend_from_slice(raw);
         all_shapes.push(entry.shape.clone());
-        dtype = apr_dtype_to_ggml(entry.dtype);
+        dtype = apr_dtype_to_ggml(entry.dtype)?;
     }
     Some((all_bytes, all_shapes, dtype))
 }

@@ -131,7 +131,7 @@ fn test_reader_ref_get_tensor_as_f32_unsupported_dtype() {
 fn test_reader_get_tensor_as_f32_q8_too_short() {
     // Q8 data needs at least 4 bytes for scale
     let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
-    writer.add_tensor("short_q8", TensorDType::Q8, vec![1], vec![0u8; 2]);
+    writer.add_tensor("short_q8", TensorDType::AprQ8, vec![1], vec![0u8; 2]);
     let bytes = writer.write().expect("write");
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
@@ -144,7 +144,7 @@ fn test_reader_get_tensor_as_f32_q8_too_short() {
 #[test]
 fn test_reader_ref_get_tensor_as_f32_q8_too_short() {
     let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
-    writer.add_tensor("short_q8", TensorDType::Q8, vec![1], vec![0u8; 2]);
+    writer.add_tensor("short_q8", TensorDType::AprQ8, vec![1], vec![0u8; 2]);
     let bytes = writer.write().expect("write");
     let reader = AprV2ReaderRef::from_bytes(&bytes).expect("read");
 
@@ -184,7 +184,7 @@ fn test_writer_add_q8_empty_tensor() {
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let entry = reader.get_tensor("empty_q8").expect("tensor exists");
-    assert_eq!(entry.dtype, TensorDType::Q8);
+    assert_eq!(entry.dtype, TensorDType::AprQ8);
     assert_eq!(entry.size, 0);
 }
 
@@ -196,7 +196,7 @@ fn test_writer_add_q4_empty_tensor() {
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let entry = reader.get_tensor("empty_q4").expect("tensor exists");
-    assert_eq!(entry.dtype, TensorDType::Q4);
+    assert_eq!(entry.dtype, TensorDType::AprQ4);
     assert_eq!(entry.size, 0);
 }
 
@@ -228,7 +228,7 @@ fn test_writer_add_q4_partial_block() {
     let reader = AprV2Reader::from_bytes(&bytes).expect("read");
 
     let entry = reader.get_tensor("partial_q4").expect("tensor");
-    assert_eq!(entry.dtype, TensorDType::Q4);
+    assert_eq!(entry.dtype, TensorDType::AprQ4);
     let result = reader.get_tensor_as_f32("partial_q4").expect("dequant");
     assert_eq!(result.len(), 20);
 }

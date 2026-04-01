@@ -406,13 +406,25 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
             })?;
 
         // Map APR dtype → GGUF dtype (same discriminant values)
+        // GH-439 (poka-yoke): Exhaustive match — no silent fallbacks.
+        // Adding a new TensorDType variant forces a compile error here.
         let gguf_dtype = match entry.dtype {
             TensorDType::F32 => GgmlType::F32,
             TensorDType::F16 => GgmlType::F16,
             TensorDType::Q4K => GgmlType::Q4K,
             TensorDType::Q6K => GgmlType::Q6K,
-            TensorDType::Q8 => GgmlType::Q8_0,
-            _ => GgmlType::F32, // Fallback for BF16, I32, etc.
+            TensorDType::AprQ8 => GgmlType::Q8_0,
+            TensorDType::BF16 | TensorDType::F64 | TensorDType::I32
+            | TensorDType::I64 | TensorDType::I8 | TensorDType::U8
+            | TensorDType::AprQ4 => {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Tensor '{}' has dtype {:?} which has no GGUF equivalent. \
+                         Convert to F32/F16 first with `apr convert`.",
+                        name, entry.dtype
+                    ),
+                });
+            }
         };
 
         // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
