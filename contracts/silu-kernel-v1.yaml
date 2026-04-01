@@ -1,0 +1,63 @@
+# SiLU Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("silu-kernel-v1")]
+# Consumer: src/nn/functional.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "SiLU (Swish) activation function correctness"
+  references:
+    - "Elfwing et al. (2018). Sigmoid-Weighted Linear Units for Neural Network Function Approximation. Neural Networks"
+    - "Ramachandran et al. (2017). Searching for Activation Functions. arXiv:1710.05941"
+  enforcement_level: "standard"
+
+equations:
+  silu:
+    formula: "SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x))"
+    domain: "x in R"
+    codomain: "y in R, y >= -0.2785 (global minimum at x approx -1.2785)"
+    invariants:
+      - "SiLU(0) = 0"
+      - "SiLU is smooth (infinitely differentiable)"
+      - "SiLU(x) -> x as x -> +inf"
+      - "SiLU(x) -> 0 as x -> -inf"
+      - "SiLU is not monotonic (has a global minimum near x = -1.2785)"
+    preconditions:
+      - "x is finite"
+    postconditions:
+      - "result is finite when x is finite"
+      - "result >= -0.2786"
+
+  silu_derivative:
+    formula: "SiLU'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))"
+    domain: "x in R"
+    codomain: "y in R, y >= -0.1"
+    invariants:
+      - "SiLU'(0) = 0.5"
+      - "SiLU'(x) -> 1 as x -> +inf"
+      - "SiLU'(x) -> 0 as x -> -inf"
+    preconditions:
+      - "x is finite"
+    postconditions:
+      - "result is finite when x is finite"
+
+proof_obligations:
+  - type: invariant
+    property: "Fixed point at zero"
+    formal: "SiLU(0.0) == 0.0"
+  - type: bound
+    property: "Global minimum bound"
+    formal: "forall x in R: SiLU(x) >= -0.2786"
+
+falsification_tests:
+  - id: "FALSIFY-SILU-001"
+    rule: "Numerical stability"
+    prediction: "SiLU(x) is finite for all finite f32 inputs including extreme values"
+    test: "Evaluate at x = -88.0, -500.0, 88.0, 500.0, f32::MIN, f32::MAX, and proptest 10000 f32 values"
+    if_fails: "exp(-x) overflow for large positive x or underflow for large negative x"
+  - id: "FALSIFY-SILU-002"
+    rule: "Lower bound"
+    prediction: "SiLU(x) >= -0.2786 for all finite f32 inputs"
+    test: "proptest 50000 f32 values in [-100.0, 100.0] and verify minimum bound"
+    if_fails: "Formula implementation error (e.g., missing the x * sigmoid(x) product)"

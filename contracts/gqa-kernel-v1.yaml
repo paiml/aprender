@@ -1,0 +1,87 @@
+# GQA Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("gqa-kernel-v1")]
+# Consumer: src/nn/transformer/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Grouped Query Attention correctness and head grouping"
+  references:
+    - "Ainslie et al. (2023). GQA: Training Generalized Multi-Query Transformer Models. ICML"
+    - "contracts/attention-kernel-v1.yaml (parent spec)"
+  enforcement_level: "standard"
+
+equations:
+  gqa_head_grouping:
+    formula: "group_size = num_q_heads / num_kv_heads; for query head q_i, kv_head = i / group_size"
+    domain: "num_q_heads >= num_kv_heads >= 1, num_q_heads % num_kv_heads == 0"
+    codomain: "kv_head_index in [0, num_kv_heads)"
+    invariants:
+      - "Each KV head serves exactly group_size query heads"
+      - "group_size is always a positive integer"
+      - "When num_q_heads == num_kv_heads, degenerates to standard MHA"
+      - "When num_kv_heads == 1, degenerates to Multi-Query Attention"
+    preconditions:
+      - "num_q_heads >= num_kv_heads"
+      - "num_q_heads % num_kv_heads == 0"
+      - "num_kv_heads >= 1"
+    postconditions:
+      - "kv_head_index < num_kv_heads"
+      - "All query heads in a group produce same KV head index"
+
+  kv_head_repeat:
+    formula: "K_expanded[i] = K[i / group_size], V_expanded[i] = V[i / group_size] for i in [0, num_q_heads)"
+    domain: "K in R^{num_kv_heads x seq x d_k}, V in R^{num_kv_heads x seq x d_v}, group_size >= 1"
+    codomain: "K_expanded in R^{num_q_heads x seq x d_k}, V_expanded in R^{num_q_heads x seq x d_v}"
+    invariants:
+      - "Expanded KV has num_q_heads heads"
+      - "Content is repeated, not interpolated"
+    preconditions:
+      - "K.shape()[0] == num_kv_heads"
+      - "V.shape()[0] == num_kv_heads"
+    postconditions:
+      - "K_expanded.shape()[0] == num_q_heads"
+      - "V_expanded.shape()[0] == num_q_heads"
+      - "forall i: K_expanded[i] == K[i / group_size]"
+
+  gqa_attention:
+    formula: "GQA(Q, K, V) = Concat(head_0, ..., head_{h-1}) * W_o where head_i = Attention(Q_i, K_{i/g}, V_{i/g})"
+    domain: "Q in R^{num_q_heads x seq x d_k}, K in R^{num_kv_heads x seq x d_k}, V in R^{num_kv_heads x seq x d_v}"
+    codomain: "out in R^{seq x d_model}"
+    invariants:
+      - "Output dimension equals num_q_heads * d_v"
+      - "KV cache size is num_kv_heads * seq * (d_k + d_v), NOT num_q_heads"
+    preconditions:
+      - "Q.shape()[-1] == K.shape()[-1]"
+      - "K.shape()[0] == V.shape()[0] == num_kv_heads"
+    postconditions:
+      - "result.shape() == [seq, num_q_heads * d_v]"
+
+proof_obligations:
+  - type: invariant
+    property: "Head grouping is a valid partition"
+    formal: "forall q in [0, num_q_heads): q / group_size < num_kv_heads"
+  - type: equivalence
+    property: "GQA degenerates to MHA when num_kv_heads == num_q_heads"
+    formal: "GQA(Q, K, V, num_kv_heads=h) == MHA(Q, K, V, num_heads=h)"
+  - type: bound
+    property: "KV cache memory proportional to num_kv_heads, not num_q_heads"
+    formal: "kv_cache_size == num_kv_heads * seq_len * (d_k + d_v) * sizeof(dtype)"
+
+falsification_tests:
+  - id: "FALSIFY-GQA-001"
+    rule: "MHA equivalence"
+    prediction: "GQA with num_kv_heads == num_q_heads produces identical output to standard MHA"
+    test: "Compare GQA(h_kv=8) vs MHA(h=8) with same weights, 1000 random inputs"
+    if_fails: "Head index mapping off-by-one or repeat_interleave bug"
+  - id: "FALSIFY-GQA-002"
+    rule: "Head group isolation"
+    prediction: "Perturbing KV head j only affects query heads in group [j*g, (j+1)*g)"
+    test: "For each KV head, perturb its values and check only expected query head outputs change"
+    if_fails: "Head grouping index calculation wrong (integer division error)"
+  - id: "FALSIFY-GQA-003"
+    rule: "MQA equivalence"
+    prediction: "GQA with num_kv_heads == 1 produces identical output to Multi-Query Attention"
+    test: "Compare GQA(h_kv=1) vs MQA with same single KV head, 1000 random inputs"
+    if_fails: "Single KV head not broadcast to all query heads"

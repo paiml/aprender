@@ -1,0 +1,83 @@
+# L-BFGS Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("lbfgs-kernel-v1")]
+# Consumer: src/optim/lbfgs.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Limited-memory BFGS optimizer two-loop recursion and line search correctness"
+  references:
+    - "Nocedal (1980). Updating Quasi-Newton Matrices with Limited Storage. Mathematics of Computation"
+    - "Liu & Nocedal (1989). On the Limited Memory BFGS Method for Large Scale Optimization. Mathematical Programming"
+  enforcement_level: "standard"
+
+equations:
+  two_loop_recursion:
+    formula: "H_k * g_k via two-loop: q = g_k; for i = k-1..k-m: alpha_i = rho_i * s_i^T * q, q -= alpha_i * y_i; r = H_0 * q; for i = k-m..k-1: beta = rho_i * y_i^T * r, r += s_i * (alpha_i - beta); return r"
+    domain: "g_k in R^n (gradient), s_i = x_{i+1} - x_i, y_i = g_{i+1} - g_i, rho_i = 1 / (y_i^T * s_i), m history pairs"
+    codomain: "direction d = -H_k * g_k in R^n"
+    invariants:
+      - "Search direction is a descent direction: d^T * g_k < 0 (when H_k is positive definite)"
+      - "Memory usage is O(m * n) not O(n^2)"
+      - "H_0 scaling: gamma_k = (s_{k-1}^T * y_{k-1}) / (y_{k-1}^T * y_{k-1})"
+    preconditions:
+      - "g_k is finite and non-zero"
+      - "y_i^T * s_i > 0 for all stored pairs (curvature condition)"
+      - "m >= 1 (history size)"
+    postconditions:
+      - "result.len() == g_k.len()"
+      - "result is finite"
+      - "dot(result, g_k) < 0 (descent direction)"
+
+  wolfe_line_search:
+    formula: "Find alpha > 0 satisfying: (i) f(x + alpha*d) <= f(x) + c1*alpha*g^T*d (Armijo), (ii) |g(x + alpha*d)^T * d| <= c2 * |g^T * d| (strong Wolfe)"
+    domain: "f: R^n -> R differentiable, d in R^n descent direction, 0 < c1 < c2 < 1"
+    codomain: "alpha > 0 satisfying Wolfe conditions"
+    invariants:
+      - "Step length alpha > 0"
+      - "Sufficient decrease (Armijo condition) guarantees progress"
+      - "Curvature condition ensures y^T * s > 0 for BFGS update"
+    preconditions:
+      - "d is a descent direction: g^T * d < 0"
+      - "0 < c1 < c2 < 1 (typically c1 = 1e-4, c2 = 0.9)"
+      - "f is bounded below"
+    postconditions:
+      - "alpha > 0.0"
+      - "f(x + alpha*d) <= f(x) + c1*alpha*g_T_d (Armijo)"
+
+  curvature_update:
+    formula: "s_k = x_{k+1} - x_k = alpha_k * d_k, y_k = g_{k+1} - g_k, store (s_k, y_k) if y_k^T * s_k > 0"
+    domain: "x_k, x_{k+1} in R^n, g_k, g_{k+1} in R^n"
+    codomain: "Updated history buffer with at most m pairs"
+    invariants:
+      - "y_k^T * s_k > 0 (positive curvature, guaranteed by Wolfe conditions)"
+      - "History buffer size <= m (oldest pair discarded when full)"
+    preconditions:
+      - "Wolfe conditions satisfied (ensures curvature condition)"
+    postconditions:
+      - "history.len() <= m"
+      - "forall (s, y) in history: dot(y, s) > 0"
+
+proof_obligations:
+  - type: invariant
+    property: "Descent direction"
+    formal: "dot(two_loop_recursion(g, history), g) < 0 when all y^T*s > 0"
+  - type: invariant
+    property: "Curvature condition preserved"
+    formal: "forall (s_i, y_i) in history: dot(y_i, s_i) > 0"
+  - type: bound
+    property: "Convergence on strongly convex functions"
+    formal: "||g_k|| -> 0 as k -> inf for L-smooth mu-strongly-convex f, rate superlinear"
+
+falsification_tests:
+  - id: "FALSIFY-LBFGS-001"
+    rule: "Descent direction"
+    prediction: "dot(direction, gradient) < 0 for all iterations with valid curvature pairs"
+    test: "Run L-BFGS on 500 random quadratic functions (f(x) = x^T*A*x + b^T*x, A positive definite), check descent at each iteration"
+    if_fails: "Two-loop recursion index ordering wrong or H_0 scaling inverted"
+  - id: "FALSIFY-LBFGS-002"
+    rule: "Convergence on convex quadratics"
+    prediction: "L-BFGS converges to optimum (||g|| < 1e-6) within 100*n iterations for n-dim quadratic"
+    test: "Random positive definite quadratics, n in 2..100, m in 3..20, verify convergence"
+    if_fails: "Line search fails to satisfy Wolfe conditions or history corruption breaks H_k approximation"

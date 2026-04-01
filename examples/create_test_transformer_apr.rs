@@ -20,7 +20,8 @@ fn main() {
     metadata.description = Some("Minimal test transformer for APR inference testing".to_string());
 
     // Set transformer config (CRITICAL for realizar inference)
-    metadata.architecture = Some("qwen2".to_string());
+    // Use llama architecture (no bias required, unlike qwen2 which needs attn_q_bias)
+    metadata.architecture = Some("llama".to_string());
     metadata.hidden_size = Some(hidden_size);
     metadata.num_layers = Some(num_layers);
     metadata.num_heads = Some(num_heads);

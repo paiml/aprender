@@ -1,0 +1,84 @@
+# PageRank Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("pagerank-kernel-v1")]
+# Consumer: src/graph/centrality.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "PageRank power iteration correctness and convergence"
+  references:
+    - "Page et al. (1999). The PageRank Citation Ranking: Bringing Order to the Web. Stanford"
+    - "Langville & Meyer (2004). Deeper Inside PageRank. Internet Mathematics"
+  enforcement_level: "standard"
+
+equations:
+  pagerank:
+    formula: "PR(i) = (1 - d) / N + d * sum_{j in B(i)} PR(j) / L(j)"
+    domain: "G = (V, E) directed graph, N = |V| >= 1, d in (0, 1), B(i) = set of nodes linking to i, L(j) = out-degree of j"
+    codomain: "PR in R^N, PR(i) > 0, sum(PR) = 1"
+    invariants:
+      - "PageRank is a probability distribution: sum(PR) = 1.0"
+      - "All PageRank values are strictly positive: PR(i) > 0"
+      - "PageRank is the stationary distribution of the random surfer Markov chain"
+    preconditions:
+      - "N >= 1"
+      - "0.0 < d < 1.0 (damping factor, typically 0.85)"
+      - "Graph adjacency is well-defined (no self-contradictory edges)"
+    postconditions:
+      - "result.len() == N"
+      - "|sum(result) - 1.0| < 1e-6"
+      - "forall i: result[i] > 0.0"
+
+  power_iteration:
+    formula: "PR^{(t+1)} = (1 - d) / N * 1 + d * M^T * PR^{(t)} where M[i,j] = 1/L(j) if j->i, else 0"
+    domain: "PR^{(0)} = 1/N * 1 (uniform), M is column-stochastic transition matrix"
+    codomain: "PR^{(t)} in R^N converging to stationary distribution"
+    invariants:
+      - "||PR^{(t+1)} - PR^{(t)}||_1 is monotonically non-increasing"
+      - "Convergence rate is O(d^t) where d is the damping factor"
+    preconditions:
+      - "Initial PR is a valid probability distribution"
+      - "Convergence threshold epsilon > 0"
+    postconditions:
+      - "||PR^{(final)} - PR^{(final-1)}||_1 < epsilon"
+
+  dangling_nodes:
+    formula: "For dangling node j (L(j) = 0): distribute PR(j) uniformly as (1/N) * PR(j) to all nodes"
+    domain: "Dangling nodes: nodes with out-degree 0"
+    codomain: "Adjusted transition preserving stochasticity"
+    invariants:
+      - "Dangling node correction preserves sum(PR) = 1"
+      - "Without correction, probability mass leaks from dangling nodes"
+    preconditions:
+      - "Graph may contain dangling nodes"
+    postconditions:
+      - "Transition matrix remains column-stochastic after correction"
+
+proof_obligations:
+  - type: invariant
+    property: "Probability distribution"
+    formal: "|sum(PR) - 1.0| < 1e-6 after convergence"
+  - type: invariant
+    property: "Strict positivity"
+    formal: "forall i in V: PR(i) > 0.0 (guaranteed by teleportation)"
+  - type: bound
+    property: "Convergence"
+    formal: "Power iteration converges in O(log(N/epsilon) / log(1/d)) iterations"
+
+falsification_tests:
+  - id: "FALSIFY-PR-001"
+    rule: "Probability distribution"
+    prediction: "|sum(PR) - 1.0| < 1e-6 for all graphs with N in 1..1000"
+    test: "proptest 1000 random directed graphs (Erdos-Renyi, p=0.1), verify sum constraint"
+    if_fails: "Dangling node handling missing or normalization step omitted"
+  - id: "FALSIFY-PR-002"
+    rule: "Strict positivity"
+    prediction: "PR(i) > 0.0 for all nodes in all graphs"
+    test: "Test disconnected graphs, star graphs, chains, single-node graphs"
+    if_fails: "Teleportation (1-d)/N term missing or zero-initialized without uniform start"
+  - id: "FALSIFY-PR-003"
+    rule: "Convergence"
+    prediction: "Power iteration converges within 200 iterations for d=0.85, epsilon=1e-8"
+    test: "Run on 500 random graphs (N up to 5000), assert convergence within iteration budget"
+    if_fails: "Dangling node probability leak prevents convergence or numerical instability in large graphs"

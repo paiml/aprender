@@ -1,0 +1,88 @@
+# Attention Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("attention-kernel-v1")]
+# Consumer: src/nn/transformer/mod.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Multi-head scaled dot-product attention correctness"
+  references:
+    - "Vaswani et al. (2017). Attention Is All You Need. NeurIPS"
+    - "contracts/softmax-kernel-v1.yaml (dependency)"
+  enforcement_level: "standard"
+
+equations:
+  scaled_dot_product:
+    formula: "Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V"
+    domain: "Q in R^{n x d_k}, K in R^{m x d_k}, V in R^{m x d_v}, d_k >= 1"
+    codomain: "out in R^{n x d_v}"
+    invariants:
+      - "Output shape is [n, d_v] regardless of sequence length m"
+      - "Attention weights sum to 1 along key dimension"
+      - "Output is finite when inputs are finite"
+    preconditions:
+      - "Q.cols() == K.cols() (d_k must match)"
+      - "K.rows() == V.rows() (m must match)"
+      - "d_k > 0"
+      - "Q, K, V contain only finite values"
+    postconditions:
+      - "result.shape() == [Q.rows(), V.cols()]"
+      - "attention_weights.sum(axis=-1) approx 1.0 (within 1e-5)"
+      - "result contains only finite values"
+
+  causal_mask:
+    formula: "mask[i, j] = -inf if j > i, else 0"
+    domain: "i in [0, n), j in [0, m), n >= 1, m >= 1"
+    codomain: "mask in R^{n x m}"
+    invariants:
+      - "Upper triangle (above diagonal) is -inf"
+      - "Lower triangle (including diagonal) is 0"
+    preconditions:
+      - "n >= 1"
+      - "m >= 1"
+    postconditions:
+      - "mask.shape() == [n, m]"
+      - "forall i, j: j <= i => mask[i,j] == 0.0"
+      - "forall i, j: j > i => mask[i,j] == -inf"
+
+  multi_head:
+    formula: "MultiHead(Q, K, V) = Concat(head_1, ..., head_h) * W_o where head_i = Attention(Q * W_q_i, K * W_k_i, V * W_v_i)"
+    domain: "Q, K, V in R^{seq x d_model}, h heads, d_k = d_model / h"
+    codomain: "out in R^{seq x d_model}"
+    invariants:
+      - "Output dimension equals input model dimension"
+      - "d_model must be divisible by num_heads"
+    preconditions:
+      - "d_model % num_heads == 0"
+      - "Q.cols() == K.cols() == V.cols() == d_model"
+    postconditions:
+      - "result.shape() == [seq_len, d_model]"
+
+proof_obligations:
+  - type: invariant
+    property: "Output shape correctness"
+    formal: "Attention(Q, K, V).shape() == [Q.rows(), V.cols()]"
+  - type: bound
+    property: "Attention weights are a valid probability distribution"
+    formal: "forall row r: sum(softmax(Q*K^T/sqrt(d_k))[r, :]) in [1.0 - 1e-5, 1.0 + 1e-5]"
+  - type: equivalence
+    property: "Causal mask prevents future information leakage"
+    formal: "forall i < n: Attention(Q, K, V, causal=true)[i, :] depends only on K[:i+1], V[:i+1]"
+
+falsification_tests:
+  - id: "FALSIFY-ATTN-001"
+    rule: "Output shape preservation"
+    prediction: "Attention(Q[n,d_k], K[m,d_k], V[m,d_v]).shape() == [n, d_v] for all valid dimensions"
+    test: "proptest 5000 with n in 1..512, m in 1..512, d_k in 1..128, d_v in 1..128"
+    if_fails: "Matmul dimension mismatch or wrong transpose"
+  - id: "FALSIFY-ATTN-002"
+    rule: "Probability distribution"
+    prediction: "softmax(scores) rows sum to 1.0 (within 1e-5) for all finite inputs"
+    test: "proptest with extreme score values near f32::MIN/MAX, uniform scores, single-element rows"
+    if_fails: "Missing numerical stability in softmax (max subtraction trick)"
+  - id: "FALSIFY-ATTN-003"
+    rule: "Causal mask correctness"
+    prediction: "With causal mask, changing K[j] or V[j] for j > i does not change output[i]"
+    test: "Perturb future key/value vectors and verify output at position i is unchanged"
+    if_fails: "Causal mask applied incorrectly (wrong triangle or missing -inf)"

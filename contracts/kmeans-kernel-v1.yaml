@@ -1,0 +1,86 @@
+# K-Means Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("kmeans-kernel-v1")]
+# Consumer: src/cluster/kmeans_impl.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "K-Means clustering assignment and centroid update correctness"
+  references:
+    - "Lloyd (1982). Least squares quantization in PCM. IEEE Transactions on Information Theory"
+    - "Arthur & Vassilvitskii (2007). k-means++: The Advantages of Careful Seeding. SODA"
+  enforcement_level: "standard"
+
+equations:
+  assignment_step:
+    formula: "c_i = argmin_j ||x_i - mu_j||^2 for each data point x_i"
+    domain: "X in R^{n x d}, mu in R^{k x d}, k >= 1, n >= k"
+    codomain: "c in {0, ..., k-1}^n"
+    invariants:
+      - "Each point assigned to exactly one cluster"
+      - "Assignment minimizes squared Euclidean distance to centroid"
+    preconditions:
+      - "X.rows() >= k"
+      - "X.cols() == mu.cols()"
+      - "k >= 1"
+      - "X and mu contain only finite values"
+    postconditions:
+      - "c.len() == X.rows()"
+      - "forall i: 0 <= c[i] < k"
+      - "forall i, j: ||x_i - mu_{c_i}||^2 <= ||x_i - mu_j||^2"
+
+  centroid_update:
+    formula: "mu_j = (1 / |S_j|) * sum_{i in S_j} x_i where S_j = {i : c_i == j}"
+    domain: "X in R^{n x d}, c in {0, ..., k-1}^n, each cluster non-empty"
+    codomain: "mu in R^{k x d}"
+    invariants:
+      - "Each centroid is the mean of its assigned points"
+      - "Centroid lies within the convex hull of its cluster points"
+    preconditions:
+      - "Each cluster j has at least one assigned point (|S_j| >= 1)"
+      - "X contains only finite values"
+    postconditions:
+      - "mu.shape() == [k, d]"
+      - "mu contains only finite values"
+
+  objective:
+    formula: "J = sum_{i=1}^{n} ||x_i - mu_{c_i}||^2 (within-cluster sum of squares, WCSS)"
+    domain: "X in R^{n x d}, c in {0, ..., k-1}^n, mu in R^{k x d}"
+    codomain: "J in R, J >= 0"
+    invariants:
+      - "J is non-negative"
+      - "J is monotonically non-increasing across iterations"
+      - "J == 0 iff all points in each cluster are identical"
+    preconditions:
+      - "Valid assignment and centroids"
+    postconditions:
+      - "result >= 0.0"
+
+proof_obligations:
+  - type: invariant
+    property: "Objective monotonically non-increasing"
+    formal: "J(t+1) <= J(t) for all iterations t"
+  - type: bound
+    property: "Objective non-negativity"
+    formal: "forall valid X, c, mu: J(X, c, mu) >= 0.0"
+  - type: invariant
+    property: "Convergence"
+    formal: "Algorithm terminates in finite iterations (J has finitely many values for finite X)"
+
+falsification_tests:
+  - id: "FALSIFY-KMEANS-001"
+    rule: "Monotone decrease"
+    prediction: "WCSS(t+1) <= WCSS(t) for every iteration of Lloyd's algorithm"
+    test: "Run 1000 random datasets (n in 10..500, d in 2..20, k in 2..10), record WCSS per iteration"
+    if_fails: "Assignment or centroid update step has a bug breaking the alternating minimization guarantee"
+  - id: "FALSIFY-KMEANS-002"
+    rule: "Assignment optimality"
+    prediction: "Each point is assigned to its nearest centroid after assignment step"
+    test: "After each assignment step, brute-force verify all n*k distances"
+    if_fails: "Distance computation bug or argmin tie-breaking inconsistency"
+  - id: "FALSIFY-KMEANS-003"
+    rule: "Empty cluster handling"
+    prediction: "Algorithm does not panic or produce NaN when a cluster becomes empty"
+    test: "Construct pathological inputs: k > distinct points, collinear data, duplicate points"
+    if_fails: "Division by zero in centroid update when |S_j| == 0"

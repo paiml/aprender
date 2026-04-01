@@ -1,0 +1,112 @@
+# Activation Kernel Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("activation-kernel-v1")]
+# Consumer: src/nn/functional.rs, src/autograd/ops/activation.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Standard activation functions (ReLU, GELU, Sigmoid, Tanh) correctness"
+  references:
+    - "Nair & Hinton (2010). Rectified Linear Units Improve Restricted Boltzmann Machines. ICML"
+    - "Hendrycks & Gimpel (2016). Gaussian Error Linear Units (GELUs). arXiv:1606.08415"
+  enforcement_level: "standard"
+
+equations:
+  relu:
+    formula: "ReLU(x) = max(0, x)"
+    domain: "x in R"
+    codomain: "y in R, y >= 0"
+    invariants:
+      - "ReLU(x) >= 0 for all x"
+      - "ReLU(x) == x for x > 0"
+      - "ReLU(x) == 0 for x <= 0"
+      - "ReLU is piecewise linear"
+    preconditions:
+      - "x is finite or x == +inf"
+    postconditions:
+      - "result >= 0.0"
+      - "result <= max(0.0, x)"
+
+  gelu:
+    formula: "GELU(x) = x * Phi(x) = 0.5 * x * (1 + erf(x / sqrt(2)))"
+    domain: "x in R"
+    codomain: "y in R, y >= -0.1700"
+    invariants:
+      - "GELU(0) = 0"
+      - "GELU(x) -> x as x -> +inf"
+      - "GELU(x) -> 0 as x -> -inf"
+      - "GELU is smooth (infinitely differentiable)"
+    preconditions:
+      - "x is finite"
+    postconditions:
+      - "result is finite when x is finite"
+      - "result >= -0.1700"
+
+  sigmoid:
+    formula: "sigmoid(x) = 1 / (1 + exp(-x))"
+    domain: "x in R"
+    codomain: "y in (0, 1)"
+    invariants:
+      - "sigmoid(0) = 0.5"
+      - "sigmoid(x) + sigmoid(-x) = 1 (antisymmetry around 0.5)"
+      - "sigmoid is strictly monotonically increasing"
+      - "0 < sigmoid(x) < 1 for all finite x"
+    preconditions:
+      - "x is finite"
+    postconditions:
+      - "0.0 < result"
+      - "result < 1.0"
+      - "result is finite"
+
+  tanh:
+    formula: "tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))"
+    domain: "x in R"
+    codomain: "y in (-1, 1)"
+    invariants:
+      - "tanh(0) = 0"
+      - "tanh(x) = 2 * sigmoid(2x) - 1"
+      - "tanh is odd: tanh(-x) = -tanh(x)"
+      - "-1 < tanh(x) < 1 for all finite x"
+    preconditions:
+      - "x is finite"
+    postconditions:
+      - "-1.0 < result"
+      - "result < 1.0"
+      - "result is finite"
+
+proof_obligations:
+  - type: bound
+    property: "ReLU non-negativity"
+    formal: "forall x in R: ReLU(x) >= 0.0"
+  - type: bound
+    property: "Sigmoid range"
+    formal: "forall finite x: 0.0 < sigmoid(x) < 1.0"
+  - type: invariant
+    property: "Sigmoid antisymmetry"
+    formal: "forall finite x: |sigmoid(x) + sigmoid(-x) - 1.0| < 1e-6"
+  - type: invariant
+    property: "Tanh odd symmetry"
+    formal: "forall finite x: |tanh(-x) + tanh(x)| < 1e-6"
+
+falsification_tests:
+  - id: "FALSIFY-ACT-001"
+    rule: "ReLU non-negativity"
+    prediction: "ReLU(x) >= 0.0 for all f32 inputs"
+    test: "proptest 50000 f32 values including f32::MIN, -0.0, NaN"
+    if_fails: "max(0, x) implemented as conditional without handling -0.0"
+  - id: "FALSIFY-ACT-002"
+    rule: "Sigmoid bounded output"
+    prediction: "0.0 < sigmoid(x) < 1.0 for all finite f32 inputs"
+    test: "Evaluate at x = -88.0, -500.0, 88.0, 500.0, and proptest 50000 f32 values"
+    if_fails: "exp(-x) overflow produces 0.0 or inf, collapsing sigmoid to boundary"
+  - id: "FALSIFY-ACT-003"
+    rule: "GELU lower bound"
+    prediction: "GELU(x) >= -0.1700 for all finite f32 inputs"
+    test: "proptest 50000 f32 values in [-100.0, 100.0] and grid search near x = -0.84"
+    if_fails: "erf approximation inaccurate near the GELU minimum"
+  - id: "FALSIFY-ACT-004"
+    rule: "Tanh-sigmoid relationship"
+    prediction: "tanh(x) == 2 * sigmoid(2x) - 1 within 1e-5 for all finite f32 in [-10, 10]"
+    test: "proptest 10000 f32 values in [-10.0, 10.0], compare both formulations"
+    if_fails: "Numerical divergence between independent tanh and sigmoid implementations"

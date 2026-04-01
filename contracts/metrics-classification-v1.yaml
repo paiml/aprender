@@ -1,0 +1,111 @@
+# Metrics Classification Contract v1.0.0
+# Backing contract for #[provable_contracts_macros::contract("metrics-classification-v1")]
+# Consumer: src/metrics/classification.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-01"
+  author: "PAIML Engineering"
+  description: "Classification metrics (Accuracy, Precision, Recall, F1, AUC) correctness"
+  references:
+    - "Sokolova & Lapalme (2009). A systematic analysis of performance measures for classification tasks. Information Processing & Management"
+    - "Fawcett (2006). An introduction to ROC analysis. Pattern Recognition Letters"
+  enforcement_level: "standard"
+
+equations:
+  accuracy:
+    formula: "Accuracy = (TP + TN) / (TP + TN + FP + FN)"
+    domain: "TP, TN, FP, FN in N, TP + TN + FP + FN >= 1"
+    codomain: "acc in [0, 1]"
+    invariants:
+      - "Accuracy == 1.0 when FP == 0 and FN == 0"
+      - "Accuracy == 0.0 when TP == 0 and TN == 0"
+    preconditions:
+      - "y_true.len() == y_pred.len()"
+      - "y_true.len() >= 1"
+    postconditions:
+      - "0.0 <= result <= 1.0"
+
+  precision:
+    formula: "Precision = TP / (TP + FP)"
+    domain: "TP, FP in N"
+    codomain: "prec in [0, 1] (undefined when TP + FP == 0)"
+    invariants:
+      - "Precision == 1.0 when FP == 0 and TP >= 1"
+      - "Precision == 0.0 when TP == 0"
+    preconditions:
+      - "y_true.len() == y_pred.len()"
+    postconditions:
+      - "0.0 <= result <= 1.0"
+      - "result == 0.0 when no positive predictions (TP + FP == 0)"
+
+  recall:
+    formula: "Recall = TP / (TP + FN)"
+    domain: "TP, FN in N"
+    codomain: "rec in [0, 1] (undefined when TP + FN == 0)"
+    invariants:
+      - "Recall == 1.0 when FN == 0 and TP >= 1"
+      - "Recall == 0.0 when TP == 0"
+    preconditions:
+      - "y_true.len() == y_pred.len()"
+    postconditions:
+      - "0.0 <= result <= 1.0"
+      - "result == 0.0 when no actual positives (TP + FN == 0)"
+
+  f1_score:
+    formula: "F1 = 2 * Precision * Recall / (Precision + Recall)"
+    domain: "Precision, Recall in [0, 1]"
+    codomain: "f1 in [0, 1]"
+    invariants:
+      - "F1 is the harmonic mean of precision and recall"
+      - "F1 <= min(Precision, Recall) is FALSE; F1 <= max(Precision, Recall)"
+      - "F1 == 0.0 when either Precision or Recall is 0.0"
+      - "F1 == 1.0 iff Precision == 1.0 and Recall == 1.0"
+    preconditions:
+      - "y_true.len() == y_pred.len()"
+    postconditions:
+      - "0.0 <= result <= 1.0"
+
+  auc_roc:
+    formula: "AUC = integral of ROC curve = integral_0^1 TPR(FPR) d(FPR)"
+    domain: "y_true in {0, 1}^n, y_score in R^n, n >= 1"
+    codomain: "auc in [0, 1]"
+    invariants:
+      - "AUC == 1.0 for perfect classifier (all positives scored above all negatives)"
+      - "AUC == 0.5 for random classifier"
+      - "AUC == 0.0 for perfectly wrong classifier"
+      - "AUC is invariant to monotonic score transformations"
+    preconditions:
+      - "y_true.len() == y_score.len()"
+      - "y_true contains at least one positive and one negative"
+      - "y_score contains finite values"
+    postconditions:
+      - "0.0 <= result <= 1.0"
+
+proof_obligations:
+  - type: bound
+    property: "All metrics bounded in [0, 1]"
+    formal: "forall valid inputs: 0.0 <= accuracy, precision, recall, f1, auc <= 1.0"
+  - type: invariant
+    property: "F1 is harmonic mean"
+    formal: "F1 == 2*P*R/(P+R) when P+R > 0, else F1 == 0"
+  - type: equivalence
+    property: "Perfect prediction identity"
+    formal: "y_pred == y_true => accuracy == 1.0 and precision == 1.0 and recall == 1.0 and F1 == 1.0"
+
+falsification_tests:
+  - id: "FALSIFY-METRIC-001"
+    rule: "Bounded output"
+    prediction: "All metrics return values in [0.0, 1.0] for any valid inputs"
+    test: "proptest 10000 binary classification scenarios with n in 1..1000"
+    if_fails: "Division by zero when denominator is 0 (e.g., no positive predictions)"
+  - id: "FALSIFY-METRIC-002"
+    rule: "Perfect prediction"
+    prediction: "When y_pred == y_true, accuracy, precision, recall, and F1 all equal 1.0"
+    test: "1000 random binary vectors of length 1..500, set y_pred = y_true"
+    if_fails: "Off-by-one in confusion matrix counting or label encoding mismatch"
+  - id: "FALSIFY-METRIC-003"
+    rule: "AUC invariance under monotonic transformation"
+    prediction: "AUC(y_true, f(y_score)) == AUC(y_true, y_score) for strictly monotonic f"
+    test: "Apply x^3, exp(x), log(x+1) to scores and verify AUC unchanged"
+    if_fails: "AUC implementation uses score values instead of ranks"
