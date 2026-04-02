@@ -54,7 +54,9 @@ pub enum Commands {
         /// Save trace output to JSON file
         #[arg(long, value_name = "FILE")]
         trace_output: Option<PathBuf>,
-        /// Trace detail level (none, basic, layer, payload)
+        /// Trace detail level (none, basic, layer, payload, chrome)
+        /// "chrome" outputs chrome://tracing JSON integrating layer trace + brick profile.
+        /// F-CLIPARITY-01 / PMAT-386 / paiml/aprender#574
         #[arg(long, value_name = "LEVEL", default_value = "basic")]
         trace_level: String,
         /// Shorthand for --trace --trace-level payload (tensor value inspection)

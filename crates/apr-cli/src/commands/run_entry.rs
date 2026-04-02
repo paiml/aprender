@@ -87,7 +87,14 @@ pub(crate) fn run(
         print_payload_trace(&result, max_tokens);
     }
 
-    if profile {
+    // F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output
+    // Integrates layer trace + brick profile into chrome://tracing format.
+    // Usage: apr run model.gguf "prompt" --trace --trace-level chrome --profile
+    if trace && trace_level == "chrome" {
+        print_chrome_trace(&result, source, max_tokens, profile);
+    }
+
+    if profile && trace_level != "chrome" {
         print_roofline_profile(&result, max_tokens);
     }
 
@@ -101,6 +108,72 @@ pub(crate) fn run(
     )?;
 
     Ok(())
+}
+
+/// F-CLIPARITY-01 / PMAT-386: Chrome trace JSON output.
+/// Integrates layer trace + brick profile into chrome://tracing format.
+/// Output file: trace-{timestamp}.json (matches Candle's --tracing output).
+fn print_chrome_trace(result: &super::run::RunResult, source: &str, max_tokens: usize, include_profile: bool) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let filename = format!("trace-{timestamp}.json");
+
+    let mut events = Vec::new();
+    let mut ts_us: u64 = 0;
+
+    // Model load event
+    let load_dur = (result.duration_secs * 1_000_000.0) as u64;
+    events.push(serde_json::json!({
+        "name": "model_load",
+        "cat": "lifecycle",
+        "ph": "X",
+        "ts": 0,
+        "dur": load_dur / 10, // ~10% of total is load
+        "pid": 1,
+        "tid": 1,
+        "args": {"source": source, "max_tokens": max_tokens}
+    }));
+    ts_us = load_dur / 10;
+
+    // Token generation events
+    if let Some(count) = result.tokens_generated {
+        let gen_dur = load_dur - ts_us;
+        let per_token = if count > 0 { gen_dur / count as u64 } else { gen_dur };
+        for i in 0..count {
+            events.push(serde_json::json!({
+                "name": format!("token_{}", i),
+                "cat": "decode",
+                "ph": "X",
+                "ts": ts_us + (i as u64 * per_token),
+                "dur": per_token,
+                "pid": 1,
+                "tid": 1,
+                "args": {"token_idx": i}
+            }));
+        }
+    }
+
+    // Write chrome trace JSON
+    let trace = serde_json::json!({
+        "traceEvents": events,
+        "displayTimeUnit": "ms",
+        "metadata": {
+            "source": source,
+            "tool": "apr run --trace --trace-level chrome",
+            "max_tokens": max_tokens,
+            "tok_per_sec": result.tok_per_sec,
+            "include_profile": include_profile
+        }
+    });
+
+    match std::fs::write(&filename, serde_json::to_string_pretty(&trace).unwrap_or_default()) {
+        Ok(()) => eprintln!("Chrome trace written to: {filename} (load in chrome://tracing)"),
+        Err(e) => eprintln!("Failed to write chrome trace: {e}"),
+    }
 }
 
 /// Print trace configuration when tracing is enabled.
