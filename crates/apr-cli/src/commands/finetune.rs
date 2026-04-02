@@ -553,6 +553,7 @@ fn execute_training_wgpu(
         inter,
         lora_rank,
         lora_alpha,
+        &["q_proj", "v_proj"],
         eps,
     );
 
