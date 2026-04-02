@@ -91,6 +91,11 @@ pub enum Commands {
         /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
         #[arg(long, default_value = "64")]
         repeat_last_n: usize,
+        /// Process prompt tokens one-by-one instead of batched prefill.
+        /// Useful for debugging prefill correctness (comparing per-token attention).
+        /// F-CLIPARITY-01 / PMAT-385 / paiml/aprender#572
+        #[arg(long)]
+        split_prompt: bool,
         /// Batch mode: read prompts from JSONL, output results as JSONL.
         /// Model loads once, processes all prompts sequentially.
         /// Each input line: {"prompt": "...", "task_id": "..."}

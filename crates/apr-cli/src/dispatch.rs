@@ -59,6 +59,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             repeat_penalty,
             repeat_last_n,
             chat,
+            split_prompt,
             batch_jsonl,
             verbose,
             backend,
