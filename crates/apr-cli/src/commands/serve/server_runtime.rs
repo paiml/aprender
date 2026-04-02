@@ -5,7 +5,7 @@
 fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_stack_size(16 * 1024 * 1024) // 16 MB (default: 2 MB)
+        .thread_stack_size(64 * 1024 * 1024) // 64 MB — GPU handler async state machines are huge
         .build()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
