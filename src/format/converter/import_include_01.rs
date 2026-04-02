@@ -1,4 +1,3 @@
-
 /// Infer architecture from user option or model config string.
 fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Architecture {
     if *user_arch != Architecture::Auto {
@@ -78,6 +77,9 @@ fn warn_unverified_architecture(arch: &Architecture, strict: bool) -> Result<()>
 }
 
 /// Validate F32 tensors against layout contract.
+///
+/// Provable precondition: tensors map must be non-empty.
+#[provable_contracts_macros::requires(!tensors.is_empty())]
 fn validate_contract_f32(
     layout: &crate::format::layout_contract::LayoutContract,
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,

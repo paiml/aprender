@@ -1,5 +1,6 @@
 //! GGUF reader and binary parsing (spec §7.2)
 
+use provable_contracts_macros::ensures;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Read;

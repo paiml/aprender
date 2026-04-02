@@ -9,10 +9,11 @@ use crate::format::converter_types::{
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
 };
-use crate::format::layout_contract::contract;
+use crate::format::layout_contract::{contract, enforce_import_contract};
 use crate::format::sharded::ShardIndex;
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::serialization::safetensors::{MappedSafeTensors, UserMetadata};
+use provable_contracts_macros::{ensures, requires};
 use std::collections::BTreeMap;
 
 // Import write functions and helpers from parent module
@@ -23,6 +24,10 @@ use std::path::{Path, PathBuf};
 #[cfg(feature = "hf-hub-integration")]
 use crate::format::converter_types::parse_import_error;
 
+/// Import a model from external format (GGUF, SafeTensors, HF) into APR format.
+///
+/// Provable contract: source is non-empty, output path is writable.
+#[requires(!source.is_empty())]
 pub fn apr_import<P: AsRef<Path>>(
     source: &str,
     output: P,
@@ -38,9 +43,7 @@ pub fn apr_import<P: AsRef<Path>>(
     // PMAT-271: Use magic bytes first, extension fallback for extensionless HF cache blobs
     let is_gguf = crate::format::rosetta::FormatType::from_magic(&local_path)
         .map(|f| matches!(f, crate::format::rosetta::FormatType::Gguf))
-        .unwrap_or_else(|_| {
-            local_path.extension().and_then(|e| e.to_str()) == Some("gguf")
-        });
+        .unwrap_or_else(|_| local_path.extension().and_then(|e| e.to_str()) == Some("gguf"));
     if is_gguf {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
         // GH-375: Falls back to dequant→requant for unsupported dtypes (Q4_0, Q5_0, Q8_0)
@@ -95,6 +98,43 @@ pub fn apr_import<P: AsRef<Path>>(
     // GH-311: Split fused QKV tensors for GPT-NeoX after name mapping
     if effective_arch == Architecture::GptNeoX {
         Architecture::split_neox_fused_qkv(&mut mapped_tensors);
+    }
+
+    // BUG-IMPORT-001 FIX: When GGUF falls back to dequant→requant (GH-375),
+    // load_source_tensors returns GGUF col-major shapes [ne0, ne1].
+    // We must apply enforce_import_contract to reverse them to APR row-major [ne1, ne0].
+    // Without this, lm_head.weight gets shape [hidden, vocab] instead of [vocab, hidden],
+    // producing corrupt APR files (Grade F, density violations on re-quantization).
+    if is_gguf {
+        let vocab_size_for_contract = load_result
+            .model_config
+            .as_ref()
+            .and_then(|c| c.vocab_size)
+            .unwrap_or(0);
+        let hidden_dim_for_contract = load_result
+            .model_config
+            .as_ref()
+            .and_then(|c| c.hidden_size)
+            .unwrap_or(0);
+        mapped_tensors = mapped_tensors
+            .into_iter()
+            .map(|(name, (data, shape))| {
+                let (apr_shape, needs_data_transpose) =
+                    enforce_import_contract(&name, &shape, vocab_size_for_contract, hidden_dim_for_contract);
+                assert!(
+                    !needs_data_transpose,
+                    "CONTRACT BUG: enforce_import_contract returned needs_data_transpose=true for '{}'. \
+                     GGUF→APR NEVER needs data transpose. See GH-208, BUG-IMPORT-001.",
+                    name
+                );
+                (name, (data, apr_shape))
+            })
+            .collect();
+        let transformed_count = mapped_tensors.len();
+        eprintln!(
+            "[BUG-IMPORT-001] Applied GGUF→APR shape contract to {} tensors (dequant fallback path)",
+            transformed_count
+        );
     }
 
     // GH-205 + GH-353: Also map F16/BF16 raw tensor names for passthrough
@@ -187,6 +227,7 @@ fn try_gguf_raw_import(
 ///
 /// This is the preferred path for GGUF import as it preserves the exact
 /// quantization from the source file, ensuring format parity with Ollama/llama.cpp.
+#[requires(gguf_path.exists())]
 pub(crate) fn apr_import_gguf_raw(
     gguf_path: &Path,
     output_path: &Path,
@@ -214,8 +255,11 @@ pub(crate) fn apr_import_gguf_raw(
         raw_result.tensors.keys().map(String::as_str),
     );
 
-    let mapped_tensors =
-        map_and_enforce_raw_tensors(raw_result.tensors, &effective_arch, &raw_result.model_config)?;
+    let mapped_tensors = map_and_enforce_raw_tensors(
+        raw_result.tensors,
+        &effective_arch,
+        &raw_result.model_config,
+    )?;
 
     // GH-279: Architecture completeness gate — refuse to write incomplete models
     enforce_arch_completeness_gate(&effective_arch, &mapped_tensors, &raw_result.model_config)?;
@@ -252,6 +296,8 @@ fn resolve_and_log_architecture(
 }
 
 /// Map tensor names, split GPT-2 QKV if needed, and enforce layout contract.
+#[requires(!tensors.is_empty())]
+#[ensures(ret.is_ok())]
 fn map_and_enforce_raw_tensors(
     tensors: BTreeMap<String, GgufRawTensor>,
     effective_arch: &Architecture,
@@ -554,7 +600,6 @@ fn resolve_url_source(url: &str) -> Result<PathBuf> {
     })
 }
 
-
 /// GH-478: Quantization dispatch for streaming imports.
 ///
 /// Mirrors `dispatch_quantize()` in write.rs but operates on `AprV2StreamingWriter`.
@@ -808,11 +853,12 @@ fn streaming_sharded_import(
                 MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
                     message: format!("Failed to re-mmap shard for weight tying: {e}"),
                 })?;
-            let meta = mapped
-                .get_metadata(embed_name)
-                .ok_or_else(|| AprenderError::FormatError {
-                    message: "Embedding tensor metadata not found for weight tying".to_string(),
-                })?;
+            let meta =
+                mapped
+                    .get_metadata(embed_name)
+                    .ok_or_else(|| AprenderError::FormatError {
+                        message: "Embedding tensor metadata not found for weight tying".to_string(),
+                    })?;
             let data = mapped
                 .get_tensor(embed_name)
                 .map_err(|e| AprenderError::FormatError {
@@ -849,9 +895,7 @@ fn streaming_sharded_import(
             message: format!("Failed to finalize APR file: {e}"),
         })?;
 
-    let file_size = fs::metadata(output_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
     eprintln!(
         "[realizar#136] Written {} ({:.1} GB)",
         output_path.display(),

@@ -147,7 +147,10 @@ fn load_single_safetensors(
     })
 }
 
-/// Load tensors from source file (`SafeTensors` format)
+/// Load tensors from source file (`SafeTensors` format).
+///
+/// Provable precondition: path must exist.
+#[provable_contracts_macros::requires(path.exists())]
 pub(crate) fn load_source_tensors(
     path: &Path,
     options: &ImportOptions,

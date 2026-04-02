@@ -93,6 +93,37 @@ impl AprReader {
         if let Some(ref arch) = meta.architecture {
             metadata.insert("architecture".to_string(), JsonValue::String(arch.clone()));
         }
+        // Transformer config fields (V2 binary header → flat metadata)
+        if let Some(v) = meta.hidden_size {
+            metadata.insert("hidden_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.num_layers {
+            metadata.insert("num_layers".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.num_heads {
+            metadata.insert("num_heads".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.num_kv_heads {
+            metadata.insert("num_kv_heads".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.vocab_size {
+            metadata.insert("vocab_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.intermediate_size {
+            metadata.insert("intermediate_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.max_position_embeddings {
+            metadata.insert("max_position_embeddings".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
+        if let Some(v) = meta.rope_theta {
+            metadata.insert("rope_theta".into(), serde_json::json!(v));
+        }
+        if let Some(v) = meta.rms_norm_eps {
+            metadata.insert("rms_norm_eps".into(), serde_json::json!(v));
+        }
+        if let Some(v) = meta.head_dim {
+            metadata.insert("head_dim".into(), JsonValue::Number(serde_json::Number::from(v)));
+        }
         // Include custom fields
         for (k, v) in &meta.custom {
             metadata.insert(k.clone(), v.clone());
@@ -165,6 +196,11 @@ impl AprReader {
     #[must_use]
     pub fn get_metadata(&self, key: &str) -> Option<&JsonValue> {
         self.metadata.get(key)
+    }
+
+    /// Iterate all metadata key-value pairs
+    pub fn all_metadata(&self) -> impl Iterator<Item = (&String, &JsonValue)> {
+        self.metadata.iter()
     }
 
     /// Get raw tensor bytes by name using cached data_offset (ALB-104).

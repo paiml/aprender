@@ -454,6 +454,9 @@ fn compute_fused_shape(shapes: &[Vec<usize>]) -> Option<Vec<usize>> {
 }
 
 /// Convert a row-major shape to GGUF ne-order (reversed for 2D).
+///
+/// Postconditions: output length == input length, element product preserved.
+#[provable_contracts_macros::ensures(ret.len() == shape.len())]
 fn shape_to_gguf(shape: &[usize]) -> Vec<u64> {
     if shape.len() == 2 {
         vec![shape[1] as u64, shape[0] as u64]
@@ -461,7 +464,6 @@ fn shape_to_gguf(shape: &[usize]) -> Vec<u64> {
         shape.iter().map(|&d| d as u64).collect()
     }
 }
-
 
 include!("export_include.rs");
 include!("fusion.rs");

@@ -59,7 +59,13 @@ pub fn apr_export<P: AsRef<Path>>(
     }
     let tensors = apply_export_quantization(tensors, input_path, &options)?;
 
-    dispatch_export(&tensors, input_path, output_path, &options, &original_dtypes)?;
+    dispatch_export(
+        &tensors,
+        input_path,
+        output_path,
+        &options,
+        &original_dtypes,
+    )?;
 
     let exported_size = if output_path.is_dir() {
         // GH-246: For directory-based exports (MLX), sum all file sizes
@@ -110,17 +116,14 @@ fn detect_apr_architecture_for_completeness(apr_path: &Path) -> Option<&'static 
     let data = fs::read(apr_path).ok()?;
     let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
     let metadata = reader.metadata();
-    let arch = metadata
-        .architecture
-        .as_deref()
-        .or_else(|| {
-            let mt = &metadata.model_type;
-            if mt.is_empty() || mt == "unknown" {
-                None
-            } else {
-                Some(mt.as_str())
-            }
-        })?;
+    let arch = metadata.architecture.as_deref().or_else(|| {
+        let mt = &metadata.model_type;
+        if mt.is_empty() || mt == "unknown" {
+            None
+        } else {
+            Some(mt.as_str())
+        }
+    })?;
     // Map to completeness key (static str)
     let key = match arch {
         "qwen3" => "qwen3",

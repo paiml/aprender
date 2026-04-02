@@ -4,6 +4,7 @@
 /// Each super block: ql (128 bytes) + qh (64 bytes) + scales (16 bytes) + d (f16) = 210 bytes
 ///
 /// Delegates to `trueno_quant::dequantize_q6_k_to_f32` — the single source of truth.
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 210;
@@ -29,6 +30,7 @@ pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) ->
 /// PMAT-231 FIX: Element order matches llama.cpp/GGML layout:
 /// - Low nibbles first (elements 0-15)
 /// - High nibbles second (elements 16-31)
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 2 + 16; // f16 scale + f16 min + 16 bytes
@@ -74,6 +76,7 @@ pub fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result
 
 /// Dequantize `Q2_K` format (K-quants)
 /// `Q2_K`: super blocks of 256 elements
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q2_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 2 + 2 + 16 + 64; // d, dmin, scales, qs = 84 bytes
@@ -127,6 +130,7 @@ pub(crate) fn dequantize_q2_k(data: &[u8], start: usize, num_elements: usize) ->
 
 /// Dequantize `Q3_K` format (K-quants)
 /// `Q3_K`: super blocks of 256 elements
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q3_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 32 + 64 + 12 + 2; // hmask, qs, scales, d = 110 bytes

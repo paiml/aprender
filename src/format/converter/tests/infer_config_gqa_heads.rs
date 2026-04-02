@@ -1,4 +1,3 @@
-
 // ============================================================================
 // GQA head dim inference: head_dim=96 and head_dim=80
 // ============================================================================
@@ -323,21 +322,23 @@ fn test_gh237_q4_empty_tensor_allowed() {
     assert_eq!(data_len, 0);
 }
 
+/// BUG-IMPORT-002: Q8 density check is now a WARNING, not a panic.
+/// Global-scale Q8 legitimately produces high zero counts when re-quantizing
+/// from block-wise quantized sources (Q4K→F32→Q8).
 #[test]
-#[should_panic(expected = "Q8 DENSITY VIOLATION")]
 fn test_gh237_q8_density_violation_detected() {
     use crate::format::v2::{AprV2Metadata, AprV2Writer};
 
     let metadata = AprV2Metadata::new("test");
     let mut writer = AprV2Writer::new(metadata);
 
-    // Data that's >99% zeros will trigger the density assertion (catches packing bugs).
-    // With 2048 elements (≥1024 threshold), we need >2028 zeros.
-    // Set only 5 values to non-zero (~99.8% zeros).
+    // Data that's >99.5% zeros triggers the warning (was: assert).
+    // With 2048 elements, only 5 non-zero values = 99.8% zeros.
     let mut data = vec![0.0f32; 2048];
     for (i, val) in data.iter_mut().enumerate().take(5) {
         *val = 1.0 + i as f32;
     }
+    // Should NOT panic — only emits a warning to stderr.
     writer.add_q8_tensor("bad.weight", vec![64, 32], &data);
 }
 

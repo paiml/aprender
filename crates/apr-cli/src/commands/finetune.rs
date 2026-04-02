@@ -598,6 +598,14 @@ fn execute_training_wgpu(
         t_start.elapsed().as_secs_f64(),
     );
 
+    // Save LoRA adapter in PEFT format
+    let lora_alpha = config.alpha;
+    if let Err(e) = pipeline.export_adapter(output_path, lora_alpha) {
+        eprintln!("[wgpu] WARNING: adapter export failed: {e}");
+    } else {
+        eprintln!("[wgpu] Adapter saved to {}", output_path.display());
+    }
+
     Ok(())
 }
 

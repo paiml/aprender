@@ -135,6 +135,8 @@ impl std::fmt::Display for ContractError {
 
 impl std::error::Error for ContractError {}
 
+use provable_contracts_macros::ensures;
+
 /// The complete layout contract with all tensor specifications.
 #[derive(Debug)]
 pub struct LayoutContract {

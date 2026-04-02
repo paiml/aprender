@@ -97,6 +97,8 @@ dependencies = [
 [[package]]
 name = "alimentar"
 version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab619ace811f204d8147d11ef71907a44ef98ba8d4ada2d3b1ea5306d5fd7a30"
 dependencies = [
  "arrow 57.3.0",
  "arrow-csv",
@@ -123,9 +125,7 @@ dependencies = [
 
 [[package]]
 name = "alimentar"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab619ace811f204d8147d11ef71907a44ef98ba8d4ada2d3b1ea5306d5fd7a30"
+version = "0.2.9"
 dependencies = [
  "arrow 57.3.0",
  "arrow-csv",
@@ -268,8 +268,8 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "apr-cli"
 version = "0.4.11"
 dependencies = [
- "alimentar 0.2.8",
- "aprender 0.27.5",
+ "alimentar 0.2.9",
+ "aprender 0.27.6",
  "assert_cmd",
  "async-stream",
  "axum",
@@ -307,7 +307,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
- "trueno 0.16.3",
+ "trueno 0.16.4",
  "trueno-explain",
  "trueno-viz 0.2.3",
  "trueno-zram-core",
@@ -341,9 +341,33 @@ dependencies = [
 [[package]]
 name = "aprender"
 version = "0.27.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9da5a89a3feab012e453372a90aa7f2c35677953bb160a88f1146c0e5688b17"
+dependencies = [
+ "batuta-common",
+ "bincode",
+ "getrandom 0.2.17",
+ "memmap2",
+ "minijinja",
+ "provable-contracts-macros 0.1.1",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tempfile",
+ "trueno 0.16.4",
+ "trueno-quant",
+]
+
+[[package]]
+name = "aprender"
+version = "0.27.6"
 dependencies = [
  "aes-gcm",
- "alimentar 0.2.8",
+ "alimentar 0.2.9",
  "alsa",
  "argon2",
  "batuta-common",
@@ -378,7 +402,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
- "trueno 0.16.3",
+ "trueno 0.16.4",
  "trueno-quant",
  "trueno-rag",
  "trueno-zram-core",
@@ -389,34 +413,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "aprender"
-version = "0.27.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9da5a89a3feab012e453372a90aa7f2c35677953bb160a88f1146c0e5688b17"
-dependencies = [
- "batuta-common",
- "bincode",
- "getrandom 0.2.17",
- "memmap2",
- "minijinja",
- "provable-contracts-macros 0.1.1",
- "rand 0.9.2",
- "rand_chacha 0.9.0",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tempfile",
- "trueno 0.16.3",
- "trueno-quant",
-]
-
-[[package]]
 name = "aprender-bench-compute"
 version = "0.1.0"
 dependencies = [
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "criterion",
  "ndarray",
 ]
@@ -425,7 +425,7 @@ dependencies = [
 name = "aprender-bench-tokenizer"
 version = "0.1.0"
 dependencies = [
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "criterion",
  "tokenizers",
 ]
@@ -434,7 +434,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "assert_cmd",
  "chrono",
  "clap",
@@ -453,7 +453,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "assert_cmd",
  "clap",
  "criterion",
@@ -470,7 +470,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -1444,11 +1444,10 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.57"
+version = "1.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0dd1ca384932ff3641c8718a02769f1698e7563dc6974ffd03346116310423"
+checksum = "c736e259eea577f443d5c86c304f9f4ae0295c43f3ba05c21f1d66b5f06001af"
 dependencies = [
- "find-msvc-tools",
  "jobserver",
  "libc",
  "shlex",
@@ -2320,10 +2319,10 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "entrenar"
-version = "0.7.6"
+version = "0.7.7"
 dependencies = [
- "alimentar 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
- "aprender 0.27.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "alimentar 0.2.8",
+ "aprender 0.27.5",
  "arrow 57.3.0",
  "bytemuck",
  "chrono",
@@ -2354,7 +2353,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
- "trueno 0.16.3",
+ "trueno 0.16.4",
  "trueno-gpu",
  "trueno-viz 0.2.3",
  "validator",
@@ -2543,12 +2542,6 @@ dependencies = [
  "libc",
  "libredox",
 ]
-
-[[package]]
-name = "find-msvc-tools"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "flatbuffers"
@@ -4647,7 +4640,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
 name = "pacha"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5165,7 +5158,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5505,7 +5498,7 @@ name = "realizar"
 version = "0.8.3"
 dependencies = [
  "anyhow",
- "aprender 0.27.5",
+ "aprender 0.27.6",
  "arc-swap",
  "async-stream",
  "axum",
@@ -5532,7 +5525,7 @@ dependencies = [
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.16.3",
+ "trueno 0.16.4",
  "trueno-gpu",
  "trueno-quant",
  "uuid",
@@ -5662,11 +5655,11 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "renacer"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "addr2line",
  "anyhow",
- "aprender 0.27.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "aprender 0.27.5",
  "backtrace",
  "clap",
  "crossbeam",
@@ -5696,7 +5689,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
- "trueno 0.16.3",
+ "trueno 0.16.4",
  "trueno-db",
  "trueno-graph",
  "trueno-viz 0.2.3",
@@ -7048,7 +7041,7 @@ dependencies = [
 
 [[package]]
 name = "trueno"
-version = "0.16.3"
+version = "0.16.4"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -7199,7 +7192,7 @@ dependencies = [
  "serde",
  "serde_yaml_ng",
  "thiserror 2.0.18",
- "trueno 0.16.3",
+ "trueno 0.16.4",
 ]
 
 [[package]]

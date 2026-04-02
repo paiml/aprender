@@ -36,6 +36,31 @@ fn validate_merge_paths<'a>(
 
 /// Read LoRA rank/alpha from adapter metadata.
 fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
+    // Handle safetensors adapter (from wgpu training pipeline)
+    // Parse safetensors header to extract lora_rank/lora_alpha from metadata
+    if adapter.extension().map(|e| e == "safetensors").unwrap_or(false) {
+        let file = std::fs::File::open(adapter)
+            .map_err(|e| CliError::ValidationFailed(format!("Read adapter: {e}")))?;
+        let mut buf = [0u8; 8];
+        std::io::Read::read_exact(&mut &file, &mut buf)
+            .map_err(|e| CliError::ValidationFailed(format!("Read header: {e}")))?;
+        let header_len = u64::from_le_bytes(buf) as usize;
+        let mut header = vec![0u8; header_len];
+        std::io::Read::read_exact(&mut (&file), &mut header)
+            .map_err(|e| CliError::ValidationFailed(format!("Read header: {e}")))?;
+        let header_str = String::from_utf8_lossy(&header);
+        // Parse lora_rank and lora_alpha from JSON metadata
+        let rank = header_str.split("\"lora_rank\"")
+            .nth(1).and_then(|s| s.split('"').nth(1))
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(64);
+        let alpha = header_str.split("\"lora_alpha\"")
+            .nth(1).and_then(|s| s.split('"').nth(1))
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(16.0);
+        return Ok((rank, alpha));
+    }
+    // APR format adapter
     let reader = aprender::serialization::apr::AprReader::open(adapter)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read adapter: {e}")))?;
     let rank = reader
@@ -141,6 +166,34 @@ fn run_merge(
     let mut writer = aprender::serialization::apr::AprWriter::new();
     let mut merged_count = 0u64;
 
+    // Copy base model metadata: both RosettaStone report AND V2 binary config.
+    // The report metadata only has JSON-level keys. V2 config (hidden_size etc.)
+    // is in the binary header and must be read separately.
+    for (key, val) in &base_report.metadata {
+        let json_val = if let Ok(n) = val.parse::<u64>() {
+            serde_json::json!(n)
+        } else if let Ok(f) = val.parse::<f64>() {
+            serde_json::json!(f)
+        } else {
+            serde_json::json!(val)
+        };
+        writer.set_metadata(key, json_val);
+    }
+    if let Some(ref arch) = base_report.architecture {
+        writer.set_metadata("architecture", serde_json::json!(arch));
+    }
+    // Copy V2 binary config from base model (hidden_size, num_layers, etc.)
+    if let Ok(base_reader) = aprender::serialization::apr::AprReader::open(model) {
+        // get_metadata parses V2 binary header into a HashMap
+        for key in ["hidden_size", "num_layers", "num_heads", "num_kv_heads",
+                     "vocab_size", "intermediate_size", "max_position_embeddings",
+                     "rope_theta", "rms_norm_eps", "head_dim", "rope_type",
+                     "num_experts", "num_experts_per_tok"] {
+            if let Some(val) = base_reader.get_metadata(key) {
+                writer.set_metadata(key, val.clone());
+            }
+        }
+    }
     writer.set_metadata(
         "merge_source",
         serde_json::json!(model.display().to_string()),

@@ -1,4 +1,3 @@
-
 /// Insert a usize metadata field if present.
 fn insert_usize_meta(
     custom: &mut std::collections::HashMap<String, serde_json::Value>,
@@ -30,7 +29,11 @@ fn insert_model_config_metadata(
     insert_usize_meta(custom, "model.num_kv_heads", cfg.num_kv_heads);
     insert_usize_meta(custom, "model.vocab_size", cfg.vocab_size);
     insert_usize_meta(custom, "model.intermediate_size", cfg.intermediate_size);
-    insert_usize_meta(custom, "model.max_position_embeddings", cfg.max_position_embeddings);
+    insert_usize_meta(
+        custom,
+        "model.max_position_embeddings",
+        cfg.max_position_embeddings,
+    );
     if let Some(rope_theta) = cfg.rope_theta {
         custom.insert(
             "model.rope_theta".to_string(),
@@ -100,6 +103,8 @@ fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
 ///
 /// PMAT-103: This function preserves the original GGUF quantization format,
 /// ensuring format parity with Ollama/llama.cpp. No dequantization occurs.
+/// Provable precondition: tensors must be non-empty for a valid APR file.
+#[provable_contracts_macros::requires(!tensors.is_empty())]
 pub(crate) fn write_apr_file_raw(
     tensors: &BTreeMap<String, GgufRawTensor>,
     output: &Path,

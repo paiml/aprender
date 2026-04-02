@@ -1,4 +1,3 @@
-
 // ============================================================================
 // MANDATORY CONTRACT ENFORCEMENT (GH-208)
 // ============================================================================
@@ -39,7 +38,14 @@
 /// for row-major access. Only the SHAPE METADATA needs to be swapped.
 /// DATA TRANSPOSE IS NEVER NEEDED for GGUF→APR because GGUF's
 /// `data[i0 + i1*ne0]` layout IS row-major when interpreted as `[ne1, ne0]`.
+/// Provable postconditions:
+/// 1. Output shape has same number of elements as input shape
+/// 2. Output shape has same number of dimensions as input shape
+/// 3. Data transpose is never needed for GGUF→APR (LAYOUT-001)
 #[must_use]
+#[ensures(ret.0.len() == input_shape.len())]
+#[ensures(ret.0.iter().product::<usize>() == input_shape.iter().product::<usize>())]
+#[ensures(!ret.1)]
 pub fn enforce_import_contract(
     tensor_name: &str,
     input_shape: &[usize],
@@ -186,36 +192,80 @@ pub fn enforce_matmul_contract(
 /// APR-style and HF-style name pairs for the same role.
 /// Each entry is (apr_pattern, hf_pattern) where {i} = layer index.
 #[must_use]
-fn required_tensor_pattern_pairs(has_qk_norm: bool, has_bias: bool) -> Vec<(&'static str, &'static str)> {
+fn required_tensor_pattern_pairs(
+    has_qk_norm: bool,
+    has_bias: bool,
+) -> Vec<(&'static str, &'static str)> {
     let mut pairs = vec![
         // Layer norms
-        ("blk.{i}.attn_norm.weight", "model.layers.{i}.input_layernorm.weight"),
-        ("blk.{i}.ffn_norm.weight", "model.layers.{i}.post_attention_layernorm.weight"),
+        (
+            "blk.{i}.attn_norm.weight",
+            "model.layers.{i}.input_layernorm.weight",
+        ),
+        (
+            "blk.{i}.ffn_norm.weight",
+            "model.layers.{i}.post_attention_layernorm.weight",
+        ),
         // Attention projections
-        ("blk.{i}.attn_q.weight", "model.layers.{i}.self_attn.q_proj.weight"),
-        ("blk.{i}.attn_k.weight", "model.layers.{i}.self_attn.k_proj.weight"),
-        ("blk.{i}.attn_v.weight", "model.layers.{i}.self_attn.v_proj.weight"),
-        ("blk.{i}.attn_output.weight", "model.layers.{i}.self_attn.o_proj.weight"),
+        (
+            "blk.{i}.attn_q.weight",
+            "model.layers.{i}.self_attn.q_proj.weight",
+        ),
+        (
+            "blk.{i}.attn_k.weight",
+            "model.layers.{i}.self_attn.k_proj.weight",
+        ),
+        (
+            "blk.{i}.attn_v.weight",
+            "model.layers.{i}.self_attn.v_proj.weight",
+        ),
+        (
+            "blk.{i}.attn_output.weight",
+            "model.layers.{i}.self_attn.o_proj.weight",
+        ),
         // FFN projections (SwiGLU)
-        ("blk.{i}.ffn_gate.weight", "model.layers.{i}.mlp.gate_proj.weight"),
-        ("blk.{i}.ffn_up.weight", "model.layers.{i}.mlp.up_proj.weight"),
-        ("blk.{i}.ffn_down.weight", "model.layers.{i}.mlp.down_proj.weight"),
+        (
+            "blk.{i}.ffn_gate.weight",
+            "model.layers.{i}.mlp.gate_proj.weight",
+        ),
+        (
+            "blk.{i}.ffn_up.weight",
+            "model.layers.{i}.mlp.up_proj.weight",
+        ),
+        (
+            "blk.{i}.ffn_down.weight",
+            "model.layers.{i}.mlp.down_proj.weight",
+        ),
     ];
 
     if has_qk_norm {
-        pairs.push(("blk.{i}.attn_q_norm.weight", "model.layers.{i}.self_attn.q_norm.weight"));
-        pairs.push(("blk.{i}.attn_k_norm.weight", "model.layers.{i}.self_attn.k_norm.weight"));
+        pairs.push((
+            "blk.{i}.attn_q_norm.weight",
+            "model.layers.{i}.self_attn.q_norm.weight",
+        ));
+        pairs.push((
+            "blk.{i}.attn_k_norm.weight",
+            "model.layers.{i}.self_attn.k_norm.weight",
+        ));
     }
 
     if has_bias {
-        pairs.push(("blk.{i}.attn_q.bias", "model.layers.{i}.self_attn.q_proj.bias"));
-        pairs.push(("blk.{i}.attn_k.bias", "model.layers.{i}.self_attn.k_proj.bias"));
-        pairs.push(("blk.{i}.attn_v.bias", "model.layers.{i}.self_attn.v_proj.bias"));
+        pairs.push((
+            "blk.{i}.attn_q.bias",
+            "model.layers.{i}.self_attn.q_proj.bias",
+        ));
+        pairs.push((
+            "blk.{i}.attn_k.bias",
+            "model.layers.{i}.self_attn.k_proj.bias",
+        ));
+        pairs.push((
+            "blk.{i}.attn_v.bias",
+            "model.layers.{i}.self_attn.v_proj.bias",
+        ));
     }
 
     pairs
 }
-
 
 /// GH-279: Enforce architecture completeness at import/export boundary.
 ///
@@ -234,7 +284,10 @@ fn required_tensor_pattern_pairs(has_qk_norm: bool, has_bias: bool) -> Vec<(&'st
 /// # Errors
 ///
 /// Returns `ContractError` if any required tensor is missing.
-#[provable_contracts_macros::contract("architecture-requirements-v1", equation = "import_completeness_gate")]
+#[provable_contracts_macros::contract(
+    "architecture-requirements-v1",
+    equation = "import_completeness_gate"
+)]
 pub fn enforce_architecture_completeness(
     tensor_names: &[&str],
     architecture: &str,
@@ -243,7 +296,7 @@ pub fn enforce_architecture_completeness(
     // Derive architecture requirements
     let (has_qk_norm, has_bias) = match architecture {
         "qwen3" => (true, false),
-        "qwen3_5" | "qwen3.5" => (false, false),  // no QK norm, no bias
+        "qwen3_5" | "qwen3.5" => (false, false), // no QK norm, no bias
         "qwen2" | "qwen2.5" | "qwen" => (false, true),
         "phi" | "phi2" | "phi3" => (false, true),
         _ => (false, false), // LLaMA, Mistral, Gemma, etc.
@@ -327,7 +380,10 @@ mod architecture_completeness_tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("blk.1.ffn_gate.weight"), "Error should name the missing tensor: {msg}");
+        assert!(
+            msg.contains("blk.1.ffn_gate.weight"),
+            "Error should name the missing tensor: {msg}"
+        );
     }
 
     #[test]
@@ -353,7 +409,11 @@ mod architecture_completeness_tests {
         let result = enforce_architecture_completeness(&refs, "qwen3", 1);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("attn_q_norm"), "Should require QK norm for Qwen3: {}", msg);
+        assert!(
+            msg.contains("attn_q_norm"),
+            "Should require QK norm for Qwen3: {}",
+            msg
+        );
     }
 
     #[test]
@@ -403,7 +463,11 @@ mod architecture_completeness_tests {
         let result = enforce_architecture_completeness(&refs, "qwen2", 1);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("bias"), "Should require bias for Qwen2: {}", msg);
+        assert!(
+            msg.contains("bias"),
+            "Should require bias for Qwen2: {}",
+            msg
+        );
     }
 }
 

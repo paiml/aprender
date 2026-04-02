@@ -39,11 +39,14 @@ Aprender provides implementations of classical machine learning algorithms optim
 ## Features
 
 - **Pure Rust** — Zero C/C++ dependencies, memory-safe, thread-safe by default
-- **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) backend
+- **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) 0.16 backend
 - **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 240 tok/s 1.5B single-decode, 851 tok/s 1.5B batched)
 - **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
+- **GGML-Compliant Dtypes** — Q4/Q8 dtype IDs now use GGML standard values (128/129 reserved for APR-native)
+- **Exhaustive Format Matching** — No silent `_ =>` fallbacks at format boundaries; all dtype/format variants handled explicitly
+- **BrickScore Profiling** — Fixed to use real profiling data instead of hardcoded values
 - **WebAssembly Ready** — Compile to WASM for browser and edge deployment
-- **17,573 Tests** — 96.35% coverage, zero SATD, 73 provable contracts, TDG 95.2/100 A+
+- **12,974+ Tests** — 96.35% coverage, zero SATD, 73 provable contracts, TDG 95.2/100 A+
 
 ## Installation
 

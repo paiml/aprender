@@ -1,6 +1,9 @@
 impl GgufReader {
 
     /// Extract a tensor as F32 data (dequantizing if needed)
+    ///
+    /// Postcondition: data.len() == shape.iter().product()
+    #[ensures(ret.as_ref().map_or(true, |(data, shape)| data.len() == shape.iter().product::<usize>()))]
     pub fn get_tensor_f32(&self, name: &str) -> Result<(Vec<f32>, Vec<usize>)> {
         let meta = self
             .tensors
@@ -34,6 +37,7 @@ impl GgufReader {
         }
 
         let tensor_start = self.data_offset + meta.offset as usize;
+
 
         let data = match meta.dtype {
             0 => {

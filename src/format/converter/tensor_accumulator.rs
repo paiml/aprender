@@ -1,16 +1,20 @@
 
-/// Map tensor names to APR canonical format
+/// Map tensor names to APR canonical format.
+///
+/// Postcondition: output tensor count equals input count (name mapping is bijective).
+#[provable_contracts_macros::ensures(ret.len() == tensors.len())]
 pub(crate) fn map_tensor_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     architecture: Architecture,
 ) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
-    tensors
+    let result: BTreeMap<String, (Vec<f32>, Vec<usize>)> = tensors
         .iter()
         .map(|(name, data)| {
             let mapped_name = architecture.map_name(name);
             (mapped_name, data.clone())
         })
-        .collect()
+        .collect();
+    result
 }
 
 /// Check tensor expectations and return error message if failed.

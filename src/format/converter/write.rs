@@ -5,6 +5,7 @@ use crate::error::{AprenderError, Result};
 use crate::format::converter_types::{ImportOptions, QuantizationType};
 use crate::format::gguf::{GgufModelConfig, GgufRawTensor, GgufTokenizer};
 use crate::serialization::safetensors::UserMetadata;
+use provable_contracts_macros::requires;
 
 // Import quantization functions from parent module
 // GH-202 FIX: transpose functions removed - GGML data is already row-major
@@ -40,7 +41,10 @@ use std::path::Path;
 /// Previously cloned unconditionally (~1.4 GB for 350M model).
 fn resolve_f32_tied_embeddings(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-) -> (std::borrow::Cow<'_, BTreeMap<String, (Vec<f32>, Vec<usize>)>>, bool) {
+) -> (
+    std::borrow::Cow<'_, BTreeMap<String, (Vec<f32>, Vec<usize>)>>,
+    bool,
+) {
     let has_lm_head = tensors.keys().any(|k| k == "lm_head.weight");
 
     // GH-88: Detect degenerate lm_head (tied weights stored as near-zeros in SafeTensors).
@@ -124,10 +128,12 @@ pub(super) fn insert_f32_tokenizer_metadata(
     }
     // GH-366: Embed SentencePiece scores for Unigram models
     if !tok.scores.is_empty() {
-        let scores_array: Vec<serde_json::Value> = tok.scores
+        let scores_array: Vec<serde_json::Value> = tok
+            .scores
             .iter()
-            .filter_map(|&s| serde_json::Number::from_f64(f64::from(s))
-                .map(serde_json::Value::Number))
+            .filter_map(|&s| {
+                serde_json::Number::from_f64(f64::from(s)).map(serde_json::Value::Number)
+            })
             .collect();
         custom.insert(
             "tokenizer.scores".to_string(),
@@ -252,7 +258,11 @@ fn add_f32_tensor_to_writer(
     // and dispatch to the quantization routine.
     if let Some((raw_bytes, raw_shape, is_bf16)) = f16_raw_tensors.get(name) {
         if matches!(quantize, None | Some(QuantizationType::Fp16)) {
-            let dtype = if *is_bf16 { TensorDType::BF16 } else { TensorDType::F16 };
+            let dtype = if *is_bf16 {
+                TensorDType::BF16
+            } else {
+                TensorDType::F16
+            };
             writer.add_tensor(name, dtype, raw_shape.clone(), raw_bytes.clone());
             return true;
         }
@@ -304,6 +314,8 @@ fn flush_writer_to_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
 /// GH-205 + GH-353: `f16_raw_tensors` contains raw F16/BF16 bytes for passthrough.
 /// When a tensor appears in both `tensors` and `f16_raw_tensors`, the raw bytes are
 /// preferred to avoid precision loss and save memory (no F32 conversion needed).
+/// Provable precondition: tensors must be non-empty for a valid APR file.
+#[requires(!tensors.is_empty())]
 pub(crate) fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
@@ -499,10 +511,12 @@ fn insert_tokenizer_metadata(
     }
     // GH-366: Embed SentencePiece scores for Unigram models (GGUF path)
     if !tok.scores.is_empty() {
-        let scores_array: Vec<serde_json::Value> = tok.scores
+        let scores_array: Vec<serde_json::Value> = tok
+            .scores
             .iter()
-            .filter_map(|&s| serde_json::Number::from_f64(f64::from(s))
-                .map(serde_json::Value::Number))
+            .filter_map(|&s| {
+                serde_json::Number::from_f64(f64::from(s)).map(serde_json::Value::Number)
+            })
             .collect();
         custom.insert(
             "tokenizer.scores".to_string(),

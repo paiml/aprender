@@ -367,7 +367,8 @@ fn p12_genchi_genbutsu_debugging() {
 /// FALSIFICATION: No versioned specification
 #[test]
 fn p13_decide_slowly_versioned_spec() {
-    let spec_path = Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path =
+        Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
 
     if spec_path.exists() {
         let spec = std::fs::read_to_string(spec_path).expect("read spec");
@@ -396,7 +397,8 @@ fn p13_decide_slowly_versioned_spec() {
 #[test]
 fn p14_hansei_reflection() {
     // Check for GitHub issue references in specs or docs
-    let spec_path = Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path =
+        Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
 
     if spec_path.exists() {
         let spec = std::fs::read_to_string(spec_path).expect("read spec");

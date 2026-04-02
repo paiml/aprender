@@ -6,6 +6,7 @@
 //! inline implementations.
 
 use crate::error::{AprenderError, Result};
+use provable_contracts_macros::ensures;
 
 /// Convert F16 (IEEE 754 half-precision) to F32.
 ///
@@ -46,6 +47,7 @@ fn safe_f16_scale(bits: u16) -> f32 {
 ///
 /// This was previously wrong (interleaved: low0, high0, low1, high1, ...) which
 /// caused APR inference to produce garbage output for Q4_0 quantized models.
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 16; // f16 scale + 16 bytes of 4-bit values
@@ -97,6 +99,7 @@ pub fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result
 ///
 /// Q8_0: blocks of 32 elements, each block has 2-byte f16 scale + 32 int8 values
 /// Total: 34 bytes per block
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 bytes of int8 values
@@ -141,6 +144,7 @@ pub fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result
 /// - 16 bytes of low 4-bit values (32 values packed 2 per byte)
 ///
 /// Total: 22 bytes per block
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 4 + 16; // f16 scale + 4 high bits + 16 low nibbles = 22
@@ -206,6 +210,7 @@ pub fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result
 /// - 16 bytes of low 4-bit values (32 values packed 2 per byte)
 ///
 /// Total: 24 bytes per block
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q5_1(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 2 + 4 + 16; // f16 scale + f16 min + 4 high bits + 16 low nibbles = 24
@@ -271,6 +276,7 @@ pub(crate) fn dequantize_q5_1(data: &[u8], start: usize, num_elements: usize) ->
 /// Each super block: d (f16) + dmin (f16) + scales (12 bytes) + qs (128 bytes) = 144 bytes
 ///
 /// Delegates to `trueno_quant::dequantize_q4_k_to_f32` — the single source of truth.
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 144;
@@ -295,6 +301,7 @@ pub(crate) fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) ->
 /// Each super block: d (f16) + dmin (f16) + scales (12 bytes) + qh (32 bytes) + qs (128 bytes) = 176 bytes
 ///
 /// Delegates to `trueno_quant::dequantize_q5_k_to_f32` — the single source of truth.
+#[ensures(ret.as_ref().map_or(true, |v| v.len() == num_elements))]
 pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 176;
