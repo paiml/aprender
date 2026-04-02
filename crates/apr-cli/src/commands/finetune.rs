@@ -1012,8 +1012,15 @@ pub(crate) fn run(
         json_output,
     );
 
-    let config = plan(model_params, vram_gb, ft_method.into())
+    let mut config = plan(model_params, vram_gb, ft_method.into())
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+
+    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
+    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+    }
 
     display_finetune_plan(
         &config,
