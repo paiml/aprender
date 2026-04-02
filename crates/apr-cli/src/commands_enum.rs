@@ -75,6 +75,22 @@ pub enum Commands {
         /// Top-k sampling (default: 1 = greedy)
         #[arg(long, default_value = "1")]
         top_k: usize,
+        /// Top-p nucleus sampling (0.0 = disabled). When set with --top-k, applies top-k first then top-p.
+        /// F-CLIPARITY-01 / PMAT-381 / paiml/aprender#569
+        #[arg(long)]
+        top_p: Option<f32>,
+        /// RNG seed for deterministic sampling (default: 299792458, matching Candle)
+        /// F-CLIPARITY-01 / PMAT-382 / paiml/aprender#570
+        #[arg(long, default_value = "299792458")]
+        seed: u64,
+        /// Repetition penalty (1.0 = no penalty, >1.0 penalizes repeats)
+        /// F-CLIPARITY-01 / PMAT-383 / paiml/aprender#571
+        #[arg(long, default_value = "1.0")]
+        repeat_penalty: f32,
+        /// Context window for repetition penalty (number of recent tokens to check)
+        /// F-CLIPARITY-01 / PMAT-384 / paiml/aprender#571
+        #[arg(long, default_value = "64")]
+        repeat_last_n: usize,
         /// Batch mode: read prompts from JSONL, output results as JSONL.
         /// Model loads once, processes all prompts sequentially.
         /// Each input line: {"prompt": "...", "task_id": "..."}
