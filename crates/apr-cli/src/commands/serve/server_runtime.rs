@@ -1,7 +1,12 @@
 /// Run an axum server with graceful shutdown and standard banner.
+/// GH-172-FIX: 16MB thread stack for worker threads — GPU forward pass with
+/// large-vocab models (151K × 4B = 608KB logits) overflows the default 2MB stack.
 #[cfg(feature = "inference")]
 fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<()> {
-    let runtime = tokio::runtime::Runtime::new()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(16 * 1024 * 1024) // 16 MB (default: 2 MB)
+        .build()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = bind_addr.to_string();
