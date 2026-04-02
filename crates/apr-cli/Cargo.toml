@@ -75,6 +75,7 @@ visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora"]
 training-gpu = ["training", "entrenar/cuda", "entrenar/gpu"]
+whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
 
 [dependencies]
@@ -90,6 +91,10 @@ batuta-common = "0.1"
 # Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.
 # TODO: Gate all CUDA code in apr-cli with #[cfg(feature = "cuda")] then remove from here.
 realizar = { version = "0.8", path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
+
+# Whisper speech recognition (GH-516: apr run --input audio.wav)
+# Zero external deps — our own implementation in ../whisper.apr
+whisper-apr = { version = "0.2", path = "../../../whisper.apr", optional = true }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
