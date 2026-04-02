@@ -15,6 +15,7 @@ metadata:
 equations:
   silu:
     formula: "SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x))"
+    lean_theorem: Theorems.Silu
     domain: "x in R"
     codomain: "y in R, y >= -0.2785 (global minimum at x approx -1.2785)"
     invariants:
@@ -31,6 +32,7 @@ equations:
 
   silu_derivative:
     formula: "SiLU'(x) = sigmoid(x) * (1 + x * (1 - sigmoid(x)))"
+    lean_theorem: Theorems.Silu_Derivative
     domain: "x in R"
     codomain: "y in R, y >= -0.1"
     invariants:

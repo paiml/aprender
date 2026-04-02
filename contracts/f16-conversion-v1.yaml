@@ -15,6 +15,7 @@ metadata:
 equations:
   f16_roundtrip:
     formula: "|f32_to_f16(f16_to_f32(x)) - x| == 0 for all valid f16 x"
+    lean_theorem: Theorems.F16_Roundtrip
     domain: "x ∈ F16 (IEEE 754 half-precision)"
     codomain: "y ∈ F32 (IEEE 754 single-precision)"
     invariants:
@@ -28,6 +29,7 @@ equations:
 
   f32_to_f16_truncation:
     formula: "|f16_to_f32(f32_to_f16(x)) - x| <= ulp_f16(x) for representable range"
+    lean_theorem: Theorems.F32_To_F16_Truncation
     domain: "x ∈ F32 where |x| <= 65504.0"
     codomain: "y ∈ F16"
     invariants:

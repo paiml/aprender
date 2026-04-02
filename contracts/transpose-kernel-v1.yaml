@@ -38,6 +38,7 @@ metadata:
 equations:
   transpose_2d:
     formula: "B[j * rows + i] = A[i * cols + j]"
+    lean_theorem: Theorems.Transpose_2d
     domain: "∀i ∈ [0, rows), ∀j ∈ [0, cols)"
     properties:
       - involution: "transpose(transpose(A)) == A"
@@ -47,6 +48,7 @@ equations:
 
   transpose_last_two:
     formula: "B[b][h][j][i] = A[b][h][i][j]"
+    lean_theorem: Theorems.Transpose_Last_Two
     domain: "∀b ∈ [0, batch), ∀h ∈ [0, heads), ∀i ∈ [0, seq), ∀j ∈ [0, dim)"
     description: "Batched transpose of last two dimensions (attention K^T)"
 

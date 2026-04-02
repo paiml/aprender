@@ -14,6 +14,7 @@ metadata:
 equations:
   mse:
     formula: "MSE = (1/n) * sum((y_i - yhat_i)^2, i=1..n)"
+    lean_theorem: Theorems.Mse
     domain: "y, yhat ∈ R^n, n >= 1"
     codomain: "MSE ∈ [0, +inf)"
     invariants:
@@ -27,6 +28,7 @@ equations:
 
   r_squared:
     formula: "R^2 = 1 - SS_res / SS_tot = 1 - sum((y_i - yhat_i)^2) / sum((y_i - mean(y))^2)"
+    lean_theorem: Theorems.R_Squared
     domain: "y, yhat ∈ R^n, n >= 2, var(y) > 0"
     codomain: "R^2 ∈ (-inf, 1]"
     invariants:

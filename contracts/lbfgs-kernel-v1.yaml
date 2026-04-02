@@ -15,6 +15,7 @@ metadata:
 equations:
   two_loop_recursion:
     formula: "H_k * g_k via two-loop: q = g_k; for i = k-1..k-m: alpha_i = rho_i * s_i^T * q, q -= alpha_i * y_i; r = H_0 * q; for i = k-m..k-1: beta = rho_i * y_i^T * r, r += s_i * (alpha_i - beta); return r"
+    lean_theorem: Theorems.Two_Loop_Recursion
     domain: "g_k in R^n (gradient), s_i = x_{i+1} - x_i, y_i = g_{i+1} - g_i, rho_i = 1 / (y_i^T * s_i), m history pairs"
     codomain: "direction d = -H_k * g_k in R^n"
     invariants:
@@ -32,6 +33,7 @@ equations:
 
   wolfe_line_search:
     formula: "Find alpha > 0 satisfying: (i) f(x + alpha*d) <= f(x) + c1*alpha*g^T*d (Armijo), (ii) |g(x + alpha*d)^T * d| <= c2 * |g^T * d| (strong Wolfe)"
+    lean_theorem: Theorems.Wolfe_Line_Search
     domain: "f: R^n -> R differentiable, d in R^n descent direction, 0 < c1 < c2 < 1"
     codomain: "alpha > 0 satisfying Wolfe conditions"
     invariants:
@@ -48,6 +50,7 @@ equations:
 
   curvature_update:
     formula: "s_k = x_{k+1} - x_k = alpha_k * d_k, y_k = g_{k+1} - g_k, store (s_k, y_k) if y_k^T * s_k > 0"
+    lean_theorem: Theorems.Curvature_Update
     domain: "x_k, x_{k+1} in R^n, g_k, g_{k+1} in R^n"
     codomain: "Updated history buffer with at most m pairs"
     invariants:

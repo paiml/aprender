@@ -32,6 +32,7 @@ metadata:
 equations:
   softmax:
     formula: "softmax(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))"
+    lean_theorem: Theorems.Softmax
     domain: "x ∈ R^n, n ≥ 1"
     properties:
       - probability_simplex: "Σ_i softmax(x)_i = 1.0"
@@ -42,6 +43,7 @@ equations:
 
   log_softmax:
     formula: "log_softmax(x)_i = x_i - max(x) - log(Σ_j exp(x_j - max(x)))"
+    lean_theorem: Theorems.Log_Softmax
     domain: "x ∈ R^n, n ≥ 1"
     properties:
       - negative: "log_softmax(x)_i ≤ 0 ∀i"

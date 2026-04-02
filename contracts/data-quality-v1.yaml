@@ -14,24 +14,28 @@ metadata:
 equations:
   split_disjointness:
     formula: "train ∩ val == ∅ AND train ∩ test == ∅ AND val ∩ test == ∅"
+    lean_theorem: Theorems.Split_Disjointness
     description: "Data splits are pairwise disjoint (no leakage)"
     invariants:
       - "No sample appears in more than one split"
 
   split_completeness:
     formula: "|train| + |val| + |test| == |dataset|"
+    lean_theorem: Theorems.Split_Completeness
     description: "All samples accounted for across splits"
     invariants:
       - "No samples lost during splitting"
 
   oversample_preservation:
     formula: "∀ sample ∈ original: sample ∈ balanced"
+    lean_theorem: Theorems.Oversample_Preservation
     description: "Oversampling only adds duplicates, never removes originals"
     invariants:
       - "|balanced| >= |original|"
 
   jsonl_validation:
     formula: "∀ line ∈ file: parse_json(line) is Ok OR error reported"
+    lean_theorem: Theorems.Jsonl_Validation
     description: "Invalid JSON on any line produces explicit error"
 
 proof_obligations:

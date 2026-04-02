@@ -59,6 +59,7 @@ kani_harnesses:
 equations:
   cross_entropy_loss:
     formula: "L = -log(softmax(logits)[y])"
+    lean_theorem: Theorems.Cross_Entropy_Loss
     domain: "logits in R^C, y in {0, ..., C-1}"
     codomain: "R+ (non-negative loss)"
     invariants:
@@ -67,6 +68,7 @@ equations:
 
   softmax:
     formula: "softmax(x)_i = exp(x_i) / sum_j(exp(x_j))"
+    lean_theorem: Theorems.Softmax
     domain: "x in R^C"
     codomain: "[0, 1]^C with sum = 1"
     invariants:

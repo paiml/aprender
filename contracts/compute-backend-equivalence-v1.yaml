@@ -67,6 +67,7 @@ metadata:
 equations:
   rmsnorm_equivalence:
     formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    lean_theorem: Theorems.Rmsnorm_Equivalence
     domain: "x ∈ ℝ^n, γ ∈ ℝ^n, ε > 0, n ≥ 1"
     codomain: "y ∈ ℝ^n"
     invariants:
@@ -80,6 +81,7 @@ equations:
 
   q4k_gemv_equivalence:
     formula: "y = W_q4k · x (fused dequantize + matvec)"
+    lean_theorem: Theorems.Q4k_Gemv_Equivalence
     domain: "W ∈ Q4K^{m×n}, x ∈ ℝ^n"
     codomain: "y ∈ ℝ^m"
     invariants:
@@ -92,6 +94,7 @@ equations:
 
   rope_equivalence:
     formula: "q'_2i = q_2i cos(θ_i) - q_{2i+1} sin(θ_i); q'_{2i+1} = q_{2i+1} cos(θ_i) + q_2i sin(θ_i)"
+    lean_theorem: Theorems.Rope_Equivalence
     domain: "q ∈ ℝ^d, position ∈ ℕ, θ_base > 0"
     codomain: "q' ∈ ℝ^d"
     invariants:
@@ -100,6 +103,7 @@ equations:
 
   swiglu_equivalence:
     formula: "y = SiLU(gate(x)) ⊙ up(x), where SiLU(z) = z · σ(z)"
+    lean_theorem: Theorems.Swiglu_Equivalence
     domain: "x ∈ ℝ^n, gate ∈ ℝ^{m×n}, up ∈ ℝ^{m×n}"
     codomain: "y ∈ ℝ^m"
     invariants:
@@ -107,6 +111,7 @@ equations:
 
   attention_equivalence:
     formula: "attn = softmax(Q·K^T / √d_k) · V"
+    lean_theorem: Theorems.Attention_Equivalence
     domain: "Q ∈ ℝ^{n×d}, K ∈ ℝ^{s×d}, V ∈ ℝ^{s×d}"
     codomain: "attn ∈ ℝ^{n×d}"
     invariants:
@@ -115,6 +120,7 @@ equations:
 
   lm_head_equivalence:
     formula: "logits = W_lm · hidden"
+    lean_theorem: Theorems.Lm_Head_Equivalence
     domain: "W_lm ∈ ℝ^{vocab×hidden}, hidden ∈ ℝ^hidden"
     codomain: "logits ∈ ℝ^vocab"
     invariants:

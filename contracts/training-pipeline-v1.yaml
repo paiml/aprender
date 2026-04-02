@@ -22,6 +22,7 @@ metadata:
 equations:
   checkpoint_roundtrip:
     formula: "load(save(state)).weights == state.weights"
+    lean_theorem: Theorems.Checkpoint_Roundtrip
     description: "Checkpoint serialization preserves all training state"
     invariants:
       - "Optimizer state preserved across save/load"
@@ -30,6 +31,7 @@ equations:
 
   vram_estimate:
     formula: "|estimated_vram - actual_vram| / actual_vram < 0.2"
+    lean_theorem: Theorems.Vram_Estimate
     description: "VRAM estimation within 20% of actual usage"
     invariants:
       - "estimated_vram > 0"
@@ -37,6 +39,7 @@ equations:
 
   restart_limit:
     formula: "restart_count <= max_restarts"
+    lean_theorem: Theorems.Restart_Limit
     description: "Training restarts bounded by configured maximum"
     invariants:
       - "restart_count monotonically increases"
@@ -44,12 +47,14 @@ equations:
 
   expected_improvement:
     formula: "EI(x) = E[max(f(x) - f_best, 0)] >= 0"
+    lean_theorem: Theorems.Expected_Improvement
     description: "Expected improvement is always non-negative"
     invariants:
       - "EI == 0 when x is known optimum"
 
   backoff_cap:
     formula: "backoff_delay <= backoff_max"
+    lean_theorem: Theorems.Backoff_Cap
     description: "Exponential backoff capped at maximum delay"
     invariants:
       - "backoff_delay >= backoff_min"

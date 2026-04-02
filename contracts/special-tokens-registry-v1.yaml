@@ -229,6 +229,7 @@ kani_harnesses:
 equations:
   token_id_bound:
     formula: "token_id < vocab_size when token_id > 0"
+    lean_theorem: Theorems.Token_Id_Bound
     domain: "token_id in N, vocab_size in N+"
     codomain: "Boolean"
     invariants:

@@ -43,6 +43,7 @@ metadata:
 equations:
   add:
     formula: "output[i] = a[i] + b[i]"
+    lean_theorem: Theorems.Add
     domain: "∀i ∈ [0, n)"
     properties:
       - commutative: "add(a, b) == add(b, a)"
@@ -51,6 +52,7 @@ equations:
 
   sub:
     formula: "output[i] = a[i] - b[i]"
+    lean_theorem: Theorems.Sub
     domain: "∀i ∈ [0, n)"
     properties:
       - inverse: "sub(a, a) == zeros"
@@ -58,6 +60,7 @@ equations:
 
   mul:
     formula: "output[i] = a[i] * b[i]"
+    lean_theorem: Theorems.Mul
     domain: "∀i ∈ [0, n)"
     properties:
       - commutative: "mul(a, b) == mul(b, a)"
@@ -66,6 +69,7 @@ equations:
 
   div:
     formula: "output[i] = a[i] / b[i]"
+    lean_theorem: Theorems.Div
     domain: "∀i ∈ [0, n), b[i] ≠ 0"
     properties:
       - identity: "div(a, ones) == a"
@@ -73,6 +77,7 @@ equations:
 
   neg:
     formula: "output[i] = -a[i]"
+    lean_theorem: Theorems.Neg
     domain: "∀i ∈ [0, n)"
     properties:
       - involution: "neg(neg(a)) == a"
@@ -80,6 +85,7 @@ equations:
 
   mul_scalar:
     formula: "output[i] = a[i] * s"
+    lean_theorem: Theorems.Mul_Scalar
     domain: "∀i ∈ [0, n)"
     properties:
       - identity: "mul_scalar(a, 1.0) == a"
@@ -88,6 +94,7 @@ equations:
 
   relu:
     formula: "output[i] = max(0, a[i])"
+    lean_theorem: Theorems.Relu
     domain: "∀i ∈ [0, n)"
     properties:
       - non_negative: "relu(a)[i] >= 0"
@@ -97,6 +104,7 @@ equations:
 
   leaky_relu:
     formula: "output[i] = a[i] > 0 ? a[i] : slope * a[i]"
+    lean_theorem: Theorems.Leaky_Relu
     domain: "∀i ∈ [0, n)"
     properties:
       - reduces_to_relu: "leaky_relu(a, 0.0) == relu(a)"

@@ -20,6 +20,7 @@ metadata:
 equations:
   sovereign_isolation:
     formula: "privacy_tier == Sovereign → outbound_connections == 0"
+    lean_theorem: Theorems.Sovereign_Isolation
     description: "Sovereign tier models never make network requests"
     invariants:
       - "No DNS lookups"
@@ -28,6 +29,7 @@ equations:
 
   circuit_breaker_fsm:
     formula: "transitions ∈ {Closed→Open, Open→HalfOpen, HalfOpen→Closed, HalfOpen→Open}"
+    lean_theorem: Theorems.Circuit_Breaker_Fsm
     description: "Circuit breaker follows valid state machine transitions"
     invariants:
       - "Closed → Open: after N consecutive failures"
@@ -38,6 +40,7 @@ equations:
 
   streaming_order:
     formula: "∀ i < j: emit_time(token_i) < emit_time(token_j)"
+    lean_theorem: Theorems.Streaming_Order
     description: "SSE token emission matches generation order"
     invariants:
       - "Each event has monotonically increasing sequence number"

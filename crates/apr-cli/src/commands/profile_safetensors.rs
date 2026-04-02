@@ -120,6 +120,7 @@ fn profile_gguf_real(
         top_k: 1,
         stop_tokens: vec![],
         trace: false,
+        ..Default::default()
     };
 
     // Warmup passes (discard timing)

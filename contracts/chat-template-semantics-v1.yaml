@@ -225,6 +225,7 @@ kani_harnesses:
 equations:
   delimiter_balance:
     formula: "count(im_start) == count(im_end) + 1 for N messages with generation prompt"
+    lean_theorem: Theorems.Delimiter_Balance
     domain: "N >= 0 messages"
     codomain: "N+"
     invariants:
@@ -233,6 +234,7 @@ equations:
 
   sanitization_idempotency:
     formula: "sanitize(sanitize(x)) == sanitize(x)"
+    lean_theorem: Theorems.Sanitization_Idempotency
     domain: "x in valid UTF-8 strings"
     codomain: "valid UTF-8 strings"
     invariants:

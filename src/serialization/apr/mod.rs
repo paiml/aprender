@@ -95,25 +95,46 @@ impl AprReader {
         }
         // Transformer config fields (V2 binary header → flat metadata)
         if let Some(v) = meta.hidden_size {
-            metadata.insert("hidden_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "hidden_size".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.num_layers {
-            metadata.insert("num_layers".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "num_layers".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.num_heads {
-            metadata.insert("num_heads".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "num_heads".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.num_kv_heads {
-            metadata.insert("num_kv_heads".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "num_kv_heads".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.vocab_size {
-            metadata.insert("vocab_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "vocab_size".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.intermediate_size {
-            metadata.insert("intermediate_size".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "intermediate_size".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.max_position_embeddings {
-            metadata.insert("max_position_embeddings".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "max_position_embeddings".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         if let Some(v) = meta.rope_theta {
             metadata.insert("rope_theta".into(), serde_json::json!(v));
@@ -122,7 +143,10 @@ impl AprReader {
             metadata.insert("rms_norm_eps".into(), serde_json::json!(v));
         }
         if let Some(v) = meta.head_dim {
-            metadata.insert("head_dim".into(), JsonValue::Number(serde_json::Number::from(v)));
+            metadata.insert(
+                "head_dim".into(),
+                JsonValue::Number(serde_json::Number::from(v)),
+            );
         }
         // Include custom fields
         for (k, v) in &meta.custom {

@@ -15,6 +15,7 @@ metadata:
 equations:
   gate_independence:
     formula: "pass(gate_i) is independent of pass(gate_j) for i != j"
+    lean_theorem: Theorems.Gate_Independence
     description: "Each QA gate evaluates independently"
     invariants:
       - "No shared mutable state between gates"
@@ -22,6 +23,7 @@ equations:
 
   regression_threshold:
     formula: "regression_detected ↔ |metric_new - metric_baseline| > threshold"
+    lean_theorem: Theorems.Regression_Threshold
     description: "Regression detection via threshold comparison"
     invariants:
       - "threshold > 0"
@@ -29,6 +31,7 @@ equations:
 
   gate_coverage:
     formula: "executed_gates >= min_required_gates"
+    lean_theorem: Theorems.Gate_Coverage
     description: "QA qualify requires minimum number of gates to pass"
     invariants:
       - "Skipped gates count as not executed"
@@ -36,6 +39,7 @@ equations:
 
   timeout_enforcement:
     formula: "∀ gate: execution_time <= timeout"
+    lean_theorem: Theorems.Timeout_Enforcement
     description: "No gate runs longer than configured timeout"
     invariants:
       - "timeout > 0"

@@ -45,6 +45,7 @@ kani_harnesses:
 equations:
   gqa_ratio:
     formula: "gqa_ratio = num_heads / num_kv_heads"
+    lean_theorem: Theorems.Gqa_Ratio
     domain: "num_heads > 0, num_kv_heads > 0, num_heads % num_kv_heads == 0"
     codomain: "N+ (positive integer)"
     invariants:
@@ -54,6 +55,7 @@ equations:
 
   head_dim:
     formula: "head_dim = hidden_dim / num_heads (when explicit_head_dim is None)"
+    lean_theorem: Theorems.Head_Dim
     domain: "hidden_dim > 0, num_heads > 0, hidden_dim % num_heads == 0"
     codomain: "N+ (per-head dimension)"
     invariants:

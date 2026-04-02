@@ -15,6 +15,7 @@ metadata:
 equations:
   throughput_positivity:
     formula: "tps = tokens / elapsed_seconds > 0"
+    lean_theorem: Theorems.Throughput_Positivity
     description: "Throughput is strictly positive for non-empty inference"
     invariants:
       - "tokens > 0 for non-empty inference"
@@ -22,6 +23,7 @@ equations:
 
   warmup_exclusion:
     formula: "measurement_start = iteration[warmup_count]"
+    lean_theorem: Theorems.Warmup_Exclusion
     description: "Warmup iterations excluded from timing measurement"
     invariants:
       - "warmup_count >= 0"
@@ -29,6 +31,7 @@ equations:
 
   ci_exit_code:
     formula: "assertion_failed → exit(1)"
+    lean_theorem: Theorems.Ci_Exit_Code
     description: "CI mode returns non-zero exit code on assertion failure"
     invariants:
       - "All assertions checked before exit"
@@ -36,6 +39,7 @@ equations:
 
   roofline_classification:
     formula: "op_intensity < ridge_point → memory_bound, else compute_bound"
+    lean_theorem: Theorems.Roofline_Classification
     description: "Roofline model classifies bottleneck type"
     invariants:
       - "ridge_point = peak_flops / peak_bandwidth"

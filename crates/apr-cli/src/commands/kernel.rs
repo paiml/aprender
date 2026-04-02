@@ -92,6 +92,7 @@ fn profile_gpu_generation(
         top_k: 1,
         stop_tokens: vec![],
         trace: false,
+        ..Default::default()
     };
 
     // Warmup passes
@@ -136,6 +137,7 @@ fn profile_gpu_generation(
             top_k: 1,
             stop_tokens: vec![],
             trace: false,
+            ..Default::default()
         };
         // GH-326: Log prefill failures instead of silently discarding
         if let Err(e) = cuda_model.generate_gpu_resident(&test_tokens, &prefill_config) {
@@ -357,6 +359,7 @@ fn run_brick_profiler_pass(
         top_k: 1,
         stop_tokens: vec![],
         trace: false,
+        ..Default::default()
     };
     let _ = cuda_model.generate_gpu_resident(test_tokens, &profile_config);
 

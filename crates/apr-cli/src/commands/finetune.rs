@@ -562,36 +562,61 @@ fn execute_training_wgpu(
         t_start.elapsed().as_secs_f64(),
     );
 
-    // 7. Train
-    for epoch in 0..epochs {
-        let mut total_loss = 0.0f32;
-        let mut total_tokens = 0usize;
+    // 7. Train — detect DPO vs SFT from data format
+    // DPO data has "chosen" field; SFT data has "instruction"/"response"
+    let is_dpo = std::fs::read_to_string(data_path)
+        .map(|s| s.lines().next().map(|l| l.contains("chosen")).unwrap_or(false))
+        .unwrap_or(false);
 
-        for (i, sample) in corpus.iter().enumerate() {
-            let prompt_ids = pipeline.encode(&sample.instruction);
-            let response_ids = pipeline.encode(&sample.response);
-            let result = pipeline.train_step(&prompt_ids, &response_ids);
-            total_loss += result.loss * result.num_response_tokens as f32;
-            total_tokens += result.num_response_tokens;
-
-            if !json_output {
-                eprintln!(
-                    "  Epoch {}/{} sample {}/{}: loss={:.4}",
-                    epoch + 1,
-                    epochs,
-                    i + 1,
-                    corpus.len(),
-                    result.loss,
-                );
+    if is_dpo {
+        // DPO alignment training
+        let pairs = entrenar::finetune::instruct_corpus::load_preference_pairs(data_path)
+            .map_err(|e| CliError::ValidationFailed(format!("DPO data: {e}")))?;
+        eprintln!("[wgpu] DPO training: {} preference pairs, beta=0.1", pairs.len());
+        for epoch in 0..epochs {
+            let mut total_loss = 0.0f32;
+            for (i, pair) in pairs.iter().enumerate() {
+                let prompt_ids = pipeline.encode(&pair.prompt);
+                let chosen_ids = pipeline.encode(&pair.chosen);
+                let rejected_ids = pipeline.encode(&pair.rejected);
+                let loss = pipeline.dpo_step(&prompt_ids, &chosen_ids, &rejected_ids, 0.1);
+                total_loss += loss;
+                if !json_output && (i + 1) % 10 == 0 {
+                    eprintln!("  Epoch {}/{} pair {}/{}: dpo_loss={:.4}",
+                        epoch + 1, epochs, i + 1, pairs.len(), loss);
+                }
             }
+            let avg = total_loss / pairs.len().max(1) as f32;
+            eprintln!("  Epoch {} complete: avg_dpo_loss={:.4}", epoch + 1, avg);
         }
+    } else {
+        // Standard SFT training
+        for epoch in 0..epochs {
+            let mut total_loss = 0.0f32;
+            let mut total_tokens = 0usize;
 
-        let avg_loss = if total_tokens > 0 {
-            total_loss / total_tokens as f32
-        } else {
-            0.0
-        };
-        eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
+            for (i, sample) in corpus.iter().enumerate() {
+                let prompt_ids = pipeline.encode(&sample.instruction);
+                let response_ids = pipeline.encode(&sample.response);
+                let result = pipeline.train_step(&prompt_ids, &response_ids);
+                total_loss += result.loss * result.num_response_tokens as f32;
+                total_tokens += result.num_response_tokens;
+
+                if !json_output {
+                    eprintln!(
+                        "  Epoch {}/{} sample {}/{}: loss={:.4}",
+                        epoch + 1, epochs, i + 1, corpus.len(), result.loss,
+                    );
+                }
+            }
+
+            let avg_loss = if total_tokens > 0 {
+                total_loss / total_tokens as f32
+            } else {
+                0.0
+            };
+            eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
+        }
     }
 
     eprintln!(

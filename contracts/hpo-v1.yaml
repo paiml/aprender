@@ -20,6 +20,7 @@ metadata:
 equations:
   budget_enforcement:
     formula: "total_trials <= budget"
+    lean_theorem: Theorems.Budget_Enforcement
     description: "Total number of evaluated configurations never exceeds budget"
     invariants:
       - "budget > 0"
@@ -27,6 +28,7 @@ equations:
 
   asha_promotion:
     formula: "promoted <= ceil(candidates / eta)"
+    lean_theorem: Theorems.Asha_Promotion
     description: "ASHA successive halving promotes at most 1/eta fraction"
     invariants:
       - "eta >= 2 (halving ratio)"
@@ -35,12 +37,14 @@ equations:
 
   best_so_far_monotonic:
     formula: "best_score(t) >= best_score(t-1)"
+    lean_theorem: Theorems.Best_So_Far_Monotonic
     description: "Best observed score never decreases over trials"
     invariants:
       - "Comparison uses consistent metric direction (max or min)"
 
   time_limit:
     formula: "elapsed <= time_limit + grace_period"
+    lean_theorem: Theorems.Time_Limit
     description: "Total HPO wall-clock time bounded by configured limit"
     invariants:
       - "grace_period accounts for in-flight trial completion"

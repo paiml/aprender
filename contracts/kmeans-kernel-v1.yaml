@@ -15,6 +15,7 @@ metadata:
 equations:
   assignment_step:
     formula: "c_i = argmin_j ||x_i - mu_j||^2 for each data point x_i"
+    lean_theorem: Theorems.Assignment_Step
     domain: "X in R^{n x d}, mu in R^{k x d}, k >= 1, n >= k"
     codomain: "c in {0, ..., k-1}^n"
     invariants:
@@ -32,6 +33,7 @@ equations:
 
   centroid_update:
     formula: "mu_j = (1 / |S_j|) * sum_{i in S_j} x_i where S_j = {i : c_i == j}"
+    lean_theorem: Theorems.Centroid_Update
     domain: "X in R^{n x d}, c in {0, ..., k-1}^n, each cluster non-empty"
     codomain: "mu in R^{k x d}"
     invariants:
@@ -46,6 +48,7 @@ equations:
 
   objective:
     formula: "J = sum_{i=1}^{n} ||x_i - mu_{c_i}||^2 (within-cluster sum of squares, WCSS)"
+    lean_theorem: Theorems.Objective
     domain: "X in R^{n x d}, c in {0, ..., k-1}^n, mu in R^{k x d}"
     codomain: "J in R, J >= 0"
     invariants:

@@ -39,6 +39,7 @@ metadata:
 equations:
   rmsnorm:
     formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    lean_theorem: Theorems.Rmsnorm
     expanded: "y_i = x_i * (1 / sqrt(Σ_j x_j² / n + ε)) * γ_i"
     domain: "x ∈ R^n, γ ∈ R^n, ε > 0"
     properties:
@@ -48,6 +49,7 @@ equations:
 
   layernorm:
     formula: "y_i = (x_i - μ) / sqrt(σ² + ε) * γ_i + β_i"
+    lean_theorem: Theorems.Layernorm
     expanded: |
       μ = Σ_j x_j / n
       σ² = Σ_j (x_j - μ)² / n

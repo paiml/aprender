@@ -15,6 +15,7 @@ metadata:
 equations:
   gqa_head_grouping:
     formula: "group_size = num_q_heads / num_kv_heads; for query head q_i, kv_head = i / group_size"
+    lean_theorem: Theorems.Gqa_Head_Grouping
     domain: "num_q_heads >= num_kv_heads >= 1, num_q_heads % num_kv_heads == 0"
     codomain: "kv_head_index in [0, num_kv_heads)"
     invariants:
@@ -32,6 +33,7 @@ equations:
 
   kv_head_repeat:
     formula: "K_expanded[i] = K[i / group_size], V_expanded[i] = V[i / group_size] for i in [0, num_q_heads)"
+    lean_theorem: Theorems.Kv_Head_Repeat
     domain: "K in R^{num_kv_heads x seq x d_k}, V in R^{num_kv_heads x seq x d_v}, group_size >= 1"
     codomain: "K_expanded in R^{num_q_heads x seq x d_k}, V_expanded in R^{num_q_heads x seq x d_v}"
     invariants:
@@ -47,6 +49,7 @@ equations:
 
   gqa_attention:
     formula: "GQA(Q, K, V) = Concat(head_0, ..., head_{h-1}) * W_o where head_i = Attention(Q_i, K_{i/g}, V_{i/g})"
+    lean_theorem: Theorems.Gqa_Attention
     domain: "Q in R^{num_q_heads x seq x d_k}, K in R^{num_kv_heads x seq x d_k}, V in R^{num_kv_heads x seq x d_v}"
     codomain: "out in R^{seq x d_model}"
     invariants:

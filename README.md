@@ -326,7 +326,7 @@ apr quantize model.apr --batch int4,int8,q4k -o models/
 | Time | ~4 minutes (NVMe) |
 | Peak RSS | ~3.8 GB |
 
-See [`docs/specifications/streaming-quantize-safetensors-q4k.md`](docs/specifications/streaming-quantize-safetensors-q4k.md) for the full specification.
+See [`docs/specifications/archive/streaming-quantize-safetensors-q4k.md`](docs/specifications/archive/streaming-quantize-safetensors-q4k.md) for the full specification.
 
 ## Showcase: Qwen2.5-Coder Inference
 
@@ -366,7 +366,7 @@ apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 
 **Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
 
-See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 43-round Popperian falsification protocol (206 bugs found and fixed).
+See [`docs/specifications/archive/qwen2.5-coder-showcase-demo.md`](docs/specifications/archive/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 43-round Popperian falsification protocol (206 bugs found and fixed).
 
 ## QA & Testing
 
@@ -429,10 +429,10 @@ See [`docs/claude-code-skills/`](docs/claude-code-skills/) for gate details, deb
 | API Reference | [docs.rs/aprender](https://docs.rs/aprender) |
 | User Guide | [paiml.github.io/aprender](https://paiml.github.io/aprender/) |
 | Examples | [`examples/`](examples/) |
-| APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
-| QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
+| APR Format Spec | [`docs/specifications/archive/APR-SPEC.md`](docs/specifications/archive/APR-SPEC.md) |
+| QA Protocol | [`docs/specifications/archive/qa-showcase-methodology.md`](docs/specifications/archive/qa-showcase-methodology.md) |
 | Qualify Matrix | [`docs/qualify-matrix.md`](docs/qualify-matrix.md) |
-| Streaming Quantization | [`docs/specifications/streaming-quantize-safetensors-q4k.md`](docs/specifications/streaming-quantize-safetensors-q4k.md) |
+| Streaming Quantization | [`docs/specifications/archive/streaming-quantize-safetensors-q4k.md`](docs/specifications/archive/streaming-quantize-safetensors-q4k.md) |
 | Claude Code Skills | [`docs/claude-code-skills/`](docs/claude-code-skills/) |
 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 

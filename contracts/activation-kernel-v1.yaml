@@ -15,6 +15,7 @@ metadata:
 equations:
   relu:
     formula: "ReLU(x) = max(0, x)"
+    lean_theorem: Theorems.Relu
     domain: "x in R"
     codomain: "y in R, y >= 0"
     invariants:
@@ -30,6 +31,7 @@ equations:
 
   gelu:
     formula: "GELU(x) = x * Phi(x) = 0.5 * x * (1 + erf(x / sqrt(2)))"
+    lean_theorem: Theorems.Gelu
     domain: "x in R"
     codomain: "y in R, y >= -0.1700"
     invariants:
@@ -45,6 +47,7 @@ equations:
 
   sigmoid:
     formula: "sigmoid(x) = 1 / (1 + exp(-x))"
+    lean_theorem: Theorems.Sigmoid
     domain: "x in R"
     codomain: "y in (0, 1)"
     invariants:
@@ -61,6 +64,7 @@ equations:
 
   tanh:
     formula: "tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))"
+    lean_theorem: Theorems.Tanh
     domain: "x in R"
     codomain: "y in (-1, 1)"
     invariants:

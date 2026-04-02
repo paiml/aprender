@@ -18,6 +18,7 @@ equations:
       m_{g+1} = sum(w_i * x_{i:lambda}, i=1..mu)
       p_sigma_{g+1} = (1-c_sigma)*p_sigma_g + sqrt(c_sigma*(2-c_sigma)*mu_eff) * C_g^{-1/2} * (m_{g+1}-m_g)/sigma_g
       C_{g+1} = (1-c_1-c_mu)*C_g + c_1*p_c*p_c^T + c_mu*sum(w_i*(x_{i:lambda}-m_g)*(x_{i:lambda}-m_g)^T/sigma_g^2)
+    lean_theorem: Theorems.Cma_Es_Update
     domain: "x ∈ R^n, C ∈ R^{n x n} SPD, sigma > 0, lambda >= 2"
     codomain: "m ∈ R^n, C ∈ R^{n x n} SPD, sigma > 0"
     invariants:

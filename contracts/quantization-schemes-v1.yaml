@@ -44,6 +44,7 @@ equations:
   symmetric_range:
     description: "Valid quantized range for a b-bit symmetric scheme"
     formula: "q ∈ [-2^(b-1), 2^(b-1) - 1]"
+    lean_theorem: Theorems.Symmetric_Range
     instances:
       int8:  "q ∈ [-128, 127]"
       int4:  "q ∈ [-8, 7]"
@@ -52,6 +53,7 @@ equations:
   asymmetric_range:
     description: "Valid quantized range for a b-bit asymmetric scheme"
     formula: "q ∈ [0, 2^b - 1]"
+    lean_theorem: Theorems.Asymmetric_Range
     instances:
       uint8: "q ∈ [0, 255]"
       uint4: "q ∈ [0, 15]"
@@ -59,6 +61,7 @@ equations:
   scale_computation_symmetric:
     description: "Scale derived from max absolute value of input tensor"
     formula: "scale = max(|x_i|) / (2^(b-1) - 1)"
+    lean_theorem: Theorems.Scale_Computation_Symmetric
     note: "Ensures the full dynamic range of x is mapped to [-2^(b-1)+1, 2^(b-1)-1]"
 
   scale_computation_asymmetric:
@@ -66,26 +69,32 @@ equations:
     formula: |
       scale = (x_max - x_min) / (2^b - 1)
       zero_point = round(-x_min / scale)
+    lean_theorem: Theorems.Scale_Computation_Asymmetric
 
   quantize_symmetric:
     description: "Forward quantization for symmetric scheme"
     formula: "q = clamp(round(x / scale), -2^(b-1), 2^(b-1) - 1)"
+    lean_theorem: Theorems.Quantize_Symmetric
 
   dequantize_symmetric:
     description: "Inverse mapping from quantized to float"
     formula: "x̂ = q * scale"
+    lean_theorem: Theorems.Dequantize_Symmetric
 
   quantize_asymmetric:
     description: "Forward quantization for asymmetric scheme"
     formula: "q = clamp(round(x / scale) + zero_point, 0, 2^b - 1)"
+    lean_theorem: Theorems.Quantize_Asymmetric
 
   dequantize_asymmetric:
     description: "Inverse mapping from quantized to float"
     formula: "x̂ = (q - zero_point) * scale"
+    lean_theorem: Theorems.Dequantize_Asymmetric
 
   dequant_error_bound:
     description: "Maximum reconstruction error for any input x within representable range"
     formula: "|dequant(quant(x)) - x| <= scale / 2"
+    lean_theorem: Theorems.Dequant_Error_Bound
     proof_sketch: >
       Rounding introduces at most ±0.5 ulp error in quantized domain.
       Multiplying by scale maps this to ±scale/2 error in float domain.
@@ -95,6 +104,7 @@ equations:
   q4k_block_bytes:
     description: "Memory footprint of a Q4K super-block (256 elements)"
     formula: "block_bytes = ceil(dim / 256) * 144"
+    lean_theorem: Theorems.Q4k_Block_Bytes
     derivation: |
       Per super-block layout (from quantized-dot-product-v1.yaml):
         d      (f16): 2 bytes   — super-block scale
@@ -108,6 +118,7 @@ equations:
   fp16_range:
     description: "IEEE 754 half-precision representable range"
     formula: "x ∈ [-65504, 65504]"
+    lean_theorem: Theorems.Fp16_Range
     note: >
       fp16 is a storage format, not a quantization scheme in the discrete sense.
       No integer rounding — the error bound applies to the closest representable value.

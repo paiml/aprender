@@ -14,6 +14,7 @@ metadata:
 equations:
   quality_score_bounds:
     formula: "score = sum(gate_i * weight_i * 100 / sum(weight_i)), 0 <= score <= 100"
+    lean_theorem: Theorems.Quality_Score_Bounds
     description: "Quality score is weighted sum of binary gates, bounded [0, 100]"
     invariants:
       - "Each gate_i ∈ {0, 1}"
@@ -21,6 +22,7 @@ equations:
 
   diff_symmetry:
     formula: "diff(A, B).divergences == diff(B, A).divergences"
+    lean_theorem: Theorems.Diff_Symmetry
     description: "Model diff is symmetric in divergence count"
     invariants:
       - "Tensor names may be listed in different order"
@@ -28,6 +30,7 @@ equations:
 
   nan_detection:
     formula: "∀ tensor with NaN or Inf: flagged in validation report"
+    lean_theorem: Theorems.Nan_Detection
     description: "Complete NaN/Inf detection across all tensors"
     invariants:
       - "Zero false negatives for NaN"
@@ -35,6 +38,7 @@ equations:
 
   lint_idempotency:
     formula: "lint(model) == lint(model) on repeated runs"
+    lean_theorem: Theorems.Lint_Idempotency
     description: "Same warnings produced every time"
 
 proof_obligations:

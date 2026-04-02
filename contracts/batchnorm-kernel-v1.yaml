@@ -14,6 +14,7 @@ metadata:
 equations:
   batchnorm:
     formula: "BN(x_i) = gamma * (x_i - mu_B) / sqrt(sigma_B^2 + eps) + beta"
+    lean_theorem: Theorems.Batchnorm
     domain: "x ∈ R^{B x C}, gamma ∈ R^C, beta ∈ R^C, eps > 0, B >= 1"
     codomain: "y ∈ R^{B x C}"
     invariants:

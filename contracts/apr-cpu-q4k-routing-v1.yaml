@@ -46,6 +46,7 @@ equations:
            b. OwnedQuantizedModel::from_apr(mapped)
            c. run_cpu_server(quantized, vocab, config)
         3. FALLBACK: load_apr_model_state → AprTransformer (for non-Q4K models)
+    lean_theorem: Theorems.Inference_Dispatch
     domain: "path is valid APR v2 file"
     properties:
       - q4k_priority: "Fused Q4K path is tried BEFORE AprTransformer"

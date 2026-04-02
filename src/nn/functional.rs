@@ -85,7 +85,7 @@ pub fn sigmoid_scalar_f64(x: f64) -> f64 {
 /// ONE PATH: Per-element delegates to `trueno::silu_scalar` (UCBD §4).
 ///
 /// Contract: silu-kernel-v1, equation "silu"
-// Contract: silu-kernel-v1, equation = "silu"
+#[provable_contracts_macros::contract("silu-kernel-v1", equation = "silu")]
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
     let src = x.data();

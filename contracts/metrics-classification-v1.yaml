@@ -15,6 +15,7 @@ metadata:
 equations:
   accuracy:
     formula: "Accuracy = (TP + TN) / (TP + TN + FP + FN)"
+    lean_theorem: Theorems.Accuracy
     domain: "TP, TN, FP, FN in N, TP + TN + FP + FN >= 1"
     codomain: "acc in [0, 1]"
     invariants:
@@ -28,6 +29,7 @@ equations:
 
   precision:
     formula: "Precision = TP / (TP + FP)"
+    lean_theorem: Theorems.Precision
     domain: "TP, FP in N"
     codomain: "prec in [0, 1] (undefined when TP + FP == 0)"
     invariants:
@@ -41,6 +43,7 @@ equations:
 
   recall:
     formula: "Recall = TP / (TP + FN)"
+    lean_theorem: Theorems.Recall
     domain: "TP, FN in N"
     codomain: "rec in [0, 1] (undefined when TP + FN == 0)"
     invariants:
@@ -54,6 +57,7 @@ equations:
 
   f1_score:
     formula: "F1 = 2 * Precision * Recall / (Precision + Recall)"
+    lean_theorem: Theorems.F1_Score
     domain: "Precision, Recall in [0, 1]"
     codomain: "f1 in [0, 1]"
     invariants:
@@ -68,6 +72,7 @@ equations:
 
   auc_roc:
     formula: "AUC = integral of ROC curve = integral_0^1 TPR(FPR) d(FPR)"
+    lean_theorem: Theorems.Auc_Roc
     domain: "y_true in {0, 1}^n, y_score in R^n, n >= 1"
     codomain: "auc in [0, 1]"
     invariants:

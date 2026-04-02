@@ -15,6 +15,7 @@ metadata:
 equations:
   tensor_completeness:
     formula: "complete(M, A) = required_tensors(A) ⊆ present_tensors(M)"
+    lean_theorem: Theorems.Tensor_Completeness
     domain: "M = model file, A ∈ {LLaMA, Qwen2, GptNeoX, Opt, ...}"
     codomain: "bool"
     invariants:
@@ -34,6 +35,7 @@ equations:
       attn_v.shape == [kv_dim, hidden_size]
       ffn_gate.shape == [intermediate_size, hidden_size]
       lm_head.shape == [vocab_size, hidden_size]
+    lean_theorem: Theorems.Shape_Consistency
     domain: "hidden_size > 0, n_layers > 0, vocab_size > 0"
     codomain: "bool (all shapes valid)"
 

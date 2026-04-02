@@ -19,6 +19,7 @@ equations:
       m_hat = m_t / (1 - beta1^t)
       v_hat = v_t / (1 - beta2^t)
       w_t = w_{t-1} - lr * (m_hat / (sqrt(v_hat) + eps) + lambda * w_{t-1})
+    lean_theorem: Theorems.Adamw_Update
     domain: "w, g ∈ R^n, lr > 0, beta1 ∈ (0,1), beta2 ∈ (0,1), eps > 0, lambda >= 0"
     codomain: "w_t ∈ R^n"
     invariants:

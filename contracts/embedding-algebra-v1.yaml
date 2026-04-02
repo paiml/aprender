@@ -14,6 +14,7 @@ metadata:
 equations:
   embedding_lookup:
     formula: "E[i] = W[token_ids[i], :] for each i"
+    lean_theorem: Theorems.Embedding_Lookup
     domain: "token_ids ∈ ℕ^n, W ∈ ℝ^{vocab×hidden}"
     codomain: "E ∈ ℝ^{n×hidden}"
     invariants:

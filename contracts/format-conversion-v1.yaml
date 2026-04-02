@@ -15,6 +15,7 @@ metadata:
 equations:
   tensor_fidelity:
     formula: "|imported[i] - original[i]| < epsilon, epsilon = 1e-6"
+    lean_theorem: Theorems.Tensor_Fidelity
     description: "Imported tensor values match original within FP32 tolerance"
     invariants:
       - "No NaN or Inf introduced by conversion"
@@ -22,6 +23,7 @@ equations:
 
   row_major_guarantee:
     formula: "∀ tensor ∈ APR: layout(tensor) == RowMajor"
+    lean_theorem: Theorems.Row_Major_Guarantee
     description: "All APR tensors stored in row-major order (LAYOUT-002)"
     invariants:
       - "GGUF column-major tensors transposed at import"
@@ -29,6 +31,7 @@ equations:
 
   transpose_involution:
     formula: "transpose(transpose(T)) == T"
+    lean_theorem: Theorems.Transpose_Involution
     description: "Double transpose is identity"
     invariants:
       - "Shape reversal: [M, N] → [N, M] → [M, N]"
@@ -36,6 +39,7 @@ equations:
 
   metadata_preservation:
     formula: "import preserves {arch, vocab_size, hidden_size, num_layers}"
+    lean_theorem: Theorems.Metadata_Preservation
     description: "Critical hyperparameters preserved through conversion"
 
 proof_obligations:

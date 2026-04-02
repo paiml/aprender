@@ -12,19 +12,9 @@ fn start_apr_server_gpu(
 ) -> Result<()> {
     use realizar::api::create_router;
 
-    // GH-471: Try Q4K inference thread first — if model has Q4K tensors, this succeeds.
-    // Avoids redundant is_apr_q4k scan that loads the entire 17 GB APR file just to check dtypes.
-    match start_apr_q4k_server_gpu(model_path, config) {
-        Ok(()) => return Ok(()),
-        Err(e) => {
-            println!(
-                "{}",
-                format!("Q4K GPU path unavailable ({e}), trying F32 dequant path").yellow()
-            );
-        }
-    }
-
-    // F32 APR: fall through to OwnedQuantizedModel path (original GH-87)
+    // #170: Q4K inference thread disabled — produces garbage output.
+    // All APR models route through OwnedQuantizedModel::from_apr → OwnedQuantizedModelCuda
+    // (same proven path as GGUF, validated by qwen-coder-deploy at 148 tok/s).
     use realizar::api::AppState;
     use realizar::apr::MappedAprModel;
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};

@@ -15,6 +15,7 @@ metadata:
 equations:
   greedy_determinism:
     formula: "greedy(logits) = argmax(logits), deterministic"
+    lean_theorem: Theorems.Greedy_Determinism
     description: "Greedy sampling always returns the highest-probability token"
     invariants:
       - "Ties broken consistently (lowest index)"
@@ -22,6 +23,7 @@ equations:
 
   temperature_positivity:
     formula: "T > 0"
+    lean_theorem: Theorems.Temperature_Positivity
     description: "Temperature must be strictly positive"
     invariants:
       - "T == 0 → use greedy instead"
@@ -29,6 +31,7 @@ equations:
 
   nucleus_subset:
     formula: "sampled_token ∈ {t : cum_prob(t) <= top_p}"
+    lean_theorem: Theorems.Nucleus_Subset
     description: "Nucleus sampling restricts to top-p cumulative probability mass"
     invariants:
       - "0 < top_p <= 1"
@@ -36,6 +39,7 @@ equations:
 
   kv_cache_consistency:
     formula: "cache.len() == num_generated_tokens"
+    lean_theorem: Theorems.Kv_Cache_Consistency
     description: "KV cache grows by one entry per generated token"
     invariants:
       - "Cache key and value have matching shapes"

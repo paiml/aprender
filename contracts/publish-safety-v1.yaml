@@ -46,6 +46,7 @@ kani_harnesses:
 equations:
   package_safety:
     formula: "safe(pkg) = symlinks(pkg) == 0 AND config_leaks(pkg) == 0 AND dev_artifacts(pkg) == 0"
+    lean_theorem: Theorems.Package_Safety
     domain: "pkg: cargo package file listing"
     codomain: "Boolean"
     invariants:

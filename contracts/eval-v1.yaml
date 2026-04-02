@@ -20,6 +20,7 @@ metadata:
 equations:
   perplexity_lower_bound:
     formula: "PPL = exp(H) >= exp(0) = 1.0"
+    lean_theorem: Theorems.Perplexity_Lower_Bound
     description: "Perplexity is the exponentiated cross-entropy, always >= 1.0"
     invariants:
       - "H (cross-entropy) >= 0"
@@ -28,6 +29,7 @@ equations:
 
   pass_at_k_bounds:
     formula: "pass@k = 1 - C(n-c, k) / C(n, k), where 0 <= pass@k <= 1"
+    lean_theorem: Theorems.Pass_At_K_Bounds
     description: "pass@k is a probability, bounded in [0, 1]"
     invariants:
       - "k <= n (can't sample more than available)"
@@ -35,6 +37,7 @@ equations:
 
   pass_at_k_monotonic:
     formula: "pass@(k+1) >= pass@k"
+    lean_theorem: Theorems.Pass_At_K_Monotonic
     description: "More samples can only increase probability of finding a solution"
     invariants:
       - "Monotonically non-decreasing in k"
@@ -42,6 +45,7 @@ equations:
 
   f1_bounds:
     formula: "F1 = 2 * P * R / (P + R), where 0 <= F1 <= 1"
+    lean_theorem: Theorems.F1_Bounds
     description: "F1 score is harmonic mean of precision and recall"
     invariants:
       - "0 <= precision <= 1"
@@ -51,6 +55,7 @@ equations:
 
   deterministic_eval:
     formula: "eval(model, data, temp=0, seed=s) → same score"
+    lean_theorem: Theorems.Deterministic_Eval
     description: "Evaluation with temperature 0 is deterministic"
     invariants:
       - "Same model + same data + same seed = same output"

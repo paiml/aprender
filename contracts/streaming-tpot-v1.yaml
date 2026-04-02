@@ -14,6 +14,7 @@ metadata:
 equations:
   tpot:
     formula: "TPOT = (1/n) * sum(t_i - t_{i-1}, i=1..n) where t_0 = time_first_token"
+    lean_theorem: Theorems.Tpot
     domain: "t ∈ R^{n+1} monotonically increasing, n >= 1"
     codomain: "TPOT ∈ (0, +inf) in seconds"
     invariants:
@@ -28,6 +29,7 @@ equations:
 
   throughput:
     formula: "tokens_per_second = 1.0 / TPOT"
+    lean_theorem: Theorems.Throughput
     domain: "TPOT > 0"
     codomain: "tok/s ∈ (0, +inf)"
 

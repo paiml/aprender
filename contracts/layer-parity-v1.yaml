@@ -175,6 +175,7 @@ kani_harnesses:
 equations:
   cosine_similarity:
     formula: "cos(a, b) = dot(a, b) / (||a|| * ||b||)"
+    lean_theorem: Theorems.Cosine_Similarity
     domain: "a, b in R^n, ||a|| > 0, ||b|| > 0"
     codomain: "[-1, 1]"
     invariants:
@@ -183,6 +184,7 @@ equations:
 
   parity_gate_threshold:
     formula: "cos(cpu_logits, gpu_logits) >= 0.98"
+    lean_theorem: Theorems.Parity_Gate_Threshold
     domain: "logit vectors from CPU and GPU backends for same input"
     codomain: "Boolean"
     invariants:

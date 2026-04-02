@@ -14,6 +14,7 @@ metadata:
 equations:
   cross_entropy:
     formula: "L = -Σ_i t_i * log(softmax(x)_i)"
+    lean_theorem: Theorems.Cross_Entropy
     domain: "x ∈ ℝ^C (logits), t ∈ {0,1}^C (one-hot target)"
     codomain: "L ∈ ℝ_{≥0}"
     invariants:

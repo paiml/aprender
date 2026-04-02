@@ -38,6 +38,7 @@ equations:
     formula: |
       For M=1, K columns, N output:
         c[j] = Σ_{k=0}^{K-1} a[k] * B[k*N + j]    for j = 0..N-1
+    lean_theorem: Theorems.Matvec
     domain: "a ∈ R^K, B ∈ R^{K×N}, c ∈ R^N"
     properties:
       - linearity: "matvec(a, B1 + B2) = matvec(a, B1) + matvec(a, B2)"

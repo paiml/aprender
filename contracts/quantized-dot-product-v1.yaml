@@ -304,6 +304,7 @@ kani_harnesses:
 equations:
   dequantization:
     formula: "x_i = d * s_j * q_i - dmin * m_j"
+    lean_theorem: Theorems.Dequantization
     domain: "q_i in quantized domain, d and dmin are f16 scales, s_j and m_j are sub-block scale/min"
     codomain: "R (reconstructed float)"
     invariants:
@@ -312,6 +313,7 @@ equations:
 
   dot_product_decomposition:
     formula: "dot(W, x) = sum_sb[ d_W * d_x * sum_j(s_j * dot(q_W_j, q_x_j)) - dmin_W * d_x * sum_j(m_j * bsum_j) ]"
+    lean_theorem: Theorems.Dot_Product_Decomposition
     domain: "W in quantized weight, x in f32 activations"
     codomain: "R (scalar dot product)"
     invariants:

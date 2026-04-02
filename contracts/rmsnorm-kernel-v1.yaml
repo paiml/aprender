@@ -15,6 +15,7 @@ metadata:
 equations:
   rmsnorm:
     formula: "y_i = x_i / sqrt(mean(x²) + ε) * γ_i"
+    lean_theorem: Theorems.Rmsnorm
     domain: "x ∈ ℝ^n, γ ∈ ℝ^n, ε > 0, n ≥ 1"
     codomain: "y ∈ ℝ^n"
     invariants:

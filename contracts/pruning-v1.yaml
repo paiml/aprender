@@ -59,6 +59,7 @@ metadata:
 equations:
   sparsity_ratio:
     formula: "sparsity(W) = count(W_i == 0) / numel(W)"
+    lean_theorem: Theorems.Sparsity_Ratio
     domain: "W ∈ R^{out × in}, sparsity ∈ [0.0, 1.0]"
     properties:
       - identity: "sparsity(W) = 0.0 iff no element is pruned"
@@ -67,6 +68,7 @@ equations:
 
   magnitude_threshold:
     formula: "prune_if |W_i| < threshold(W, ratio)"
+    lean_theorem: Theorems.Magnitude_Threshold
     threshold_selection: "threshold = quantile(|W|, ratio)"
     domain: "ratio ∈ [0.0, 1.0)"
     properties:
@@ -76,6 +78,7 @@ equations:
 
   wanda_score:
     formula: "score_i = |W_i| * ||X_i||_2"
+    lean_theorem: Theorems.Wanda_Score
     domain: "W ∈ R^{out × in}, X ∈ R^{in × T} (activation matrix over T tokens)"
     expanded: "score_i = |W_{row,col}| * sqrt( Σ_t X_{col,t}² )"
     properties:
@@ -86,6 +89,7 @@ equations:
 
   depth_prune_layer_count:
     formula: "layers_after = num_layers - num_removed"
+    lean_theorem: Theorems.Depth_Prune_Layer_Count
     constraint: "num_removed < num_layers (at least one layer must remain)"
     properties:
       - strict_reduction: "layers_after < num_layers iff num_removed > 0"

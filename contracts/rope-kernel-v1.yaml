@@ -43,6 +43,7 @@ equations:
         sin_val = sin(m × θ_i)
         output[..., 2i]   = x[..., 2i] × cos_val - x[..., 2i+1] × sin_val
         output[..., 2i+1] = x[..., 2i] × sin_val + x[..., 2i+1] × cos_val
+    lean_theorem: Theorems.Rope
     domain: "x ∈ R^[batch, seq, heads, head_dim], head_dim even"
     properties:
       - rotation: "RoPE applies 2D rotation to each (x_2i, x_2i+1) pair"
@@ -53,6 +54,7 @@ equations:
 
   inv_freq:
     formula: "θ_i = 1 / base^(2i / d)"
+    lean_theorem: Theorems.Inv_Freq
     description: "Inverse frequency for dimension i with base (default 10000)"
 
 # =============================================================================

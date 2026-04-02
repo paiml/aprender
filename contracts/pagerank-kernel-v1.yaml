@@ -15,6 +15,7 @@ metadata:
 equations:
   pagerank:
     formula: "PR(i) = (1 - d) / N + d * sum_{j in B(i)} PR(j) / L(j)"
+    lean_theorem: Theorems.Pagerank
     domain: "G = (V, E) directed graph, N = |V| >= 1, d in (0, 1), B(i) = set of nodes linking to i, L(j) = out-degree of j"
     codomain: "PR in R^N, PR(i) > 0, sum(PR) = 1"
     invariants:
@@ -32,6 +33,7 @@ equations:
 
   power_iteration:
     formula: "PR^{(t+1)} = (1 - d) / N * 1 + d * M^T * PR^{(t)} where M[i,j] = 1/L(j) if j->i, else 0"
+    lean_theorem: Theorems.Power_Iteration
     domain: "PR^{(0)} = 1/N * 1 (uniform), M is column-stochastic transition matrix"
     codomain: "PR^{(t)} in R^N converging to stationary distribution"
     invariants:
@@ -45,6 +47,7 @@ equations:
 
   dangling_nodes:
     formula: "For dangling node j (L(j) = 0): distribute PR(j) uniformly as (1/N) * PR(j) to all nodes"
+    lean_theorem: Theorems.Dangling_Nodes
     domain: "Dangling nodes: nodes with out-degree 0"
     codomain: "Adjusted transition preserving stochasticity"
     invariants:

@@ -15,6 +15,7 @@ metadata:
 equations:
   matmul:
     formula: "C = A · B where C[i,j] = Σ_k A[i,k] * B[k,j]"
+    lean_theorem: Theorems.Matmul
     domain: "A ∈ ℝ^{m×k}, B ∈ ℝ^{k×n}"
     codomain: "C ∈ ℝ^{m×n}"
     invariants:

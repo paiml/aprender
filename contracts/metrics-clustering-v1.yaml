@@ -18,6 +18,7 @@ equations:
       a(i) = mean distance from i to other points in same cluster
       b(i) = min over clusters C != C_i of mean distance from i to points in C
       s(i) = (b(i) - a(i)) / max(a(i), b(i))
+    lean_theorem: Theorems.Silhouette
     domain: "X ∈ R^{n x d}, labels ∈ {0..k-1}^n, n >= 2, k >= 2"
     codomain: "s ∈ [-1, 1]"
     invariants:
@@ -31,6 +32,7 @@ equations:
 
   adjusted_rand_index:
     formula: "ARI = (RI - E[RI]) / (max(RI) - E[RI])"
+    lean_theorem: Theorems.Adjusted_Rand_Index
     domain: "labels_true ∈ Z^n, labels_pred ∈ Z^n, n >= 1"
     codomain: "ARI ∈ [-1, 1], with ARI = 1 for perfect agreement"
     invariants:

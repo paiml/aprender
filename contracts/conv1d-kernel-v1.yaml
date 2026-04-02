@@ -14,6 +14,7 @@ metadata:
 equations:
   conv1d:
     formula: "y[i] = sum(w[k] * x[i * stride + k], k=0..kernel_size-1) + bias"
+    lean_theorem: Theorems.Conv1d
     domain: "x ∈ R^L, w ∈ R^K, bias ∈ R, stride >= 1, K >= 1, L >= K"
     codomain: "y ∈ R^{floor((L - K) / stride) + 1}"
     invariants:

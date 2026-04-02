@@ -264,45 +264,56 @@ tensor_index_entry_layout:
 equations:
   align_up:
     formula: "align_up(v, a) = (v + a - 1) & !(a - 1)"
+    lean_theorem: Theorems.Align_Up
     precondition: "a is a positive power of two"
     note: "Used for all section-offset calculations"
 
   align_64:
     formula: "align_64(v) = align_up(v, 64)"
+    lean_theorem: Theorems.Align_64
     note: "Primary alignment helper for APR v2"
 
   padding_to_align:
     formula: "padding(v, a) = align_up(v, a) - v"
+    lean_theorem: Theorems.Padding_To_Align
     range: "[0, a)"
     note: "Bytes of zero-padding written between sections"
 
   is_aligned_64:
     formula: "is_aligned_64(v) = (v % 64 == 0)"
+    lean_theorem: Theorems.Is_Aligned_64
 
   metadata_section_end:
     formula: "metadata_section_end = metadata_offset + align_64(metadata_size)"
+    lean_theorem: Theorems.Metadata_Section_End
     note: "metadata_offset is always HEADER_SIZE_V2 = 64"
 
   tensor_index_offset:
     formula: "tensor_index_offset = align_64(HEADER_SIZE_V2 + metadata_size)"
+    lean_theorem: Theorems.Tensor_Index_Offset
 
   data_offset:
     formula: "data_offset = align_64(tensor_index_offset + sum(entry.to_bytes().len() for each tensor))"
+    lean_theorem: Theorems.Data_Offset
 
   per_tensor_data_alignment:
     formula: "tensor_data_start = data_offset + align_64(cumulative_prior_tensor_sizes)"
+    lean_theorem: Theorems.Per_Tensor_Data_Alignment
     note: "Each tensor begins on a 64-byte boundary within the data section"
 
   checksum_coverage:
     formula: "CRC32(header_bytes[0..40] ++ header_bytes[44..64])"
+    lean_theorem: Theorems.Checksum_Coverage
     note: "The checksum field at [40,44) is excluded from its own computation"
 
   roundtrip_fidelity:
     formula: "from_bytes(to_bytes(x)) == x  for all x: AprV2Header"
+    lean_theorem: Theorems.Roundtrip_Fidelity
     note: "Exact bitwise equality — no lossy fields"
 
   tensor_roundtrip_fidelity:
     formula: "decompress(read_tensor(write_tensor(T))) == T  for all T: TensorIndexEntry + data"
+    lean_theorem: Theorems.Tensor_Roundtrip_Fidelity
     note: "Applies to F32/F16 dtypes. Quantized dtypes are exact at the block level."
 
 # =============================================================================

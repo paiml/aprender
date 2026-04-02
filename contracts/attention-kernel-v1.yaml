@@ -15,6 +15,7 @@ metadata:
 equations:
   scaled_dot_product:
     formula: "Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V"
+    lean_theorem: Theorems.Scaled_Dot_Product
     domain: "Q in R^{n x d_k}, K in R^{m x d_k}, V in R^{m x d_v}, d_k >= 1"
     codomain: "out in R^{n x d_v}"
     invariants:
@@ -33,6 +34,7 @@ equations:
 
   causal_mask:
     formula: "mask[i, j] = -inf if j > i, else 0"
+    lean_theorem: Theorems.Causal_Mask
     domain: "i in [0, n), j in [0, m), n >= 1, m >= 1"
     codomain: "mask in R^{n x m}"
     invariants:
@@ -48,6 +50,7 @@ equations:
 
   multi_head:
     formula: "MultiHead(Q, K, V) = Concat(head_1, ..., head_h) * W_o where head_i = Attention(Q * W_q_i, K * W_k_i, V * W_v_i)"
+    lean_theorem: Theorems.Multi_Head
     domain: "Q, K, V in R^{seq x d_model}, h heads, d_k = d_model / h"
     codomain: "out in R^{seq x d_model}"
     invariants:

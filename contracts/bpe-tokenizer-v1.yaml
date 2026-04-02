@@ -19,6 +19,7 @@ metadata:
 equations:
   encode_decode_roundtrip:
     formula: "decode(encode(text)) == text for valid UTF-8"
+    lean_theorem: Theorems.Encode_Decode_Roundtrip
     description: "Encoding then decoding recovers original text"
     invariants:
       - "Input must be valid UTF-8"
@@ -26,6 +27,7 @@ equations:
 
   vocab_size:
     formula: "|vocab| == requested_vocab_size"
+    lean_theorem: Theorems.Vocab_Size
     description: "Training produces vocabulary of exact requested size"
     invariants:
       - "Initial vocab = byte-level (256 entries)"
@@ -34,6 +36,7 @@ equations:
 
   bpe_merge_order:
     formula: "merged_pair = argmax(frequency) over adjacent pairs"
+    lean_theorem: Theorems.Bpe_Merge_Order
     description: "BPE selects most frequent adjacent pair for each merge"
     invariants:
       - "Tie-breaking is deterministic (lexicographic)"
@@ -41,6 +44,7 @@ equations:
 
   special_token_isolation:
     formula: "encode(normal_text) ∩ {BOS, EOS, PAD, UNK} == ∅"
+    lean_theorem: Theorems.Special_Token_Isolation
     description: "Normal text never tokenizes to special token IDs"
     invariants:
       - "Special tokens only produced by explicit insertion"

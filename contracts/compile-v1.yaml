@@ -14,6 +14,7 @@ metadata:
 equations:
   inference_parity:
     formula: "compiled_binary(prompt, seed) == apr_run(model, prompt, seed)"
+    lean_theorem: Theorems.Inference_Parity
     description: "Compiled binary produces identical output to interpreter"
     invariants:
       - "Same sampling parameters"
@@ -22,6 +23,7 @@ equations:
 
   self_containment:
     formula: "compiled_binary requires no external model file"
+    lean_theorem: Theorems.Self_Containment
     description: "Model weights embedded in binary"
     invariants:
       - "No file I/O for model loading"
@@ -29,6 +31,7 @@ equations:
 
   target_format:
     formula: "target → expected_binary_format"
+    lean_theorem: Theorems.Target_Format
     description: "Correct binary format for each target triple"
     invariants:
       - "x86_64-unknown-linux-* → ELF"

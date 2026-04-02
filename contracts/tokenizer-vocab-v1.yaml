@@ -243,6 +243,7 @@ kani_harnesses:
 equations:
   vocab_size_consistency:
     formula: "vocab_size(tokenizer_contract) == vocab_size(special_tokens_contract)"
+    lean_theorem: Theorems.Vocab_Size_Consistency
     domain: "model family identifier"
     codomain: "Boolean"
     invariants:

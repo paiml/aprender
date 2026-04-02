@@ -229,6 +229,7 @@ impl ChatSession {
                 top_k: 40,
                 stop_tokens,
                 trace: config.trace,
+                ..Default::default()
             };
 
             // GH-224: Try cached CUDA model first (no re-upload)
@@ -432,6 +433,7 @@ impl ChatSession {
                 top_k: 40,
                 stop_tokens,
                 trace: config.trace,
+                ..Default::default()
             };
 
             // Try CUDA GPU path first (200+ tok/s target)
