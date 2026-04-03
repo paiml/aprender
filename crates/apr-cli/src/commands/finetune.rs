@@ -256,7 +256,8 @@ fn execute_training(
     use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
 
     // 1. Resolve model config from APR metadata (GH-376: pass model_size for GGUF files)
-    let model_config = super::model_config::resolve_transformer_config(Some(model_path), model_size)?;
+    let model_config =
+        super::model_config::resolve_transformer_config(Some(model_path), model_size)?;
 
     if !json_output {
         println!();
@@ -566,14 +567,22 @@ fn execute_training_wgpu(
     // 7. Train — detect DPO vs SFT from data format
     // DPO data has "chosen" field; SFT data has "instruction"/"response"
     let is_dpo = std::fs::read_to_string(data_path)
-        .map(|s| s.lines().next().map(|l| l.contains("chosen")).unwrap_or(false))
+        .map(|s| {
+            s.lines()
+                .next()
+                .map(|l| l.contains("chosen"))
+                .unwrap_or(false)
+        })
         .unwrap_or(false);
 
     if is_dpo {
         // DPO alignment training
         let pairs = entrenar::finetune::instruct_corpus::load_preference_pairs(data_path)
             .map_err(|e| CliError::ValidationFailed(format!("DPO data: {e}")))?;
-        eprintln!("[wgpu] DPO training: {} preference pairs, beta=0.1", pairs.len());
+        eprintln!(
+            "[wgpu] DPO training: {} preference pairs, beta=0.1",
+            pairs.len()
+        );
         for epoch in 0..epochs {
             let mut total_loss = 0.0f32;
             for (i, pair) in pairs.iter().enumerate() {
@@ -583,8 +592,14 @@ fn execute_training_wgpu(
                 let loss = pipeline.dpo_step(&prompt_ids, &chosen_ids, &rejected_ids, 0.1);
                 total_loss += loss;
                 if !json_output && (i + 1) % 10 == 0 {
-                    eprintln!("  Epoch {}/{} pair {}/{}: dpo_loss={:.4}",
-                        epoch + 1, epochs, i + 1, pairs.len(), loss);
+                    eprintln!(
+                        "  Epoch {}/{} pair {}/{}: dpo_loss={:.4}",
+                        epoch + 1,
+                        epochs,
+                        i + 1,
+                        pairs.len(),
+                        loss
+                    );
                 }
             }
             let avg = total_loss / pairs.len().max(1) as f32;
@@ -606,7 +621,11 @@ fn execute_training_wgpu(
                 if !json_output {
                     eprintln!(
                         "  Epoch {}/{} sample {}/{}: loss={:.4}",
-                        epoch + 1, epochs, i + 1, corpus.len(), result.loss,
+                        epoch + 1,
+                        epochs,
+                        i + 1,
+                        corpus.len(),
+                        result.loss,
                     );
                 }
             }
@@ -1111,7 +1130,16 @@ fn run_finetune_training(
     }
 
     let out = output_path.unwrap_or(Path::new("adapter.apr"));
-    execute_training(mp, config, data, out, epochs, learning_rate, json_output, model_size)
+    execute_training(
+        mp,
+        config,
+        data,
+        out,
+        epochs,
+        learning_rate,
+        json_output,
+        model_size,
+    )
 }
 
 /// Display finetune plan (text or JSON).

@@ -117,23 +117,23 @@ mod tests_name_mapping {
     use super::*;
 
     #[test]
-    fn test_whisper_preserve_model_prefix() {
-        // PMAT-099: Names are now preserved for AprTransformer compatibility
+    fn test_whisper_strips_model_prefix() {
+        // GH-577: Strip model. prefix to match whisper-apr's load_from_apr() convention
         let mapped = Architecture::Whisper.map_name("model.encoder.conv1.weight");
-        assert_eq!(mapped, "model.encoder.conv1.weight");
+        assert_eq!(mapped, "encoder.conv1.weight");
     }
 
     #[test]
-    fn test_whisper_no_prefix() {
+    fn test_whisper_no_prefix_unchanged() {
         let mapped = Architecture::Whisper.map_name("encoder.conv1.weight");
         assert_eq!(mapped, "encoder.conv1.weight");
     }
 
     #[test]
-    fn test_whisper_decoder_layer_norm() {
-        // PMAT-099: Names are now preserved for AprTransformer compatibility
+    fn test_whisper_decoder_layer_norm_strips_prefix() {
+        // GH-577: Strip model. prefix to match whisper-apr's load_from_apr() convention
         let mapped = Architecture::Whisper.map_name("model.decoder.layer_norm.weight");
-        assert_eq!(mapped, "model.decoder.layer_norm.weight");
+        assert_eq!(mapped, "decoder.layer_norm.weight");
     }
 
     #[test]

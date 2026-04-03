@@ -99,8 +99,14 @@ impl Architecture {
     }
 
     fn whisper_map_name(name: &str) -> String {
-        // PMAT-099: Preserve model. prefix for Whisper
-        name.to_string()
+        // GH-577: Strip model. prefix for whisper-apr compatibility.
+        // whisper-apr's load_from_apr() expects encoder./decoder. prefixes
+        // without model. prefix (matching whisper-apr's own map_tensor_name).
+        if let Some(stripped) = name.strip_prefix("model.") {
+            stripped.to_string()
+        } else {
+            name.to_string()
+        }
     }
 
     fn llama_map_name(name: &str) -> String {
