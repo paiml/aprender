@@ -163,47 +163,29 @@ fn run_merge(
         .collect();
 
     let engine = MergeEngine::new();
-    let mut writer = aprender::serialization::apr::AprWriter::new();
     let mut merged_count = 0u64;
 
-    // Copy base model metadata: both RosettaStone report AND V2 binary config.
-    // The report metadata only has JSON-level keys. V2 config (hidden_size etc.)
-    // is in the binary header and must be read separately.
-    for (key, val) in &base_report.metadata {
-        let json_val = if let Ok(n) = val.parse::<u64>() {
-            serde_json::json!(n)
-        } else if let Ok(f) = val.parse::<f64>() {
-            serde_json::json!(f)
-        } else {
-            serde_json::json!(val)
-        };
-        writer.set_metadata(key, json_val);
-    }
-    if let Some(ref arch) = base_report.architecture {
-        writer.set_metadata("architecture", serde_json::json!(arch));
-    }
-    // Copy V2 binary config from base model (hidden_size, num_layers, etc.)
-    if let Ok(base_reader) = aprender::serialization::apr::AprReader::open(model) {
-        // get_metadata parses V2 binary header into a HashMap
-        for key in ["hidden_size", "num_layers", "num_heads", "num_kv_heads",
-                     "vocab_size", "intermediate_size", "max_position_embeddings",
-                     "rope_theta", "rms_norm_eps", "head_dim", "rope_type",
-                     "num_experts", "num_experts_per_tok"] {
-            if let Some(val) = base_reader.get_metadata(key) {
-                writer.set_metadata(key, val.clone());
-            }
-        }
-    }
-    writer.set_metadata(
-        "merge_source",
+    // Read base model as V2 to preserve metadata INCLUDING embedded tokenizer.
+    // Previous code used AprWriter (v1) which lost the tokenizer section.
+    let base_bytes = std::fs::read(model)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read base model: {e}")))?;
+    let base_v2 = aprender::format::v2::AprV2Reader::from_bytes(&base_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse base model as V2: {e}")))?;
+    let mut metadata = base_v2.metadata().clone();
+
+    // Add merge provenance to metadata
+    metadata.custom.insert(
+        "merge_source".to_string(),
         serde_json::json!(model.display().to_string()),
     );
-    writer.set_metadata(
-        "merge_adapter",
+    metadata.custom.insert(
+        "merge_adapter".to_string(),
         serde_json::json!(adapter.display().to_string()),
     );
-    writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
-    writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
+    metadata.custom.insert("lora_rank".to_string(), serde_json::json!(lora_rank));
+    metadata.custom.insert("lora_alpha".to_string(), serde_json::json!(lora_alpha));
+
+    let mut writer = aprender::format::v2::AprV2Writer::new(metadata);
 
     for ti in &base_report.tensors {
         let base_data = rosetta
@@ -227,10 +209,10 @@ fn run_merge(
             base_data
         };
 
-        writer.add_tensor_f32(&ti.name, ti.shape.clone(), &merged);
+        writer.add_f32_tensor(&ti.name, ti.shape.clone(), &merged);
     }
 
-    let bytes = writer.to_bytes().map_err(|e| {
+    let bytes = writer.write().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to serialize merged model: {e}"))
     })?;
     std::fs::write(out, &bytes)
