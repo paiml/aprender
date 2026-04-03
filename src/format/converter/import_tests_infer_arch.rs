@@ -322,6 +322,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Qwen2,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Qwen3, "QK norm must force Qwen3");
     }
@@ -336,6 +337,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Qwen2,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Qwen2, "Correct qwen2 metadata must be preserved");
     }
@@ -351,6 +353,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Llama,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Llama, "No contradicting evidence must preserve metadata");
     }
@@ -365,6 +368,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Qwen2,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Qwen3, "HF-style QK norm must also force Qwen3");
     }
@@ -379,6 +383,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Qwen3,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Qwen3, "Correct qwen3 metadata must be preserved");
     }
@@ -394,6 +399,7 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Llama,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Qwen2, "Bias must override LLaMA to Qwen2");
     }
@@ -408,8 +414,31 @@
         let result = verify_architecture_from_tensor_evidence(
             Architecture::Phi,
             names.into_iter(),
+            false,
         );
         assert_eq!(result, Architecture::Phi, "Phi with bias must stay Phi");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_008_user_specified_whisper_not_overridden() {
+        // GH-576: Whisper has attention biases but user explicitly said --arch whisper.
+        // The heuristic must NOT override to Qwen2.
+        let names = vec![
+            "encoder.blocks.0.attn.query.weight",
+            "encoder.blocks.0.attn.query.bias",       // attention bias present
+            "decoder.blocks.0.cross_attn.query.weight",
+            "model.decoder.layers.0.self_attn.q_proj.bias", // HF-style bias
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Whisper,
+            names.into_iter(),
+            true, // user_specified = true
+        );
+        assert_eq!(
+            result,
+            Architecture::Whisper,
+            "GH-576: explicit --arch whisper must not be overridden by bias heuristic"
+        );
     }
 
     #[test]

@@ -13,9 +13,15 @@ fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Ar
 /// QK norm presence ⟹ Qwen3 (unique to Qwen3, never in Qwen2/LLaMA/Phi).
 /// Attention bias presence ⟹ Qwen2 or Phi (never in Qwen3/LLaMA).
 /// This is provable — logical implication, not heuristic.
+///
+/// GH-576 FIX: When user explicitly passed `--arch` (not auto),
+/// the evidence check is informational only — we log a warning
+/// but respect the user's choice. The override was incorrectly
+/// replacing whisper (which has attention biases) with Qwen2.
 fn verify_architecture_from_tensor_evidence<S: AsRef<str>>(
     metadata_arch: Architecture,
     tensor_names: impl Iterator<Item = S>,
+    user_specified: bool,
 ) -> Architecture {
     let mut has_qk_norm = false;
     let mut has_attn_bias = false;
@@ -31,6 +37,26 @@ fn verify_architecture_from_tensor_evidence<S: AsRef<str>>(
         if has_qk_norm {
             break; // QK norm is conclusive, no need to scan further
         }
+    }
+
+    // GH-576: If user explicitly specified --arch, respect it.
+    // Log evidence as informational but do NOT override.
+    if user_specified {
+        if has_qk_norm && metadata_arch != Architecture::Qwen3 {
+            eprintln!(
+                "[ARCH-EVIDENCE] Info: QK norm detected (suggests Qwen3), \
+                 but respecting user-specified --arch {:?}",
+                metadata_arch
+            );
+        }
+        if has_attn_bias && !matches!(metadata_arch, Architecture::Qwen2 | Architecture::Phi) {
+            eprintln!(
+                "[ARCH-EVIDENCE] Info: attention bias detected (suggests Qwen2), \
+                 but respecting user-specified --arch {:?}",
+                metadata_arch
+            );
+        }
+        return metadata_arch;
     }
 
     if has_qk_norm && metadata_arch != Architecture::Qwen3 {

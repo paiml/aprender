@@ -82,9 +82,12 @@ pub fn apr_import<P: AsRef<Path>>(
             .and_then(|c| c.architecture.as_deref()),
     );
     // CONTRACT: Tensor evidence overrides metadata claims
+    // GH-576: Pass user_specified flag so explicit --arch is respected
+    let user_specified = options.architecture != Architecture::Auto;
     let effective_arch = verify_architecture_from_tensor_evidence(
         metadata_arch,
         load_result.tensors.keys().map(String::as_str),
+        user_specified,
     );
     warn_unverified_architecture(&effective_arch, options.strict)?;
 
@@ -250,9 +253,12 @@ pub(crate) fn apr_import_gguf_raw(
         options.strict,
     )?;
     // CONTRACT: Tensor evidence overrides metadata claims (e.g., bartowski Qwen3 GGUFs claim "qwen2")
+    // GH-576: Respect explicit --arch flag
+    let user_specified_gguf = options.architecture != Architecture::Auto;
     let effective_arch = verify_architecture_from_tensor_evidence(
         metadata_arch,
         raw_result.tensors.keys().map(String::as_str),
+        user_specified_gguf,
     );
 
     let mapped_tensors = map_and_enforce_raw_tensors(
