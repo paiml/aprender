@@ -248,14 +248,15 @@ fn execute_training(
     epochs: u32,
     learning_rate: f64,
     json_output: bool,
+    model_size: Option<&str>,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructConfig;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
     use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
 
-    // 1. Resolve model config from APR metadata
-    let model_config = super::model_config::resolve_transformer_config(Some(model_path), None)?;
+    // 1. Resolve model config from APR metadata (GH-376: pass model_size for GGUF files)
+    let model_config = super::model_config::resolve_transformer_config(Some(model_path), model_size)?;
 
     if !json_output {
         println!();
@@ -1070,6 +1071,7 @@ pub(crate) fn run(
         epochs,
         learning_rate,
         json_output,
+        model_size,
     )
 }
 
@@ -1082,6 +1084,7 @@ fn run_finetune_training(
     epochs: u32,
     learning_rate: f64,
     json_output: bool,
+    model_size: Option<&str>,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1108,7 +1111,7 @@ fn run_finetune_training(
     }
 
     let out = output_path.unwrap_or(Path::new("adapter.apr"));
-    execute_training(mp, config, data, out, epochs, learning_rate, json_output)
+    execute_training(mp, config, data, out, epochs, learning_rate, json_output, model_size)
 }
 
 /// Display finetune plan (text or JSON).

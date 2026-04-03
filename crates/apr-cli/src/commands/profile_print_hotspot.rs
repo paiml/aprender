@@ -197,8 +197,8 @@ fn print_roofline_section(results: &RealProfileResults) {
         "  Achieved:       {:.1} GFLOPS, {:.1} GB/s",
         r.achieved_gflops, r.achieved_bandwidth_gbps
     );
-    println!("  Compute eff:    {:.1}%", r.compute_efficiency_pct);
-    println!("  Memory eff:     {:.1}%", r.memory_efficiency_pct);
+    println!("  Compute eff:    {:.1}% (per-kernel, excl launch overhead)", r.compute_efficiency_pct);
+    println!("  Memory eff:     {:.1}% (per-kernel, excl launch overhead)", r.memory_efficiency_pct);
     println!(
         "  Arithmetic int: {:.2} (threshold={:.1})",
         r.arithmetic_intensity, r.ai_threshold

@@ -289,9 +289,14 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
     }
 }
 
-/// Compute roofline analysis using trueno hardware detection
+/// Compute roofline analysis using trueno hardware detection.
+///
+/// F-BRICKPARITY-01: subtracts kernel launch overhead from
+/// inference time so that efficiency percentages reflect
+/// per-kernel throughput (matching ncu --set roofline), not
+/// pipeline throughput (which includes idle between launches).
 #[cfg(feature = "inference")]
-fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
+pub(crate) fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
     let is_gpu = results.backend == "cuda";
 
     // Hardware detection: use GPU specs for CUDA, CPU specs for CPU
@@ -336,10 +341,26 @@ fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
     let bytes_lm_head = hidden * vocab * 0.5;
     let total_bytes = bytes_per_layer * layers + bytes_lm_head;
 
-    // For GPU: use per-token decode time, not total inference (which includes prefill overhead)
+    // For GPU: use per-token decode time, not total inference
+    // (which includes prefill overhead).
+    //
+    // F-BRICKPARITY-01 FIX: subtract kernel launch overhead so
+    // roofline reports *per-kernel* efficiency, not pipeline
+    // efficiency. Without this, idle time between kernel launches
+    // (83.8% for Q4K M=1 decode) deflates the achieved BW/GFLOPS
+    // by ~5x, causing apr profile to report 20% mem / 1% compute
+    // while ncu measures 55% mem / 29% compute on the same kernel.
     let inference_sec = if is_gpu && results.decode_tok_s > 0.0 {
-        // Per-token time = 1/decode_tok_s (more accurate for GPU roofline)
-        1.0 / results.decode_tok_s
+        let pipeline_sec = 1.0 / results.decode_tok_s;
+        // Subtract idle/launch overhead to get kernel-active time
+        let overhead_frac = results.kernel_launch_overhead_pct / 100.0;
+        let kernel_active_sec = pipeline_sec * (1.0 - overhead_frac);
+        // Guard: if overhead >= 100%, fall back to pipeline time
+        if kernel_active_sec > 0.0 {
+            kernel_active_sec
+        } else {
+            pipeline_sec
+        }
     } else {
         results.total_inference_us / 1_000_000.0
     };
