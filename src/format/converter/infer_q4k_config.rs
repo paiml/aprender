@@ -121,13 +121,29 @@ fn write_q4k_apr_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
 ///
 /// Selectively quantizes large weight tensors while keeping biases and norms as F32.
 /// Uses APR format with proper Q4K dtype for GPU-accelerated inference.
+///
+/// **PMAT-154 (P0 fix):** Now accepts an optional GGUF tokenizer and embeds it
+/// into APR metadata via `insert_f32_tokenizer_metadata()`. Previously omitted,
+/// producing APR files that failed inference with "Tokenizer encode failed".
 fn save_model_tensors_q4k(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
+    gguf_tokenizer: Option<&GgufTokenizer>,
 ) -> Result<()> {
     let cfg = infer_q4k_config(tensors);
     let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
-    let metadata = build_q4k_metadata(&cfg, param_count);
+    let mut metadata = build_q4k_metadata(&cfg, param_count);
+
+    // PMAT-154: Embed tokenizer into APR metadata (Jidoka: APR files MUST be self-contained)
+    if let Some(tok) = gguf_tokenizer {
+        write::insert_f32_tokenizer_metadata(tok, &mut metadata.custom);
+        eprintln!(
+            "[PMAT-154] Embedded tokenizer ({} vocab, {} merges) into Q4K APR",
+            tok.vocabulary.len(),
+            tok.merges.len()
+        );
+    }
+
     let mut writer = AprV2Writer::new(metadata);
 
     // Add tensors, selectively quantizing to Q4K

@@ -366,8 +366,9 @@ pub fn apr_convert<P: AsRef<Path>>(
     };
 
     // Step 2: Handle Q4K specially - store raw Q4K bytes in APR format
+    // PMAT-154: Pass tokenizer so APR files are self-contained (Jidoka)
     if options.quantize == Some(QuantizationType::Q4K) {
-        save_model_tensors_q4k(&tensors, output_path)?;
+        save_model_tensors_q4k(&tensors, output_path, gguf_tokenizer.as_ref())?;
         return Ok(ConvertReport::build(
             original_size,
             output_path,
