@@ -163,7 +163,7 @@ mod tests_conversion {
         );
     }
 
-    /// Harness-based: Whisper name mapping preserves model.* prefix (PMAT-099).
+    /// GH-577: Whisper name mapping strips model.* prefix for whisper-apr.
     #[test]
     fn test_name_mapping_whisper() {
         use crate::format::v2::AprV2Reader;
@@ -195,19 +195,20 @@ mod tests_conversion {
             result.err()
         );
 
-        // Read-back verification: check tensor names preserved
+        // GH-577: Verify model. prefix is STRIPPED for whisper-apr compatibility.
+        // whisper-apr's load_from_apr() expects encoder.* / decoder.* without model. prefix.
         let data = fs::read(&output).expect("Failed to read output");
         let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse APR");
         let tensor_names = reader.tensor_names();
 
         assert!(
-            tensor_names.contains(&"model.encoder.conv1.weight"),
-            "Should preserve 'model.' prefix for AprTransformer compatibility, got: {:?}",
+            tensor_names.contains(&"encoder.conv1.weight"),
+            "GH-577: should strip 'model.' prefix for whisper-apr, got: {:?}",
             tensor_names
         );
         assert!(
-            tensor_names.contains(&"model.decoder.layer_norm.weight"),
-            "Should preserve 'model.' prefix for AprTransformer compatibility, got: {:?}",
+            tensor_names.contains(&"decoder.layer_norm.weight"),
+            "GH-577: should strip 'model.' prefix for whisper-apr, got: {:?}",
             tensor_names
         );
     }
