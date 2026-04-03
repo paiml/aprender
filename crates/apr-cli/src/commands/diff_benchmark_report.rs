@@ -75,8 +75,20 @@ pub(crate) fn run(
         // only needs generation throughput, not parity verification.
         std::env::set_var("SKIP_PARITY_GATE", "1");
 
-        // Try GPU generation profiling first (full token generation, not just forward pass)
-        match profile_gpu_generation(path, tokens, 3, 10) {
+        // GH-578: Spawn GPU profiling on a thread with 16MB stack.
+        // The deep call chain (profile_gpu_generation → generate_gpu_resident →
+        // forward_all_layers_gpu_to_logits → transformer_layer_workspace_inner)
+        // overflows the default 8MB stack on constrained hardware (RTX 4060 Yoga).
+        let path_owned = path.to_path_buf();
+        let gpu_result = std::thread::Builder::new()
+            .name("gpu-profile".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || profile_gpu_generation(&path_owned, tokens, 3, 10))
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
+            .join()
+            .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
+
+        match gpu_result {
             Ok(r) => r,
             Err(e) => {
                 if matches!(format, OutputFormat::Human) {

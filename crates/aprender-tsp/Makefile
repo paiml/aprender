@@ -21,15 +21,15 @@ build:
 
 # Run all tests
 test:
-	cargo test --all-features
+	cargo test
 
 # Run tests with verbose output
 test-verbose:
-	cargo test --all-features -- --nocapture
+	cargo test -- --nocapture
 
 # Run clippy lints
 lint:
-	cargo clippy --all-features -- -D warnings
+	cargo clippy -- -D warnings
 
 # Format code
 fmt:

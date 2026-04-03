@@ -137,10 +137,14 @@ impl AprReader {
             );
         }
         if let Some(v) = meta.rope_theta {
-            metadata.insert("rope_theta".into(), serde_json::json!(v));
+            if let Some(n) = serde_json::Number::from_f64(v as f64) {
+                metadata.insert("rope_theta".into(), JsonValue::Number(n));
+            }
         }
         if let Some(v) = meta.rms_norm_eps {
-            metadata.insert("rms_norm_eps".into(), serde_json::json!(v));
+            if let Some(n) = serde_json::Number::from_f64(v as f64) {
+                metadata.insert("rms_norm_eps".into(), JsonValue::Number(n));
+            }
         }
         if let Some(v) = meta.head_dim {
             metadata.insert(
