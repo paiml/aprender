@@ -169,11 +169,12 @@ fn test_architecture_auto_preserves_model_prefix() {
 }
 
 #[test]
-fn test_architecture_whisper_preserves_prefix() {
+fn test_architecture_whisper_strips_model_prefix() {
+    // GH-577: whisper_map_name strips "model." prefix for whisper-apr compatibility
     let arch = Architecture::Whisper;
     assert_eq!(
         arch.map_name("model.encoder.weight"),
-        "model.encoder.weight"
+        "encoder.weight"
     );
 }
 
