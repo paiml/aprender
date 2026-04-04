@@ -272,7 +272,7 @@ bindings:
 - contract: model-format-conversion-v1.yaml
   equation: format_conversion_roundtrip
   module_path: aprender::convert
-  function: convert_model
+  function: run
   status: implemented
   notes: Tensor count/names/shapes preserved across format conversion
 - contract: model-format-conversion-v1.yaml
@@ -284,13 +284,13 @@ bindings:
 - contract: model-format-conversion-v1.yaml
   equation: import_integrity
   module_path: aprender::import
-  function: import_model
+  function: run
   status: implemented
   notes: Content-based format detection, not extension-based
 - contract: model-format-conversion-v1.yaml
   equation: export_fidelity
   module_path: aprender::export
-  function: export_model
+  function: run
   status: implemented
   notes: Atomic write via temp file + rename
 - contract: model-format-conversion-v1.yaml
@@ -326,7 +326,7 @@ bindings:
 - contract: apr-cli-operations-v1.yaml
   equation: concurrent_model_access
   module_path: aprender::serve
-  function: handle_inference_request
+  function: run
   status: implemented
   notes: Per-request KV cache, immutable model weights
 - contract: apr-cli-operations-v1.yaml
@@ -338,7 +338,7 @@ bindings:
 - contract: apr-cli-v1.yaml
   equation: command_parse_determinism
   module_path: apr_cli::Cli
-  function: Cli::try_parse_from
+  function: try_parse_from
   status: implemented
   notes: Clap-derived parse is pure and deterministic; global flags propagate via
 - contract: apr-cli-v1.yaml
@@ -374,61 +374,61 @@ bindings:
 - contract: apr-model-lifecycle-v1.yaml
   equation: pull_cache_integrity
   module_path: apr_cli::commands::pull
-  function: download_and_cache_model
+  function: run
   status: implemented
   notes: Content-addressed cache at ~/.cache/aprender/models/, HTTP Range resume
 - contract: apr-model-lifecycle-v1.yaml
   equation: import_format_detection
   module_path: apr_cli::commands::import
-  function: import_model
+  function: run
   status: implemented
   notes: Magic byte detection for GGUF/SafeTensors/APR formats
 - contract: apr-model-lifecycle-v1.yaml
   equation: export_roundtrip
   module_path: apr_cli::commands::export
-  function: export_model
+  function: run
   status: implemented
   notes: Supports GGUF, SafeTensors, APR output formats
 - contract: apr-model-lifecycle-v1.yaml
   equation: quantize_precision_bound
   module_path: apr_cli::commands::quantize
-  function: quantize_model
+  function: run
   status: implemented
   notes: Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/F16 schemes via GH-243
 - contract: apr-model-lifecycle-v1.yaml
   equation: merge_weight_conservation
   module_path: apr_cli::commands::merge
-  function: merge_models
+  function: run
   status: implemented
   notes: SLERP/TIES/DARE/Linear merge strategies
 - contract: apr-serve-v1.yaml
   equation: server_lifecycle
   module_path: apr_cli::commands::serve
-  function: run_server
+  function: run
   status: implemented
   notes: Actix-web server with Init/Binding/Loading/Ready/Draining/Stopped states
 - contract: apr-serve-v1.yaml
   equation: request_routing
   module_path: apr_cli::commands::serve
-  function: configure_routes
+  function: run
   status: implemented
   notes: OpenAI-compatible /v1/completions, /v1/chat/completions, /v1/models
 - contract: apr-serve-v1.yaml
   equation: graceful_shutdown
   module_path: apr_cli::commands::serve
-  function: shutdown_handler
+  function: run
   status: implemented
   notes: SIGTERM triggers drain with 30s timeout
 - contract: apr-data-pipeline-v1.yaml
   equation: data_validation
   module_path: apr_cli::commands::data
-  function: data_validate
+  function: run
   status: implemented
   notes: JSONL/CSV/text validation with line-level error reporting
 - contract: apr-data-pipeline-v1.yaml
   equation: data_split_determinism
   module_path: apr_cli::commands::data
-  function: data_split
+  function: run
   status: implemented
   notes: Seed-deterministic train/val/test split
 - contract: apr-data-pipeline-v1.yaml
@@ -446,31 +446,31 @@ bindings:
 - contract: apr-model-qa-v1.yaml
   equation: model_integrity_check
   module_path: apr_cli::commands::check
-  function: run_check
+  function: run
   status: implemented
   notes: 10-stage pipeline (header, metadata, tensors, shapes, dtypes, arch, embedding, qkv, norms, vocab)
 - contract: apr-model-qa-v1.yaml
   equation: qa_gate_composition
   module_path: apr_cli::commands::qa
-  function: run_qa_pipeline
+  function: run
   status: implemented
   notes: Configurable gates with per-gate enable/disable and thresholds
 - contract: apr-model-qa-v1.yaml
   equation: canary_regression_detection
   module_path: apr_cli::commands::canary
-  function: canary_test
+  function: run
   status: implemented
   notes: Fixed-prompt regression detection with token-level comparison
 - contract: apr-model-qa-v1.yaml
   equation: lint_model_conventions
   module_path: apr_cli::commands::lint
-  function: lint_model
+  function: run
   status: implemented
   notes: Naming, dtype, shape, metadata, ordering rules
 - contract: apr-model-qa-v1.yaml
   equation: probar_property_tests
   module_path: apr_cli::commands::probar
-  function: run_property_tests
+  function: run
   status: implemented
   notes: Softmax sum, attention non-neg, embedding norm, shape match properties
 - contract: apr-architecture-schema-v1.yaml
@@ -554,7 +554,7 @@ bindings:
 - contract: apr-chat-session-v1.yaml
   equation: session_state_machine
   module_path: apr_cli::commands::chat
-  function: chat_loop
+  function: run
   status: implemented
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
 - contract: apr-chat-session-v1.yaml
@@ -572,7 +572,7 @@ bindings:
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
   module_path: apr_cli::commands::chat_session
-  function: save_session
+  function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
 critical_path:
