@@ -30,6 +30,8 @@ jobs:
 
   mutants:
     runs-on: self-hosted
+    container:
+      image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
