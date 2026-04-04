@@ -414,8 +414,8 @@ live `apr` binary execution. Results:
 
 | Claim | Evidence | Verdict |
 |-------|----------|---------|
-| **SF-001**: lib_parse_rosetta.rs blocks compilation | `cargo test -p apr-cli --lib` fails with E0063 (2 errors) | **CONFIRMED** |
-| **SF-002**: 7 sampling params dropped in `apr run` | `RunOptions` struct (run.rs:126-157) has NO sampling fields. `dispatch_run()` signature (dispatch_run.rs:4-26) omits all 7. `dispatch.rs:57-62` destructures but never passes them. | **CONFIRMED** |
+| **SF-001**: lib_parse_rosetta.rs blocks compilation | `cargo test -p apr-cli --lib` fails with E0063 (2 errors) | **CONFIRMED → FIXED** (5c46243e) |
+| **SF-002**: 7 sampling params dropped in `apr run` | `RunOptions` struct (run.rs:126-157) has NO sampling fields. `dispatch_run()` signature (dispatch_run.rs:4-26) omits all 7. `dispatch.rs:57-62` destructures but never passes them. | **CONFIRMED → FIXED** (8c5078af, b14f2e06) |
 | SF-002 batch path uses temp/top_k | `run_batch()` (run_entry.rs:276-284) takes temperature and top_k | **CONFIRMED** — batch path partial, main path total drop |
 | Five-whys root cause (L-flow gap) | Provable contracts verify L1-L5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
 
