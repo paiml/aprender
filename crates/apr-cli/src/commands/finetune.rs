@@ -1984,7 +1984,6 @@ fn display_classify_plan(
     }
 }
 
-/// Display next-steps guidance when no classify training data is provided.
 fn display_classify_next_steps(json_output: bool) {
     if !json_output {
         println!();
@@ -1994,12 +1993,6 @@ fn display_classify_next_steps(json_output: bool) {
         println!("  Example: apr finetune --task classify --data train.jsonl -o checkpoints/");
     }
 }
-
-// Instruct helper functions (load_instruct_pipeline, display_instruct_plan,
-// display_instruct_next_steps, display_instruct_result, display_instruct_result_json)
-// are removed — they depend on unpublished entrenar 0.7.5 APIs:
-//   instruct_corpus, instruct_pipeline, instruct_trainer, InstructTrainResult.
-// They will be restored when entrenar publishes the instruct subsystem.
 
 #[cfg(test)]
 #[path = "finetune_tests.rs"]

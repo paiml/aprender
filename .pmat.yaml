@@ -1,4 +1,13 @@
 comply:
+  thresholds:
+    file_health:
+      critical_lines: 2500
+      warning_lines: 1000
+      exclude_patterns:
+      - "generated_contracts.rs"
+      - "*_tests*.rs"
+      - "tests/**"
+      - "*_contract_falsify.rs"
   suppressions:
     - rules: ["CB-954"]
       files: ["contracts/**", "docs/roadmaps/**"]
