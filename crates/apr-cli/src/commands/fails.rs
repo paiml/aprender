@@ -143,20 +143,9 @@
     fn test_run_model_with_options() {
         let options = RunOptions {
             input: Some(PathBuf::from("/tmp/test.wav")),
-            prompt: None,
-            max_tokens: 32,
-            output_format: "json".to_string(),
-            force: false,
             no_gpu: true,
-            offline: false,
-            benchmark: false,
-            verbose: false,
-            trace: false,
-            trace_steps: None,
-            trace_verbose: false,
-            trace_output: None,
-            trace_level: "basic".to_string(),
-            profile: false,
+            output_format: "json".to_string(),
+            ..RunOptions::default()
         };
         assert!(options.no_gpu);
         assert_eq!(options.output_format, "json");
