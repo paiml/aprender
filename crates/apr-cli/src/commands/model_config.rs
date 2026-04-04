@@ -151,12 +151,13 @@ pub(crate) fn resolve_transformer_config_by_size(
     match model_size {
         Some(size) => match size {
             "0.5B" | "500M" | "qwen2-0.5b" => Ok(TransformerConfig::qwen2_0_5b()),
+            "1.5B" | "qwen2-1.5b" | "qwen2.5-1.5b" => Ok(TransformerConfig::qwen2_1_5b()),
             "7B" | "llama2-7b" => Ok(TransformerConfig::llama2_7b()),
             "13B" | "llama2-13b" => Ok(TransformerConfig::llama2_13b()),
             "mistral-7b" => Ok(TransformerConfig::mistral_7b()),
             "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => Ok(TransformerConfig::qwen3_5_9b()),
             unknown => Err(CliError::ValidationFailed(format!(
-                "Unknown model size '{unknown}'. Known sizes: 0.5B, 7B, 9B, 13B"
+                "Unknown model size '{unknown}'. Known sizes: 0.5B, 1.5B, 7B, 9B, 13B"
             ))),
         },
         None => Err(CliError::ValidationFailed(
@@ -184,19 +185,46 @@ fn transformer_config_from_apr_metadata(
     rope_theta: Option<f32>,
     architecture: Option<&str>,
 ) -> Option<entrenar::transformer::TransformerConfig> {
+    use entrenar::transformer::TransformerConfig;
+
     let hidden = hidden_size?;
-    let heads = num_heads?;
-    let layers = num_layers?;
     let vocab = vocab_size?;
-    let intermediate = intermediate_size?;
+
+    // If critical fields are missing, try to match a known architecture preset
+    // by (architecture, hidden_size). This handles APR files created from GGUF
+    // that didn't store num_heads/num_layers in metadata (pre-GH-376 imports).
+    let (heads, layers, intermediate, kv_heads) =
+        match (num_heads, num_layers, intermediate_size, num_kv_heads) {
+            (Some(h), Some(l), Some(i), kv) => (h, l, i, kv),
+            _ => {
+                // Fall back to known presets by architecture + hidden_size
+                let preset = match (architecture, hidden) {
+                    (Some(a), 896) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_0_5b()),
+                    (Some(a), 1536) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_1_5b()),
+                    (Some(a), 3584) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_7b()),
+                    _ => None,
+                };
+                if let Some(p) = preset {
+                    eprintln!(
+                        "[GH-376] Metadata incomplete (num_heads/num_layers missing), \
+                         using {arch} preset for hidden_size={hidden}",
+                        arch = architecture.unwrap_or("unknown"),
+                    );
+                    (p.num_attention_heads, p.num_hidden_layers, p.intermediate_size,
+                     Some(p.num_kv_heads))
+                } else {
+                    return None;
+                }
+            }
+        };
 
     // Determine use_bias from architecture family
     let use_bias = matches!(architecture, Some(a) if a.starts_with("qwen2"));
 
-    Some(entrenar::transformer::TransformerConfig {
+    Some(TransformerConfig {
         hidden_size: hidden,
         num_attention_heads: heads,
-        num_kv_heads: num_kv_heads.unwrap_or(heads),
+        num_kv_heads: kv_heads.unwrap_or(heads),
         intermediate_size: intermediate,
         num_hidden_layers: layers,
         vocab_size: vocab,
