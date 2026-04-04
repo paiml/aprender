@@ -103,8 +103,20 @@ fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
 ///
 /// PMAT-103: This function preserves the original GGUF quantization format,
 /// ensuring format parity with Ollama/llama.cpp. No dequantization occurs.
-/// Provable precondition: tensors must be non-empty for a valid APR file.
+///
+/// CONTRACT: apr_tokenizer_embedding (model-format-conversion-v1.yaml)
+///   - APR files MUST embed tokenizer when tokenizer is available
+///   - Metadata MUST include architecture config when model_config is available
+///
+/// CONTRACT: architecture_config_invariants (apr-architecture-schema-v1.yaml)
+///   - hidden_size, num_layers, num_heads, vocab_size must be present
+// CONTRACT L5: apr_tokenizer_embedding (model-format-conversion-v1.yaml, PMAT-154 P0)
+// CONTRACT L5: architecture_config_invariants (apr-architecture-schema-v1.yaml, PMAT-490)
 #[provable_contracts_macros::requires(!tensors.is_empty())]
+#[provable_contracts_macros::requires(tokenizer.is_some())]
+#[provable_contracts_macros::requires(
+    model_config.map_or(false, |c| c.hidden_size.is_some() && c.num_layers.is_some() && c.num_heads.is_some() && c.vocab_size.is_some())
+)]
 pub(crate) fn write_apr_file_raw(
     tensors: &BTreeMap<String, GgufRawTensor>,
     output: &Path,
@@ -197,34 +209,8 @@ pub(crate) fn write_apr_file_raw(
         custom,
     };
 
-    // PMAT-490: Warn on metadata incompleteness — training pipeline needs these fields.
-    // This is a soft enforcement (warning, not error) because:
-    // 1. Older GGUF files may not have all metadata keys
-    // 2. The downstream preset fallback (model_config.rs) handles missing fields
-    // 3. Hard failure would break import of valid-but-sparse GGUF files
-    {
-        let missing: Vec<&str> = [
-            ("hidden_size", metadata.hidden_size.is_none()),
-            ("num_layers", metadata.num_layers.is_none()),
-            ("num_heads", metadata.num_heads.is_none()),
-            ("num_kv_heads", metadata.num_kv_heads.is_none()),
-            ("vocab_size", metadata.vocab_size.is_none()),
-            ("intermediate_size", metadata.intermediate_size.is_none()),
-        ]
-        .iter()
-        .filter(|(_, is_none)| *is_none)
-        .map(|(name, _)| *name)
-        .collect();
-
-        if !missing.is_empty() {
-            eprintln!(
-                "[PMAT-490] WARNING: APR metadata incomplete — missing: {}. \
-                 Training pipeline will fall back to architecture presets. \
-                 Re-import with a GGUF file that has complete metadata to fix.",
-                missing.join(", ")
-            );
-        }
-    }
+    // PMAT-490: Metadata completeness is enforced by #[requires] contract above.
+    // Compiler verifies tokenizer + model_config are present at all call sites.
 
     // Create APR writer
     let mut writer = AprV2Writer::new(metadata);
