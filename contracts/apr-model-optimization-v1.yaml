@@ -1,0 +1,435 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Model optimization contract — structured pruning, knowledge distillation,
+    and fine-tuning pipelines. Covers `apr prune` (magnitude/structured pruning
+    with sparsity targets), `apr distill` (teacher->student knowledge transfer),
+    and `apr finetune` (LoRA/QLoRA parameter-efficient fine-tuning).
+  references:
+  - 'Han et al. (2015) Learning Both Weights and Connections. NeurIPS'
+  - 'Hinton et al. (2015) Distilling the Knowledge in a Neural Network. arXiv:1503.02531'
+  - 'Hu et al. (2021) LoRA: Low-Rank Adaptation of Large Language Models. arXiv:2106.09685'
+  - 'apr-cli/src/commands/prune.rs'
+  - 'apr-cli/src/commands/distill.rs'
+  - 'apr-cli/src/commands/finetune.rs'
+  depends_on:
+  - apr-model-lifecycle-v1
+  - training-loop-v1
+
+equations:
+  prune_sparsity_target:
+    formula: |
+      prune(model, target_sparsity, tolerance): (AprModel, f64, f64) -> Result<AprModel, PruneError>
+        let actual = count_zeros(result.weights) / total_weights(result)
+        |actual - target_sparsity| <= tolerance
+        forall w in result.weights: w == 0.0 || w == original.weights[i]
+        layer_sparsity[l] respects sensitivity[l] from Fisher information
+    domain: AprModel with F32 weights, target_sparsity in (0.0, 1.0), tolerance in (0.0, 0.1]
+    codomain: Result<AprModel, PruneError>
+    invariants:
+    - Pruned weights are exactly 0.0 (not epsilon-close)
+    - Non-pruned weights are bit-identical to original
+    - Global sparsity within tolerance of target
+    - Layer-wise sparsity distribution respects sensitivity ranking (low-sensitivity layers pruned more aggressively)
+    preconditions:
+    - model.weights.iter().all(|w| w.is_finite())
+    - target_sparsity > 0.0 && target_sparsity < 1.0
+    - tolerance > 0.0 && tolerance <= 0.1
+    postconditions:
+    - (actual_sparsity - target_sparsity).abs() <= tolerance
+    - pruned_model.weights.iter().filter(|w| **w == 0.0).count() > 0
+    - pruned_model.weights.len() == model.weights.len()
+    lean_theorem: Theorems.PruneSparsityTarget
+
+  prune_architecture_preservation:
+    formula: |
+      prune(model, sparsity, tol): (AprModel, f64, f64) -> Result<AprModel, PruneError>
+        result.num_layers == model.num_layers
+        result.hidden_dim == model.hidden_dim
+        result.tensor_shapes == model.tensor_shapes
+        AprModel::load(save(result)) succeeds (model remains loadable)
+    domain: AprModel with valid architecture config
+    codomain: Result<AprModel, PruneError>
+    invariants:
+    - Number of layers unchanged after pruning
+    - Hidden dimension unchanged after pruning
+    - All tensor shapes identical to original (only values change)
+    - Pruned model is loadable via standard AprModel::load()
+    preconditions:
+    - model.num_layers > 0
+    - model.hidden_dim > 0
+    - model.tensors.iter().all(|t| t.shape().len() >= 1)
+    postconditions:
+    - result.num_layers == model.num_layers
+    - result.hidden_dim == model.hidden_dim
+    - result.tensors.iter().zip(model.tensors.iter()).all(|(r, o)| r.shape() == o.shape())
+    lean_theorem: Theorems.PruneArchitecturePreservation
+
+  distill_knowledge_transfer:
+    formula: |
+      distill(teacher, student, data, T, alpha): (AprModel, AprModel, Dataset, f64, f64) -> Result<AprModel, DistillError>
+        L_distill = alpha * KL(softmax(s_logits / T), softmax(t_logits / T)) * T^2
+                  + (1 - alpha) * CE(s_logits, labels)
+        KL_t < KL_{t-1} for smoothed trajectory (EMA, alpha=0.1)
+        softmax(logits / T) applied consistently to both teacher and student
+    domain: teacher (frozen AprModel), student (trainable AprModel), Dataset, T > 0, alpha in [0, 1]
+    codomain: Result<AprModel, DistillError> where result is the trained student
+    invariants:
+    - Teacher weights are frozen (never modified during distillation)
+    - KL divergence between student and teacher decreases monotonically (EMA-smoothed)
+    - Temperature T applied identically to both teacher and student logits
+    - Combined loss balances soft targets (KL) and hard targets (CE) via alpha
+    preconditions:
+    - teacher.is_frozen() == true
+    - student.output_dim == teacher.output_dim
+    - T > 0.0 (temperature must be positive)
+    - alpha >= 0.0 && alpha <= 1.0
+    postconditions:
+    - kl_final < kl_initial (student learned from teacher)
+    - teacher.weights == teacher_original.weights (teacher unchanged)
+    - result.output_dim == teacher.output_dim
+    lean_theorem: Theorems.DistillKnowledgeTransfer
+
+  finetune_lora_rank_correctness:
+    formula: |
+      finetune_lora(model, data, r, alpha_lora): (AprModel, Dataset, usize, f64) -> Result<LoraModel, FinetuneError>
+        forall adapter in result.adapters:
+          adapter.B.shape == (d, r)  where d = target_module.out_features
+          adapter.A.shape == (r, k)  where k = target_module.in_features
+          W' = W + (alpha_lora / r) * B @ A
+        forall (name, param) in model.base_params():
+          result.base_param(name) == param  (frozen, bit-identical)
+    domain: AprModel with linear layers, Dataset, r in [1, 256], alpha_lora > 0
+    codomain: Result<LoraModel, FinetuneError>
+    invariants:
+    - Each LoRA adapter B has shape (d, r) and A has shape (r, k)
+    - Weight update is W' = W + (alpha_lora / r) * B @ A
+    - Base model weights are frozen and bit-identical after fine-tuning
+    - Only adapter parameters (B, A) receive gradients
+    preconditions:
+    - r >= 1 && r <= 256
+    - alpha_lora > 0.0
+    - model has at least one linear layer eligible for LoRA
+    postconditions:
+    - result.adapters.len() > 0
+    - result.adapters.iter().all(|a| a.B.shape()[1] == r && a.A.shape()[0] == r)
+    - result.base_weights_hash() == model.weights_hash()
+    lean_theorem: Theorems.FinetuneLora_RankCorrectness
+
+  finetune_checkpoint_determinism:
+    formula: |
+      finetune(model, data, seed): (AprModel, Dataset, u64) -> Result<Checkpoint, FinetuneError>
+        let ckpt1 = finetune(model, data, seed)
+        let ckpt2 = finetune(model, data, seed)
+        sha256(serialize(ckpt1)) == sha256(serialize(ckpt2))
+        ckpt.base_model_ref is a content hash (not a path)
+        ckpt.adapter_weights present and non-empty
+    domain: AprModel, Dataset (deterministic iteration order), seed in u64
+    codomain: Result<Checkpoint, FinetuneError>
+    invariants:
+    - Same data + same seed produces bit-identical checkpoint bytes
+    - Checkpoint contains base model reference (content hash, not filesystem path)
+    - Checkpoint contains adapter weights separately from base model
+    - Checkpoint includes training metadata (seed, epoch, loss)
+    preconditions:
+    - seed is explicitly set (no implicit randomness)
+    - data iteration order is deterministic for given seed
+    - model weights are deterministic (loaded from known checkpoint)
+    postconditions:
+    - sha256(ckpt1_bytes) == sha256(ckpt2_bytes) for same inputs
+    - ckpt.base_model_ref.is_some()
+    - ckpt.adapter_weights.len() > 0
+    lean_theorem: Theorems.FinetuneCheckpointDeterminism
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model, check sparsity/rank/temperature params, verify architecture compatibility
+  - name: execute
+    description: Run pruning/distillation/fine-tuning optimization pipeline
+  - name: verify_output
+    description: Verify sparsity targets, architecture preservation, KL convergence, LoRA shapes, checkpoint determinism
+
+proof_obligations:
+- type: bound
+  property: Pruned model achieves target sparsity within tolerance
+  formal: "|actual_sparsity - target_sparsity| <= tolerance"
+  tolerance: 0.01
+  applies_to: prune_sparsity_target
+  lean:
+    theorem: Theorems.PruneSparsityTarget
+    status: sorry
+- type: invariant
+  property: Pruned model preserves original architecture
+  formal: result.num_layers == model.num_layers && result.hidden_dim == model.hidden_dim && shapes_equal(result, model)
+  applies_to: prune_architecture_preservation
+  lean:
+    theorem: Theorems.PruneArchitecturePreservation
+    status: sorry
+- type: monotonicity
+  property: Student KL divergence from teacher decreases during distillation
+  formal: KL(student_T, teacher_T) decreases monotonically (EMA-smoothed)
+  tolerance: 1e-4
+  applies_to: distill_knowledge_transfer
+  lean:
+    theorem: Theorems.DistillKnowledgeTransfer
+    status: sorry
+- type: invariant
+  property: LoRA adapters have correct rank and base weights are frozen
+  formal: adapter.B.shape == (d, r) && adapter.A.shape == (r, k) && base_weights unchanged
+  applies_to: finetune_lora_rank_correctness
+  lean:
+    theorem: Theorems.FinetuneLora_RankCorrectness
+    status: sorry
+- type: determinism
+  property: Same seed and data produce bit-identical fine-tuning checkpoints
+  formal: sha256(finetune(m, d, s)) == sha256(finetune(m, d, s))
+  applies_to: finetune_checkpoint_determinism
+  lean:
+    theorem: Theorems.FinetuneCheckpointDeterminism
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-OPT-001
+  rule: Pruned model achieves target sparsity within tolerance
+  prediction: Pruning to 50% sparsity yields actual sparsity in [0.49, 0.51]
+  test: |
+    #[test]
+    fn falsify_opt_001_sparsity_target() {
+        let model = create_test_model(4, 64);  // 4 layers, hidden_dim=64
+        let target_sparsity = 0.5;
+        let tolerance = 0.01;
+
+        let pruned = prune_model(&model, target_sparsity, tolerance).unwrap();
+        let total = pruned.weights().len() as f64;
+        let zeros = pruned.weights().iter().filter(|w| **w == 0.0).count() as f64;
+        let actual_sparsity = zeros / total;
+
+        assert!(
+            (actual_sparsity - target_sparsity).abs() <= tolerance,
+            "Sparsity {} not within tolerance {} of target {}",
+            actual_sparsity, tolerance, target_sparsity
+        );
+
+        // Verify pruned weights are exactly 0.0, not epsilon
+        for w in pruned.weights() {
+            assert!(
+                *w == 0.0 || model.weights().contains(w),
+                "Pruned weight {} is neither zero nor original", w
+            );
+        }
+    }
+  if_fails: Pruning algorithm does not respect sparsity target or sets weights to near-zero instead of exact zero
+
+- id: FALSIFY-OPT-002
+  rule: Pruned model preserves original architecture
+  prediction: Pruned model has identical layer count, hidden dim, and tensor shapes
+  test: |
+    #[test]
+    fn falsify_opt_002_architecture_preservation() {
+        let model = create_test_model(6, 128);  // 6 layers, hidden_dim=128
+        let pruned = prune_model(&model, 0.7, 0.05).unwrap();
+
+        assert_eq!(
+            pruned.num_layers(), model.num_layers(),
+            "Layer count changed: {} -> {}", model.num_layers(), pruned.num_layers()
+        );
+        assert_eq!(
+            pruned.hidden_dim(), model.hidden_dim(),
+            "Hidden dim changed: {} -> {}", model.hidden_dim(), pruned.hidden_dim()
+        );
+
+        for (i, (orig_t, pruned_t)) in model.tensors().iter()
+            .zip(pruned.tensors().iter()).enumerate()
+        {
+            assert_eq!(
+                orig_t.shape(), pruned_t.shape(),
+                "Tensor {} shape changed: {:?} -> {:?}", i, orig_t.shape(), pruned_t.shape()
+            );
+        }
+
+        // Verify model is still loadable
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("pruned.apr");
+        pruned.save(&path).unwrap();
+        let reloaded = AprModel::load(&path).unwrap();
+        assert_eq!(reloaded.num_layers(), model.num_layers());
+    }
+  if_fails: Pruning mutates tensor shapes or layer structure, breaking model loadability
+
+- id: FALSIFY-OPT-003
+  rule: Student KL divergence from teacher decreases during distillation
+  prediction: KL divergence (EMA-smoothed) at epoch 20 is lower than at epoch 1
+  test: |
+    #[test]
+    fn falsify_opt_003_knowledge_transfer() {
+        let teacher = create_pretrained_teacher(4, 128);
+        let student = create_student_model(4, 64);
+        let data = create_distillation_dataset(200);
+        let temperature = 4.0;
+        let alpha = 0.7;
+
+        let metrics = distill(
+            &teacher, &mut student.clone(), &data, temperature, alpha,
+            DistillConfig { epochs: 20, ..default() }
+        ).unwrap();
+
+        // EMA-smoothed KL divergence should decrease
+        let ema_first_3 = ema(&metrics[..3].iter().map(|m| m.kl_divergence).collect(), 0.1);
+        let ema_last_3 = ema(&metrics[17..].iter().map(|m| m.kl_divergence).collect(), 0.1);
+        assert!(
+            ema_last_3 < ema_first_3,
+            "KL divergence not decreasing: first_3_ema={}, last_3_ema={}",
+            ema_first_3, ema_last_3
+        );
+
+        // Teacher must be unchanged
+        let teacher_after = create_pretrained_teacher(4, 128);
+        assert_eq!(
+            teacher.weights_hash(), teacher_after.weights_hash(),
+            "Teacher weights modified during distillation"
+        );
+    }
+  if_fails: Student not learning from teacher — check temperature scaling, loss formulation, or gradient flow
+
+- id: FALSIFY-OPT-004
+  rule: LoRA adapters have correct rank and base weights are frozen
+  prediction: Adapters have shape (d, r) and (r, k), base weights unchanged
+  test: |
+    #[test]
+    fn falsify_opt_004_lora_rank_correctness() {
+        let model = create_test_model(4, 128);
+        let data = create_finetune_dataset(100);
+        let rank = 8;
+        let alpha_lora = 16.0;
+        let base_hash = model.weights_hash();
+
+        let lora_model = finetune_lora(
+            &model, &data, rank, alpha_lora,
+            FinetuneConfig { epochs: 5, ..default() }
+        ).unwrap();
+
+        // Check adapter shapes
+        for adapter in lora_model.adapters() {
+            let (d, r_b) = (adapter.B.shape()[0], adapter.B.shape()[1]);
+            let (r_a, k) = (adapter.A.shape()[0], adapter.A.shape()[1]);
+            assert_eq!(r_b, rank, "B rank mismatch: expected {}, got {}", rank, r_b);
+            assert_eq!(r_a, rank, "A rank mismatch: expected {}, got {}", rank, r_a);
+            assert_eq!(d, adapter.target_out_features,
+                "B dim mismatch: expected {}, got {}", adapter.target_out_features, d);
+            assert_eq!(k, adapter.target_in_features,
+                "A dim mismatch: expected {}, got {}", adapter.target_in_features, k);
+        }
+
+        // Base weights must be frozen (bit-identical)
+        assert_eq!(
+            lora_model.base_weights_hash(), base_hash,
+            "Base weights changed during LoRA fine-tuning"
+        );
+    }
+  if_fails: LoRA adapter shapes incorrect or base weights corrupted during fine-tuning
+
+- id: FALSIFY-OPT-005
+  rule: Same seed and data produce bit-identical fine-tuning checkpoints
+  prediction: Two runs with seed=42 produce identical checkpoint bytes
+  test: |
+    #[test]
+    fn falsify_opt_005_checkpoint_determinism() {
+        let model = create_test_model(4, 64);
+        let data = create_finetune_dataset(50);
+        let seed = 42u64;
+
+        let ckpt1 = finetune_lora(
+            &model, &data, 4, 8.0,
+            FinetuneConfig { epochs: 3, seed, ..default() }
+        ).unwrap().checkpoint();
+
+        let ckpt2 = finetune_lora(
+            &model, &data, 4, 8.0,
+            FinetuneConfig { epochs: 3, seed, ..default() }
+        ).unwrap().checkpoint();
+
+        // Bit-identical checkpoint bytes
+        let bytes1 = serialize_checkpoint(&ckpt1);
+        let bytes2 = serialize_checkpoint(&ckpt2);
+        assert_eq!(
+            sha256(&bytes1), sha256(&bytes2),
+            "Checkpoints not deterministic: different hashes for same seed"
+        );
+
+        // Checkpoint must contain base model ref and adapter weights
+        assert!(ckpt1.base_model_ref().is_some(), "Missing base model reference");
+        assert!(!ckpt1.adapter_weights().is_empty(), "Missing adapter weights");
+        assert!(ckpt1.metadata().seed == seed, "Seed not recorded in metadata");
+    }
+  if_fails: Non-determinism in training loop (uncontrolled RNG, thread scheduling, or HashMap iteration order)
+
+kani_harnesses:
+- id: KANI-OPT-001
+  obligation: Pruned model achieves target sparsity within tolerance
+  property: Actual sparsity within tolerance of target for all valid inputs
+  bound: 16
+  strategy: bounded_int
+  harness: verify_prune_sparsity_target
+- id: KANI-OPT-002
+  obligation: Pruned model preserves original architecture
+  property: Layer count, hidden dim, and tensor shapes unchanged after pruning
+  bound: 8
+  strategy: exhaustive
+  harness: verify_prune_architecture_preserved
+- id: KANI-OPT-003
+  obligation: Student KL divergence from teacher decreases during distillation
+  property: KL divergence between student and teacher outputs decreases over training
+  bound: 16
+  strategy: bounded_int
+  harness: verify_distill_kl_convergence
+- id: KANI-OPT-004
+  obligation: LoRA adapters have correct rank and base weights are frozen
+  property: Adapter B is (d, r), A is (r, k), base weights bit-identical
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lora_rank_shapes
+- id: KANI-OPT-005
+  obligation: Same seed and data produce bit-identical fine-tuning checkpoints
+  property: Deterministic training yields identical serialized checkpoints
+  bound: 8
+  strategy: exhaustive
+  harness: verify_finetune_determinism
+
+qa_gate:
+  id: F-OPT-GATE
+  name: Model Optimization Contract
+  description: Quality gate for pruning, distillation, and fine-tuning pipelines
+  checks:
+  - sparsity_target_achieved
+  - architecture_preserved
+  - knowledge_transfer_convergence
+  - lora_rank_correctness
+  - checkpoint_determinism
+  pass_criteria: All 5 falsification tests pass
+  falsification: FALSIFY-OPT-001 through FALSIFY-OPT-005
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — pruning halts if actual sparsity exceeds
+    tolerance band. Distillation stops if KL divergence diverges (NaN or
+    increasing trend over patience window). Human decides whether to adjust
+    sparsity target, temperature, or learning rate.
+  poka_yoke: >
+    "Mistake-proofing" — LoRA rank validated at construction (1 <= r <= 256).
+    Temperature must be positive. Sparsity target must be in (0, 1). Base model
+    weights are frozen via requires_grad=false before training begins, making
+    accidental base weight modification impossible.
+  genchi_genbutsu: >
+    "Go and see" — sparsity is measured by counting exact zeros in the weight
+    tensor, not estimated. KL divergence computed from actual forward passes on
+    real data. LoRA shapes verified by inspecting tensor dimensions, not
+    inferred from config.
+  kaizen: >
+    "Continuous improvement" — distillation metrics (KL divergence, CE loss,
+    combined loss) logged per epoch for trend analysis. Pruning sensitivity
+    analysis cached for incremental re-pruning. Checkpoint metadata enables
+    reproducible experiment comparison across runs.

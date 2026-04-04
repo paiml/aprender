@@ -112,6 +112,27 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         Commands::Serve { command } => dispatch_serve_command(command, cli),
 
+        // PMAT-182: apr code — sovereign coding assistant
+        #[cfg(feature = "code")]
+        Commands::Code {
+            model,
+            project,
+            resume,
+            prompt,
+            print,
+            max_turns,
+            manifest,
+        } => batuta::agent::code::cmd_code(
+            model.clone(),
+            project.clone(),
+            resume.clone(),
+            prompt.clone(),
+            *print,
+            *max_turns,
+            manifest.clone(),
+        )
+        .map_err(|e| CliError::Aprender(e.to_string())),
+
         _ => return None,
     })
 }

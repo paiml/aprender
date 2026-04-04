@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-03'
   author: PAIML Engineering
+  registry: true
   description: >
     apr-cli interface contract — command parsing determinism, training pipeline
     plan/apply semantics, tokenizer training correctness, model contract
@@ -240,28 +241,28 @@ proof_obligations:
     theorem: Theorems.CommandParseDeterminism
     status: sorry
 - type: completeness
-  property: Contract gate exempts all diagnostic commands
+  property: Contract gate exempts diagnostic commands
   formal: forall cmd in DiagnosticCommands, extract_model_paths(cmd) == []
   applies_to: contract_gate_enforcement
   lean:
     theorem: Theorems.ContractGateEnforcement
     status: sorry
 - type: invariant
-  property: Skip-contract flag bypasses validation
+  property: Skip-contract flag bypasses model validation
   formal: cli.skip_contract == true -> no validate_model_contract() call
   applies_to: contract_gate_enforcement
   lean:
     theorem: Theorems.ContractGateEnforcementSkip
     status: sorry
 - type: invariant
-  property: Training plan has no side effects
+  property: Training plan is pure (no side effects)
   formal: fs_state_before(train_plan(args)) == fs_state_after(train_plan(args))
   applies_to: training_plan_apply_semantics
   lean:
     theorem: Theorems.TrainingPlanApplySemantics
     status: sorry
 - type: postcondition
-  property: Training apply writes only to output directory
+  property: Global --json flag propagates to all subcommands
   formal: forall file in modified_files(train_apply(plan)), file.starts_with(plan.output_dir)
   applies_to: training_plan_apply_semantics
   lean:
@@ -283,14 +284,14 @@ proof_obligations:
     theorem: Theorems.PipeStdinSupport
     status: sorry
 - type: invariant
-  property: Directory resolution is deterministic
+  property: Alias commands parse identically
   formal: forall dir, resolve_model_path(dir) == resolve_model_path(dir)
   applies_to: model_path_resolution
   lean:
     theorem: Theorems.ModelPathResolution
     status: sorry
 - type: postcondition
-  property: Shard index.json takes priority in directory resolution
+  property: Directory resolution prioritizes index.json over shard files
   formal: >
     dir.contains("model.safetensors.index.json") ->
     resolve_model_path(dir) == Ok(dir/"model.safetensors.index.json")

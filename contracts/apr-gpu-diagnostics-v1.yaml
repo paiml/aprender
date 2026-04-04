@@ -1,0 +1,395 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    GPU compute diagnostics contract — PTX code generation, kernel mapping,
+    and real-time GPU/CPU monitoring. Covers `apr ptx` (emit PTX assembly),
+    `apr ptx-map` (map model layers to GPU kernels), and `apr cbtop`
+    (real-time compute monitoring TUI with JSON headless mode).
+  references:
+  - 'NVIDIA PTX ISA 8.x Reference'
+  - 'apr-cli/src/commands/ptx_explain.rs'
+  - 'apr-cli/src/commands/ptx_map.rs'
+  - 'apr-cli/src/commands/cbtop.rs'
+  depends_on:
+  - cli-dispatch-v1
+  - apr-cli-operations-v1
+
+equations:
+  ptx_code_generation:
+    formula: |
+      ptx_emit(model, arch): (Model, GpuArch) -> Result<PtxAssembly, PtxError>
+        For each kernel K in {matmul, softmax, rope}:
+          ptx = generate_ptx(K, arch)
+          assert ptx.starts_with(".version")
+          assert ptx.contains(".target " ++ arch.target_str())
+          assert ptx.register_count() <= arch.max_registers_per_thread()
+          assert ptx.syntax_valid()  // NVIDIA ptxas --parse-only equivalent
+        return PtxAssembly { kernels: [ptx_matmul, ptx_softmax, ptx_rope] }
+    domain: (Model with weight shapes, GpuArch in {sm_70, sm_75, sm_80, sm_86, sm_89, sm_90})
+    codomain: Result<PtxAssembly with valid .version/.target directives, PtxError>
+    invariants:
+    - Generated PTX starts with .version directive and .target matching requested arch
+    - Register usage per kernel does not exceed arch.max_registers_per_thread (255 for sm_70+)
+    - Every kernel entry point has matching .entry declaration with parameter list
+    - PTX contains no undefined labels or forward references to nonexistent symbols
+    preconditions:
+    - model has at least one layer with weight tensors
+    - arch is a supported NVIDIA compute capability (sm_70 through sm_90)
+    postconditions:
+    - returned PtxAssembly contains one entry per kernel type (matmul, softmax, rope)
+    - each PTX module is syntactically valid (parseable by ptxas --parse-only)
+    lean_theorem: Theorems.Ptx_Code_Generation
+
+  ptx_kernel_mapping:
+    formula: |
+      ptx_map(model): Model -> Result<KernelMap, MapError>
+        For each layer L in model.layers:
+          match L.layer_type:
+            Attention => map to {qkv_proj_kernel, rope_kernel, softmax_kernel, attn_matmul_kernel, o_proj_kernel}
+            FFN       => map to {gate_proj_kernel, up_proj_kernel, activation_kernel, down_proj_kernel}
+            Norm      => map to {rmsnorm_kernel | layernorm_kernel}
+            Embedding => map to {embedding_lookup_kernel}
+          occupancy = estimate_occupancy(kernel, arch, block_size)
+          assert occupancy > 0.0
+        return KernelMap { layers: [...], total_kernels, occupancy_estimates }
+    domain: Model with typed layers (Attention, FFN, Norm, Embedding)
+    codomain: Result<KernelMap where every layer maps to >= 1 kernel, MapError>
+    invariants:
+    - Every layer type maps to at least one GPU kernel (no unmapped layers)
+    - Attention layers produce exactly 5 kernel entries (QKV proj, RoPE, softmax, attn matmul, O proj)
+    - FFN layers produce exactly 4 kernel entries (gate, up, activation, down)
+    - Occupancy estimates are in range (0.0, 1.0] for all kernels
+    preconditions:
+    - model.layers is non-empty
+    - each layer has a recognized layer_type in {Attention, FFN, Norm, Embedding}
+    postconditions:
+    - kernel_map.layers.len() == model.layers.len() (one-to-one mapping)
+    - total_kernels == sum of per-layer kernel counts
+    - all occupancy values in (0.0, 1.0]
+    lean_theorem: Theorems.Ptx_Kernel_Mapping
+
+  cbtop_monitoring:
+    formula: |
+      cbtop(config): CbtopConfig -> Result<MetricStream, MonitorError>
+        loop every config.refresh_interval:
+          metrics = collect_metrics()
+          metrics.gpu = query_gpu_metrics()     // memory, utilization, temperature
+          metrics.cpu = query_cpu_metrics()      // per-core usage, frequency
+          metrics.timestamp = now()
+          match config.mode:
+            Tui    => render_tui(metrics)        // must not panic
+            Json   => emit_json(metrics)         // must be valid JSON
+            Headless(n) => emit_json(metrics); if tick >= n { break }
+        return Ok(stream)
+    domain: CbtopConfig { mode in {Tui, Json, Headless(n)}, refresh_interval >= 100ms }
+    codomain: Result<Stream of MetricSnapshot per tick, MonitorError>
+    invariants:
+    - Each tick produces exactly one MetricSnapshot with timestamp
+    - JSON mode emits one valid JSON object per line per tick (NDJSON)
+    - TUI mode renders without panic even when GPU is unavailable (graceful fallback)
+    - Refresh interval is honored within 10% tolerance (no busy-spin, no missed ticks)
+    preconditions:
+    - refresh_interval >= 100ms (prevent CPU burn)
+    - mode is one of {Tui, Json, Headless(n)} where n > 0
+    postconditions:
+    - in Headless(n) mode, exactly n JSON lines are emitted before exit
+    - in Json mode, every emitted line parses as valid JSON
+    - in Tui mode, terminal state is restored on exit (raw mode disabled, cursor visible)
+    lean_theorem: Theorems.Cbtop_Monitoring
+
+  cbtop_measurement_accuracy:
+    formula: |
+      accuracy(reported, actual): (Metrics, GroundTruth) -> Result<(), AccuracyError>
+        // GPU memory accuracy
+        assert |reported.gpu_mem_used - actual.gpu_mem_used| / actual.gpu_mem_used <= 0.05
+        // CPU core count
+        assert reported.cpu_core_count == actual.cpu_core_count
+        // Temperature range validity
+        assert reported.gpu_temp >= 0.0 && reported.gpu_temp <= 120.0
+        // Utilization range
+        assert reported.gpu_util >= 0.0 && reported.gpu_util <= 100.0
+        assert reported.cpu_util >= 0.0 && reported.cpu_util <= 100.0
+    domain: (Reported metrics from cbtop, ground truth from nvidia-smi / /proc/stat)
+    codomain: Result<(), AccuracyError> — Ok iff all measurements within tolerance
+    invariants:
+    - GPU memory usage within 5% of nvidia-smi reported value
+    - CPU core count matches /proc/cpuinfo or sysconf(_SC_NPROCESSORS_ONLN)
+    - GPU temperature in valid physical range [0, 120] degrees Celsius
+    - All utilization percentages in [0.0, 100.0] (no negative, no overflow)
+    preconditions:
+    - GPU driver is loaded and responding (nvidia-smi returns 0)
+    - /proc filesystem is accessible (Linux)
+    postconditions:
+    - reported GPU memory error <= 5% of actual
+    - reported CPU core count is exact match to actual
+    lean_theorem: Theorems.Cbtop_Measurement_Accuracy
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: >
+      Validate model path, GPU architecture target, and cbtop configuration.
+      For ptx: verify model has extractable weight shapes. For ptx-map: verify
+      model layers are typed. For cbtop: verify refresh interval and mode.
+  - name: execute
+    description: >
+      For ptx: generate PTX assembly per kernel, validate syntax. For ptx-map:
+      walk model layers, assign kernels, estimate occupancy. For cbtop: enter
+      metric collection loop, render or emit per tick.
+  - name: verify_output
+    description: >
+      For ptx: confirm PTX syntax validity and register counts. For ptx-map:
+      confirm all layers mapped, occupancy in bounds. For cbtop: confirm
+      JSON validity (headless) or terminal restoration (TUI).
+
+proof_obligations:
+- type: postcondition
+  property: PTX assembly is syntactically valid for target architecture
+  formal: "forall arch in supported_archs, ptx_emit(model, arch).is_ok() implies ptxas_parse(ptx).is_ok()"
+  tolerance: 1e-6
+  applies_to: ptx_code_generation
+  lean:
+    theorem: Theorems.PtxCodeGeneration
+    status: sorry
+- type: invariant
+  property: Every model layer maps to at least one GPU kernel
+  formal: "forall layer in model.layers, kernel_map[layer].len() >= 1"
+  applies_to: ptx_kernel_mapping
+  lean:
+    theorem: Theorems.PtxKernelMapping
+    status: sorry
+- type: postcondition
+  property: JSON headless mode emits valid NDJSON
+  formal: "forall tick in 0..n, serde_json::from_str(output_lines[tick]).is_ok()"
+  applies_to: cbtop_monitoring
+  lean:
+    theorem: Theorems.CbtopMonitoring
+    status: sorry
+- type: bound
+  property: GPU memory measurement within 5% of actual
+  formal: "|reported.gpu_mem - actual.gpu_mem| / actual.gpu_mem <= 0.05"
+  tolerance: 0.05
+  applies_to: cbtop_measurement_accuracy
+  lean:
+    theorem: Theorems.CbtopMeasurementAccuracy
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-GPU-001
+  rule: PTX assembly is syntactically valid for target architecture
+  prediction: >
+    Generated PTX for sm_80 contains .version and .target sm_80 directives,
+    and every .entry has a matching closing brace
+  test: |
+    #[test]
+    fn falsify_gpu_001_ptx_syntax_validity() {
+        let model = TestModel::qwen2_0_5b();
+        for arch in [GpuArch::Sm70, GpuArch::Sm80, GpuArch::Sm89, GpuArch::Sm90] {
+            let ptx = ptx_emit(&model, arch).expect("PTX generation should succeed");
+            for kernel in &ptx.kernels {
+                let src = kernel.source();
+                assert!(src.contains(".version"), "PTX must have .version directive");
+                assert!(src.contains(&format!(".target {}", arch.target_str())),
+                    "PTX must target {}", arch.target_str());
+                // Validate balanced braces (entry/exit)
+                let opens = src.matches('{').count();
+                let closes = src.matches('}').count();
+                assert_eq!(opens, closes,
+                    "Unbalanced braces in PTX for {:?}: {} open vs {} close",
+                    arch, opens, closes);
+                // Register count within arch limit
+                assert!(kernel.register_count() <= arch.max_registers_per_thread(),
+                    "Register count {} exceeds arch limit {}",
+                    kernel.register_count(), arch.max_registers_per_thread());
+            }
+        }
+    }
+  if_fails: PTX emitter produces malformed assembly or wrong target directive
+
+- id: FALSIFY-GPU-002
+  rule: Every model layer maps to at least one GPU kernel
+  prediction: >
+    A model with Attention, FFN, Norm, and Embedding layers produces a kernel
+    map where no layer has zero kernels
+  test: |
+    #[test]
+    fn falsify_gpu_002_all_layers_mapped() {
+        let model = TestModel::llama_1b();
+        let kernel_map = ptx_map(&model).expect("Kernel mapping should succeed");
+        assert_eq!(kernel_map.layers.len(), model.layers.len(),
+            "Kernel map should cover all {} layers", model.layers.len());
+        for (i, layer_kernels) in kernel_map.layers.iter().enumerate() {
+            assert!(!layer_kernels.kernels.is_empty(),
+                "Layer {} ({:?}) has zero kernel mappings",
+                i, model.layers[i].layer_type);
+            for k in &layer_kernels.kernels {
+                assert!(k.occupancy > 0.0 && k.occupancy <= 1.0,
+                    "Kernel {} occupancy {} out of range (0, 1.0]",
+                    k.name, k.occupancy);
+            }
+        }
+        // Verify specific layer type kernel counts
+        for layer in &model.layers {
+            let mapped = &kernel_map.layers[layer.index];
+            match layer.layer_type {
+                LayerType::Attention => assert_eq!(mapped.kernels.len(), 5,
+                    "Attention layer should map to 5 kernels"),
+                LayerType::FFN => assert_eq!(mapped.kernels.len(), 4,
+                    "FFN layer should map to 4 kernels"),
+                LayerType::Norm => assert!(mapped.kernels.len() >= 1,
+                    "Norm layer should map to at least 1 kernel"),
+                LayerType::Embedding => assert!(mapped.kernels.len() >= 1,
+                    "Embedding layer should map to at least 1 kernel"),
+            }
+        }
+    }
+  if_fails: Layer type dispatch has missing arm or occupancy estimator returns zero
+
+- id: FALSIFY-GPU-003
+  rule: JSON headless mode emits valid NDJSON
+  prediction: >
+    Running cbtop in Headless(5) mode produces exactly 5 lines, each valid JSON
+    with required fields (timestamp, gpu_mem, cpu_util)
+  test: |
+    #[test]
+    fn falsify_gpu_003_json_headless_valid() {
+        let config = CbtopConfig {
+            mode: CbtopMode::Headless(5),
+            refresh_interval: Duration::from_millis(100),
+        };
+        let output = run_cbtop_capture(&config).expect("cbtop should not error");
+        let lines: Vec<&str> = output.trim().lines().collect();
+        assert_eq!(lines.len(), 5,
+            "Headless(5) should produce exactly 5 lines, got {}", lines.len());
+        for (i, line) in lines.iter().enumerate() {
+            let parsed: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|e| panic!("Line {} is not valid JSON: {}\nContent: {}", i, e, line));
+            assert!(parsed.get("timestamp").is_some(),
+                "Line {} missing 'timestamp' field", i);
+            assert!(parsed.get("gpu").is_some() || parsed.get("cpu").is_some(),
+                "Line {} must have at least 'gpu' or 'cpu' metrics", i);
+        }
+    }
+  if_fails: JSON serialization is broken or tick counter is off-by-one
+
+- id: FALSIFY-GPU-004
+  rule: GPU memory measurement within 5% of actual
+  prediction: >
+    Reported GPU memory differs from nvidia-smi by no more than 5% of actual,
+    and temperature is in [0, 120] range
+  test: |
+    #[test]
+    fn falsify_gpu_004_measurement_accuracy() {
+        // Skip if no GPU available
+        let ground_truth = match nvidia_smi_query() {
+            Ok(gt) => gt,
+            Err(_) => { eprintln!("No GPU — skipping accuracy test"); return; }
+        };
+        let config = CbtopConfig {
+            mode: CbtopMode::Headless(3),
+            refresh_interval: Duration::from_millis(200),
+        };
+        let snapshots = collect_cbtop_snapshots(&config).expect("cbtop should succeed");
+        for (i, snap) in snapshots.iter().enumerate() {
+            // GPU memory within 5%
+            if let Some(gpu) = &snap.gpu {
+                let mem_error = (gpu.mem_used_mb as f64 - ground_truth.mem_used_mb as f64).abs()
+                    / ground_truth.mem_used_mb as f64;
+                assert!(mem_error <= 0.05,
+                    "Tick {} GPU mem error {:.1}% exceeds 5% threshold (reported={}, actual={})",
+                    i, mem_error * 100.0, gpu.mem_used_mb, ground_truth.mem_used_mb);
+                // Temperature in valid range
+                assert!(gpu.temperature_c >= 0.0 && gpu.temperature_c <= 120.0,
+                    "Tick {} GPU temp {:.1}C outside valid range [0, 120]",
+                    i, gpu.temperature_c);
+                // Utilization in [0, 100]
+                assert!(gpu.utilization_pct >= 0.0 && gpu.utilization_pct <= 100.0,
+                    "Tick {} GPU util {:.1}% outside valid range [0, 100]",
+                    i, gpu.utilization_pct);
+            }
+            // CPU core count matches
+            let actual_cores = num_cpus::get();
+            assert_eq!(snap.cpu.core_count, actual_cores,
+                "Tick {} CPU core count mismatch: reported={}, actual={}",
+                i, snap.cpu.core_count, actual_cores);
+            // CPU utilization in [0, 100]
+            assert!(snap.cpu.utilization_pct >= 0.0 && snap.cpu.utilization_pct <= 100.0,
+                "Tick {} CPU util {:.1}% outside valid range [0, 100]",
+                i, snap.cpu.utilization_pct);
+        }
+    }
+  if_fails: GPU memory query uses wrong NVML field or CPU core count reads logical instead of physical
+
+kani_harnesses:
+- id: KANI-GPU-001
+  obligation: PTX assembly is syntactically valid for target architecture
+  property: All generated PTX has .version, correct .target, and balanced braces
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ptx_syntax_validity
+- id: KANI-GPU-002
+  obligation: Every model layer maps to at least one GPU kernel
+  property: kernel_map[layer].len() >= 1 for all layers
+  bound: 16
+  strategy: bounded_int
+  harness: verify_kernel_mapping_completeness
+- id: KANI-GPU-003
+  obligation: JSON headless mode emits valid NDJSON
+  property: Every emitted line is valid JSON with required fields
+  bound: 8
+  strategy: exhaustive
+  harness: verify_json_headless_output
+- id: KANI-GPU-004
+  obligation: GPU memory measurement within 5% of actual
+  property: "|reported - actual| / actual <= 0.05 for GPU memory"
+  bound: 16
+  strategy: bounded_int
+  harness: verify_gpu_memory_accuracy
+
+qa_gate:
+  id: F-GPU-DIAG-GATE
+  name: GPU Compute Diagnostics Contract
+  description: >
+    PTX code generation, kernel mapping, and real-time monitoring — validates
+    correctness of GPU diagnostics pipeline from assembly emission through
+    live metric collection.
+  checks:
+  - ptx_code_generation
+  - ptx_kernel_mapping
+  - cbtop_monitoring
+  - cbtop_measurement_accuracy
+  pass_criteria: All 4 falsification tests pass, all 4 kani harnesses verify
+  falsification: >
+    Generate PTX for unsupported arch to trigger syntax error. Remove FFN
+    kernel mapping to trigger unmapped layer. Corrupt JSON serializer to
+    emit invalid NDJSON. Mock nvidia-smi with 10% memory offset to trigger
+    accuracy bound violation.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — PTX generation validates syntax inline
+    before returning results. If a generated kernel has unbalanced braces or
+    references an undefined register, the emitter stops immediately with a
+    precise error ("kernel matmul_f16: register %r257 exceeds sm_80 limit of
+    255") rather than producing silently broken assembly.
+  poka_yoke: >
+    "Mistake-proofing" — the kernel mapping table is exhaustive over layer
+    types. Adding a new LayerType variant without a kernel mapping arm produces
+    a compile-time exhaustive match error. Occupancy estimation rejects
+    block_size=0 at the type level (NonZeroU32). JSON headless mode uses
+    serde_json::to_writer which cannot produce partial JSON on success.
+  genchi_genbutsu: >
+    "Go and see" — measurement accuracy tests compare cbtop output against
+    nvidia-smi ground truth on real hardware. Temperature and utilization
+    ranges are validated against physical constraints, not arbitrary constants.
+    When no GPU is available, the test explicitly skips rather than passing
+    vacuously.
+  kaizen: >
+    "Continuous improvement" — new GPU architectures (sm_100, sm_120) extend
+    the GpuArch enum and add new PTX target strings. Kernel mapping evolves
+    as new layer types (SSM, MoE router) are added to the model graph.
+    cbtop gains new metric sources (NPU, TPU) via the same MetricSnapshot
+    trait without breaking existing JSON consumers.

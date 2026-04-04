@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     LLM architecture schema contract — full structural specification of
     transformer model components. Covers the complete model graph from
@@ -192,49 +193,49 @@ proof_obligations:
     theorem: Theorems.ArchitectureConfigInvariants
     status: sorry
 - type: invariant
-  property: GQA group size divides num_heads evenly
+  property: GQA group size consistency
   formal: num_heads % num_kv_heads == 0
   applies_to: architecture_config_invariants
   lean:
     theorem: Theorems.ArchitectureConfigGqaInvariant
     status: sorry
 - type: postcondition
-  property: Attention Q/K/V/O shapes match config
+  property: Attention shapes match config
   formal: "Q=[h, n_h*d_h], K=V=[h, n_kv*d_h], O=[n_h*d_h, h]"
   applies_to: attention_tensor_shapes
   lean:
     theorem: Theorems.AttentionTensorShapes
     status: sorry
 - type: postcondition
-  property: FFN gate/up/down shapes are transpose-consistent
+  property: FFN transpose consistency
   formal: "gate.shape == up.shape, down.shape == transpose(gate.shape)"
   applies_to: ffn_tensor_shapes
   lean:
     theorem: Theorems.FfnTensorShapes
     status: sorry
 - type: invariant
-  property: Every layer has exactly 2 norm tensors
+  property: Norm tensors per layer
   formal: norm_count_per_layer == 2 for all layers
   applies_to: normalization_tensor_shapes
   lean:
     theorem: Theorems.NormalizationTensorShapes
     status: sorry
 - type: postcondition
-  property: Embedding exists and has correct shape
+  property: Embedding shape matches vocab
   formal: "embed.shape == [vocab_size, hidden_size]"
   applies_to: embedding_tensor_shapes
   lean:
     theorem: Theorems.EmbeddingTensorShapes
     status: sorry
 - type: invariant
-  property: RoPE frequency vector length matches head_dim
-  formal: freq.len() == head_dim / 2
+  property: RoPE type is valid
+  formal: rope_type in {0, 2}
   applies_to: rope_position_encoding
   lean:
     theorem: Theorems.RopePositionEncoding
     status: sorry
 - type: bound
-  property: Total tensor count within tolerance of expected
+  property: Total tensor count within tolerance
   formal: "abs(actual_tensors - expected_tensors(config)) <= 5"
   applies_to: total_tensor_count
   lean:

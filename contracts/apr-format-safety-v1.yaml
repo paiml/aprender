@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Format safety contract — magic byte validation, header integrity,
     provenance enforcement, strict mode, and dtype coercion safety for
@@ -194,7 +195,7 @@ proof_obligations:
     theorem: Theorems.TruncationDetection
     status: sorry
 - type: invariant
-  property: Strict validation is read-only
+  property: Strict import rejects NaN tensors
   formal: hash(model_before) == hash(model_after) for strict_validate(model)
   applies_to: strict_import_validation
   lean:

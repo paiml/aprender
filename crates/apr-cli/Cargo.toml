@@ -63,8 +63,9 @@ name = "apr"
 path = "src/main.rs"
 
 [features]
-default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu"]
+default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
 hf-hub = ["aprender/hf-hub-integration"]
+code = ["dep:batuta"]
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "realizar/gpu"]
@@ -86,6 +87,9 @@ provable-contracts-macros = { version = "0.2", path = "../../../provable-contrac
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
+
+# Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
+batuta = { version = "0.7", path = "../../../batuta", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.

@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Data pipeline contract — dataset loading, preprocessing, validation,
     and streaming for training and evaluation. Covers `apr data` commands
@@ -115,21 +116,21 @@ proof_obligations:
     theorem: Theorems.DataSplitDeterminism
     status: sorry
 - type: determinism
-  property: Split with same seed is deterministic
+  property: No cross-contamination
   formal: split(data, ratios, seed) == split(data, ratios, seed)
   applies_to: data_split_determinism
   lean:
     theorem: Theorems.DataSplitDeterminismPure
     status: sorry
 - type: conservation
-  property: DataLoader yields all samples exactly once
+  property: DataLoader yields all samples
   formal: sum(batch.len()) == dataset.len()
   applies_to: streaming_data_loader
   lean:
     theorem: Theorems.StreamingDataLoader
     status: sorry
 - type: idempotency
-  property: Preprocessing is idempotent for special tokens
+  property: Preprocessing idempotent for special tokens
   formal: preprocess(preprocess(text)).special_token_count == preprocess(text).special_token_count
   applies_to: preprocessing_idempotency
   lean:

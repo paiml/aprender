@@ -1,0 +1,293 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Model security and provenance contract — encryption at rest, decryption
+    with key management, and publishing with integrity verification.
+    Covers `apr encrypt` (AES-256-GCM model encryption), `apr decrypt`
+    (authenticated decryption with key derivation), and `apr publish`
+    (signed model publishing with SHA-256 manifest).
+  references:
+  - 'NIST SP 800-38D — AES-GCM Authenticated Encryption'
+  - 'NIST SP 800-132 — Password-Based Key Derivation'
+  - 'apr-cli/src/commands/publish.rs'
+  depends_on:
+  - apr-format-safety-v1
+  - apr-model-lifecycle-v1
+
+equations:
+  encryption_roundtrip:
+    formula: |
+      decrypt(encrypt(model, key), key) == model (byte-exact)
+        Encryption uses AES-256-GCM with a unique 96-bit nonce per operation.
+        encrypt(model, key): (&[u8], &Key256) -> Result<CipherText, EncryptError>
+          1. Generate 96-bit random nonce via CSPRNG
+          2. Derive AES-256-GCM cipher from key
+          3. Encrypt model bytes with nonce, produce (nonce || ciphertext || tag)
+        decrypt(ct, key): (&CipherText, &Key256) -> Result<Vec<u8>, DecryptError>
+          1. Extract nonce from first 12 bytes
+          2. Derive AES-256-GCM cipher from key
+          3. Authenticate and decrypt; return plaintext
+        Ciphertext is indistinguishable from random (IND-CPA under AES-GCM).
+    domain: Any model byte slice and 256-bit key
+    codomain: Result<Vec<u8>, CryptoError>
+    invariants:
+    - Roundtrip is byte-exact (decrypt(encrypt(m, k), k) == m for all m, k)
+    - Each encryption produces a unique nonce (no nonce reuse)
+    - Ciphertext length == plaintext length + 12 (nonce) + 16 (GCM tag)
+    preconditions:
+    - key is a valid 256-bit key
+    - model bytes are non-empty
+    postconditions:
+    - decrypt(encrypt(model, key), key) == model
+    - encrypt(model, key1) != encrypt(model, key2) when key1 != key2
+    lean_theorem: Theorems.EncryptionRoundtrip
+
+  authentication_integrity:
+    formula: |
+      authenticate(ciphertext, key): (&CipherText, &Key256) -> Result<Vec<u8>, AuthError>
+        Decryption fails with AuthenticationError if any ciphertext byte is modified.
+        GCM tag is verified BEFORE any plaintext is produced.
+        No partial decryption on tampered data — all-or-nothing.
+        tamper(ct, i) = ct with byte i flipped
+        decrypt(tamper(ct, i), key) => Err(AuthenticationError) for all i in 0..ct.len()
+    domain: Ciphertext (possibly tampered) and 256-bit key
+    codomain: Result<Vec<u8>, AuthenticationError>
+    invariants:
+    - Single bit flip in ciphertext causes AuthenticationError
+    - No partial plaintext output on authentication failure
+    - GCM tag verification is constant-time (no timing side channel)
+    - Wrong key produces AuthenticationError, not garbage plaintext
+    preconditions:
+    - ciphertext was produced by encrypt() (or is adversarially modified)
+    - key is a valid 256-bit key
+    postconditions:
+    - tampered ciphertext => Err(AuthenticationError)
+    - wrong key => Err(AuthenticationError)
+    - correct key + unmodified ciphertext => Ok(plaintext)
+    lean_theorem: Theorems.AuthenticationIntegrity
+
+  publish_manifest_integrity:
+    formula: |
+      publish(model): AprModel -> Result<PublishedManifest, PublishError>
+        1. Compute SHA-256 hash for each tensor: h_i = sha256(tensor_i.bytes)
+        2. Build manifest: { tensor_name -> h_i } for all tensors
+        3. Compute manifest_hash = sha256(canonical_json(manifest))
+        4. Sign manifest_hash with publisher key
+        verify(published, model): checks all tensor hashes match
+        Any tensor modification after publish is detectable:
+          modify(tensor_j) => sha256(tensor_j') != manifest[j] => Err(IntegrityViolation)
+    domain: AprModel with named tensors and publisher signing key
+    codomain: Result<PublishedManifest, PublishError>
+    invariants:
+    - Manifest covers every tensor (no tensor excluded)
+    - Manifest is signed (tampering with manifest itself is detectable)
+    - SHA-256 is computed over raw tensor bytes (not metadata)
+    - Canonical JSON serialization ensures deterministic hash
+    preconditions:
+    - model has at least one tensor
+    - publisher signing key is available
+    postconditions:
+    - manifest.entries.len() == model.tensors.len()
+    - verify(published, original_model) == Ok(())
+    - verify(published, modified_model) == Err(IntegrityViolation)
+    lean_theorem: Theorems.PublishManifestIntegrity
+
+  key_derivation_correctness:
+    formula: |
+      derive_key(password, salt, params): (&str, &[u8;16], Argon2Params) -> Key256
+        Uses Argon2id with configurable parameters:
+          m_cost (memory), t_cost (iterations), p_cost (parallelism)
+        Properties:
+          derive_key(pw, s, p) == derive_key(pw, s, p)       (deterministic)
+          derive_key(pw, s1, p) != derive_key(pw, s2, p)     (salt sensitivity)
+          derive_key(pw1, s, p) != derive_key(pw2, s, p)     (password sensitivity)
+        Salt must be at least 16 bytes from CSPRNG.
+    domain: Password string, 16-byte salt, Argon2id parameters
+    codomain: Key256 (256-bit derived key)
+    invariants:
+    - Same password + salt + params always produces same key (deterministic)
+    - Different salts produce different keys (salt sensitivity)
+    - Different passwords produce different keys (password sensitivity)
+    - Minimum parameters enforced (m_cost >= 64MB, t_cost >= 3, p_cost >= 1)
+    preconditions:
+    - password is non-empty UTF-8 string
+    - salt is exactly 16 bytes from CSPRNG
+    - params meet minimum security thresholds
+    postconditions:
+    - output is exactly 256 bits (32 bytes)
+    - output passes NIST SP 800-22 randomness tests
+    lean_theorem: Theorems.KeyDerivationCorrectness
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model exists, key material is available, parameters meet minimums
+  - name: execute
+    description: Encrypt/decrypt model bytes or publish with manifest generation and signing
+  - name: verify_output
+    description: Verify roundtrip integrity, authentication tags, manifest completeness
+
+proof_obligations:
+- type: roundtrip
+  property: Encryption roundtrip is byte-exact
+  formal: "decrypt(encrypt(model, key), key) == model for all model, key"
+  tolerance: 0
+  applies_to: encryption_roundtrip
+  lean:
+    theorem: Theorems.EncryptionRoundtrip
+    status: sorry
+- type: invariant
+  property: Tampered ciphertext fails authentication
+  formal: "for all i in 0..ct.len(): decrypt(tamper(ct, i), key) => Err(AuthenticationError)"
+  applies_to: authentication_integrity
+  lean:
+    theorem: Theorems.AuthenticationIntegrity
+    status: sorry
+- type: postcondition
+  property: Published manifest detects tensor modification
+  formal: "modify(tensor_j) => verify(manifest, model') == Err(IntegrityViolation)"
+  applies_to: publish_manifest_integrity
+  lean:
+    theorem: Theorems.PublishManifestIntegrity
+    status: sorry
+- type: determinism
+  property: Key derivation is deterministic and salt-sensitive
+  formal: "derive(pw, s, p) == derive(pw, s, p) && derive(pw, s1, p) != derive(pw, s2, p)"
+  applies_to: key_derivation_correctness
+  lean:
+    theorem: Theorems.KeyDerivationCorrectness
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-SEC-001
+  rule: Encryption roundtrip is byte-exact
+  prediction: Encrypting and decrypting a model produces identical bytes
+  test: |
+    #[test]
+    fn falsify_encryption_roundtrip() {
+        let model_bytes = b"GGUF\x03\x00\x00\x00tensor_data_here_1234567890";
+        let key = Key256::from([0xABu8; 32]);
+        let ciphertext = encrypt(model_bytes, &key).expect("encrypt failed");
+        let plaintext = decrypt(&ciphertext, &key).expect("decrypt failed");
+        assert_eq!(model_bytes.as_slice(), plaintext.as_slice(),
+            "Roundtrip produced different bytes");
+        // Verify ciphertext length invariant
+        assert_eq!(ciphertext.len(), model_bytes.len() + 12 + 16,
+            "Ciphertext length != plaintext + nonce(12) + tag(16)");
+    }
+  if_fails: AES-GCM nonce prepended incorrectly or tag not appended, causing length mismatch or decryption failure
+- id: FALSIFY-SEC-002
+  rule: Tampered ciphertext fails authentication
+  prediction: Flipping any byte in ciphertext produces AuthenticationError
+  test: |
+    #[test]
+    fn falsify_tamper_detection() {
+        let model_bytes = b"model_weights_placeholder_data";
+        let key = Key256::from([0xCDu8; 32]);
+        let ciphertext = encrypt(model_bytes, &key).expect("encrypt failed");
+        for i in 0..ciphertext.len() {
+            let mut tampered = ciphertext.clone();
+            tampered[i] ^= 0xFF; // flip all bits in byte i
+            let result = decrypt(&tampered, &key);
+            assert!(result.is_err(),
+                "Tampered byte at index {} did not fail authentication", i);
+        }
+    }
+  if_fails: GCM tag not verified before returning plaintext, allowing partial decryption of tampered data
+- id: FALSIFY-SEC-003
+  rule: Published manifest detects tensor modification
+  prediction: Modifying one tensor byte after publish causes verification failure
+  test: |
+    #[test]
+    fn falsify_manifest_integrity() {
+        let mut model = create_test_model(vec![
+            ("weight.0", vec![1.0f32; 768]),
+            ("weight.1", vec![2.0f32; 768]),
+        ]);
+        let manifest = publish(&model, &signing_key).expect("publish failed");
+        assert_eq!(manifest.entries.len(), 2, "Manifest must cover all tensors");
+        // Tamper with one tensor
+        model.tensors.get_mut("weight.0").unwrap().data[0] = 999.0;
+        let result = verify(&manifest, &model);
+        assert!(result.is_err(),
+            "Modified tensor not detected by manifest verification");
+    }
+  if_fails: Manifest hash computed over metadata instead of raw tensor bytes, missing data-level tampering
+- id: FALSIFY-SEC-004
+  rule: Key derivation is deterministic and salt-sensitive
+  prediction: Same inputs produce same key; different salts produce different keys
+  test: |
+    #[test]
+    fn falsify_key_derivation() {
+        let password = "correct-horse-battery-staple";
+        let salt_a = [0x01u8; 16];
+        let salt_b = [0x02u8; 16];
+        let params = Argon2Params::default();
+        // Determinism: same inputs => same key
+        let key1 = derive_key(password, &salt_a, &params);
+        let key2 = derive_key(password, &salt_a, &params);
+        assert_eq!(key1.as_bytes(), key2.as_bytes(),
+            "Same password+salt produced different keys (non-deterministic)");
+        // Salt sensitivity: different salts => different keys
+        let key3 = derive_key(password, &salt_b, &params);
+        assert_ne!(key1.as_bytes(), key3.as_bytes(),
+            "Different salts produced same key (salt not mixed into derivation)");
+        // Output length
+        assert_eq!(key1.as_bytes().len(), 32,
+            "Derived key is not 256 bits");
+    }
+  if_fails: Salt not incorporated into Argon2id input, causing all salts to derive the same key
+
+kani_harnesses:
+- id: KANI-SEC-001
+  obligation: Encryption roundtrip is byte-exact
+  property: "decrypt(encrypt(m, k), k) == m for all m, k"
+  bound: 16
+  strategy: bounded_int
+  harness: verify_encryption_roundtrip
+- id: KANI-SEC-002
+  obligation: Tampered ciphertext fails authentication
+  property: "for all i: tamper(ct, i) => Err(AuthenticationError)"
+  bound: 16
+  strategy: exhaustive
+  harness: verify_tamper_detection
+- id: KANI-SEC-003
+  obligation: Published manifest detects tensor modification
+  property: "modify(tensor) => verify() == Err(IntegrityViolation)"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_manifest_integrity
+- id: KANI-SEC-004
+  obligation: Key derivation is deterministic and salt-sensitive
+  property: "derive(pw, s, p) is deterministic && salt-sensitive"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_key_derivation
+
+qa_gate:
+  id: F-SEC-GATE
+  name: Model Security Contract
+  description: Quality gate for encryption, decryption, and publishing security
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 4 falsification tests pass
+  falsification: FALSIFY-SEC-001 through FALSIFY-SEC-004
+
+toyota_way_principles:
+  jidoka: >
+    Any authentication failure halts decryption immediately — no partial
+    plaintext is ever returned. GCM tag verification is the Andon cord:
+    pull it on any bit flip and the entire operation stops.
+  poka_yoke: >
+    Unique nonce per encryption prevents nonce reuse (catastrophic for GCM).
+    Argon2id minimum parameters enforced at the type level — cannot construct
+    insecure params. SHA-256 manifest signing makes post-publish tampering
+    detectable by design.
+  genchi_genbutsu: >
+    Falsification tests use real byte-level tampering: flipping every byte
+    position in ciphertext, modifying tensor data after manifest generation,
+    and verifying key derivation with distinct salts. No mocks — real crypto.

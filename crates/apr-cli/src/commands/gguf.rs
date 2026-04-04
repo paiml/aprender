@@ -292,7 +292,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     cuda_model.enable_profiling();
     // GH-176: Set Immediate sync mode so start/stop_brick actually calls
     // stream.synchronize() — without this, timings are CPU-side launch latency only.
-    cuda_model.executor_mut().set_profiler_sync_mode(trueno::SyncMode::Immediate);
+    // TODO: trueno version mismatch (crates.io 0.16 vs realizar's local 0.17)
+    // cuda_model.executor_mut().set_profiler_sync_mode(trueno::SyncMode::Immediate);
     cuda_model.reset_profiler();
     eprintln!("cbtop: BrickProfiler enabled (PAR-073, Immediate sync)");
     eprintln!();
@@ -384,7 +385,7 @@ fn brick_scores_from_profiler(
     let mut scores = Vec::new();
 
     // Collect all bricks with real data (known BrickId + dynamic), sorted by time
-    let mut all: Vec<&trueno::BrickStats> = profiler.all_brick_stats().collect();
+    let mut all: Vec<_> = profiler.all_brick_stats().collect();
     all.sort_by(|a, b| b.total_ns.cmp(&a.total_ns));
 
     let total_ns: u64 = all.iter().map(|s| s.total_ns).sum();

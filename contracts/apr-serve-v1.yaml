@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Inference server contract — OpenAI-compatible HTTP server lifecycle,
     health checks, graceful shutdown, request routing, and concurrent
@@ -117,7 +118,7 @@ kernel_structure:
 
 proof_obligations:
 - type: state_machine
-  property: Server lifecycle valid transitions
+  property: Health returns 200 only when ready
   formal: >
     Init->Binding->Loading->Ready->Draining->Stopped, no skip.
     Health returns 200 only in Ready state.
@@ -126,7 +127,7 @@ proof_obligations:
     theorem: Theorems.ServerLifecycle
     status: sorry
 - type: invariant
-  property: No cross-request KV cache contamination
+  property: Concurrent inference isolation
   formal: result(req_a, concurrent=[]) == result(req_a, concurrent=[req_b])
   tolerance: 1e-6
   applies_to: concurrent_inference_isolation
@@ -134,14 +135,14 @@ proof_obligations:
     theorem: Theorems.ConcurrentInferenceIsolation
     status: sorry
 - type: postcondition
-  property: Graceful shutdown completes in-flight requests
+  property: Graceful shutdown completes in-flight
   formal: in_flight_count == 0 before process exit
   applies_to: graceful_shutdown
   lean:
     theorem: Theorems.GracefulShutdown
     status: sorry
 - type: completeness
-  property: All API routes handled
+  property: Unknown path returns 404
   formal: no path returns 500 Internal Server Error for routing failures
   applies_to: request_routing
   lean:

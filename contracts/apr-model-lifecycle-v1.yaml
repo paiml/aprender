@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Model lifecycle contract — pull/import/export/convert/merge/quantize
     operations that move models between formats, registries, and precision
@@ -85,7 +86,7 @@ equations:
   quantize_precision_bound:
     formula: |
       quantize(model, scheme): (AprModel, QuantScheme) -> Result<AprModel, QuantError>
-        scheme in {Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, F16}
+        scheme in {Q2_K, Q3_K, Q4_0, Q4_1, Q4_K, Q5_0, Q5_1, Q5_K, Q6_K, Q8_0, Q8_1, F16, BF16}
         output.size < input.size (guaranteed compression)
         perplexity(quantized) - perplexity(original) < tolerance(scheme)
     domain: AprModel with F32 weights, QuantScheme
@@ -133,7 +134,7 @@ kernel_structure:
 
 proof_obligations:
 - type: roundtrip
-  property: Import/export roundtrip preserves model
+  property: Import/export roundtrip
   formal: import(export(model, fmt)).config == model.config
   tolerance: 1e-6
   applies_to: export_roundtrip
@@ -169,7 +170,7 @@ proof_obligations:
     theorem: Theorems.ImportFormatDetection
     status: sorry
 - type: determinism
-  property: Format detection is deterministic
+  property: Partial download does not corrupt cache
   formal: detect_format(bytes) == detect_format(bytes) for all byte sequences
   applies_to: import_format_detection
   lean:

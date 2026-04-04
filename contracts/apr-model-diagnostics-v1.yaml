@@ -1,0 +1,394 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Model diagnostics contract — low-level hex inspection, cross-format
+    comparison (Rosetta), model oracle (architecture prediction and
+    compatibility checking), and automated diagnosis. Covers `apr hex`
+    (binary tensor inspection), `apr rosetta` (cross-format fingerprint
+    comparison), `apr oracle` (model family detection and compatibility
+    matrix), and `apr diagnose` (automated fault diagnosis).
+  references:
+  - 'apr-cli/src/commands/hex.rs'
+  - 'apr-cli/src/commands/rosetta.rs'
+  - 'apr-cli/src/commands/oracle.rs'
+  - 'apr-cli/src/commands/diagnose.rs'
+  depends_on:
+  - cli-dispatch-v1
+  - apr-format-safety-v1
+
+equations:
+  hex_display_fidelity:
+    formula: |
+      hex_display(tensor, offset, len, fmt): (Tensor, usize, usize, DisplayFormat) -> HexOutput
+        Read raw bytes from tensor storage at [offset..offset+len]
+        Format each byte according to fmt:
+          Hex:   "{:02x}" per byte, 16 bytes per line
+          Float: reinterpret as f16/f32/bf16 per dtype, show decimal
+          Int:   reinterpret as i8/i16/i32 per dtype, show decimal
+        Line prefix: byte offset in hex (e.g., "0x0040:")
+        Byte offsets: absolute from tensor data start
+        offset + len must not exceed tensor byte length
+    domain: (Tensor with raw byte storage, byte offset, byte count, display format)
+    codomain: HexOutput with formatted lines and metadata
+    invariants:
+    - Byte offsets are absolute from tensor data start (not file start)
+    - Displayed bytes are identical to raw storage (no transformation)
+    - Display format matches requested dtype interpretation exactly
+    - Out-of-bounds offset+len returns error, never reads garbage
+    preconditions:
+    - tensor is loaded and byte-accessible
+    - offset + len <= tensor.byte_len()
+    - fmt is a supported DisplayFormat variant
+    postconditions:
+    - output.lines.len() == ceil(len / bytes_per_line)
+    - concatenating all displayed bytes reconstructs original byte range
+    - output.offset_start == offset
+    lean_theorem: Theorems.Hex_Display_Fidelity
+
+  rosetta_fingerprint_determinism:
+    formula: |
+      fingerprint(model): Model -> Fingerprint
+        For each tensor t in model.tensors (sorted by name):
+          stats_t = (mean(t), std(t), min(t), max(t), sha256(t.bytes))
+        fingerprint = hash(concat(stats_t for all t))
+      compare(fp_a, fp_b, tolerance): (Fingerprint, Fingerprint, f64) -> CompareReport
+        For each tensor name present in both:
+          |mean_a - mean_b| < tolerance
+          |std_a  - std_b|  < tolerance
+          byte_hash match -> identical
+        Missing tensors reported as divergence
+    domain: Model file in any supported format (GGUF, SafeTensors, APR)
+    codomain: Fingerprint (deterministic content hash + per-tensor statistics)
+    invariants:
+    - Same logical model in different formats produces identical fingerprint
+    - Fingerprint depends only on tensor content, not format metadata
+    - Tensor sort order is lexicographic by name (deterministic)
+    - Statistical comparison uses configurable FP tolerance (default 1e-6)
+    preconditions:
+    - model is loadable and all tensors are readable
+    - tensor names are valid UTF-8
+    postconditions:
+    - fingerprint is deterministic (same model -> same fingerprint)
+    - compare report lists every tensor present in either model
+    - identical tensors have byte_hash match = true
+    lean_theorem: Theorems.Rosetta_Fingerprint_Determinism
+
+  oracle_family_detection:
+    formula: |
+      detect_family(model): Model -> Result<FamilyDetection, DetectionError>
+        Strategy 1: metadata lookup
+          Check model.metadata["general.architecture"] (GGUF)
+          Check model.metadata["architectures"] (SafeTensors config.json)
+        Strategy 2: tensor name pattern matching
+          Match tensor names against known family patterns:
+            "model.layers.{n}.self_attn.q_proj" -> LLaMA-family
+            "transformer.h.{n}.attn.c_attn"    -> GPT-2 family
+            "model.layers.{n}.mixer.in_proj"    -> Mamba/SSM family
+        Strategy 3: shape heuristics
+          hidden_dim, num_heads, num_layers -> narrow candidates
+        Result: detected family with confidence score [0.0, 1.0]
+        Unknown: explicit FamilyDetection::Unknown (never guesses wrong)
+    domain: Model with accessible metadata and tensor names
+    codomain: Result<FamilyDetection, DetectionError>
+    invariants:
+    - Detection is deterministic (same model -> same family)
+    - Unknown architectures return FamilyDetection::Unknown, never a wrong family
+    - Confidence score is calibrated (>0.9 means metadata match, 0.5-0.9 means pattern match)
+    - All three strategies are tried in order; first high-confidence match wins
+    preconditions:
+    - model is loaded with at least metadata or tensor names accessible
+    postconditions:
+    - result.family is a valid ModelFamily variant (including Unknown)
+    - result.confidence in [0.0, 1.0]
+    - result.strategy indicates which strategy matched
+    lean_theorem: Theorems.Oracle_Family_Detection
+
+  oracle_compatibility_matrix:
+    formula: |
+      check_compatibility(model, runtime): (Model, RuntimeEnv) -> CompatReport
+        Checks:
+          gpu_memory:  model.size_bytes <= runtime.gpu_vram - overhead
+          quantization: model.quant_scheme in runtime.supported_quants
+          context_len: model.max_context <= runtime.max_context
+          dtype:       model.compute_dtype in runtime.supported_dtypes
+          vocab_size:  model.vocab_size <= runtime.max_vocab
+        Each check: pass/fail with reason string
+        Overall: pass iff all checks pass
+        No false positives: pass => model will load and run
+    domain: (Model metadata, RuntimeEnv describing hardware/software capabilities)
+    codomain: CompatReport with per-check verdicts
+    invariants:
+    - No false positives (compatible report -> model loads successfully at runtime)
+    - Every check includes specific values (expected vs available)
+    - GPU memory check includes KV cache overhead estimate
+    - Quantization support is exact (not approximate)
+    preconditions:
+    - model metadata is complete (size, quant, context, dtype, vocab)
+    - runtime environment is queryable (GPU VRAM, supported features)
+    postconditions:
+    - report.checks.len() >= 5
+    - report.pass == report.checks.iter().all(|c| c.passed)
+    - each failing check includes remediation suggestion
+    lean_theorem: Theorems.Oracle_Compatibility_Matrix
+
+  diagnose_fault_isolation:
+    formula: |
+      diagnose(model): Model -> Result<DiagnosisReport, DiagnoseError>
+        Fault detectors (run in parallel):
+          nan_weights:     scan tensors for NaN/Inf values
+          shape_mismatch:  compare tensor shapes against family template
+          missing_tensors: diff expected tensors vs actual tensors
+          corrupt_header:  validate header checksums and field bounds
+          dtype_anomaly:   detect unexpected dtype per tensor role
+          truncation:      compare file size vs header-declared size
+        Each detector: (fault_type, severity, tensor_name, remediation)
+        Severity: Critical (model unusable), Warning (degraded), Info (cosmetic)
+        False positive rate < 5% (measured by falsification suite)
+    domain: Model file path (any supported format)
+    codomain: Result<DiagnosisReport, DiagnoseError>
+    invariants:
+    - Each fault includes specific tensor name and actionable remediation
+    - Fault detectors are independent (failure of one does not skip others)
+    - NaN detection scans ALL tensors, not just a sample
+    - False positive rate < 5% across standard model corpus
+    preconditions:
+    - model file exists and is at least partially readable
+    postconditions:
+    - report.faults is sorted by severity descending (Critical first)
+    - report.faults has no duplicates (same fault_type + tensor_name)
+    - every fault has non-empty remediation string
+    lean_theorem: Theorems.Diagnose_Fault_Isolation
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model path, detect format, load metadata and tensor index
+  - name: execute
+    description: Run diagnostic command (hex display, fingerprint, oracle detection, fault diagnosis)
+  - name: verify_output
+    description: Verify output completeness, format determinism, no false positives
+
+proof_obligations:
+- type: invariant
+  property: Hex byte offsets are correct and display matches raw storage
+  formal: "∀ offset, len: hex_display(t, offset, len).bytes == t.raw_bytes[offset..offset+len]"
+  applies_to: hex_display_fidelity
+  lean:
+    theorem: Theorems.Hex_Display_Fidelity
+    status: sorry
+- type: determinism
+  property: Rosetta fingerprint is format-independent and deterministic
+  formal: "fingerprint(load_gguf(m)) == fingerprint(load_safetensors(m)) for same logical model m"
+  tolerance: 1e-6
+  applies_to: rosetta_fingerprint_determinism
+  lean:
+    theorem: Theorems.Rosetta_Fingerprint_Determinism
+    status: sorry
+- type: postcondition
+  property: Oracle never misidentifies unknown architecture as known family
+  formal: "unknown_architecture(model) => detect_family(model).family == Unknown"
+  applies_to: oracle_family_detection
+  lean:
+    theorem: Theorems.Oracle_Family_Detection
+    status: sorry
+- type: invariant
+  property: Compatibility check has no false positives
+  formal: "check_compatibility(m, r).pass == true => m loads and runs on r"
+  applies_to: oracle_compatibility_matrix
+  lean:
+    theorem: Theorems.Oracle_Compatibility_Matrix
+    status: sorry
+- type: postcondition
+  property: Diagnosis isolates faults with actionable remediation
+  formal: "∀ fault in diagnose(m).faults: fault.remediation.len() > 0 ∧ fault.tensor_name is specific"
+  applies_to: diagnose_fault_isolation
+  lean:
+    theorem: Theorems.Diagnose_Fault_Isolation
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-DIAG-001
+  rule: Hex byte offsets are correct and display matches raw storage
+  prediction: Hex output at offset 64 for 32 bytes matches raw tensor bytes exactly
+  test: |
+    #[test]
+    fn falsify_diag_001_hex_fidelity() {
+        let tensor = TestTensor::random_f32(&[256, 256]);
+        let raw_bytes = tensor.as_raw_bytes();
+        let output = hex_display(&tensor, 64, 32, DisplayFormat::Hex).unwrap();
+        let displayed_bytes = output.parse_displayed_bytes();
+        assert_eq!(
+            &displayed_bytes[..],
+            &raw_bytes[64..96],
+            "Hex display at offset 64 must match raw bytes"
+        );
+        assert_eq!(output.offset_start, 64);
+        assert_eq!(output.lines.len(), 2, "32 bytes = 2 lines of 16");
+    }
+  if_fails: Byte offset calculation wrong (e.g., off-by-header-size or using file offset instead of tensor offset)
+- id: FALSIFY-DIAG-002
+  rule: Rosetta fingerprint is format-independent and deterministic
+  prediction: Same model saved as GGUF and SafeTensors produces identical fingerprint
+  test: |
+    #[test]
+    fn falsify_diag_002_rosetta_cross_format() {
+        let model = TestModel::tiny_llama();
+        let gguf_path = model.save_as_gguf("/tmp/test_rosetta.gguf");
+        let st_path = model.save_as_safetensors("/tmp/test_rosetta.safetensors");
+        let fp_gguf = fingerprint(&load_model(&gguf_path).unwrap());
+        let fp_st = fingerprint(&load_model(&st_path).unwrap());
+        assert_eq!(
+            fp_gguf, fp_st,
+            "Fingerprint must be identical across formats: GGUF={:x}, ST={:x}",
+            fp_gguf.hash, fp_st.hash
+        );
+        // Verify determinism: same file twice
+        let fp_gguf2 = fingerprint(&load_model(&gguf_path).unwrap());
+        assert_eq!(fp_gguf, fp_gguf2, "Fingerprint must be deterministic");
+    }
+  if_fails: Fingerprint includes format-specific metadata (alignment padding, GGUF KV pairs) instead of pure tensor content
+- id: FALSIFY-DIAG-003
+  rule: Oracle never misidentifies unknown architecture as known family
+  prediction: Model with randomized tensor names returns FamilyDetection::Unknown
+  test: |
+    #[test]
+    fn falsify_diag_003_oracle_unknown_family() {
+        let model = TestModel::with_random_tensor_names(32, 4096);
+        model.metadata.remove("general.architecture");
+        let result = detect_family(&model).unwrap();
+        assert_eq!(
+            result.family,
+            ModelFamily::Unknown,
+            "Random tensor names must yield Unknown, got {:?} with confidence {}",
+            result.family, result.confidence
+        );
+        assert!(
+            result.confidence < 0.5,
+            "Unknown detection confidence should be low, got {}",
+            result.confidence
+        );
+    }
+  if_fails: Pattern matcher has overly broad regex that matches random tensor names to a known family
+- id: FALSIFY-DIAG-004
+  rule: Compatibility check has no false positives
+  prediction: Model exceeding GPU VRAM is reported incompatible
+  test: |
+    #[test]
+    fn falsify_diag_004_compat_gpu_memory() {
+        let model = TestModel::with_size_bytes(16 * 1024 * 1024 * 1024); // 16 GB model
+        let runtime = RuntimeEnv {
+            gpu_vram: 8 * 1024 * 1024 * 1024, // 8 GB GPU
+            supported_quants: vec![QuantScheme::Q4_K, QuantScheme::Q8_0],
+            max_context: 8192,
+            supported_dtypes: vec![DType::F16, DType::F32],
+            max_vocab: 128000,
+        };
+        let report = check_compatibility(&model, &runtime);
+        assert!(!report.pass, "16 GB model on 8 GB GPU must be incompatible");
+        let gpu_check = report.checks.iter().find(|c| c.name == "gpu_memory").unwrap();
+        assert!(!gpu_check.passed, "GPU memory check must fail");
+        assert!(
+            gpu_check.reason.contains("16") && gpu_check.reason.contains("8"),
+            "Reason must include expected vs available VRAM"
+        );
+    }
+  if_fails: GPU memory check ignores KV cache overhead or uses wrong units (MB vs bytes)
+- id: FALSIFY-DIAG-005
+  rule: Diagnosis isolates faults with actionable remediation
+  prediction: Model with NaN weights in layer 5 produces specific fault with remediation
+  test: |
+    #[test]
+    fn falsify_diag_005_diagnose_nan_weights() {
+        let mut model = TestModel::qwen2_0_5b();
+        model.inject_nan("model.layers.5.self_attn.q_proj.weight", 0.1); // 10% NaN
+        let report = diagnose(&model).unwrap();
+        let nan_fault = report.faults.iter()
+            .find(|f| f.fault_type == FaultType::NanWeights)
+            .expect("Should detect NaN weights");
+        assert_eq!(
+            nan_fault.tensor_name,
+            "model.layers.5.self_attn.q_proj.weight",
+            "Must identify specific tensor"
+        );
+        assert_eq!(nan_fault.severity, Severity::Critical);
+        assert!(
+            !nan_fault.remediation.is_empty(),
+            "Remediation must be non-empty"
+        );
+        assert!(
+            nan_fault.remediation.contains("re-download") || nan_fault.remediation.contains("requantize"),
+            "Remediation must be actionable, got: {}",
+            nan_fault.remediation
+        );
+        // Verify no duplicate faults
+        let nan_count = report.faults.iter()
+            .filter(|f| f.fault_type == FaultType::NanWeights
+                && f.tensor_name == "model.layers.5.self_attn.q_proj.weight")
+            .count();
+        assert_eq!(nan_count, 1, "No duplicate faults for same tensor");
+    }
+  if_fails: NaN scanner samples tensors instead of scanning all, misses layer 5 defect
+
+kani_harnesses:
+- id: KANI-DIAG-001
+  obligation: Hex byte offsets are correct and display matches raw storage
+  property: "∀ offset, len within bounds: displayed bytes == raw bytes"
+  bound: 16
+  strategy: bounded_int
+  harness: verify_hex_display_fidelity
+- id: KANI-DIAG-002
+  obligation: Rosetta fingerprint is format-independent and deterministic
+  property: fingerprint(m) == fingerprint(m) for all valid models
+  bound: 8
+  strategy: exhaustive
+  harness: verify_rosetta_determinism
+- id: KANI-DIAG-003
+  obligation: Oracle never misidentifies unknown architecture as known family
+  property: "no_metadata ∧ random_names => family == Unknown"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_oracle_unknown_detection
+- id: KANI-DIAG-004
+  obligation: Compatibility check has no false positives
+  property: "model_size > gpu_vram => !report.pass"
+  bound: 16
+  strategy: bounded_int
+  harness: verify_compat_no_false_positive
+- id: KANI-DIAG-005
+  obligation: Diagnosis isolates faults with actionable remediation
+  property: "∀ fault: remediation.len() > 0 ∧ tensor_name is specific"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_diagnose_fault_remediation
+
+qa_gate:
+  id: F-DIAG-GATE
+  name: Model Diagnostics Contract
+  description: Quality gate for hex, rosetta, oracle, and diagnose commands
+  checks:
+  - hex_display_fidelity
+  - rosetta_fingerprint_determinism
+  - oracle_family_detection
+  - oracle_compatibility_matrix
+  - diagnose_fault_isolation
+  pass_criteria: All 5 falsification tests pass, all 5 kani harnesses verify
+  falsification: FALSIFY-DIAG-001 through FALSIFY-DIAG-005
+
+toyota_way_principles:
+  jidoka: >
+    Any diagnostic finding stops silently-wrong output immediately.
+    Hex display refuses out-of-bounds reads rather than showing garbage.
+    Oracle returns Unknown rather than guessing a wrong family.
+    Diagnose emits Critical severity for NaN weights — no silent degradation.
+  poka_yoke: >
+    Rosetta fingerprints are content-only (no metadata contamination).
+    Compatibility matrix checks all five dimensions — no partial "compatible"
+    that fails at runtime. Diagnose deduplicates faults by (type, tensor_name)
+    so users never see the same issue twice.
+  genchi_genbutsu: >
+    Falsification tests use real tensor data with injected defects: NaN
+    injection into specific layers, oversized models against small GPUs,
+    randomized tensor names for oracle confusion. Not mock objects.

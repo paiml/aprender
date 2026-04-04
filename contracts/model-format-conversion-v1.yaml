@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-03'
   author: PAIML Engineering
+  registry: true
   description: >
     Model format conversion safety — apr convert/quantize/merge/import/export
     operations preserve tensor integrity, maintain weight equivalence,

@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-03'
   author: PAIML Engineering
+  registry: true
   description: >
     All 48 apr-cli operations — argument validation, side-effect classification,
     resource cleanup, concurrent safety, and progress reporting invariants.

@@ -81,13 +81,15 @@ fn generate_rust(families: &[FamilyData]) -> String {
     out.push_str("/// parsing is needed. The data was validated at build time.\n");
     out.push_str("#[must_use]\n");
     out.push_str("pub fn build_default_registry() -> FamilyRegistry {\n");
-    out.push_str("    let mut registry = FamilyRegistry::new();\n\n");
-
-    for f in families {
-        out.push_str(&generate_family_registration(f));
+    if families.is_empty() {
+        out.push_str("    FamilyRegistry::new()\n");
+    } else {
+        out.push_str("    let mut registry = FamilyRegistry::new();\n\n");
+        for f in families {
+            out.push_str(&generate_family_registration(f));
+        }
+        out.push_str("    registry\n");
     }
-
-    out.push_str("    registry\n");
     out.push_str("}\n");
 
     out

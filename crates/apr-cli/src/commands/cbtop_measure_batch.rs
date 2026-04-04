@@ -101,7 +101,7 @@ fn measure_standard_throughput(
 #[cfg(feature = "inference")]
 fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCuda) {
     let profiler = cuda_model.profiler();
-    let mut all: Vec<&trueno::BrickStats> = profiler.all_brick_stats().collect();
+    let mut all: Vec<_> = profiler.all_brick_stats().collect();
     if all.is_empty() {
         eprintln!("  No per-brick data collected (profiling may need per-brick sync points)");
     } else {

@@ -473,6 +473,83 @@ bindings:
   function: run
   status: implemented
   notes: JSON serialization, KV-cache not persisted (rebuilt from history)
+# --- apr-model-graph-v1 (full LLM forward pass) ---
+- contract: apr-model-graph-v1.yaml
+  equation: forward_pass_completeness
+  module_path: aprender::inference::forward
+  function: forward_pass
+  status: implemented
+  notes: Full forward pass from tokens to logits
+- contract: apr-model-graph-v1.yaml
+  equation: attention_mechanism
+  module_path: aprender::nn::transformer
+  function: scaled_dot_product_attention
+  status: implemented
+  notes: Q/K/V/O projections with RoPE and GQA expansion
+# --- apr-gpu-diagnostics-v1 (ptx, ptx-map, cbtop) ---
+- contract: apr-gpu-diagnostics-v1.yaml
+  equation: ptx_code_generation
+  module_path: apr_cli::commands::ptx_explain
+  function: run
+  status: implemented
+  notes: Emit PTX assembly for GPU kernels
+- contract: apr-gpu-diagnostics-v1.yaml
+  equation: cbtop_monitoring
+  module_path: apr_cli::commands::cbtop
+  function: run
+  status: implemented
+  notes: Real-time GPU/CPU monitoring with JSON headless mode
+# --- apr-model-optimization-v1 (prune, distill, finetune) ---
+- contract: apr-model-optimization-v1.yaml
+  equation: prune_sparsity_target
+  module_path: apr_cli::commands::prune
+  function: run
+  status: implemented
+  notes: Structured/unstructured pruning with sensitivity analysis
+- contract: apr-model-optimization-v1.yaml
+  equation: finetune_lora_rank_correctness
+  module_path: apr_cli::commands::finetune
+  function: run
+  status: implemented
+  notes: LoRA/QLoRA adapter training with frozen base weights
+- contract: apr-model-optimization-v1.yaml
+  equation: distill_knowledge_transfer
+  module_path: apr_cli::commands::distill
+  function: run
+  status: implemented
+  notes: Teacher→student KL divergence minimization
+# --- apr-model-security-v1 (encrypt, decrypt, publish) ---
+- contract: apr-model-security-v1.yaml
+  equation: encryption_roundtrip
+  module_path: apr_cli::commands::encrypt
+  function: run
+  status: implemented
+  notes: AES-256-GCM with Argon2id key derivation
+- contract: apr-model-security-v1.yaml
+  equation: publish_manifest_integrity
+  module_path: apr_cli::commands::publish
+  function: run
+  status: implemented
+  notes: SHA-256 manifest with signed model publishing
+# --- apr-model-diagnostics-v1 (hex, rosetta, oracle, diagnose) ---
+- contract: apr-model-diagnostics-v1.yaml
+  equation: hex_display_fidelity
+  module_path: apr_cli::commands::hex
+  function: run
+  status: implemented
+  notes: Binary tensor inspection with offset/dtype display
+- contract: apr-model-diagnostics-v1.yaml
+  equation: oracle_family_detection
+  module_path: apr_cli::commands::oracle
+  function: run
+  status: implemented
+  notes: Architecture detection from metadata/tensor patterns
+- contract: apr-model-diagnostics-v1.yaml
+  equation: rosetta_fingerprint_determinism
+  module_path: apr_cli::commands::rosetta
+  function: run
+  status: implemented
+  notes: Cross-format fingerprint comparison (GGUF/SafeTensors/APR)
 critical_path:
 - softmax
 - rmsnorm
@@ -515,3 +592,14 @@ critical_path:
 - dtype_coercion_safety
 - session_state_machine
 - kv_cache_management
+- forward_pass_completeness
+- attention_mechanism
+- ptx_code_generation
+- cbtop_monitoring
+- prune_sparsity_target
+- finetune_lora_rank_correctness
+- encryption_roundtrip
+- publish_manifest_integrity
+- hex_display_fidelity
+- oracle_family_detection
+- rosetta_fingerprint_determinism

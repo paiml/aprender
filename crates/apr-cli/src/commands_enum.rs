@@ -482,6 +482,37 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Sovereign AI coding assistant — all inference local via realizar (PMAT-182)
+    #[cfg(feature = "code")]
+    Code {
+        /// Path to local GGUF/APR model file (prefers .apr format)
+        #[arg(long)]
+        model: Option<PathBuf>,
+
+        /// Project directory (loads APR.md/CLAUDE.md from this path)
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+
+        /// Resume previous session (optionally by ID)
+        #[arg(long)]
+        resume: Option<Option<String>>,
+
+        /// Agent manifest (advanced — overrides defaults)
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+
+        /// Initial prompt (non-interactive: print response and exit)
+        #[arg(short, long)]
+        print: bool,
+
+        /// Prompt text (positional, for -p mode)
+        #[arg(trailing_var_arg = true)]
+        prompt: Vec<String>,
+
+        /// Max turns before stopping
+        #[arg(long, default_value = "50")]
+        max_turns: u32,
+    },
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]
     Extended(ExtendedCommands),

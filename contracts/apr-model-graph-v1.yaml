@@ -1,0 +1,748 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Full LLM forward-pass graph contract — complete structural specification
+    from input token IDs through embedding, transformer layers (attention +
+    FFN + normalization), to output logits. Covers decoder-only (LLaMA,
+    Qwen, Mistral, GPT-2), encoder-only (BERT), encoder-decoder (Whisper),
+    hybrid SSM+Attention (Falcon-H1, Mamba), and MoE architectures.
+    This is the authoritative DAG against which `apr check --graph`,
+    `apr validate --structure`, and `apr flow` verify model completeness.
+  references:
+  - 'Vaswani et al. (2017) Attention Is All You Need. NeurIPS 2017'
+  - 'Shazeer (2020) GLU Variants Improve Transformer. arXiv:2002.05202'
+  - 'Su et al. (2021) RoFormer: Rotary Position Embedding. arXiv:2104.09864'
+  - 'Ainslie et al. (2023) GQA: Generalized Multi-Query Attention. arXiv:2305.13245'
+  - 'Gu & Dao (2023) Mamba: Linear-Time Sequence Modeling. arXiv:2312.00752'
+  - 'Fedus et al. (2022) Switch Transformers: Scaling to Trillion Parameters. JMLR'
+  - 'aprender/src/format/gguf/api.rs — GgufModelConfig'
+  - 'aprender/src/format/model_family.rs — ModelFamilyConfig'
+  - 'apr-cli/src/commands/check.rs — 10-stage integrity pipeline'
+  - 'contracts/model-families/ — per-family tensor/shape templates'
+  depends_on:
+  - apr-architecture-schema-v1
+  - tensor-layout-v1
+  - layer-parity-v1
+  - qwen2-weight-loading-v1
+
+graph_structure:
+  description: >
+    Directed acyclic graph of the full LLM forward pass. Each node is a
+    compute stage; edges represent tensor data flow. The graph is validated
+    at import-time to ensure all required stages exist and shapes are
+    consistent across edges.
+  nodes:
+  - id: input_tokens
+    type: input
+    dtype: u32
+    shape: "[batch_size, seq_len]"
+    description: Token IDs from tokenizer
+
+  - id: token_embedding
+    type: embedding_lookup
+    tensor: "{family.embedding}"
+    shape: "[batch_size, seq_len, hidden_dim]"
+    description: Token embedding table lookup
+
+  - id: position_encoding
+    type: position
+    variants:
+    - name: rope
+      applied_to: [q_proj, k_proj]
+      parameters: [theta, rope_type, head_dim]
+    - name: absolute
+      tensor: "{family.position_embedding}"
+      shape: "[max_position_embeddings, hidden_dim]"
+    - name: alibi
+      computed: true
+      parameters: [num_heads, max_position]
+    - name: none
+      description: No explicit position encoding (SSM models)
+    description: Position information injection
+
+  - id: transformer_layer
+    type: repeated_block
+    count: num_layers
+    description: Single transformer layer (repeated N times)
+    subgraph:
+    - id: pre_attn_norm
+      type: normalization
+      variants:
+      - rmsnorm
+      - layernorm
+      tensor: "{family.per_layer.input_layernorm}"
+      shape_weight: "[hidden_dim]"
+      shape_bias: "[hidden_dim]"
+      description: Pre-attention normalization
+
+    - id: attention_block
+      type: attention
+      description: Multi-head attention (MHA/GQA/MQA)
+      subgraph:
+      - id: q_proj
+        type: linear
+        tensor: "{family.per_layer.q_proj}"
+        shape: "[num_heads * head_dim, hidden_dim]"
+        bias: "{family.constraints.has_bias}"
+      - id: k_proj
+        type: linear
+        tensor: "{family.per_layer.k_proj}"
+        shape: "[num_kv_heads * head_dim, hidden_dim]"
+        bias: "{family.constraints.has_bias}"
+      - id: v_proj
+        type: linear
+        tensor: "{family.per_layer.v_proj}"
+        shape: "[num_kv_heads * head_dim, hidden_dim]"
+        bias: "{family.constraints.has_bias}"
+      - id: rope_apply
+        type: position_encoding
+        applied_to: [q_proj, k_proj]
+        condition: "constraints.positional_encoding == 'rope'"
+      - id: kv_repeat
+        type: repeat_kv
+        condition: "num_kv_heads < num_heads"
+        expansion: "num_heads / num_kv_heads"
+        description: Expand KV heads for GQA (broadcast K,V to match Q head count)
+      - id: scaled_dot_product
+        type: attention_score
+        formula: "softmax(Q @ K^T / sqrt(head_dim)) @ V"
+        shape: "[batch, num_heads, seq_len, head_dim]"
+      - id: o_proj
+        type: linear
+        tensor: "{family.per_layer.o_proj}"
+        shape: "[hidden_dim, num_heads * head_dim]"
+        bias: "{family.constraints.has_bias}"
+
+    - id: attn_residual
+      type: residual_add
+      inputs: [pre_attn_norm.input, attention_block.output]
+      description: Residual connection around attention
+
+    - id: pre_ffn_norm
+      type: normalization
+      variants:
+      - rmsnorm
+      - layernorm
+      tensor: "{family.per_layer.post_attention_layernorm}"
+      shape_weight: "[hidden_dim]"
+      description: Pre-FFN normalization
+
+    - id: ffn_block
+      type: feed_forward
+      description: Feed-forward network (SwiGLU/GELU/ReLU or MoE)
+      variants:
+      - name: swiglu
+        subgraph:
+        - id: gate_proj
+          type: linear
+          tensor: "{family.per_layer.gate_proj}"
+          shape: "[intermediate_dim, hidden_dim]"
+        - id: up_proj
+          type: linear
+          tensor: "{family.per_layer.up_proj}"
+          shape: "[intermediate_dim, hidden_dim]"
+        - id: silu_activation
+          type: activation
+          function: silu
+          applied_to: gate_proj
+        - id: element_mul
+          type: element_wise
+          operation: multiply
+          inputs: [silu_activation, up_proj]
+        - id: down_proj
+          type: linear
+          tensor: "{family.per_layer.down_proj}"
+          shape: "[hidden_dim, intermediate_dim]"
+      - name: gelu_mlp
+        subgraph:
+        - id: fc1
+          type: linear
+          shape: "[intermediate_dim, hidden_dim]"
+        - id: gelu_activation
+          type: activation
+          function: gelu
+        - id: fc2
+          type: linear
+          shape: "[hidden_dim, intermediate_dim]"
+      - name: moe
+        subgraph:
+        - id: router
+          type: linear
+          shape: "[num_experts, hidden_dim]"
+          description: Expert routing gate
+        - id: top_k_gate
+          type: top_k_softmax
+          k: num_experts_per_tok
+        - id: expert_ffn
+          type: parallel_experts
+          count: num_experts
+          each: swiglu
+          shape_gate: "[moe_intermediate_dim, hidden_dim]"
+          shape_up: "[moe_intermediate_dim, hidden_dim]"
+          shape_down: "[hidden_dim, moe_intermediate_dim]"
+        - id: expert_combine
+          type: weighted_sum
+          description: Combine expert outputs by router weights
+
+    - id: ffn_residual
+      type: residual_add
+      inputs: [attn_residual.output, ffn_block.output]
+      description: Residual connection around FFN
+
+  - id: final_norm
+    type: normalization
+    tensor: "{family.final_norm}"
+    shape_weight: "[hidden_dim]"
+    description: Final layer normalization after all transformer layers
+
+  - id: lm_head
+    type: linear
+    tensor: "{family.lm_head}"
+    shape: "[vocab_size, hidden_dim]"
+    tied_to: token_embedding
+    condition: "constraints.tied_embeddings"
+    description: Language model head (logit projection)
+
+  - id: output_logits
+    type: output
+    shape: "[batch_size, seq_len, vocab_size]"
+    dtype: f32
+    description: Raw logits before sampling/softmax
+
+  edges:
+  - from: input_tokens
+    to: token_embedding
+  - from: token_embedding
+    to: position_encoding
+  - from: position_encoding
+    to: transformer_layer
+  - from: transformer_layer
+    to: final_norm
+    note: Output of last layer
+  - from: final_norm
+    to: lm_head
+  - from: lm_head
+    to: output_logits
+
+encoder_decoder_extension:
+  description: >
+    Additional nodes for encoder-decoder architectures (Whisper, T5).
+    The encoder processes source input; the decoder attends to both
+    its own history and encoder output via cross-attention.
+  encoder_nodes:
+  - id: encoder_embedding
+    type: embedding_lookup
+    description: Source input embedding (e.g., mel spectrogram projection for Whisper)
+  - id: encoder_layer
+    type: repeated_block
+    count: encoder_layers
+    subgraph:
+    - id: encoder_self_attn
+      type: attention
+      description: Encoder self-attention
+    - id: encoder_ffn
+      type: feed_forward
+    - id: encoder_norm
+      type: normalization
+  decoder_cross_attention:
+    description: >
+      Cross-attention in decoder layers: Q from decoder hidden state,
+      K and V from encoder output. Shape of K,V depends on encoder
+      hidden_dim (may differ from decoder hidden_dim).
+    q_source: decoder_hidden
+    kv_source: encoder_output
+    tensors:
+      cross_q_proj: "decoder.layers.{n}.encoder_attn.q_proj.weight"
+      cross_k_proj: "decoder.layers.{n}.encoder_attn.k_proj.weight"
+      cross_v_proj: "decoder.layers.{n}.encoder_attn.v_proj.weight"
+      cross_o_proj: "decoder.layers.{n}.encoder_attn.out_proj.weight"
+
+ssm_extension:
+  description: >
+    State-space model extension for hybrid architectures (Mamba, Falcon-H1,
+    RWKV). Some layers replace attention with selective state spaces.
+  ssm_layer:
+    type: selective_ssm
+    parameters:
+    - d_state
+    - d_conv
+    - expand_factor
+    - dt_rank
+    tensors:
+      in_proj: "model.layers.{n}.mixer.in_proj.weight"
+      conv1d: "model.layers.{n}.mixer.conv1d.weight"
+      x_proj: "model.layers.{n}.mixer.x_proj.weight"
+      dt_proj: "model.layers.{n}.mixer.dt_proj.weight"
+      A_log: "model.layers.{n}.mixer.A_log"
+      D: "model.layers.{n}.mixer.D"
+      out_proj: "model.layers.{n}.mixer.out_proj.weight"
+    invariants:
+    - d_state > 0
+    - d_conv >= 1
+    - dt_rank > 0
+
+equations:
+  forward_pass_completeness:
+    formula: |
+      forward(tokens, config, weights): ([u32; seq_len], Config, Weights) -> [f32; vocab_size]
+        let x = embed(tokens, weights.embedding)           // [B, S, H]
+        for i in 0..config.num_layers:
+          let normed = norm(x, weights.layer[i].attn_norm)  // [B, S, H]
+          let attn = attention(normed, weights.layer[i])     // [B, S, H]
+          x = x + attn                                       // residual
+          let normed2 = norm(x, weights.layer[i].ffn_norm)  // [B, S, H]
+          let ffn = feed_forward(normed2, weights.layer[i]) // [B, S, H]
+          x = x + ffn                                        // residual
+        x = norm(x, weights.final_norm)                      // [B, S, H]
+        return matmul(x, weights.lm_head)                    // [B, S, V]
+    domain: (tokens ∈ [0, vocab_size), config ∈ ValidConfig, weights ∈ LoadedWeights)
+    codomain: Logits tensor of shape [batch_size, seq_len, vocab_size]
+    invariants:
+    - Every layer transforms [B, S, H] → [B, S, H] (shape preservation)
+    - Residual connections preserve gradient flow
+    - Final output shape is [B, S, V] where V = vocab_size
+    - All intermediate tensors are finite (no NaN/Inf propagation)
+    preconditions:
+    - All tokens in [0, vocab_size)
+    - All weight tensors loaded and shapes match config
+    - config is validated (head_dim * num_heads == hidden_size)
+    postconditions:
+    - Output logits have shape [batch_size, seq_len, vocab_size]
+    - Output logits are finite (no NaN, no Inf)
+    lean_theorem: Theorems.Forward_Pass_Completeness
+
+  attention_mechanism:
+    formula: |
+      attention(x, layer_weights, config): ([B,S,H], LayerWeights, Config) -> [B,S,H]
+        Q = x @ W_q                     // [B, S, num_heads * head_dim]
+        K = x @ W_k                     // [B, S, num_kv_heads * head_dim]
+        V = x @ W_v                     // [B, S, num_kv_heads * head_dim]
+        Q, K = apply_rope(Q, K, freqs)  // position encoding
+        K, V = repeat_kv(K, V, n_rep)   // GQA expansion
+        // Reshape to multi-head: [B, num_heads, S, head_dim]
+        scores = Q @ K^T / sqrt(head_dim) + mask
+        weights = softmax(scores, dim=-1)
+        attn_out = weights @ V           // [B, num_heads, S, head_dim]
+        return attn_out.reshape(B,S,H) @ W_o
+    domain: Hidden state [B,S,H], layer weights, config
+    codomain: Attention output [B,S,H]
+    invariants:
+    - Q shape = [B, S, num_heads * head_dim]
+    - K, V shape = [B, S, num_kv_heads * head_dim]
+    - Softmax output sums to 1.0 per row (within FP tolerance)
+    - Output shape matches input shape [B, S, H]
+    - Causal mask prevents attending to future positions (decoder-only)
+    preconditions:
+    - x has shape [B, S, H]
+    - W_q, W_k, W_v, W_o shapes match config
+    postconditions:
+    - Output has same shape as input [B, S, H]
+    - All attention weights in [0, 1]
+    lean_theorem: Theorems.Attention_Mechanism
+
+  ffn_computation:
+    formula: |
+      ffn_swiglu(x, gate_w, up_w, down_w): [B,S,H] -> [B,S,H]
+        gate = x @ gate_w               // [B, S, I]
+        up = x @ up_w                   // [B, S, I]
+        hidden = silu(gate) * up         // [B, S, I] element-wise
+        return hidden @ down_w           // [B, S, H]
+      ffn_gelu(x, fc1_w, fc2_w): [B,S,H] -> [B,S,H]
+        hidden = gelu(x @ fc1_w)        // [B, S, I]
+        return hidden @ fc2_w            // [B, S, H]
+      ffn_moe(x, router_w, expert_ws, k): [B,S,H] -> [B,S,H]
+        logits = x @ router_w           // [B, S, num_experts]
+        top_k_ids, top_k_weights = top_k_softmax(logits, k)
+        output = sum(w_i * expert_i(x) for i in top_k_ids)
+        return output                    // [B, S, H]
+    domain: Hidden state [B,S,H], FFN weight tensors
+    codomain: FFN output [B,S,H]
+    invariants:
+    - Input and output have same hidden dimension H
+    - SwiGLU gate and up projections have identical shapes
+    - Down projection transposes gate projection shape
+    - MoE router selects exactly k experts per token
+    preconditions:
+    - x has shape [B, S, H]
+    - FFN weight shapes match config (gate/up = [I,H], down = [H,I])
+    postconditions:
+    - Output shape == input shape [B, S, H]
+    - MoE output is weighted combination of at most k experts
+    lean_theorem: Theorems.FFN_Computation
+
+  residual_stream:
+    formula: |
+      residual_stream(x, layer_fn): [B,S,H] -> [B,S,H]
+        return x + layer_fn(norm(x))
+        // Pre-norm architecture: normalize before sub-layer, add residual after
+    domain: Hidden state [B,S,H], sub-layer function
+    codomain: Updated hidden state [B,S,H]
+    invariants:
+    - Shape is preserved through residual connection
+    - Gradient flows unimpeded through identity path
+    - No scaling applied to residual (unlike some architectures)
+    preconditions:
+    - x has shape [B, S, H]
+    - layer_fn preserves shape [B, S, H] → [B, S, H]
+    postconditions:
+    - Output has same shape [B, S, H]
+    lean_theorem: Theorems.Residual_Stream
+
+  kv_cache_management:
+    formula: |
+      kv_cache_update(cache, new_k, new_v, pos): (Cache, K, V, usize) -> Cache
+        cache.k[pos..pos+new_len] = new_k
+        cache.v[pos..pos+new_len] = new_v
+        return cache
+        // During autoregressive generation, only new tokens are projected
+        // and appended to the KV cache. Previous K,V are reused.
+    domain: (existing KV cache, new K/V tensors, position offset)
+    codomain: Updated KV cache
+    invariants:
+    - Cache grows monotonically during generation
+    - Cached K,V values are immutable once written
+    - Cache size bounded by max_position_embeddings * num_kv_heads * head_dim
+    - Position tracking is consistent with sequence length
+    preconditions:
+    - pos + new_len <= max_position_embeddings
+    - new_k, new_v shapes = [B, num_kv_heads, new_len, head_dim]
+    postconditions:
+    - cache.len() == pos + new_len
+    - cache.k[0..pos] unchanged (immutability)
+    lean_theorem: Theorems.KV_Cache_Management
+
+  tensor_name_resolution:
+    formula: |
+      resolve_tensor(family, role, layer_idx): (Family, Role, usize) -> String
+        let template = family.tensor_template[role]
+        return template.replace("{n}", layer_idx.to_string())
+      resolve_all(family, config): (Family, Config) -> Vec<(String, Shape)>
+        let mut tensors = vec![]
+        tensors.push((resolve_tensor(family, "embedding", 0), [vocab_size, hidden_dim]))
+        for i in 0..config.num_layers:
+          for role in [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj,
+                       input_layernorm, post_attention_layernorm]:
+            tensors.push((resolve_tensor(family, role, i), shape_template[role]))
+        tensors.push((resolve_tensor(family, "final_norm", 0), [hidden_dim]))
+        tensors.push((resolve_tensor(family, "lm_head", 0), [vocab_size, hidden_dim]))
+        return tensors
+    domain: (model family, tensor role, layer index)
+    codomain: Fully-qualified tensor name string
+    invariants:
+    - Template substitution is deterministic
+    - Every model family defines all required tensor roles
+    - Layer index is zero-based and < num_layers
+    - GGUF and HuggingFace tensor names resolve to same logical role
+    preconditions:
+    - family has tensor_template for requested role
+    - layer_idx < config.num_layers
+    postconditions:
+    - Returned name matches exactly one tensor in the model file
+    - Shape matches shape_template for that role
+    lean_theorem: Theorems.Tensor_Name_Resolution
+
+  quantization_precision:
+    formula: |
+      quantize(tensor, scheme): (Tensor<f32>, QuantScheme) -> Tensor<Quant>
+        Supported schemes and their bit widths:
+          Q2_K: 2.5625 bits/weight (super-blocks with 2-bit quants + scales)
+          Q3_K: 3.4375 bits/weight
+          Q4_0: 4.0 bits/weight (legacy block quantization)
+          Q4_1: 4.5 bits/weight (Q4_0 + per-block bias)
+          Q4_K: 4.5 bits/weight (K-quant with importance matrix)
+          Q5_0: 5.0 bits/weight
+          Q5_1: 5.5 bits/weight
+          Q5_K: 5.5 bits/weight
+          Q6_K: 6.5625 bits/weight
+          Q8_0: 8.0 bits/weight
+          Q8_1: 8.5 bits/weight
+          F16: 16.0 bits/weight
+          BF16: 16.0 bits/weight
+          F32: 32.0 bits/weight
+        dequantize(quantize(t, s)) ≈ t within precision_bound(s)
+    domain: Float32 tensor, quantization scheme
+    codomain: Quantized tensor with metadata
+    invariants:
+    - Quantized tensor preserves element count
+    - Dequantized values within scheme-specific tolerance of original
+    - Block structure aligned to scheme requirements (32, 64, 256 elements)
+    - Importance-weighted schemes (K-quants) preserve salient weights better
+    preconditions:
+    - Tensor element count divisible by block size
+    - Input tensor has no NaN or Inf values
+    postconditions:
+    - Output tensor byte size < input by factor of (32 / bits_per_weight)
+    - Round-trip error bounded by scheme tolerance
+    lean_theorem: Theorems.Quantization_Precision
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: >
+      Parse model metadata (architecture, family, config parameters).
+      Resolve model family from HF architectures field or hf_pattern.
+      Validate config invariants (head_dim, GQA divisibility, bounds).
+  - name: execute
+    description: >
+      Walk the full model graph: verify embedding → layers → attention →
+      FFN → normalization → output head. Check tensor names against family
+      template. Verify shapes against shape_template. Count tensors.
+  - name: verify_output
+    description: >
+      Confirm total tensor count matches expected. Verify no orphan tensors.
+      Check that forward pass DAG is complete (no dangling edges).
+
+proof_obligations:
+- type: invariant
+  property: Forward pass preserves hidden dimension
+  formal: "∀ layer_i: shape(layer_output_i) == [B, S, H]"
+  tolerance: 1e-6
+  applies_to: forward_pass_completeness
+- type: invariant
+  property: Attention softmax rows sum to 1.0
+  formal: "∀ row in attn_weights: |sum(row) - 1.0| < 1e-5"
+  applies_to: attention_mechanism
+- type: invariant
+  property: FFN SwiGLU gate/up shapes match
+  formal: "gate_proj.shape == up_proj.shape"
+  applies_to: ffn_computation
+- type: invariant
+  property: KV cache immutability
+  formal: "∀ pos < current_len: cache[pos] == cache_prev[pos]"
+  applies_to: kv_cache_management
+- type: postcondition
+  property: Tensor name resolution is bijective
+  formal: "∀ (name1, name2) with role1 ≠ role2: name1 ≠ name2"
+  applies_to: tensor_name_resolution
+- type: invariant
+  property: Quantization preserves element count
+  formal: "quant(t).num_elements == t.num_elements"
+  applies_to: quantization_precision
+- type: invariant
+  property: MoE router selects exactly k experts
+  formal: "top_k(logits, k).len() == k"
+  applies_to: ffn_computation
+- type: bound
+  property: Quantization round-trip bounded error
+  formal: "max|dequant(quant(t)) - t| <= precision_bound(scheme)"
+  applies_to: quantization_precision
+
+falsification_tests:
+- id: FALSIFY-GRAPH-001
+  rule: Forward pass preserves hidden dimension
+  prediction: Model with mismatched down_proj shape [H+1, I] fails validation
+  test: |
+    #[test]
+    fn falsify_graph_001_shape_preservation() {
+        // Create model where layer 3 down_proj has wrong output dim
+        let mut model = TestModel::qwen2_0_5b();
+        model.tensors["model.layers.3.mlp.down_proj.weight"].shape = [4097, 11008];
+        let result = validate_forward_graph(&model);
+        assert!(result.is_err(), "Should reject shape mismatch in down_proj");
+        assert!(result.unwrap_err().to_string().contains("shape"),
+            "Error should mention shape mismatch");
+    }
+  if_fails: Shape validation only checks first/last layer, misses interior errors
+- id: FALSIFY-GRAPH-002
+  rule: Attention softmax rows sum to 1.0
+  prediction: Attention with all-zero QK^T still produces valid softmax
+  test: |
+    #[test]
+    fn falsify_graph_002_zero_attention_softmax() {
+        let q = Tensor::zeros(&[1, 1, 4, 64]);  // all zero query
+        let k = Tensor::zeros(&[1, 1, 4, 64]);  // all zero key
+        let v = Tensor::ones(&[1, 1, 4, 64]);
+        let (output, weights) = scaled_dot_product_attention(&q, &k, &v, None, 0.0, false);
+        // softmax of all-zeros = uniform distribution
+        let row_sum: f32 = weights.slice(0, 0).sum();
+        assert!((row_sum - 1.0).abs() < 1e-5,
+            "Softmax row sum {} should be 1.0", row_sum);
+    }
+  if_fails: Softmax has numerical instability with all-zero inputs
+- id: FALSIFY-GRAPH-003
+  rule: FFN SwiGLU gate/up shapes match
+  prediction: Model with gate_proj and up_proj of different shapes rejected
+  test: |
+    #[test]
+    fn falsify_graph_003_swiglu_shape_mismatch() {
+        let mut model = TestModel::llama_1b();
+        model.tensors["model.layers.0.mlp.gate_proj.weight"].shape = [8192, 2048];
+        model.tensors["model.layers.0.mlp.up_proj.weight"].shape = [8191, 2048]; // off by one
+        let result = validate_ffn_block(&model, 0);
+        assert!(result.is_err(), "Should reject gate/up shape mismatch");
+    }
+  if_fails: FFN validation only checks down_proj, not gate/up consistency
+- id: FALSIFY-GRAPH-004
+  rule: KV cache immutability
+  prediction: Overwriting position 0 in KV cache is rejected
+  test: |
+    #[test]
+    fn falsify_graph_004_kv_cache_overwrite() {
+        let mut cache = KvCache::new(1, 32, 128, 8);
+        cache.update(&new_k, &new_v, 0); // initial write
+        let k_before = cache.k_at(0).clone();
+        cache.update(&new_k2, &new_v2, 0); // overwrite attempt
+        assert_eq!(cache.k_at(0), &k_before,
+            "KV cache position 0 should be immutable after write");
+    }
+  if_fails: KV cache allows in-place overwrite, corrupting cached context
+- id: FALSIFY-GRAPH-005
+  rule: Tensor name resolution is bijective
+  prediction: Two roles resolving to same tensor name detected as error
+  test: |
+    #[test]
+    fn falsify_graph_005_tensor_name_collision() {
+        let family = ModelFamily::from_yaml("test_family_colliding_names.yaml");
+        let config = TestConfig::new(32, 4096, 32);
+        let tensors = resolve_all(&family, &config);
+        let names: Vec<_> = tensors.iter().map(|(n, _)| n).collect();
+        let unique: HashSet<_> = names.iter().collect();
+        assert_eq!(names.len(), unique.len(),
+            "Tensor name collision detected: {} names, {} unique", names.len(), unique.len());
+    }
+  if_fails: Family template allows duplicate tensor names across roles
+- id: FALSIFY-GRAPH-006
+  rule: Quantization preserves element count
+  prediction: Quantizing [4096, 4096] tensor gives same element count
+  test: |
+    #[test]
+    fn falsify_graph_006_quant_element_preservation() {
+        let tensor = Tensor::randn(&[4096, 4096]);
+        let quant = quantize(&tensor, QuantScheme::Q4_K);
+        assert_eq!(quant.num_elements(), tensor.num_elements(),
+            "Q4_K should preserve element count: {} vs {}",
+            quant.num_elements(), tensor.num_elements());
+    }
+  if_fails: Quantization truncates tensor to block-aligned size
+- id: FALSIFY-GRAPH-007
+  rule: MoE router selects exactly k experts
+  prediction: Router always selects exactly num_experts_per_tok experts
+  test: |
+    #[test]
+    fn falsify_graph_007_moe_topk_count() {
+        let router_logits = Tensor::randn(&[1, 1, 8]); // 8 experts
+        let (ids, weights) = top_k_softmax(&router_logits, 2); // k=2
+        assert_eq!(ids.shape()[2], 2,
+            "Should select exactly 2 experts, got {}", ids.shape()[2]);
+        let weight_sum: f32 = weights.slice(0, 0).sum();
+        assert!((weight_sum - 1.0).abs() < 1e-5,
+            "Expert weights should sum to 1.0, got {}", weight_sum);
+    }
+  if_fails: Router selects variable number of experts or weights don't normalize
+- id: FALSIFY-GRAPH-008
+  rule: Quantization round-trip bounded error
+  prediction: Q4_K round-trip max error < 0.5 for normally distributed weights
+  test: |
+    #[test]
+    fn falsify_graph_008_quant_roundtrip_error() {
+        let tensor = Tensor::randn(&[4096, 4096]); // ~N(0,1)
+        let quant = quantize(&tensor, QuantScheme::Q4_K);
+        let dequant = dequantize(&quant);
+        let max_error = (tensor - dequant).abs().max();
+        assert!(max_error < 0.5,
+            "Q4_K round-trip max error {} exceeds bound 0.5", max_error);
+    }
+  if_fails: Quantization introduces unbounded error in weight values
+
+kani_harnesses:
+- id: KANI-GRAPH-001
+  obligation: Forward pass preserves hidden dimension
+  property: All layer outputs have shape [B, S, H]
+  bound: 8
+  strategy: exhaustive
+  harness: verify_shape_preservation
+- id: KANI-GRAPH-002
+  obligation: Attention softmax rows sum to 1.0
+  property: softmax output rows sum to 1.0 within tolerance
+  bound: 16
+  strategy: bounded_int
+  harness: verify_softmax_normalization
+- id: KANI-GRAPH-003
+  obligation: FFN input/output dimensions match
+  property: ffn_output.shape == ffn_input.shape for all FFN variants
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ffn_shape_preservation
+- id: KANI-GRAPH-004
+  obligation: Residual connection preserves shape
+  property: (x + f(norm(x))).shape == x.shape
+  bound: 8
+  strategy: exhaustive
+  harness: verify_residual_shape
+- id: KANI-GRAPH-005
+  obligation: KV cache immutability
+  property: Once-written cache positions are never modified
+  bound: 16
+  strategy: bounded_int
+  harness: verify_kv_cache_immutability
+- id: KANI-GRAPH-006
+  obligation: Tensor name resolution is bijective
+  property: No two roles map to same tensor name
+  bound: 8
+  strategy: exhaustive
+  harness: verify_tensor_name_bijection
+- id: KANI-GRAPH-007
+  obligation: Quantization preserves element count
+  property: quant.num_elements() == original.num_elements()
+  bound: 16
+  strategy: bounded_int
+  harness: verify_quant_element_count
+- id: KANI-GRAPH-008
+  obligation: MoE router selects exactly k experts
+  property: top_k always returns exactly k indices
+  bound: 16
+  strategy: exhaustive
+  harness: verify_moe_topk_exact
+- id: KANI-GRAPH-009
+  obligation: Quantization round-trip bounded error
+  property: max error within scheme tolerance
+  bound: 8
+  strategy: bounded_int
+  harness: verify_quant_roundtrip_bound
+- id: KANI-GRAPH-010
+  obligation: Output logits have vocab dimension
+  property: logits.shape[-1] == vocab_size
+  bound: 8
+  strategy: exhaustive
+  harness: verify_logit_vocab_dim
+
+qa_gate:
+  id: F-GRAPH-GATE
+  name: Model Graph Contract
+  description: Full LLM forward-pass graph validation gate
+  checks:
+  - forward_pass_completeness
+  - attention_mechanism
+  - ffn_computation
+  - residual_stream
+  - kv_cache_management
+  - tensor_name_resolution
+  - quantization_precision
+  pass_criteria: All 8 falsification tests pass, all 10 kani harnesses verify
+  falsification: >
+    Remove one layer's down_proj tensor to break shape preservation invariant.
+    The model graph should detect the broken edge.
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the graph validator walks every node
+    in the DAG. A missing tensor or wrong shape stops import immediately with
+    a precise error: "layer 3 down_proj expected [4096, 11008], got [4097, 11008]".
+    No silent shape broadcasting.
+  poka_yoke: >
+    "Mistake-proofing" — model family templates are the single source of truth
+    for tensor names and shapes. The template makes it impossible to construct
+    a valid model graph with missing or misnamed tensors. New families must
+    provide complete tensor_template and shape_template before import is enabled.
+  genchi_genbutsu: >
+    "Go and see" — falsification tests use real tensor data with injected
+    defects (off-by-one shapes, NaN injection, missing tensors). Not
+    synthetic assertions against mock objects.
+  kaizen: >
+    "Continuous improvement" — new model families (Falcon-H1, RWKV-7) extend
+    the graph with SSM nodes. The architecture is additive: new node types
+    compose with existing validation. Each new family adds its own falsification
+    tests to the test suite.

@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Model quality assurance contract — check, validate, qa, lint, probar
     commands that verify model integrity, detect regressions, and enforce
@@ -139,7 +140,7 @@ proof_obligations:
     theorem: Theorems.ModelIntegrityCheck
     status: sorry
 - type: postcondition
-  property: QA gate composition is correct
+  property: QA gate composition score
   formal: report.score == passed_count / enabled_count
   tolerance: 1e-6
   applies_to: qa_gate_composition
@@ -154,21 +155,21 @@ proof_obligations:
     theorem: Theorems.ModelIntegrityCheckDeterminism
     status: sorry
 - type: invariant
-  property: Canary baseline is immutable
+  property: Canary detects regression
   formal: baseline_after == baseline_before for canary(model, baseline)
   applies_to: canary_regression_detection
   lean:
     theorem: Theorems.CanaryRegressionDetection
     status: sorry
 - type: postcondition
-  property: Lint findings are deduplicated
+  property: Lint findings deduplicated
   formal: no two findings have same (rule, location) pair
   applies_to: lint_model_conventions
   lean:
     theorem: Theorems.LintModelConventions
     status: sorry
 - type: completeness
-  property: Probar tests all requested properties
+  property: Probar tests all properties
   formal: report.tested == properties.len()
   applies_to: probar_property_tests
   lean:

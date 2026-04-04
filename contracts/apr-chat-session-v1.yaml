@@ -2,6 +2,7 @@ metadata:
   version: 1.0.0
   created: '2026-04-04'
   author: PAIML Engineering
+  registry: true
   description: >
     Chat session contract — stateful interactive inference with session
     persistence, KV-cache management, template application, and multi-turn
@@ -112,21 +113,21 @@ kernel_structure:
 
 proof_obligations:
 - type: state_machine
-  property: Chat session follows valid transitions
+  property: Ctrl-C returns to input
   formal: "Init->WaitInput->Generating->WaitInput->...->Exit, Ctrl-C returns to WaitInput"
   applies_to: session_state_machine
   lean:
     theorem: Theorems.SessionStateMachine
     status: sorry
 - type: idempotency
-  property: Template application is idempotent
+  property: Template application idempotent
   formal: structure(apply(apply(p))) == structure(apply(p))
   applies_to: chat_template_application
   lean:
     theorem: Theorems.ChatTemplateApplication
     status: sorry
 - type: bound
-  property: KV-cache bounded by max context
+  property: KV-cache bounded
   formal: cache.len() <= max_context_length after every operation
   tolerance: 1e-6
   applies_to: kv_cache_management
@@ -134,7 +135,7 @@ proof_obligations:
     theorem: Theorems.KvCacheManagement
     status: sorry
 - type: roundtrip
-  property: Session save/load roundtrip
+  property: Session roundtrip
   formal: load(save(session)).history == session.history
   tolerance: 0.0
   applies_to: session_persistence
