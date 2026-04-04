@@ -260,6 +260,8 @@
                 profile: false,
                 backend: None,
                 otlp_endpoint: None,
+                context_length: 4096,
+                no_fp8_cache: false,
             },
         };
         let paths = extract_model_paths(&serve_cmd);
@@ -306,6 +308,11 @@
             chat: false,
             temperature: 0.0,
             top_k: 1,
+            top_p: None,
+            seed: 299_792_458,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
+            split_prompt: false,
             batch_jsonl: None,
             verbose: false,
             backend: None,
