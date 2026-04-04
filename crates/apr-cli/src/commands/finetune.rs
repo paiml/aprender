@@ -318,15 +318,20 @@ fn execute_training(
         println!("  Data: {} samples", corpus.len());
     }
 
-    // §26.11.7: Use WgpuInstructPipeline when GPU available and CUDA is not.
-    // Bypasses Transformer::from_apr() (20-min CPU dequant) by loading Q4K
-    // directly to GPU via OwnedQuantizedModel + dequant_model_weights().
+    // PMAT-491: Bypass 20-min CPU dequant for GPU training paths.
+    // Both CUDA NF4 and WGPU use OwnedQuantizedModel::from_apr() which loads
+    // Q4K directly (seconds) instead of Transformer::from_apr() which dequants
+    // the entire model to F32 on CPU (20+ minutes for 1.5B).
     #[cfg(feature = "cuda")]
     let cuda_ok = entrenar::autograd::cuda_training::cuda_training_available();
     #[cfg(not(feature = "cuda"))]
     let cuda_ok = false;
 
-    if !cuda_ok && trueno::backends::gpu::GpuDevice::is_available() {
+    let has_gpu = cuda_ok || trueno::backends::gpu::GpuDevice::is_available();
+
+    if has_gpu && instruct_config.quantize_nf4 {
+        // PMAT-491: Fast Q4K direct load for NF4 training on any GPU backend.
+        // Loads Q4K in seconds via OwnedQuantizedModel, dequants per-layer.
         return execute_training_wgpu(
             model_path,
             &model_config,
@@ -340,6 +345,7 @@ fn execute_training(
         );
     }
 
+    // Full fine-tune (non-NF4) or CPU-only: must dequant entire model to F32.
     let pipeline = InstructPipeline::from_apr(model_path, &model_config, instruct_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
