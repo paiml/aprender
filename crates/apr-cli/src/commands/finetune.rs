@@ -319,18 +319,17 @@ fn execute_training(
     }
 
     // PMAT-491: Bypass 20-min CPU dequant for GPU training paths.
-    // Both CUDA NF4 and WGPU use OwnedQuantizedModel::from_apr() which loads
-    // Q4K directly (seconds) instead of Transformer::from_apr() which dequants
-    // the entire model to F32 on CPU (20+ minutes for 1.5B).
+    // CUDA NF4: InstructPipeline::from_apr() → CudaTransformerTrainer (has NF4 blocks)
+    // WGPU NF4: OwnedQuantizedModel::from_apr() → WgpuInstructPipeline (fast Q4K direct)
+    // Full FT:  InstructPipeline::from_apr() → full F32 (CPU dequant required)
     #[cfg(feature = "cuda")]
     let cuda_ok = entrenar::autograd::cuda_training::cuda_training_available();
     #[cfg(not(feature = "cuda"))]
     let cuda_ok = false;
 
-    let has_gpu = cuda_ok || trueno::backends::gpu::GpuDevice::is_available();
-
-    if has_gpu && instruct_config.quantize_nf4 {
-        // PMAT-491: Fast Q4K direct load for NF4 training on any GPU backend.
+    if !cuda_ok && trueno::backends::gpu::GpuDevice::is_available() && instruct_config.quantize_nf4
+    {
+        // PMAT-491: WGPU fast Q4K direct load — only when CUDA is NOT available.
         // Loads Q4K in seconds via OwnedQuantizedModel, dequants per-layer.
         return execute_training_wgpu(
             model_path,
@@ -345,7 +344,9 @@ fn execute_training(
         );
     }
 
-    // Full fine-tune (non-NF4) or CPU-only: must dequant entire model to F32.
+    // CUDA NF4 or full fine-tune: InstructPipeline handles both.
+    // CUDA NF4 uses CudaNf4TransformerBlock (Q4K→NF4 on GPU, no 20-min dequant
+    // because init_cuda uploads per-layer, not all-at-once).
     let pipeline = InstructPipeline::from_apr(model_path, &model_config, instruct_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
