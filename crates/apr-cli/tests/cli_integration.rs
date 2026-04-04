@@ -445,3 +445,4 @@ fn test_gh122_hex_help() {
 include!("includes/cli_integration_gh122_hex.rs");
 include!("includes/cli_integration_tune.rs");
 include!("includes/cli_integration_format.rs");
+include!("includes/cli_contract_dispatch.rs");
