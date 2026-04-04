@@ -1,7 +1,7 @@
 # apr-cli Silent Failure Enforcement Specification
 
-**Version**: 1.0.0
-**Status**: Active — Enforcement Required
+**Version**: 1.1.0
+**Status**: Active — Enforcement Required (Falsified 2026-04-04)
 **Created**: 2026-04-04
 **Parent**: [cli.md](cli.md) §6.3, [provable-contracts.md](provable-contracts.md)
 **Crate**: `apr-cli`
@@ -401,3 +401,140 @@ can only go up.
 - `cli-dispatch-v1.yaml` — Dispatch completeness (Grade A, 0.95)
 - `apr-cli-operations-v1.yaml` — Side-effect classification (Grade A, 0.97)
 - `pmat comply` CB-1200..1214 — Provable-contracts compliance checks
+
+---
+
+## 9. Self-Falsification (Popperian Audit)
+
+This specification was subjected to Popperian falsification on 2026-04-04.
+Every claim was tested against the actual codebase using `pmat query` and
+live `apr` binary execution. Results:
+
+### 9.1 Claims Confirmed
+
+| Claim | Evidence | Verdict |
+|-------|----------|---------|
+| **SF-001**: lib_parse_rosetta.rs blocks compilation | `cargo test -p apr-cli --lib` fails with E0063 (2 errors) | **CONFIRMED** |
+| **SF-002**: 7 sampling params dropped in `apr run` | `RunOptions` struct (run.rs:126-157) has NO sampling fields. `dispatch_run()` signature (dispatch_run.rs:4-26) omits all 7. `dispatch.rs:57-62` destructures but never passes them. | **CONFIRMED** |
+| SF-002 batch path uses temp/top_k | `run_batch()` (run_entry.rs:276-284) takes temperature and top_k | **CONFIRMED** — batch path partial, main path total drop |
+| Five-whys root cause (L-flow gap) | Provable contracts verify L1-L5 (existence, signature, body) but nothing verifies CLI param → execution data flow | **CONFIRMED** |
+
+### 9.2 Claims Falsified (WRONG)
+
+| Claim | Attempted Falsification | Actual Result | Verdict |
+|-------|-------------------------|---------------|---------|
+| **SF-003**: inspect/validate exit 0 on error | `apr inspect /tmp/fake.gguf` → exit 4; `apr validate /tmp/fake.gguf` → exit 5 | Both return correct non-zero exit codes | **FALSIFIED** — claim was wrong |
+| **SF-004**: catch-all "silently swallows" | `dispatch_analysis.rs:1033` uses `unreachable!()` macro — panics at runtime, does NOT return None silently | Runtime panic, not silent failure | **PARTIALLY FALSIFIED** — still a bug (should be compile error not runtime panic), but characterization as "silent" was wrong |
+| **SF-005**: finetune unused params | `finetune.rs:1022` passes `learning_rate` to `dispatch_finetune_mode()`. `plan_only` used 17 times in finetune.rs. | Both parameters ARE used | **FALSIFIED** — claim was wrong |
+
+### 9.3 Corrected Incident Table
+
+| ID | Severity | Status | Description |
+|----|----------|--------|-------------|
+| SF-001 | P0 | **CONFIRMED** | `lib_parse_rosetta.rs` missing 7 struct fields — blocks lib test suite |
+| SF-002 | P1 | **CONFIRMED** | `apr run` drops 7 sampling params (temp, top_k, top_p, seed, repeat_penalty, repeat_last_n, split_prompt) in main path |
+| SF-003 | ~~P1~~ | **FALSIFIED** | ~~inspect/validate exit 0 on error~~ — actual: exit 4/5 correctly |
+| SF-004 | P2→P3 | **PARTIALLY FALSIFIED** | catch-all is `unreachable!()` (panic), not silent. Still wrong (should be compile-time exhaustive match) but not silent |
+| SF-005 | ~~P2~~ | **FALSIFIED** | ~~finetune unused params~~ — both learning_rate and plan_only are used |
+
+### 9.4 Tarantula Score Corrections
+
+Original tarantula scores were computed from sub-agent analysis, not from
+direct code execution. Three of five had inflated suspicion scores due to
+incorrect premises:
+
+| ID | Original Score | Corrected Score | Reason |
+|----|---------------|-----------------|--------|
+| SF-001 | 1.00 | 1.00 | Confirmed — blocks test compilation |
+| SF-002 | 0.98 | **0.98** | Confirmed — 7 params dropped |
+| SF-003 | 0.90 | **0.00** | False positive — exit codes are correct |
+| SF-004 | 0.88 | **0.30** | Downgraded — panic not silent, but still bad |
+| SF-005 | 0.82 | **0.00** | False positive — params are used |
+
+**Lesson**: Sub-agent tarantula analysis trusted test failure messages
+without verifying against running code. 3/5 claims were wrong. Only
+direct `pmat query` + live binary execution produces reliable results.
+
+---
+
+## 10. Five-Whys: Why Did the Spec Contain False Claims?
+
+### Why #1: Why were SF-003, SF-004, SF-005 wrong?
+
+The initial investigation used sub-agent reports that analyzed code
+structure (grep patterns, unused-variable warnings) without running
+the actual binary or tracing the full call chain.
+
+### Why #2: Why were sub-agents wrong?
+
+Sub-agents read dispatch.rs and saw unused variables (correct) but then
+inferred behavior from variable names without tracing downstream:
+- SF-003: Saw error text in output → assumed exit 0 (didn't test)
+- SF-005: Saw `learning_rate` as function param → assumed unused inside (didn't read body)
+
+### Why #3: Why wasn't live verification done first?
+
+The investigation prioritized breadth (test all 51 commands) over depth
+(verify each claim). Tarantula scoring was applied to static analysis
+results, not dynamic execution traces.
+
+### Why #4: Why is static analysis insufficient for silent-failure detection?
+
+Silent failures are definitionally undetectable from source code alone —
+the code compiles, runs, and returns Ok(()). Only behavioral testing
+(run command, check output) can distinguish "silently drops parameter"
+from "parameter flows through correctly."
+
+### Why #5 (Root Cause): No automated behavioral falsification in CI.
+
+**Root cause**: The project has structural contracts (pv score: A) and
+compilation gates (pre-commit) but no **behavioral regression tests**
+that run `apr run --temperature 0.9` and verify the output distribution
+actually changes. The falsification tests in YAML contracts are
+*specified* but not *executed*.
+
+---
+
+## 11. Chain of Thought: What We Actually Know
+
+After falsification, the verified ground truth is:
+
+**CONFIRMED defects:**
+1. `lib_parse_rosetta.rs` has 2 compilation errors (7 missing struct
+   fields) blocking the entire lib test suite. Fix: add the fields.
+   (Already fixed in commit 5c46243e.)
+
+2. `apr run` accepts `--temperature`, `--top-p`, `--seed`,
+   `--repeat-penalty`, `--repeat-last-n`, `--split-prompt`, `--top-k`
+   from the CLI but **none of these reach the inference engine**:
+   - `Commands::Run` struct has all 7 fields (commands_enum.rs:80-100)
+   - `dispatch.rs:56-62` destructures all 7 but passes none
+   - `dispatch_run()` (dispatch_run.rs:4-26) has 20 params, 0 sampling
+   - `run::run()` (run_entry.rs:8-27) has 18 params, 0 sampling
+   - `RunOptions` struct (run.rs:126-157) has 0 sampling fields
+   - `run_model()` receives `RunOptions` → calls realizar with no sampling config
+   - **User sees**: `apr run model.gguf --temperature 0.9 --seed 42` runs
+     without error. Output is greedy (temperature=0). No warning printed.
+   - **Batch path exception**: `run_batch()` does use temperature + top_k
+
+3. `dispatch_extended_command()` has `_ => unreachable!()` on line 1033
+   that will panic at runtime if a new ExtendedCommands variant is added
+   without a dispatch arm. Not silent, but should be a compile error.
+
+**FALSIFIED claims (removed from enforcement):**
+- ~~SF-003~~: inspect/validate exit codes are correct (exit 4, exit 5)
+- ~~SF-005~~: finetune parameters are properly propagated
+
+**Enforcement priority (revised):**
+1. **P0**: Fix SF-001 (done) — unblock test suite
+2. **P1**: Fix SF-002 — add sampling params to RunOptions, dispatch_run, run::run
+3. **P3**: Fix SF-004 — replace unreachable!() with exhaustive match
+4. **New P1**: Add behavioral falsification tests that actually RUN commands
+   and verify output changes with different parameter values
+
+**Contract gap (confirmed):**
+The L-flow gap is real. No enforcement level covers data flow from CLI
+parse → struct → dispatch → options → execution. The fix requires either:
+- (a) Compile-time: derive RunOptions from Commands::Run (share fields)
+- (b) Runtime: behavioral regression tests in CI
+- (c) Static analysis: pmat check for unused struct destructuring in dispatch
