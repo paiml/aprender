@@ -240,12 +240,6 @@ bindings:
   status: implemented
   notes: Magic byte check before any allocation
 - contract: ../gguf-format-safety-v1.yaml
-  equation: tensor_metadata_integrity
-  module_path: aprender::gguf::reader
-  function: parse_tensor_info
-  status: implemented
-  notes: Shape bounds, offset bounds, dtype validation
-- contract: ../gguf-format-safety-v1.yaml
   equation: metadata_kv_safety
   module_path: aprender::gguf::reader
   function: parse_metadata
@@ -257,18 +251,6 @@ bindings:
   function: validate_header
   status: implemented
   notes: Header size bounded before JSON parsing
-- contract: ../safetensors-format-safety-v1.yaml
-  equation: tensor_offset_bounds
-  module_path: aprender::safetensors::reader
-  function: validate_offsets
-  status: implemented
-  notes: All tensor regions within file bounds, no overlap
-- contract: ../safetensors-format-safety-v1.yaml
-  equation: mmap_zero_copy
-  module_path: aprender::safetensors::reader
-  function: mmap_tensor
-  status: implemented
-  notes: Zero-copy mmap with page-aligned offsets
 - contract: model-format-conversion-v1.yaml
   equation: format_conversion_roundtrip
   module_path: aprender::convert
@@ -329,18 +311,6 @@ bindings:
   function: run
   status: implemented
   notes: Per-request KV cache, immutable model weights
-- contract: apr-cli-operations-v1.yaml
-  equation: progress_reporting
-  module_path: apr_cli::progress
-  function: report_progress
-  status: implemented
-  notes: Monotonic progress [0.0, 1.0] with at least 1 update/sec
-- contract: apr-cli-v1.yaml
-  equation: command_parse_determinism
-  module_path: apr_cli::Cli
-  function: try_parse_from
-  status: implemented
-  notes: Clap-derived parse is pure and deterministic; global flags propagate via
 - contract: apr-cli-v1.yaml
   equation: contract_gate_enforcement
   module_path: apr_cli::dispatch
@@ -437,12 +407,6 @@ bindings:
   function: DataLoader::next_batch
   status: implemented
   notes: Epoch-seeded shuffle, no sample drop on final partial batch
-- contract: apr-data-pipeline-v1.yaml
-  equation: preprocessing_idempotency
-  module_path: aprender::data::preprocessor
-  function: preprocess
-  status: implemented
-  notes: Special token dedup via BOS/EOS detection
 - contract: apr-model-qa-v1.yaml
   equation: model_integrity_check
   module_path: apr_cli::commands::check
@@ -480,41 +444,11 @@ bindings:
   status: implemented
   notes: Validates hidden_size/num_heads divisibility, GQA ratio, MoE fields
 - contract: apr-architecture-schema-v1.yaml
-  equation: attention_tensor_shapes
-  module_path: apr_cli::commands::check
-  function: check_attention_shapes
-  status: implemented
-  notes: Validates Q/K/V/O projection shapes per layer against config
-- contract: apr-architecture-schema-v1.yaml
-  equation: ffn_tensor_shapes
-  module_path: apr_cli::commands::check
-  function: check_ffn_shapes
-  status: implemented
-  notes: Validates gate/up/down shapes, SwiGLU and MoE variants
-- contract: apr-architecture-schema-v1.yaml
-  equation: normalization_tensor_shapes
-  module_path: apr_cli::commands::check
-  function: check_norm_tensors
-  status: implemented
-  notes: Validates 2 norm tensors per layer + final_norm
-- contract: apr-architecture-schema-v1.yaml
-  equation: embedding_tensor_shapes
-  module_path: apr_cli::commands::check
-  function: check_embedding_shapes
-  status: implemented
-  notes: Validates token embedding shape, lm_head or tied embeddings
-- contract: apr-architecture-schema-v1.yaml
   equation: rope_position_encoding
   module_path: aprender::nn::rope
   function: RotaryPositionEmbedding::validate_config
   status: implemented
   notes: RoPE theta, type (NORM vs NEOX), frequency vector length
-- contract: apr-architecture-schema-v1.yaml
-  equation: total_tensor_count
-  module_path: apr_cli::commands::check
-  function: check_tensor_count
-  status: implemented
-  notes: Expected count formula with +/-5 tolerance for metadata tensors
 - contract: apr-format-safety-v1.yaml
   equation: magic_byte_validation
   module_path: aprender::gguf::reader
@@ -527,48 +461,12 @@ bindings:
   function: validate_header
   status: implemented
   notes: Bounded allocation, no OOM from crafted tensor_count
-- contract: apr-format-safety-v1.yaml
-  equation: provenance_enforcement
-  module_path: apr_cli::commands::import
-  function: enforce_provenance_check
-  status: implemented
-  notes: --enforce-provenance flag gates base_model_hash verification
-- contract: apr-format-safety-v1.yaml
-  equation: strict_import_validation
-  module_path: apr_cli::commands::import
-  function: strict_validate
-  status: implemented
-  notes: NaN/Inf scan, shape match, dtype consistency when --strict
-- contract: apr-format-safety-v1.yaml
-  equation: dtype_coercion_safety
-  module_path: aprender::tensor::convert
-  function: coerce_dtype
-  status: implemented
-  notes: F32->F16 clamp, F32->Q4_0 blockwise, widening lossless
-- contract: apr-format-safety-v1.yaml
-  equation: truncation_detection
-  module_path: aprender::gguf::reader
-  function: detect_truncation
-  status: implemented
-  notes: Compares actual vs expected file size from header
 - contract: apr-chat-session-v1.yaml
   equation: session_state_machine
   module_path: apr_cli::commands::chat
   function: run
   status: implemented
   notes: Init->WaitInput->Generating->WaitInput->Exit state machine
-- contract: apr-chat-session-v1.yaml
-  equation: chat_template_application
-  module_path: apr_cli::commands::chat
-  function: apply_template
-  status: implemented
-  notes: ChatML, Llama, Alpaca template formats
-- contract: apr-chat-session-v1.yaml
-  equation: kv_cache_management
-  module_path: aprender::inference::kv_cache
-  function: manage_kv_cache
-  status: implemented
-  notes: Sliding window truncation at max_context
 - contract: apr-chat-session-v1.yaml
   equation: session_persistence
   module_path: apr_cli::commands::chat_session
