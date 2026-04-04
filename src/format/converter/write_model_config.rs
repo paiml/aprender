@@ -197,6 +197,35 @@ pub(crate) fn write_apr_file_raw(
         custom,
     };
 
+    // PMAT-490: Warn on metadata incompleteness — training pipeline needs these fields.
+    // This is a soft enforcement (warning, not error) because:
+    // 1. Older GGUF files may not have all metadata keys
+    // 2. The downstream preset fallback (model_config.rs) handles missing fields
+    // 3. Hard failure would break import of valid-but-sparse GGUF files
+    {
+        let missing: Vec<&str> = [
+            ("hidden_size", metadata.hidden_size.is_none()),
+            ("num_layers", metadata.num_layers.is_none()),
+            ("num_heads", metadata.num_heads.is_none()),
+            ("num_kv_heads", metadata.num_kv_heads.is_none()),
+            ("vocab_size", metadata.vocab_size.is_none()),
+            ("intermediate_size", metadata.intermediate_size.is_none()),
+        ]
+        .iter()
+        .filter(|(_, is_none)| *is_none)
+        .map(|(name, _)| *name)
+        .collect();
+
+        if !missing.is_empty() {
+            eprintln!(
+                "[PMAT-490] WARNING: APR metadata incomplete — missing: {}. \
+                 Training pipeline will fall back to architecture presets. \
+                 Re-import with a GGUF file that has complete metadata to fix.",
+                missing.join(", ")
+            );
+        }
+    }
+
     // Create APR writer
     let mut writer = AprV2Writer::new(metadata);
 
