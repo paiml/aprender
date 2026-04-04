@@ -23,6 +23,14 @@ fn dispatch_run(
     trace_level: &str,
     profile: bool,
     chat: bool,
+    // PMAT-496: Sampling parameters
+    temperature: f32,
+    top_k: usize,
+    top_p: Option<f32>,
+    seed: u64,
+    repeat_penalty: f32,
+    repeat_last_n: usize,
+    split_prompt: bool,
 ) -> Result<(), CliError> {
     let effective_trace = trace || trace_payload;
     let effective_trace_level = if trace_payload {
@@ -58,6 +66,13 @@ fn dispatch_run(
         trace_output,
         effective_trace_level,
         profile,
+        temperature,
+        top_k,
+        top_p,
+        seed,
+        repeat_penalty,
+        repeat_last_n,
+        split_prompt,
     )
 }
 

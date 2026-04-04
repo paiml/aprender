@@ -107,6 +107,14 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 trace_level.as_str(),
                 *profile,
                 *chat,
+                // PMAT-496: Sampling parameters — no longer silently dropped
+                *temperature,
+                *top_k,
+                *top_p,
+                *seed,
+                *repeat_penalty,
+                *repeat_last_n,
+                *split_prompt,
             )
         }
 

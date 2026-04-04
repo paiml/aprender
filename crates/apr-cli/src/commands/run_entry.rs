@@ -24,6 +24,14 @@ pub(crate) fn run(
     trace_output: Option<PathBuf>,
     trace_level: &str,
     profile: bool,
+    // PMAT-496: Sampling parameters — previously silently dropped
+    temperature: f32,
+    top_k: usize,
+    top_p: Option<f32>,
+    seed: u64,
+    repeat_penalty: f32,
+    repeat_last_n: usize,
+    split_prompt: bool,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -75,6 +83,13 @@ pub(crate) fn run(
         trace_output,
         trace_level: trace_level.to_string(),
         profile,
+        temperature,
+        top_k,
+        top_p,
+        seed,
+        repeat_penalty,
+        repeat_last_n,
+        split_prompt,
     };
 
     let result = run_model(source, &options)?;

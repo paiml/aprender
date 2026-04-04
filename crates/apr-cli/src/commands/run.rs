@@ -154,6 +154,21 @@ pub(crate) struct RunOptions {
     pub trace_level: String,
     /// Enable inline Roofline profiling (PMAT-480)
     pub profile: bool,
+    /// Sampling temperature (0.0 = greedy argmax, >0 = stochastic)
+    /// PMAT-496 / F-CLIPARITY-01
+    pub temperature: f32,
+    /// Top-k sampling (0 = disabled)
+    pub top_k: usize,
+    /// Top-p nucleus sampling (None = disabled)
+    pub top_p: Option<f32>,
+    /// RNG seed for deterministic sampling
+    pub seed: u64,
+    /// Repetition penalty (1.0 = no penalty)
+    pub repeat_penalty: f32,
+    /// Context window for repetition penalty
+    pub repeat_last_n: usize,
+    /// Process prompt tokens one-by-one (debug prefill)
+    pub split_prompt: bool,
 }
 
 impl Default for RunOptions {
@@ -174,6 +189,13 @@ impl Default for RunOptions {
             trace_output: None,
             trace_level: "basic".to_string(),
             profile: false,
+            temperature: 0.0,
+            top_k: 1,
+            top_p: None,
+            seed: 299_792_458,
+            repeat_penalty: 1.0,
+            repeat_last_n: 64,
+            split_prompt: false,
         }
     }
 }
