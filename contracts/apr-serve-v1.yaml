@@ -1,0 +1,206 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Inference server contract — OpenAI-compatible HTTP server lifecycle,
+    health checks, graceful shutdown, request routing, and concurrent
+    inference safety. Covers `apr serve` and `apr serve plan`.
+  references:
+  - 'apr-cli/src/commands/serve.rs — run_server(), health_check()'
+  - 'apr-cli/src/commands/serve_plan.rs — generate_serve_plan()'
+  - 'aprender/src/http/ — Actix-web handler implementations'
+  - 'OpenAI API specification — /v1/completions, /v1/chat/completions'
+  depends_on:
+  - http-api-v1
+  - apr-cli-v1
+
+equations:
+  server_lifecycle:
+    formula: |
+      serve(config): ServeConfig -> Result<(), ServerError>
+        States: Init -> Binding -> Loading -> Ready -> Draining -> Stopped
+        Init: parse config, validate model path
+        Binding: bind TCP socket (fail-fast if port occupied)
+        Loading: load model into memory (GPU or CPU)
+        Ready: accept requests, health check returns 200
+        Draining: stop accepting new requests, finish in-flight
+        Stopped: all resources freed, process exits 0
+    domain: ServeConfig with valid model path, host, port
+    codomain: Result<(), ServerError>
+    invariants:
+    - Health endpoint returns 200 only in Ready state
+    - No requests processed before model fully loaded
+    - Graceful shutdown completes in-flight requests before exit
+    - SIGTERM triggers Draining → Stopped transition
+    preconditions:
+    - config.model_path.exists()
+    - config.port is available (not bound by another process)
+    postconditions:
+    - "Ready state /health returns 200"
+    - "Stopped state — TCP port released, GPU memory freed"
+    lean_theorem: Theorems.ServerLifecycle
+
+  request_routing:
+    formula: |
+      route(request): HttpRequest -> Result<HttpResponse, ApiError>
+        /v1/completions -> handle_completion()
+        /v1/chat/completions -> handle_chat_completion()
+        /v1/models -> handle_list_models()
+        /v1/embeddings -> handle_embeddings()
+        /health -> health_check()
+        (any other path) -> 404 Not Found
+    domain: HttpRequest with method, path, headers, body
+    codomain: Result<HttpResponse, ApiError>
+    invariants:
+    - Unknown paths return 404 (not 500)
+    - Method mismatch returns 405
+    - Routes are case-sensitive and exact-match
+    preconditions:
+    - server is in Ready state
+    postconditions:
+    - response has correct Content-Type header
+    - response status code semantically correct for the outcome
+    lean_theorem: Theorems.RequestRouting
+
+  concurrent_inference_isolation:
+    formula: |
+      handle_concurrent(reqs): Vec<Request> -> Vec<Response>
+        For each request_i:
+          result_i = inference(model, request_i.prompt)
+          result_i is independent of other concurrent requests
+        KV-cache is per-request (no cross-contamination)
+    domain: Multiple concurrent inference requests
+    codomain: Vec<Response> where order matches request order
+    invariants:
+    - Result of request A is identical whether B runs concurrently or not
+    - KV-cache allocated and freed per-request
+    - OOM on one request does not crash the server
+    preconditions:
+    - server in Ready state
+    - at least one request pending
+    postconditions:
+    - all responses returned (none dropped silently)
+    - server still in Ready state after all requests complete
+    lean_theorem: Theorems.ConcurrentInferenceIsolation
+
+  graceful_shutdown:
+    formula: |
+      shutdown(signal): Signal -> Result<(), ShutdownError>
+        1. Stop accepting new TCP connections
+        2. Wait for in-flight requests (bounded timeout)
+        3. Free model memory (GPU + CPU)
+        4. Close log files
+        5. Exit with code 0
+    domain: SIGTERM or SIGINT signal
+    codomain: Result<(), ShutdownError>
+    invariants:
+    - In-flight requests get responses (not connection reset)
+    - Shutdown timeout bounded (default 30s)
+    - No resource leaks (GPU VRAM, file descriptors, TCP sockets)
+    preconditions:
+    - server is in Ready or Loading state
+    postconditions:
+    - process exit code 0
+    - GPU memory fully released
+    - TCP port available for rebinding
+    lean_theorem: Theorems.GracefulShutdown
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate config, check model path exists, verify port availability
+  - name: execute
+    description: Bind socket, load model, serve requests with concurrent isolation
+  - name: verify_output
+    description: Graceful shutdown, drain in-flight requests, release all resources
+
+proof_obligations:
+- type: state_machine
+  property: Server lifecycle valid transitions
+  formal: >
+    Init->Binding->Loading->Ready->Draining->Stopped, no skip.
+    Health returns 200 only in Ready state.
+  applies_to: server_lifecycle
+  lean:
+    theorem: Theorems.ServerLifecycle
+    status: sorry
+- type: invariant
+  property: No cross-request KV cache contamination
+  formal: result(req_a, concurrent=[]) == result(req_a, concurrent=[req_b])
+  tolerance: 1e-6
+  applies_to: concurrent_inference_isolation
+  lean:
+    theorem: Theorems.ConcurrentInferenceIsolation
+    status: sorry
+- type: postcondition
+  property: Graceful shutdown completes in-flight requests
+  formal: in_flight_count == 0 before process exit
+  applies_to: graceful_shutdown
+  lean:
+    theorem: Theorems.GracefulShutdown
+    status: sorry
+- type: completeness
+  property: All API routes handled
+  formal: no path returns 500 Internal Server Error for routing failures
+  applies_to: request_routing
+  lean:
+    theorem: Theorems.RequestRouting
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-SRV-001
+  rule: Health returns 200 only when ready
+  prediction: /health returns 503 during model loading phase
+  test: Start server, immediately hit /health before model loads
+  if_fails: Health endpoint returns 200 before model is loaded
+- id: FALSIFY-SRV-002
+  rule: Graceful shutdown completes in-flight
+  prediction: Request started before SIGTERM gets a response
+  test: Send slow request, SIGTERM server, verify response received
+  if_fails: Connection reset during graceful shutdown
+- id: FALSIFY-SRV-003
+  rule: Unknown path returns 404
+  prediction: GET /nonexistent returns 404 with JSON error envelope
+  test: Curl unknown path, parse response
+  if_fails: Actix default error handler returns HTML 404
+- id: FALSIFY-SRV-004
+  rule: Concurrent inference isolation
+  prediction: Two concurrent requests produce same results as sequential
+  test: Run 10 identical requests concurrently, assert all outputs identical
+  if_fails: KV-cache shared between concurrent requests
+
+kani_harnesses:
+- id: KANI-SRV-001
+  obligation: Server lifecycle valid transitions
+  property: Only defined state transitions allowed
+  bound: 8
+  strategy: exhaustive
+  harness: verify_server_state_machine
+- id: KANI-SRV-002
+  obligation: All API routes handled
+  property: No route returns 500 for routing failures
+  bound: 16
+  strategy: exhaustive
+  harness: verify_route_completeness
+- id: KANI-SRV-003
+  obligation: Graceful shutdown completes in-flight requests
+  property: in_flight == 0 before exit
+  bound: 4
+  strategy: exhaustive
+  harness: verify_graceful_shutdown
+- id: KANI-SRV-004
+  obligation: No cross-request KV cache contamination
+  property: result independence
+  bound: 4
+  strategy: exhaustive
+  harness: verify_kv_isolation
+
+qa_gate:
+  id: F-SRV-GATE
+  name: Serve Contract
+  description: Quality gate for inference server lifecycle
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 4 falsification tests pass

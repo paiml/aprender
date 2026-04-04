@@ -1,0 +1,354 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: Qwen2.5-Coder-0.5B SafeTensors weight loading and tensor name mapping
+  registry: true
+  references:
+  - shell-safety-inference.md v2.2.0 (bashrs spec, Section 14)
+  - HuggingFace SafeTensors format specification
+  - Qwen2.5 Technical Report — model architecture
+  - qwen3-shapes-v1.yaml (sister contract for Qwen3-8B)
+  depends_on:
+  - classification-finetune-v1
+  - tensor-layout-v1
+model_config:
+  name: Qwen2.5-Coder-0.5B
+  hidden_size: 896
+  num_layers: 24
+  num_attention_heads: 14
+  num_kv_heads: 2
+  intermediate_size: 4864
+  vocab_size: 151936
+  head_dim: 64
+  rope_theta: 1000000.0
+  storage_dtype: bfloat16
+  compute_dtype: float32
+tensor_mapping:
+  description: Maps HuggingFace tensor names to entrenar internal field paths
+  global:
+  - hf_name: model.embed_tokens.weight
+    entrenar_field: transformer.embedding.weight
+    shape:
+    - 151936
+    - 896
+    notes: Embedding matrix — vocab_size x hidden_size
+  - hf_name: model.norm.weight
+    entrenar_field: transformer.final_norm.weight
+    shape:
+    - 896
+    notes: Final RMSNorm
+  - hf_name: lm_head.weight
+    entrenar_field: null
+    shape:
+    - 151936
+    - 896
+    notes: Language model head — NOT needed for classification (replaced by ClassificationHead)
+  per_layer:
+    description: Template for layer i (i = 0..23)
+    tensors:
+    - hf_name: model.layers.{i}.self_attn.q_proj.weight
+      entrenar_field: transformer.layers[{i}].attention.q_proj.weight
+      shape:
+      - 896
+      - 896
+      notes: Q projection — n_h * d_k x hidden
+    - hf_name: model.layers.{i}.self_attn.q_proj.bias
+      entrenar_field: transformer.layers[{i}].attention.q_proj.bias
+      shape:
+      - 896
+      notes: Q projection bias
+    - hf_name: model.layers.{i}.self_attn.k_proj.weight
+      entrenar_field: transformer.layers[{i}].attention.k_proj.weight
+      shape:
+      - 128
+      - 896
+      notes: 'K projection — n_kv * d_k x hidden (GQA: 2 KV heads)'
+    - hf_name: model.layers.{i}.self_attn.k_proj.bias
+      entrenar_field: transformer.layers[{i}].attention.k_proj.bias
+      shape:
+      - 128
+      notes: K projection bias
+    - hf_name: model.layers.{i}.self_attn.v_proj.weight
+      entrenar_field: transformer.layers[{i}].attention.v_proj.weight
+      shape:
+      - 128
+      - 896
+      notes: 'V projection — n_kv * d_k x hidden (GQA: 2 KV heads)'
+    - hf_name: model.layers.{i}.self_attn.v_proj.bias
+      entrenar_field: transformer.layers[{i}].attention.v_proj.bias
+      shape:
+      - 128
+      notes: V projection bias
+    - hf_name: model.layers.{i}.self_attn.o_proj.weight
+      entrenar_field: transformer.layers[{i}].attention.o_proj.weight
+      shape:
+      - 896
+      - 896
+      notes: O projection — hidden x n_h * d_k
+    - hf_name: model.layers.{i}.mlp.gate_proj.weight
+      entrenar_field: transformer.layers[{i}].ffn.gate.weight
+      shape:
+      - 4864
+      - 896
+      notes: SwiGLU gate projection
+    - hf_name: model.layers.{i}.mlp.up_proj.weight
+      entrenar_field: transformer.layers[{i}].ffn.up.weight
+      shape:
+      - 4864
+      - 896
+      notes: SwiGLU up projection
+    - hf_name: model.layers.{i}.mlp.down_proj.weight
+      entrenar_field: transformer.layers[{i}].ffn.down.weight
+      shape:
+      - 896
+      - 4864
+      notes: SwiGLU down projection
+    - hf_name: model.layers.{i}.input_layernorm.weight
+      entrenar_field: transformer.layers[{i}].attn_norm.weight
+      shape:
+      - 896
+      notes: Pre-attention RMSNorm
+    - hf_name: model.layers.{i}.post_attention_layernorm.weight
+      entrenar_field: transformer.layers[{i}].ffn_norm.weight
+      shape:
+      - 896
+      notes: Pre-FFN RMSNorm
+loading_invariants:
+  structural:
+  - id: F-WGT-001
+    name: All layers populated
+    description: Every layer has non-zero Q/K/V/O and FFN weights after loading
+    severity: P0
+    critical: true
+  - id: F-WGT-002
+    name: No NaN or Inf
+    description: All loaded tensor values are finite (no NaN, no Inf)
+    severity: P0
+    critical: true
+  - id: F-WGT-003
+    name: Shape match
+    description: Every tensor shape matches TransformerConfig dimensions
+    severity: P0
+    critical: true
+  - id: F-WGT-004
+    name: Embedding vocab size
+    description: Embedding weight has vocab_size rows (151,936)
+    severity: P0
+    critical: true
+  - id: F-WGT-005
+    name: Layer count
+    description: Number of loaded layers == config.num_layers (24)
+    severity: P0
+    critical: true
+  dtype_conversion:
+  - id: F-WGT-006
+    name: BF16 to F32 lossless
+    description: BF16->F32 conversion preserves relative magnitude ordering
+    severity: P1
+  - id: F-WGT-007
+    name: Weight statistics reasonable
+    description: Mean ≈ 0, std in [0.001, 1.0] for projection weights
+    severity: P1
+  gqa_specific:
+  - id: F-WGT-008
+    name: GQA head ratio
+    description: num_attention_heads / num_kv_heads = 14 / 2 = 7 (integer)
+    severity: P0
+    critical: true
+  - id: F-WGT-009
+    name: KV projection smaller than Q
+    description: K/V weight shape[0] = num_kv_heads * head_dim = 128 < Q shape[0]
+      = 896
+    severity: P0
+    critical: true
+falsification_tests:
+- id: FALSIFY-WGT-001
+  rule: F-WGT-001 (All layers populated)
+  prediction: Loading populates all 24 layers with non-zero weights
+  test: "#[test]\nfn falsify_wgt_001_all_layers_populated() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    for i in 0..24 {\n        let layer = &model.layers()[i];\n\
+    \        assert!(layer.q_proj_weight().iter().any(|&x| x != 0.0),\n          \
+    \      \"Layer {} Q projection is all zeros\", i);\n        assert!(layer.ffn_gate_weight().iter().any(|&x|\
+    \ x != 0.0),\n                \"Layer {} FFN gate is all zeros\", i);\n    }\n\
+    }\n"
+  if_fails: Weight loading skipped layers or produced zero-initialized weights
+- id: FALSIFY-WGT-002
+  rule: F-WGT-002 (No NaN)
+  prediction: No NaN values in any loaded tensor
+  test: "#[test]\nfn falsify_wgt_002_no_nan() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    for param in model.parameters() {\n      \
+    \  for &val in param.data().iter() {\n            assert!(!val.is_nan(), \"NaN\
+    \ found in loaded weights\");\n            assert!(!val.is_infinite(), \"Inf found\
+    \ in loaded weights\");\n        }\n    }\n}\n"
+  if_fails: BF16->F32 conversion produced NaN or corrupt SafeTensors file
+- id: FALSIFY-WGT-003
+  rule: F-WGT-003 (Shape match)
+  prediction: Q projection shape matches config
+  test: "#[test]\nfn falsify_wgt_003_q_proj_shape() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    let q = model.layers()[0].q_proj_weight();\n\
+    \    assert_eq!(q.shape(), &[896, 896],\n               \"Q projection shape mismatch:\
+    \ expected [896, 896], got {:?}\", q.shape());\n}\n"
+  if_fails: Tensor name mapping incorrect or reshape error
+- id: FALSIFY-WGT-004
+  rule: F-WGT-004 (Embedding vocab)
+  prediction: Embedding has 151,936 rows
+  test: "#[test]\nfn falsify_wgt_004_embedding_vocab_size() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    let embed = model.embedding_weight();\n  \
+    \  assert_eq!(embed.shape()[0], 151936,\n               \"Embedding vocab size\
+    \ mismatch\");\n    assert_eq!(embed.shape()[1], 896,\n               \"Embedding\
+    \ dim mismatch\");\n}\n"
+  if_fails: Embedding truncated or wrong tensor loaded
+- id: FALSIFY-WGT-005
+  rule: F-WGT-005 (Layer count)
+  prediction: Exactly 24 layers loaded
+  test: "#[test]\nfn falsify_wgt_005_layer_count() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    assert_eq!(model.num_layers(), 24);\n}\n"
+  if_fails: Layer iteration stopped early or loaded extra layers
+- id: FALSIFY-WGT-006
+  rule: F-WGT-008 (GQA ratio)
+  prediction: KV heads divide attention heads evenly
+  test: "#[test]\nfn falsify_wgt_006_gqa_ratio() {\n    let config = TransformerConfig::qwen2_0_5b();\n\
+    \    assert_eq!(config.num_attention_heads % config.num_kv_heads, 0,\n       \
+    \        \"GQA ratio not integer\");\n    assert_eq!(config.num_attention_heads\
+    \ / config.num_kv_heads, 7);\n}\n"
+  if_fails: Config constants wrong for Qwen2.5-Coder-0.5B
+- id: FALSIFY-WGT-007
+  rule: F-WGT-009 (KV smaller than Q)
+  prediction: K/V projection is smaller than Q projection
+  test: "#[test]\nfn falsify_wgt_007_kv_smaller_than_q() {\n    let model = Transformer::from_safetensors(\"\
+    model.safetensors\").unwrap();\n    let q_rows = model.layers()[0].q_proj_weight().shape()[0];\n\
+    \    let k_rows = model.layers()[0].k_proj_weight().shape()[0];\n    assert!(k_rows\
+    \ < q_rows,\n            \"K projection ({}) should be smaller than Q ({})\",\
+    \ k_rows, q_rows);\n    assert_eq!(k_rows, 128);\n    assert_eq!(q_rows, 896);\n\
+    }\n"
+  if_fails: GQA not correctly implemented — K/V should be compressed
+equations:
+  q_projection:
+    formula: '[n_h * d_k, hidden] = [14*64, 896] = [896, 896]'
+    domain: 'Qwen2.5-Coder-0.5B: n_h=14, d_k=64, hidden=896'
+    invariants:
+    - Q projection is square for this config
+    preconditions:
+    - '!config.is_empty()'
+    - hidden_size > 0
+    lean_theorem: Theorems.Q_Projection
+  kv_projection:
+    formula: '[n_kv * d_k, hidden] = [2*64, 896] = [128, 896]'
+    domain: 'Qwen2.5-Coder-0.5B: n_kv=2, d_k=64'
+    invariants:
+    - 'GQA ratio: n_h / n_kv = 7'
+    preconditions:
+    - '!config.is_empty()'
+    - hidden_size > 0
+    lean_theorem: Theorems.Kv_Projection
+  swiglu_expansion:
+    formula: intermediate / hidden = 4864 / 896 = 5.43
+    domain: Qwen2.5-Coder-0.5B
+    invariants:
+    - 'gate_proj and up_proj: [4864, 896]'
+    - 'down_proj: [896, 4864]'
+    preconditions:
+    - '!config.is_empty()'
+    - intermediate_size > 0
+    lean_theorem: Theorems.Swiglu_Expansion
+  total_parameters:
+    formula: ~494M parameters
+    components:
+      embedding: 151936 * 896 = 136.1M
+      per_layer_attention: (896*896 + 2*128*896 + 896*896) * 24 = ~47.6M
+      per_layer_ffn: (4864*896 * 2 + 896*4864) * 24 = ~313.0M
+      norms: (896 * 2 * 24 + 896) = ~0.04M
+    preconditions:
+    - '!config.is_empty()'
+    - num_layers > 0
+    lean_theorem: Theorems.Total_Parameters
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Detect SafeTensors format, validate tensor name mapping
+  - name: execute
+    description: Load and convert BF16 tensors to F32, populate all layers
+  - name: verify_output
+    description: Verify shapes match config, no NaN/Inf, GQA ratio correct
+
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — weight loading halts on first shape mismatch
+
+    or NaN detection. No partially-loaded model reaches training.
+
+    '
+  poka_yoke: '"Mistake-proofing" — tensor name mapping is a compile-time constant
+    table.
+
+    Impossible to accidentally swap Q and K projections.
+
+    '
+  genchi_genbutsu: '"Go and see" — falsification tests use real SafeTensors from HuggingFace,
+
+    not synthetic weights. Real shapes, real BF16 values, real GQA layout.
+
+    '
+  kaizen: '"Continuous improvement" — tensor mapping table extends to Qwen3.5 by adding
+
+    new config preset while preserving all existing validation.
+
+    '
+qa_gate:
+  id: F-WGT-GATE
+  name: Qwen2.5 Weight Loading Contract
+  description: SafeTensors weight loading quality gate
+  checks:
+  - all_layers_populated
+  - no_nan_inf
+  - shape_match
+  - embedding_vocab_size
+  - layer_count
+  - gqa_ratio
+  - kv_compression
+  pass_criteria: All 7 falsification tests pass
+  falsification: Swap Q and K tensor names in mapping to break shape validation
+proof_obligations:
+- type: invariant
+  property: Q projection is square for this config
+  formal: Q projection is square for this config
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: 'GQA ratio: n_h / n_kv = 7'
+  formal: 'GQA ratio: n_h / n_kv = 7'
+  applies_to: all
+- type: invariant
+  property: 'gate_proj and up_proj: [4864, 896]'
+  formal: 'gate_proj and up_proj: [4864, 896]'
+  applies_to: all
+- type: invariant
+  property: 'down_proj: [896, 4864]'
+  formal: 'down_proj: [896, 4864]'
+  applies_to: all
+kani_harnesses:
+- id: KANI-WGT-001
+  obligation: Q projection is square for this config
+  property: Q projection shape [896, 896] for Qwen2.5-0.5B
+  bound: 8
+  strategy: exhaustive
+  harness: verify_q_projection_square
+- id: KANI-WGT-002
+  obligation: "GQA ratio: n_h / n_kv = 7"
+  property: num_attention_heads / num_kv_heads == 7
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gqa_ratio
+- id: KANI-WGT-003
+  obligation: "gate_proj and up_proj: [4864, 896]"
+  property: gate_proj and up_proj shapes are [4864, 896]
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gate_up_proj_shape
+- id: KANI-WGT-004
+  obligation: "down_proj: [896, 4864]"
+  property: down_proj shape is [896, 4864]
+  bound: 8
+  strategy: exhaustive
+  harness: verify_down_proj_shape

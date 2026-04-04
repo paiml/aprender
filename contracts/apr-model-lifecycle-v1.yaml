@@ -1,0 +1,257 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Model lifecycle contract — pull/import/export/convert/merge/quantize
+    operations that move models between formats, registries, and precision
+    levels. Covers the full model supply chain from HuggingFace import
+    through local cache to APR-native format.
+  references:
+  - 'apr-cli/src/commands/pull.rs — download_and_cache_model()'
+  - 'apr-cli/src/commands/import.rs — import_from_hf(), import_from_url()'
+  - 'apr-cli/src/commands/export.rs — export_to_gguf(), export_to_safetensors()'
+  - 'apr-cli/src/commands/convert.rs — convert_model()'
+  - 'apr-cli/src/commands/merge.rs — merge_models()'
+  - 'apr-cli/src/commands/quantize.rs — quantize_model()'
+  - 'APR-SPEC §4.12 — Model import/export pipeline'
+  depends_on:
+  - apr-cli-v1
+  - model-format-conversion-v1
+  - qwen2-weight-loading-v1
+
+equations:
+  pull_cache_integrity:
+    formula: |
+      pull(source): ModelSource -> Result<CachedModel, PullError>
+        CachedModel lives in ~/.cache/aprender/models/<hash>/
+        SHA-256 of downloaded bytes matches manifest
+        Partial downloads resume via HTTP Range headers
+        Companion files (tokenizer, config) fetched atomically
+    domain: ModelSource in {hf://org/repo, URL, local path}
+    codomain: Result<CachedModel, PullError>
+    invariants:
+    - Cache is content-addressed (same model → same path)
+    - Partial downloads never corrupt existing cached models
+    - Companion files (tokenizer.json, config.json) present iff model needs them
+    preconditions:
+    - source is a valid URI or local path
+    - disk has sufficient space for model + companions
+    postconditions:
+    - cached_path.exists() && sha256(cached_path) == manifest.hash
+    - tokenizer companion present for LLM models
+    lean_theorem: Theorems.PullCacheIntegrity
+
+  import_format_detection:
+    formula: |
+      import(path): Path -> Result<AprModel, ImportError>
+        Detect format: GGUF magic bytes, SafeTensors header, APR header
+        Convert to internal representation
+        Validate tensor shapes against architecture config
+    domain: Path to model file (GGUF, SafeTensors, APR, or HF directory)
+    codomain: Result<AprModel, ImportError>
+    invariants:
+    - Format detection is deterministic (magic byte prefix)
+    - Import never modifies the source file
+    - Tensor data preserved bit-for-bit in lossless import
+    preconditions:
+    - path.exists()
+    - file has valid magic bytes for a known format
+    postconditions:
+    - result.tensors.len() > 0
+    - result.config matches architecture from file metadata
+    lean_theorem: Theorems.ImportFormatDetection
+
+  export_roundtrip:
+    formula: |
+      export(model, format): (AprModel, Format) -> Result<Path, ExportError>
+        import(export(model, fmt)) ≈ model (within format precision)
+        GGUF: tensor names mapped to GGUF convention
+        SafeTensors: metadata preserved in header JSON
+    domain: AprModel with valid tensors and config
+    codomain: Result<Path, ExportError> where path is the exported file
+    invariants:
+    - Roundtrip preserves tensor count and shapes
+    - Roundtrip preserves model config (hidden_size, num_heads, etc.)
+    - Export to same format as import is bit-identical
+    preconditions:
+    - model.tensors.iter().all(|t| t.is_finite())
+    - target format supports model's dtype
+    postconditions:
+    - output_path.exists()
+    - import(output_path).config == model.config
+    lean_theorem: Theorems.ExportRoundtrip
+
+  quantize_precision_bound:
+    formula: |
+      quantize(model, scheme): (AprModel, QuantScheme) -> Result<AprModel, QuantError>
+        scheme in {Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, F16}
+        output.size < input.size (guaranteed compression)
+        perplexity(quantized) - perplexity(original) < tolerance(scheme)
+    domain: AprModel with F32 weights, QuantScheme
+    codomain: Result<AprModel, QuantError>
+    invariants:
+    - Quantized model smaller than original
+    - Tensor count unchanged (same architecture)
+    - Quantization is deterministic (same input → same output)
+    preconditions:
+    - model.dtype == F32 (quantize from full precision)
+    - scheme is a valid QuantScheme variant
+    postconditions:
+    - result.tensors.len() == model.tensors.len()
+    - file_size(result) < file_size(model)
+    lean_theorem: Theorems.QuantizePrecisionBound
+
+  merge_weight_conservation:
+    formula: |
+      merge(models, strategy): (Vec<AprModel>, MergeStrategy) -> Result<AprModel, MergeError>
+        strategy in {SLERP, TIES, DARE, Linear}
+        For linear: merged[i] = sum(w_k * model_k[i]) where sum(w_k) = 1
+        Output has same architecture as inputs (all must match)
+    domain: Vec<AprModel> with identical architectures, MergeStrategy
+    codomain: Result<AprModel, MergeError>
+    invariants:
+    - All input models have identical tensor shapes
+    - Output tensor count equals input tensor count
+    - Linear merge weights sum to 1.0
+    preconditions:
+    - models.len() >= 2
+    - models share identical architecture config
+    postconditions:
+    - result.tensors.len() == models[0].tensors.len()
+    - result.config == models[0].config
+    lean_theorem: Theorems.MergeWeightConservation
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model source, check format, verify disk space
+  - name: execute
+    description: Pull/import/export/convert/merge/quantize the model
+  - name: verify_output
+    description: Verify output integrity, tensor count, and format compliance
+
+proof_obligations:
+- type: roundtrip
+  property: Import/export roundtrip preserves model
+  formal: import(export(model, fmt)).config == model.config
+  tolerance: 1e-6
+  applies_to: export_roundtrip
+  lean:
+    theorem: Theorems.ExportRoundtrip
+    status: sorry
+- type: invariant
+  property: Cache is content-addressed
+  formal: pull(source1) == pull(source2) iff source1.hash == source2.hash
+  applies_to: pull_cache_integrity
+  lean:
+    theorem: Theorems.PullCacheIntegrity
+    status: sorry
+- type: bound
+  property: Quantization compresses
+  formal: file_size(quantize(m, s)) < file_size(m)
+  applies_to: quantize_precision_bound
+  lean:
+    theorem: Theorems.QuantizePrecisionBound
+    status: sorry
+- type: conservation
+  property: Merge preserves tensor count
+  formal: merge(models).tensors.len() == models[0].tensors.len()
+  applies_to: merge_weight_conservation
+  lean:
+    theorem: Theorems.MergeWeightConservation
+    status: sorry
+- type: invariant
+  property: Import never modifies source
+  formal: hash(path_before) == hash(path_after) for import(path)
+  applies_to: import_format_detection
+  lean:
+    theorem: Theorems.ImportFormatDetection
+    status: sorry
+- type: determinism
+  property: Format detection is deterministic
+  formal: detect_format(bytes) == detect_format(bytes) for all byte sequences
+  applies_to: import_format_detection
+  lean:
+    theorem: Theorems.ImportFormatDetectionDeterminism
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-MLC-001
+  rule: Cache is content-addressed
+  prediction: Pulling same model twice yields same cache path
+  test: Pull model, record path, clear state, pull again, assert paths match
+  if_fails: Cache path depends on timestamp or ordering, not content hash
+- id: FALSIFY-MLC-002
+  rule: Import/export roundtrip
+  prediction: export(import(file), same_format) produces bit-identical file
+  test: Import GGUF, export to GGUF, diff original vs exported
+  if_fails: Export reorders tensors or loses metadata
+- id: FALSIFY-MLC-003
+  rule: Quantization compresses
+  prediction: Q4_0 model is smaller than F32 original
+  test: Quantize test model to Q4_0, compare file sizes
+  if_fails: Quantization adds overhead that exceeds compression
+- id: FALSIFY-MLC-004
+  rule: Merge preserves tensor count
+  prediction: Merging 2 models produces model with same tensor count
+  test: Merge two identical models with linear 0.5/0.5, count tensors
+  if_fails: Merge drops or duplicates tensors
+- id: FALSIFY-MLC-005
+  rule: Import never modifies source
+  prediction: SHA-256 of input file unchanged after import
+  test: Hash file, import, hash again, assert equality
+  if_fails: Import writes metadata back to source file
+- id: FALSIFY-MLC-006
+  rule: Partial download does not corrupt cache
+  prediction: Interrupting pull mid-download leaves no partial file in final cache path
+  test: Start pull, kill after 50%, verify cache path does not exist
+  if_fails: Partial file left at final path (next load reads truncated model)
+
+kani_harnesses:
+- id: KANI-MLC-001
+  obligation: Import/export roundtrip preserves model
+  property: import(export(model, fmt)).config == model.config
+  bound: 8
+  strategy: exhaustive
+  harness: verify_roundtrip_preserves_model
+- id: KANI-MLC-002
+  obligation: Cache is content-addressed
+  property: same hash → same path
+  bound: 8
+  strategy: exhaustive
+  harness: verify_cache_content_addressed
+- id: KANI-MLC-003
+  obligation: Quantization compresses
+  property: output_size < input_size
+  bound: 16
+  strategy: bounded_int
+  harness: verify_quantize_compresses
+- id: KANI-MLC-004
+  obligation: Merge preserves tensor count
+  property: output.tensors.len() == input[0].tensors.len()
+  bound: 8
+  strategy: exhaustive
+  harness: verify_merge_tensor_count
+- id: KANI-MLC-005
+  obligation: Import never modifies source
+  property: hash(path_before) == hash(path_after) for import(path)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_import_readonly
+- id: KANI-MLC-006
+  obligation: Format detection is deterministic
+  property: detect_format(bytes) is pure
+  bound: 8
+  strategy: exhaustive
+  harness: verify_format_detection_deterministic
+
+qa_gate:
+  id: F-MLC-GATE
+  name: Model Lifecycle Contract
+  description: Quality gate for pull/import/export/convert/merge/quantize
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 6 falsification tests pass
+  falsification: FALSIFY-MLC-001 through FALSIFY-MLC-006

@@ -1,0 +1,2178 @@
+version: 1.0.0
+target_crate: aprender
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: aprender::nn::functional::softmax
+  function: softmax
+  signature: 'fn softmax(x: &Tensor, dim: i32) -> Tensor'
+  status: implemented
+  notes: 2D tensors only; dim parameter currently unused
+- contract: rmsnorm-kernel-v1.yaml
+  equation: rmsnorm
+  module_path: aprender::nn::RMSNorm
+  function: RMSNorm::forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Struct-based; requires RMSNorm::new(shape) then .forward() [function not
+    found in source]
+- contract: rope-kernel-v1.yaml
+  equation: rope
+  module_path: aprender::nn::RotaryPositionEmbedding
+  function: RotaryPositionEmbedding::apply
+  signature: 'fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor'
+  status: pending
+  notes: 4D tensor [batch, seq, heads, head_dim]; head_dim must be even [function
+    not found in source]
+- contract: attention-kernel-v1.yaml
+  equation: attention
+  module_path: aprender::nn::transformer
+  function: scaled_dot_product_attention
+  signature: 'fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value:
+    &Tensor, attn_mask: Option<&Tensor>, dropout_p: f32, training: bool) -> (Tensor,
+    Tensor)'
+  status: implemented
+  notes: Module-private in aprender; full public impl in realizar::gpu::scheduler::ops::gqa_multihead_attention
+- contract: activation-kernel-v1.yaml
+  equation: gelu
+  module_path: aprender::nn::functional::gelu
+  function: gelu
+  signature: 'fn gelu(x: &Tensor) -> Tensor'
+  status: implemented
+- contract: activation-kernel-v1.yaml
+  equation: relu
+  module_path: aprender::nn::functional::relu
+  function: relu
+  signature: 'fn relu(x: &Tensor) -> Tensor'
+  status: implemented
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar, AVX2, and PTX implementations in provable-contracts kernels
+- contract: matmul-kernel-v1.yaml
+  equation: matmul
+  module_path: aprender::autograd::Tensor
+  function: Tensor::matmul
+  signature: 'fn matmul(&self, other: &Tensor) -> Tensor'
+  status: pending
+  notes: 2D only; delegates to trueno SIMD [function not found in source]
+- contract: matmul-kernel-v1.yaml
+  equation: quantized_dot
+  module_path: realizar::quantize::fused_k
+  function: fused_q4k_dot
+  signature: 'fn fused_q4k_dot(q4k_data: &[u8], activations: &[f32]) -> Result<f32>'
+  status: pending
+  notes: function not found in source
+- contract: flash-attention-v1.yaml
+  equation: flash_attention
+  module_path: realizar::gguf::inference::attention_part_02
+  function: flash_attention_tiled
+  signature: 'fn flash_attention_tiled(q: &[f32], k: &[f32], v: &[f32], ...) -> Vec<f32>'
+  status: pending
+  notes: function not found in source
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: aprender::models::qwen2
+  function: swiglu_fused
+  signature: 'fn swiglu_fused(gate: &Tensor, up: &Tensor) -> Tensor'
+  status: pending
+  notes: function not found in source
+- contract: swiglu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: SiLU component shared with silu-kernel-v1; scalar/AVX2/PTX in provable-contracts
+- contract: gqa-kernel-v1.yaml
+  equation: gqa
+  module_path: aprender::nn::transformer
+  function: MultiHeadAttention::forward
+  signature: 'fn forward(&self, query: &Tensor, key: &Tensor, value: &Tensor, mask:
+    Option<&Tensor>) -> Tensor'
+  status: pending
+  notes: Embedded in aprender MHA; standalone pub impl in realizar::gpu::scheduler::ops::gqa_multihead_attention
+    with SIMD [function not found in source]
+- contract: layernorm-kernel-v1.yaml
+  equation: layernorm
+  module_path: aprender::nn::LayerNorm
+  function: LayerNorm::forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Standard LayerNorm with gamma/beta affine parameters [function not found
+    in source]
+- contract: layernorm-kernel-v1.yaml
+  equation: statistics
+  module_path: aprender::nn::LayerNorm
+  function: LayerNorm::forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Mean and variance computed internally within forward() [function not found
+    in source]
+- contract: silu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::silu_standalone
+  function: silu_standalone_scalar
+  signature: 'fn silu_standalone_scalar(input: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar, AVX2, PTX variants; also in trueno backends (all 6 architectures)
+- contract: cross-entropy-kernel-v1.yaml
+  equation: cross_entropy
+  module_path: aprender::nn::CrossEntropyLoss
+  function: CrossEntropyLoss::forward
+  signature: 'fn forward(&self, input: &Tensor, target: &Tensor) -> Tensor'
+  status: pending
+  notes: Uses log-sum-exp internally; supports class weights [function not found in
+    source]
+- contract: cross-entropy-kernel-v1.yaml
+  equation: log_softmax
+  module_path: provable_contracts::kernels::cross_entropy
+  function: log_softmax_scalar
+  signature: 'fn log_softmax_scalar(logits: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source
+- contract: adamw-kernel-v1.yaml
+  equation: adam_moments
+  module_path: aprender::nn::optim::AdamW
+  function: AdamW::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grads: &[Tensor])'
+  status: pending
+  notes: Moment updates computed inside step(); not separately testable [function
+    not found in source]
+- contract: adamw-kernel-v1.yaml
+  equation: adam_variance
+  module_path: aprender::nn::optim::AdamW
+  function: AdamW::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grads: &[Tensor])'
+  status: pending
+  notes: Second moment update inside step() [function not found in source]
+- contract: adamw-kernel-v1.yaml
+  equation: bias_correction
+  module_path: aprender::nn::optim::AdamW
+  function: AdamW::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grads: &[Tensor])'
+  status: pending
+  notes: Bias correction applied inside step() [function not found in source]
+- contract: adamw-kernel-v1.yaml
+  equation: weight_update
+  module_path: aprender::nn::optim::AdamW
+  function: AdamW::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grads: &[Tensor])'
+  status: pending
+  notes: Decoupled weight decay applied after Adam update in step() [function not
+    found in source]
+- contract: conv1d-kernel-v1.yaml
+  equation: conv1d
+  module_path: aprender::nn::Conv1d
+  function: Conv1d::forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Standard 1D convolution; used in Whisper encoder [function not found in source]
+- contract: batchnorm-kernel-v1.yaml
+  equation: batchnorm_train
+  module_path: aprender::nn::BatchNorm1d
+  function: BatchNorm1d::forward
+  signature: 'fn forward(&mut self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Training mode with batch statistics [function not found in source]
+- contract: batchnorm-kernel-v1.yaml
+  equation: running_stats
+  module_path: aprender::nn::BatchNorm1d
+  function: BatchNorm1d::forward
+  signature: 'fn forward(&mut self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Running stats updated during forward() in training mode [function not found
+    in source]
+- contract: batchnorm-kernel-v1.yaml
+  equation: batchnorm_eval
+  module_path: aprender::nn::BatchNorm1d
+  function: BatchNorm1d::forward
+  signature: 'fn forward(&mut self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Eval mode uses running stats; controlled by .eval() flag [function not found
+    in source]
+- contract: kmeans-kernel-v1.yaml
+  equation: assignment
+  module_path: aprender::cluster::KMeans
+  function: KMeans::predict
+  signature: 'fn predict(&self, x: &Tensor) -> Vec<usize>'
+  status: pending
+  notes: Nearest centroid assignment [function not found in source]
+- contract: kmeans-kernel-v1.yaml
+  equation: update
+  module_path: aprender::cluster::KMeans
+  function: KMeans::fit
+  signature: 'fn fit(&mut self, x: &Tensor)'
+  status: pending
+  notes: Centroid update inside fit() loop [function not found in source]
+- contract: kmeans-kernel-v1.yaml
+  equation: objective
+  module_path: aprender::cluster::KMeans
+  function: KMeans::inertia
+  signature: fn inertia(&self) -> f64
+  status: pending
+  notes: Sum of squared distances to centroids [function not found in source]
+- contract: pagerank-kernel-v1.yaml
+  equation: pagerank
+  module_path: aprender::graph::pagerank
+  function: pagerank
+  signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) ->
+    Tensor'
+  status: implemented
+  notes: Power iteration PageRank
+- contract: pagerank-kernel-v1.yaml
+  equation: power_iteration
+  module_path: aprender::graph::pagerank
+  function: pagerank
+  signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) ->
+    Tensor'
+  status: implemented
+  notes: Iteration loop inside pagerank()
+- contract: lbfgs-kernel-v1.yaml
+  equation: two_loop_recursion
+  module_path: aprender::optim::LBFGS
+  function: LBFGS::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grad_fn: impl Fn() -> Vec<Tensor>)'
+  status: pending
+  notes: Two-loop recursion inside step() [function not found in source]
+- contract: lbfgs-kernel-v1.yaml
+  equation: secant_condition
+  module_path: aprender::optim::LBFGS
+  function: LBFGS::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grad_fn: impl Fn() -> Vec<Tensor>)'
+  status: pending
+  notes: Secant pairs stored and curvature checked [function not found in source]
+- contract: lbfgs-kernel-v1.yaml
+  equation: line_search
+  module_path: aprender::optim::LBFGS
+  function: LBFGS::step
+  signature: 'fn step(&mut self, params: &mut [Tensor], grad_fn: impl Fn() -> Vec<Tensor>)'
+  status: pending
+  notes: Strong Wolfe line search inside step() [function not found in source]
+- contract: cma-es-kernel-v1.yaml
+  equation: sample
+  module_path: aprender::metaheuristics::CmaEs
+  function: CmaEs::ask
+  signature: fn ask(&mut self) -> Vec<Vec<f64>>
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: cma-es-kernel-v1.yaml
+  equation: mean_update
+  module_path: aprender::metaheuristics::CmaEs
+  function: CmaEs::tell
+  signature: 'fn tell(&mut self, solutions: &[(Vec<f64>, f64)])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: cma-es-kernel-v1.yaml
+  equation: covariance_update
+  module_path: aprender::metaheuristics::CmaEs
+  function: CmaEs::tell
+  signature: 'fn tell(&mut self, solutions: &[(Vec<f64>, f64)])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: qk-norm-v1.yaml
+  equation: qk_rmsnorm
+  module_path: aprender::nn::RMSNorm
+  function: RMSNorm::forward
+  signature: 'fn forward(&self, input: &Tensor) -> Tensor'
+  status: pending
+  notes: Per-head QK normalization uses RMSNorm; tested via RMSNorm::without_affine
+    [function not found in source]
+- contract: qk-norm-v1.yaml
+  equation: qk_rmsnorm
+  module_path: trueno_gpu::kernels::layernorm::PerHeadRmsNormKernel
+  function: PerHeadRmsNormKernel::build_ptx
+  signature: fn build_ptx(&self) -> PtxKernel
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: decay
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_decay
+  signature: 'fn gated_delta_net_decay(a_log: &[f32], dt: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: write
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_write
+  signature: 'fn gated_delta_net_write(state: &mut [f32], k: &[f32], delta: &[f32],
+    decay: &[f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: output
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_output
+  signature: 'fn gated_delta_net_output(y: &[f32], z: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: kv-cache-equivalence-v1.yaml
+  equation: prefill_incremental
+  module_path: realizar::gguf::inference::forward::batch_part_02_part_03
+  function: prefill_batch
+  signature: 'fn prefill_batch(model: &mut Model, tokens: &[u32], ...) -> Result<Vec<f32>>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: kv-cache-equivalence-v1.yaml
+  equation: batched_serial_equivalence
+  module_path: realizar::gguf::inference::forward
+  function: generate_with_batched_prefill
+  signature: fn generate_with_batched_prefill(...) -> Result<Vec<u32>>
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: kv-cache-equivalence-v1.yaml
+  equation: fused_kernel
+  module_path: realizar::cuda::executor::kv_cache_part_02_part_03
+  function: flash_attention_cached
+  signature: 'fn flash_attention_cached(q: &CudaSlice, k_cache: &CudaSlice, v_cache:
+    &CudaSlice, ...) -> Result<()>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: base_frequency
+  module_path: aprender::nn::RotaryPositionEmbedding
+  function: RotaryPositionEmbedding::new
+  signature: 'fn new(dim: usize, max_seq_len: usize, base: f32) -> Self'
+  status: pending
+  notes: Base frequency computed in constructor [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: ntk_scaled_base
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Ntk and DynamicNtk in realizar; tested in position_part_04_part_02
+    [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: linear_interpolation
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Linear in realizar; context_multiplier tested [function
+    not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: yarn_ramp
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Yarn with ramp function in realizar; auto_attn_factor tested
+    [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: yarn_mixed_frequency
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: YaRN mixed-frequency applied via ScaledRope::apply(); tested in position_part_04_part_02
+    [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: rotation_matrix
+  module_path: aprender::nn::RotaryPositionEmbedding
+  function: RotaryPositionEmbedding::apply
+  signature: 'fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor'
+  status: pending
+  notes: Rotation applied per-head; orthogonality is intrinsic to cos/sin construction
+    [function not found in source]
+- contract: embedding-algebra-v1.yaml
+  equation: embedding_lookup
+  module_path: aprender::nn::Embedding
+  function: Embedding::forward
+  signature: 'fn forward(&self, input: &[usize]) -> Tensor'
+  status: pending
+  notes: Standard embedding lookup by token ID [function not found in source]
+- contract: inference-pipeline-v1.yaml
+  equation: prefill_phase
+  module_path: realizar::gguf::inference::forward::batch_part_02_part_03
+  function: prefill_batch
+  signature: 'fn prefill_batch(model: &mut Model, tokens: &[u32], ...) -> Result<Vec<f32>>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: inference-pipeline-v1.yaml
+  equation: decode_step
+  module_path: realizar::gguf::inference::forward
+  function: Model::forward
+  signature: 'fn forward(&mut self, token: u32, position: usize) -> Result<Vec<f32>>'
+  status: pending
+  notes: Single-token forward pass in realizar; decode is the default path after prefill
+    [function not found in source]
+- contract: qwen35-hybrid-forward-v1.yaml
+  equation: gdn_sublayer
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_forward
+  signature: 'fn gated_delta_net_forward(input: &[f32], weights: &GdnWeights, state:
+    &mut GdnState) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: attention-scaling-v1.yaml
+  equation: scaled_dot_product
+  module_path: aprender::nn::transformer
+  function: scaled_dot_product_attention
+  signature: 'fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value:
+    &Tensor, attn_mask: Option<&Tensor>, dropout_p: f32, training: bool) -> (Tensor,
+    Tensor)'
+  status: implemented
+  notes: 1/sqrt(d_k) scaling applied in both aprender SDPA and realizar GQA attention
+    kernels
+- contract: attention-scaling-v1.yaml
+  equation: numerical_stability
+  module_path: aprender::nn::functional::softmax
+  function: softmax
+  signature: 'fn softmax(x: &Tensor, dim: i32) -> Tensor'
+  status: implemented
+  notes: Max-subtraction trick implemented in softmax
+- contract: attention-kernel-v1.yaml
+  equation: attention
+  module_path: realizar::apr::helpers
+  function: simple_attention
+  signature: 'fn simple_attention(q: &[f32], k: &[f32], v: &[f32], seq_len: usize,
+    num_heads: usize, num_kv_heads: usize, head_dim: usize) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: flash-attention-v1.yaml
+  equation: flash_attention
+  module_path: realizar::gguf::inference::attention_part_02
+  function: flash_attention_tiled
+  signature: 'fn flash_attention_tiled(q: &[f32], k: &[f32], v: &[f32], ...) -> Vec<f32>'
+  status: pending
+  notes: function not found in source
+- contract: gated-delta-net-v1.yaml
+  equation: decay
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_decay
+  signature: 'fn gated_delta_net_decay(a_log: &[f32], dt: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: read
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_read
+  signature: 'fn gated_delta_net_read(state: &[f32], q: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: delta
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_delta
+  signature: 'fn gated_delta_net_delta(v: &[f32], read: &[f32], beta: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: write
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_write
+  signature: 'fn gated_delta_net_write(state: &mut [f32], k: &[f32], delta: &[f32],
+    decay: &[f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: output
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_output
+  signature: 'fn gated_delta_net_output(y: &[f32], z: &[f32]) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gqa-kernel-v1.yaml
+  equation: gqa
+  module_path: realizar::apr::helpers
+  function: simple_attention
+  signature: 'fn simple_attention(q: &[f32], k: &[f32], v: &[f32], seq_len: usize,
+    num_heads: usize, num_kv_heads: usize, head_dim: usize) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: silu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::silu_standalone
+  function: silu_standalone_scalar
+  signature: 'fn silu_standalone_scalar(input: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar/AVX2/PTX; also in trueno backends (6 architectures)
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: provable_contracts::kernels::swiglu
+  function: swiglu_scalar
+  signature: 'fn swiglu_scalar(gate: &[f32], value: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar/AVX2/PTX; also fused in realizar::quantize::activation_part_02 and
+    CUDA
+- contract: swiglu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Shared with silu-kernel-v1; SiLU component of SwiGLU
+- contract: rope-extrapolation-v1.yaml
+  equation: ntk_scaled_base
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Ntk and DynamicNtk in realizar [function not found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: linear_interpolation
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Linear with context_multiplier in realizar [function not
+    found in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: yarn_ramp
+  module_path: realizar::layers::position
+  function: ScaledRope::new
+  signature: 'fn new(config: RopeConfig) -> Self'
+  status: pending
+  notes: RopeScalingType::Yarn with ramp function in realizar [function not found
+    in source]
+- contract: rope-extrapolation-v1.yaml
+  equation: yarn_mixed_frequency
+  module_path: realizar::layers::position
+  function: ScaledRope::apply
+  signature: 'fn apply(&self, x: &[f32], position: usize, head_dim: usize) -> Vec<f32>'
+  status: pending
+  notes: YaRN mixed-frequency via ScaledRope in realizar [function not found in source]
+- contract: qwen35-hybrid-forward-v1.yaml
+  equation: gdn_sublayer
+  module_path: realizar::gpu::scheduler::linear_attn
+  function: gated_delta_net_forward
+  signature: 'fn gated_delta_net_forward(input: &[f32], weights: &GdnWeights, state:
+    &mut GdnState) -> Vec<f32>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: inference-pipeline-v1.yaml
+  equation: prefill_phase
+  module_path: realizar::gguf::inference::forward::batch_part_02_part_03
+  function: prefill_batch
+  signature: 'fn prefill_batch(model: &mut Model, tokens: &[u32], ...) -> Result<Vec<f32>>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: inference-pipeline-v1.yaml
+  equation: decode_step
+  module_path: realizar::gguf::inference::forward
+  function: Model::forward
+  signature: 'fn forward(&mut self, token: u32, position: usize) -> Result<Vec<f32>>'
+  status: pending
+  notes: Single-token decode via KV-cached forward pass in realizar [function not
+    found in source]
+- contract: qwen35-shapes-v1.yaml
+  equation: o_projection_transpose
+  module_path: realizar::gguf::config
+  function: ArchConstraints::from_gguf_metadata
+  signature: 'fn from_gguf_metadata(metadata: &GgufMetadata) -> ArchConstraints'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: architecture-requirements-v1.yaml
+  equation: gguf_loader_validation
+  module_path: realizar::cuda::executor::weights
+  function: CudaExecutor::build_indexed_weights
+  signature: 'fn build_indexed_weights(&mut self, num_layers: usize, layer_prefix_fn:
+    F, arch: &ArchConstraints) -> Result<(), GpuError>'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: architecture-requirements-v1.yaml
+  equation: apr_loader_validation
+  module_path: realizar::apr::cuda_part_02_part_03
+  function: AprV2ModelCuda::upload_quantized_weights_to_gpu
+  signature: fn upload_quantized_weights_to_gpu(&mut self) -> Result<usize>
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: architecture-requirements-v1.yaml
+  equation: safetensors_loader_validation
+  module_path: realizar::safetensors_cuda
+  function: SafeTensorsCudaModel::upload_weights
+  signature: fn upload_weights(...) -> Result<(Vec<f32>, ...)>
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: architecture-requirements-v1.yaml
+  equation: import_completeness_gate
+  module_path: aprender::format::layout_contract
+  function: enforce_architecture_completeness
+  signature: 'fn enforce_architecture_completeness(tensor_names: &[&str], architecture:
+    &str, num_layers: usize) -> Result<(), ContractError>'
+  status: implemented
+  notes: Import/export boundary check — rejects incomplete models before writing APR
+    file
+- contract: activation-kernel-v1.yaml
+  equation: relu
+  module_path: provable_contracts::kernels::activation
+  function: relu_scalar
+  signature: 'fn relu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: activation-kernel-v1.yaml
+  equation: gelu
+  module_path: provable_contracts::kernels::activation
+  function: gelu_scalar
+  signature: 'fn gelu_scalar(input: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: silu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::silu_standalone
+  function: silu_standalone_scalar
+  signature: 'fn silu_standalone_scalar(input: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: provable_contracts::kernels::softmax
+  function: softmax_scalar
+  signature: 'fn softmax_scalar(input: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: rmsnorm-kernel-v1.yaml
+  equation: rmsnorm
+  module_path: provable_contracts::kernels::rmsnorm
+  function: rmsnorm_scalar
+  signature: 'fn rmsnorm_scalar(input: &[f32], gamma: &[f32], eps: f32, output: &mut
+    [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: layernorm-kernel-v1.yaml
+  equation: layernorm
+  module_path: provable_contracts::kernels::layernorm
+  function: layernorm_scalar
+  signature: 'fn layernorm_scalar(input: &[f32], gamma: &[f32], beta: &[f32], eps:
+    f32, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: batchnorm-kernel-v1.yaml
+  equation: batchnorm_train
+  module_path: provable_contracts::kernels::batchnorm
+  function: batchnorm_scalar
+  signature: 'fn batchnorm_scalar(input: &[f32], n: usize, c: usize, gamma: &[f32],
+    beta: &[f32], eps: f32, output: &mut [f32], mean: &mut [f32], var: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: provable_contracts::kernels::swiglu
+  function: swiglu_scalar
+  signature: 'fn swiglu_scalar(gate: &[f32], value: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: cross-entropy-kernel-v1.yaml
+  equation: cross_entropy
+  module_path: provable_contracts::kernels::cross_entropy
+  function: cross_entropy_scalar
+  signature: 'fn cross_entropy_scalar(targets: &[f32], logits: &[f32], num_classes:
+    usize) -> f32'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: rope-kernel-v1.yaml
+  equation: rope
+  module_path: provable_contracts::kernels::rope
+  function: rope_scalar
+  signature: 'fn rope_scalar(x: &[f32], position: usize, dim: usize, base: f32, output:
+    &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: matmul-kernel-v1.yaml
+  equation: matmul
+  module_path: provable_contracts::kernels::matmul
+  function: matmul_scalar
+  signature: 'fn matmul_scalar(a: &[f32], b: &[f32], m: usize, p: usize, n: usize,
+    c: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: attention-kernel-v1.yaml
+  equation: attention
+  module_path: provable_contracts::kernels::attention
+  function: attention_scalar
+  signature: 'fn attention_scalar(q: &[f32], k: &[f32], v: &[f32], n: usize, m: usize,
+    d_k: usize, d_v: usize, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gqa-kernel-v1.yaml
+  equation: gqa
+  module_path: provable_contracts::kernels::gqa
+  function: gqa_scalar
+  signature: 'fn gqa_scalar(q: &[f32], k: &[f32], v: &[f32], n: usize, d_k: usize,
+    d_v: usize, num_heads: usize, num_kv_heads: usize, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: flash-attention-v1.yaml
+  equation: flash_attention
+  module_path: provable_contracts::kernels::flash_attention
+  function: flash_attention_scalar
+  signature: 'fn flash_attention_scalar(q: &[f32], k: &[f32], v: &[f32], n: usize,
+    d: usize, tile_size: usize, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: adamw-kernel-v1.yaml
+  equation: weight_update
+  module_path: provable_contracts::kernels::adamw
+  function: adamw_step_scalar
+  signature: 'fn adamw_step_scalar(params: &mut [f32], grads: &[f32], m: &mut [f32],
+    v: &mut [f32], lr: f32, beta1: f32, beta2: f32, eps: f32, wd: f32, t: u32)'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: conv1d-kernel-v1.yaml
+  equation: conv1d
+  module_path: provable_contracts::kernels::conv1d
+  function: conv1d_scalar
+  signature: 'fn conv1d_scalar(input: &[f32], weight: &[f32], bias: Option<&[f32]>,
+    c_in: usize, c_out: usize, l: usize, k: usize, stride: usize, pad: usize, output:
+    &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: ssm-kernel-v1.yaml
+  equation: ssm_scan
+  module_path: provable_contracts::kernels::ssm
+  function: ssm_scan_scalar
+  signature: 'fn ssm_scan_scalar(a_bar: &[f32], b_bar: &[f32], c: &[f32], x: &[f32],
+    n: usize, l: usize, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: kmeans-kernel-v1.yaml
+  equation: assignment
+  module_path: provable_contracts::kernels::kmeans
+  function: kmeans_assign_scalar
+  signature: 'fn kmeans_assign_scalar(points: &[f32], centroids: &[f32], n: usize,
+    k: usize, d: usize, assignments: &mut [u32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: pagerank-kernel-v1.yaml
+  equation: pagerank
+  module_path: provable_contracts::kernels::pagerank
+  function: pagerank_iterate_scalar
+  signature: 'fn pagerank_iterate_scalar(transition: &[f32], rank: &[f32], n: usize,
+    damping: f32, output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: lbfgs-kernel-v1.yaml
+  equation: two_loop_recursion
+  module_path: provable_contracts::kernels::lbfgs
+  function: lbfgs_direction_scalar
+  signature: 'fn lbfgs_direction_scalar(gradient: &[f32], s_history: &[Vec<f32>],
+    y_history: &[Vec<f32>], direction: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: cma-es-kernel-v1.yaml
+  equation: sample
+  module_path: provable_contracts::kernels::cma_es
+  function: cma_sample_scalar
+  signature: 'fn cma_sample_scalar(mean: &[f32], sigma: f32, cholesky_l: &[f32], d:
+    usize, z: &[f32], output: &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: gated-delta-net-v1.yaml
+  equation: write
+  module_path: provable_contracts::kernels::gated_delta_net
+  function: gdn_recurrence_scalar
+  signature: 'fn gdn_recurrence_scalar(state: &mut [f32], k: &[f32], v: &[f32], q:
+    &[f32], z: &[f32], alpha: f32, beta: f32, k_dim: usize, v_dim: usize, output:
+    &mut [f32])'
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: metrics-regression-v1.yaml
+  equation: r_squared
+  module_path: aprender::metrics
+  function: r_squared
+  signature: 'fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: R² = 1 - SS_res/SS_tot
+- contract: metrics-regression-v1.yaml
+  equation: mse
+  module_path: aprender::metrics
+  function: mse
+  signature: 'fn mse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Mean Squared Error
+- contract: metrics-regression-v1.yaml
+  equation: mae
+  module_path: aprender::metrics
+  function: mae
+  signature: 'fn mae(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Mean Absolute Error
+- contract: metrics-regression-v1.yaml
+  equation: rmse
+  module_path: aprender::metrics
+  function: rmse
+  signature: 'fn rmse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Root Mean Squared Error = sqrt(MSE)
+- contract: metrics-classification-v1.yaml
+  equation: accuracy
+  module_path: aprender::metrics::classification
+  function: accuracy
+  signature: 'fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32'
+  status: implemented
+  notes: Classification accuracy = correct/total
+- contract: metrics-classification-v1.yaml
+  equation: precision
+  module_path: aprender::metrics::classification
+  function: precision
+  signature: 'fn precision(y_pred: &[usize], y_true: &[usize], average: Average) ->
+    f32'
+  status: implemented
+  notes: TP / (TP + FP), supports Macro/Micro/Weighted
+- contract: metrics-classification-v1.yaml
+  equation: recall
+  module_path: aprender::metrics::classification
+  function: recall
+  signature: 'fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32'
+  status: implemented
+  notes: TP / (TP + FN), supports Macro/Micro/Weighted
+- contract: metrics-classification-v1.yaml
+  equation: f1_score
+  module_path: aprender::metrics::classification
+  function: f1_score
+  signature: 'fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) ->
+    f32'
+  status: implemented
+  notes: Harmonic mean of precision and recall
+- contract: metrics-classification-v1.yaml
+  equation: confusion_matrix
+  module_path: aprender::metrics::classification
+  function: confusion_matrix
+  signature: 'fn confusion_matrix(y_pred: &[usize], y_true: &[usize]) -> Matrix<f32>'
+  status: implemented
+  notes: CM[i,j] = count of true=i, pred=j
+- contract: metrics-clustering-v1.yaml
+  equation: silhouette_score
+  module_path: aprender::metrics
+  function: silhouette_score
+  signature: 'fn silhouette_score(data: &Matrix<f32>, labels: &[usize]) -> f32'
+  status: implemented
+  notes: Mean silhouette coefficient across all samples
+- contract: metrics-clustering-v1.yaml
+  equation: inertia
+  module_path: aprender::metrics
+  function: inertia
+  signature: 'fn inertia(data: &Matrix<f32>, centroids: &Matrix<f32>, labels: &[usize])
+    -> f32'
+  status: implemented
+  notes: Within-cluster sum of squares
+- contract: metrics-clustering-v1.yaml
+  equation: silhouette_coefficient
+  module_path: aprender::metrics
+  function: silhouette_coefficient
+  signature: 'fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32'
+  status: implemented
+  notes: Private helper — per-point silhouette
+- contract: loss-functions-v1.yaml
+  equation: mse_loss
+  module_path: aprender::nn::loss::MSELoss
+  function: MSELoss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: MSE loss with autograd support [function not found in source]
+- contract: loss-functions-v1.yaml
+  equation: l1_loss
+  module_path: aprender::nn::loss::L1Loss
+  function: L1Loss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: L1/MAE loss with autograd support [function not found in source]
+- contract: loss-functions-v1.yaml
+  equation: smooth_l1
+  module_path: aprender::nn::loss::SmoothL1Loss
+  function: SmoothL1Loss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: Smooth L1 loss (Huber-like) [function not found in source]
+- contract: loss-functions-v1.yaml
+  equation: bce
+  module_path: aprender::nn::loss::BCELoss
+  function: BCELoss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: Binary Cross-Entropy loss [function not found in source]
+- contract: loss-functions-v1.yaml
+  equation: nll
+  module_path: aprender::nn::loss::NLLLoss
+  function: NLLLoss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: Negative Log-Likelihood loss [function not found in source]
+- contract: loss-functions-v1.yaml
+  equation: huber
+  module_path: aprender::nn::loss::HuberLoss
+  function: HuberLoss::forward
+  signature: 'fn forward(&self, predictions: &Tensor, targets: &Tensor) -> Tensor'
+  status: pending
+  notes: Huber loss with configurable delta [function not found in source]
+- contract: graph-centrality-v1.yaml
+  equation: degree
+  module_path: aprender::graph::centrality
+  function: Graph::degree_centrality
+  signature: fn degree_centrality(&self) -> HashMap<NodeId, f64>
+  status: pending
+  notes: 'Freeman''s normalization: deg(v)/(n-1) [function not found in source]'
+- contract: graph-centrality-v1.yaml
+  equation: betweenness
+  module_path: aprender::graph::centrality
+  function: Graph::betweenness_centrality
+  signature: fn betweenness_centrality(&self) -> HashMap<NodeId, f64>
+  status: pending
+  notes: Brandes algorithm [function not found in source]
+- contract: graph-centrality-v1.yaml
+  equation: closeness
+  module_path: aprender::graph::centrality
+  function: Graph::closeness_centrality
+  signature: fn closeness_centrality(&self) -> HashMap<NodeId, f64>
+  status: pending
+  notes: Geodesic distance based [function not found in source]
+- contract: graph-centrality-v1.yaml
+  equation: eigenvector
+  module_path: aprender::graph::centrality
+  function: Graph::eigenvector_centrality
+  signature: 'fn eigenvector_centrality(&self, max_iter: usize, tol: f64) -> Result<HashMap<NodeId,
+    f64>, &''static str>'
+  status: pending
+  notes: Power iteration for dominant eigenvector [function not found in source]
+- contract: graph-centrality-v1.yaml
+  equation: katz
+  module_path: aprender::graph::centrality
+  function: Graph::katz_centrality
+  signature: 'fn katz_centrality(&self, alpha: f64, beta: f64, max_iter: usize, tol:
+    f64) -> Result<HashMap<NodeId, f64>, &''static str>'
+  status: pending
+  notes: Katz centrality with attenuation factor [function not found in source]
+- contract: graph-centrality-v1.yaml
+  equation: harmonic
+  module_path: aprender::graph::centrality
+  function: Graph::harmonic_centrality
+  signature: fn harmonic_centrality(&self) -> HashMap<NodeId, f64>
+  status: pending
+  notes: Boldi & Vigna (2014), handles disconnected graphs [function not found in
+    source]
+- contract: calibration-v1.yaml
+  equation: expected_calibration_error
+  module_path: aprender::calibration
+  function: expected_calibration_error
+  signature: 'fn expected_calibration_error(predictions: &[f32], labels: &[bool],
+    n_bins: usize) -> f32'
+  status: implemented
+  notes: ECE with uniform-width binning
+- contract: calibration-v1.yaml
+  equation: maximum_calibration_error
+  module_path: aprender::calibration
+  function: maximum_calibration_error
+  signature: 'fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins:
+    usize) -> f32'
+  status: implemented
+  notes: MCE — worst-case bin calibration error
+- contract: calibration-v1.yaml
+  equation: platt_scaling
+  module_path: aprender::calibration
+  function: PlattScaling::fit
+  signature: 'fn fit(logits: &[f32], labels: &[bool]) -> Self'
+  status: pending
+  notes: Sigmoid calibration via log-loss minimization [function not found in source]
+- contract: calibration-v1.yaml
+  equation: isotonic_regression
+  module_path: aprender::calibration
+  function: IsotonicRegression::fit
+  signature: 'fn fit(&mut self, predictions: &[f32], labels: &[bool]) -> Result<()>'
+  status: pending
+  notes: Pool Adjacent Violators (PAV) algorithm [function not found in source]
+- contract: calibration-v1.yaml
+  equation: reliability_diagram
+  module_path: aprender::calibration
+  function: reliability_diagram
+  signature: 'fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins:
+    usize) -> Vec<(f32, f32, usize)>'
+  status: implemented
+  notes: Bin-level (confidence, accuracy, count) tuples
+- contract: preprocessing-normalization-v1.yaml
+  equation: standard_scaler
+  module_path: aprender::preprocessing
+  function: StandardScaler::fit + StandardScaler::transform
+  signature: 'fn fit(&mut self, x: &Matrix<f32>) -> Result<()>, fn transform(&self,
+    x: &Matrix<f32>) -> Result<Matrix<f32>>'
+  status: pending
+  notes: Zero-mean unit-variance standardization [function not found in source]
+- contract: preprocessing-normalization-v1.yaml
+  equation: minmax_scaler
+  module_path: aprender::preprocessing
+  function: MinMaxScaler::fit + MinMaxScaler::transform
+  signature: 'fn fit(&mut self, x: &Matrix<f32>) -> Result<()>, fn transform(&self,
+    x: &Matrix<f32>) -> Result<Matrix<f32>>'
+  status: pending
+  notes: Feature scaling to [min, max] range [function not found in source]
+- contract: preprocessing-normalization-v1.yaml
+  equation: robust_scaler
+  module_path: aprender::preprocessing
+  function: RobustScaler::fit + RobustScaler::transform
+  signature: 'fn fit(&mut self, x: &Matrix<f32>) -> Result<()>, fn transform(&self,
+    x: &Matrix<f32>) -> Result<Matrix<f32>>'
+  status: pending
+  notes: Robust scaling with median/IQR — uses percentile interpolation [function
+    not found in source]
+- contract: decision-tree-v1.yaml
+  equation: gini_impurity
+  module_path: aprender::tree::helpers
+  function: gini_impurity
+  signature: 'fn gini_impurity(labels: &[usize]) -> f32'
+  status: implemented
+  notes: Gini impurity for CART splitting criterion
+- contract: decision-tree-v1.yaml
+  equation: gini_split
+  module_path: aprender::tree::helpers
+  function: gini_split
+  signature: 'fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32'
+  status: implemented
+  notes: Weighted Gini impurity for binary split
+- contract: decision-tree-v1.yaml
+  equation: mse_split
+  module_path: aprender::tree::helpers_part_02
+  function: compute_mse
+  signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
+  status: implemented
+  notes: MSE impurity for regression tree split (weighted variance)
+- contract: decision-tree-v1.yaml
+  equation: prediction
+  module_path: aprender::tree::classifier
+  function: DecisionTreeClassifier::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: CART classifier prediction via tree traversal [function not found in source]
+- contract: naive-bayes-v1.yaml
+  equation: class_prior
+  module_path: aprender::classification
+  function: GaussianNB::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Computes class priors, means, variances during fit [function not found in
+    source]
+- contract: naive-bayes-v1.yaml
+  equation: gaussian_likelihood
+  module_path: aprender::classification
+  function: GaussianNB::predict_proba
+  signature: 'fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<Vec<f32>>>'
+  status: pending
+  notes: Gaussian PDF evaluation per class per feature [function not found in source]
+- contract: naive-bayes-v1.yaml
+  equation: log_posterior
+  module_path: aprender::classification
+  function: GaussianNB::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: Argmax of log-posteriors for classification [function not found in source]
+- contract: linear-models-v1.yaml
+  equation: ols_fit
+  module_path: aprender::linear_model
+  function: LinearRegression::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()>'
+  status: pending
+  notes: OLS via normal equations (Cholesky solver) [function not found in source]
+- contract: linear-models-v1.yaml
+  equation: ols_predict
+  module_path: aprender::linear_model
+  function: LinearRegression::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vector<f32>>'
+  status: pending
+  notes: 'Linear prediction: ŷ = Xβ + b [function not found in source]'
+- contract: linear-models-v1.yaml
+  equation: r_squared_training
+  module_path: aprender::linear_model
+  function: LinearRegression::score
+  signature: 'fn score(&self, x: &Matrix<f32>, y: &Vector<f32>) -> f32'
+  status: pending
+  notes: R² = 1 - SS_res/SS_tot on training data [function not found in source]
+- contract: linear-models-v1.yaml
+  equation: logistic_predict_proba
+  module_path: aprender::classification
+  function: LogisticRegression::predict_proba
+  signature: 'fn predict_proba(&self, x: &Matrix<f32>) -> Result<Vec<f32>>'
+  status: pending
+  notes: Sigmoid probability output [function not found in source]
+- contract: svm-v1.yaml
+  equation: hinge_loss
+  module_path: aprender::classification
+  function: LinearSVM::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Subgradient descent with hinge loss [function not found in source]
+- contract: svm-v1.yaml
+  equation: decision_function
+  module_path: aprender::classification
+  function: LinearSVM::decision_function
+  signature: 'fn decision_function(&self, x: &Matrix<f32>) -> Result<Vec<f32>>'
+  status: pending
+  notes: w·x + b decision values [function not found in source]
+- contract: svm-v1.yaml
+  equation: svm_predict
+  module_path: aprender::classification
+  function: LinearSVM::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: Binary classification via sign(decision_function) [function not found in
+    source]
+- contract: pca-v1.yaml
+  equation: pca_transform
+  module_path: aprender::preprocessing
+  function: PCA::fit + PCA::transform
+  signature: 'fn fit(&mut self, x: &Matrix<f32>) -> Result<()>, fn transform(&self,
+    x: &Matrix<f32>) -> Result<Matrix<f32>>'
+  status: pending
+  notes: Eigendecomposition-based dimensionality reduction [function not found in
+    source]
+- contract: pca-v1.yaml
+  equation: explained_variance
+  module_path: aprender::preprocessing
+  function: PCA::explained_variance_ratio
+  signature: fn explained_variance_ratio(&self) -> Option<&[f32]>
+  status: pending
+  notes: Ratio of variance captured per component [function not found in source]
+- contract: ica-v1.yaml
+  equation: fastica
+  module_path: aprender::decomposition
+  function: ICA::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>) -> Result<()>'
+  status: pending
+  notes: FastICA with deflation and tanh nonlinearity [function not found in source]
+- contract: ica-v1.yaml
+  equation: unmixing
+  module_path: aprender::decomposition
+  function: ICA::transform
+  signature: 'fn transform(&self, x: &Matrix<f32>) -> Result<Matrix<f32>>'
+  status: pending
+  notes: S = X W^T unmixing transformation [function not found in source]
+- contract: arima-v1.yaml
+  equation: ar_forecast
+  module_path: aprender::time_series
+  function: ARIMA::forecast
+  signature: 'fn forecast(&self, n_periods: usize) -> Result<Vec<f32>>'
+  status: pending
+  notes: AR(p) forecasting with fitted coefficients [function not found in source]
+- contract: arima-v1.yaml
+  equation: differencing
+  module_path: aprender::time_series
+  function: ARIMA::fit
+  signature: 'fn fit(&mut self, data: &[f32]) -> Result<()>'
+  status: pending
+  notes: d-th order differencing applied during fit [function not found in source]
+- contract: arima-v1.yaml
+  equation: ma_filter
+  module_path: aprender::time_series
+  function: ARIMA::forecast
+  signature: 'fn forecast(&self, n_periods: usize) -> Result<Vec<f32>>'
+  status: pending
+  notes: MA(q) error correction applied during forecast [function not found in source]
+- contract: arima-v1.yaml
+  equation: forecast_finite
+  module_path: aprender::time_series
+  function: ARIMA::forecast
+  signature: 'fn forecast(&self, n_periods: usize) -> Result<Vec<f32>>'
+  status: pending
+  notes: All forecast values must be finite (no NaN/Inf) [function not found in source]
+- contract: bayesian-v1.yaml
+  equation: conjugate_update
+  module_path: aprender::bayesian::conjugate
+  function: BetaBinomial::update
+  signature: 'fn update(&mut self, successes: usize, trials: usize)'
+  status: pending
+  notes: 'Beta-Binomial conjugate update: α += successes, β += failures [function
+    not found in source]'
+- contract: bayesian-v1.yaml
+  equation: posterior_valid
+  module_path: aprender::bayesian::conjugate
+  function: BetaBinomial::alpha + BetaBinomial::beta
+  signature: fn alpha(&self) -> f64, fn beta(&self) -> f64
+  status: pending
+  notes: Posterior parameters must remain positive [function not found in source]
+- contract: bayesian-v1.yaml
+  equation: blr_predict
+  module_path: aprender::bayesian::regression
+  function: BayesianLinearRegression::predict
+  signature: 'fn predict(&self, x_test: &Matrix<f32>) -> Result<(Vector<f32>, Vector<f32>)>'
+  status: pending
+  notes: Posterior mean prediction with uncertainty [function not found in source]
+- contract: bayesian-v1.yaml
+  equation: posterior_predictive
+  module_path: aprender::bayesian::regression
+  function: BayesianLinearRegression::predict
+  signature: 'fn predict(&self, x_test: &Matrix<f32>) -> Result<(Vector<f32>, Vector<f32>)>'
+  status: pending
+  notes: Returns (mean, std) for predictive distribution [function not found in source]
+- contract: glm-v1.yaml
+  equation: poisson_link
+  module_path: aprender::glm
+  function: GLM::new with LinkFunction::Log
+  signature: 'fn new(family: Family, link: LinkFunction) -> Self'
+  status: pending
+  notes: 'Log link for Poisson: g(μ) = ln(μ) [function not found in source]'
+- contract: glm-v1.yaml
+  equation: gamma_link
+  module_path: aprender::glm
+  function: GLM::new with LinkFunction::Reciprocal
+  signature: 'fn new(family: Family, link: LinkFunction) -> Self'
+  status: pending
+  notes: 'Reciprocal link for Gamma: g(μ) = 1/μ [function not found in source]'
+- contract: glm-v1.yaml
+  equation: binomial_link
+  module_path: aprender::glm
+  function: GLM::new with LinkFunction::Logit
+  signature: 'fn new(family: Family, link: LinkFunction) -> Self'
+  status: pending
+  notes: 'Logit link for Binomial: g(μ) = ln(μ/(1-μ)) [function not found in source]'
+- contract: glm-v1.yaml
+  equation: irls_fit
+  module_path: aprender::glm
+  function: GLM::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[f32]) -> Result<()>'
+  status: pending
+  notes: IRLS iterative fitting with convergence check [function not found in source]
+- contract: drift-detection-v1.yaml
+  equation: univariate_drift
+  module_path: aprender::metrics::drift
+  function: DriftDetector::detect_univariate
+  signature: 'fn detect_univariate(&self, reference: &Vector<f32>, current: &Vector<f32>)
+    -> DriftStatus'
+  status: pending
+  notes: 'Normalized mean difference: |μ_ref - μ_cur| / σ_ref [function not found
+    in source]'
+- contract: drift-detection-v1.yaml
+  equation: performance_drift
+  module_path: aprender::metrics::drift
+  function: DriftDetector::detect_performance_drift
+  signature: 'fn detect_performance_drift(&self, baseline_scores: &[f32], current_scores:
+    &[f32]) -> DriftStatus'
+  status: pending
+  notes: Score degradation detection [function not found in source]
+- contract: drift-detection-v1.yaml
+  equation: classify_drift
+  module_path: aprender::metrics::drift
+  function: DriftDetector::classify_drift
+  signature: 'fn classify_drift(&self, score: f32) -> DriftStatus'
+  status: pending
+  notes: Threshold-based classification into NoDrift/Warning/Drift [function not found
+    in source]
+- contract: drift-detection-v1.yaml
+  equation: min_samples_guard
+  module_path: aprender::metrics::drift
+  function: DriftDetector::detect_univariate
+  signature: 'fn detect_univariate(&self, reference: &Vector<f32>, current: &Vector<f32>)
+    -> DriftStatus'
+  status: pending
+  notes: Returns NoDrift when samples < min_samples (avoid false positives) [function
+    not found in source]
+- contract: metrics-ranking-v1.yaml
+  equation: hit_at_k
+  module_path: aprender::metrics::ranking
+  function: hit_at_k
+  signature: 'fn hit_at_k<T: PartialEq>(predictions: &[T], target: &T, k: usize) ->
+    f32'
+  status: implemented
+  notes: 'Binary 0/1 indicator: target in top-K'
+- contract: metrics-ranking-v1.yaml
+  equation: reciprocal_rank
+  module_path: aprender::metrics::ranking
+  function: reciprocal_rank
+  signature: 'fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32'
+  status: implemented
+  notes: 1/rank of first correct prediction
+- contract: metrics-ranking-v1.yaml
+  equation: mrr
+  module_path: aprender::metrics::ranking
+  function: mrr
+  signature: 'fn mrr<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T])
+    -> f32'
+  status: implemented
+  notes: Mean Reciprocal Rank across queries
+- contract: metrics-ranking-v1.yaml
+  equation: ndcg_at_k
+  module_path: aprender::metrics::ranking
+  function: ndcg_at_k
+  signature: 'fn ndcg_at_k(relevance: &[f32], k: usize) -> f32'
+  status: implemented
+  notes: 'Normalized DCG: DCG/IDCG ∈ [0,1]'
+- contract: gbm-v1.yaml
+  equation: gradient_boost
+  module_path: aprender::tree::gradient_boosting
+  function: GradientBoostingClassifier::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: 'Boosting loop: F_m = F_{m-1} + ν·h_m [function not found in source]'
+- contract: gbm-v1.yaml
+  equation: negative_gradient
+  module_path: aprender::tree::gradient_boosting
+  function: GradientBoostingClassifier::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Pseudo-residuals computed inside fit loop [function not found in source]
+- contract: gbm-v1.yaml
+  equation: predict
+  module_path: aprender::tree::gradient_boosting
+  function: GradientBoostingClassifier::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: Aggregated tree predictions with sigmoid thresholding [function not found
+    in source]
+- contract: gbm-v1.yaml
+  equation: training_loss
+  module_path: aprender::tree::gradient_boosting
+  function: GradientBoostingClassifier::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Loss computed per stage inside fit [function not found in source]
+- contract: optimization-v1.yaml
+  equation: cg_minimize
+  module_path: aprender::optim::conjugate_gradient
+  function: ConjugateGradient::minimize
+  signature: 'fn minimize<F, G>(&self, f: F, grad: G, x0: &[f64]) -> Result<OptimizationResult>'
+  status: pending
+  notes: Fletcher-Reeves nonlinear CG with line search [function not found in source]
+- contract: optimization-v1.yaml
+  equation: line_search
+  module_path: aprender::optim::conjugate_gradient
+  function: ConjugateGradient::minimize
+  signature: 'fn minimize<F, G>(&self, f: F, grad: G, x0: &[f64]) -> Result<OptimizationResult>'
+  status: pending
+  notes: Backtracking line search inside minimize [function not found in source]
+- contract: optimization-v1.yaml
+  equation: convergence
+  module_path: aprender::optim::conjugate_gradient
+  function: ConjugateGradient::minimize
+  signature: 'fn minimize<F, G>(&self, f: F, grad: G, x0: &[f64]) -> Result<OptimizationResult>'
+  status: pending
+  notes: Convergence via gradient norm tolerance [function not found in source]
+- contract: random-forest-v1.yaml
+  equation: bootstrap_sample
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Bootstrap sampling with replacement inside fit [function not found in source]
+- contract: random-forest-v1.yaml
+  equation: majority_vote
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: Majority vote across ensemble trees [function not found in source]
+- contract: random-forest-v1.yaml
+  equation: predict
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::predict
+  signature: 'fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>>'
+  status: pending
+  notes: Aggregated prediction from bootstrap ensemble [function not found in source]
+- contract: random-forest-v1.yaml
+  equation: ensemble_size
+  module_path: aprender::tree::random_forest
+  function: RandomForestClassifier::fit
+  signature: 'fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()>'
+  status: pending
+  notes: Number of trees matches n_estimators configuration [function not found in
+    source]
+- contract: active-learning-v1.yaml
+  equation: uncertainty_score
+  module_path: aprender::active_learning
+  function: UncertaintySampling::score
+  signature: 'fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32>'
+  status: pending
+  notes: Uncertainty = 1 - max(p_i) for each sample [function not found in source]
+- contract: active-learning-v1.yaml
+  equation: margin_score
+  module_path: aprender::active_learning
+  function: MarginSampling::score
+  signature: 'fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32>'
+  status: pending
+  notes: Margin = 1 - (p1 - p2) for top-2 probabilities [function not found in source]
+- contract: active-learning-v1.yaml
+  equation: entropy_score
+  module_path: aprender::active_learning
+  function: EntropySampling::score
+  signature: 'fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32>'
+  status: pending
+  notes: Shannon entropy H = -Σ p·ln(p) [function not found in source]
+- contract: active-learning-v1.yaml
+  equation: qbc_score
+  module_path: aprender::active_learning
+  function: QueryByCommittee::score_committee
+  signature: 'fn score_committee(&self, committee_preds: &[Vec<Vector<f32>>]) -> Vec<f32>'
+  status: pending
+  notes: Vote entropy across committee members [function not found in source]
+- contract: gnn-v1.yaml
+  equation: gcn_aggregate
+  module_path: aprender::nn::gnn
+  function: GCNConv::forward
+  signature: 'fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor'
+  status: pending
+  notes: GCN normalized adjacency propagation [function not found in source]
+- contract: gnn-v1.yaml
+  equation: message_passing
+  module_path: aprender::nn::gnn
+  function: MessagePassing::propagate
+  signature: 'fn propagate(&self, x: &Tensor, edge_index: &AdjacencyMatrix) -> Tensor'
+  status: pending
+  notes: Generic message → aggregate → update framework [function not found in source]
+- contract: gnn-v1.yaml
+  equation: global_mean_pool
+  module_path: aprender::gnn
+  function: global_mean_pool
+  signature: 'fn global_mean_pool(node_features: &[Vec<f32>], batch: &[usize]) ->
+    Vec<Vec<f32>>'
+  status: implemented
+  notes: Mean aggregation of node features per graph
+- contract: gnn-v1.yaml
+  equation: global_max_pool
+  module_path: aprender::gnn
+  function: global_max_pool
+  signature: 'fn global_max_pool(node_features: &[Vec<f32>], batch: &[usize]) -> Vec<Vec<f32>>'
+  status: implemented
+  notes: Max aggregation of node features per graph
+- contract: metaheuristics-v1.yaml
+  equation: sa_acceptance
+  module_path: aprender::metaheuristics::sa
+  function: SimulatedAnnealing::optimize
+  signature: 'fn optimize(&mut self, objective: &dyn Fn(&[f64]) -> f64, space: &SearchSpace,
+    budget: &Budget) -> OptimizationResult'
+  status: pending
+  notes: Metropolis acceptance criterion with exponential cooling [function not found
+    in source]
+- contract: metaheuristics-v1.yaml
+  equation: ga_crossover
+  module_path: aprender::metaheuristics::ga
+  function: GeneticAlgorithm::optimize
+  signature: 'fn optimize(&mut self, objective: &dyn Fn(&[f64]) -> f64, space: &SearchSpace,
+    budget: &Budget) -> OptimizationResult'
+  status: pending
+  notes: SBX crossover + polynomial mutation + tournament selection [function not
+    found in source]
+- contract: metaheuristics-v1.yaml
+  equation: pso_velocity
+  module_path: aprender::metaheuristics::pso
+  function: ParticleSwarm::optimize
+  signature: 'fn optimize(&mut self, objective: &dyn Fn(&[f64]) -> f64, space: &SearchSpace,
+    budget: &Budget) -> OptimizationResult'
+  status: pending
+  notes: Velocity update with inertia, cognitive, social components [function not
+    found in source]
+- contract: metaheuristics-v1.yaml
+  equation: best_monotone
+  module_path: aprender::metaheuristics
+  function: PerturbativeMetaheuristic::optimize
+  signature: 'fn optimize(&mut self, objective: &dyn Fn(&[f64]) -> f64, space: &SearchSpace,
+    budget: &Budget) -> OptimizationResult'
+  status: pending
+  notes: Best-so-far value is monotone non-increasing across all metaheuristics [function
+    not found in source]
+- contract: classification-finetune-v1.yaml
+  equation: logit_shape
+  module_path: aprender::format::validated_classification
+  function: ValidatedClassLogits::new
+  signature: 'fn new(data: Vec<f32>, num_classes: usize) -> Result<Self, ContractValidationError>'
+  status: pending
+  notes: 'F-CLASS-001: Poka-Yoke — rejects data.len() != num_classes, num_classes
+    < 2, NaN/Inf [function not found in source]'
+- contract: classification-finetune-v1.yaml
+  equation: label_bounds
+  module_path: aprender::format::validated_classification
+  function: ValidatedSafetyLabel::new
+  signature: 'fn new(index: usize, num_classes: usize) -> Result<Self, ContractValidationError>'
+  status: pending
+  notes: 'F-CLASS-002: Poka-Yoke — rejects index >= num_classes [function not found
+    in source]'
+- contract: classification-finetune-v1.yaml
+  equation: classifier_weight_shape
+  module_path: aprender::format::validated_classification
+  function: ValidatedClassifierWeight::new
+  signature: 'fn new(data: Vec<f32>, hidden_size: usize, num_classes: usize) -> Result<Self,
+    ContractValidationError>'
+  status: pending
+  notes: 'F-CLASS-004: Poka-Yoke — rejects data.len() != hidden_size * num_classes,
+    NaN/Inf [function not found in source]'
+- contract: classification-finetune-v1.yaml
+  equation: softmax_sum
+  module_path: aprender::format::validated_classification
+  function: ValidatedClassLogits::softmax
+  signature: fn softmax(&self) -> Vec<f32>
+  status: pending
+  notes: 'F-CLASS-003: softmax output sums to 1.0 within epsilon=1e-5 [function not
+    found in source]'
+- contract: classification-finetune-v1.yaml
+  equation: config_factory
+  module_path: entrenar::transformer::config
+  function: TransformerConfig::qwen3_5_9b
+  signature: fn qwen3_5_9b() -> Self
+  status: pending
+  notes: function not found in source [function not found in source]
+- contract: attention-scaling-v1.yaml
+  equation: attention_entropy
+  module_path: aprender
+  function: attention_entropy
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: write
+  module_path: aprender
+  function: write
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: ssm_discretize
+  module_path: aprender
+  function: ssm_discretize
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: ssm_scan
+  module_path: aprender
+  function: ssm_scan
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: selective_gate
+  module_path: aprender
+  function: selective_gate
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cma-es-kernel-v1.yaml
+  equation: sample
+  module_path: aprender
+  function: sample
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: top_p
+  module_path: aprender
+  function: top_p
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: temperature
+  module_path: aprender
+  function: temperature
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: top_k
+  module_path: aprender
+  function: top_k
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: int8-symmetric-quant-v1.yaml
+  equation: quantize
+  module_path: aprender
+  function: quantize
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: aprender
+  function: sigmoid
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: aprender
+  function: silu
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: aprender
+  function: swiglu
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cross-entropy-kernel-v1.yaml
+  equation: log_softmax
+  module_path: aprender
+  function: log_softmax
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: bayesian-v1.yaml
+  equation: posterior_predictive
+  module_path: aprender
+  function: posterior_predictive
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: loss-functions-v1.yaml
+  equation: mse_loss
+  module_path: aprender
+  function: mse_loss
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: delta
+  module_path: aprender
+  function: delta
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: svm-v1.yaml
+  equation: margin
+  module_path: aprender
+  function: margin
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: svm-v1.yaml
+  equation: hinge_loss
+  module_path: aprender
+  function: hinge_loss
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: pca-v1.yaml
+  equation: explained_variance
+  module_path: aprender
+  function: explained_variance
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: transpose-kernel-v1.yaml
+  equation: transpose
+  module_path: aprender
+  function: transpose
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cross-entropy-kernel-v1.yaml
+  equation: cross_entropy
+  module_path: aprender
+  function: cross_entropy
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: tensor-shape-flow-v1.yaml
+  equation: lm_head
+  module_path: aprender
+  function: lm_head
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: tensor-inventory-v1.yaml
+  equation: tensor_count
+  module_path: aprender
+  function: tensor_count
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: format-parity-v1.yaml
+  equation: element_count
+  module_path: aprender
+  function: element_count
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: q4k-q6k-superblock-v1.yaml
+  equation: total_bytes
+  module_path: aprender
+  function: total_bytes
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: read
+  module_path: aprender
+  function: read
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: optimization-v1.yaml
+  equation: convergence
+  module_path: aprender
+  function: convergence
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: layernorm-kernel-v1.yaml
+  equation: statistics
+  module_path: aprender
+  function: statistics
+  status: implemented
+  notes: Auto-inferred by pv infer
+# --- CLI/MCP/HTTP boundary contracts (2026-04-03) ---
+- contract: cli-dispatch-v1.yaml
+  equation: dispatch_completeness
+  function: dispatch_core_command
+  module_path: apr_cli::dispatch::dispatch_core_command
+  status: pending
+  notes: CLI subcommand dispatch — every Commands variant has a handler
+- contract: cli-dispatch-v1.yaml
+  equation: exit_code_semantics
+  function: exit_code
+  module_path: apr_cli::error::CliError::exit_code
+  status: pending
+  notes: Exit code mapping — distinct error classes to distinct non-zero codes
+- contract: cli-dispatch-v1.yaml
+  equation: output_format_fidelity
+  function: format_output
+  module_path: apr_cli::output
+  status: pending
+  notes: JSON/YAML/CSV output always parseable by respective parser
+- contract: cli-dispatch-v1.yaml
+  equation: idempotent_inspection
+  function: dispatch_inspection_commands
+  module_path: apr_cli::dispatch::dispatch_inspection_commands
+  status: pending
+  notes: Read-only commands (check, inspect, validate) have no side effects
+- contract: http-api-v1.yaml
+  equation: request_response_schema
+  function: handle_completions
+  module_path: apr_cli::serve::handle_completions
+  status: pending
+  notes: POST /v1/completions returns valid JSON with correct Content-Type
+- contract: http-api-v1.yaml
+  equation: error_envelope_preservation
+  function: error_response
+  module_path: apr_cli::serve::error_response
+  status: pending
+  notes: 'All HTTP errors wrapped in JSON envelope {error: {message, type, code}}'
+- contract: http-api-v1.yaml
+  equation: cors_negotiation
+  function: cors_middleware
+  module_path: apr_cli::serve::cors_middleware
+  status: pending
+  notes: --no-cors flag completely removes all CORS headers
+- contract: http-api-v1.yaml
+  equation: timeout_honoring
+  function: request_timeout
+  module_path: apr_cli::serve::request_timeout
+  status: pending
+  notes: Request timeout produces clean error response, no partial state mutation
+- contract: mcp-tool-schema-v1.yaml
+  equation: tool_schema_fidelity
+  function: handle_tools_list
+  module_path: apr_cli::mcp::handle_tools_list
+  status: pending
+  notes: inputSchema matches actual handler parameter types
+- contract: mcp-tool-schema-v1.yaml
+  equation: session_state_machine
+  function: handle_request
+  module_path: apr_cli::mcp::McpSession::handle_request
+  status: pending
+  notes: Session state S0→S1→S2→S3, tools/call before initialize returns -32600
+- contract: mcp-tool-schema-v1.yaml
+  equation: error_mapping
+  function: mcp_error
+  module_path: apr_cli::mcp::mcp_error
+  status: pending
+  notes: Handler errors map to valid JSON-RPC error codes (-327xx range)
+- contract: mcp-tool-schema-v1.yaml
+  equation: idempotency_classification
+  function: tool_metadata
+  module_path: apr_cli::mcp::tool_metadata
+  status: pending
+  notes: Read-only tools classified idempotent, mutation tools non-idempotent
+# === Model Format Safety (GGUF) ===
+- contract: ../gguf-format-safety-v1.yaml
+  equation: magic_validation
+  module_path: aprender::gguf::reader
+  function: validate_magic
+  status: implemented
+  notes: Magic byte check before any allocation
+- contract: ../gguf-format-safety-v1.yaml
+  equation: tensor_metadata_integrity
+  module_path: aprender::gguf::reader
+  function: parse_tensor_info
+  status: implemented
+  notes: Shape bounds, offset bounds, dtype validation
+- contract: ../gguf-format-safety-v1.yaml
+  equation: metadata_kv_safety
+  module_path: aprender::gguf::reader
+  function: parse_metadata
+  status: implemented
+  notes: String length checked before alloc (CVE-2024-25664 mitigation)
+# === Model Format Safety (Safetensors) ===
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: header_size_validation
+  module_path: aprender::safetensors::reader
+  function: validate_header
+  status: implemented
+  notes: Header size bounded before JSON parsing
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: tensor_offset_bounds
+  module_path: aprender::safetensors::reader
+  function: validate_offsets
+  status: implemented
+  notes: All tensor regions within file bounds, no overlap
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: mmap_zero_copy
+  module_path: aprender::safetensors::reader
+  function: mmap_tensor
+  status: implemented
+  notes: Zero-copy mmap with page-aligned offsets
+# === Model Format Conversion ===
+- contract: model-format-conversion-v1.yaml
+  equation: format_conversion_roundtrip
+  module_path: aprender::convert
+  function: convert_model
+  status: implemented
+  notes: Tensor count/names/shapes preserved across format conversion
+- contract: model-format-conversion-v1.yaml
+  equation: quantization_bounds
+  module_path: aprender::quantize
+  function: quantize_tensor
+  status: implemented
+  notes: Error bounded by dtype-specific tolerance
+- contract: model-format-conversion-v1.yaml
+  equation: import_integrity
+  module_path: aprender::import
+  function: import_model
+  status: implemented
+  notes: Content-based format detection, not extension-based
+- contract: model-format-conversion-v1.yaml
+  equation: export_fidelity
+  module_path: aprender::export
+  function: export_model
+  status: implemented
+  notes: Atomic write via temp file + rename
+- contract: model-format-conversion-v1.yaml
+  equation: apr_tokenizer_embedding
+  module_path: aprender::convert
+  function: save_model_tensors_with_gguf_config_and_tokenizer
+  status: implemented
+  notes: P0 invariant — every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)
+# === APR CLI Operations ===
+- contract: apr-cli-operations-v1.yaml
+  equation: side_effect_classification
+  module_path: apr_cli::dispatch
+  function: dispatch_core_command
+  status: implemented
+  notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
+- contract: apr-cli-operations-v1.yaml
+  equation: resource_cleanup
+  module_path: apr_cli::dispatch
+  function: dispatch_core_command
+  status: implemented
+  notes: GPU/tmp/thread cleanup on all exit paths via RAII
+- contract: apr-cli-operations-v1.yaml
+  equation: inference_determinism
+  module_path: aprender::inference
+  function: generate
+  status: implemented
+  notes: temperature=0 greedy decoding is deterministic
+- contract: apr-cli-operations-v1.yaml
+  equation: tokenizer_consistency
+  module_path: aprender::tokenizer
+  function: encode
+  status: implemented
+  notes: BPE encode/decode roundtrip for valid UTF-8
+- contract: apr-cli-operations-v1.yaml
+  equation: concurrent_model_access
+  module_path: aprender::serve
+  function: handle_inference_request
+  status: implemented
+  notes: Per-request KV cache, immutable model weights
+- contract: apr-cli-operations-v1.yaml
+  equation: progress_reporting
+  module_path: apr_cli::progress
+  function: report_progress
+  status: implemented
+  notes: Monotonic progress [0.0, 1.0] with at least 1 update/sec
+# === APR CLI Interface (apr-cli-v1) ===
+- contract: apr-cli-v1.yaml
+  equation: command_parse_determinism
+  module_path: apr_cli::Cli
+  function: Cli::try_parse_from
+  status: implemented
+  notes: Clap-derived parse is pure and deterministic; global flags propagate via #[arg(global)]
+- contract: apr-cli-v1.yaml
+  equation: contract_gate_enforcement
+  module_path: apr_cli::dispatch
+  function: execute_command
+  status: implemented
+  notes: PMAT-237 contract gate — extract_model_paths + validate_model_contract before dispatch
+- contract: apr-cli-v1.yaml
+  equation: training_plan_apply_semantics
+  module_path: apr_cli::commands::train
+  function: train::run
+  status: implemented
+  notes: Plan is pure (no GPU/filesystem), Apply writes to --output directory only
+- contract: apr-cli-v1.yaml
+  equation: tokenizer_training_correctness
+  module_path: apr_cli::commands::tokenize
+  function: tokenize::run
+  status: implemented
+  notes: BPE plan/apply — vocab.json size equals requested vocab_size
+- contract: apr-cli-v1.yaml
+  equation: pipe_stdin_support
+  module_path: apr_cli::pipe
+  function: with_stdin_support
+  status: implemented
+  notes: TempModelFile RAII cleanup; POSIX "-" convention for stdin/stdout
+- contract: apr-cli-v1.yaml
+  equation: model_path_resolution
+  module_path: apr_cli::error
+  function: resolve_model_path
+  status: implemented
+  notes: Directory resolution with index.json priority (PMAT-314); O(1) stat-based
+# === Model Lifecycle (apr-model-lifecycle-v1) ===
+- contract: apr-model-lifecycle-v1.yaml
+  equation: pull_cache_integrity
+  module_path: apr_cli::commands::pull
+  function: download_and_cache_model
+  status: implemented
+  notes: Content-addressed cache at ~/.cache/aprender/models/, HTTP Range resume
+- contract: apr-model-lifecycle-v1.yaml
+  equation: import_format_detection
+  module_path: apr_cli::commands::import
+  function: import_model
+  status: implemented
+  notes: Magic byte detection for GGUF/SafeTensors/APR formats
+- contract: apr-model-lifecycle-v1.yaml
+  equation: export_roundtrip
+  module_path: apr_cli::commands::export
+  function: export_model
+  status: implemented
+  notes: Supports GGUF, SafeTensors, APR output formats
+- contract: apr-model-lifecycle-v1.yaml
+  equation: quantize_precision_bound
+  module_path: apr_cli::commands::quantize
+  function: quantize_model
+  status: implemented
+  notes: Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/F16 schemes via GH-243
+- contract: apr-model-lifecycle-v1.yaml
+  equation: merge_weight_conservation
+  module_path: apr_cli::commands::merge
+  function: merge_models
+  status: implemented
+  notes: SLERP/TIES/DARE/Linear merge strategies
+# === Serve (apr-serve-v1) ===
+- contract: apr-serve-v1.yaml
+  equation: server_lifecycle
+  module_path: apr_cli::commands::serve
+  function: run_server
+  status: implemented
+  notes: Actix-web server with Init/Binding/Loading/Ready/Draining/Stopped states
+- contract: apr-serve-v1.yaml
+  equation: request_routing
+  module_path: apr_cli::commands::serve
+  function: configure_routes
+  status: implemented
+  notes: OpenAI-compatible /v1/completions, /v1/chat/completions, /v1/models
+- contract: apr-serve-v1.yaml
+  equation: graceful_shutdown
+  module_path: apr_cli::commands::serve
+  function: shutdown_handler
+  status: implemented
+  notes: SIGTERM triggers drain with 30s timeout
+- contract: apr-serve-v1.yaml
+  equation: concurrent_inference_isolation
+  module_path: apr_cli::commands::serve
+  function: handle_inference
+  status: pending
+  notes: Per-request KV cache isolation — needs verification
+# === Data Pipeline (apr-data-pipeline-v1) ===
+- contract: apr-data-pipeline-v1.yaml
+  equation: data_validation
+  module_path: apr_cli::commands::data
+  function: data_validate
+  status: implemented
+  notes: JSONL/CSV/text validation with line-level error reporting
+- contract: apr-data-pipeline-v1.yaml
+  equation: data_split_determinism
+  module_path: apr_cli::commands::data
+  function: data_split
+  status: implemented
+  notes: Seed-deterministic train/val/test split
+- contract: apr-data-pipeline-v1.yaml
+  equation: streaming_data_loader
+  module_path: aprender::data::dataloader
+  function: DataLoader::next_batch
+  status: implemented
+  notes: Epoch-seeded shuffle, no sample drop on final partial batch
+- contract: apr-data-pipeline-v1.yaml
+  equation: preprocessing_idempotency
+  module_path: aprender::data::preprocessor
+  function: preprocess
+  status: implemented
+  notes: Special token dedup via BOS/EOS detection
+# === Model QA (apr-model-qa-v1) ===
+- contract: apr-model-qa-v1.yaml
+  equation: model_integrity_check
+  module_path: apr_cli::commands::check
+  function: run_check
+  status: implemented
+  notes: 10-stage pipeline (header, metadata, tensors, shapes, dtypes, arch, embedding, qkv, norms, vocab)
+- contract: apr-model-qa-v1.yaml
+  equation: qa_gate_composition
+  module_path: apr_cli::commands::qa
+  function: run_qa_pipeline
+  status: implemented
+  notes: Configurable gates with per-gate enable/disable and thresholds
+- contract: apr-model-qa-v1.yaml
+  equation: canary_regression_detection
+  module_path: apr_cli::commands::canary
+  function: canary_test
+  status: implemented
+  notes: Fixed-prompt regression detection with token-level comparison
+- contract: apr-model-qa-v1.yaml
+  equation: lint_model_conventions
+  module_path: apr_cli::commands::lint
+  function: lint_model
+  status: implemented
+  notes: Naming, dtype, shape, metadata, ordering rules
+- contract: apr-model-qa-v1.yaml
+  equation: probar_property_tests
+  module_path: apr_cli::commands::probar
+  function: run_property_tests
+  status: implemented
+  notes: Softmax sum, attention non-neg, embedding norm, shape match properties
+# === Architecture Schema (apr-architecture-schema-v1) ===
+- contract: apr-architecture-schema-v1.yaml
+  equation: architecture_config_invariants
+  module_path: aprender::format::gguf::api
+  function: GgufModelConfig::validate
+  status: implemented
+  notes: Validates hidden_size/num_heads divisibility, GQA ratio, MoE fields
+- contract: apr-architecture-schema-v1.yaml
+  equation: attention_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_attention_shapes
+  status: implemented
+  notes: Validates Q/K/V/O projection shapes per layer against config
+- contract: apr-architecture-schema-v1.yaml
+  equation: ffn_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_ffn_shapes
+  status: implemented
+  notes: Validates gate/up/down shapes, SwiGLU and MoE variants
+- contract: apr-architecture-schema-v1.yaml
+  equation: normalization_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_norm_tensors
+  status: implemented
+  notes: Validates 2 norm tensors per layer + final_norm
+- contract: apr-architecture-schema-v1.yaml
+  equation: embedding_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_embedding_shapes
+  status: implemented
+  notes: Validates token embedding shape, lm_head or tied embeddings
+- contract: apr-architecture-schema-v1.yaml
+  equation: rope_position_encoding
+  module_path: aprender::nn::rope
+  function: RotaryPositionEmbedding::validate_config
+  status: implemented
+  notes: RoPE theta, type (NORM vs NEOX), frequency vector length
+- contract: apr-architecture-schema-v1.yaml
+  equation: total_tensor_count
+  module_path: apr_cli::commands::check
+  function: check_tensor_count
+  status: implemented
+  notes: Expected count formula with +/-5 tolerance for metadata tensors
+# === Format Safety (apr-format-safety-v1) ===
+- contract: apr-format-safety-v1.yaml
+  equation: magic_byte_validation
+  module_path: aprender::gguf::reader
+  function: detect_format
+  status: implemented
+  notes: GGUF/SafeTensors/APR magic byte prefix detection, panic-free on truncated input
+- contract: apr-format-safety-v1.yaml
+  equation: header_integrity
+  module_path: aprender::gguf::reader
+  function: validate_header
+  status: implemented
+  notes: Bounded allocation, no OOM from crafted tensor_count
+- contract: apr-format-safety-v1.yaml
+  equation: provenance_enforcement
+  module_path: apr_cli::commands::import
+  function: enforce_provenance_check
+  status: implemented
+  notes: --enforce-provenance flag gates base_model_hash verification
+- contract: apr-format-safety-v1.yaml
+  equation: strict_import_validation
+  module_path: apr_cli::commands::import
+  function: strict_validate
+  status: implemented
+  notes: NaN/Inf scan, shape match, dtype consistency when --strict
+- contract: apr-format-safety-v1.yaml
+  equation: dtype_coercion_safety
+  module_path: aprender::tensor::convert
+  function: coerce_dtype
+  status: implemented
+  notes: F32->F16 clamp, F32->Q4_0 blockwise, widening lossless
+- contract: apr-format-safety-v1.yaml
+  equation: truncation_detection
+  module_path: aprender::gguf::reader
+  function: detect_truncation
+  status: implemented
+  notes: Compares actual vs expected file size from header
+# === Chat Session (apr-chat-session-v1) ===
+- contract: apr-chat-session-v1.yaml
+  equation: session_state_machine
+  module_path: apr_cli::commands::chat
+  function: chat_loop
+  status: implemented
+  notes: Init->WaitInput->Generating->WaitInput->Exit state machine
+- contract: apr-chat-session-v1.yaml
+  equation: chat_template_application
+  module_path: apr_cli::commands::chat
+  function: apply_template
+  status: implemented
+  notes: ChatML, Llama, Alpaca template formats
+- contract: apr-chat-session-v1.yaml
+  equation: kv_cache_management
+  module_path: aprender::inference::kv_cache
+  function: manage_kv_cache
+  status: implemented
+  notes: Sliding window truncation at max_context
+- contract: apr-chat-session-v1.yaml
+  equation: session_persistence
+  module_path: apr_cli::commands::chat_session
+  function: save_session
+  status: implemented
+  notes: JSON serialization, KV-cache not persisted (rebuilt from history)
+critical_path:
+- softmax
+- rmsnorm
+- attention
+- matmul
+- rope
+- swiglu
+- gelu
+- embedding_lookup
+- cross_entropy
+- forward
+- tokenize
+- sample
+- layernorm
+- dispatch
+- exit_code
+- error_envelope
+- tool_schema
+- magic_validation
+- header_size_validation
+- format_conversion_roundtrip
+- quantization_bounds
+- side_effect_classification
+- inference_determinism
+- tokenizer_consistency
+- command_parse_determinism
+- contract_gate_enforcement
+- model_path_resolution
+- pull_cache_integrity
+- import_format_detection
+- export_roundtrip
+- quantize_precision_bound
+- server_lifecycle
+- data_validation
+- model_integrity_check
+- qa_gate_composition
+- magic_byte_validation
+- header_integrity
+- provenance_enforcement
+- dtype_coercion_safety
+- session_state_machine
+- kv_cache_management

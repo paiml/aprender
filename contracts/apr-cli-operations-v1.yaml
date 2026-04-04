@@ -1,0 +1,303 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    All 48 apr-cli operations — argument validation, side-effect classification,
+    resource cleanup, concurrent safety, and progress reporting invariants.
+    Covers run, check, serve, inspect, debug, validate, lint, explain, canary,
+    trace, tensors, diff, chat, tui, import, export, pull, list, rm, convert,
+    compile, quantize, merge, prune, distill, publish, eval, bench, profile,
+    parity, ptx, ptx-map, flow, tree, data, tokenize, pipeline, diagnose,
+    qa, qualify, probar, compare-hf, showcase, hex, cbtop, rosetta, oracle,
+    decrypt, encrypt.
+  references:
+  - 'apr-cli/src/dispatch.rs — main dispatch_core_command()'
+  - 'apr-cli/src/commands/ — per-command modules'
+  - 'apr-cli/src/error.rs — CliError with exit codes'
+  - 'POSIX.1-2017 Section 12 — Utility Conventions'
+  depends_on:
+  - cli-dispatch-v1
+  - model-format-conversion-v1
+  - http-api-v1
+equations:
+  side_effect_classification:
+    formula: |
+      classify(cmd): Command -> SideEffectClass
+        ReadOnly = {check, inspect, debug, validate, lint, explain, list,
+                    eval, bench, profile, parity, ptx, ptx-map, flow, tree,
+                    tensors, diff, hex, cbtop, rosetta, qa, qualify,
+                    compare-hf, showcase, diagnose, oracle}
+        Mutating = {import, export, convert, quantize, merge, prune, distill,
+                    publish, compile, rm, data, tokenize, pipeline,
+                    decrypt, encrypt}
+        LongRunning = {run, serve, chat, tui, canary, trace, pull, probar}
+    domain: Any apr CLI command
+    codomain: SideEffectClass in {ReadOnly, Mutating, LongRunning}
+    invariants:
+    - ReadOnly commands NEVER modify files, models, or external state
+    - Mutating commands write to explicit --output path (never implicit overwrite)
+    - LongRunning commands support graceful SIGINT/SIGTERM shutdown
+    - Classification is exhaustive — every command has exactly one class
+    preconditions:
+    - command is a valid Commands variant
+    postconditions:
+    - returned class matches documented behavior
+    lean_theorem: Theorems.Side_Effect_Classification
+  resource_cleanup:
+    formula: |
+      cleanup(cmd): Command -> Result<(), CleanupError>
+        GPU context released on exit (even on error/panic)
+        Temporary files deleted on exit
+        Network connections closed
+        mmap regions unmapped
+        Thread pool joined (no orphan threads)
+    domain: Any command after execution (success or failure)
+    codomain: All resources released
+    invariants:
+    - No GPU memory leak after command exit
+    - No temporary files left in /tmp after command exit
+    - No zombie threads after command exit
+    - Drop handlers run even on panic (RAII guarantee)
+    preconditions:
+    - command has finished execution (Ok or Err)
+    postconditions:
+    - GPU memory usage returns to pre-command level
+    - /tmp file count returns to pre-command level
+    lean_theorem: Theorems.Resource_Cleanup
+  inference_determinism:
+    formula: |
+      run(model, prompt, seed): (Model, String, u64) -> Result<String, InferenceError>
+        Given identical (model, prompt, seed, temperature=0.0):
+          run(m, p, s) == run(m, p, s)  (deterministic)
+        temperature > 0 -> non-deterministic (expected)
+    domain: Model path, prompt text, random seed
+    codomain: Result<generated text, InferenceError>
+    invariants:
+    - temperature=0 is always deterministic (greedy decoding)
+    - seed controls randomness when temperature > 0
+    - Output is valid UTF-8
+    - Token count <= max_tokens parameter
+    preconditions:
+    - model file exists and passes format validation
+    - prompt is non-empty valid UTF-8
+    postconditions:
+    - output is valid UTF-8
+    - output token count <= max_tokens
+    lean_theorem: Theorems.Inference_Determinism
+  progress_reporting:
+    formula: |
+      progress(cmd, callback): (Command, Fn(Progress)) -> ()
+        For long-running commands:
+          callback called at least once per second
+          progress.pct monotonically increasing [0.0, 1.0]
+          progress.pct == 1.0 on completion
+          progress.eta decreasing (or None if unknown)
+    domain: Long-running command with progress callback
+    codomain: Stream of Progress events
+    invariants:
+    - Progress percentage is monotonically non-decreasing
+    - Progress never exceeds 1.0
+    - At least one update per second for interactive use
+    - Final progress is exactly 1.0 on success
+    preconditions:
+    - command is in LongRunning class
+    postconditions:
+    - final progress == 1.0 on Ok
+    lean_theorem: Theorems.Progress_Reporting
+  concurrent_model_access:
+    formula: |
+      concurrent(model, requests): (Model, Vec<Request>) -> Vec<Result>
+        Multiple inference requests on same model:
+          No data race on model weights (immutable after load)
+          KV cache per-request (not shared)
+          Results independent of request ordering
+    domain: Loaded model with concurrent request batch
+    codomain: Vec of independent results
+    invariants:
+    - Model weights are immutable during inference (no aliased mutation)
+    - Each request has its own KV cache (no cross-contamination)
+    - Results are independent of execution order
+    - Concurrent load does not exceed GPU memory limit
+    preconditions:
+    - model loaded successfully
+    - requests.len() > 0
+    postconditions:
+    - results.len() == requests.len()
+    - each result independent of others
+    lean_theorem: Theorems.Concurrent_Model_Access
+  tokenizer_consistency:
+    formula: |
+      tokenize(text): String -> Vec<Token>
+        decode(encode(text)) == text  (roundtrip for valid text)
+        encode(text).len() <= text.len() * MAX_EXPANSION_RATIO
+        Special tokens never appear in encoded non-special text
+    domain: Valid UTF-8 text string
+    codomain: Vec<Token> (token IDs)
+    invariants:
+    - Roundtrip encode/decode preserves original text
+    - Token count bounded by input length * expansion ratio
+    - Special tokens (BOS, EOS, PAD) only appear when explicitly added
+    - Empty string produces empty token list
+    preconditions:
+    - text is valid UTF-8
+    - tokenizer model loaded
+    postconditions:
+    - decode(result) == text
+    lean_theorem: Theorems.Tokenizer_Consistency
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate command arguments, model path, and resource availability
+  - name: execute
+    description: Dispatch to command handler, perform operation with progress reporting
+  - name: verify_output
+    description: Verify postconditions, release resources, return result
+
+proof_obligations:
+- type: invariant
+  property: ReadOnly commands have no side effects
+  formal: forall cmd in ReadOnly, fs_state_before == fs_state_after
+  applies_to: side_effect_classification
+  lean:
+    theorem: Theorems.SideEffectClassification
+    status: sorry
+- type: invariant
+  property: No resource leaks after command exit
+  formal: forall cmd, gpu_mem_after <= gpu_mem_before AND tmp_files_after <= tmp_files_before
+  applies_to: resource_cleanup
+  lean:
+    theorem: Theorems.ResourceCleanup
+    status: sorry
+- type: determinism
+  property: Greedy decoding is deterministic
+  formal: temperature=0 -> run(m,p,s) == run(m,p,s)
+  applies_to: inference_determinism
+  lean:
+    theorem: Theorems.InferenceDeterminism
+    status: sorry
+- type: monotonicity
+  property: Progress percentage monotonically increasing
+  formal: forall t1 < t2, progress(t1).pct <= progress(t2).pct
+  applies_to: progress_reporting
+  lean:
+    theorem: Theorems.ProgressReporting
+    status: sorry
+- type: invariant
+  property: Concurrent inference results independent
+  formal: result_i independent of request ordering
+  applies_to: concurrent_model_access
+  lean:
+    theorem: Theorems.ConcurrentModelAccess
+    status: sorry
+- type: roundtrip
+  property: Tokenizer encode/decode roundtrip
+  formal: decode(encode(text)) == text for valid UTF-8
+  applies_to: tokenizer_consistency
+  lean:
+    theorem: Theorems.TokenizerConsistency
+    status: sorry
+- type: bound
+  property: Token count bounded by input length
+  formal: encode(text).len() <= text.len() * MAX_EXPANSION_RATIO
+  tolerance: 1e-6
+  applies_to: tokenizer_consistency
+  lean:
+    theorem: Theorems.TokenizerConsistencyBound
+    status: sorry
+falsification_tests:
+- id: FALSIFY-OPS-001
+  rule: ReadOnly commands have no side effects
+  prediction: apr check does not modify any file (before/after hash identical)
+  test: Snapshot filesystem, run apr check, diff snapshot
+  if_fails: Read-only command has hidden file mutation
+- id: FALSIFY-OPS-002
+  rule: No resource leaks after command exit
+  prediction: GPU memory returns to baseline after inference error
+  test: Force inference OOM, measure GPU memory after, compare to baseline
+  if_fails: GPU memory leak on error path
+- id: FALSIFY-OPS-003
+  rule: Greedy decoding is deterministic
+  prediction: Two runs with temperature=0 produce identical output
+  test: Run same prompt twice with temperature=0, assert output equality
+  if_fails: Non-deterministic codepath in greedy sampling
+- id: FALSIFY-OPS-004
+  rule: Progress percentage monotonically increasing
+  prediction: Progress never decreases during model loading
+  test: Capture all progress events during pull, verify monotonicity
+  if_fails: Progress percentage regression (confuses users)
+- id: FALSIFY-OPS-005
+  rule: Concurrent inference results independent
+  prediction: Result of request A is identical whether B runs concurrently or not
+  test: Run request A alone, then with concurrent B, diff results
+  if_fails: KV cache contamination between concurrent requests
+- id: FALSIFY-OPS-006
+  rule: Tokenizer encode/decode roundtrip
+  prediction: Random UTF-8 strings survive tokenize/detokenize roundtrip
+  test: Generate 1000 random UTF-8 strings, encode then decode, assert equality
+  if_fails: Tokenizer drops or corrupts characters
+- id: FALSIFY-OPS-007
+  rule: Token count bounded by input length
+  prediction: No input produces more than 4x tokens (BPE worst case)
+  test: Encode adversarial strings (single-byte tokens), verify count <= 4 * len
+  if_fails: Token explosion — unbounded memory usage
+kani_harnesses:
+- id: KANI-OPS-001
+  obligation: ReadOnly commands have no side effects
+  property: No file mutation in readonly commands
+  bound: 8
+  strategy: exhaustive
+  harness: verify_readonly_no_mutation
+- id: KANI-OPS-002
+  obligation: No resource leaks after command exit
+  property: Resources freed on all exit paths
+  bound: 8
+  strategy: exhaustive
+  harness: verify_resource_cleanup
+- id: KANI-OPS-003
+  obligation: Greedy decoding is deterministic
+  property: temperature=0 -> deterministic output
+  bound: 4
+  strategy: exhaustive
+  harness: verify_greedy_determinism
+- id: KANI-OPS-004
+  obligation: Progress percentage monotonically increasing
+  property: pct(t1) <= pct(t2) for t1 < t2
+  bound: 16
+  strategy: bounded_int
+  harness: verify_progress_monotonic
+- id: KANI-OPS-005
+  obligation: Concurrent inference results independent
+  property: No cross-request state contamination
+  bound: 4
+  strategy: exhaustive
+  harness: verify_concurrent_independence
+- id: KANI-OPS-006
+  obligation: Tokenizer encode/decode roundtrip
+  property: decode(encode(s)) == s
+  bound: 8
+  strategy: exhaustive
+  harness: verify_tokenizer_roundtrip
+- id: KANI-OPS-007
+  obligation: Token count bounded by input length
+  property: tokens.len() <= input.len() * 4
+  bound: 16
+  strategy: bounded_int
+  harness: verify_token_count_bounded
+qa_gate:
+  id: F-OPS-GATE
+  name: APR CLI Operations Contract
+  description: All 48 apr-cli operations — safety, determinism, and resource management
+  checks:
+  - side_effect_classification
+  - resource_cleanup
+  - inference_determinism
+  - progress_reporting
+  - concurrent_model_access
+  - tokenizer_consistency
+  pass_criteria: All 7 falsification tests pass
+  falsification: >
+    Run read-only command with filesystem watcher to detect mutations.
+    Force inference error and measure GPU memory leak.
+    Run two greedy inferences and diff output.

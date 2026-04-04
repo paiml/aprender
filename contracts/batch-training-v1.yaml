@@ -1,0 +1,283 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: Mini-batch training with gradient accumulation for classification
+  registry: true
+  references:
+  - shell-safety-inference.md v2.2.0 (bashrs spec, Section 14)
+  - classification-finetune-v1.yaml (parent contract)
+  - Goyal et al. (2017). Accurate, Large Minibatch SGD. arXiv:1706.02677
+  depends_on:
+  - classification-finetune-v1
+  - qwen2-weight-loading-v1
+batch_config:
+  default_batch_size: 32
+  default_accumulation_steps: 1
+  default_gradient_clip_norm: 1.0
+  supported_batch_sizes:
+  - 1
+  - 2
+  - 4
+  - 8
+  - 16
+  - 32
+  - 64
+  - 128
+training_invariants:
+  gradient_accumulation:
+  - id: F-BATCH-001
+    name: Gradient equivalence
+    description: 'Accumulated gradients over N micro-batches produce the same parameter
+
+      update as a single large batch of N * micro_batch_size samples
+
+      (within floating-point tolerance).
+
+      '
+    severity: P0
+    critical: true
+    tolerance: 1e-5
+  - id: F-BATCH-002
+    name: Loss finite
+    description: Average batch loss is finite (no NaN, no Inf) for all batches
+    severity: P0
+    critical: true
+  - id: F-BATCH-003
+    name: Gradient norm bounded
+    description: After gradient clipping, total gradient norm <= clip_norm
+    severity: P0
+    critical: true
+  - id: F-BATCH-004
+    name: Batch size invariant
+    description: Processed sample count == min(batch_size, remaining_samples)
+    severity: P1
+  optimizer_interaction:
+  - id: F-BATCH-005
+    name: Single optimizer step per batch
+    description: optimizer.step() called exactly once per batch (not per sample)
+    severity: P0
+    critical: true
+  - id: F-BATCH-006
+    name: Gradient zeroing
+    description: Gradients zeroed before each batch (no stale gradients)
+    severity: P0
+    critical: true
+  - id: F-BATCH-007
+    name: Gradient scaling
+    description: Accumulated gradients divided by accumulation_steps before optimizer step
+    severity: P1
+equations:
+  gradient_accumulation:
+    formula: 'g_accumulated = (1/K) * sum_{k=1}^{K} g_micro_k
+
+      where K = accumulation_steps, g_micro_k = gradient from micro-batch k
+
+      '
+    domain: K >= 1, each micro-batch has B/K samples
+    invariants:
+    - Equivalent to single batch of B samples (within FP tolerance)
+    - Division by K normalizes gradient magnitude
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Gradient_Accumulation
+  gradient_clipping:
+    formula: "if ||g|| > clip_norm:\n    g = g * (clip_norm / ||g||)\nwhere ||g|| = sqrt(sum(g_i^2)) is L2 norm\n"
+    domain: clip_norm > 0
+    invariants:
+    - 'Post-clipping: ||g|| <= clip_norm'
+    - 'Direction preserved: g_clipped / ||g_clipped|| == g / ||g||'
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Gradient_Clipping
+  batch_loss:
+    formula: 'L_batch = (1/B) * sum_{i=1}^{B} L(f(x_i), y_i)
+
+      where B = batch_size, L = cross_entropy_loss
+
+      '
+    domain: B >= 1
+    invariants:
+    - L_batch is finite for all valid inputs
+    - L_batch >= 0 (cross-entropy is non-negative)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Batch_Loss
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate batch size, accumulation steps, and gradient clip norm
+  - name: execute
+    description: Forward pass, accumulate gradients, clip, and optimizer step
+  - name: verify_output
+    description: Verify loss is finite, gradients bounded, optimizer stepped once
+
+falsification_tests:
+- id: FALSIFY-BATCH-001
+  rule: F-BATCH-001 (Gradient equivalence)
+  prediction: Accumulated micro-batch gradients match single large-batch gradients
+  test: "#[test]\nfn falsify_batch_001_gradient_equivalence() {\n    let samples = create_test_samples(8);\n\n    // Single\
+    \ large batch\n    let mut pipeline_a = create_test_pipeline();\n    let result_a = pipeline_a.train_batch(&samples);\n\
+    \    let grads_a = pipeline_a.collect_gradients();\n\n    // 4 micro-batches of 2\n    let mut pipeline_b = create_test_pipeline();\
+    \  // same init weights\n    for chunk in samples.chunks(2) {\n        pipeline_b.accumulate_gradients(chunk);\n    }\n\
+    \    pipeline_b.apply_accumulated_gradients(4);  // divide by 4\n    let grads_b = pipeline_b.collect_gradients();\n\n\
+    \    for (ga, gb) in grads_a.iter().zip(grads_b.iter()) {\n        assert!((ga - gb).abs() < 1e-5,\n                \"\
+    Gradient mismatch: {} vs {}\", ga, gb);\n    }\n}\n"
+  if_fails: Gradient accumulation not equivalent to large-batch — normalization error
+- id: FALSIFY-BATCH-002
+  rule: F-BATCH-002 (Loss finite)
+  prediction: Batch loss is always finite
+  test: "proptest! {\n    #[test]\n    fn falsify_batch_002_loss_finite(\n        batch_size in 1usize..=32,\n        num_samples\
+    \ in 1usize..=100,\n    ) {\n        let samples = create_random_samples(num_samples);\n        let mut pipeline = create_test_pipeline();\n\
+    \        let bs = batch_size.min(num_samples);\n        let result = pipeline.train_batch(&samples[..bs]);\n        prop_assert!(result.loss.is_finite(),\n\
+    \                     \"Batch loss is not finite: {}\", result.loss);\n        prop_assert!(result.loss >= 0.0,\n    \
+    \                 \"Batch loss is negative: {}\", result.loss);\n    }\n}\n"
+  if_fails: Loss computation produces NaN/Inf for some input combination
+- id: FALSIFY-BATCH-003
+  rule: F-BATCH-003 (Gradient norm bounded)
+  prediction: Post-clipping gradient norm <= clip_norm
+  test: "#[test]\nfn falsify_batch_003_gradient_clipping() {\n    let samples = create_test_samples(16);\n    let mut pipeline\
+    \ = create_test_pipeline_with_clip(1.0);\n    pipeline.train_batch(&samples);\n    let grad_norm = pipeline.gradient_norm();\n\
+    \    assert!(grad_norm <= 1.0 + 1e-6,\n            \"Gradient norm {} exceeds clip_norm 1.0\", grad_norm);\n}\n"
+  if_fails: Gradient clipping not applied or applied incorrectly
+- id: FALSIFY-BATCH-004
+  rule: F-BATCH-005 (Single optimizer step)
+  prediction: Optimizer called exactly once per batch
+  test: "#[test]\nfn falsify_batch_004_single_optimizer_step() {\n    let samples = create_test_samples(8);\n    let mut pipeline\
+    \ = create_test_pipeline();\n\n    let params_before = pipeline.collect_params();\n    pipeline.train_batch(&samples);\n\
+    \    let params_after = pipeline.collect_params();\n\n    // Params should have changed (optimizer stepped)\n    let changed\
+    \ = params_before.iter().zip(params_after.iter())\n        .any(|(a, b)| (a - b).abs() > 1e-10);\n    assert!(changed,\
+    \ \"No parameter update — optimizer not called\");\n}\n"
+  if_fails: Optimizer step not wired to batch completion
+- id: FALSIFY-BATCH-005
+  rule: F-BATCH-006 (Gradient zeroing)
+  prediction: No stale gradients between batches
+  test: "#[test]\nfn falsify_batch_005_no_stale_gradients() {\n    let samples_a = create_test_samples(4);\n    let samples_b\
+    \ = create_test_samples(4);\n    let mut pipeline = create_test_pipeline();\n\n    // Train two batches\n    pipeline.train_batch(&samples_a);\n\
+    \    let grads_after_a = pipeline.collect_gradients();\n\n    pipeline.train_batch(&samples_b);\n    let grads_after_b\
+    \ = pipeline.collect_gradients();\n\n    // Gradients should be different (if same, stale from batch A)\n    let all_same\
+    \ = grads_after_a.iter().zip(grads_after_b.iter())\n        .all(|(a, b)| (a - b).abs() < 1e-10);\n    assert!(!all_same,\
+    \ \"Gradients identical between batches — not zeroed\");\n}\n"
+  if_fails: Gradient zeroing not called before each batch
+- id: FALSIFY-BATCH-006
+  rule: F-BATCH-007 (Gradient scaling)
+  prediction: Accumulated gradients divided by K before optimizer step
+  test: |
+    #[test]
+    fn falsify_batch_006_gradient_scaling() {
+        let samples = create_test_samples(8);
+        let mut pipeline_accum = create_test_pipeline();
+        for chunk in samples.chunks(2) {
+            pipeline_accum.accumulate_gradients(chunk);
+        }
+        pipeline_accum.apply_accumulated_gradients(4);
+        let grads_accum = pipeline_accum.collect_gradients();
+
+        // Gradients should be roughly 1/4 of un-normalized
+        for &g in &grads_accum {
+            assert!(g.is_finite(), "Gradient not finite after scaling");
+        }
+    }
+  if_fails: Gradient not divided by accumulation_steps before optimizer step
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — training halts immediately when loss becomes
+
+    NaN or gradient norm explodes. No corrupt weight updates propagate.
+
+    '
+  poka_yoke: '"Mistake-proofing" — batch_size validated at construction. Gradient clipping
+
+    is always-on (configurable threshold, not optional). Division by accumulation_steps
+
+    is automatic.
+
+    '
+  genchi_genbutsu: '"Go and see" — gradient equivalence test proves accumulated micro-batches
+
+    match single large batch with real forward/backward passes, not mocked gradients.
+
+    '
+  kaizen: '"Continuous improvement" — batch configuration is a struct, not magic constants.
+
+    Easy to tune batch_size and accumulation_steps as hardware changes.
+
+    '
+qa_gate:
+  id: F-BATCH-GATE
+  name: Batch Training Contract
+  description: Mini-batch training with gradient accumulation quality gate
+  checks:
+  - gradient_equivalence
+  - loss_finite
+  - gradient_norm_bounded
+  - single_optimizer_step
+  - gradient_zeroing
+  pass_criteria: All 5 falsification tests pass
+  falsification: Remove gradient division by accumulation_steps to break equivalence
+proof_obligations:
+- type: invariant
+  property: Equivalent to single batch of B samples (within FP tolerance)
+  formal: Equivalent to single batch of B samples (within FP tolerance)
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: Division by K normalizes gradient magnitude
+  formal: Division by K normalizes gradient magnitude
+  applies_to: all
+- type: invariant
+  property: 'Post-clipping: ||g|| <= clip_norm'
+  formal: 'Post-clipping: ||g|| <= clip_norm'
+  applies_to: all
+- type: invariant
+  property: 'Direction preserved: g_clipped / ||g_clipped|| == g / ||g||'
+  formal: 'Direction preserved: g_clipped / ||g_clipped|| == g / ||g||'
+  applies_to: all
+- type: invariant
+  property: L_batch is finite for all valid inputs
+  formal: L_batch is finite for all valid inputs
+  applies_to: all
+- type: invariant
+  property: L_batch >= 0 (cross-entropy is non-negative)
+  formal: L_batch >= 0 (cross-entropy is non-negative)
+  applies_to: all
+kani_harnesses:
+- id: KANI-BATCH-001
+  obligation: Equivalent to single batch of B samples (within FP tolerance)
+  property: Accumulated gradients over K micro-batches equal single-batch gradients within FP tolerance
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gradient_accumulation_equivalence
+- id: KANI-BATCH-002
+  obligation: Division by K normalizes gradient magnitude
+  property: Gradient magnitude normalized by accumulation_steps
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gradient_normalization
+- id: KANI-BATCH-003
+  obligation: "Post-clipping: ||g|| <= clip_norm"
+  property: Post-clipping gradient norm bounded by clip_norm
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gradient_clipping_bound
+- id: KANI-BATCH-004
+  obligation: "Direction preserved: g_clipped / ||g_clipped|| == g / ||g||"
+  property: Clipping preserves gradient direction
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gradient_direction_preserved
+- id: KANI-BATCH-005
+  obligation: L_batch is finite for all valid inputs
+  property: Batch loss is always finite
+  bound: 16
+  strategy: bounded_int
+  harness: verify_loss_finite
+- id: KANI-BATCH-006
+  obligation: L_batch >= 0 (cross-entropy is non-negative)
+  property: Cross-entropy loss is non-negative
+  bound: 16
+  strategy: bounded_int
+  harness: verify_loss_non_negative

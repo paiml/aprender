@@ -1,0 +1,283 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Model format conversion safety — apr convert/quantize/merge/import/export
+    operations preserve tensor integrity, maintain weight equivalence,
+    and enforce format-specific invariants. Conversion bugs silently corrupt
+    model weights, producing plausible but wrong inference results.
+  references:
+  - 'GGUF Specification v3 (ggerganov/ggml)'
+  - 'Safetensors specification (huggingface/safetensors)'
+  - 'APR internal format (aprender native tensor layout)'
+  - 'apr-cli/src/commands/ — convert, quantize, merge, import, export handlers'
+  depends_on:
+  - cli-dispatch-v1
+  - tensor-layout-v1
+equations:
+  format_conversion_roundtrip:
+    formula: |
+      convert(model, src_fmt, dst_fmt): Model -> Result<Model, ConvertError>
+        roundtrip: convert(convert(m, A, B), B, A) ≈ m  (within dtype precision)
+        tensor_count(src) == tensor_count(dst)
+        tensor_names(src) == tensor_names(dst)  (preserved exactly)
+        For each tensor: shape_src == shape_dst
+    domain: Model in source format {GGUF, Safetensors, APR, PyTorch}
+    codomain: Result<Model in destination format, ConvertError>
+    invariants:
+    - Tensor count preserved across conversion
+    - Tensor names preserved exactly (no renaming)
+    - Tensor shapes preserved exactly (no reshape)
+    - Weight values preserved within dtype precision bounds
+    preconditions:
+    - source model passes format validation
+    - source format != destination format
+    postconditions:
+    - destination model passes format validation
+    - tensor_count(output) == tensor_count(input)
+    lean_theorem: Theorems.Format_Conversion_Roundtrip
+  quantization_bounds:
+    formula: |
+      quantize(tensor, src_dtype, dst_dtype): Tensor -> Result<Tensor, QuantError>
+        dst_dtype ∈ {Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K}
+        error = max(|dequant(quant(x)) - x|) for all x in tensor
+        error <= dtype_tolerance(dst_dtype)
+        output_size = tensor.numel() * bits_per_weight(dst_dtype) / 8
+    domain: Float tensor with target quantization type
+    codomain: Result<Quantized tensor, QuantError>
+    invariants:
+    - Quantization error bounded by dtype-specific tolerance
+    - Output tensor shape identical to input shape
+    - Output size = numel * bits_per_weight / 8 (exact)
+    - Dequantized values are finite (no NaN/Inf introduced)
+    preconditions:
+    - input tensor dtype is F16 or F32 or BF16
+    - input values are all finite (no NaN/Inf)
+    - dst_dtype is a known quantization type
+    postconditions:
+    - output.shape == input.shape
+    - all dequantized values are finite
+    lean_theorem: Theorems.Quantization_Bounds
+  merge_weight_algebra:
+    formula: |
+      merge(models, weights): Vec<(Model, f64)> -> Result<Model, MergeError>
+        For each tensor name shared by all models:
+          merged[name] = sum(w_i * model_i[name]) / sum(w_i)
+        Weights must be positive and sum to non-zero
+        All models must have identical architecture (same tensor names, shapes, dtypes)
+    domain: List of (Model, weight) pairs with compatible architectures
+    codomain: Result<Merged model, MergeError>
+    invariants:
+    - All models have identical tensor name sets
+    - All models have identical tensor shapes per name
+    - Merge weights are all positive
+    - Merged tensor = weighted average (commutative, associative)
+    preconditions:
+    - models.len() >= 2
+    - all weights > 0.0
+    - all models have same architecture
+    postconditions:
+    - output has same tensor names as inputs
+    - output tensors have same shapes as inputs
+    lean_theorem: Theorems.Merge_Weight_Algebra
+  import_integrity:
+    formula: |
+      import(path, format): Path -> Result<Model, ImportError>
+        Detects format from magic bytes (not extension)
+        GGUF: magic == "GGUF"
+        Safetensors: first 8 bytes are valid u64 LE header size
+        PyTorch: magic == PK (zip) with data.pkl
+        APR: magic == "APR\x01"
+    domain: File path to model on disk
+    codomain: Result<In-memory Model, ImportError>
+    invariants:
+    - Format detected from content, not file extension
+    - Import does not modify source file (read-only)
+    - All tensors loaded and validated before returning Ok
+    - Partial load (file truncated mid-tensor) returns ImportError
+    preconditions:
+    - file exists and is readable
+    - file size >= minimum for detected format
+    postconditions:
+    - all tensors have valid shapes and dtypes
+    - tensor data fully loaded (no lazy stubs)
+    lean_theorem: Theorems.Import_Integrity
+  export_fidelity:
+    formula: |
+      export(model, path, format): (Model, Path, Format) -> Result<(), ExportError>
+        Written file passes format validation
+        import(export(m)) ≈ m (roundtrip within dtype precision)
+        File is complete (no partial writes on error)
+    domain: In-memory Model with target path and format
+    codomain: Result<(), ExportError> — file written atomically
+    invariants:
+    - Atomic write — temp file + rename, no partial files on crash
+    - Exported file passes pv validate for target format
+    - Tensor count and names preserved
+    - File permissions set correctly (0644)
+    preconditions:
+    - model has at least one tensor
+    - target directory exists and is writable
+    - format is a supported export format
+    postconditions:
+    - file at path passes format validation
+    - file size > 0
+    lean_theorem: Theorems.Export_Fidelity
+  apr_tokenizer_embedding:
+    formula: |
+      apr_convert(input, output, options): (Path, Path, ConvertOptions) -> Result<ConvertReport>
+        IF output format is APR:
+          metadata(output).contains("tokenizer.merges") OR
+          metadata(output).contains("tokenizer.vocabulary") OR
+          metadata(output).contains("tokenizer.ggml")
+        APR files MUST be self-contained — tokenizer embedded at write time.
+        Any code path that produces an APR file without tokenizer is a P0 defect.
+    domain: All APR file creation paths (convert, import, merge, quantize)
+    codomain: APR file with embedded tokenizer
+    invariants:
+    - Every APR creation path embeds tokenizer data (Jidoka)
+    - Q4K passthrough path — tokenizer from GGUF raw result
+    - Q4K fallback path — tokenizer from extract_gguf_config() (PMAT-154 fix)
+    - Non-Q4K path — tokenizer from save_model_tensors_with_gguf_config_and_tokenizer()
+    - SafeTensors path — tokenizer from tokenizer.json if present
+    preconditions:
+    - source model has tokenizer data (GGUF vocabulary or tokenizer.json)
+    postconditions:
+    - output APR metadata contains tokenizer.merges or tokenizer.vocabulary
+    - realizar can load and encode text without external tokenizer file
+    lean_theorem: Theorems.Apr_Tokenizer_Embedding
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Detect format from magic bytes, validate source model integrity
+  - name: execute
+    description: Convert, quantize, or merge model with tensor preservation
+  - name: verify_output
+    description: Verify roundtrip fidelity, atomic write, tokenizer embedding
+
+proof_obligations:
+- type: roundtrip
+  property: Format conversion preserves tensor count
+  formal: tensor_count(convert(m, A, B)) == tensor_count(m)
+  applies_to: format_conversion_roundtrip
+- type: bound
+  property: Quantization error bounded
+  formal: max_error(quant(tensor, dtype)) <= dtype_tolerance(dtype)
+  tolerance: 1e-6
+  applies_to: quantization_bounds
+- type: invariant
+  property: Merge architecture compatibility
+  formal: forall m1 m2 in models, tensor_names(m1) == tensor_names(m2)
+  applies_to: merge_weight_algebra
+- type: precondition
+  property: Format detection from content not extension
+  formal: detect_format(bytes) independent of file_path.extension()
+  applies_to: import_integrity
+- type: roundtrip
+  property: Export-import roundtrip fidelity
+  formal: import(path_after_export(m)) ≈ m within dtype precision
+  applies_to: export_fidelity
+- type: invariant
+  property: Atomic write — no partial files
+  formal: file at path is either complete and valid OR does not exist
+  applies_to: export_fidelity
+- type: postcondition
+  property: APR files embed tokenizer at write time
+  formal: for all APR creation paths, output.metadata contains tokenizer data
+  applies_to: apr_tokenizer_embedding
+falsification_tests:
+- id: FALSIFY-CONV-001
+  rule: Format conversion preserves tensor count
+  prediction: Converting 100-tensor GGUF to safetensors produces exactly 100 tensors
+  test: Convert known model, count tensors in output, assert equal
+  if_fails: Tensor dropped or duplicated during conversion
+- id: FALSIFY-CONV-002
+  rule: Quantization error bounded
+  prediction: Q4_0 quantization of random F32 tensor has max error < 0.5
+  test: Quantize random tensor, compute max abs error, assert < tolerance
+  if_fails: Quantization introduces unbounded error
+- id: FALSIFY-CONV-003
+  rule: Merge architecture compatibility
+  prediction: Merging models with different tensor names returns MergeError
+  test: Create two models with different tensor name sets, attempt merge
+  if_fails: Silent tensor dropping during merge
+- id: FALSIFY-CONV-004
+  rule: Format detection from content not extension
+  prediction: GGUF file with .safetensors extension is detected as GGUF
+  test: Rename GGUF file to .safetensors, import, verify GGUF format detected
+  if_fails: Extension-based detection — wrong parser applied to wrong format
+- id: FALSIFY-CONV-005
+  rule: Export-import roundtrip fidelity
+  prediction: export then import produces identical tensor names and shapes
+  test: Export model to safetensors, import back, diff tensor metadata
+  if_fails: Roundtrip corruption — data loss during format translation
+- id: FALSIFY-CONV-006
+  rule: Atomic write — no partial files
+  prediction: Interrupted export leaves no partial file at target path
+  test: Start export, kill process mid-write, verify target does not exist
+  if_fails: Partial file left on disk — corrupted model loaded on next run
+- id: FALSIFY-CONV-007
+  rule: APR tokenizer embedding (PMAT-154)
+  prediction: Every APR creation path (Q4K passthrough, Q4K fallback, non-Q4K, SafeTensors) produces APR with tokenizer.merges or tokenizer.vocabulary in metadata
+  test: Convert GGUF to APR via each code path; scan first 64KB of output for tokenizer.merges or tokenizer.vocabulary; assert present
+  if_fails: APR file without tokenizer — inference fails with opaque "Tokenizer encode failed" error instead of working. P0 catastrophic — the APR format promise of self-contained models is broken.
+kani_harnesses:
+- id: KANI-CONV-001
+  obligation: Format conversion preserves tensor count
+  property: tensor_count(output) == tensor_count(input)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_tensor_count_preserved
+- id: KANI-CONV-002
+  obligation: Quantization error bounded
+  property: max_error < dtype_tolerance
+  bound: 16
+  strategy: stub_float
+  harness: verify_quant_error_bounded
+- id: KANI-CONV-003
+  obligation: Merge architecture compatibility
+  property: Different architectures rejected
+  bound: 8
+  strategy: exhaustive
+  harness: verify_merge_compat_check
+- id: KANI-CONV-004
+  obligation: Format detection from content not extension
+  property: detect_format independent of path
+  bound: 4
+  strategy: exhaustive
+  harness: verify_content_detection
+- id: KANI-CONV-005
+  obligation: Export-import roundtrip fidelity
+  property: import(export(m)).tensor_names == m.tensor_names
+  bound: 8
+  strategy: exhaustive
+  harness: verify_roundtrip_names
+- id: KANI-CONV-006
+  obligation: Atomic write — no partial files
+  property: File either complete or absent
+  bound: 4
+  strategy: exhaustive
+  harness: verify_atomic_write
+- id: KANI-CONV-007
+  obligation: APR files embed tokenizer at write time
+  property: All APR creation paths embed tokenizer metadata
+  bound: 4
+  strategy: exhaustive
+  harness: verify_apr_tokenizer_embedded
+qa_gate:
+  id: F-CONV-GATE
+  name: Model Format Conversion Safety Contract
+  description: Format conversion invariants for apr convert/quantize/merge/import/export
+  checks:
+  - format_conversion_roundtrip
+  - quantization_bounds
+  - merge_weight_algebra
+  - import_integrity
+  - export_fidelity
+  pass_criteria: All 7 falsification tests pass
+  falsification: >
+    Convert a model, count tensors, verify all preserved.
+    Quantize with extreme values, check error bounds.
+    Merge incompatible models, verify rejection.

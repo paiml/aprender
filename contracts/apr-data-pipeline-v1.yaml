@@ -1,0 +1,212 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Data pipeline contract — dataset loading, preprocessing, validation,
+    and streaming for training and evaluation. Covers `apr data` commands
+    (prepare, validate, stats, split) and the training data pipeline.
+  references:
+  - 'apr-cli/src/commands/data.rs — data_prepare(), data_validate(), data_stats()'
+  - 'apr-cli/src/data_commands.rs — DataCommands::{Prepare, Validate, Stats, Split}'
+  - 'aprender/src/data/ — Dataset, DataLoader, Preprocessor'
+  depends_on:
+  - training-loop-v1
+  - apr-cli-v1
+
+equations:
+  data_validation:
+    formula: |
+      validate(path): Path -> Result<DataReport, ValidationError>
+        Checks: UTF-8 encoding, JSONL structure, field completeness
+        Reports: line count, field distribution, encoding issues
+        Rejects: binary content, truncated lines, invalid JSON
+    domain: Path to data file (JSONL, CSV, text)
+    codomain: Result<DataReport, ValidationError>
+    invariants:
+    - Validation is read-only (never modifies input file)
+    - Invalid lines reported with line numbers
+    - Empty file returns error (not empty report)
+    preconditions:
+    - path.exists() && path.is_file()
+    postconditions:
+    - report.line_count == actual line count of file
+    - report.invalid_lines subset of 1..=line_count
+    lean_theorem: Theorems.DataValidation
+
+  data_split_determinism:
+    formula: |
+      split(data, ratios, seed): (Dataset, Ratios, u64) -> (Train, Val, Test)
+        ratios = (train_pct, val_pct, test_pct) where sum == 1.0
+        Shuffle with seed, then partition by ratios
+        Same seed always produces same split
+    domain: Dataset with N samples, split ratios summing to 1.0, seed
+    codomain: (Train, Val, Test) disjoint subsets
+    invariants:
+    - Train ∪ Val ∪ Test == Dataset (no samples lost)
+    - Train ∩ Val == ∅, Train ∩ Test == ∅, Val ∩ Test == ∅ (no contamination)
+    - Same seed → same split (deterministic)
+    - "len(Train) + len(Val) + len(Test) == N"
+    preconditions:
+    - ratios.sum() == 1.0
+    - seed is a valid u64
+    - data.len() > 0
+    postconditions:
+    - train.len() + val.len() + test.len() == data.len()
+    - no sample appears in more than one split
+    lean_theorem: Theorems.DataSplitDeterminism
+
+  streaming_data_loader:
+    formula: |
+      dataloader(dataset, batch_size, shuffle): DataLoaderConfig -> DataIterator
+        Yields batches of batch_size samples
+        Final batch may be smaller (no padding, no drop)
+        Shuffle with epoch-dependent seed for reproducibility
+    domain: Dataset with N samples, batch_size > 0, shuffle flag
+    codomain: Iterator<Item = Batch> yielding ceil(N / batch_size) batches
+    invariants:
+    - Total samples yielded == N (no duplicates, no drops)
+    - Batch sizes equal batch_size except possibly last
+    - Shuffle is epoch-seeded (reproducible across restarts)
+    preconditions:
+    - batch_size > 0
+    - dataset.len() > 0
+    postconditions:
+    - sum(batch.len() for batch in iterator) == dataset.len()
+    - max(batch.len()) == batch_size
+    lean_theorem: Theorems.StreamingDataLoader
+
+  preprocessing_idempotency:
+    formula: |
+      preprocess(text): String -> TokenizedSample
+        Apply tokenizer, truncate to max_length, add special tokens
+        preprocess(preprocess(text)) has same token_ids as preprocess(text)
+        (Special tokens not double-added)
+    domain: UTF-8 text string
+    codomain: TokenizedSample with token_ids and attention_mask
+    invariants:
+    - Special tokens appear exactly once ([CLS], [SEP], <bos>, <eos>)
+    - Token count <= max_length
+    - Preprocessing is deterministic
+    preconditions:
+    - text is valid UTF-8
+    - max_length > 0
+    postconditions:
+    - result.token_ids.len() <= max_length
+    - special tokens appear exactly once
+    lean_theorem: Theorems.PreprocessingIdempotency
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate data file exists, check format and encoding
+  - name: execute
+    description: Load, split, preprocess, and stream data batches
+  - name: verify_output
+    description: Verify sample conservation, split disjointness, and batch completeness
+
+proof_obligations:
+- type: conservation
+  property: Split preserves all samples
+  formal: "len(Train) + len(Val) + len(Test) == N, no duplicates"
+  tolerance: 1e-6
+  applies_to: data_split_determinism
+  lean:
+    theorem: Theorems.DataSplitDeterminism
+    status: sorry
+- type: determinism
+  property: Split with same seed is deterministic
+  formal: split(data, ratios, seed) == split(data, ratios, seed)
+  applies_to: data_split_determinism
+  lean:
+    theorem: Theorems.DataSplitDeterminismPure
+    status: sorry
+- type: conservation
+  property: DataLoader yields all samples exactly once
+  formal: sum(batch.len()) == dataset.len()
+  applies_to: streaming_data_loader
+  lean:
+    theorem: Theorems.StreamingDataLoader
+    status: sorry
+- type: idempotency
+  property: Preprocessing is idempotent for special tokens
+  formal: preprocess(preprocess(text)).special_token_count == preprocess(text).special_token_count
+  applies_to: preprocessing_idempotency
+  lean:
+    theorem: Theorems.PreprocessingIdempotency
+    status: sorry
+- type: invariant
+  property: Validation is read-only
+  formal: hash(file_before) == hash(file_after) for validate(file)
+  applies_to: data_validation
+  lean:
+    theorem: Theorems.DataValidation
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-DATA-001
+  rule: Split preserves all samples
+  prediction: Train + val + test sample count equals original
+  test: Split 1000-sample dataset, count total across splits
+  if_fails: Rounding error loses samples at partition boundaries
+- id: FALSIFY-DATA-002
+  rule: No cross-contamination
+  prediction: No sample ID appears in more than one split
+  test: Split dataset, intersect train/val/test sample IDs
+  if_fails: Shuffle produces duplicates across partitions
+- id: FALSIFY-DATA-003
+  rule: DataLoader yields all samples
+  prediction: Iterating full DataLoader yields exactly N samples
+  test: Create 97-sample dataset, batch_size=10, count yielded samples
+  if_fails: Last partial batch dropped (common DataLoader bug)
+- id: FALSIFY-DATA-004
+  rule: Preprocessing idempotent for special tokens
+  prediction: Double-preprocessing does not double special tokens
+  test: Preprocess text, preprocess again, count [CLS]/[SEP] tokens
+  if_fails: Special tokens prepended/appended on each call
+- id: FALSIFY-DATA-005
+  rule: Validation is read-only
+  prediction: File hash unchanged after validation
+  test: SHA-256 before and after validate()
+  if_fails: Validation writes normalized data back to input file
+
+kani_harnesses:
+- id: KANI-DATA-001
+  obligation: Split preserves all samples
+  property: "len(Train) + len(Val) + len(Test) == N"
+  bound: 16
+  strategy: bounded_int
+  harness: verify_split_conservation
+- id: KANI-DATA-002
+  obligation: DataLoader yields all samples exactly once
+  property: sum(batch.len()) == N
+  bound: 16
+  strategy: bounded_int
+  harness: verify_dataloader_conservation
+- id: KANI-DATA-003
+  obligation: Preprocessing is idempotent for special tokens
+  property: special_tokens counted once
+  bound: 8
+  strategy: exhaustive
+  harness: verify_preprocessing_idempotent
+- id: KANI-DATA-004
+  obligation: Split with same seed is deterministic
+  property: same seed same result
+  bound: 8
+  strategy: exhaustive
+  harness: verify_split_deterministic
+- id: KANI-DATA-005
+  obligation: Validation is read-only
+  property: hash(file_before) == hash(file_after) for validate(file)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_validation_readonly
+
+qa_gate:
+  id: F-DATA-GATE
+  name: Data Pipeline Contract
+  description: Quality gate for dataset loading, splitting, and preprocessing
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass

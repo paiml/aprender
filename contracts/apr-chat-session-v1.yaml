@@ -1,0 +1,218 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Chat session contract — stateful interactive inference with session
+    persistence, KV-cache management, template application, and multi-turn
+    conversation safety. Covers `apr chat` and `apr tui` modes.
+  references:
+  - 'apr-cli/src/commands/chat.rs — chat_loop(), ChatSession'
+  - 'apr-cli/src/commands/chat_session.rs — SessionState, save/load'
+  - 'apr-cli/src/commands/chat_generate_session.rs — generate_response()'
+  - 'apr-cli/src/commands/tui.rs — tui_loop(), TuiState'
+  depends_on:
+  - apr-cli-v1
+  - apr-cli-operations-v1
+
+equations:
+  session_state_machine:
+    formula: |
+      chat_loop(model, config): (Model, ChatConfig) -> Result<(), ChatError>
+        States: Init -> WaitInput -> Generating -> WaitInput -> ... -> Exit
+        WaitInput: read user prompt from stdin/tui
+        Generating: tokenize, KV-cache append, sample tokens, detokenize
+        Exit: /quit, /exit, Ctrl-D, or SIGINT
+      History accumulates: each turn appends user+assistant messages
+    domain: Loaded model, ChatConfig with template and sampling params
+    codomain: Result<(), ChatError>
+    invariants:
+    - Session history is append-only (no retroactive editing)
+    - KV-cache length matches token count of full history
+    - Template applied consistently to every user turn
+    - Ctrl-C during generation returns to WaitInput (not Exit)
+    preconditions:
+    - model is loaded and ready for inference
+    postconditions:
+    - "on Exit: KV-cache freed, session optionally saved to disk"
+    lean_theorem: Theorems.SessionStateMachine
+
+  chat_template_application:
+    formula: |
+      apply_template(prompt, history, template): (String, History, Template) -> String
+        ChatML: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
+        Llama: [INST] {prompt} [/INST]
+        Alpaca: ### Instruction:\n{prompt}\n### Response:\n
+      Template is idempotent: apply(apply(p)) has same structure as apply(p)
+    domain: User prompt string, conversation history, template format
+    codomain: Formatted prompt string with template markers
+    invariants:
+    - Template markers appear exactly once per turn
+    - History is ordered chronologically
+    - System prompt (if any) appears only at start, not repeated
+    preconditions:
+    - prompt is non-empty
+    - template is a known format
+    postconditions:
+    - result contains the original prompt text
+    - result starts with template prefix
+    lean_theorem: Theorems.ChatTemplateApplication
+
+  kv_cache_management:
+    formula: |
+      manage_kv_cache(cache, new_tokens): (KVCache, Vec<Token>) -> Result<KVCache, CacheError>
+        Append new tokens to existing cache
+        If cache_len + new_tokens > max_context:
+          Truncate oldest tokens (sliding window)
+          OR return CacheError::ContextExceeded
+        Cache is per-session (no cross-session contamination)
+    domain: KVCache with current token history, new tokens to append
+    codomain: Result<KVCache, CacheError>
+    invariants:
+    - Cache length never exceeds max_context_length
+    - Truncation removes oldest tokens first (FIFO)
+    - Cache is freed on session exit
+    preconditions:
+    - new_tokens.len() > 0
+    - cache is in valid state
+    postconditions:
+    - result.len() <= max_context_length
+    - "result contains most recent tokens (newest preserved)"
+    lean_theorem: Theorems.KvCacheManagement
+
+  session_persistence:
+    formula: |
+      save_session(session, path): (ChatSession, Path) -> Result<(), IoError>
+      load_session(path): Path -> Result<ChatSession, SessionError>
+        Roundtrip: load(save(session)) == session (for history and config)
+        Format: JSON with history, config, model_path, timestamp
+        KV-cache is NOT persisted (rebuilt on load from history replay)
+    domain: ChatSession with history and config, file path
+    codomain: Result<(), IoError> for save, Result<ChatSession, SessionError> for load
+    invariants:
+    - Roundtrip preserves history messages and config
+    - KV-cache rebuilt from history on load (not serialized)
+    - Session file is human-readable JSON
+    preconditions:
+    - "save: path parent directory exists and is writable"
+    - "load: path exists and is valid session JSON"
+    postconditions:
+    - "save: file exists and is valid JSON"
+    - "load: session.history == saved session.history"
+    lean_theorem: Theorems.SessionPersistence
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model loaded, parse chat config and template format
+  - name: execute
+    description: Run chat loop with KV-cache management and template application
+  - name: verify_output
+    description: Verify session persistence roundtrip, cleanup KV-cache on exit
+
+proof_obligations:
+- type: state_machine
+  property: Chat session follows valid transitions
+  formal: "Init->WaitInput->Generating->WaitInput->...->Exit, Ctrl-C returns to WaitInput"
+  applies_to: session_state_machine
+  lean:
+    theorem: Theorems.SessionStateMachine
+    status: sorry
+- type: idempotency
+  property: Template application is idempotent
+  formal: structure(apply(apply(p))) == structure(apply(p))
+  applies_to: chat_template_application
+  lean:
+    theorem: Theorems.ChatTemplateApplication
+    status: sorry
+- type: bound
+  property: KV-cache bounded by max context
+  formal: cache.len() <= max_context_length after every operation
+  tolerance: 1e-6
+  applies_to: kv_cache_management
+  lean:
+    theorem: Theorems.KvCacheManagement
+    status: sorry
+- type: roundtrip
+  property: Session save/load roundtrip
+  formal: load(save(session)).history == session.history
+  tolerance: 0.0
+  applies_to: session_persistence
+  lean:
+    theorem: Theorems.SessionPersistence
+    status: sorry
+- type: invariant
+  property: History is append-only
+  formal: history[0..n] unchanged after appending turn n+1
+  applies_to: session_state_machine
+  lean:
+    theorem: Theorems.SessionHistoryAppendOnly
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-CHAT-001
+  rule: Template application idempotent
+  prediction: Applying ChatML template twice does not double-wrap markers
+  test: Apply template to prompt, apply again, count im_start tokens
+  if_fails: Template markers duplicated on each application
+- id: FALSIFY-CHAT-002
+  rule: KV-cache bounded
+  prediction: 10000-token conversation does not exceed max_context
+  test: Send enough turns to exceed context, verify cache truncation
+  if_fails: KV-cache grows unbounded, OOM on long conversations
+- id: FALSIFY-CHAT-003
+  rule: Session roundtrip
+  prediction: Saving and loading session preserves all messages
+  test: Build 5-turn session, save, load, diff histories
+  if_fails: Session serialization loses messages or config
+- id: FALSIFY-CHAT-004
+  rule: Ctrl-C returns to input
+  prediction: Sending SIGINT during generation returns to prompt
+  test: Start generation, send SIGINT, verify still in WaitInput
+  if_fails: SIGINT exits the entire program instead of canceling generation
+- id: FALSIFY-CHAT-005
+  rule: History is append-only
+  prediction: Previous messages unchanged after adding new turn
+  test: Record history hash after turn 3, add turn 4, verify hash unchanged
+  if_fails: New turn modifies or reorders previous messages
+
+kani_harnesses:
+- id: KANI-CHAT-001
+  obligation: Chat session follows valid transitions
+  property: valid transitions only
+  bound: 8
+  strategy: exhaustive
+  harness: verify_chat_state_machine
+- id: KANI-CHAT-002
+  obligation: Template application is idempotent
+  property: markers appear exactly once
+  bound: 8
+  strategy: exhaustive
+  harness: verify_template_idempotent
+- id: KANI-CHAT-003
+  obligation: KV-cache bounded by max context
+  property: cache.len() <= max_context
+  bound: 16
+  strategy: bounded_int
+  harness: verify_kv_cache_bounded
+- id: KANI-CHAT-004
+  obligation: Session save/load roundtrip
+  property: load(save(s)).history == s.history
+  bound: 4
+  strategy: exhaustive
+  harness: verify_session_roundtrip
+- id: KANI-CHAT-005
+  obligation: History is append-only
+  property: history[0..n] immutable
+  bound: 8
+  strategy: exhaustive
+  harness: verify_history_append_only
+
+qa_gate:
+  id: F-CHAT-GATE
+  name: Chat Session Contract
+  description: Quality gate for stateful interactive inference
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass

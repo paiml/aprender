@@ -1,0 +1,255 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Model quality assurance contract — check, validate, qa, lint, probar
+    commands that verify model integrity, detect regressions, and enforce
+    quality gates before deployment. The defensive layer of apr-cli.
+  references:
+  - 'apr-cli/src/commands/check.rs — run_check(), aggregate_results()'
+  - 'apr-cli/src/commands/validate.rs — validate_model()'
+  - 'apr-cli/src/commands/qa.rs — run_qa_pipeline(), QaReport'
+  - 'apr-cli/src/commands/lint.rs — lint_model()'
+  - 'apr-cli/src/commands/probar.rs — run_property_tests()'
+  - 'apr-cli/src/commands/canary.rs — canary_test(), canary_report()'
+  depends_on:
+  - apr-cli-v1
+  - apr-cli-operations-v1
+
+equations:
+  model_integrity_check:
+    formula: |
+      check(path): Path -> Result<CheckReport, CheckError>
+        Stages: header, metadata, tensors, shapes, dtypes, architecture,
+                embedding_validity, qkv_detection, layer_norms, vocabulary
+        Each stage produces pass/fail + evidence
+        Overall: pass iff all stages pass
+    domain: Path to model file (GGUF, SafeTensors, APR)
+    codomain: Result<CheckReport, CheckError>
+    invariants:
+    - Check is read-only (never modifies the model file)
+    - Deterministic (same file → same report)
+    - Partial failure reported per-stage (not all-or-nothing)
+    preconditions:
+    - path.exists() && is_valid_model_file(path)
+    postconditions:
+    - report.stages.len() >= 8
+    - report.pass == report.stages.iter().all(|s| s.passed)
+    lean_theorem: Theorems.ModelIntegrityCheck
+
+  qa_gate_composition:
+    formula: |
+      qa(path, gates): (Path, QaConfig) -> Result<QaReport, QaError>
+        gates: [NaN/Inf, shape, dtype, vocab, embedding, perplexity, canary]
+        Each gate is independently configurable (enable/disable, threshold)
+        Report includes per-gate verdict + aggregate score
+        Exit code 0 iff all enabled gates pass
+    domain: Model path, QA configuration with gate thresholds
+    codomain: Result<QaReport, QaError>
+    invariants:
+    - Gate order does not affect results (commutative)
+    - Disabled gates do not appear in report
+    - Aggregate score = passed_gates / enabled_gates
+    preconditions:
+    - at least one gate enabled
+    - path is a valid model file
+    postconditions:
+    - report.score == passed_count / enabled_count
+    - report.pass == (report.score == 1.0)
+    lean_theorem: Theorems.QaGateComposition
+
+  canary_regression_detection:
+    formula: |
+      canary(model, baseline): (Path, CanaryBaseline) -> Result<CanaryReport, CanaryError>
+        Run fixed prompts, compare outputs to baseline
+        Regression: output diverges beyond tolerance
+        Pass: output matches baseline within tolerance
+    domain: Model path, CanaryBaseline with expected outputs
+    codomain: Result<CanaryReport, CanaryError>
+    invariants:
+    - Canary prompts are fixed (not randomized)
+    - Comparison is token-level (not string-level)
+    - Baseline is immutable once captured
+    preconditions:
+    - model produces output for canary prompts
+    - baseline.prompts.len() > 0
+    postconditions:
+    - report.regressions.len() == count of diverged prompts
+    - report.pass == (report.regressions.is_empty())
+    lean_theorem: Theorems.CanaryRegressionDetection
+
+  lint_model_conventions:
+    formula: |
+      lint(path): Path -> Result<LintReport, LintError>
+        Rules: naming conventions, dtype consistency, shape validity,
+               metadata completeness, tensor ordering
+        Each rule produces finding (error, warning, info)
+        Findings reference the specific tensor or metadata field
+    domain: Path to model file
+    codomain: Result<LintReport, LintError>
+    invariants:
+    - Lint is read-only
+    - Findings are deduplicated
+    - "Severity ordering — error > warning > info"
+    preconditions:
+    - path.exists()
+    postconditions:
+    - report.findings sorted by severity desc
+    - no duplicate findings (same rule + same location)
+    lean_theorem: Theorems.LintModelConventions
+
+  probar_property_tests:
+    formula: |
+      probar(model, properties): (Path, Vec<Property>) -> Result<ProbarReport, ProbarError>
+        Run property-based tests against model behavior:
+          - Softmax output sums to 1
+          - Attention scores are non-negative
+          - Embedding norms bounded
+          - Layer output shapes match config
+    domain: Model path, list of properties to check
+    codomain: Result<ProbarReport, ProbarError>
+    invariants:
+    - Each property tested independently
+    - Failure of one property does not skip others
+    - Random seeds logged for reproducibility
+    preconditions:
+    - model loads successfully
+    - properties.len() > 0
+    postconditions:
+    - report.tested == properties.len()
+    - report.pass == report.failures.is_empty()
+    lean_theorem: Theorems.ProbarPropertyTests
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model path, load configuration, initialize QA gates
+  - name: execute
+    description: Run check stages, QA gates, lint rules, and property tests
+  - name: verify_output
+    description: Aggregate results, compute scores, generate reports
+
+proof_obligations:
+- type: invariant
+  property: Check is read-only
+  formal: hash(file_before) == hash(file_after) for check(file)
+  applies_to: model_integrity_check
+  lean:
+    theorem: Theorems.ModelIntegrityCheck
+    status: sorry
+- type: postcondition
+  property: QA gate composition is correct
+  formal: report.score == passed_count / enabled_count
+  tolerance: 1e-6
+  applies_to: qa_gate_composition
+  lean:
+    theorem: Theorems.QaGateComposition
+    status: sorry
+- type: determinism
+  property: Check is deterministic
+  formal: check(path) == check(path) for all valid paths
+  applies_to: model_integrity_check
+  lean:
+    theorem: Theorems.ModelIntegrityCheckDeterminism
+    status: sorry
+- type: invariant
+  property: Canary baseline is immutable
+  formal: baseline_after == baseline_before for canary(model, baseline)
+  applies_to: canary_regression_detection
+  lean:
+    theorem: Theorems.CanaryRegressionDetection
+    status: sorry
+- type: postcondition
+  property: Lint findings are deduplicated
+  formal: no two findings have same (rule, location) pair
+  applies_to: lint_model_conventions
+  lean:
+    theorem: Theorems.LintModelConventions
+    status: sorry
+- type: completeness
+  property: Probar tests all requested properties
+  formal: report.tested == properties.len()
+  applies_to: probar_property_tests
+  lean:
+    theorem: Theorems.ProbarPropertyTests
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-QA-001
+  rule: Check is read-only
+  prediction: SHA-256 of model file unchanged after `apr check`
+  test: Hash file, run check, hash again
+  if_fails: Check writes metadata or fixes back to model file
+- id: FALSIFY-QA-002
+  rule: QA gate composition score
+  prediction: 3/4 gates passing → score == 0.75
+  test: Configure 4 gates, make 1 fail, verify score
+  if_fails: Score calculation off-by-one or counts disabled gates
+- id: FALSIFY-QA-003
+  rule: Canary detects regression
+  prediction: Modified model fails canary against original baseline
+  test: Capture baseline, quantize model, run canary, expect regression
+  if_fails: Canary comparison too lenient or ignores token-level changes
+- id: FALSIFY-QA-004
+  rule: Lint findings deduplicated
+  prediction: Model with 1 naming violation produces exactly 1 finding
+  test: Lint model, count findings for same rule+tensor
+  if_fails: Same finding emitted multiple times (per-layer duplication)
+- id: FALSIFY-QA-005
+  rule: Probar tests all properties
+  prediction: Requesting 5 properties yields report.tested == 5
+  test: Run probar with 5 properties, check report
+  if_fails: Some properties silently skipped on error
+- id: FALSIFY-QA-006
+  rule: Check is deterministic
+  prediction: Running check twice on same model produces identical reports
+  test: Run check twice, diff JSON outputs
+  if_fails: Non-deterministic metadata or timestamp in report
+
+kani_harnesses:
+- id: KANI-QA-001
+  obligation: Check is read-only
+  property: hash(file_before) == hash(file_after) for check(file)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_check_readonly
+- id: KANI-QA-002
+  obligation: QA gate composition is correct
+  property: score == passed / enabled
+  bound: 8
+  strategy: exhaustive
+  harness: verify_qa_score
+- id: KANI-QA-003
+  obligation: Check is deterministic
+  property: check(path) == check(path)
+  bound: 4
+  strategy: exhaustive
+  harness: verify_check_deterministic
+- id: KANI-QA-004
+  obligation: Canary baseline is immutable
+  property: baseline_after == baseline_before for canary(model, baseline)
+  bound: 4
+  strategy: exhaustive
+  harness: verify_canary_baseline_immutable
+- id: KANI-QA-005
+  obligation: Lint findings are deduplicated
+  property: no duplicate (rule, location) pairs
+  bound: 16
+  strategy: exhaustive
+  harness: verify_lint_dedup
+- id: KANI-QA-006
+  obligation: Probar tests all requested properties
+  property: tested == requested
+  bound: 8
+  strategy: exhaustive
+  harness: verify_probar_completeness
+
+qa_gate:
+  id: F-QA-GATE
+  name: Model QA Contract
+  description: Quality gate for check, qa, lint, probar, canary
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass

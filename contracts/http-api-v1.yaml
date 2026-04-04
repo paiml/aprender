@@ -1,0 +1,291 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: HTTP inference server request/response schemas, error envelope, content-type negotiation, CORS
+  registry: true
+  references:
+  - 'RFC 9110 — HTTP Semantics (IETF, 2022)'
+  - 'RFC 9112 — HTTP/1.1 (IETF, 2022)'
+  - 'OpenAI API Compatibility Specification (chat/completions endpoint)'
+  - 'apr-cli/src/serve_commands.rs — ServeCommands::Run'
+  - 'Fetch Standard — CORS protocol (WHATWG)'
+  depends_on:
+  - cli-dispatch-v1
+http_config:
+  default_host: '127.0.0.1'
+  default_port: 8080
+  endpoints:
+  - path: /v1/completions
+    method: POST
+    content_type: application/json
+  - path: /v1/chat/completions
+    method: POST
+    content_type: application/json
+  - path: /v1/models
+    method: GET
+    content_type: application/json
+  - path: /health
+    method: GET
+    content_type: application/json
+  - path: /metrics
+    method: GET
+    content_type: text/plain
+  error_envelope:
+    format: '{"error": {"message": string, "type": string, "code": int}}'
+    content_type: application/json
+  cors:
+    default_enabled: true
+    disable_flag: --no-cors
+equations:
+  request_response_schema:
+    formula: |
+      parse(request.body, schema(endpoint)) = Ok(typed_request)
+      ∧ serialize(handler(typed_request)) ∈ ValidJSON
+      ∧ response.content_type = "application/json"
+    domain: (request ∈ HttpRequest, endpoint ∈ Endpoints)
+    codomain: HttpResponse where body ∈ ValidJSON
+    invariants:
+    - Request body must match endpoint schema or return 400
+    - Response body is always valid JSON for API endpoints
+    - Content-Type header matches actual body encoding
+    - Streaming responses use text/event-stream with valid SSE framing
+    preconditions:
+    - endpoint ∈ known_endpoints
+    - Content-Type header present for POST requests
+    postconditions:
+    - "On Ok: response body is valid JSON matching endpoint schema"
+    - "Content-Type header is application/json for all API responses"
+    - "Streaming responses use text/event-stream with valid SSE framing"
+    lean_theorem: Theorems.Request_Response_Schema
+  error_envelope_preservation:
+    formula: |
+      ∀ err ∈ HandlerError:
+        response(err) = {
+          status: http_status(err),
+          body: {"error": {"message": err.display(), "type": err.kind(), "code": http_status(err)}},
+          content_type: "application/json"
+        }
+    domain: HandlerError (any error from request processing)
+    codomain: HttpResponse with JSON error body
+    invariants:
+    - Error responses always have JSON body (never plain text stack traces)
+    - HTTP status codes are semantically correct (400 for bad input, 404 for unknown model, 500 for internal)
+    - Error message is human-readable (no lossy downcast erasing context)
+    - Error type field classifies the error category
+    - No information leakage (no file paths, no stack traces in production)
+    preconditions:
+    - Error is a well-formed HandlerError
+    postconditions:
+    - "Response body is valid JSON with {error: {message, type, code}} structure"
+    - "HTTP status code is semantically correct (4xx for client errors, 5xx for server errors)"
+    lean_theorem: Theorems.Error_Envelope
+  cors_negotiation:
+    formula: |
+      cors_enabled ∧ request.origin ∈ Origin:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+      ¬cors_enabled:
+        ∀ h ∈ CORS_HEADERS: h ∉ response.headers
+    domain: (request ∈ HttpRequest, cors_config ∈ {enabled, disabled})
+    codomain: HttpResponse with or without CORS headers
+    invariants:
+    - --no-cors flag completely removes all CORS headers
+    - OPTIONS preflight returns 204 with CORS headers when enabled
+    - CORS headers present on all responses when enabled (not just OPTIONS)
+    preconditions:
+    - Server is running and accepting connections
+    postconditions:
+    - "CORS enabled: Access-Control-Allow-Origin header present on all responses"
+    - "CORS disabled: zero CORS headers in any response"
+    lean_theorem: Theorems.CORS_Negotiation
+  timeout_honoring:
+    formula: |
+      ∀ request with timeout T:
+        duration(handler(request)) > T → response.status = 408 ∨ 504
+        ∧ model.state = state_before(request)  // no partial mutation
+    domain: (request ∈ HttpRequest, T ∈ Duration)
+    codomain: HttpResponse with timeout status or completed result
+    invariants:
+    - Request processing respects configured timeout
+    - Timeout produces a clean error response (not connection drop)
+    - No partial state mutation on timeout (model state unchanged)
+    - Streaming responses can timeout between chunks
+    preconditions:
+    - timeout > 0
+    postconditions:
+    - "Timed-out requests return 408 or 504 with JSON error envelope"
+    - "Model state is unchanged after timeout (no partial mutation)"
+    lean_theorem: Theorems.Timeout_Honoring
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Parse HTTP request, validate JSON body against endpoint schema
+  - name: execute
+    description: Route to handler, process inference, stream response
+  - name: verify_output
+    description: Verify JSON envelope, CORS headers, SSE framing, timeout cleanup
+
+proof_obligations:
+- type: invariant
+  property: Error responses always have JSON envelope
+  formal: '∀ err: response(err).content_type = "application/json" ∧ is_valid_json(response(err).body)'
+  applies_to: error_envelope_preservation
+  lean:
+    theorem: Theorems.ErrorEnvelopePreservation
+    status: sorry
+- type: invariant
+  property: CORS headers are all-or-nothing
+  formal: '¬cors_enabled → (∀ h ∈ CORS_HEADERS: h ∉ response.headers)'
+  applies_to: cors_negotiation
+  lean:
+    theorem: Theorems.CorsNegotiation
+    status: sorry
+- type: invariant
+  property: Streaming uses SSE framing
+  formal: '∀ chunk ∈ stream: chunk.starts_with("data: ") ∧ chunk.ends_with("\n\n")'
+  applies_to: request_response_schema
+  lean:
+    theorem: Theorems.RequestResponseSchema
+    status: sorry
+- type: invariant
+  property: Timeout does not corrupt model state
+  formal: '∀ timeout: model.state_after == model.state_before'
+  tolerance: 1e-6
+  applies_to: timeout_honoring
+  lean:
+    theorem: Theorems.TimeoutHonoring
+    status: sorry
+falsification_tests:
+- id: FALSIFY-HTTP-001
+  rule: Streaming uses SSE framing
+  prediction: POST to /v1/completions with valid JSON returns valid JSON response
+  test: |
+    #[tokio::test]
+    async fn falsify_http_001_completions_response_valid_json() {
+        let client = reqwest::Client::new();
+        let resp = client.post("http://127.0.0.1:8080/v1/completions")
+            .json(&serde_json::json!({
+                "prompt": "Hello",
+                "max_tokens": 5
+            }))
+            .send()
+            .await
+            .expect("Server not running");
+        assert_eq!(resp.headers()["content-type"], "application/json");
+        let body = resp.text().await.unwrap();
+        let parsed: serde_json::Result<serde_json::Value> =
+            serde_json::from_str(&body);
+        assert!(parsed.is_ok(), "Response not valid JSON: {}", body);
+    }
+  if_fails: Response serialization broken or Content-Type header wrong
+- id: FALSIFY-HTTP-002
+  rule: Error responses always have JSON envelope
+  prediction: Invalid JSON body returns 400 with error envelope
+  test: |
+    #[tokio::test]
+    async fn falsify_http_002_error_envelope_on_bad_request() {
+        let client = reqwest::Client::new();
+        let resp = client.post("http://127.0.0.1:8080/v1/completions")
+            .header("Content-Type", "application/json")
+            .body("not valid json{{{")
+            .send()
+            .await
+            .expect("Server not running");
+        assert_eq!(resp.status(), 400);
+        let body: serde_json::Value = resp.json().await
+            .expect("Error response must be valid JSON");
+        assert!(body["error"]["message"].is_string(),
+            "Error envelope missing message field");
+        assert!(body["error"]["type"].is_string(),
+            "Error envelope missing type field");
+    }
+  if_fails: Error handler returns plain text or HTML instead of JSON envelope
+- id: FALSIFY-HTTP-003
+  rule: CORS headers are all-or-nothing
+  prediction: --no-cors flag removes CORS headers from response
+  test: |
+    #[tokio::test]
+    async fn falsify_http_003_no_cors_removes_headers() {
+        // Server started with --no-cors
+        let client = reqwest::Client::new();
+        let resp = client.get("http://127.0.0.1:8080/health")
+            .send()
+            .await
+            .expect("Server not running");
+        assert!(resp.headers().get("access-control-allow-origin").is_none(),
+            "CORS header present when --no-cors is set");
+    }
+  if_fails: CORS headers leak through when disabled
+- id: FALSIFY-HTTP-004
+  rule: Timeout does not corrupt model state
+  prediction: Request timeout leaves model in usable state (next request succeeds)
+  test: |
+    #[tokio::test]
+    async fn falsify_http_004_unknown_endpoint_404() {
+        let client = reqwest::Client::new();
+        let resp = client.get("http://127.0.0.1:8080/v1/nonexistent")
+            .send()
+            .await
+            .expect("Server not running");
+        assert_eq!(resp.status(), 404);
+        let body: serde_json::Value = resp.json().await
+            .expect("404 response must be valid JSON");
+        assert!(body["error"]["message"].is_string(),
+            "404 error envelope missing message field");
+    }
+  if_fails: 404 returns HTML error page instead of JSON envelope
+kani_harnesses:
+- id: KANI-HTTP-001
+  obligation: Error responses always have JSON envelope
+  property: All error paths produce parseable JSON bodies
+  bound: 16
+  strategy: exhaustive
+  harness: verify_error_envelope_structure
+- id: KANI-HTTP-002
+  obligation: CORS headers are all-or-nothing
+  property: Disabled CORS removes all CORS headers from response
+  bound: 8
+  strategy: exhaustive
+  harness: verify_cors_all_or_nothing
+- id: KANI-HTTP-003
+  obligation: Streaming uses SSE framing
+  property: Every streaming chunk has correct SSE framing
+  bound: 8
+  strategy: exhaustive
+  harness: verify_sse_framing
+- id: KANI-HTTP-004
+  obligation: Timeout does not corrupt model state
+  property: Model state identical before and after timeout
+  bound: 4
+  strategy: exhaustive
+  harness: verify_timeout_state_preservation
+qa_gate:
+  id: F-HTTP-GATE
+  name: HTTP API Contract
+  description: Inference server HTTP API quality gate
+  checks:
+  - request_response_schema
+  - error_envelope_preservation
+  - cors_negotiation
+  - timeout_honoring
+  pass_criteria: All 4 falsification tests pass
+  falsification: Return plain text error from handler to break JSON envelope
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — request deserialization fails fast with a
+    400 error and descriptive message before any model inference begins. Malformed
+    requests never reach the inference engine.
+  poka_yoke: >
+    "Mistake-proofing" — the error envelope is a typed struct serialized by serde.
+    It is impossible to return an error response without the envelope structure.
+    The type system enforces the { error: { message, type, code } } shape.
+  genchi_genbutsu: >
+    "Go and see" — falsification tests make real HTTP requests to a running server
+    instance. No mocked HTTP handlers or fake responses.
+  kaizen: >
+    "Continuous improvement" — new endpoints added to the router automatically
+    require handler functions. OpenAPI spec generation planned to validate
+    schema drift between contract and implementation.
