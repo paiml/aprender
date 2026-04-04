@@ -199,9 +199,15 @@ fn transformer_config_from_apr_metadata(
             _ => {
                 // Fall back to known presets by architecture + hidden_size
                 let preset = match (architecture, hidden) {
-                    (Some(a), 896) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_0_5b()),
-                    (Some(a), 1536) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_1_5b()),
-                    (Some(a), 3584) if a.starts_with("qwen2") => Some(TransformerConfig::qwen2_7b()),
+                    (Some(a), 896) if a.starts_with("qwen2") => {
+                        Some(TransformerConfig::qwen2_0_5b())
+                    }
+                    (Some(a), 1536) if a.starts_with("qwen2") => {
+                        Some(TransformerConfig::qwen2_1_5b())
+                    }
+                    (Some(a), 3584) if a.starts_with("qwen2") => {
+                        Some(TransformerConfig::qwen2_7b())
+                    }
                     _ => None,
                 };
                 if let Some(p) = preset {
@@ -210,8 +216,12 @@ fn transformer_config_from_apr_metadata(
                          using {arch} preset for hidden_size={hidden}",
                         arch = architecture.unwrap_or("unknown"),
                     );
-                    (p.num_attention_heads, p.num_hidden_layers, p.intermediate_size,
-                     Some(p.num_kv_heads))
+                    (
+                        p.num_attention_heads,
+                        p.num_hidden_layers,
+                        p.intermediate_size,
+                        Some(p.num_kv_heads),
+                    )
                 } else {
                     return None;
                 }

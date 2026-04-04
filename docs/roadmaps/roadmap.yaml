@@ -5032,3 +5032,19 @@ roadmap:
   - contracts
   - test
   notes: null
+- id: PMAT-496
+  github_issue: null
+  item_type: task
+  title: 'SF-002: Thread 7 sampling params through apr run dispatch chain'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T11:25:05Z
+  updated: 2026-04-04T11:25:12.711401362+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

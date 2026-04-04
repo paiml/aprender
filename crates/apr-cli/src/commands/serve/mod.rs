@@ -44,7 +44,10 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     println!("Model: {}", model_path.display());
     println!("Binding: {}", config.bind_addr());
     if config.context_length != 4096 {
-        println!("Context length: {} (--context-length)", config.context_length);
+        println!(
+            "Context length: {} (--context-length)",
+            config.context_length
+        );
     }
     if config.no_fp8_cache {
         println!("FP8 cache: DISABLED (--no-fp8-cache, saves ~1.5 GB)");
