@@ -33,6 +33,15 @@ pub(crate) fn run(
         None => derive_output_path(source)?,
     };
     let output = output_path.as_path();
+
+    // GH-582: --preserve-q4k is now the default for GGUF imports
+    if preserve_q4k {
+        eprintln!(
+            "  {} --preserve-q4k is now the default for GGUF imports (PMAT-103). Flag has no additional effect.",
+            output::badge_warn("NOTE")
+        );
+    }
+
     // PMAT-103: If preserve_q4k is set and source is a local GGUF file,
     // use realizar's Q4K converter to preserve quantization
     #[cfg(feature = "inference")]
