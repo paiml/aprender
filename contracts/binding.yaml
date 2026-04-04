@@ -1,0 +1,863 @@
+version: 1.0.0
+target_crate: aprender
+bindings:
+- contract: softmax-kernel-v1.yaml
+  equation: softmax
+  module_path: aprender::nn::functional::softmax
+  function: softmax
+  signature: 'fn softmax(x: &Tensor, dim: i32) -> Tensor'
+  status: implemented
+  notes: 2D tensors only; dim parameter currently unused
+- contract: attention-kernel-v1.yaml
+  equation: attention
+  module_path: aprender::nn::transformer
+  function: scaled_dot_product_attention
+  signature: 'fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value: &Tensor, attn_mask: Option<&Tensor>, dropout_p:
+    f32, training: bool) -> (Tensor, Tensor)'
+  status: implemented
+  notes: Module-private in aprender; full public impl in realizar::gpu::scheduler::ops::gqa_multihead_attention
+- contract: activation-kernel-v1.yaml
+  equation: gelu
+  module_path: aprender::nn::functional::gelu
+  function: gelu
+  signature: 'fn gelu(x: &Tensor) -> Tensor'
+  status: implemented
+- contract: activation-kernel-v1.yaml
+  equation: relu
+  module_path: aprender::nn::functional::relu
+  function: relu
+  signature: 'fn relu(x: &Tensor) -> Tensor'
+  status: implemented
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar, AVX2, and PTX implementations in provable-contracts kernels
+- contract: swiglu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: SiLU component shared with silu-kernel-v1; scalar/AVX2/PTX in provable-contracts
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar, AVX2, PTX variants; also in trueno backends (all 6 architectures)
+- contract: pagerank-kernel-v1.yaml
+  equation: pagerank
+  module_path: aprender::graph::pagerank
+  function: pagerank
+  signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
+  status: implemented
+  notes: Power iteration PageRank
+- contract: pagerank-kernel-v1.yaml
+  equation: power_iteration
+  module_path: aprender::graph::pagerank
+  function: pagerank
+  signature: 'fn pagerank(adj: &Tensor, damping: f64, max_iter: usize, tol: f64) -> Tensor'
+  status: implemented
+  notes: Iteration loop inside pagerank()
+- contract: attention-scaling-v1.yaml
+  equation: scaled_dot_product
+  module_path: aprender::nn::transformer
+  function: scaled_dot_product_attention
+  signature: 'fn scaled_dot_product_attention(query: &Tensor, key: &Tensor, value: &Tensor, attn_mask: Option<&Tensor>, dropout_p:
+    f32, training: bool) -> (Tensor, Tensor)'
+  status: implemented
+  notes: 1/sqrt(d_k) scaling applied in both aprender SDPA and realizar GQA attention kernels
+- contract: attention-scaling-v1.yaml
+  equation: numerical_stability
+  module_path: aprender::nn::functional::softmax
+  function: softmax
+  signature: 'fn softmax(x: &Tensor, dim: i32) -> Tensor'
+  status: implemented
+  notes: Max-subtraction trick implemented in softmax
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar/AVX2/PTX; also in trueno backends (6 architectures)
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: provable_contracts::kernels::swiglu
+  function: swiglu_scalar
+  signature: 'fn swiglu_scalar(gate: &[f32], value: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar/AVX2/PTX; also fused in realizar::quantize::activation_part_02 and CUDA
+- contract: swiglu-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Shared with silu-kernel-v1; SiLU component of SwiGLU
+- contract: architecture-requirements-v1.yaml
+  equation: import_completeness_gate
+  module_path: aprender::format::layout_contract
+  function: enforce_architecture_completeness
+  signature: 'fn enforce_architecture_completeness(tensor_names: &[&str], architecture: &str, num_layers: usize) -> Result<(),
+    ContractError>'
+  status: implemented
+  notes: "Import/export boundary check \u2014 rejects incomplete models before writing APR file"
+- contract: activation-kernel-v1.yaml
+  equation: relu
+  module_path: provable_contracts::kernels::activation
+  function: relu_scalar
+  signature: 'fn relu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: provable_contracts::kernels::activation
+  function: silu_scalar
+  signature: 'fn silu_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: provable_contracts::kernels::silu_standalone
+  function: sigmoid_scalar
+  signature: 'fn sigmoid_scalar(input: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: provable_contracts::kernels::swiglu
+  function: swiglu_scalar
+  signature: 'fn swiglu_scalar(gate: &[f32], value: &[f32], output: &mut [f32])'
+  status: implemented
+  notes: Scalar + AVX2 + PTX backends
+- contract: metrics-regression-v1.yaml
+  equation: r_squared
+  module_path: aprender::metrics
+  function: r_squared
+  signature: 'fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: "R\xB2 = 1 - SS_res/SS_tot"
+- contract: metrics-regression-v1.yaml
+  equation: mse
+  module_path: aprender::metrics
+  function: mse
+  signature: 'fn mse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Mean Squared Error
+- contract: metrics-regression-v1.yaml
+  equation: mae
+  module_path: aprender::metrics
+  function: mae
+  signature: 'fn mae(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Mean Absolute Error
+- contract: metrics-regression-v1.yaml
+  equation: rmse
+  module_path: aprender::metrics
+  function: rmse
+  signature: 'fn rmse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32'
+  status: implemented
+  notes: Root Mean Squared Error = sqrt(MSE)
+- contract: metrics-classification-v1.yaml
+  equation: accuracy
+  module_path: aprender::metrics::classification
+  function: accuracy
+  signature: 'fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32'
+  status: implemented
+  notes: Classification accuracy = correct/total
+- contract: metrics-classification-v1.yaml
+  equation: precision
+  module_path: aprender::metrics::classification
+  function: precision
+  signature: 'fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32'
+  status: implemented
+  notes: TP / (TP + FP), supports Macro/Micro/Weighted
+- contract: metrics-classification-v1.yaml
+  equation: recall
+  module_path: aprender::metrics::classification
+  function: recall
+  signature: 'fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32'
+  status: implemented
+  notes: TP / (TP + FN), supports Macro/Micro/Weighted
+- contract: metrics-classification-v1.yaml
+  equation: f1_score
+  module_path: aprender::metrics::classification
+  function: f1_score
+  signature: 'fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32'
+  status: implemented
+  notes: Harmonic mean of precision and recall
+- contract: metrics-classification-v1.yaml
+  equation: confusion_matrix
+  module_path: aprender::metrics::classification
+  function: confusion_matrix
+  signature: 'fn confusion_matrix(y_pred: &[usize], y_true: &[usize]) -> Matrix<f32>'
+  status: implemented
+  notes: CM[i,j] = count of true=i, pred=j
+- contract: metrics-clustering-v1.yaml
+  equation: silhouette_score
+  module_path: aprender::metrics
+  function: silhouette_score
+  signature: 'fn silhouette_score(data: &Matrix<f32>, labels: &[usize]) -> f32'
+  status: implemented
+  notes: Mean silhouette coefficient across all samples
+- contract: metrics-clustering-v1.yaml
+  equation: inertia
+  module_path: aprender::metrics
+  function: inertia
+  signature: 'fn inertia(data: &Matrix<f32>, centroids: &Matrix<f32>, labels: &[usize]) -> f32'
+  status: implemented
+  notes: Within-cluster sum of squares
+- contract: metrics-clustering-v1.yaml
+  equation: silhouette_coefficient
+  module_path: aprender::metrics
+  function: silhouette_coefficient
+  signature: 'fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32'
+  status: implemented
+  notes: "Private helper \u2014 per-point silhouette"
+- contract: calibration-v1.yaml
+  equation: expected_calibration_error
+  module_path: aprender::calibration
+  function: expected_calibration_error
+  signature: 'fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32'
+  status: implemented
+  notes: ECE with uniform-width binning
+- contract: calibration-v1.yaml
+  equation: maximum_calibration_error
+  module_path: aprender::calibration
+  function: maximum_calibration_error
+  signature: 'fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32'
+  status: implemented
+  notes: "MCE \u2014 worst-case bin calibration error"
+- contract: calibration-v1.yaml
+  equation: reliability_diagram
+  module_path: aprender::calibration
+  function: reliability_diagram
+  signature: 'fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins: usize) -> Vec<(f32, f32, usize)>'
+  status: implemented
+  notes: Bin-level (confidence, accuracy, count) tuples
+- contract: decision-tree-v1.yaml
+  equation: gini_impurity
+  module_path: aprender::tree::helpers
+  function: gini_impurity
+  signature: 'fn gini_impurity(labels: &[usize]) -> f32'
+  status: implemented
+  notes: Gini impurity for CART splitting criterion
+- contract: decision-tree-v1.yaml
+  equation: gini_split
+  module_path: aprender::tree::helpers
+  function: gini_split
+  signature: 'fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32'
+  status: implemented
+  notes: Weighted Gini impurity for binary split
+- contract: decision-tree-v1.yaml
+  equation: mse_split
+  module_path: aprender::tree::helpers_part_02
+  function: compute_mse
+  signature: 'fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32'
+  status: implemented
+  notes: MSE impurity for regression tree split (weighted variance)
+- contract: metrics-ranking-v1.yaml
+  equation: hit_at_k
+  module_path: aprender::metrics::ranking
+  function: hit_at_k
+  signature: 'fn hit_at_k<T: PartialEq>(predictions: &[T], target: &T, k: usize) -> f32'
+  status: implemented
+  notes: 'Binary 0/1 indicator: target in top-K'
+- contract: metrics-ranking-v1.yaml
+  equation: reciprocal_rank
+  module_path: aprender::metrics::ranking
+  function: reciprocal_rank
+  signature: 'fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32'
+  status: implemented
+  notes: 1/rank of first correct prediction
+- contract: metrics-ranking-v1.yaml
+  equation: mrr
+  module_path: aprender::metrics::ranking
+  function: mrr
+  signature: 'fn mrr<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]) -> f32'
+  status: implemented
+  notes: Mean Reciprocal Rank across queries
+- contract: metrics-ranking-v1.yaml
+  equation: ndcg_at_k
+  module_path: aprender::metrics::ranking
+  function: ndcg_at_k
+  signature: 'fn ndcg_at_k(relevance: &[f32], k: usize) -> f32'
+  status: implemented
+  notes: "Normalized DCG: DCG/IDCG \u2208 [0,1]"
+- contract: gnn-v1.yaml
+  equation: global_mean_pool
+  module_path: aprender::gnn
+  function: global_mean_pool
+  signature: 'fn global_mean_pool(node_features: &[Vec<f32>], batch: &[usize]) -> Vec<Vec<f32>>'
+  status: implemented
+  notes: Mean aggregation of node features per graph
+- contract: gnn-v1.yaml
+  equation: global_max_pool
+  module_path: aprender::gnn
+  function: global_max_pool
+  signature: 'fn global_max_pool(node_features: &[Vec<f32>], batch: &[usize]) -> Vec<Vec<f32>>'
+  status: implemented
+  notes: Max aggregation of node features per graph
+- contract: attention-scaling-v1.yaml
+  equation: attention_entropy
+  module_path: aprender
+  function: attention_entropy
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: write
+  module_path: aprender
+  function: write
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: ssm_discretize
+  module_path: aprender
+  function: ssm_discretize
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: ssm_scan
+  module_path: aprender
+  function: ssm_scan
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ssm-kernel-v1.yaml
+  equation: selective_gate
+  module_path: aprender
+  function: selective_gate
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cma-es-kernel-v1.yaml
+  equation: sample
+  module_path: aprender
+  function: sample
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: top_p
+  module_path: aprender
+  function: top_p
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: temperature
+  module_path: aprender
+  function: temperature
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: sampling-algorithms-v1.yaml
+  equation: top_k
+  module_path: aprender
+  function: top_k
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: int8-symmetric-quant-v1.yaml
+  equation: quantize
+  module_path: aprender
+  function: quantize
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: silu-kernel-v1.yaml
+  equation: sigmoid
+  module_path: aprender
+  function: sigmoid
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: activation-kernel-v1.yaml
+  equation: silu
+  module_path: aprender
+  function: silu
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: swiglu-kernel-v1.yaml
+  equation: swiglu
+  module_path: aprender
+  function: swiglu
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cross-entropy-kernel-v1.yaml
+  equation: log_softmax
+  module_path: aprender
+  function: log_softmax
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: bayesian-v1.yaml
+  equation: posterior_predictive
+  module_path: aprender
+  function: posterior_predictive
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: loss-functions-v1.yaml
+  equation: mse_loss
+  module_path: aprender
+  function: mse_loss
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: delta
+  module_path: aprender
+  function: delta
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: svm-v1.yaml
+  equation: margin
+  module_path: aprender
+  function: margin
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: svm-v1.yaml
+  equation: hinge_loss
+  module_path: aprender
+  function: hinge_loss
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: pca-v1.yaml
+  equation: explained_variance
+  module_path: aprender
+  function: explained_variance
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: transpose-kernel-v1.yaml
+  equation: transpose
+  module_path: aprender
+  function: transpose
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: cross-entropy-kernel-v1.yaml
+  equation: cross_entropy
+  module_path: aprender
+  function: cross_entropy
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: tensor-shape-flow-v1.yaml
+  equation: lm_head
+  module_path: aprender
+  function: lm_head
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: tensor-inventory-v1.yaml
+  equation: tensor_count
+  module_path: aprender
+  function: tensor_count
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: format-parity-v1.yaml
+  equation: element_count
+  module_path: aprender
+  function: element_count
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: q4k-q6k-superblock-v1.yaml
+  equation: total_bytes
+  module_path: aprender
+  function: total_bytes
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: gated-delta-net-v1.yaml
+  equation: read
+  module_path: aprender
+  function: read
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: optimization-v1.yaml
+  equation: convergence
+  module_path: aprender
+  function: convergence
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: layernorm-kernel-v1.yaml
+  equation: statistics
+  module_path: aprender
+  function: statistics
+  status: implemented
+  notes: Auto-inferred by pv infer
+- contract: ../gguf-format-safety-v1.yaml
+  equation: magic_validation
+  module_path: aprender::gguf::reader
+  function: validate_magic
+  status: implemented
+  notes: Magic byte check before any allocation
+- contract: ../gguf-format-safety-v1.yaml
+  equation: tensor_metadata_integrity
+  module_path: aprender::gguf::reader
+  function: parse_tensor_info
+  status: implemented
+  notes: Shape bounds, offset bounds, dtype validation
+- contract: ../gguf-format-safety-v1.yaml
+  equation: metadata_kv_safety
+  module_path: aprender::gguf::reader
+  function: parse_metadata
+  status: implemented
+  notes: String length checked before alloc (CVE-2024-25664 mitigation)
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: header_size_validation
+  module_path: aprender::safetensors::reader
+  function: validate_header
+  status: implemented
+  notes: Header size bounded before JSON parsing
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: tensor_offset_bounds
+  module_path: aprender::safetensors::reader
+  function: validate_offsets
+  status: implemented
+  notes: All tensor regions within file bounds, no overlap
+- contract: ../safetensors-format-safety-v1.yaml
+  equation: mmap_zero_copy
+  module_path: aprender::safetensors::reader
+  function: mmap_tensor
+  status: implemented
+  notes: Zero-copy mmap with page-aligned offsets
+- contract: model-format-conversion-v1.yaml
+  equation: format_conversion_roundtrip
+  module_path: aprender::convert
+  function: convert_model
+  status: implemented
+  notes: Tensor count/names/shapes preserved across format conversion
+- contract: model-format-conversion-v1.yaml
+  equation: quantization_bounds
+  module_path: aprender::quantize
+  function: quantize_tensor
+  status: implemented
+  notes: Error bounded by dtype-specific tolerance
+- contract: model-format-conversion-v1.yaml
+  equation: import_integrity
+  module_path: aprender::import
+  function: import_model
+  status: implemented
+  notes: Content-based format detection, not extension-based
+- contract: model-format-conversion-v1.yaml
+  equation: export_fidelity
+  module_path: aprender::export
+  function: export_model
+  status: implemented
+  notes: Atomic write via temp file + rename
+- contract: model-format-conversion-v1.yaml
+  equation: apr_tokenizer_embedding
+  module_path: aprender::convert
+  function: save_model_tensors_with_gguf_config_and_tokenizer
+  status: implemented
+  notes: "P0 invariant \u2014 every APR file embeds tokenizer (PMAT-154 fix, Q4K passthrough/fallback paths)"
+- contract: apr-cli-operations-v1.yaml
+  equation: side_effect_classification
+  module_path: apr_cli::dispatch
+  function: dispatch_core_command
+  status: implemented
+  notes: All 48 commands classified as ReadOnly/Mutating/LongRunning
+- contract: apr-cli-operations-v1.yaml
+  equation: resource_cleanup
+  module_path: apr_cli::dispatch
+  function: dispatch_core_command
+  status: implemented
+  notes: GPU/tmp/thread cleanup on all exit paths via RAII
+- contract: apr-cli-operations-v1.yaml
+  equation: inference_determinism
+  module_path: aprender::inference
+  function: generate
+  status: implemented
+  notes: temperature=0 greedy decoding is deterministic
+- contract: apr-cli-operations-v1.yaml
+  equation: tokenizer_consistency
+  module_path: aprender::tokenizer
+  function: encode
+  status: implemented
+  notes: BPE encode/decode roundtrip for valid UTF-8
+- contract: apr-cli-operations-v1.yaml
+  equation: concurrent_model_access
+  module_path: aprender::serve
+  function: handle_inference_request
+  status: implemented
+  notes: Per-request KV cache, immutable model weights
+- contract: apr-cli-operations-v1.yaml
+  equation: progress_reporting
+  module_path: apr_cli::progress
+  function: report_progress
+  status: implemented
+  notes: Monotonic progress [0.0, 1.0] with at least 1 update/sec
+- contract: apr-cli-v1.yaml
+  equation: command_parse_determinism
+  module_path: apr_cli::Cli
+  function: Cli::try_parse_from
+  status: implemented
+  notes: Clap-derived parse is pure and deterministic; global flags propagate via
+- contract: apr-cli-v1.yaml
+  equation: contract_gate_enforcement
+  module_path: apr_cli::dispatch
+  function: execute_command
+  status: implemented
+  notes: "PMAT-237 contract gate \u2014 extract_model_paths + validate_model_contract before dispatch"
+- contract: apr-cli-v1.yaml
+  equation: training_plan_apply_semantics
+  module_path: apr_cli::commands::train
+  function: train::run
+  status: implemented
+  notes: Plan is pure (no GPU/filesystem), Apply writes to --output directory only
+- contract: apr-cli-v1.yaml
+  equation: tokenizer_training_correctness
+  module_path: apr_cli::commands::tokenize
+  function: tokenize::run
+  status: implemented
+  notes: "BPE plan/apply \u2014 vocab.json size equals requested vocab_size"
+- contract: apr-cli-v1.yaml
+  equation: pipe_stdin_support
+  module_path: apr_cli::pipe
+  function: with_stdin_support
+  status: implemented
+  notes: TempModelFile RAII cleanup; POSIX "-" convention for stdin/stdout
+- contract: apr-cli-v1.yaml
+  equation: model_path_resolution
+  module_path: apr_cli::error
+  function: resolve_model_path
+  status: implemented
+  notes: Directory resolution with index.json priority (PMAT-314); O(1) stat-based
+- contract: apr-model-lifecycle-v1.yaml
+  equation: pull_cache_integrity
+  module_path: apr_cli::commands::pull
+  function: download_and_cache_model
+  status: implemented
+  notes: Content-addressed cache at ~/.cache/aprender/models/, HTTP Range resume
+- contract: apr-model-lifecycle-v1.yaml
+  equation: import_format_detection
+  module_path: apr_cli::commands::import
+  function: import_model
+  status: implemented
+  notes: Magic byte detection for GGUF/SafeTensors/APR formats
+- contract: apr-model-lifecycle-v1.yaml
+  equation: export_roundtrip
+  module_path: apr_cli::commands::export
+  function: export_model
+  status: implemented
+  notes: Supports GGUF, SafeTensors, APR output formats
+- contract: apr-model-lifecycle-v1.yaml
+  equation: quantize_precision_bound
+  module_path: apr_cli::commands::quantize
+  function: quantize_model
+  status: implemented
+  notes: Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/F16 schemes via GH-243
+- contract: apr-model-lifecycle-v1.yaml
+  equation: merge_weight_conservation
+  module_path: apr_cli::commands::merge
+  function: merge_models
+  status: implemented
+  notes: SLERP/TIES/DARE/Linear merge strategies
+- contract: apr-serve-v1.yaml
+  equation: server_lifecycle
+  module_path: apr_cli::commands::serve
+  function: run_server
+  status: implemented
+  notes: Actix-web server with Init/Binding/Loading/Ready/Draining/Stopped states
+- contract: apr-serve-v1.yaml
+  equation: request_routing
+  module_path: apr_cli::commands::serve
+  function: configure_routes
+  status: implemented
+  notes: OpenAI-compatible /v1/completions, /v1/chat/completions, /v1/models
+- contract: apr-serve-v1.yaml
+  equation: graceful_shutdown
+  module_path: apr_cli::commands::serve
+  function: shutdown_handler
+  status: implemented
+  notes: SIGTERM triggers drain with 30s timeout
+- contract: apr-data-pipeline-v1.yaml
+  equation: data_validation
+  module_path: apr_cli::commands::data
+  function: data_validate
+  status: implemented
+  notes: JSONL/CSV/text validation with line-level error reporting
+- contract: apr-data-pipeline-v1.yaml
+  equation: data_split_determinism
+  module_path: apr_cli::commands::data
+  function: data_split
+  status: implemented
+  notes: Seed-deterministic train/val/test split
+- contract: apr-data-pipeline-v1.yaml
+  equation: streaming_data_loader
+  module_path: aprender::data::dataloader
+  function: DataLoader::next_batch
+  status: implemented
+  notes: Epoch-seeded shuffle, no sample drop on final partial batch
+- contract: apr-data-pipeline-v1.yaml
+  equation: preprocessing_idempotency
+  module_path: aprender::data::preprocessor
+  function: preprocess
+  status: implemented
+  notes: Special token dedup via BOS/EOS detection
+- contract: apr-model-qa-v1.yaml
+  equation: model_integrity_check
+  module_path: apr_cli::commands::check
+  function: run_check
+  status: implemented
+  notes: 10-stage pipeline (header, metadata, tensors, shapes, dtypes, arch, embedding, qkv, norms, vocab)
+- contract: apr-model-qa-v1.yaml
+  equation: qa_gate_composition
+  module_path: apr_cli::commands::qa
+  function: run_qa_pipeline
+  status: implemented
+  notes: Configurable gates with per-gate enable/disable and thresholds
+- contract: apr-model-qa-v1.yaml
+  equation: canary_regression_detection
+  module_path: apr_cli::commands::canary
+  function: canary_test
+  status: implemented
+  notes: Fixed-prompt regression detection with token-level comparison
+- contract: apr-model-qa-v1.yaml
+  equation: lint_model_conventions
+  module_path: apr_cli::commands::lint
+  function: lint_model
+  status: implemented
+  notes: Naming, dtype, shape, metadata, ordering rules
+- contract: apr-model-qa-v1.yaml
+  equation: probar_property_tests
+  module_path: apr_cli::commands::probar
+  function: run_property_tests
+  status: implemented
+  notes: Softmax sum, attention non-neg, embedding norm, shape match properties
+- contract: apr-architecture-schema-v1.yaml
+  equation: architecture_config_invariants
+  module_path: aprender::format::gguf::api
+  function: GgufModelConfig::validate
+  status: implemented
+  notes: Validates hidden_size/num_heads divisibility, GQA ratio, MoE fields
+- contract: apr-architecture-schema-v1.yaml
+  equation: attention_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_attention_shapes
+  status: implemented
+  notes: Validates Q/K/V/O projection shapes per layer against config
+- contract: apr-architecture-schema-v1.yaml
+  equation: ffn_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_ffn_shapes
+  status: implemented
+  notes: Validates gate/up/down shapes, SwiGLU and MoE variants
+- contract: apr-architecture-schema-v1.yaml
+  equation: normalization_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_norm_tensors
+  status: implemented
+  notes: Validates 2 norm tensors per layer + final_norm
+- contract: apr-architecture-schema-v1.yaml
+  equation: embedding_tensor_shapes
+  module_path: apr_cli::commands::check
+  function: check_embedding_shapes
+  status: implemented
+  notes: Validates token embedding shape, lm_head or tied embeddings
+- contract: apr-architecture-schema-v1.yaml
+  equation: rope_position_encoding
+  module_path: aprender::nn::rope
+  function: RotaryPositionEmbedding::validate_config
+  status: implemented
+  notes: RoPE theta, type (NORM vs NEOX), frequency vector length
+- contract: apr-architecture-schema-v1.yaml
+  equation: total_tensor_count
+  module_path: apr_cli::commands::check
+  function: check_tensor_count
+  status: implemented
+  notes: Expected count formula with +/-5 tolerance for metadata tensors
+- contract: apr-format-safety-v1.yaml
+  equation: magic_byte_validation
+  module_path: aprender::gguf::reader
+  function: detect_format
+  status: implemented
+  notes: GGUF/SafeTensors/APR magic byte prefix detection, panic-free on truncated input
+- contract: apr-format-safety-v1.yaml
+  equation: header_integrity
+  module_path: aprender::gguf::reader
+  function: validate_header
+  status: implemented
+  notes: Bounded allocation, no OOM from crafted tensor_count
+- contract: apr-format-safety-v1.yaml
+  equation: provenance_enforcement
+  module_path: apr_cli::commands::import
+  function: enforce_provenance_check
+  status: implemented
+  notes: --enforce-provenance flag gates base_model_hash verification
+- contract: apr-format-safety-v1.yaml
+  equation: strict_import_validation
+  module_path: apr_cli::commands::import
+  function: strict_validate
+  status: implemented
+  notes: NaN/Inf scan, shape match, dtype consistency when --strict
+- contract: apr-format-safety-v1.yaml
+  equation: dtype_coercion_safety
+  module_path: aprender::tensor::convert
+  function: coerce_dtype
+  status: implemented
+  notes: F32->F16 clamp, F32->Q4_0 blockwise, widening lossless
+- contract: apr-format-safety-v1.yaml
+  equation: truncation_detection
+  module_path: aprender::gguf::reader
+  function: detect_truncation
+  status: implemented
+  notes: Compares actual vs expected file size from header
+- contract: apr-chat-session-v1.yaml
+  equation: session_state_machine
+  module_path: apr_cli::commands::chat
+  function: chat_loop
+  status: implemented
+  notes: Init->WaitInput->Generating->WaitInput->Exit state machine
+- contract: apr-chat-session-v1.yaml
+  equation: chat_template_application
+  module_path: apr_cli::commands::chat
+  function: apply_template
+  status: implemented
+  notes: ChatML, Llama, Alpaca template formats
+- contract: apr-chat-session-v1.yaml
+  equation: kv_cache_management
+  module_path: aprender::inference::kv_cache
+  function: manage_kv_cache
+  status: implemented
+  notes: Sliding window truncation at max_context
+- contract: apr-chat-session-v1.yaml
+  equation: session_persistence
+  module_path: apr_cli::commands::chat_session
+  function: save_session
+  status: implemented
+  notes: JSON serialization, KV-cache not persisted (rebuilt from history)
+critical_path:
+- softmax
+- rmsnorm
+- attention
+- matmul
+- rope
+- swiglu
+- gelu
+- embedding_lookup
+- cross_entropy
+- forward
+- tokenize
+- sample
+- layernorm
+- dispatch
+- exit_code
+- error_envelope
+- tool_schema
+- magic_validation
+- header_size_validation
+- format_conversion_roundtrip
+- quantization_bounds
+- side_effect_classification
+- inference_determinism
+- tokenizer_consistency
+- command_parse_determinism
+- contract_gate_enforcement
+- model_path_resolution
+- pull_cache_integrity
+- import_format_detection
+- export_roundtrip
+- quantize_precision_bound
+- server_lifecycle
+- data_validation
+- model_integrity_check
+- qa_gate_composition
+- magic_byte_validation
+- header_integrity
+- provenance_enforcement
+- dtype_coercion_safety
+- session_state_machine
+- kv_cache_management
