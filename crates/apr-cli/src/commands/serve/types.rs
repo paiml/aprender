@@ -56,6 +56,10 @@ pub struct ServerConfig {
     pub backend: Option<String>,
     /// PMAT-485: OTLP endpoint for distributed tracing (Jaeger/Tempo)
     pub otlp_endpoint: Option<String>,
+    /// GH-286: Maximum context/sequence length for KV cache. Default: 4096.
+    pub context_length: usize,
+    /// GH-286: Skip FP8 weight cache warmup. Saves ~1.5 GB RSS.
+    pub no_fp8_cache: bool,
 }
 
 impl Default for ServerConfig {
@@ -76,6 +80,8 @@ impl Default for ServerConfig {
             verbose: false,
             backend: None,
             otlp_endpoint: None,
+            context_length: 4096,
+            no_fp8_cache: false,
         }
     }
 }

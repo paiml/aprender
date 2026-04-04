@@ -79,5 +79,11 @@ pub enum ServeCommands {
         /// Example: --otlp-endpoint http://localhost:4317
         #[arg(long, value_name = "URL")]
         otlp_endpoint: Option<String>,
+        /// GH-286: Max context/sequence length for KV cache. Lower = less RSS.
+        #[arg(long, default_value = "4096")]
+        context_length: usize,
+        /// GH-286: Skip FP8 weight cache warmup. Saves ~1.5 GB RSS.
+        #[arg(long)]
+        no_fp8_cache: bool,
     },
 }

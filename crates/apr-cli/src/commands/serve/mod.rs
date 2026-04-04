@@ -33,10 +33,22 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
         eprintln!("[PMAT-297] Thread pool config: {e} (may already be initialized)");
     }
 
+    // GH-286: Set env vars for realizr's KV cache and FP8 control
+    std::env::set_var("REALIZR_CONTEXT_LENGTH", config.context_length.to_string());
+    if config.no_fp8_cache {
+        std::env::set_var("REALIZR_NO_FP8_CACHE", "1");
+    }
+
     println!("{}", "=== APR Serve ===".cyan().bold());
     println!();
     println!("Model: {}", model_path.display());
     println!("Binding: {}", config.bind_addr());
+    if config.context_length != 4096 {
+        println!("Context length: {} (--context-length)", config.context_length);
+    }
+    if config.no_fp8_cache {
+        println!("FP8 cache: DISABLED (--no-fp8-cache, saves ~1.5 GB)");
+    }
     println!();
 
     // Validate model

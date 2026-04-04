@@ -78,6 +78,8 @@ fn dispatch_serve(
     verbose: bool,
     backend: &Option<String>,
     otlp_endpoint: &Option<String>,
+    context_length: usize,
+    no_fp8_cache: bool,
 ) -> Result<(), CliError> {
     if let Some(ref endpoint) = otlp_endpoint {
         eprintln!("OTLP tracing enabled → {endpoint}");
@@ -97,6 +99,8 @@ fn dispatch_serve(
         verbose,
         backend: backend.clone(),
         otlp_endpoint: otlp_endpoint.clone(),
+        context_length,
+        no_fp8_cache,
         ..Default::default()
     };
     serve::run(file, &config)
@@ -129,6 +133,8 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             profile,
             backend,
             otlp_endpoint,
+            context_length,
+            no_fp8_cache,
         } => crate::error::resolve_model_path(file).and_then(|r| {
             dispatch_serve(
                 &r,
@@ -145,6 +151,8 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
                 cli.verbose,
                 backend,
                 otlp_endpoint,
+                *context_length,
+                *no_fp8_cache,
             )
         }),
     }
