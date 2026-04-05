@@ -7,6 +7,7 @@
 //!
 //! NOTE: Requires local entrenar with matching Explainable trait (not crates.io 0.7).
 //! Gated to avoid compile errors when entrenar is from crates.io.
+#![allow(unexpected_cfgs)]
 #![cfg(feature = "explainable-monitor-integration")]
 
 use aprender::classification::LogisticRegression;
