@@ -466,11 +466,25 @@ fn execute_training_wgpu(
 
     let mut lm_head_f32 = Vec::new();
 
-    for (name, data, _rows, _cols) in weights {
+    for (name, data, rows, cols) in weights {
         if name == "lm_head" {
             lm_head_f32 = data;
-        } else {
+        } else if name.contains("_norm") || rows == 1 || cols == 1 {
+            // Norm weights and biases are 1D — no transpose needed
             fwd.upload_weight(&name, &data);
+        } else {
+            // PMAT-497: Transpose weight from [out_dim, in_dim] (GGUF/GEMV layout)
+            // to [in_dim, out_dim] (tiled GEMM layout: B[K, N]).
+            // The tiled GEMM computes C[M,N] = A[M,K] @ B[K,N], so B must be [K=in, N=out].
+            // Without this transpose, non-square projections (k_proj 256×1536, gate_proj
+            // 8960×1536) read wrong data, producing loss 18.9 (worse than random 11.93).
+            let mut transposed = vec![0.0f32; data.len()];
+            for r in 0..rows {
+                for c in 0..cols {
+                    transposed[c * rows + r] = data[r * cols + c];
+                }
+            }
+            fwd.upload_weight(&name, &transposed);
         }
     }
 
@@ -1996,3 +2010,7 @@ fn display_classify_next_steps(json_output: bool) {
 #[cfg(test)]
 #[path = "finetune_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "finetune_contract_tests.rs"]
+mod contract_tests;
