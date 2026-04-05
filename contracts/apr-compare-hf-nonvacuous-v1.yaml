@@ -1,0 +1,89 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr compare-hf non-vacuous-verification contract — CLI must NOT emit a PASS verdict when 0 tensors were actually compared; vacuous truth from the library's all_passed() predicate must be guarded at the CLI boundary"
+  references:
+    - "paiml/aprender#621 (compare-hf reports '✓ All tensors match' when it compared 0 tensors)"
+  registry: true
+  tags:
+    - cli
+    - compare-hf
+    - verification
+    - vacuous-truth
+    - five-whys
+
+five_whys:
+  symptom: "apr compare-hf model.gguf --hf Qwen/Qwen2.5-Coder-1.5B-Instruct reports 'Total tensors compared: 0' followed by '✓ All tensors match within threshold!' and exits 0"
+  why_1: "BatchComparison::all_passed() returns true for an empty comparison set (vacuous truth)"
+  why_2: "The library test src/inspect/safetensors_tests.rs:305 explicitly asserts 'Empty is all passed' — the implementation intentionally models ∀ ∅ = true"
+  why_3: "Vacuous truth is correct at the library level (all_passed is a pure predicate over a set) but wrong at the CLI level — a user running compare-hf wants to VERIFY, and 'verified nothing' is not a successful verification"
+  why_4: "The CLI does not guard against total_compared == 0 before rendering a PASS verdict or returning Ok()"
+  why_5: "No contract formalizes that compare-hf's verdict must be non-vacuous — 'compared at least one tensor' was never stated as a precondition for emitting PASS"
+  root_cause: "Library-level vacuous truth flowed unchecked to the CLI verdict path; no semantic contract required at-least-one-tensor-compared before emitting PASS."
+
+equations:
+  non_vacuous_verdict:
+    formula: "compare_hf_passes(M, HF) ⟹ tensors_compared(M, HF) > 0"
+    domain: "(local model M, HF reference HF) → compare-hf invocation"
+    codomain: "boolean verdict + exit code"
+    invariants:
+      - "compare-hf MUST NOT emit a PASS verdict when 0 tensors were compared"
+      - "compare-hf MUST exit non-zero when 0 tensors were compared"
+      - "compare-hf MUST print a clear diagnostic explaining the 0-comparison (likely name-mapping issue)"
+      - "compare-hf MAY emit PASS only when tensors_compared >= 1 AND all pass threshold"
+
+  exit_code_semantics:
+    formula: "exit(compare-hf) = 0 ⟺ (tensors_compared > 0 ∧ all_passed)"
+    domain: "compare-hf invocation"
+    codomain: "exit code (0 = success)"
+    invariants:
+      - "exit 0 REQUIRES both non-vacuous comparison AND all-pass"
+      - "exit non-zero on name-mapping failure (0 compared)"
+      - "exit non-zero on threshold failure (some fail)"
+
+proof_obligations:
+  - type: invariant
+    property: "PASS verdict is non-vacuous"
+    formal: "verdict = PASS ⟹ total_compared > 0"
+    applies_to: non_vacuous_verdict
+  - type: invariant
+    property: "exit 0 requires non-zero comparisons"
+    formal: "exit_code = 0 ⟹ total_compared > 0"
+    applies_to: exit_code_semantics
+  - type: invariant
+    property: "0-comparison case shows name-mapping diagnostic"
+    formal: "total_compared = 0 ⟹ output contains 'name-mapping' or 'mapping issue'"
+    applies_to: non_vacuous_verdict
+
+falsification_tests:
+  - id: FALSIFY-COMPARE-HF-001
+    rule: "0-tensor comparison exits non-zero"
+    prediction: "When apr compare-hf compares 0 tensors, exit code != 0"
+    test: "apr compare-hf $M --hf Qwen/Qwen2.5-Coder-1.5B-Instruct > /tmp/cout 2>&1; EC=$?; sed -i 's/\\x1b\\[[0-9;]*m//g' /tmp/cout; grep -qE 'Total tensors compared: 0' /tmp/cout && [ $EC -ne 0 ]"
+    if_fails: "Exit code still 0 on vacuous comparison — CLI guard missing"
+  - id: FALSIFY-COMPARE-HF-002
+    rule: "0-tensor comparison does NOT emit 'All tensors match'"
+    prediction: "Text output never contains 'All tensors match' when total_compared=0"
+    test: "OUT=$(apr compare-hf $M --hf Qwen/Qwen2.5-Coder-1.5B-Instruct 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g'); echo \"$OUT\" | grep -qE 'Total tensors compared: 0' && ! (echo \"$OUT\" | grep -qE 'All tensors match')"
+    if_fails: "Vacuous PASS verdict still emitted"
+  - id: FALSIFY-COMPARE-HF-003
+    rule: "0-tensor comparison shows name-mapping diagnostic"
+    prediction: "Text output contains a mapping-issue hint when 0 tensors compared"
+    test: "OUT=$(apr compare-hf $M --hf Qwen/Qwen2.5-Coder-1.5B-Instruct 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g'); echo \"$OUT\" | grep -qE 'Total tensors compared: 0' && echo \"$OUT\" | grep -qiE 'mapping|no tensors matched|0 tensors'"
+    if_fails: "User has no hint why verification failed"
+
+kani_harnesses:
+  - id: KANI-COMPARE-HF-001
+    obligation: "exit 0 requires total_compared > 0"
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-COMPARE-HF-001
+  name: "compare-hf non-vacuous verification contract"
+  description: "apr compare-hf must not emit a PASS verdict or exit 0 when 0 tensors were compared; a vacuous verification is not a successful one"
+  checks:
+    - "non_vacuous_verdict"
+    - "exit_code_semantics"
+  pass_criteria: "FALSIFY-COMPARE-HF-{001,002,003} all PASS on a GGUF model where tensor name mapping fails"

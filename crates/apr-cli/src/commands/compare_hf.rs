@@ -134,6 +134,18 @@ fn run_compare(
         output_text(&batch, threshold);
     }
 
+    // Contract: apr-compare-hf-nonvacuous-v1 F-COMPARE-HF-001 (paiml/aprender#621).
+    // A vacuous comparison (0 tensors) is NOT a successful verification — guard before
+    // emitting PASS or exit 0. The library's BatchComparison::all_passed() returns true
+    // on an empty set by design (∀ ∅ = true), but the CLI verdict must be non-vacuous.
+    if batch.total_compared == 0 {
+        return Err(CliError::ValidationFailed(
+            "0 tensors were compared — likely a tensor name mapping issue between the local \
+             model and the HuggingFace reference. The verification is vacuous, not successful."
+                .to_string(),
+        ));
+    }
+
     // Exit with error if any comparisons failed
     if !batch.all_passed() {
         return Err(CliError::ValidationFailed(format!(
@@ -273,7 +285,20 @@ fn output_text(batch: &BatchComparison, threshold: f64) {
     println!();
 
     // Final verdict
-    if batch.all_passed() {
+    // Contract: apr-compare-hf-nonvacuous-v1 F-COMPARE-HF-001 (paiml/aprender#621).
+    // Guard against vacuous PASS: if 0 tensors were compared, do not emit the green
+    // checkmark — emit a mapping-failure diagnostic instead.
+    if batch.total_compared == 0 {
+        println!(
+            "{}",
+            "⚠ 0 tensors compared — likely a tensor name mapping issue."
+                .yellow()
+                .bold()
+        );
+        println!("  The HuggingFace reference has tensors, the local model has tensors,");
+        println!("  but the name-mapping function did not match any pair.");
+        println!("  See map_hf_to_apr_name() in crates/apr-cli/src/commands/compare_hf.rs");
+    } else if batch.all_passed() {
         println!("{}", "✓ All tensors match within threshold!".green().bold());
     } else {
         println!(
