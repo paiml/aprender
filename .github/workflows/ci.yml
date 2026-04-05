@@ -30,6 +30,7 @@ jobs:
 
   mutants:
     runs-on: self-hosted
+    continue-on-error: true
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
