@@ -1,52 +1,79 @@
-<div align="center">
-
-<p align="center">
-  <img src=".github/apr-format-hero.svg" alt="aprender" width="800">
-</p>
-
 <h1 align="center">aprender</h1>
 
 <p align="center">
-  <b>A production-ready machine learning library written in pure Rust.</b>
+  <strong>Production ML Library in Pure Rust</strong>
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/aprender"><img src="https://img.shields.io/crates/v/aprender.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/aprender"><img src="https://docs.rs/aprender/badge.svg" alt="Documentation"></a>
-  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
-  <a href="#"><img src="https://img.shields.io/badge/MSRV-1.89-blue.svg" alt="MSRV: 1.89"></a>
+  <a href="https://crates.io/crates/aprender">
+    <img src="https://img.shields.io/crates/v/aprender.svg" alt="crates.io">
+  </a>
+  <a href="https://docs.rs/aprender">
+    <img src="https://docs.rs/aprender/badge.svg" alt="docs.rs">
+  </a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/MSRV-1.89-blue.svg" alt="MSRV: 1.89">
+  </a>
 </p>
 
-</div>
+A pure Rust machine learning library with SIMD acceleration, GPU
+inference, and the APR v2 model format. No Python dependencies, no C
+bindings -- memory-safe, thread-safe, and WebAssembly-ready.
 
 ---
 
-Aprender provides implementations of classical machine learning algorithms optimized for performance and safety. The library requires no external dependencies beyond the Rust standard library and offers seamless compilation to WebAssembly.
+[Features](#features) | [Installation](#installation) | [Quick Start](#quick-start) | [Algorithms](#algorithms) | [APR Format](#apr-format) | [Architecture](#architecture) | [Quality](#quality) | [Sovereign Stack](#sovereign-ai-stack) | [Documentation](#documentation) | [License](#license)
+
+---
 
 ## Table of Contents
 
 - [Features](#features)
 - [Installation](#installation)
-- [Usage](#usage)
+- [Quick Start](#quick-start)
 - [Algorithms](#algorithms)
-- [Model Persistence](#model-persistence)
+- [APR Format](#apr-format)
+- [Architecture](#architecture)
+- [Quality](#quality)
+- [Sovereign AI Stack](#sovereign-ai-stack)
 - [Documentation](#documentation)
-- [Claude Code Skills](#claude-code-skills)
 - [Contributing](#contributing)
 - [License](#license)
 
+## What is aprender?
+
+Aprender is a production-ready machine learning library written entirely
+in Rust. It provides classical and modern ML algorithms -- from linear
+regression and k-means to neural networks and transformers -- with SIMD
+acceleration via [trueno](https://github.com/paiml/trueno) and GPU
+inference via [realizar](https://github.com/paiml/realizar). Models
+serialize to the APR v2 format with LZ4/ZSTD compression, zero-copy
+loading, and optional AES-256-GCM encryption.
+
+Aprender is the ML foundation of the PAIML Sovereign AI Stack.
+
 ## Features
 
-- **Pure Rust** — Zero C/C++ dependencies, memory-safe, thread-safe by default
-- **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) 0.16 backend
-- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 240 tok/s 1.5B single-decode, 851 tok/s 1.5B batched)
-- **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
-- **GGML-Compliant Dtypes** — Q4/Q8 dtype IDs now use GGML standard values (128/129 reserved for APR-native)
-- **Exhaustive Format Matching** — No silent `_ =>` fallbacks at format boundaries; all dtype/format variants handled explicitly
-- **BrickScore Profiling** — Fixed to use real profiling data instead of hardcoded values
-- **WebAssembly Ready** — Compile to WASM for browser and edge deployment
-- **12,974+ Tests** — 96.35% coverage, zero SATD, 73 provable contracts, TDG 95.2/100 A+
+- **Pure Rust** -- Zero C/C++ dependencies, memory-safe and thread-safe
+  by default.
+- **SIMD Acceleration** -- Vectorized operations via
+  [trueno](https://github.com/paiml/trueno) 0.16 (AVX2/AVX-512/NEON).
+- **GPU Inference** -- CUDA-accelerated inference via
+  [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 851
+  tok/s 1.5B batched on RTX 4090).
+- **APR v2 Format** -- Native model serialization with LZ4/ZSTD
+  compression, zero-copy loading, and Int4/Int8 quantization.
+- **Multi-Format** -- Native `.apr`, SafeTensors (single + sharded), and
+  GGUF support.
+- **WebAssembly Ready** -- Compile to WASM for browser and edge
+  deployment.
+- **12,974+ Tests** -- 96.35% coverage, 73 provable contracts.
 
 ## Installation
 
@@ -72,7 +99,7 @@ aprender = { version = "0.27", features = ["format-encryption", "hf-hub-integrat
 | `hf-hub-integration` | Hugging Face Hub push/pull support |
 | `gpu` | GPU acceleration via wgpu |
 
-## Usage
+## Quick Start
 
 ```rust
 use aprender::prelude::*;
@@ -92,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     model.fit(&x, &y)?;
 
     // Evaluate
-    println!("R² = {:.4}", model.score(&x, &y));
+    println!("R-squared = {:.4}", model.score(&x, &y));
 
     Ok(())
 }
@@ -100,86 +127,101 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Algorithms
 
-### Supervised Learning
+### Linear Models
 
-| Algorithm | Description |
-|-----------|-------------|
-| `LinearRegression` | Ordinary least squares regression |
-| `LogisticRegression` | Binary and multiclass classification |
-| `DecisionTreeClassifier` | GINI-based decision trees |
-| `RandomForestClassifier` | Bootstrap aggregating ensemble |
-| `GradientBoostingClassifier` | Adaptive boosting with residual learning |
-| `NaiveBayes` | Gaussian naive Bayes classifier |
-| `KNeighborsClassifier` | k-nearest neighbors |
-| `LinearSVM` | Support vector machine with hinge loss |
+| Algorithm | Module |
+|-----------|--------|
+| `LinearRegression` | `linear_model` |
+| `LogisticRegression` | `linear_model` |
+| `LinearSVM` | `classification` |
 
-### Unsupervised Learning
+### Clustering
 
-| Algorithm | Description |
-|-----------|-------------|
-| `KMeans` | k-means++ initialization with Lloyd's algorithm |
-| `DBSCAN` | Density-based spatial clustering |
-| `PCA` | Principal component analysis |
-| `IsolationForest` | Anomaly detection |
+| Algorithm | Module |
+|-----------|--------|
+| `KMeans` | `cluster` |
+| `DBSCAN` | `cluster` |
 
-### Additional Modules
+### Classification
 
-- **Graph Analysis** — PageRank, betweenness centrality, community detection
-- **Time Series** — ARIMA forecasting
-- **Text Processing** — Tokenization, TF-IDF, stemming, chat templates
-- **Neural Networks** — Sequential models, transformers, mixture of experts
-- **Metaheuristics** — ACO, Tabu Search, DE, PSO, GA, CMA-ES
+| Algorithm | Module |
+|-----------|--------|
+| `NaiveBayes` | `classification` |
+| `KNeighborsClassifier` | `classification` |
+| `RandomForestClassifier` | `ensemble` |
+| `GradientBoostingClassifier` | `ensemble` |
 
-### Chat Templates
+### Decision Trees
 
-Format LLM conversations for different model families with automatic template detection:
+| Algorithm | Module |
+|-----------|--------|
+| `DecisionTreeClassifier` | `tree` |
 
-```rust
-use aprender::text::chat_template::{
-    auto_detect_template, ChatMessage, ChatTemplateEngine
-};
+### NLP and Text
 
-// Auto-detect template from model name
-let template = auto_detect_template("Qwen2-0.5B-Instruct");
+| Capability | Module |
+|------------|--------|
+| Tokenization (BPE, WordPiece) | `text` |
+| TF-IDF vectorization | `text` |
+| Stemming | `text` |
+| Chat templates (ChatML, Llama2, Mistral, Phi) | `text` |
 
-let messages = vec![
-    ChatMessage::system("You are a helpful assistant."),
-    ChatMessage::user("Hello!"),
-];
+### Time Series
 
-let formatted = template.format_conversation(&messages)?;
-```
+| Capability | Module |
+|------------|--------|
+| ARIMA forecasting | `time_series` |
 
-**Supported Formats:**
+### Graph Analysis
 
-| Format | Models | System Prompt |
-|--------|--------|---------------|
-| ChatML | Qwen2, Yi, OpenHermes | Yes |
-| Llama2 | TinyLlama, Vicuna, LLaMA 2 | Yes |
-| Mistral | Mistral-7B, Mixtral | No |
-| Phi | Phi-2, Phi-3 | Yes |
-| Alpaca | Alpaca, Guanaco | Yes |
-| Raw | Fallback | Passthrough |
-| Custom | Any (Jinja2) | Configurable |
+| Capability | Module |
+|------------|--------|
+| PageRank | `graph` |
+| Betweenness centrality | `graph` |
+| Community detection | `graph` |
 
-See [`examples/chat_template.rs`](examples/chat_template.rs) for complete usage.
+### Bayesian Inference
 
-**Verification:** All templates are 100% tested via bashrs probar playbooks. See [`docs/model-verification-checklist.md`](docs/model-verification-checklist.md) for coverage status.
+| Capability | Module |
+|------------|--------|
+| Gaussian Naive Bayes | `bayesian` |
 
-### Related Crates
+### Neural Networks
 
-| Crate | Description |
-|-------|-------------|
-| [`aprender-tsp`](https://crates.io/crates/aprender-tsp) | TSP solver with CLI and `.apr` model persistence |
-| [`aprender-shell`](https://crates.io/crates/aprender-shell) | AI-powered shell completion trained on your history |
+| Capability | Module |
+|------------|--------|
+| Sequential models | `nn` |
+| Transformer layers | `nn` |
+| Mixture of Experts | `nn` |
 
-### Resources
+### Decomposition
 
-| Resource | Description |
-|----------|-------------|
-| [apr-cookbook](https://github.com/paiml/apr-cookbook) | 50+ idiomatic Rust examples for `.apr` format, WASM deployment, and SIMD acceleration |
+| Algorithm | Module |
+|-----------|--------|
+| PCA | `decomposition` |
 
-## Model Persistence
+### Model Serialization (APR v2)
+
+| Capability | Module |
+|------------|--------|
+| Save/load with encryption | `format` |
+| LZ4/ZSTD compression | `format` |
+| Zero-copy memory-mapped loading | `format` |
+| Ed25519 signatures | `format` |
+
+### Online Learning
+
+| Capability | Module |
+|------------|--------|
+| Incremental model updates | `online` |
+
+### Recommendation Systems
+
+| Capability | Module |
+|------------|--------|
+| Collaborative filtering | `recommend` |
+
+## APR Format
 
 The `.apr` format provides secure, efficient model serialization:
 
@@ -196,231 +238,76 @@ save(&model, ModelType::LinearRegression, "model.apr",
 let model: LinearRegression = load("model.apr", ModelType::LinearRegression)?;
 ```
 
-### Format Capabilities
+| Feature | APR v1 | APR v2 |
+|---------|--------|--------|
+| Tensor Compression | None | LZ4/ZSTD |
+| Index Format | JSON | Binary |
+| Zero-Copy Loading | Partial | Full |
+| Quantization | Int8 | Int4/Int8 |
+| Streaming | No | Yes |
 
-- **Security** — AES-256-GCM encryption, Ed25519 signatures, X25519 key exchange
-- **Performance** — Memory-mapped loading, 600x faster than standard deserialization
-- **Integrity** — CRC32 checksums with automatic corruption detection
-- **Commercial** — License blocks, watermarking, buyer-specific encryption
-
-## APR CLI Tool
-
-The `apr` CLI provides comprehensive model operations for the `.apr` format.
-
-### Installation
-
-```bash
-cargo install apr-cli
-```
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| `apr run` | Run model directly (auto-download, cache, execute) |
-| `apr serve` | Start inference server (REST API, streaming, metrics) |
-| `apr chat` | Interactive chat with language models |
-| `apr inspect` | Inspect model metadata, vocab, and structure |
-| `apr debug` | Simple debugging output ("drama" mode available) |
-| `apr validate` | Validate model integrity and quality |
-| `apr diff` | Compare two models |
-| `apr tensors` | List tensor names, shapes, and statistics |
-| `apr trace` | Layer-by-layer trace analysis |
-| `apr lint` | Check for best practices and conventions |
-| `apr explain` | Explain errors, architecture, tensors, and kernel pipelines |
-| `apr canary` | Regression testing via tensor statistics |
-| `apr export` | Export to SafeTensors, GGUF formats |
-| `apr import` | Import from HuggingFace, SafeTensors |
-| `apr pull` | Download and cache model from HuggingFace (Ollama-style UX) |
-| `apr list` | List cached models |
-| `apr rm` | Remove model from cache |
-| `apr compile` | Compile model into standalone executable (APR-SPEC §4.16) |
-| `apr convert` | Quantization (int8, int4, fp16) and optimization |
-| `apr quantize` | Streaming quantization (int8, int4, fp16, q4k) with plan mode |
-| `apr merge` | Merge models (average, weighted strategies) |
-| `apr tui` | Interactive terminal UI |
-| `apr probar` | Export for visual testing |
-| `apr tree` | Model architecture tree view |
-| `apr hex` | Hex dump tensor data |
-| `apr flow` | Data flow visualization |
-| `apr bench` | Benchmark throughput (spec H12: >= 10 tok/s) |
-| `apr eval` | Evaluate model: perplexity (LM) or classification metrics (--task classify) |
-| `apr profile` | Deep profiling with Roofline analysis |
-| `apr qa` | Falsifiable QA checklist for model releases |
-| `apr qualify` | Cross-subcommand smoke test (does every tool handle this model?) |
-| `apr showcase` | Qwen2.5-Coder showcase demo |
-| `apr check` | Model self-test: 10-stage pipeline integrity check |
-| `apr publish` | Publish model to HuggingFace Hub |
-| `apr cbtop` | ComputeBrick pipeline monitor |
-| `apr compare-hf` | Compare APR model against HuggingFace source |
-
-### Quick Examples
-
-```bash
-# Run model directly (auto-downloads if needed)
-apr run hf://openai/whisper-tiny --input audio.wav
-
-# Download and cache models (Ollama-style UX)
-apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/
-apr list  # List cached models
-
-# Validate model integrity
-apr validate model.apr --quality
-
-# Convert with quantization
-apr convert model.safetensors --quantize int8 -o model-int8.apr
-
-# Lint for best practices
-apr lint model.apr
-
-# Export to GGUF (llama.cpp compatible)
-apr export model.apr --format gguf -o model.gguf
-
-# Merge models (ensemble)
-apr merge model1.apr model2.apr --strategy average -o ensemble.apr
-
-# Create regression test
-apr canary create model.apr --input ref.wav --output canary.json
-
-# Check model against canary
-apr canary check optimized.apr --canary canary.json
-
-# Compile model into standalone binary
-apr compile whisper.apr -o whisper-cli --release --strip
-
-# Streaming quantization — SafeTensors to Q4K APR (bounded memory)
-apr quantize /path/to/sharded-model/ --scheme q4k -o model-q4k.apr
-
-# Publish to HuggingFace Hub
-apr publish ./model-dir/ org/model-name --license mit
-```
-
-## Streaming Quantization (ALB-093)
-
-Direct SafeTensors to Q4K APR streaming quantization with bounded memory. Quantize models of any size without loading the full model into RAM.
-
-```bash
-# Quantize sharded HuggingFace model directly to Q4K APR
-apr quantize /path/to/safetensors/model/ --scheme q4k -o output.apr
-
-# Plan mode — estimate output size without running
-apr quantize /path/to/model/ --scheme q4k --plan
-
-# Batch quantize to multiple schemes
-apr quantize model.apr --batch int4,int8,q4k -o models/
-```
-
-**How it works:**
-- Reads shards one at a time via mmap (`MappedSafeTensors`)
-- Each tensor flows through: dequant to f32, validate (NaN/Inf), quantize Q4K, stream write
-- Norm, embedding, bias, and small tensors kept at F32 (precision-critical)
-- Peak memory bounded by largest single tensor (~2-4 GB), not model size
-
-**Results on Qwen3-Coder-30B-A3B-Instruct (57 GB, 16 shards, 18,867 tensors):**
-
-| Metric | Value |
-|--------|-------|
-| Input | 57 GB (16 SafeTensors shards) |
-| Output | 17 GB (single Q4K APR file) |
-| Compression | 3.3x |
-| Time | ~4 minutes (NVMe) |
-| Peak RSS | ~3.8 GB |
-
-See [`docs/specifications/archive/streaming-quantize-safetensors-q4k.md`](docs/specifications/archive/streaming-quantize-safetensors-q4k.md) for the full specification.
-
-## Showcase: Qwen2.5-Coder Inference
-
-Multi-model inference across Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B, and 14B — all formats (SafeTensors, GGUF, APR), both CPU and GPU:
-
-```bash
-# Run any model (auto-downloads if needed)
-apr run hf://Qwen/Qwen2.5-Coder-7B-Instruct --prompt "Write hello world in Rust"
-
-# Sharded SafeTensors supported (3B+)
-apr serve /path/to/model.safetensors.index.json --port 8080
-
-# Interactive chat
-apr chat qwen2.5-coder-1.5b-q4_k_m.gguf
-
-# Production server (OpenAI-compatible API)
-apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
-```
-
-### Benchmark Results (2026-02-11)
-
-**7B Q4_K_M on RTX 4090:**
-
-| Mode | Throughput | vs Ollama | Status |
-|------|------------|-----------|--------|
-| GPU Decode | **67.8 tok/s** | **0.6x** (Grade D) | Pass |
-| CPU (GGUF) | 8 tok/s | — | Pass |
-
-**1.5B Q4_K_M on RTX 4090:**
-
-| Mode | Throughput | vs Ollama | Status |
-|------|------------|-----------|--------|
-| GPU Batched (M=16) | **851.8 tok/s** | **2.93x** | Pass |
-| GPU Single (APR Q4K, GH-88) | **240 tok/s** | — | Pass |
-| GPU Single (GGUF) | 120.1 tok/s | 1.0x | Pass |
-| CPU | 25.3 tok/s | 1.69x | Pass |
-
-**Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
-
-See [`docs/specifications/archive/qwen2.5-coder-showcase-demo.md`](docs/specifications/archive/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 43-round Popperian falsification protocol (206 bugs found and fixed).
-
-## QA & Testing
-
-The project includes comprehensive QA infrastructure for model validation:
-
-```bash
-# Run 7-gate QA suite on any model
-apr qa model.gguf
-
-# QA with throughput assertions
-apr qa model.gguf --assert-tps 100 --json
-
-# MVP playbook testing (18-cell matrix: 3 formats × 2 backends × 3 modalities)
-cd apr-model-qa-playbook
-apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
-  --model-path /path/to/model.safetensors.index.json
-```
-
-**QA Gates (7 falsifiable gates):**
-1. Tensor contract validation
-2. Golden output verification
-3. Throughput measurement
-4. Ollama parity comparison
-5. GPU speedup verification
-6. Format parity (SafeTensors vs GGUF vs APR)
-7. PTX parity (GPU kernel correctness)
-
-**QA Matrix Coverage:**
-- **Modalities**: `run`, `chat`, `serve`
-- **Formats**: GGUF, SafeTensors (including sharded), APR
-- **Backends**: CPU, GPU
-- **Models tested**: 0.5B, 1.5B, 3B, 7B, 14B
-- **Falsification**: 43 rounds, 206 bugs found, 155/163 gates passing (95.1%)
-
-## Claude Code Skills
-
-aprender ships with [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) skills that automate development and debugging workflows. If you're contributing or investigating bugs, these replace manual multi-step processes with a single command.
-
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| **Dogfood** | `/dogfood` | Rebuild apr-cli, exercise against real models, run quality gates, find next work (6 gates) |
-| **Pre-release** | `/pre-release` | Prevent crates.io publish breakage — derived from 5 historical release failures (10 gates) |
-
-**Quick start:**
+## Architecture
 
 ```
-# After making changes — rebuild, test, verify
-> /dogfood
-
-# Before publishing — full release QA
-> /pre-release
+aprender
+  primitives/       Core tensor types (Matrix, Vector)
+  linear_model/     Linear and logistic regression
+  cluster/          KMeans, DBSCAN
+  classification/   SVM, Naive Bayes, KNN
+  tree/             Decision trees
+  ensemble/         Random forest, gradient boosting
+  text/             Tokenization, TF-IDF, chat templates
+  time_series/      ARIMA
+  graph/            PageRank, centrality, community detection
+  bayesian/         Bayesian inference
+  glm/              Generalized linear models
+  decomposition/    PCA, dimensionality reduction
+  nn/               Neural networks, transformers, MoE
+  online/           Online / incremental learning
+  recommend/        Recommendation systems
+  synthetic/        Synthetic data generation
+  format/           APR v2 serialization (encryption, compression)
+  serialization/    Legacy serialization
+  prelude/          Convenient re-exports
 ```
 
-See [`docs/claude-code-skills/`](docs/claude-code-skills/) for gate details, debugging workflows, and examples.
+Key dependency: [trueno](https://crates.io/crates/trueno) provides the
+SIMD-accelerated compute primitives (AVX2/AVX-512/NEON).
+
+## Quality
+
+- **12,974+ tests**, 96.35% line coverage
+- Zero clippy warnings (`-D warnings`)
+- 73 provable contracts via
+  [provable-contracts](https://github.com/paiml/provable-contracts)
+- TDG Score: A+ (95.2/100)
+- Mutation testing target: >80% mutation score
+- Zero SATD (self-admitted technical debt)
+
+## Sovereign AI Stack
+
+Aprender is the ML layer of the PAIML Sovereign AI Stack -- a pure Rust
+ecosystem for privacy-preserving ML infrastructure.
+
+| Layer | Crate | Purpose |
+|-------|-------|---------|
+| Compute | [trueno](https://crates.io/crates/trueno) | SIMD/GPU primitives (AVX2/AVX-512/NEON, wgpu) |
+| ML | **aprender** | ML algorithms, APR v2 format |
+| Training | [entrenar](https://crates.io/crates/entrenar) | Autograd, LoRA/QLoRA, quantization |
+| Inference | [realizar](https://crates.io/crates/realizar) | APR/GGUF/SafeTensors inference, GPU kernels |
+| Speech | [whisper-apr](https://crates.io/crates/whisper-apr) | Pure Rust Whisper ASR |
+| Distribution | [repartir](https://crates.io/crates/repartir) | Distributed compute (CPU/GPU/Remote) |
+| Simulation | [simular](https://crates.io/crates/simular) | Monte Carlo, physics, optimization |
+| Registry | [pacha](https://crates.io/crates/pacha) | Model registry with Ed25519 signatures |
+| Orchestration | [batuta](https://crates.io/crates/batuta) | Stack coordination and CLI |
+
+### Related Crates
+
+| Crate | Description |
+|-------|-------------|
+| [aprender-tsp](https://crates.io/crates/aprender-tsp) | TSP solver with CLI and `.apr` model persistence |
+| [aprender-shell](https://crates.io/crates/aprender-shell) | AI-powered shell completion trained on your history |
+| [apr-cookbook](https://github.com/paiml/apr-cookbook) | 50+ idiomatic Rust examples for `.apr` format and SIMD acceleration |
 
 ## Documentation
 
@@ -430,30 +317,22 @@ See [`docs/claude-code-skills/`](docs/claude-code-skills/) for gate details, deb
 | User Guide | [paiml.github.io/aprender](https://paiml.github.io/aprender/) |
 | Examples | [`examples/`](examples/) |
 | APR Format Spec | [`docs/specifications/archive/APR-SPEC.md`](docs/specifications/archive/APR-SPEC.md) |
-| QA Protocol | [`docs/specifications/archive/qa-showcase-methodology.md`](docs/specifications/archive/qa-showcase-methodology.md) |
-| Qualify Matrix | [`docs/qualify-matrix.md`](docs/qualify-matrix.md) |
-| Streaming Quantization | [`docs/specifications/archive/streaming-quantize-safetensors-q4k.md`](docs/specifications/archive/streaming-quantize-safetensors-q4k.md) |
-| Claude Code Skills | [`docs/claude-code-skills/`](docs/claude-code-skills/) |
-🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Contributing
 
-We welcome contributions. Please ensure your changes pass the test suite:
-
-```bash
-cargo test --all-features
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
-```
+1. Fork the repository
+2. Make your changes on the `master` branch
+3. Run quality gates: `cargo test --all-features && cargo clippy --all-targets -- -D warnings && cargo fmt --check`
+4. Submit a pull request
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-Aprender is distributed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT
 
 ---
 
 <p align="center">
-  <sub>Built by <a href="https://paiml.com">Paiml</a></sub>
+  <sub>Built by <a href="https://paiml.com">PAIML</a></sub>
 </p>
