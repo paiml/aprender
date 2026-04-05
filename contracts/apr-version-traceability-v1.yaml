@@ -1,0 +1,85 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr --version traceability contract — the version output must always contain an informative build identifier; never the bare '(unknown)' sentinel when a CARGO_PKG_VERSION or any alternative identifier is available"
+  references:
+    - "paiml/aprender#597 (Version string shows (unknown) instead of git hash)"
+  registry: true
+  tags:
+    - cli
+    - version
+    - build
+    - sentinel
+    - five-whys
+
+five_whys:
+  symptom: "apr --version emits 'apr 0.4.13 (unknown)' on hosts built via cargo install (from path or crates.io); local git-worktree builds correctly emit 'apr 0.4.13 (b8c5d809)'"
+  why_1: "APR_GIT_SHA env var fell back to 'unknown' at build time because git rev-parse --short HEAD failed"
+  why_2: "cargo install copies source to a temp workspace without the .git/ directory; on crates.io tarball installs there is no .git either. git rev-parse runs but finds no repo."
+  why_3: "build.rs has only one hash source — the git command. No env var check, committed hash file, or informative fallback."
+  why_4: "Release process (scripts/release.sh, .github/workflows/release.yml) calls cargo publish directly without writing hash metadata into the package."
+  why_5: "No provable-contract forbids the '(unknown)' sentinel in version output — 'version is traceable' was never formalized."
+  root_cause: "Single git-command source + no release-time hash baking + no contract forbidding sentinel leaked a meaningless version identifier to production binaries."
+
+equations:
+  non_sentinel_version:
+    formula: "apr --version output MUST NOT contain '(unknown)' when CARGO_PKG_VERSION is available"
+    domain: "any apr binary built by cargo (path or crates.io)"
+    codomain: "version string"
+    invariants:
+      - "apr --version output contains a non-sentinel build identifier"
+      - "Fallback identifier MUST include CARGO_PKG_VERSION when git hash is unavailable"
+      - "Common sentinel forms are forbidden: (unknown), 0000000, <empty>, null"
+
+  fallback_hierarchy:
+    formula: "APR_GIT_SHA = override ∨ git_hash ∨ committed_sha ∨ 'v{version}+no-git'"
+    domain: "build-time environment"
+    codomain: "APR_GIT_SHA environment variable"
+    invariants:
+      - "Env var APR_GIT_SHA_OVERRIDE, if set, wins (for CI/release)"
+      - "Otherwise: try git rev-parse --short HEAD"
+      - "Otherwise: try reading crates/apr-cli/.git-sha committed file"
+      - "Otherwise: emit 'v{CARGO_PKG_VERSION}+no-git' as informative fallback"
+
+proof_obligations:
+  - type: invariant
+    property: "No '(unknown)' sentinel in version output"
+    formal: "apr --version output ∌ '(unknown)'"
+    applies_to: non_sentinel_version
+  - type: invariant
+    property: "Fallback includes package version"
+    formal: "git_hash = none ⟹ APR_GIT_SHA contains CARGO_PKG_VERSION"
+    applies_to: fallback_hierarchy
+
+falsification_tests:
+  - id: FALSIFY-VERSION-001
+    rule: "apr --version does not contain '(unknown)'"
+    prediction: "apr --version output does not contain the string '(unknown)'"
+    test: "! apr --version 2>&1 | grep -qE '\\(unknown\\)'"
+    if_fails: "Sentinel still leaking — fallback logic not reached or not wired"
+  - id: FALSIFY-VERSION-002
+    rule: "apr --version does not contain known sentinel forms"
+    prediction: "apr --version output contains no sentinel from the forbidden set"
+    test: "! apr --version 2>&1 | grep -qE '\\(unknown\\)|\\(0000000\\)|\\(<empty>\\)|\\(null\\)'"
+    if_fails: "Alternative sentinel leaked"
+  - id: FALSIFY-VERSION-003
+    rule: "apr --version on crates.io-style build contains version"
+    prediction: "When built without git context, apr --version output contains the package version string"
+    test: "apr --version 2>&1 | grep -qE '0\\.4\\.[0-9]+'"
+    if_fails: "Version string missing entirely"
+
+kani_harnesses:
+  - id: KANI-VERSION-001
+    obligation: "version output is non-sentinel"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-VERSION-001
+  name: "apr --version traceability contract"
+  description: "apr --version output must always contain a meaningful build identifier; never the bare '(unknown)' or other sentinel forms"
+  checks:
+    - "non_sentinel_version"
+    - "fallback_hierarchy"
+  pass_criteria: "FALSIFY-VERSION-{001,002,003} all PASS on a cargo-install-built binary (no git context)"
