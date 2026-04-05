@@ -71,7 +71,7 @@
 
 // Contract assertions from YAML (pv codegen)
 #[macro_use]
-#[allow(unused_macros)]
+#[allow(unused_macros, clippy::duplicated_attributes)]
 mod generated_contracts;
 pub mod active_learning;
 /// Audio I/O and signal processing (mel spectrogram, resampling, capture)
