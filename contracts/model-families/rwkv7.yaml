@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: rwkv7"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: rwkv7
 display_name: "RWKV-7 Linear Attention"
 vendor: RWKV Foundation

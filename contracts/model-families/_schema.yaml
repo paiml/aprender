@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: _schema"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 # Model Family Contract YAML Schema
 # Version: 1.0.0
 # See: docs/specifications/compiler-enforced-model-types-model-oracle.md S4.2

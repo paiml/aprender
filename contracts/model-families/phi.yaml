@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: phi"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: phi
 display_name: "Microsoft Phi"
 vendor: Microsoft

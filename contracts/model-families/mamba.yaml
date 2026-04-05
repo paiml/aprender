@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: mamba"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: mamba
 display_name: "Mamba State Space Model"
 vendor: state-spaces

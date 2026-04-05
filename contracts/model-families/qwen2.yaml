@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: qwen2"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: qwen2
 display_name: "Qwen2 / Qwen2.5-Coder"
 vendor: Alibaba

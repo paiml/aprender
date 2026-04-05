@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: falcon_h1"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: falcon_h1
 display_name: "Falcon-H1 Hybrid Transformer+SSM"
 vendor: TII (Technology Innovation Institute)

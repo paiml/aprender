@@ -1,3 +1,11 @@
+metadata:
+  version: "1.0"
+  created: "2026-04-05"
+  description: "Model family descriptor: gpt2"
+  kind: model-family
+  references:
+    - "https://huggingface.co/"
+
 family: gpt2
 display_name: "OpenAI GPT-2"
 vendor: OpenAI
