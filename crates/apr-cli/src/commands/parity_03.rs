@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "cuda")]
-pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()> {
+pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool) -> Result<()> {
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, OwnedQuantizedModelCuda,
     };
@@ -144,8 +144,10 @@ pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()>
     auto_diagnose(&all_metrics, hidden_dim, num_heads, kv_heads);
 
     // ── Exit code ───────────────────────────────────────────────────────────
+    // GH-615: Exit non-zero when parity is disproven — exit code must match display.
+    // Previously required --assert flag, but display already says "PARITY DISPROVEN".
     let has_failures = all_metrics.iter().any(|m| m.verdict().is_fail());
-    if has_failures && assert {
+    if has_failures {
         Err(CliError::ValidationFailed(
             "PARITY DISPROVEN: GPU/CPU divergence exceeds tolerance".to_string(),
         ))

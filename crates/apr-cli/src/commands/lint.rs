@@ -34,14 +34,15 @@ pub(crate) fn run(file: &Path, json: bool) -> Result<()> {
     // Display results
     display_report(&report);
 
-    // GH-252: Only fail on errors, not warnings. Warnings are advisory.
-    if report.error_count > 0 {
-        Err(CliError::ValidationFailed(format!(
-            "Lint failed with {} error(s) and {} warning(s)",
-            report.error_count, report.warn_count
-        )))
-    } else {
+    // GH-601: Exit non-zero when report says "Lint failed" — exit code must match display.
+    // report.passed() returns false when error_count > 0 OR warn_count > 0.
+    if report.passed() {
         Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "Lint failed with {} error(s), {} warning(s), {} info(s)",
+            report.error_count, report.warn_count, report.info_count
+        )))
     }
 }
 
@@ -63,7 +64,7 @@ fn print_json_report(file: &Path, report: &LintReport) -> Result<()> {
 
     let output_json = serde_json::json!({
         "model": file.display().to_string(),
-        "passed": report.error_count == 0,
+        "passed": report.passed(),
         "error_count": report.error_count,
         "warn_count": report.warn_count,
         "info_count": report.info_count,
@@ -75,14 +76,14 @@ fn print_json_report(file: &Path, report: &LintReport) -> Result<()> {
         serde_json::to_string_pretty(&output_json).unwrap_or_default()
     );
 
-    // GH-252: Only fail on errors, not warnings
-    if report.error_count > 0 {
-        Err(CliError::ValidationFailed(format!(
-            "Lint failed with {} error(s) and {} warning(s)",
-            report.error_count, report.warn_count
-        )))
-    } else {
+    // GH-601: Exit non-zero when lint fails — exit code must match JSON "passed" field.
+    if report.passed() {
         Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "Lint failed with {} error(s), {} warning(s), {} info(s)",
+            report.error_count, report.warn_count, report.info_count
+        )))
     }
 }
 
