@@ -1,0 +1,91 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr inspect/rosetta dtype naming contract — DType column must render human-readable GGML type names (F32, Q4_K, Q6_K), never raw integer discriminants"
+  references:
+    - "paiml/aprender#619 (inspect/rosetta: DType column shows integer IDs instead of names)"
+    - "paiml/aprender#605 (DType IDs historical pattern)"
+    - "paiml/aprender#603 (quantization field shows '0' — downstream of same root cause)"
+  registry: true
+  tags:
+    - cli
+    - inspect
+    - rosetta
+    - dtype
+    - display
+
+equations:
+  dtype_naming:
+    formula: "∀ t ∈ InspectionReport.tensors: t.dtype ∈ GGML_NAMES"
+    domain: "tensor entry in an InspectionReport populated from a GGUF, SafeTensors, or APR v2 file"
+    codomain: "human-readable dtype string"
+    invariants:
+      - "TensorInfo.dtype is ALWAYS a human-readable name from the GGML canonical set"
+      - "TensorInfo.dtype NEVER parses as an integer via str::parse::<u32>"
+      - "GGML_NAMES = {F32, F16, Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q8_1, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS, IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16, BF16, I32, I64, F64, IQ1_M, unknown}"
+
+  cross_cmd_consistency:
+    formula: "∀ tensor T in file F: dtype(inspect F, T) = dtype(tensors F, T)"
+    domain: "a tensor present in both `apr inspect` and `apr tensors` output for the same file"
+    codomain: "dtype name string"
+    invariants:
+      - "apr inspect and apr tensors MUST report the same dtype name for the same tensor"
+      - "apr rosetta inspect and apr tensors MUST report the same dtype name for the same tensor"
+      - "JSON output (inspect --json, tensors --json) MUST use the same dtype names as text output"
+
+proof_obligations:
+  - type: invariant
+    property: "dtype names never leak as raw integers on GGUF"
+    formal: "∀ t ∈ inspect(GGUF).tensors: t.dtype ∈ GGML_NAMES ∧ ¬parses_as_u32(t.dtype)"
+    applies_to: dtype_naming
+  - type: invariant
+    property: "dtype names never leak as raw integers on rosetta inspect"
+    formal: "∀ t ∈ rosetta_inspect(GGUF).tensors: t.dtype ∈ GGML_NAMES ∧ ¬parses_as_u32(t.dtype)"
+    applies_to: dtype_naming
+  - type: invariant
+    property: "Cross-command dtype name consistency"
+    formal: "∀ tensor T: dtype(inspect, T) = dtype(tensors, T) = dtype(rosetta_inspect, T)"
+    applies_to: cross_cmd_consistency
+
+falsification_tests:
+  - id: FALSIFY-INSPECT-DTYPE-001
+    rule: "apr inspect DType column on GGUF contains no pure integers"
+    prediction: "apr inspect <gguf> text output's DType column has no entries that parse as u32"
+    test: "apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk -F'│' '/blk\\./ {gsub(/^ +| +$/, \"\", $3); if ($3 ~ /^[0-9]+$/) exit 1}'"
+    if_fails: "DType column still emits raw GGML discriminants — fix at src/format/rosetta/validate_inspect.rs:318"
+  - id: FALSIFY-INSPECT-DTYPE-002
+    rule: "apr inspect --json tensors[*].dtype on GGUF are all names"
+    prediction: "apr inspect --json <gguf> emits no tensor.dtype that matches ^[0-9]+$"
+    test: "apr inspect --json $M 2>&1 | jq -r '.tensors // [] | .[].dtype' | grep -E '^[0-9]+$' && exit 1 || exit 0"
+    if_fails: "JSON output emits raw discriminants — same root cause"
+  - id: FALSIFY-INSPECT-DTYPE-003
+    rule: "apr rosetta inspect DType column contains no pure integers"
+    prediction: "apr rosetta inspect <gguf> text output's DType column has no entries that parse as u32"
+    test: "apr rosetta inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk -F'│' '/blk\\./ {gsub(/^ +| +$/, \"\", $3); if ($3 ~ /^[0-9]+$/) exit 1}'"
+    if_fails: "rosetta inspect emits raw discriminants"
+  - id: FALSIFY-INSPECT-DTYPE-004
+    rule: "inspect text output and tensors --json use the same dtype vocabulary"
+    prediction: "The set of dtype names shown by `apr inspect` (text) is a subset of those shown by `apr tensors --json`"
+    test: "D1=$(apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk -F'│' '/blk\\./ {gsub(/^ +| +$/, \"\", $3); print $3}' | sort -u); D2=$(apr tensors --json $M | jq -r '.tensors[].dtype' | sort -u); for d in $D1; do echo \"$D2\" | grep -qx \"$d\" || exit 1; done"
+    if_fails: "inspect and tensors use different dtype vocabularies — cross-cmd drift"
+  - id: FALSIFY-INSPECT-DTYPE-005
+    rule: "ggml_dtype_name is reachable from rosetta module"
+    prediction: "validate_inspect.rs references tensors::ggml_dtype_name or an equivalent name mapper"
+    test: "grep -E 'ggml_dtype_name|dtype_name' src/format/rosetta/validate_inspect.rs"
+    if_fails: "Root-cause fix not applied — validate_inspect.rs still stringifies the raw u32"
+
+kani_harnesses:
+  - id: KANI-INSPECT-DTYPE-001
+    obligation: "Every GGML u32 discriminant ∈ [0,30] maps to a non-integer name"
+    bound: 31
+    strategy: bounded_int
+
+qa_gate:
+  id: F-INSPECT-DTYPE-001
+  name: "Inspect dtype naming contract"
+  description: "apr inspect, apr rosetta inspect, and apr tensors must all render tensor dtypes as human-readable GGML type names, never as raw integer discriminants"
+  checks:
+    - "dtype_naming"
+    - "cross_cmd_consistency"
+  pass_criteria: "FALSIFY-INSPECT-DTYPE-{001,002,003,004,005} all PASS on a GGUF model with mixed F32/Q4_K/Q6_K tensors"

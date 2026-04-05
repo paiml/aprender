@@ -1,0 +1,96 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr inspect quantization field contract — InspectionReport.quantization must reflect the dominant dtype among the model's WEIGHT tensors (by parameter count), not the first-tensor-in-BTreeMap-order stub value"
+  references:
+    - "paiml/aprender#603 (quantization field shows '0' / 'F32' instead of actual quant scheme)"
+    - "paiml/aprender#619 (DType IDs — fixed, same file, dtype now comes through as name)"
+    - "paiml/aprender#605 (DType IDs historical pattern)"
+  registry: true
+  tags:
+    - cli
+    - inspect
+    - rosetta
+    - quantization
+    - five-whys
+
+five_whys:
+  symptom: "apr inspect reports Quantization: 0 (pre-#619) or Quantization: F32 (post-#619) for a Q4_K_M quantized GGUF model"
+  why_1: "InspectionReport.quantization is populated from tensors.first().map(|t| t.dtype) at validate_inspect.rs:335"
+  why_2: "tensors is built from result.tensors (a BTreeMap) iterated alphabetically; first key is blk.0.attn_k.bias (always F32)"
+  why_3: "'First tensor's dtype' was a stub — never a correct heuristic; correct answer surveys WEIGHT tensors only and picks dominant dtype by parameter count"
+  why_4: "No test fixture asserts quantization != F32 for Q4_K_M GGUF; tests hand-pick dtypes without cross-checking the aggregate field"
+  why_5: "No provable-contract binds InspectionReport.quantization to a semantic definition — the field was written without a specification"
+  root_cause: "Stub computation with no semantic contract binding. This contract fixes the 'no contract' root cause; the code fix applies the now-specified semantic."
+
+equations:
+  dominant_weight_dtype:
+    formula: "quantization(M) = argmax_{d ∈ dtypes} Σ {params(t) : t ∈ M.tensors, t.is_weight, t.dtype = d}"
+    domain: "GGUF model M with weight tensors (t.name ∌ 'bias'|'norm'|'ln_')"
+    codomain: "dtype name string from GGML_NAMES"
+    invariants:
+      - "quantization is computed over WEIGHT tensors only — biases and norm layers are excluded"
+      - "For mixed-quantization models, return the dtype with the most parameters"
+      - "For uniformly-quantized models, return that single dtype"
+      - "For an empty set of weight tensors (shouldn't happen), return None"
+
+  weight_tensor_predicate:
+    formula: "is_weight(t) = ¬(lower(t.name) contains 'bias' ∨ 'norm' ∨ 'ln_')"
+    domain: "tensor name string"
+    codomain: "boolean"
+    invariants:
+      - "Bias tensors are excluded regardless of layer position"
+      - "Normalization layer tensors (LayerNorm/RMSNorm) are excluded"
+      - "All other tensors are treated as weights for the purpose of quantization detection"
+
+proof_obligations:
+  - type: invariant
+    property: "quantization reflects dominant weight dtype, not first-in-BTreeMap"
+    formal: "quantization(M) = argmax_{d} Σ {params(t) : is_weight(t), t.dtype=d}"
+    applies_to: dominant_weight_dtype
+  - type: invariant
+    property: "biases and norms excluded from quantization calculation"
+    formal: "∀ t with is_bias(t) ∨ is_norm(t): t.dtype does not solely determine quantization(M)"
+    applies_to: weight_tensor_predicate
+  - type: postcondition
+    property: "for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}"
+    formal: "quantization(qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) ∈ {Q4_K, Q6_K}"
+    applies_to: dominant_weight_dtype
+
+falsification_tests:
+  - id: FALSIFY-INSPECT-QUANT-001
+    rule: "Quantization field is NOT F32 for a quantized GGUF model"
+    prediction: "apr inspect on a Q4_K_M model reports Quantization: Q4_K (or Q6_K), never F32 or a raw integer"
+    test: "Q=$(apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk -F'│' '/Quantization/ {gsub(/^ +| +$/, \"\", $3); print $3}'); [ \"$Q\" != \"F32\" ] && [ \"$Q\" != \"0\" ] && [ -n \"$Q\" ]"
+    if_fails: "Quantization still picks first tensor (bias) instead of dominant weight dtype"
+  - id: FALSIFY-INSPECT-QUANT-002
+    rule: "inspect --json quantization is a dtype name, not 'F32' for quantized model"
+    prediction: "apr inspect --json on a Q4_K_M model has .quantization ∈ {Q4_K, Q6_K, Q4_K_M, mixed}, never 'F32' or '0'"
+    test: "Q=$(apr inspect --json $M | jq -r '.quantization'); [ \"$Q\" != \"F32\" ] && [ \"$Q\" != \"0\" ] && [ \"$Q\" != \"null\" ]"
+    if_fails: "JSON output still picks wrong tensor — same root cause"
+  - id: FALSIFY-INSPECT-QUANT-003
+    rule: "quantization agrees with the dominant dtype in apr tensors"
+    prediction: "apr inspect quantization matches the dtype with the most parameters in apr tensors --json output (excluding bias/norm)"
+    test: "QI=$(apr inspect --json $M | jq -r '.quantization'); QT=$(apr tensors --json $M | jq -r '.tensors[] | select(.name | test(\"bias|norm|ln_\"; \"i\") | not) | .dtype' | sort | uniq -c | sort -rn | head -1 | awk '{print $2}'); [ \"$QI\" = \"$QT\" ] || { echo \"inspect=$QI tensors-dominant=$QT\"; exit 1; }"
+    if_fails: "inspect and tensors disagree on dominant weight dtype — stub still in place"
+  - id: FALSIFY-INSPECT-QUANT-004
+    rule: "code-level check: validate_inspect.rs no longer uses tensors.first()"
+    prediction: "src/format/rosetta/validate_inspect.rs does not contain 'tensors.first().map(|t| t.dtype'"
+    test: "grep -qE 'tensors\\.first\\(\\)\\.map\\(\\|t\\| t\\.dtype' src/format/rosetta/validate_inspect.rs && exit 1 || exit 0"
+    if_fails: "Stub computation still in code"
+
+kani_harnesses:
+  - id: KANI-INSPECT-QUANT-001
+    obligation: "quantization excludes bias/norm tensors"
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-INSPECT-QUANT-001
+  name: "Inspect quantization field semantic contract"
+  description: "InspectionReport.quantization must be the dominant dtype (by parameter count) among the model's weight tensors, excluding biases and norm layers"
+  checks:
+    - "dominant_weight_dtype"
+    - "weight_tensor_predicate"
+  pass_criteria: "FALSIFY-INSPECT-QUANT-{001,002,003,004} all PASS on a Q4_K_M GGUF model with mixed F32/Q4_K/Q6_K tensors"

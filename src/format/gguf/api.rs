@@ -256,6 +256,10 @@ pub struct GgufRawLoadResult {
     pub tokenizer: GgufTokenizer,
     /// Model configuration
     pub model_config: GgufModelConfig,
+    /// Raw GGUF KV metadata, stringified for display.
+    /// Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
+    /// Keys are on-disk GGUF names (e.g., qwen2.embedding_length) — never fabricated.
+    pub raw_metadata: BTreeMap<String, String>,
 }
 
 /// Load GGUF with raw quantized tensors (preserves Q4K for GPU inference)
@@ -315,11 +319,46 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         moe_intermediate_size: None,
     };
 
+    // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
+    // Propagate raw GGUF KV metadata to downstream consumers (inspect/rosetta) so they
+    // can display authentic on-disk keys instead of fabricated ML-shorthand names.
+    let raw_metadata: BTreeMap<String, String> = reader
+        .metadata
+        .iter()
+        .map(|(k, v)| (k.clone(), gguf_value_display(v)))
+        .collect();
+
     Ok(GgufRawLoadResult {
         tensors,
         tokenizer,
         model_config,
+        raw_metadata,
     })
+}
+
+/// Format a `GgufValue` as a human-readable display string.
+/// Arrays are summarized as `[len=N]` to keep display output bounded.
+/// Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
+fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
+    use crate::format::gguf::types::GgufValue;
+    match v {
+        GgufValue::Uint8(n) => n.to_string(),
+        GgufValue::Int8(n) => n.to_string(),
+        GgufValue::Uint16(n) => n.to_string(),
+        GgufValue::Int16(n) => n.to_string(),
+        GgufValue::Uint32(n) => n.to_string(),
+        GgufValue::Int32(n) => n.to_string(),
+        GgufValue::Float32(n) => n.to_string(),
+        GgufValue::Bool(b) => b.to_string(),
+        GgufValue::String(s) => s.clone(),
+        GgufValue::Uint64(n) => n.to_string(),
+        GgufValue::Int64(n) => n.to_string(),
+        GgufValue::Float64(n) => n.to_string(),
+        GgufValue::ArrayUint32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayInt32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayFloat32(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayString(a) => format!("[len={}]", a.len()),
+    }
 }
 
 #[cfg(test)]

@@ -1,0 +1,94 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr inspect GGUF metadata propagation contract — InspectionReport.metadata must contain ALL raw GGUF KV pairs using their on-disk key names, not a hand-picked subset with fabricated key names"
+  references:
+    - "paiml/aprender#622 (inspect truncates GGUF metadata to 4 keys)"
+    - "paiml/aprender#603 (quantization field stub — adjacent root cause pattern)"
+    - "paiml/aprender#619 (DType IDs — same file, same stub-without-contract pattern)"
+  registry: true
+  tags:
+    - cli
+    - inspect
+    - gguf
+    - metadata
+    - five-whys
+
+five_whys:
+  symptom: "apr inspect on a qwen2 GGUF shows 'Metadata (4 keys)' with fabricated key names (n_embd, n_heads, n_layers, general.architecture), while apr hex reports '26 KV pairs' for the same file"
+  why_1: "validate_inspect.rs manually writes 4 hard-coded keys into meta_map, rather than copying all KV pairs from the GGUF file"
+  why_2: "GgufRawLoadResult (returned by load_gguf_raw) exposes only the typed GgufModelConfig fields — the raw KV metadata map held in GgufReader.metadata is not propagated downstream"
+  why_3: "load_gguf_raw was designed for the inference path (which needs typed config), and raw metadata forwarding was never added when inspect started needing it"
+  why_4: "The manually-written keys use non-standard ML shorthand names (n_embd, n_heads) generated from typed fields, not the actual on-disk GGUF keys (e.g., qwen2.embedding_length, qwen2.attention.head_count)"
+  why_5: "No contract binds InspectionReport.metadata to the file's actual KV pairs — the field was populated with fabricated content because nothing specified the truth-source"
+  root_cause: "load_gguf_raw does not expose raw metadata to consumers; validate_inspect compensates with fabricated keys. Absence of a provable-contract mandating file-truth made this invisible."
+
+equations:
+  metadata_completeness:
+    formula: "|InspectionReport(M).metadata| = kv_count(M)"
+    domain: "a GGUF file M with N metadata KV pairs"
+    codomain: "non-negative integer equal to the GGUF header's metadata_kv_count"
+    invariants:
+      - "Every GGUF KV pair present in the file MUST appear in InspectionReport.metadata"
+      - "No metadata key may be renamed or synthesized — keys are on-disk names verbatim"
+      - "Value formatting may be truncated for display (e.g., long arrays) but must preserve semantic content"
+
+  metadata_key_authenticity:
+    formula: "∀ k ∈ InspectionReport.metadata.keys: k ∈ file_kv_keys(M)"
+    domain: "each key in the InspectionReport metadata map"
+    codomain: "boolean — key exists in the GGUF file's raw KV entries"
+    invariants:
+      - "No metadata key may be a fabricated ML-shorthand name (n_embd, n_heads) unless the GGUF file literally contains that key"
+      - "Standard GGUF keys are architecture-scoped (e.g., qwen2.embedding_length, llama.attention.head_count) — inspect must use these"
+
+proof_obligations:
+  - type: invariant
+    property: "metadata count agrees with file header kv_count"
+    formal: "|InspectionReport(M).metadata| = apr_hex(M).kv_count"
+    applies_to: metadata_completeness
+  - type: invariant
+    property: "all metadata keys are authentic on-disk keys"
+    formal: "∀ k ∈ inspect(M).metadata: GgufReader.metadata[k] is defined"
+    applies_to: metadata_key_authenticity
+  - type: postcondition
+    property: "Qwen2.5-Coder 1.5B shows >=20 keys (not 4)"
+    formal: "|inspect(qwen2.5-coder-1.5b-instruct-q4_k_m.gguf).metadata| >= 20"
+    applies_to: metadata_completeness
+
+falsification_tests:
+  - id: FALSIFY-INSPECT-META-001
+    rule: "inspect metadata count matches hex kv_count"
+    prediction: "apr inspect reports the same KV count as apr hex for the same GGUF file"
+    test: "N_INSPECT=$(apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -oE 'Metadata \\([0-9]+ keys?\\)' | grep -oE '[0-9]+'); N_HEX=$(apr hex $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -oE '[0-9]+ KV pairs' | grep -oE '[0-9]+'); [ \"$N_INSPECT\" = \"$N_HEX\" ] || { echo \"inspect=$N_INSPECT hex=$N_HEX\"; exit 1; }"
+    if_fails: "inspect is truncating metadata — raw KV pairs not propagated through GgufRawLoadResult"
+  - id: FALSIFY-INSPECT-META-002
+    rule: "inspect metadata shows >= 20 keys for Qwen2.5-Coder"
+    prediction: "A qwen2 GGUF file has >= 20 metadata entries (architecture, tokenizer, alignment, version, …)"
+    test: "N=$(apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -oE 'Metadata \\([0-9]+ keys?\\)' | grep -oE '[0-9]+'); [ \"$N\" -ge 20 ]"
+    if_fails: "inspect still shows the 4-key hand-written stub"
+  - id: FALSIFY-INSPECT-META-003
+    rule: "inspect metadata uses authentic GGUF key names (architecture-scoped)"
+    prediction: "Metadata keys match the architecture prefix (qwen2.*, llama.*, etc.), not shorthand fabrications"
+    test: "apr inspect $M 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -oE 'qwen2\\.[a-z_]+|general\\.[a-z_]+' | head -1"
+    if_fails: "Keys are still n_embd/n_heads fabrications instead of qwen2.embedding_length style"
+  - id: FALSIFY-INSPECT-META-004
+    rule: "code-level check: validate_inspect.rs no longer hand-writes n_embd/n_heads/n_layers"
+    prediction: "src/format/rosetta/validate_inspect.rs does not insert 'n_embd', 'n_heads', 'n_layers' as meta keys"
+    test: "grep -qE 'meta_map\\.insert\\(\"n_(embd|heads|layers)\"' src/format/rosetta/validate_inspect.rs && exit 1 || exit 0"
+    if_fails: "Hand-written 4-key stub still in code"
+
+kani_harnesses:
+  - id: KANI-INSPECT-META-001
+    obligation: "metadata key count equals file kv count"
+    bound: 64
+    strategy: bounded_int
+
+qa_gate:
+  id: F-INSPECT-META-001
+  name: "Inspect metadata propagation contract"
+  description: "apr inspect must expose every GGUF KV pair from the file using the on-disk key names; no fabricated keys, no silent truncation"
+  checks:
+    - "metadata_completeness"
+    - "metadata_key_authenticity"
+  pass_criteria: "FALSIFY-INSPECT-META-{001,002,003,004} all PASS on a qwen2 GGUF file with >= 20 KV entries"

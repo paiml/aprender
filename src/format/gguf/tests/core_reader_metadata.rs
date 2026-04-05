@@ -164,6 +164,7 @@ fn test_gguf_raw_tensor_debug() {
 fn test_gguf_raw_load_result_debug() {
     let result = GgufRawLoadResult {
         tensors: std::collections::BTreeMap::new(),
+        raw_metadata: std::collections::BTreeMap::new(),
         tokenizer: GgufTokenizer {
             vocabulary: vec![],
             merges: vec![],

@@ -295,27 +295,22 @@ impl RosettaStone {
 
         let result = load_gguf_raw(path)?;
 
-        let mut meta_map: BTreeMap<String, String> = BTreeMap::new();
-        // Add config info to metadata
-        if let Some(ref arch) = result.model_config.architecture {
-            meta_map.insert("general.architecture".to_string(), arch.clone());
-        }
-        if let Some(num_layers) = result.model_config.num_layers {
-            meta_map.insert("n_layers".to_string(), num_layers.to_string());
-        }
-        if let Some(num_heads) = result.model_config.num_heads {
-            meta_map.insert("n_heads".to_string(), num_heads.to_string());
-        }
-        if let Some(hidden_size) = result.model_config.hidden_size {
-            meta_map.insert("n_embd".to_string(), hidden_size.to_string());
-        }
+        // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
+        // Surface ALL on-disk GGUF KV pairs using their authentic keys (e.g., qwen2.embedding_length,
+        // general.architecture, tokenizer.ggml.model). Previously this was a 4-key hand-written stub
+        // that fabricated ML-shorthand names (n_embd, n_heads, n_layers) — see Five Whys in the
+        // contract YAML for full root-cause analysis.
+        let meta_map: BTreeMap<String, String> = result.raw_metadata.clone();
 
+        // Contract: apr-inspect-dtype-naming-v1 F-INSPECT-DTYPE-001 (paiml/aprender#619).
+        // Render GGML dtype as a human-readable name (F32, Q4_K, Q6_K, …), not the raw u32
+        // discriminant. Delegates to the same lookup used by `apr tensors` for cross-cmd parity.
         let tensors: Vec<TensorInfo> = result
             .tensors
             .iter()
             .map(|(name, t): (&String, &GgufRawTensor)| TensorInfo {
                 name: name.clone(),
-                dtype: format!("{}", t.dtype),
+                dtype: crate::format::tensors::ggml_dtype_name(t.dtype).to_string(),
                 shape: t.shape.clone(),
                 size_bytes: t.data.len(),
                 stats: None,
@@ -329,7 +324,30 @@ impl RosettaStone {
 
         let architecture = result.model_config.architecture.clone();
 
-        let quantization = tensors.first().map(|t| t.dtype.clone());
+        // Contract: apr-inspect-quantization-v1 F-INSPECT-QUANT-001 (paiml/aprender#603).
+        // The model's "quantization" is the dominant dtype by parameter count among its WEIGHT
+        // tensors — biases and norm layers are excluded because they are typically kept in F32
+        // even for heavily-quantized models. Previous code picked tensors.first() which, after
+        // alphabetical BTreeMap ordering, was always blk.0.attn_k.bias (F32). See Five Whys in
+        // contracts/apr-inspect-quantization-v1.yaml.
+        let quantization = {
+            let mut params_by_dtype: std::collections::HashMap<&str, usize> =
+                std::collections::HashMap::new();
+            for t in &tensors {
+                let name_lower = t.name.to_lowercase();
+                let is_weight = !(name_lower.contains("bias")
+                    || name_lower.contains("norm")
+                    || name_lower.contains("ln_"));
+                if is_weight {
+                    let params: usize = t.shape.iter().product();
+                    *params_by_dtype.entry(t.dtype.as_str()).or_insert(0) += params;
+                }
+            }
+            params_by_dtype
+                .into_iter()
+                .max_by_key(|(_, params)| *params)
+                .map(|(dtype, _)| dtype.to_string())
+        };
 
         Ok(InspectionReport {
             format: FormatType::Gguf,
