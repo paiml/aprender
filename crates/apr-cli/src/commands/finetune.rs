@@ -570,6 +570,7 @@ fn execute_training_wgpu(
         lora_alpha,
         &["q_proj", "v_proj"],
         eps,
+        learning_rate as f32,
     );
 
     eprintln!(
