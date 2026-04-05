@@ -1,0 +1,76 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr list --quiet wiring contract — the global --quiet flag MUST materially affect apr list output (suppress help text, keep only machine-consumable data). Part of the #568/#604/#595/#524 silent-flag family."
+  references:
+    - "paiml/aprender#623 (list --quiet and inspect --vocab no-op)"
+    - "paiml/aprender#595 (--quiet silent flag)"
+    - "paiml/aprender#568 (--rank silent flag)"
+  registry: true
+  tags:
+    - cli
+    - list
+    - quiet
+    - silent-flag
+    - five-whys
+
+five_whys:
+  symptom: "diff <(apr list) <(apr list --quiet) produces no output — the global --quiet flag is accepted but has no observable effect on apr list output"
+  why_1: "dispatch.rs:558 dispatches 'Commands::List => pull::list(cli.json)' — passes cli.json but drops cli.quiet"
+  why_2: "list() signature fn list(json: bool) was defined without quiet awareness; each subcommand's dispatch branch picks which global flags to forward"
+  why_3: "No central 'global flags context' struct is passed to every dispatcher branch — each branch re-decides per subcommand"
+  why_4: "No automated silent-flag diff check in CI; historical bugs #568/#604/#595/#524 recur because detection is manual"
+  why_5: "No contract formalizes 'every global flag must materially affect every subcommand, or be explicitly disabled' — the architectural gap has no machine-checkable binding"
+  root_cause: "Dispatcher drops global flags per-subcommand without a contract enforcing flag wiring; the silent-flag anti-pattern persists structurally."
+
+equations:
+  quiet_materiality:
+    formula: "∀ cmd ∈ apr subcommands: output(cmd --quiet) ≠ output(cmd) OR cmd explicitly opts-out"
+    domain: "any apr subcommand that produces user-facing output"
+    codomain: "stdout bytes"
+    invariants:
+      - "apr list --quiet MUST suppress the 'Pull a model with:' help text"
+      - "apr list --quiet MUST keep machine-consumable output (one model name per line, or nothing if empty)"
+      - "The --quiet flag is NOT a JSON flag; it produces a terse text representation"
+
+proof_obligations:
+  - type: invariant
+    property: "list --quiet differs from list default"
+    formal: "output(apr list) ≠ output(apr list --quiet)"
+    applies_to: quiet_materiality
+  - type: invariant
+    property: "list --quiet omits help text"
+    formal: "'Pull a model with' ∉ output(apr list --quiet)"
+    applies_to: quiet_materiality
+
+falsification_tests:
+  - id: FALSIFY-LIST-QUIET-001
+    rule: "list --quiet produces different output than list"
+    prediction: "diff between apr list and apr list --quiet is non-empty"
+    test: "diff <(apr list 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g') <(apr list --quiet 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g') > /tmp/qdiff; [ -s /tmp/qdiff ]"
+    if_fails: "--quiet is still a no-op — dispatcher still drops cli.quiet"
+  - id: FALSIFY-LIST-QUIET-002
+    rule: "list --quiet omits the help text"
+    prediction: "apr list --quiet does not emit 'Pull a model with:' or table headers"
+    test: "! apr list --quiet 2>&1 | grep -qE 'Pull a model with|=== Cached Models ==='"
+    if_fails: "Help text still leaking in --quiet mode"
+  - id: FALSIFY-LIST-QUIET-003
+    rule: "list --quiet output is terse (one identifier per line, no padding)"
+    prediction: "apr list --quiet lines are short (no tabular padding), each line is a model identifier or path"
+    test: "apr list --quiet 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | awk 'NR>0 && length($0)>200 {exit 1}'"
+    if_fails: "Output still using tabular padding — not quiet-mode"
+
+kani_harnesses:
+  - id: KANI-LIST-QUIET-001
+    obligation: "quiet output length < default output length"
+    bound: 8
+    strategy: bounded_int
+
+qa_gate:
+  id: F-LIST-QUIET-001
+  name: "apr list --quiet wiring contract"
+  description: "The global --quiet flag must materially affect apr list output, producing a terse machine-consumable representation with no help text or tabular decoration"
+  checks:
+    - "quiet_materiality"
+  pass_criteria: "FALSIFY-LIST-QUIET-{001,002,003} all PASS"

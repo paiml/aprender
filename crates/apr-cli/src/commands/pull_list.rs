@@ -53,9 +53,12 @@ struct DiskModelEntry {
 }
 
 /// List cached models
+///
+/// Contract: apr-list-quiet-wiring-v1 F-LIST-QUIET-001 (paiml/aprender#623).
+/// When quiet=true, suppress help text and tabular decoration — emit one entry per line.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
-pub fn list(json: bool) -> Result<()> {
+pub fn list(json: bool, quiet: bool) -> Result<()> {
     let fetcher = ModelFetcher::new().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
@@ -70,6 +73,18 @@ pub fn list(json: bool) -> Result<()> {
     let known_paths: HashSet<std::path::PathBuf> =
         models.iter().map(|m| m.path.clone()).collect();
     let orphans = scan_cache_dir_for_orphans(fetcher.cache_dir(), &known_paths);
+
+    // Contract: apr-list-quiet-wiring-v1 F-LIST-QUIET-001 (paiml/aprender#623).
+    // Quiet mode: one identifier per line, no decoration, no help text.
+    if quiet {
+        for m in &models {
+            println!("{}", m.name);
+        }
+        for o in &orphans {
+            println!("{}", o.name);
+        }
+        return Ok(());
+    }
 
     // GH-248: JSON output mode
     if json {
