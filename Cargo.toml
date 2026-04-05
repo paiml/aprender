@@ -19,7 +19,7 @@ proptest = "1.6"
 # Note: Using "deny" (not "forbid") to allow documented unsafe in mmap module.
 # See bundle-mmap-spec.md Section 4 for safety justification.
 unsafe_code = "deny"
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(coverage_nightly)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(coverage_nightly)', 'cfg(feature, values("explainable-monitor-integration"))'] }
 unsafe_op_in_unsafe_fn = "warn"
 
 # Code Quality
