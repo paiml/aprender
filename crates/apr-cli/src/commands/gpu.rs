@@ -11,6 +11,11 @@ pub fn run(json: bool) -> Result<()> {
     let total_mb = entrenar::gpu::ledger::detect_total_memory_mb();
     let mem_type = entrenar::gpu::ledger::detect_memory_type();
 
+    // Contract: apr-gpu-presence-v1 F-GPU-PRESENCE-001 (paiml/aprender#624).
+    // The entrenar API returns sentinel values ("GPU-unknown", 0) on hosts with no
+    // discrete GPU. Disambiguate so consumers can tell "no GPU" from "GPU with 0 MB used".
+    let gpu_present = uuid != "GPU-unknown" && total_mb > 0;
+
     let ledger =
         entrenar::gpu::ledger::VramLedger::new(uuid.clone(), total_mb, mem_type.reserve_factor());
 
@@ -24,6 +29,7 @@ pub fn run(json: bool) -> Result<()> {
             .sum();
 
         let json_val = serde_json::json!({
+            "gpu_present": gpu_present,
             "gpu_uuid": uuid,
             "total_mb": total_mb,
             "memory_type": format!("{mem_type:?}"),
@@ -45,6 +51,11 @@ pub fn run(json: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&json_val).unwrap_or_default()
         );
+    } else if !gpu_present {
+        // Contract: apr-gpu-presence-v1 F-GPU-PRESENCE-001 (paiml/aprender#624).
+        println!("No discrete GPU detected on this host.");
+        println!("  (entrenar ledger returned uuid={uuid}, total_mb={total_mb})");
+        println!("  Hint: use `apr run --device cpu <model>` for CPU inference.");
     } else {
         println!("GPU: {uuid}");
         println!("Total: {total_mb} MB");

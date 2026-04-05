@@ -1,0 +1,95 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr gpu presence-disambiguation contract — output must clearly distinguish 'no GPU detected' from 'GPU present with 0 bytes used'; sentinel values from entrenar must not leak into the CLI output as if they were real"
+  references:
+    - "paiml/aprender#624 (apr gpu on CPU-only host returns phantom GPU-unknown 0 MB)"
+    - "paiml/aprender#524 (--no-gpu silent flag pattern)"
+    - "paiml/aprender#596 (JSON f32 precision — different but same 'JSON semantics' family)"
+  registry: true
+  tags:
+    - cli
+    - gpu
+    - json
+    - sentinel
+    - five-whys
+
+five_whys:
+  symptom: "apr gpu on a CPU-only host (intel, x86_64, no discrete GPU) emits 'GPU: GPU-unknown\\nTotal: 0 MB' and `apr gpu --json` emits {\"gpu_uuid\":\"GPU-unknown\",\"total_mb\":0,...} with exit 0 — indistinguishable on-shape from a real GPU that happens to have 0 bytes"
+  why_1: "entrenar::gpu::ledger::detect_gpu_uuid() returns 'GPU-unknown' and detect_total_memory_mb() returns 0 as silent fallbacks; apr gpu emits them unconditionally"
+  why_2: "The fallback path doesn't surface a boolean 'is there a GPU?' — sentinel values look legitimate to consumers"
+  why_3: "entrenar's detect_* API returns String/usize directly, not Option<T> or Result<T> — no type-level distinction between 'detected' and 'fallback'"
+  why_4: "No test case exercises the no-GPU scenario; CI environments have NVIDIA GPUs so the bug was never triggered there"
+  why_5: "No contract formalizes apr gpu's output semantics — consumers can't programmatically detect no-GPU because the signal doesn't exist"
+  root_cause: "Sentinel values from upstream API leaked into CLI output without disambiguation; no contract bound the output shape to a semantic 'GPU present' predicate."
+
+equations:
+  gpu_presence_disambiguation:
+    formula: "gpu_present(h) ⟺ (uuid(h) ≠ 'GPU-unknown' ∧ total_mb(h) > 0)"
+    domain: "a host h with output(apr gpu) = (uuid, total_mb, ...)"
+    codomain: "boolean — whether the host has a discrete GPU"
+    invariants:
+      - "apr gpu output MUST include a boolean signal 'gpu_present' (or equivalent) distinguishing no-GPU from 0-MB-GPU"
+      - "If gpu_present = false, the text output shows a clear 'no discrete GPU' message"
+      - "If gpu_present = false, the JSON output has gpu_present: false"
+      - "The sentinel value 'GPU-unknown' MUST imply gpu_present = false"
+      - "total_mb = 0 MUST imply gpu_present = false"
+
+  consistency:
+    formula: "text(apr gpu).no_gpu = json(apr gpu).gpu_present.not"
+    domain: "the same invocation, rendered as text or JSON"
+    codomain: "boolean — whether the 'no GPU' signal is carried consistently across renderings"
+    invariants:
+      - "Text and JSON outputs agree on gpu_present"
+
+proof_obligations:
+  - type: invariant
+    property: "JSON output exposes gpu_present boolean"
+    formal: "apr gpu --json | jq 'has(\"gpu_present\")' = true"
+    applies_to: gpu_presence_disambiguation
+  - type: invariant
+    property: "On no-GPU host, gpu_present = false"
+    formal: "uuid = 'GPU-unknown' ∨ total_mb = 0 ⟹ gpu_present = false"
+    applies_to: gpu_presence_disambiguation
+  - type: invariant
+    property: "Text output distinguishes no-GPU"
+    formal: "gpu_present = false ⟹ text output contains 'No discrete GPU' (or equivalent)"
+    applies_to: consistency
+
+falsification_tests:
+  - id: FALSIFY-GPU-PRESENCE-001
+    rule: "JSON output has gpu_present field"
+    prediction: "apr gpu --json emits a top-level gpu_present boolean field"
+    test: "apr gpu --json | jq -e 'has(\"gpu_present\")'"
+    if_fails: "JSON still lacks gpu_present — consumers cannot disambiguate no-GPU"
+  - id: FALSIFY-GPU-PRESENCE-002
+    rule: "On no-GPU host, gpu_present is false"
+    prediction: "When uuid='GPU-unknown' or total_mb=0, gpu_present must be false"
+    test: "J=$(apr gpu --json); U=$(echo \"$J\" | jq -r .gpu_uuid); T=$(echo \"$J\" | jq -r .total_mb); P=$(echo \"$J\" | jq -r .gpu_present); if [ \"$U\" = \"GPU-unknown\" ] || [ \"$T\" = \"0\" ]; then [ \"$P\" = \"false\" ]; else true; fi"
+    if_fails: "Sentinel values detected but gpu_present was still true"
+  - id: FALSIFY-GPU-PRESENCE-003
+    rule: "Text output says 'No discrete GPU' when absent"
+    prediction: "When gpu_present=false, text output contains 'No discrete GPU'"
+    test: "P=$(apr gpu --json | jq -r .gpu_present); if [ \"$P\" = \"false\" ]; then apr gpu 2>&1 | grep -qiE 'no discrete gpu|no gpu detected'; else true; fi"
+    if_fails: "Text output still shows phantom GPU-unknown/0 MB record"
+  - id: FALSIFY-GPU-PRESENCE-004
+    rule: "On GPU host, gpu_present is true"
+    prediction: "When a real GPU is present (uuid != GPU-unknown, total_mb > 0), gpu_present = true"
+    test: "J=$(apr gpu --json); U=$(echo \"$J\" | jq -r .gpu_uuid); T=$(echo \"$J\" | jq -r .total_mb); P=$(echo \"$J\" | jq -r .gpu_present); if [ \"$U\" != \"GPU-unknown\" ] && [ \"$T\" != \"0\" ]; then [ \"$P\" = \"true\" ]; else true; fi"
+    if_fails: "Real GPU not recognized — predicate inverted"
+
+kani_harnesses:
+  - id: KANI-GPU-PRESENCE-001
+    obligation: "gpu_present ⟺ (uuid valid ∧ total_mb > 0)"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-GPU-PRESENCE-001
+  name: "apr gpu presence disambiguation contract"
+  description: "apr gpu must emit a boolean gpu_present signal that distinguishes 'no discrete GPU' from 'GPU with 0 MB used', in both text and JSON outputs"
+  checks:
+    - "gpu_presence_disambiguation"
+    - "consistency"
+  pass_criteria: "FALSIFY-GPU-PRESENCE-{001,002,003,004} all PASS on both a GPU host (local/jetson/gx10) and a CPU-only host (intel)"
