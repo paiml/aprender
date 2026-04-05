@@ -294,6 +294,11 @@ fn flush_writer_to_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
         message: format!("Failed to serialize APR format: {e}"),
     })?;
 
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to create output directory: {e}"),
+        })?;
+    }
     let mut file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to create output file: {e}"),
     })?;
