@@ -17,6 +17,15 @@ macro_rules! contract_pre_absolute_position_add {
     }};
 }
 
+/// Invariants for equation `absolute_position_add`.
+/// Check after computation: `contract_inv_absolute_position_add!(result_expr)`
+macro_rules! contract_inv_absolute_position_add {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/activation-kernel-v1.yaml — DO NOT EDIT
 // Contract: activation-kernel-v1
 
@@ -33,6 +42,15 @@ macro_rules! contract_pre_gelu {
     }};
 }
 
+/// Invariants for equation `gelu`.
+/// Check after computation: `contract_inv_gelu!(result_expr)`
+macro_rules! contract_inv_gelu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `relu`.
 /// Domain-specific. Call: `contract_pre_relu!(slice_expr)`
 macro_rules! contract_pre_relu {
@@ -46,6 +64,15 @@ macro_rules! contract_pre_relu {
     }};
 }
 
+/// Invariants for equation `relu`.
+/// Check after computation: `contract_inv_relu!(result_expr)`
+macro_rules! contract_inv_relu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `silu`.
 /// Domain-specific. Call: `contract_pre_silu!(slice_expr)`
 macro_rules! contract_pre_silu {
@@ -56,6 +83,15 @@ macro_rules! contract_pre_silu {
             "Contract silu: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract silu: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `silu`.
+/// Check after computation: `contract_inv_silu!(result_expr)`
+macro_rules! contract_inv_silu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -75,6 +111,15 @@ macro_rules! contract_pre_entropy_score {
     }};
 }
 
+/// Invariants for equation `entropy_score`.
+/// Check after computation: `contract_inv_entropy_score!(result_expr)`
+macro_rules! contract_inv_entropy_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `margin_score`.
 /// Domain-specific. Call: `contract_pre_margin_score!(slice_expr)`
 macro_rules! contract_pre_margin_score {
@@ -85,6 +130,15 @@ macro_rules! contract_pre_margin_score {
             "Contract margin_score: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract margin_score: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `margin_score`.
+/// Check after computation: `contract_inv_margin_score!(result_expr)`
+macro_rules! contract_inv_margin_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -101,6 +155,15 @@ macro_rules! contract_pre_qbc_score {
     }};
 }
 
+/// Invariants for equation `qbc_score`.
+/// Check after computation: `contract_inv_qbc_score!(result_expr)`
+macro_rules! contract_inv_qbc_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `uncertainty_score`.
 /// Domain-specific. Call: `contract_pre_uncertainty_score!(slice_expr)`
 macro_rules! contract_pre_uncertainty_score {
@@ -111,6 +174,15 @@ macro_rules! contract_pre_uncertainty_score {
             "Contract uncertainty_score: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract uncertainty_score: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `uncertainty_score`.
+/// Check after computation: `contract_inv_uncertainty_score!(result_expr)`
+macro_rules! contract_inv_uncertainty_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -128,6 +200,15 @@ macro_rules! contract_pre_adam_moments {
     }};
 }
 
+/// Invariants for equation `adam_moments`.
+/// Check after computation: `contract_inv_adam_moments!(result_expr)`
+macro_rules! contract_inv_adam_moments {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `adam_variance`.
 /// Domain-specific. Call: `contract_pre_adam_variance!(slice_expr)`
 macro_rules! contract_pre_adam_variance {
@@ -136,6 +217,15 @@ macro_rules! contract_pre_adam_variance {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract adam_variance: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `adam_variance`.
+/// Check after computation: `contract_inv_adam_variance!(result_expr)`
+macro_rules! contract_inv_adam_variance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -150,6 +240,15 @@ macro_rules! contract_pre_bias_correction {
     }};
 }
 
+/// Invariants for equation `bias_correction`.
+/// Check after computation: `contract_inv_bias_correction!(result_expr)`
+macro_rules! contract_inv_bias_correction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `weight_update`.
 /// Domain-specific. Call: `contract_pre_weight_update!(slice_expr)`
 macro_rules! contract_pre_weight_update {
@@ -158,6 +257,15 @@ macro_rules! contract_pre_weight_update {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract weight_update: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `weight_update`.
+/// Check after computation: `contract_inv_weight_update!(result_expr)`
+macro_rules! contract_inv_weight_update {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -181,6 +289,15 @@ macro_rules! contract_post_context_compaction {
     }};
 }
 
+/// Invariants for equation `context_compaction`.
+/// Check after computation: `contract_inv_context_compaction!(result_expr)`
+macro_rules! contract_inv_context_compaction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `context_compaction`.
 macro_rules! contract_context_compaction {
     ($input:expr, $body:expr) => {{
@@ -199,6 +316,15 @@ macro_rules! contract_post_hook_ordering {
     }};
 }
 
+/// Invariants for equation `hook_ordering`.
+/// Check after computation: `contract_inv_hook_ordering!(result_expr)`
+macro_rules! contract_inv_hook_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `loop_termination`.
 /// Domain-specific. Call: `contract_pre_loop_termination!(slice_expr)`
 macro_rules! contract_pre_loop_termination {
@@ -211,6 +337,15 @@ macro_rules! contract_pre_loop_termination {
 /// Postconditions for equation `loop_termination`.
 /// Call before return: `contract_post_loop_termination!(result_expr)`
 macro_rules! contract_post_loop_termination {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `loop_termination`.
+/// Check after computation: `contract_inv_loop_termination!(result_expr)`
+macro_rules! contract_inv_loop_termination {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -234,6 +369,15 @@ macro_rules! contract_post_parallel_tool_safety {
     }};
 }
 
+/// Invariants for equation `parallel_tool_safety`.
+/// Check after computation: `contract_inv_parallel_tool_safety!(result_expr)`
+macro_rules! contract_inv_parallel_tool_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `sandbox_enforcement`.
 /// Domain-specific. Call: `contract_pre_sandbox_enforcement!(slice_expr)`
 macro_rules! contract_pre_sandbox_enforcement {
@@ -246,6 +390,15 @@ macro_rules! contract_pre_sandbox_enforcement {
 /// Postconditions for equation `sandbox_enforcement`.
 /// Call before return: `contract_post_sandbox_enforcement!(result_expr)`
 macro_rules! contract_post_sandbox_enforcement {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `sandbox_enforcement`.
+/// Check after computation: `contract_inv_sandbox_enforcement!(result_expr)`
+macro_rules! contract_inv_sandbox_enforcement {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -269,9 +422,27 @@ macro_rules! contract_post_session_crash_recovery {
     }};
 }
 
+/// Invariants for equation `session_crash_recovery`.
+/// Check after computation: `contract_inv_session_crash_recovery!(result_expr)`
+macro_rules! contract_inv_session_crash_recovery {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Postconditions for equation `state_machine`.
 /// Call before return: `contract_post_state_machine!(result_expr)`
 macro_rules! contract_post_state_machine {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `state_machine`.
+/// Check after computation: `contract_inv_state_machine!(result_expr)`
+macro_rules! contract_inv_state_machine {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -289,12 +460,30 @@ macro_rules! contract_pre_daemon_lifecycle {
     }};
 }
 
+/// Invariants for equation `daemon_lifecycle`.
+/// Check after computation: `contract_inv_daemon_lifecycle!(result_expr)`
+macro_rules! contract_inv_daemon_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `error_classification`.
 /// Call at function entry: `contract_pre_error_classification!(input_expr)`
 macro_rules! contract_pre_error_classification {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `error_classification`.
+/// Check after computation: `contract_inv_error_classification!(result_expr)`
+macro_rules! contract_inv_error_classification {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -307,12 +496,30 @@ macro_rules! contract_pre_manager_registration {
     }};
 }
 
+/// Invariants for equation `manager_registration`.
+/// Check after computation: `contract_inv_manager_registration!(result_expr)`
+macro_rules! contract_inv_manager_registration {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `red_metrics`.
 /// Call at function entry: `contract_pre_red_metrics!(input_expr)`
 macro_rules! contract_pre_red_metrics {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `red_metrics`.
+/// Check after computation: `contract_inv_red_metrics!(result_expr)`
+macro_rules! contract_inv_red_metrics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -325,12 +532,30 @@ macro_rules! contract_pre_restart_policy {
     }};
 }
 
+/// Invariants for equation `restart_policy`.
+/// Check after computation: `contract_inv_restart_policy!(result_expr)`
+macro_rules! contract_inv_restart_policy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `signal_handling`.
 /// Call at function entry: `contract_pre_signal_handling!(input_expr)`
 macro_rules! contract_pre_signal_handling {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `signal_handling`.
+/// Check after computation: `contract_inv_signal_handling!(result_expr)`
+macro_rules! contract_inv_signal_handling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -349,6 +574,15 @@ macro_rules! contract_pre_brick_verification {
 /// Postconditions for equation `brick_verification`.
 /// Call before return: `contract_post_brick_verification!(result_expr)`
 macro_rules! contract_post_brick_verification {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `brick_verification`.
+/// Check after computation: `contract_inv_brick_verification!(result_expr)`
+macro_rules! contract_inv_brick_verification {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -381,6 +615,15 @@ macro_rules! contract_post_contrast_accessibility {
     }};
 }
 
+/// Invariants for equation `contrast_accessibility`.
+/// Check after computation: `contract_inv_contrast_accessibility!(result_expr)`
+macro_rules! contract_inv_contrast_accessibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `contrast_accessibility`.
 macro_rules! contract_contrast_accessibility {
     ($input:expr, $body:expr) => {{
@@ -394,6 +637,15 @@ macro_rules! contract_contrast_accessibility {
 /// Postconditions for equation `cost_display_accuracy`.
 /// Call before return: `contract_post_cost_display_accuracy!(result_expr)`
 macro_rules! contract_post_cost_display_accuracy {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cost_display_accuracy`.
+/// Check after computation: `contract_inv_cost_display_accuracy!(result_expr)`
+macro_rules! contract_inv_cost_display_accuracy {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -418,6 +670,15 @@ macro_rules! contract_post_frame_budget {
     }};
 }
 
+/// Invariants for equation `frame_budget`.
+/// Check after computation: `contract_inv_frame_budget!(result_expr)`
+macro_rules! contract_inv_frame_budget {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `frame_budget`.
 macro_rules! contract_frame_budget {
     ($input:expr, $body:expr) => {{
@@ -434,6 +695,15 @@ macro_rules! contract_pre_layout_correctness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `layout_correctness`.
+/// Check after computation: `contract_inv_layout_correctness!(result_expr)`
+macro_rules! contract_inv_layout_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -454,6 +724,15 @@ macro_rules! contract_post_pixel_coverage {
     }};
 }
 
+/// Invariants for equation `pixel_coverage`.
+/// Check after computation: `contract_inv_pixel_coverage!(result_expr)`
+macro_rules! contract_inv_pixel_coverage {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `pixel_coverage`.
 macro_rules! contract_pixel_coverage {
     ($input:expr, $body:expr) => {{
@@ -461,6 +740,15 @@ macro_rules! contract_pixel_coverage {
         let _contract_result = $body;
         contract_post_pixel_coverage!(_contract_result);
         _contract_result
+    }};
+}
+
+/// Invariants for equation `state_machine_validity`.
+/// Check after computation: `contract_inv_state_machine_validity!(result_expr)`
+macro_rules! contract_inv_state_machine_validity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -476,6 +764,15 @@ macro_rules! contract_pre_streaming_responsiveness {
 /// Postconditions for equation `streaming_responsiveness`.
 /// Call before return: `contract_post_streaming_responsiveness!(result_expr)`
 macro_rules! contract_post_streaming_responsiveness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `streaming_responsiveness`.
+/// Check after computation: `contract_inv_streaming_responsiveness!(result_expr)`
+macro_rules! contract_inv_streaming_responsiveness {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -505,6 +802,15 @@ macro_rules! contract_pre_alibi_bias {
     }};
 }
 
+/// Invariants for equation `alibi_bias`.
+/// Check after computation: `contract_inv_alibi_bias!(result_expr)`
+macro_rules! contract_inv_alibi_bias {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `alibi_slopes`.
 /// Domain-specific. Call: `contract_pre_alibi_slopes!(slice_expr)`
 macro_rules! contract_pre_alibi_slopes {
@@ -513,6 +819,15 @@ macro_rules! contract_pre_alibi_slopes {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract alibi_slopes: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `alibi_slopes`.
+/// Check after computation: `contract_inv_alibi_slopes!(result_expr)`
+macro_rules! contract_inv_alibi_slopes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -531,6 +846,15 @@ macro_rules! contract_pre_architecture_config_invariants {
 /// Postconditions for equation `architecture_config_invariants`.
 /// Call before return: `contract_post_architecture_config_invariants!(result_expr)`
 macro_rules! contract_post_architecture_config_invariants {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `architecture_config_invariants`.
+/// Check after computation: `contract_inv_architecture_config_invariants!(result_expr)`
+macro_rules! contract_inv_architecture_config_invariants {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -563,6 +887,15 @@ macro_rules! contract_post_attention_tensor_shapes {
     }};
 }
 
+/// Invariants for equation `attention_tensor_shapes`.
+/// Check after computation: `contract_inv_attention_tensor_shapes!(result_expr)`
+macro_rules! contract_inv_attention_tensor_shapes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `attention_tensor_shapes`.
 macro_rules! contract_attention_tensor_shapes {
     ($input:expr, $body:expr) => {{
@@ -585,6 +918,15 @@ macro_rules! contract_pre_embedding_tensor_shapes {
 /// Postconditions for equation `embedding_tensor_shapes`.
 /// Call before return: `contract_post_embedding_tensor_shapes!(result_expr)`
 macro_rules! contract_post_embedding_tensor_shapes {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `embedding_tensor_shapes`.
+/// Check after computation: `contract_inv_embedding_tensor_shapes!(result_expr)`
+macro_rules! contract_inv_embedding_tensor_shapes {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -617,6 +959,15 @@ macro_rules! contract_post_ffn_tensor_shapes {
     }};
 }
 
+/// Invariants for equation `ffn_tensor_shapes`.
+/// Check after computation: `contract_inv_ffn_tensor_shapes!(result_expr)`
+macro_rules! contract_inv_ffn_tensor_shapes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `ffn_tensor_shapes`.
 macro_rules! contract_ffn_tensor_shapes {
     ($input:expr, $body:expr) => {{
@@ -639,6 +990,15 @@ macro_rules! contract_pre_normalization_tensor_shapes {
 /// Postconditions for equation `normalization_tensor_shapes`.
 /// Call before return: `contract_post_normalization_tensor_shapes!(result_expr)`
 macro_rules! contract_post_normalization_tensor_shapes {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `normalization_tensor_shapes`.
+/// Check after computation: `contract_inv_normalization_tensor_shapes!(result_expr)`
+macro_rules! contract_inv_normalization_tensor_shapes {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -671,6 +1031,15 @@ macro_rules! contract_post_rope_position_encoding {
     }};
 }
 
+/// Invariants for equation `rope_position_encoding`.
+/// Check after computation: `contract_inv_rope_position_encoding!(result_expr)`
+macro_rules! contract_inv_rope_position_encoding {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `rope_position_encoding`.
 macro_rules! contract_rope_position_encoding {
     ($input:expr, $body:expr) => {{
@@ -693,6 +1062,15 @@ macro_rules! contract_pre_total_tensor_count {
 /// Postconditions for equation `total_tensor_count`.
 /// Call before return: `contract_post_total_tensor_count!(result_expr)`
 macro_rules! contract_post_total_tensor_count {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `total_tensor_count`.
+/// Check after computation: `contract_inv_total_tensor_count!(result_expr)`
+macro_rules! contract_inv_total_tensor_count {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -728,6 +1106,15 @@ macro_rules! contract_post_chat_template_application {
     }};
 }
 
+/// Invariants for equation `chat_template_application`.
+/// Check after computation: `contract_inv_chat_template_application!(result_expr)`
+macro_rules! contract_inv_chat_template_application {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `chat_template_application`.
 macro_rules! contract_chat_template_application {
     ($input:expr, $body:expr) => {{
@@ -752,6 +1139,15 @@ macro_rules! contract_pre_kv_cache_management {
 /// Postconditions for equation `kv_cache_management`.
 /// Call before return: `contract_post_kv_cache_management!(result_expr)`
 macro_rules! contract_post_kv_cache_management {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `kv_cache_management`.
+/// Check after computation: `contract_inv_kv_cache_management!(result_expr)`
+macro_rules! contract_inv_kv_cache_management {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -784,6 +1180,15 @@ macro_rules! contract_post_session_persistence {
     }};
 }
 
+/// Invariants for equation `session_persistence`.
+/// Check after computation: `contract_inv_session_persistence!(result_expr)`
+macro_rules! contract_inv_session_persistence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `session_persistence`.
 macro_rules! contract_session_persistence {
     ($input:expr, $body:expr) => {{
@@ -806,6 +1211,15 @@ macro_rules! contract_pre_session_state_machine {
 /// Postconditions for equation `session_state_machine`.
 /// Call before return: `contract_post_session_state_machine!(result_expr)`
 macro_rules! contract_post_session_state_machine {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `session_state_machine`.
+/// Check after computation: `contract_inv_session_state_machine!(result_expr)`
+macro_rules! contract_inv_session_state_machine {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -902,6 +1316,15 @@ macro_rules! contract_post_concurrent_model_access {
     }};
 }
 
+/// Invariants for equation `concurrent_model_access`.
+/// Check after computation: `contract_inv_concurrent_model_access!(result_expr)`
+macro_rules! contract_inv_concurrent_model_access {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `concurrent_model_access`.
 macro_rules! contract_concurrent_model_access {
     ($input:expr, $body:expr) => {{
@@ -924,6 +1347,15 @@ macro_rules! contract_pre_inference_determinism {
 /// Postconditions for equation `inference_determinism`.
 /// Call before return: `contract_post_inference_determinism!(result_expr)`
 macro_rules! contract_post_inference_determinism {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `inference_determinism`.
+/// Check after computation: `contract_inv_inference_determinism!(result_expr)`
+macro_rules! contract_inv_inference_determinism {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -956,6 +1388,15 @@ macro_rules! contract_post_progress_reporting {
     }};
 }
 
+/// Invariants for equation `progress_reporting`.
+/// Check after computation: `contract_inv_progress_reporting!(result_expr)`
+macro_rules! contract_inv_progress_reporting {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `progress_reporting`.
 macro_rules! contract_progress_reporting {
     ($input:expr, $body:expr) => {{
@@ -978,6 +1419,15 @@ macro_rules! contract_pre_resource_cleanup {
 /// Postconditions for equation `resource_cleanup`.
 /// Call before return: `contract_post_resource_cleanup!(result_expr)`
 macro_rules! contract_post_resource_cleanup {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `resource_cleanup`.
+/// Check after computation: `contract_inv_resource_cleanup!(result_expr)`
+macro_rules! contract_inv_resource_cleanup {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1010,6 +1460,15 @@ macro_rules! contract_post_side_effect_classification {
     }};
 }
 
+/// Invariants for equation `side_effect_classification`.
+/// Check after computation: `contract_inv_side_effect_classification!(result_expr)`
+macro_rules! contract_inv_side_effect_classification {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `side_effect_classification`.
 macro_rules! contract_side_effect_classification {
     ($input:expr, $body:expr) => {{
@@ -1032,6 +1491,15 @@ macro_rules! contract_pre_tokenizer_consistency {
 /// Postconditions for equation `tokenizer_consistency`.
 /// Call before return: `contract_post_tokenizer_consistency!(result_expr)`
 macro_rules! contract_post_tokenizer_consistency {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tokenizer_consistency`.
+/// Check after computation: `contract_inv_tokenizer_consistency!(result_expr)`
+macro_rules! contract_inv_tokenizer_consistency {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1067,6 +1535,15 @@ macro_rules! contract_post_command_parse_determinism {
     }};
 }
 
+/// Invariants for equation `command_parse_determinism`.
+/// Check after computation: `contract_inv_command_parse_determinism!(result_expr)`
+macro_rules! contract_inv_command_parse_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `command_parse_determinism`.
 macro_rules! contract_command_parse_determinism {
     ($input:expr, $body:expr) => {{
@@ -1094,12 +1571,57 @@ macro_rules! contract_post_contract_gate_enforcement {
     }};
 }
 
+/// Invariants for equation `contract_gate_enforcement`.
+/// Check after computation: `contract_inv_contract_gate_enforcement!(result_expr)`
+macro_rules! contract_inv_contract_gate_enforcement {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `contract_gate_enforcement`.
 macro_rules! contract_contract_gate_enforcement {
     ($input:expr, $body:expr) => {{
         contract_pre_contract_gate_enforcement!($input);
         let _contract_result = $body;
         contract_post_contract_gate_enforcement!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `exit_code_semantics`.
+/// Call at function entry: `contract_pre_exit_code_semantics!(input_expr)`
+macro_rules! contract_pre_exit_code_semantics {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `exit_code_semantics`.
+/// Call before return: `contract_post_exit_code_semantics!(result_expr)`
+macro_rules! contract_post_exit_code_semantics {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `exit_code_semantics`.
+/// Check after computation: `contract_inv_exit_code_semantics!(result_expr)`
+macro_rules! contract_inv_exit_code_semantics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `exit_code_semantics`.
+macro_rules! contract_exit_code_semantics {
+    ($input:expr, $body:expr) => {{
+        contract_pre_exit_code_semantics!($input);
+        let _contract_result = $body;
+        contract_post_exit_code_semantics!(_contract_result);
         _contract_result
     }};
 }
@@ -1116,6 +1638,15 @@ macro_rules! contract_pre_model_path_resolution {
 /// Postconditions for equation `model_path_resolution`.
 /// Call before return: `contract_post_model_path_resolution!(result_expr)`
 macro_rules! contract_post_model_path_resolution {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `model_path_resolution`.
+/// Check after computation: `contract_inv_model_path_resolution!(result_expr)`
+macro_rules! contract_inv_model_path_resolution {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1148,12 +1679,57 @@ macro_rules! contract_post_pipe_stdin_support {
     }};
 }
 
+/// Invariants for equation `pipe_stdin_support`.
+/// Check after computation: `contract_inv_pipe_stdin_support!(result_expr)`
+macro_rules! contract_inv_pipe_stdin_support {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `pipe_stdin_support`.
 macro_rules! contract_pipe_stdin_support {
     ($input:expr, $body:expr) => {{
         contract_pre_pipe_stdin_support!($input);
         let _contract_result = $body;
         contract_post_pipe_stdin_support!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `sigpipe_handling`.
+/// Call at function entry: `contract_pre_sigpipe_handling!(input_expr)`
+macro_rules! contract_pre_sigpipe_handling {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `sigpipe_handling`.
+/// Call before return: `contract_post_sigpipe_handling!(result_expr)`
+macro_rules! contract_post_sigpipe_handling {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `sigpipe_handling`.
+/// Check after computation: `contract_inv_sigpipe_handling!(result_expr)`
+macro_rules! contract_inv_sigpipe_handling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `sigpipe_handling`.
+macro_rules! contract_sigpipe_handling {
+    ($input:expr, $body:expr) => {{
+        contract_pre_sigpipe_handling!($input);
+        let _contract_result = $body;
+        contract_post_sigpipe_handling!(_contract_result);
         _contract_result
     }};
 }
@@ -1170,6 +1746,15 @@ macro_rules! contract_pre_tokenizer_training_correctness {
 /// Postconditions for equation `tokenizer_training_correctness`.
 /// Call before return: `contract_post_tokenizer_training_correctness!(result_expr)`
 macro_rules! contract_post_tokenizer_training_correctness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tokenizer_training_correctness`.
+/// Check after computation: `contract_inv_tokenizer_training_correctness!(result_expr)`
+macro_rules! contract_inv_tokenizer_training_correctness {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1202,12 +1787,57 @@ macro_rules! contract_post_training_plan_apply_semantics {
     }};
 }
 
+/// Invariants for equation `training_plan_apply_semantics`.
+/// Check after computation: `contract_inv_training_plan_apply_semantics!(result_expr)`
+macro_rules! contract_inv_training_plan_apply_semantics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `training_plan_apply_semantics`.
 macro_rules! contract_training_plan_apply_semantics {
     ($input:expr, $body:expr) => {{
         contract_pre_training_plan_apply_semantics!($input);
         let _contract_result = $body;
         contract_post_training_plan_apply_semantics!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `tty_detection`.
+/// Call at function entry: `contract_pre_tty_detection!(input_expr)`
+macro_rules! contract_pre_tty_detection {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `tty_detection`.
+/// Call before return: `contract_post_tty_detection!(result_expr)`
+macro_rules! contract_post_tty_detection {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tty_detection`.
+/// Check after computation: `contract_inv_tty_detection!(result_expr)`
+macro_rules! contract_inv_tty_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `tty_detection`.
+macro_rules! contract_tty_detection {
+    ($input:expr, $body:expr) => {{
+        contract_pre_tty_detection!($input);
+        let _contract_result = $body;
+        contract_post_tty_detection!(_contract_result);
         _contract_result
     }};
 }
@@ -1230,6 +1860,15 @@ macro_rules! contract_post_apr_md_compliance {
     ($result:expr) => {{
         let _contract_result = &$result;
         debug_assert!(violated_instructions.len() == 0, "Contract apr_md_compliance: postcondition violated — violated_instructions.len() == 0");
+    }};
+}
+
+/// Invariants for equation `apr_md_compliance`.
+/// Check after computation: `contract_inv_apr_md_compliance!(result_expr)`
+macro_rules! contract_inv_apr_md_compliance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -1260,6 +1899,15 @@ macro_rules! contract_post_apr_model_validity {
     }};
 }
 
+/// Invariants for equation `apr_model_validity`.
+/// Check after computation: `contract_inv_apr_model_validity!(result_expr)`
+macro_rules! contract_inv_apr_model_validity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `apr_model_validity`.
 macro_rules! contract_apr_model_validity {
     ($input:expr, $body:expr) => {{
@@ -1273,6 +1921,15 @@ macro_rules! contract_apr_model_validity {
 /// Postconditions for equation `no_model_error`.
 /// Call before return: `contract_post_no_model_error!(result_expr)`
 macro_rules! contract_post_no_model_error {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `no_model_error`.
+/// Check after computation: `contract_inv_no_model_error!(result_expr)`
+macro_rules! contract_inv_no_model_error {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1295,6 +1952,15 @@ macro_rules! contract_post_session_integrity {
     }};
 }
 
+/// Invariants for equation `session_integrity`.
+/// Check after computation: `contract_inv_session_integrity!(result_expr)`
+macro_rules! contract_inv_session_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `session_integrity`.
 macro_rules! contract_session_integrity {
     ($input:expr, $body:expr) => {{
@@ -1302,6 +1968,15 @@ macro_rules! contract_session_integrity {
         let _contract_result = $body;
         contract_post_session_integrity!(_contract_result);
         _contract_result
+    }};
+}
+
+/// Invariants for equation `single_binary`.
+/// Check after computation: `contract_inv_single_binary!(result_expr)`
+macro_rules! contract_inv_single_binary {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -1317,6 +1992,15 @@ macro_rules! contract_pre_sovereignty_guarantee {
 /// Postconditions for equation `sovereignty_guarantee`.
 /// Call before return: `contract_post_sovereignty_guarantee!(result_expr)`
 macro_rules! contract_post_sovereignty_guarantee {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `sovereignty_guarantee`.
+/// Check after computation: `contract_inv_sovereignty_guarantee!(result_expr)`
+macro_rules! contract_inv_sovereignty_guarantee {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1349,6 +2033,15 @@ macro_rules! contract_post_startup_latency {
     }};
 }
 
+/// Invariants for equation `startup_latency`.
+/// Check after computation: `contract_inv_startup_latency!(result_expr)`
+macro_rules! contract_inv_startup_latency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `startup_latency`.
 macro_rules! contract_startup_latency {
     ($input:expr, $body:expr) => {{
@@ -1371,6 +2064,15 @@ macro_rules! contract_pre_tool_safety {
 /// Postconditions for equation `tool_safety`.
 /// Call before return: `contract_post_tool_safety!(result_expr)`
 macro_rules! contract_post_tool_safety {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tool_safety`.
+/// Check after computation: `contract_inv_tool_safety!(result_expr)`
+macro_rules! contract_inv_tool_safety {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1408,6 +2110,15 @@ macro_rules! contract_post_data_split_determinism {
     }};
 }
 
+/// Invariants for equation `data_split_determinism`.
+/// Check after computation: `contract_inv_data_split_determinism!(result_expr)`
+macro_rules! contract_inv_data_split_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `data_split_determinism`.
 macro_rules! contract_data_split_determinism {
     ($input:expr, $body:expr) => {{
@@ -1430,6 +2141,15 @@ macro_rules! contract_pre_data_validation {
 /// Postconditions for equation `data_validation`.
 /// Call before return: `contract_post_data_validation!(result_expr)`
 macro_rules! contract_post_data_validation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `data_validation`.
+/// Check after computation: `contract_inv_data_validation!(result_expr)`
+macro_rules! contract_inv_data_validation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1462,6 +2182,15 @@ macro_rules! contract_post_preprocessing_idempotency {
     }};
 }
 
+/// Invariants for equation `preprocessing_idempotency`.
+/// Check after computation: `contract_inv_preprocessing_idempotency!(result_expr)`
+macro_rules! contract_inv_preprocessing_idempotency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `preprocessing_idempotency`.
 macro_rules! contract_preprocessing_idempotency {
     ($input:expr, $body:expr) => {{
@@ -1486,6 +2215,15 @@ macro_rules! contract_pre_streaming_data_loader {
 /// Postconditions for equation `streaming_data_loader`.
 /// Call before return: `contract_post_streaming_data_loader!(result_expr)`
 macro_rules! contract_post_streaming_data_loader {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `streaming_data_loader`.
+/// Check after computation: `contract_inv_streaming_data_loader!(result_expr)`
+macro_rules! contract_inv_streaming_data_loader {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1521,6 +2259,15 @@ macro_rules! contract_post_alpha_rank_ratio {
     }};
 }
 
+/// Invariants for equation `alpha_rank_ratio`.
+/// Check after computation: `contract_inv_alpha_rank_ratio!(result_expr)`
+macro_rules! contract_inv_alpha_rank_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `alpha_rank_ratio`.
 macro_rules! contract_alpha_rank_ratio {
     ($input:expr, $body:expr) => {{
@@ -1543,6 +2290,15 @@ macro_rules! contract_pre_checkpoint_metadata_roundtrip {
 /// Postconditions for equation `checkpoint_metadata_roundtrip`.
 /// Call before return: `contract_post_checkpoint_metadata_roundtrip!(result_expr)`
 macro_rules! contract_post_checkpoint_metadata_roundtrip {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `checkpoint_metadata_roundtrip`.
+/// Check after computation: `contract_inv_checkpoint_metadata_roundtrip!(result_expr)`
+macro_rules! contract_inv_checkpoint_metadata_roundtrip {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1575,6 +2331,15 @@ macro_rules! contract_post_merge_tensor_shape {
     }};
 }
 
+/// Invariants for equation `merge_tensor_shape`.
+/// Check after computation: `contract_inv_merge_tensor_shape!(result_expr)`
+macro_rules! contract_inv_merge_tensor_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `merge_tensor_shape`.
 macro_rules! contract_merge_tensor_shape {
     ($input:expr, $body:expr) => {{
@@ -1597,6 +2362,15 @@ macro_rules! contract_pre_rank_bounds_safety {
 /// Postconditions for equation `rank_bounds_safety`.
 /// Call before return: `contract_post_rank_bounds_safety!(result_expr)`
 macro_rules! contract_post_rank_bounds_safety {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `rank_bounds_safety`.
+/// Check after computation: `contract_inv_rank_bounds_safety!(result_expr)`
+macro_rules! contract_inv_rank_bounds_safety {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1629,6 +2403,15 @@ macro_rules! contract_post_vram_feasibility {
     }};
 }
 
+/// Invariants for equation `vram_feasibility`.
+/// Check after computation: `contract_inv_vram_feasibility!(result_expr)`
+macro_rules! contract_inv_vram_feasibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `vram_feasibility`.
 macro_rules! contract_vram_feasibility {
     ($input:expr, $body:expr) => {{
@@ -1653,6 +2436,15 @@ macro_rules! contract_pre_detect_regression {
     }};
 }
 
+/// Invariants for equation `detect_regression`.
+/// Check after computation: `contract_inv_detect_regression!(result_expr)`
+macro_rules! contract_inv_detect_regression {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `format_report`.
 /// Domain-specific. Call: `contract_pre_format_report!(slice_expr)`
 macro_rules! contract_pre_format_report {
@@ -1661,6 +2453,15 @@ macro_rules! contract_pre_format_report {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract format_report: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `format_report`.
+/// Check after computation: `contract_inv_format_report!(result_expr)`
+macro_rules! contract_inv_format_report {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -1675,6 +2476,15 @@ macro_rules! contract_pre_parse_playbook {
     }};
 }
 
+/// Invariants for equation `parse_playbook`.
+/// Check after computation: `contract_inv_parse_playbook!(result_expr)`
+macro_rules! contract_inv_parse_playbook {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `serialize_roundtrip`.
 /// Domain-specific. Call: `contract_pre_serialize_roundtrip!(slice_expr)`
 macro_rules! contract_pre_serialize_roundtrip {
@@ -1686,6 +2496,15 @@ macro_rules! contract_pre_serialize_roundtrip {
     }};
 }
 
+/// Invariants for equation `serialize_roundtrip`.
+/// Check after computation: `contract_inv_serialize_roundtrip!(result_expr)`
+macro_rules! contract_inv_serialize_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `validate_schema`.
 /// Domain-specific. Call: `contract_pre_validate_schema!(slice_expr)`
 macro_rules! contract_pre_validate_schema {
@@ -1694,6 +2513,15 @@ macro_rules! contract_pre_validate_schema {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract validate_schema: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `validate_schema`.
+/// Check after computation: `contract_inv_validate_schema!(result_expr)`
+macro_rules! contract_inv_validate_schema {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -1717,12 +2545,57 @@ macro_rules! contract_post_dtype_coercion_safety {
     }};
 }
 
+/// Invariants for equation `dtype_coercion_safety`.
+/// Check after computation: `contract_inv_dtype_coercion_safety!(result_expr)`
+macro_rules! contract_inv_dtype_coercion_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `dtype_coercion_safety`.
 macro_rules! contract_dtype_coercion_safety {
     ($input:expr, $body:expr) => {{
         contract_pre_dtype_coercion_safety!($input);
         let _contract_result = $body;
         contract_post_dtype_coercion_safety!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `flag_integrity`.
+/// Call at function entry: `contract_pre_flag_integrity!(input_expr)`
+macro_rules! contract_pre_flag_integrity {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `flag_integrity`.
+/// Call before return: `contract_post_flag_integrity!(result_expr)`
+macro_rules! contract_post_flag_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `flag_integrity`.
+/// Check after computation: `contract_inv_flag_integrity!(result_expr)`
+macro_rules! contract_inv_flag_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `flag_integrity`.
+macro_rules! contract_flag_integrity {
+    ($input:expr, $body:expr) => {{
+        contract_pre_flag_integrity!($input);
+        let _contract_result = $body;
+        contract_post_flag_integrity!(_contract_result);
         _contract_result
     }};
 }
@@ -1739,6 +2612,15 @@ macro_rules! contract_pre_header_integrity {
 /// Postconditions for equation `header_integrity`.
 /// Call before return: `contract_post_header_integrity!(result_expr)`
 macro_rules! contract_post_header_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `header_integrity`.
+/// Check after computation: `contract_inv_header_integrity!(result_expr)`
+macro_rules! contract_inv_header_integrity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1771,12 +2653,57 @@ macro_rules! contract_post_magic_byte_validation {
     }};
 }
 
+/// Invariants for equation `magic_byte_validation`.
+/// Check after computation: `contract_inv_magic_byte_validation!(result_expr)`
+macro_rules! contract_inv_magic_byte_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `magic_byte_validation`.
 macro_rules! contract_magic_byte_validation {
     ($input:expr, $body:expr) => {{
         contract_pre_magic_byte_validation!($input);
         let _contract_result = $body;
         contract_post_magic_byte_validation!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `metadata_completeness`.
+/// Call at function entry: `contract_pre_metadata_completeness!(input_expr)`
+macro_rules! contract_pre_metadata_completeness {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `metadata_completeness`.
+/// Call before return: `contract_post_metadata_completeness!(result_expr)`
+macro_rules! contract_post_metadata_completeness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `metadata_completeness`.
+/// Check after computation: `contract_inv_metadata_completeness!(result_expr)`
+macro_rules! contract_inv_metadata_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `metadata_completeness`.
+macro_rules! contract_metadata_completeness {
+    ($input:expr, $body:expr) => {{
+        contract_pre_metadata_completeness!($input);
+        let _contract_result = $body;
+        contract_post_metadata_completeness!(_contract_result);
         _contract_result
     }};
 }
@@ -1793,6 +2720,15 @@ macro_rules! contract_pre_provenance_enforcement {
 /// Postconditions for equation `provenance_enforcement`.
 /// Call before return: `contract_post_provenance_enforcement!(result_expr)`
 macro_rules! contract_post_provenance_enforcement {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `provenance_enforcement`.
+/// Check after computation: `contract_inv_provenance_enforcement!(result_expr)`
+macro_rules! contract_inv_provenance_enforcement {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1825,6 +2761,15 @@ macro_rules! contract_post_strict_import_validation {
     }};
 }
 
+/// Invariants for equation `strict_import_validation`.
+/// Check after computation: `contract_inv_strict_import_validation!(result_expr)`
+macro_rules! contract_inv_strict_import_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `strict_import_validation`.
 macro_rules! contract_strict_import_validation {
     ($input:expr, $body:expr) => {{
@@ -1852,12 +2797,57 @@ macro_rules! contract_post_truncation_detection {
     }};
 }
 
+/// Invariants for equation `truncation_detection`.
+/// Check after computation: `contract_inv_truncation_detection!(result_expr)`
+macro_rules! contract_inv_truncation_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `truncation_detection`.
 macro_rules! contract_truncation_detection {
     ($input:expr, $body:expr) => {{
         contract_pre_truncation_detection!($input);
         let _contract_result = $body;
         contract_post_truncation_detection!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `validate_exit_code_consistency`.
+/// Call at function entry: `contract_pre_validate_exit_code_consistency!(input_expr)`
+macro_rules! contract_pre_validate_exit_code_consistency {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `validate_exit_code_consistency`.
+/// Call before return: `contract_post_validate_exit_code_consistency!(result_expr)`
+macro_rules! contract_post_validate_exit_code_consistency {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `validate_exit_code_consistency`.
+/// Check after computation: `contract_inv_validate_exit_code_consistency!(result_expr)`
+macro_rules! contract_inv_validate_exit_code_consistency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `validate_exit_code_consistency`.
+macro_rules! contract_validate_exit_code_consistency {
+    ($input:expr, $body:expr) => {{
+        contract_pre_validate_exit_code_consistency!($input);
+        let _contract_result = $body;
+        contract_post_validate_exit_code_consistency!(_contract_result);
         _contract_result
     }};
 }
@@ -1877,6 +2867,15 @@ macro_rules! contract_pre_architecture_extraction {
 /// Postconditions for equation `architecture_extraction`.
 /// Call before return: `contract_post_architecture_extraction!(result_expr)`
 macro_rules! contract_post_architecture_extraction {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `architecture_extraction`.
+/// Check after computation: `contract_inv_architecture_extraction!(result_expr)`
+macro_rules! contract_inv_architecture_extraction {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1909,6 +2908,15 @@ macro_rules! contract_post_jidoka_validation {
     }};
 }
 
+/// Invariants for equation `jidoka_validation`.
+/// Check after computation: `contract_inv_jidoka_validation!(result_expr)`
+macro_rules! contract_inv_jidoka_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `jidoka_validation`.
 macro_rules! contract_jidoka_validation {
     ($input:expr, $body:expr) => {{
@@ -1931,6 +2939,15 @@ macro_rules! contract_pre_no_model_ux {
 /// Postconditions for equation `no_model_ux`.
 /// Call before return: `contract_post_no_model_ux!(result_expr)`
 macro_rules! contract_post_no_model_ux {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `no_model_ux`.
+/// Check after computation: `contract_inv_no_model_ux!(result_expr)`
+macro_rules! contract_inv_no_model_ux {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -1963,6 +2980,15 @@ macro_rules! contract_post_search_order {
     }};
 }
 
+/// Invariants for equation `search_order`.
+/// Check after computation: `contract_inv_search_order!(result_expr)`
+macro_rules! contract_inv_search_order {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `search_order`.
 macro_rules! contract_search_order {
     ($input:expr, $body:expr) => {{
@@ -1987,6 +3013,15 @@ macro_rules! contract_pre_sort_priority {
 /// Postconditions for equation `sort_priority`.
 /// Call before return: `contract_post_sort_priority!(result_expr)`
 macro_rules! contract_post_sort_priority {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `sort_priority`.
+/// Check after computation: `contract_inv_sort_priority!(result_expr)`
+macro_rules! contract_inv_sort_priority {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2022,6 +3057,15 @@ macro_rules! contract_post_export_roundtrip {
     }};
 }
 
+/// Invariants for equation `export_roundtrip`.
+/// Check after computation: `contract_inv_export_roundtrip!(result_expr)`
+macro_rules! contract_inv_export_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `export_roundtrip`.
 macro_rules! contract_export_roundtrip {
     ($input:expr, $body:expr) => {{
@@ -2044,6 +3088,15 @@ macro_rules! contract_pre_import_format_detection {
 /// Postconditions for equation `import_format_detection`.
 /// Call before return: `contract_post_import_format_detection!(result_expr)`
 macro_rules! contract_post_import_format_detection {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `import_format_detection`.
+/// Check after computation: `contract_inv_import_format_detection!(result_expr)`
+macro_rules! contract_inv_import_format_detection {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2078,6 +3131,15 @@ macro_rules! contract_post_merge_weight_conservation {
     }};
 }
 
+/// Invariants for equation `merge_weight_conservation`.
+/// Check after computation: `contract_inv_merge_weight_conservation!(result_expr)`
+macro_rules! contract_inv_merge_weight_conservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `merge_weight_conservation`.
 macro_rules! contract_merge_weight_conservation {
     ($input:expr, $body:expr) => {{
@@ -2105,6 +3167,15 @@ macro_rules! contract_post_pull_cache_integrity {
     }};
 }
 
+/// Invariants for equation `pull_cache_integrity`.
+/// Check after computation: `contract_inv_pull_cache_integrity!(result_expr)`
+macro_rules! contract_inv_pull_cache_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `pull_cache_integrity`.
 macro_rules! contract_pull_cache_integrity {
     ($input:expr, $body:expr) => {{
@@ -2127,6 +3198,15 @@ macro_rules! contract_pre_quantize_precision_bound {
 /// Postconditions for equation `quantize_precision_bound`.
 /// Call before return: `contract_post_quantize_precision_bound!(result_expr)`
 macro_rules! contract_post_quantize_precision_bound {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `quantize_precision_bound`.
+/// Check after computation: `contract_inv_quantize_precision_bound!(result_expr)`
+macro_rules! contract_inv_quantize_precision_bound {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2162,6 +3242,15 @@ macro_rules! contract_post_canary_regression_detection {
     }};
 }
 
+/// Invariants for equation `canary_regression_detection`.
+/// Check after computation: `contract_inv_canary_regression_detection!(result_expr)`
+macro_rules! contract_inv_canary_regression_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `canary_regression_detection`.
 macro_rules! contract_canary_regression_detection {
     ($input:expr, $body:expr) => {{
@@ -2189,6 +3278,15 @@ macro_rules! contract_post_lint_model_conventions {
     }};
 }
 
+/// Invariants for equation `lint_model_conventions`.
+/// Check after computation: `contract_inv_lint_model_conventions!(result_expr)`
+macro_rules! contract_inv_lint_model_conventions {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `lint_model_conventions`.
 macro_rules! contract_lint_model_conventions {
     ($input:expr, $body:expr) => {{
@@ -2211,6 +3309,15 @@ macro_rules! contract_pre_model_integrity_check {
 /// Postconditions for equation `model_integrity_check`.
 /// Call before return: `contract_post_model_integrity_check!(result_expr)`
 macro_rules! contract_post_model_integrity_check {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `model_integrity_check`.
+/// Check after computation: `contract_inv_model_integrity_check!(result_expr)`
+macro_rules! contract_inv_model_integrity_check {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2245,6 +3352,15 @@ macro_rules! contract_post_probar_property_tests {
     }};
 }
 
+/// Invariants for equation `probar_property_tests`.
+/// Check after computation: `contract_inv_probar_property_tests!(result_expr)`
+macro_rules! contract_inv_probar_property_tests {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `probar_property_tests`.
 macro_rules! contract_probar_property_tests {
     ($input:expr, $body:expr) => {{
@@ -2267,6 +3383,15 @@ macro_rules! contract_pre_qa_gate_composition {
 /// Postconditions for equation `qa_gate_composition`.
 /// Call before return: `contract_post_qa_gate_composition!(result_expr)`
 macro_rules! contract_post_qa_gate_composition {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `qa_gate_composition`.
+/// Check after computation: `contract_inv_qa_gate_composition!(result_expr)`
+macro_rules! contract_inv_qa_gate_composition {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2302,6 +3427,15 @@ macro_rules! contract_post_chat_template_dispatch {
     }};
 }
 
+/// Invariants for equation `chat_template_dispatch`.
+/// Check after computation: `contract_inv_chat_template_dispatch!(result_expr)`
+macro_rules! contract_inv_chat_template_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `chat_template_dispatch`.
 macro_rules! contract_chat_template_dispatch {
     ($input:expr, $body:expr) => {{
@@ -2329,12 +3463,93 @@ macro_rules! contract_post_concurrent_inference_isolation {
     }};
 }
 
+/// Invariants for equation `concurrent_inference_isolation`.
+/// Check after computation: `contract_inv_concurrent_inference_isolation!(result_expr)`
+macro_rules! contract_inv_concurrent_inference_isolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `concurrent_inference_isolation`.
 macro_rules! contract_concurrent_inference_isolation {
     ($input:expr, $body:expr) => {{
         contract_pre_concurrent_inference_isolation!($input);
         let _contract_result = $body;
         contract_post_concurrent_inference_isolation!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `cors_preflight`.
+/// Call at function entry: `contract_pre_cors_preflight!(input_expr)`
+macro_rules! contract_pre_cors_preflight {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `cors_preflight`.
+/// Call before return: `contract_post_cors_preflight!(result_expr)`
+macro_rules! contract_post_cors_preflight {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cors_preflight`.
+/// Check after computation: `contract_inv_cors_preflight!(result_expr)`
+macro_rules! contract_inv_cors_preflight {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `cors_preflight`.
+macro_rules! contract_cors_preflight {
+    ($input:expr, $body:expr) => {{
+        contract_pre_cors_preflight!($input);
+        let _contract_result = $body;
+        contract_post_cors_preflight!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `error_sanitization`.
+/// Call at function entry: `contract_pre_error_sanitization!(input_expr)`
+macro_rules! contract_pre_error_sanitization {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `error_sanitization`.
+/// Call before return: `contract_post_error_sanitization!(result_expr)`
+macro_rules! contract_post_error_sanitization {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `error_sanitization`.
+/// Check after computation: `contract_inv_error_sanitization!(result_expr)`
+macro_rules! contract_inv_error_sanitization {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `error_sanitization`.
+macro_rules! contract_error_sanitization {
+    ($input:expr, $body:expr) => {{
+        contract_pre_error_sanitization!($input);
+        let _contract_result = $body;
+        contract_post_error_sanitization!(_contract_result);
         _contract_result
     }};
 }
@@ -2356,12 +3571,57 @@ macro_rules! contract_post_format_detection {
     }};
 }
 
+/// Invariants for equation `format_detection`.
+/// Check after computation: `contract_inv_format_detection!(result_expr)`
+macro_rules! contract_inv_format_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `format_detection`.
 macro_rules! contract_format_detection {
     ($input:expr, $body:expr) => {{
         contract_pre_format_detection!($input);
         let _contract_result = $body;
         contract_post_format_detection!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `gpu_token_integrity`.
+/// Domain-specific. Call: `contract_pre_gpu_token_integrity!(slice_expr)`
+macro_rules! contract_pre_gpu_token_integrity {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_logits = &$input;
+    }};
+}
+
+/// Postconditions for equation `gpu_token_integrity`.
+/// Call before return: `contract_post_gpu_token_integrity!(result_expr)`
+macro_rules! contract_post_gpu_token_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `gpu_token_integrity`.
+/// Check after computation: `contract_inv_gpu_token_integrity!(result_expr)`
+macro_rules! contract_inv_gpu_token_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `gpu_token_integrity`.
+macro_rules! contract_gpu_token_integrity {
+    ($input:expr, $body:expr) => {{
+        contract_pre_gpu_token_integrity!($input);
+        let _contract_result = $body;
+        contract_post_gpu_token_integrity!(_contract_result);
         _contract_result
     }};
 }
@@ -2383,12 +3643,57 @@ macro_rules! contract_post_graceful_shutdown {
     }};
 }
 
+/// Invariants for equation `graceful_shutdown`.
+/// Check after computation: `contract_inv_graceful_shutdown!(result_expr)`
+macro_rules! contract_inv_graceful_shutdown {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `graceful_shutdown`.
 macro_rules! contract_graceful_shutdown {
     ($input:expr, $body:expr) => {{
         contract_pre_graceful_shutdown!($input);
         let _contract_result = $body;
         contract_post_graceful_shutdown!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `max_tokens_bound`.
+/// Call at function entry: `contract_pre_max_tokens_bound!(input_expr)`
+macro_rules! contract_pre_max_tokens_bound {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `max_tokens_bound`.
+/// Call before return: `contract_post_max_tokens_bound!(result_expr)`
+macro_rules! contract_post_max_tokens_bound {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `max_tokens_bound`.
+/// Check after computation: `contract_inv_max_tokens_bound!(result_expr)`
+macro_rules! contract_inv_max_tokens_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `max_tokens_bound`.
+macro_rules! contract_max_tokens_bound {
+    ($input:expr, $body:expr) => {{
+        contract_pre_max_tokens_bound!($input);
+        let _contract_result = $body;
+        contract_post_max_tokens_bound!(_contract_result);
         _contract_result
     }};
 }
@@ -2405,6 +3710,15 @@ macro_rules! contract_pre_request_routing {
 /// Postconditions for equation `request_routing`.
 /// Call before return: `contract_post_request_routing!(result_expr)`
 macro_rules! contract_post_request_routing {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `request_routing`.
+/// Check after computation: `contract_inv_request_routing!(result_expr)`
+macro_rules! contract_inv_request_routing {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2437,12 +3751,57 @@ macro_rules! contract_post_server_lifecycle {
     }};
 }
 
+/// Invariants for equation `server_lifecycle`.
+/// Check after computation: `contract_inv_server_lifecycle!(result_expr)`
+macro_rules! contract_inv_server_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `server_lifecycle`.
 macro_rules! contract_server_lifecycle {
     ($input:expr, $body:expr) => {{
         contract_pre_server_lifecycle!($input);
         let _contract_result = $body;
         contract_post_server_lifecycle!(_contract_result);
+        _contract_result
+    }};
+}
+
+/// Preconditions for equation `unknown_route_json_404`.
+/// Call at function entry: `contract_pre_unknown_route_json_404!(input_expr)`
+macro_rules! contract_pre_unknown_route_json_404 {
+    () => {{}};
+    ($input:expr) => {{
+        let _contract_input = &$input;
+    }};
+}
+
+/// Postconditions for equation `unknown_route_json_404`.
+/// Call before return: `contract_post_unknown_route_json_404!(result_expr)`
+macro_rules! contract_post_unknown_route_json_404 {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `unknown_route_json_404`.
+/// Check after computation: `contract_inv_unknown_route_json_404!(result_expr)`
+macro_rules! contract_inv_unknown_route_json_404 {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Combined pre+post contract for equation `unknown_route_json_404`.
+macro_rules! contract_unknown_route_json_404 {
+    ($input:expr, $body:expr) => {{
+        contract_pre_unknown_route_json_404!($input);
+        let _contract_result = $body;
+        contract_post_unknown_route_json_404!(_contract_result);
         _contract_result
     }};
 }
@@ -2482,6 +3841,15 @@ macro_rules! contract_pre_arch_constraint_lookup {
     }};
 }
 
+/// Invariants for equation `arch_constraint_lookup`.
+/// Check after computation: `contract_inv_arch_constraint_lookup!(result_expr)`
+macro_rules! contract_inv_arch_constraint_lookup {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/architecture-requirements-v1.yaml — DO NOT EDIT
 // Contract: architecture-requirements-v1
 
@@ -2496,6 +3864,15 @@ macro_rules! contract_pre_constraint_matrix_exhaustiveness {
     }};
 }
 
+/// Invariants for equation `constraint_matrix_exhaustiveness`.
+/// Check after computation: `contract_inv_constraint_matrix_exhaustiveness!(result_expr)`
+macro_rules! contract_inv_constraint_matrix_exhaustiveness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `role_mapping`.
 /// Domain-specific. Call: `contract_pre_role_mapping!(slice_expr)`
 macro_rules! contract_pre_role_mapping {
@@ -2507,6 +3884,15 @@ macro_rules! contract_pre_role_mapping {
     }};
 }
 
+/// Invariants for equation `role_mapping`.
+/// Check after computation: `contract_inv_role_mapping!(result_expr)`
+macro_rules! contract_inv_role_mapping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `weight_completeness`.
 /// Domain-specific. Call: `contract_pre_weight_completeness!(slice_expr)`
 macro_rules! contract_pre_weight_completeness {
@@ -2515,6 +3901,15 @@ macro_rules! contract_pre_weight_completeness {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract weight_completeness: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `weight_completeness`.
+/// Check after computation: `contract_inv_weight_completeness!(result_expr)`
+macro_rules! contract_inv_weight_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2534,6 +3929,15 @@ macro_rules! contract_pre_ar_forecast {
     }};
 }
 
+/// Invariants for equation `ar_forecast`.
+/// Check after computation: `contract_inv_ar_forecast!(result_expr)`
+macro_rules! contract_inv_ar_forecast {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `differencing`.
 /// Domain-specific. Call: `contract_pre_differencing!(slice_expr)`
 macro_rules! contract_pre_differencing {
@@ -2544,6 +3948,15 @@ macro_rules! contract_pre_differencing {
             "Contract differencing: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract differencing: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `differencing`.
+/// Check after computation: `contract_inv_differencing!(result_expr)`
+macro_rules! contract_inv_differencing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2560,6 +3973,15 @@ macro_rules! contract_pre_forecast_finite {
     }};
 }
 
+/// Invariants for equation `forecast_finite`.
+/// Check after computation: `contract_inv_forecast_finite!(result_expr)`
+macro_rules! contract_inv_forecast_finite {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ma_filter`.
 /// Domain-specific. Call: `contract_pre_ma_filter!(slice_expr)`
 macro_rules! contract_pre_ma_filter {
@@ -2570,6 +3992,15 @@ macro_rules! contract_pre_ma_filter {
             "Contract ma_filter: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract ma_filter: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `ma_filter`.
+/// Check after computation: `contract_inv_ma_filter!(result_expr)`
+macro_rules! contract_inv_ma_filter {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2588,6 +4019,15 @@ macro_rules! contract_pre_cancellation_safe {
 /// Postconditions for equation `cancellation_safe`.
 /// Call before return: `contract_post_cancellation_safe!(result_expr)`
 macro_rules! contract_post_cancellation_safe {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cancellation_safe`.
+/// Check after computation: `contract_inv_cancellation_safe!(result_expr)`
+macro_rules! contract_inv_cancellation_safe {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2620,6 +4060,15 @@ macro_rules! contract_post_channel_lossless {
     }};
 }
 
+/// Invariants for equation `channel_lossless`.
+/// Check after computation: `contract_inv_channel_lossless!(result_expr)`
+macro_rules! contract_inv_channel_lossless {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `channel_lossless`.
 macro_rules! contract_channel_lossless {
     ($input:expr, $body:expr) => {{
@@ -2642,6 +4091,15 @@ macro_rules! contract_pre_structured_spawn {
 /// Postconditions for equation `structured_spawn`.
 /// Call before return: `contract_post_structured_spawn!(result_expr)`
 macro_rules! contract_post_structured_spawn {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `structured_spawn`.
+/// Check after computation: `contract_inv_structured_spawn!(result_expr)`
+macro_rules! contract_inv_structured_spawn {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -2712,6 +4170,15 @@ macro_rules! contract_post_attention {
     }};
 }
 
+/// Invariants for equation `attention`.
+/// Check after computation: `contract_inv_attention!(result_expr)`
+macro_rules! contract_inv_attention {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `attention`.
 macro_rules! contract_attention {
     ($input:expr, $body:expr) => {{
@@ -2734,6 +4201,15 @@ macro_rules! contract_pre_rmsnorm {
     }};
 }
 
+/// Invariants for equation `rmsnorm`.
+/// Check after computation: `contract_inv_rmsnorm!(result_expr)`
+macro_rules! contract_inv_rmsnorm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rope_rotation`.
 /// Domain-specific. Call: `contract_pre_rope_rotation!(slice_expr)`
 macro_rules! contract_pre_rope_rotation {
@@ -2745,12 +4221,30 @@ macro_rules! contract_pre_rope_rotation {
     }};
 }
 
+/// Invariants for equation `rope_rotation`.
+/// Check after computation: `contract_inv_rope_rotation!(result_expr)`
+macro_rules! contract_inv_rope_rotation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `scaled_dot_product`.
 /// Domain-specific. Call: `contract_pre_scaled_dot_product!(slice_expr)`
 macro_rules! contract_pre_scaled_dot_product {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `scaled_dot_product`.
+/// Check after computation: `contract_inv_scaled_dot_product!(result_expr)`
+macro_rules! contract_inv_scaled_dot_product {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2768,6 +4262,15 @@ macro_rules! contract_pre_attention_entropy {
     }};
 }
 
+/// Invariants for equation `attention_entropy`.
+/// Check after computation: `contract_inv_attention_entropy!(result_expr)`
+macro_rules! contract_inv_attention_entropy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `numerical_stability`.
 /// Domain-specific. Call: `contract_pre_numerical_stability!(slice_expr)`
 macro_rules! contract_pre_numerical_stability {
@@ -2779,6 +4282,15 @@ macro_rules! contract_pre_numerical_stability {
     }};
 }
 
+/// Invariants for equation `numerical_stability`.
+/// Check after computation: `contract_inv_numerical_stability!(result_expr)`
+macro_rules! contract_inv_numerical_stability {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `scaled_dot_product`.
 /// Domain-specific. Call: `contract_pre_scaled_dot_product!(slice_expr)`
 macro_rules! contract_pre_scaled_dot_product {
@@ -2787,6 +4299,15 @@ macro_rules! contract_pre_scaled_dot_product {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract scaled_dot_product: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `scaled_dot_product`.
+/// Check after computation: `contract_inv_scaled_dot_product!(result_expr)`
+macro_rules! contract_inv_scaled_dot_product {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2803,6 +4324,15 @@ macro_rules! contract_pre_score_bound_with_qknorm {
     }};
 }
 
+/// Invariants for equation `score_bound_with_qknorm`.
+/// Check after computation: `contract_inv_score_bound_with_qknorm!(result_expr)`
+macro_rules! contract_inv_score_bound_with_qknorm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `softmax_saturation`.
 /// Domain-specific. Call: `contract_pre_softmax_saturation!(slice_expr)`
 macro_rules! contract_pre_softmax_saturation {
@@ -2816,6 +4346,15 @@ macro_rules! contract_pre_softmax_saturation {
     }};
 }
 
+/// Invariants for equation `softmax_saturation`.
+/// Check after computation: `contract_inv_softmax_saturation!(result_expr)`
+macro_rules! contract_inv_softmax_saturation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `variance_preservation`.
 /// Domain-specific. Call: `contract_pre_variance_preservation!(slice_expr)`
 macro_rules! contract_pre_variance_preservation {
@@ -2824,6 +4363,15 @@ macro_rules! contract_pre_variance_preservation {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract variance_preservation: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `variance_preservation`.
+/// Check after computation: `contract_inv_variance_preservation!(result_expr)`
+macro_rules! contract_inv_variance_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2841,6 +4389,15 @@ macro_rules! contract_pre_dot_product {
     }};
 }
 
+/// Invariants for equation `dot_product`.
+/// Check after computation: `contract_inv_dot_product!(result_expr)`
+macro_rules! contract_inv_dot_product {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `fma_accumulation`.
 /// Domain-specific. Call: `contract_pre_fma_accumulation!(slice_expr)`
 macro_rules! contract_pre_fma_accumulation {
@@ -2849,6 +4406,15 @@ macro_rules! contract_pre_fma_accumulation {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract fma_accumulation: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `fma_accumulation`.
+/// Check after computation: `contract_inv_fma_accumulation!(result_expr)`
+macro_rules! contract_inv_fma_accumulation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2868,6 +4434,15 @@ macro_rules! contract_pre_garbage_oracle {
     }};
 }
 
+/// Invariants for equation `garbage_oracle`.
+/// Check after computation: `contract_inv_garbage_oracle!(result_expr)`
+macro_rules! contract_inv_garbage_oracle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gpu_threshold`.
 /// Domain-specific. Call: `contract_pre_gpu_threshold!(slice_expr)`
 macro_rules! contract_pre_gpu_threshold {
@@ -2878,6 +4453,15 @@ macro_rules! contract_pre_gpu_threshold {
             "Contract gpu_threshold: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract gpu_threshold: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `gpu_threshold`.
+/// Check after computation: `contract_inv_gpu_threshold!(result_expr)`
+macro_rules! contract_inv_gpu_threshold {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2894,6 +4478,15 @@ macro_rules! contract_pre_qk_norm_score_bound {
     }};
 }
 
+/// Invariants for equation `qk_norm_score_bound`.
+/// Check after computation: `contract_inv_qk_norm_score_bound!(result_expr)`
+macro_rules! contract_inv_qk_norm_score_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `simd_only_threshold`.
 /// Domain-specific. Call: `contract_pre_simd_only_threshold!(slice_expr)`
 macro_rules! contract_pre_simd_only_threshold {
@@ -2904,6 +4497,15 @@ macro_rules! contract_pre_simd_only_threshold {
             "Contract simd_only_threshold: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract simd_only_threshold: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `simd_only_threshold`.
+/// Check after computation: `contract_inv_simd_only_threshold!(result_expr)`
+macro_rules! contract_inv_simd_only_threshold {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2921,6 +4523,15 @@ macro_rules! contract_pre_batch_loss {
     }};
 }
 
+/// Invariants for equation `batch_loss`.
+/// Check after computation: `contract_inv_batch_loss!(result_expr)`
+macro_rules! contract_inv_batch_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gradient_accumulation`.
 /// Domain-specific. Call: `contract_pre_gradient_accumulation!(slice_expr)`
 macro_rules! contract_pre_gradient_accumulation {
@@ -2932,6 +4543,15 @@ macro_rules! contract_pre_gradient_accumulation {
     }};
 }
 
+/// Invariants for equation `gradient_accumulation`.
+/// Check after computation: `contract_inv_gradient_accumulation!(result_expr)`
+macro_rules! contract_inv_gradient_accumulation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gradient_clipping`.
 /// Domain-specific. Call: `contract_pre_gradient_clipping!(slice_expr)`
 macro_rules! contract_pre_gradient_clipping {
@@ -2940,6 +4560,15 @@ macro_rules! contract_pre_gradient_clipping {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract gradient_clipping: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `gradient_clipping`.
+/// Check after computation: `contract_inv_gradient_clipping!(result_expr)`
+macro_rules! contract_inv_gradient_clipping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2957,6 +4586,15 @@ macro_rules! contract_pre_batched_beam_projection {
     }};
 }
 
+/// Invariants for equation `batched_beam_projection`.
+/// Check after computation: `contract_inv_batched_beam_projection!(result_expr)`
+macro_rules! contract_inv_batched_beam_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `beam_selection`.
 /// Domain-specific. Call: `contract_pre_beam_selection!(slice_expr)`
 macro_rules! contract_pre_beam_selection {
@@ -2965,6 +4603,15 @@ macro_rules! contract_pre_beam_selection {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract beam_selection: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `beam_selection`.
+/// Check after computation: `contract_inv_beam_selection!(result_expr)`
+macro_rules! contract_inv_beam_selection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -2979,6 +4626,15 @@ macro_rules! contract_pre_sequential_beam_projection {
     }};
 }
 
+/// Invariants for equation `sequential_beam_projection`.
+/// Check after computation: `contract_inv_sequential_beam_projection!(result_expr)`
+macro_rules! contract_inv_sequential_beam_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `termination`.
 /// Domain-specific. Call: `contract_pre_termination!(slice_expr)`
 macro_rules! contract_pre_termination {
@@ -2987,6 +4643,15 @@ macro_rules! contract_pre_termination {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract termination: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `termination`.
+/// Check after computation: `contract_inv_termination!(result_expr)`
+macro_rules! contract_inv_termination {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3006,6 +4671,15 @@ macro_rules! contract_pre_batchnorm_eval {
     }};
 }
 
+/// Invariants for equation `batchnorm_eval`.
+/// Check after computation: `contract_inv_batchnorm_eval!(result_expr)`
+macro_rules! contract_inv_batchnorm_eval {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `batchnorm_train`.
 /// Domain-specific. Call: `contract_pre_batchnorm_train!(slice_expr)`
 macro_rules! contract_pre_batchnorm_train {
@@ -3019,6 +4693,15 @@ macro_rules! contract_pre_batchnorm_train {
     }};
 }
 
+/// Invariants for equation `batchnorm_train`.
+/// Check after computation: `contract_inv_batchnorm_train!(result_expr)`
+macro_rules! contract_inv_batchnorm_train {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `running_stats`.
 /// Domain-specific. Call: `contract_pre_running_stats!(slice_expr)`
 macro_rules! contract_pre_running_stats {
@@ -3029,6 +4712,15 @@ macro_rules! contract_pre_running_stats {
             "Contract running_stats: precondition violated — input.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_input.len() > 0,
             "Contract running_stats: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `running_stats`.
+/// Check after computation: `contract_inv_running_stats!(result_expr)`
+macro_rules! contract_inv_running_stats {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3048,6 +4740,15 @@ macro_rules! contract_pre_blr_predict {
     }};
 }
 
+/// Invariants for equation `blr_predict`.
+/// Check after computation: `contract_inv_blr_predict!(result_expr)`
+macro_rules! contract_inv_blr_predict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `conjugate_update`.
 /// Domain-specific. Call: `contract_pre_conjugate_update!(slice_expr)`
 macro_rules! contract_pre_conjugate_update {
@@ -3058,6 +4759,15 @@ macro_rules! contract_pre_conjugate_update {
             "Contract conjugate_update: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract conjugate_update: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `conjugate_update`.
+/// Check after computation: `contract_inv_conjugate_update!(result_expr)`
+macro_rules! contract_inv_conjugate_update {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3074,6 +4784,15 @@ macro_rules! contract_pre_posterior_predictive {
     }};
 }
 
+/// Invariants for equation `posterior_predictive`.
+/// Check after computation: `contract_inv_posterior_predictive!(result_expr)`
+macro_rules! contract_inv_posterior_predictive {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `posterior_valid`.
 /// Domain-specific. Call: `contract_pre_posterior_valid!(slice_expr)`
 macro_rules! contract_pre_posterior_valid {
@@ -3084,6 +4803,15 @@ macro_rules! contract_pre_posterior_valid {
             "Contract posterior_valid: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract posterior_valid: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `posterior_valid`.
+/// Check after computation: `contract_inv_posterior_valid!(result_expr)`
+macro_rules! contract_inv_posterior_valid {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3099,6 +4827,15 @@ macro_rules! contract_pre_bm25_ranking {
     }};
 }
 
+/// Invariants for equation `bm25_ranking`.
+/// Check after computation: `contract_inv_bm25_ranking!(result_expr)`
+macro_rules! contract_inv_bm25_ranking {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `index_insert_retrieve`.
 /// Domain-specific. Call: `contract_pre_index_insert_retrieve!(slice_expr)`
 macro_rules! contract_pre_index_insert_retrieve {
@@ -3108,12 +4845,30 @@ macro_rules! contract_pre_index_insert_retrieve {
     }};
 }
 
+/// Invariants for equation `index_insert_retrieve`.
+/// Check after computation: `contract_inv_index_insert_retrieve!(result_expr)`
+macro_rules! contract_inv_index_insert_retrieve {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `robots_compliance`.
 /// Domain-specific. Call: `contract_pre_robots_compliance!(slice_expr)`
 macro_rules! contract_pre_robots_compliance {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `robots_compliance`.
+/// Check after computation: `contract_inv_robots_compliance!(result_expr)`
+macro_rules! contract_inv_robots_compliance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3129,6 +4884,15 @@ macro_rules! contract_pre_tokenize_normalization {
 /// Postconditions for equation `tokenize_normalization`.
 /// Call before return: `contract_post_tokenize_normalization!(result_expr)`
 macro_rules! contract_post_tokenize_normalization {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tokenize_normalization`.
+/// Check after computation: `contract_inv_tokenize_normalization!(result_expr)`
+macro_rules! contract_inv_tokenize_normalization {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3160,6 +4924,15 @@ macro_rules! contract_pre_bias_add {
     }};
 }
 
+/// Invariants for equation `bias_add`.
+/// Check after computation: `contract_inv_bias_add!(result_expr)`
+macro_rules! contract_inv_bias_add {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/bidirectional-attention-v1.yaml — DO NOT EDIT
 // Contract: bidirectional-attention-v1
 
@@ -3171,6 +4944,15 @@ macro_rules! contract_pre_bidirectional_attention {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract bidirectional_attention: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `bidirectional_attention`.
+/// Check after computation: `contract_inv_bidirectional_attention!(result_expr)`
+macro_rules! contract_inv_bidirectional_attention {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3188,12 +4970,30 @@ macro_rules! contract_pre_composite_hash {
     }};
 }
 
+/// Invariants for equation `composite_hash`.
+/// Check after computation: `contract_inv_composite_hash!(result_expr)`
+macro_rules! contract_inv_composite_hash {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `hash_file`.
 /// Call at function entry: `contract_pre_hash_file!(input_expr)`
 macro_rules! contract_pre_hash_file {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `hash_file`.
+/// Check after computation: `contract_inv_hash_file!(result_expr)`
+macro_rules! contract_inv_hash_file {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3207,6 +5007,15 @@ macro_rules! contract_pre_hash_string {
             "Contract hash_string: precondition violated — !input.is_empty()");
         debug_assert!(_pv_input.len() <= 1_073_741_824,
             "Contract hash_string: precondition violated — input.len() <= 1_073_741_824");
+    }};
+}
+
+/// Invariants for equation `hash_string`.
+/// Check after computation: `contract_inv_hash_string!(result_expr)`
+macro_rules! contract_inv_hash_string {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3224,6 +5033,15 @@ macro_rules! contract_pre_decode {
     }};
 }
 
+/// Invariants for equation `decode`.
+/// Check after computation: `contract_inv_decode!(result_expr)`
+macro_rules! contract_inv_decode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `encode`.
 /// Domain-specific. Call: `contract_pre_encode!(slice_expr)`
 macro_rules! contract_pre_encode {
@@ -3235,6 +5053,15 @@ macro_rules! contract_pre_encode {
     }};
 }
 
+/// Invariants for equation `encode`.
+/// Check after computation: `contract_inv_encode!(result_expr)`
+macro_rules! contract_inv_encode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `merge_rule`.
 /// Domain-specific. Call: `contract_pre_merge_rule!(slice_expr)`
 macro_rules! contract_pre_merge_rule {
@@ -3243,6 +5070,15 @@ macro_rules! contract_pre_merge_rule {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract merge_rule: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `merge_rule`.
+/// Check after computation: `contract_inv_merge_rule!(result_expr)`
+macro_rules! contract_inv_merge_rule {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3261,6 +5097,15 @@ macro_rules! contract_pre_builder_pattern {
 /// Postconditions for equation `builder_pattern`.
 /// Call before return: `contract_post_builder_pattern!(result_expr)`
 macro_rules! contract_post_builder_pattern {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `builder_pattern`.
+/// Check after computation: `contract_inv_builder_pattern!(result_expr)`
+macro_rules! contract_inv_builder_pattern {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3288,6 +5133,24 @@ macro_rules! contract_pre_build {
     }};
 }
 
+/// Invariants for equation `build`.
+/// Check after computation: `contract_inv_build!(result_expr)`
+macro_rules! contract_inv_build {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `builder_config`.
+/// Check after computation: `contract_inv_builder_config!(result_expr)`
+macro_rules! contract_inv_builder_config {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/calibration-v1.yaml — DO NOT EDIT
 // Contract: calibration-v1
 
@@ -3304,6 +5167,15 @@ macro_rules! contract_pre_expected_calibration_error {
     }};
 }
 
+/// Invariants for equation `expected_calibration_error`.
+/// Check after computation: `contract_inv_expected_calibration_error!(result_expr)`
+macro_rules! contract_inv_expected_calibration_error {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `isotonic_regression`.
 /// Domain-specific. Call: `contract_pre_isotonic_regression!(slice_expr)`
 macro_rules! contract_pre_isotonic_regression {
@@ -3314,6 +5186,15 @@ macro_rules! contract_pre_isotonic_regression {
             "Contract isotonic_regression: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract isotonic_regression: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `isotonic_regression`.
+/// Check after computation: `contract_inv_isotonic_regression!(result_expr)`
+macro_rules! contract_inv_isotonic_regression {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3330,6 +5211,15 @@ macro_rules! contract_pre_maximum_calibration_error {
     }};
 }
 
+/// Invariants for equation `maximum_calibration_error`.
+/// Check after computation: `contract_inv_maximum_calibration_error!(result_expr)`
+macro_rules! contract_inv_maximum_calibration_error {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `platt_scaling`.
 /// Domain-specific. Call: `contract_pre_platt_scaling!(slice_expr)`
 macro_rules! contract_pre_platt_scaling {
@@ -3343,6 +5233,15 @@ macro_rules! contract_pre_platt_scaling {
     }};
 }
 
+/// Invariants for equation `platt_scaling`.
+/// Check after computation: `contract_inv_platt_scaling!(result_expr)`
+macro_rules! contract_inv_platt_scaling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `reliability_diagram`.
 /// Domain-specific. Call: `contract_pre_reliability_diagram!(slice_expr)`
 macro_rules! contract_pre_reliability_diagram {
@@ -3353,6 +5252,15 @@ macro_rules! contract_pre_reliability_diagram {
             "Contract reliability_diagram: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract reliability_diagram: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `reliability_diagram`.
+/// Check after computation: `contract_inv_reliability_diagram!(result_expr)`
+macro_rules! contract_inv_reliability_diagram {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3436,6 +5344,15 @@ macro_rules! contract_post_appstate_architecture_cache {
     }};
 }
 
+/// Invariants for equation `appstate_architecture_cache`.
+/// Check after computation: `contract_inv_appstate_architecture_cache!(result_expr)`
+macro_rules! contract_inv_appstate_architecture_cache {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `appstate_architecture_cache`.
 macro_rules! contract_appstate_architecture_cache {
     ($input:expr, $body:expr) => {{
@@ -3458,6 +5375,15 @@ macro_rules! contract_pre_architecture_aware_selection {
 /// Postconditions for equation `architecture_aware_selection`.
 /// Call before return: `contract_post_architecture_aware_selection!(result_expr)`
 macro_rules! contract_post_architecture_aware_selection {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `architecture_aware_selection`.
+/// Check after computation: `contract_inv_architecture_aware_selection!(result_expr)`
+macro_rules! contract_inv_architecture_aware_selection {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3492,6 +5418,15 @@ macro_rules! contract_post_format_conversation_determinism {
     }};
 }
 
+/// Invariants for equation `format_conversation_determinism`.
+/// Check after computation: `contract_inv_format_conversation_determinism!(result_expr)`
+macro_rules! contract_inv_format_conversation_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `format_conversation_determinism`.
 macro_rules! contract_format_conversation_determinism {
     ($input:expr, $body:expr) => {{
@@ -3514,6 +5449,15 @@ macro_rules! contract_pre_thinking_block_suppression {
 /// Postconditions for equation `thinking_block_suppression`.
 /// Call before return: `contract_post_thinking_block_suppression!(result_expr)`
 macro_rules! contract_post_thinking_block_suppression {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `thinking_block_suppression`.
+/// Check after computation: `contract_inv_thinking_block_suppression!(result_expr)`
+macro_rules! contract_inv_thinking_block_suppression {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3546,6 +5490,15 @@ macro_rules! contract_post_trait_completeness {
     }};
 }
 
+/// Invariants for equation `trait_completeness`.
+/// Check after computation: `contract_inv_trait_completeness!(result_expr)`
+macro_rules! contract_inv_trait_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `trait_completeness`.
 macro_rules! contract_trait_completeness {
     ($input:expr, $body:expr) => {{
@@ -3570,6 +5523,15 @@ macro_rules! contract_pre_classifier_weight_shape {
     }};
 }
 
+/// Invariants for equation `classifier_weight_shape`.
+/// Check after computation: `contract_inv_classifier_weight_shape!(result_expr)`
+macro_rules! contract_inv_classifier_weight_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `label_bounds`.
 /// Domain-specific. Call: `contract_pre_label_bounds!(slice_expr)`
 macro_rules! contract_pre_label_bounds {
@@ -3578,6 +5540,15 @@ macro_rules! contract_pre_label_bounds {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract label_bounds: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `label_bounds`.
+/// Check after computation: `contract_inv_label_bounds!(result_expr)`
+macro_rules! contract_inv_label_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3592,6 +5563,15 @@ macro_rules! contract_pre_logit_shape {
     }};
 }
 
+/// Invariants for equation `logit_shape`.
+/// Check after computation: `contract_inv_logit_shape!(result_expr)`
+macro_rules! contract_inv_logit_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `softmax_sum`.
 /// Domain-specific. Call: `contract_pre_softmax_sum!(slice_expr)`
 macro_rules! contract_pre_softmax_sum {
@@ -3602,6 +5582,15 @@ macro_rules! contract_pre_softmax_sum {
             "Contract softmax_sum: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract softmax_sum: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `softmax_sum`.
+/// Check after computation: `contract_inv_softmax_sum!(result_expr)`
+macro_rules! contract_inv_softmax_sum {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3619,6 +5608,15 @@ macro_rules! contract_pre_embedding_extraction {
     }};
 }
 
+/// Invariants for equation `embedding_extraction`.
+/// Check after computation: `contract_inv_embedding_extraction!(result_expr)`
+macro_rules! contract_inv_embedding_extraction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `evaluation`.
 /// Call at function entry: `contract_pre_evaluation!(input_expr)`
 macro_rules! contract_pre_evaluation {
@@ -3628,12 +5626,30 @@ macro_rules! contract_pre_evaluation {
     }};
 }
 
+/// Invariants for equation `evaluation`.
+/// Check after computation: `contract_inv_evaluation!(result_expr)`
+macro_rules! contract_inv_evaluation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `linear_probe`.
 /// Call at function entry: `contract_pre_linear_probe!(input_expr)`
 macro_rules! contract_pre_linear_probe {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `linear_probe`.
+/// Check after computation: `contract_inv_linear_probe!(result_expr)`
+macro_rules! contract_inv_linear_probe {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3649,6 +5665,15 @@ macro_rules! contract_pre_duplicate_detection {
     }};
 }
 
+/// Invariants for equation `duplicate_detection`.
+/// Check after computation: `contract_inv_duplicate_detection!(result_expr)`
+macro_rules! contract_inv_duplicate_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `outlier_detection`.
 /// Call at function entry: `contract_pre_outlier_detection!(input_expr)`
 macro_rules! contract_pre_outlier_detection {
@@ -3658,12 +5683,30 @@ macro_rules! contract_pre_outlier_detection {
     }};
 }
 
+/// Invariants for equation `outlier_detection`.
+/// Check after computation: `contract_inv_outlier_detection!(result_expr)`
+macro_rules! contract_inv_outlier_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `scan_completeness`.
 /// Call at function entry: `contract_pre_scan_completeness!(input_expr)`
 macro_rules! contract_pre_scan_completeness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `scan_completeness`.
+/// Check after computation: `contract_inv_scan_completeness!(result_expr)`
+macro_rules! contract_inv_scan_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3679,12 +5722,30 @@ macro_rules! contract_pre_dispatch_completeness {
     }};
 }
 
+/// Invariants for equation `dispatch_completeness`.
+/// Check after computation: `contract_inv_dispatch_completeness!(result_expr)`
+macro_rules! contract_inv_dispatch_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `exit_code_semantics`.
 /// Call at function entry: `contract_pre_exit_code_semantics!(input_expr)`
 macro_rules! contract_pre_exit_code_semantics {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `exit_code_semantics`.
+/// Check after computation: `contract_inv_exit_code_semantics!(result_expr)`
+macro_rules! contract_inv_exit_code_semantics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3700,6 +5761,15 @@ macro_rules! contract_pre_feature_gated_dispatch {
 /// Postconditions for equation `feature_gated_dispatch`.
 /// Call before return: `contract_post_feature_gated_dispatch!(result_expr)`
 macro_rules! contract_post_feature_gated_dispatch {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `feature_gated_dispatch`.
+/// Check after computation: `contract_inv_feature_gated_dispatch!(result_expr)`
+macro_rules! contract_inv_feature_gated_dispatch {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3724,12 +5794,30 @@ macro_rules! contract_pre_idempotent_inspection {
     }};
 }
 
+/// Invariants for equation `idempotent_inspection`.
+/// Check after computation: `contract_inv_idempotent_inspection!(result_expr)`
+macro_rules! contract_inv_idempotent_inspection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `output_format_fidelity`.
 /// Call at function entry: `contract_pre_output_format_fidelity!(input_expr)`
 macro_rules! contract_pre_output_format_fidelity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `output_format_fidelity`.
+/// Check after computation: `contract_inv_output_format_fidelity!(result_expr)`
+macro_rules! contract_inv_output_format_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3748,6 +5836,15 @@ macro_rules! contract_pre_exit_code_semantics {
 /// Postconditions for equation `exit_code_semantics`.
 /// Call before return: `contract_post_exit_code_semantics!(result_expr)`
 macro_rules! contract_post_exit_code_semantics {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `exit_code_semantics`.
+/// Check after computation: `contract_inv_exit_code_semantics!(result_expr)`
+macro_rules! contract_inv_exit_code_semantics {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3780,6 +5877,15 @@ macro_rules! contract_post_output_format_fidelity {
     }};
 }
 
+/// Invariants for equation `output_format_fidelity`.
+/// Check after computation: `contract_inv_output_format_fidelity!(result_expr)`
+macro_rules! contract_inv_output_format_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `output_format_fidelity`.
 macro_rules! contract_output_format_fidelity {
     ($input:expr, $body:expr) => {{
@@ -3802,6 +5908,15 @@ macro_rules! contract_pre_result_cardinality {
 /// Postconditions for equation `result_cardinality`.
 /// Call before return: `contract_post_result_cardinality!(result_expr)`
 macro_rules! contract_post_result_cardinality {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `result_cardinality`.
+/// Check after computation: `contract_inv_result_cardinality!(result_expr)`
+macro_rules! contract_inv_result_cardinality {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -3834,6 +5949,15 @@ macro_rules! contract_post_timeout_honoring {
     }};
 }
 
+/// Invariants for equation `timeout_honoring`.
+/// Check after computation: `contract_inv_timeout_honoring!(result_expr)`
+macro_rules! contract_inv_timeout_honoring {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `timeout_honoring`.
 macro_rules! contract_timeout_honoring {
     ($input:expr, $body:expr) => {{
@@ -3860,12 +5984,30 @@ macro_rules! contract_pre_exit_code_dispatch {
     }};
 }
 
+/// Invariants for equation `exit_code_dispatch`.
+/// Check after computation: `contract_inv_exit_code_dispatch!(result_expr)`
+macro_rules! contract_inv_exit_code_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `finding_determinism`.
 /// Call at function entry: `contract_pre_finding_determinism!(input_expr)`
 macro_rules! contract_pre_finding_determinism {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `finding_determinism`.
+/// Check after computation: `contract_inv_finding_determinism!(result_expr)`
+macro_rules! contract_inv_finding_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3878,6 +6020,15 @@ macro_rules! contract_pre_output_format_validity {
     }};
 }
 
+/// Invariants for equation `output_format_validity`.
+/// Check after computation: `contract_inv_output_format_validity!(result_expr)`
+macro_rules! contract_inv_output_format_validity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `severity_ordering`.
 /// Domain-specific. Call: `contract_pre_severity_ordering!(slice_expr)`
 macro_rules! contract_pre_severity_ordering {
@@ -3886,6 +6037,15 @@ macro_rules! contract_pre_severity_ordering {
         let _pv_diagnostics = &$input;
         debug_assert!(_pv_diagnostics.len() >= 0,
             "Contract severity_ordering: precondition violated — diagnostics.len() >= 0");
+    }};
+}
+
+/// Invariants for equation `severity_ordering`.
+/// Check after computation: `contract_inv_severity_ordering!(result_expr)`
+macro_rules! contract_inv_severity_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3901,12 +6061,30 @@ macro_rules! contract_pre_dispatch_correctness {
     }};
 }
 
+/// Invariants for equation `dispatch_correctness`.
+/// Check after computation: `contract_inv_dispatch_correctness!(result_expr)`
+macro_rules! contract_inv_dispatch_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `index_freshness`.
 /// Call at function entry: `contract_pre_index_freshness!(input_expr)`
 macro_rules! contract_pre_index_freshness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `index_freshness`.
+/// Check after computation: `contract_inv_index_freshness!(result_expr)`
+macro_rules! contract_inv_index_freshness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3918,6 +6096,15 @@ macro_rules! contract_pre_rag_query_correctness {
         let _pv_query = &$input;
         debug_assert!(_pv_query.len() > 0,
             "Contract rag_query_correctness: precondition violated — query.len() > 0");
+    }};
+}
+
+/// Invariants for equation `rag_query_correctness`.
+/// Check after computation: `contract_inv_rag_query_correctness!(result_expr)`
+macro_rules! contract_inv_rag_query_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3937,12 +6124,30 @@ macro_rules! contract_pre_exit_code_dispatch {
     }};
 }
 
+/// Invariants for equation `exit_code_dispatch`.
+/// Check after computation: `contract_inv_exit_code_dispatch!(result_expr)`
+macro_rules! contract_inv_exit_code_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `input_validation`.
 /// Call at function entry: `contract_pre_input_validation!(input_expr)`
 macro_rules! contract_pre_input_validation {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `input_validation`.
+/// Check after computation: `contract_inv_input_validation!(result_expr)`
+macro_rules! contract_inv_input_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3959,12 +6164,30 @@ macro_rules! contract_pre_output_validity {
     }};
 }
 
+/// Invariants for equation `output_validity`.
+/// Check after computation: `contract_inv_output_validity!(result_expr)`
+macro_rules! contract_inv_output_validity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpilation_determinism`.
 /// Call at function entry: `contract_pre_transpilation_determinism!(input_expr)`
 macro_rules! contract_pre_transpilation_determinism {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `transpilation_determinism`.
+/// Check after computation: `contract_inv_transpilation_determinism!(result_expr)`
+macro_rules! contract_inv_transpilation_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -3982,6 +6205,15 @@ macro_rules! contract_pre_covariance_update {
     }};
 }
 
+/// Invariants for equation `covariance_update`.
+/// Check after computation: `contract_inv_covariance_update!(result_expr)`
+macro_rules! contract_inv_covariance_update {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mean_update`.
 /// Domain-specific. Call: `contract_pre_mean_update!(slice_expr)`
 macro_rules! contract_pre_mean_update {
@@ -3993,6 +6225,15 @@ macro_rules! contract_pre_mean_update {
     }};
 }
 
+/// Invariants for equation `mean_update`.
+/// Check after computation: `contract_inv_mean_update!(result_expr)`
+macro_rules! contract_inv_mean_update {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `sample`.
 /// Domain-specific. Call: `contract_pre_sample!(slice_expr)`
 macro_rules! contract_pre_sample {
@@ -4001,6 +6242,15 @@ macro_rules! contract_pre_sample {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract sample: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `sample`.
+/// Check after computation: `contract_inv_sample!(result_expr)`
+macro_rules! contract_inv_sample {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4018,6 +6268,15 @@ macro_rules! contract_pre_tokenizer_adequacy {
     }};
 }
 
+/// Invariants for equation `tokenizer_adequacy`.
+/// Check after computation: `contract_inv_tokenizer_adequacy!(result_expr)`
+macro_rules! contract_inv_tokenizer_adequacy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/codegen-dispatch-v1.yaml — DO NOT EDIT
 // Contract: codegen-dispatch-v1
 
@@ -4030,6 +6289,15 @@ macro_rules! contract_pre_apply_script {
     }};
 }
 
+/// Invariants for equation `apply_script`.
+/// Check after computation: `contract_inv_apply_script!(result_expr)`
+macro_rules! contract_inv_apply_script {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `check_script`.
 /// Call at function entry: `contract_pre_check_script!(input_expr)`
 macro_rules! contract_pre_check_script {
@@ -4039,12 +6307,30 @@ macro_rules! contract_pre_check_script {
     }};
 }
 
+/// Invariants for equation `check_script`.
+/// Check after computation: `contract_inv_check_script!(result_expr)`
+macro_rules! contract_inv_check_script {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `state_query_script`.
 /// Call at function entry: `contract_pre_state_query_script!(input_expr)`
 macro_rules! contract_pre_state_query_script {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `state_query_script`.
+/// Check after computation: `contract_inv_state_query_script!(result_expr)`
+macro_rules! contract_inv_state_query_script {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4060,6 +6346,15 @@ macro_rules! contract_pre_insert_get_consistency {
     }};
 }
 
+/// Invariants for equation `insert_get_consistency`.
+/// Check after computation: `contract_inv_insert_get_consistency!(result_expr)`
+macro_rules! contract_inv_insert_get_consistency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `query_correctness`.
 /// Call at function entry: `contract_pre_query_correctness!(input_expr)`
 macro_rules! contract_pre_query_correctness {
@@ -4069,12 +6364,30 @@ macro_rules! contract_pre_query_correctness {
     }};
 }
 
+/// Invariants for equation `query_correctness`.
+/// Check after computation: `contract_inv_query_correctness!(result_expr)`
+macro_rules! contract_inv_query_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `wasm_parity`.
 /// Call at function entry: `contract_pre_wasm_parity!(input_expr)`
 macro_rules! contract_pre_wasm_parity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `wasm_parity`.
+/// Check after computation: `contract_inv_wasm_parity!(result_expr)`
+macro_rules! contract_inv_wasm_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4095,6 +6408,15 @@ macro_rules! contract_pre_aggregate_score {
 /// Postconditions for equation `aggregate_score`.
 /// Call before return: `contract_post_aggregate_score!(result_expr)`
 macro_rules! contract_post_aggregate_score {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `aggregate_score`.
+/// Check after computation: `contract_inv_aggregate_score!(result_expr)`
+macro_rules! contract_inv_aggregate_score {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4127,6 +6449,15 @@ macro_rules! contract_post_run_checks {
     }};
 }
 
+/// Invariants for equation `run_checks`.
+/// Check after computation: `contract_inv_run_checks!(result_expr)`
+macro_rules! contract_inv_run_checks {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `run_checks`.
 macro_rules! contract_run_checks {
     ($input:expr, $body:expr) => {{
@@ -4151,6 +6482,15 @@ macro_rules! contract_pre_batch_correctness {
     }};
 }
 
+/// Invariants for equation `batch_correctness`.
+/// Check after computation: `contract_inv_batch_correctness!(result_expr)`
+macro_rules! contract_inv_batch_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `roundtrip_identity`.
 /// Domain-specific. Call: `contract_pre_roundtrip_identity!(slice_expr)`
 macro_rules! contract_pre_roundtrip_identity {
@@ -4162,6 +6502,15 @@ macro_rules! contract_pre_roundtrip_identity {
     }};
 }
 
+/// Invariants for equation `roundtrip_identity`.
+/// Check after computation: `contract_inv_roundtrip_identity!(result_expr)`
+macro_rules! contract_inv_roundtrip_identity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `simd_scalar_parity`.
 /// Domain-specific. Call: `contract_pre_simd_scalar_parity!(slice_expr)`
 macro_rules! contract_pre_simd_scalar_parity {
@@ -4170,6 +6519,15 @@ macro_rules! contract_pre_simd_scalar_parity {
         let _pv_data = &$input;
         debug_assert!(_pv_data.len() > 0,
             "Contract simd_scalar_parity: precondition violated — data.len() > 0");
+    }};
+}
+
+/// Invariants for equation `simd_scalar_parity`.
+/// Check after computation: `contract_inv_simd_scalar_parity!(result_expr)`
+macro_rules! contract_inv_simd_scalar_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4187,12 +6545,30 @@ macro_rules! contract_pre_compression_ratio {
     }};
 }
 
+/// Invariants for equation `compression_ratio`.
+/// Check after computation: `contract_inv_compression_ratio!(result_expr)`
+macro_rules! contract_inv_compression_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `page_state`.
 /// Call at function entry: `contract_pre_page_state!(input_expr)`
 macro_rules! contract_pre_page_state {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `page_state`.
+/// Check after computation: `contract_inv_page_state!(result_expr)`
+macro_rules! contract_inv_page_state {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4204,6 +6580,15 @@ macro_rules! contract_pre_roundtrip_identity {
         let _pv_data = &$input;
         debug_assert!(_pv_data.len() > 0,
             "Contract roundtrip_identity: precondition violated — data.len() > 0");
+    }};
+}
+
+/// Invariants for equation `roundtrip_identity`.
+/// Check after computation: `contract_inv_roundtrip_identity!(result_expr)`
+macro_rules! contract_inv_roundtrip_identity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4222,6 +6607,15 @@ macro_rules! contract_pre_lz4_roundtrip {
 /// Postconditions for equation `lz4_roundtrip`.
 /// Call before return: `contract_post_lz4_roundtrip!(result_expr)`
 macro_rules! contract_post_lz4_roundtrip {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `lz4_roundtrip`.
+/// Check after computation: `contract_inv_lz4_roundtrip!(result_expr)`
+macro_rules! contract_inv_lz4_roundtrip {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4249,6 +6643,15 @@ macro_rules! contract_pre_sqlite_migration {
 /// Postconditions for equation `sqlite_migration`.
 /// Call before return: `contract_post_sqlite_migration!(result_expr)`
 macro_rules! contract_post_sqlite_migration {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `sqlite_migration`.
+/// Check after computation: `contract_inv_sqlite_migration!(result_expr)`
+macro_rules! contract_inv_sqlite_migration {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4284,6 +6687,15 @@ macro_rules! contract_post_backend_dispatch_complete {
     }};
 }
 
+/// Invariants for equation `backend_dispatch_complete`.
+/// Check after computation: `contract_inv_backend_dispatch_complete!(result_expr)`
+macro_rules! contract_inv_backend_dispatch_complete {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `backend_dispatch_complete`.
 macro_rules! contract_backend_dispatch_complete {
     ($input:expr, $body:expr) => {{
@@ -4311,6 +6723,15 @@ macro_rules! contract_post_gpu_cpu_parity {
     }};
 }
 
+/// Invariants for equation `gpu_cpu_parity`.
+/// Check after computation: `contract_inv_gpu_cpu_parity!(result_expr)`
+macro_rules! contract_inv_gpu_cpu_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `gpu_cpu_parity`.
 macro_rules! contract_gpu_cpu_parity {
     ($input:expr, $body:expr) => {{
@@ -4333,6 +6754,15 @@ macro_rules! contract_pre_simd_scalar_parity {
 /// Postconditions for equation `simd_scalar_parity`.
 /// Call before return: `contract_post_simd_scalar_parity!(result_expr)`
 macro_rules! contract_post_simd_scalar_parity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `simd_scalar_parity`.
+/// Check after computation: `contract_inv_simd_scalar_parity!(result_expr)`
+macro_rules! contract_inv_simd_scalar_parity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4368,6 +6798,15 @@ macro_rules! contract_post_channel_lossless {
     }};
 }
 
+/// Invariants for equation `channel_lossless`.
+/// Check after computation: `contract_inv_channel_lossless!(result_expr)`
+macro_rules! contract_inv_channel_lossless {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `channel_lossless`.
 macro_rules! contract_channel_lossless {
     ($input:expr, $body:expr) => {{
@@ -4395,6 +6834,15 @@ macro_rules! contract_post_parallel_determinism {
     }};
 }
 
+/// Invariants for equation `parallel_determinism`.
+/// Check after computation: `contract_inv_parallel_determinism!(result_expr)`
+macro_rules! contract_inv_parallel_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `parallel_determinism`.
 macro_rules! contract_parallel_determinism {
     ($input:expr, $body:expr) => {{
@@ -4417,6 +6865,15 @@ macro_rules! contract_pre_task_cancellation_cleanup {
 /// Postconditions for equation `task_cancellation_cleanup`.
 /// Call before return: `contract_post_task_cancellation_cleanup!(result_expr)`
 macro_rules! contract_post_task_cancellation_cleanup {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `task_cancellation_cleanup`.
+/// Check after computation: `contract_inv_task_cancellation_cleanup!(result_expr)`
+macro_rules! contract_inv_task_cancellation_cleanup {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4452,6 +6909,15 @@ macro_rules! contract_post_threshold_invariants {
     }};
 }
 
+/// Invariants for equation `threshold_invariants`.
+/// Check after computation: `contract_inv_threshold_invariants!(result_expr)`
+macro_rules! contract_inv_threshold_invariants {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `threshold_invariants`.
 macro_rules! contract_threshold_invariants {
     ($input:expr, $body:expr) => {{
@@ -4474,6 +6940,15 @@ macro_rules! contract_pre_unknown_key_rejection {
 /// Postconditions for equation `unknown_key_rejection`.
 /// Call before return: `contract_post_unknown_key_rejection!(result_expr)`
 macro_rules! contract_post_unknown_key_rejection {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `unknown_key_rejection`.
+/// Check after computation: `contract_inv_unknown_key_rejection!(result_expr)`
+macro_rules! contract_inv_unknown_key_rejection {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4509,6 +6984,15 @@ macro_rules! contract_post_configuration {
     }};
 }
 
+/// Invariants for equation `configuration`.
+/// Check after computation: `contract_inv_configuration!(result_expr)`
+macro_rules! contract_inv_configuration {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `configuration`.
 macro_rules! contract_configuration {
     ($input:expr, $body:expr) => {{
@@ -4531,6 +7015,15 @@ macro_rules! contract_pre_bfs {
     }};
 }
 
+/// Invariants for equation `bfs`.
+/// Check after computation: `contract_inv_bfs!(result_expr)`
+macro_rules! contract_inv_bfs {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/configuration-v1.yaml — DO NOT EDIT
 // Contract: configuration-v1
 
@@ -4540,6 +7033,24 @@ macro_rules! contract_pre_connect {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `connect`.
+/// Check after computation: `contract_inv_connect!(result_expr)`
+macro_rules! contract_inv_connect {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `connection_count`.
+/// Check after computation: `contract_inv_connection_count!(result_expr)`
+macro_rules! contract_inv_connection_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4555,6 +7066,15 @@ macro_rules! contract_pre_validate_index {
     }};
 }
 
+/// Invariants for equation `validate_index`.
+/// Check after computation: `contract_inv_validate_index!(result_expr)`
+macro_rules! contract_inv_validate_index {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `validate_size`.
 /// Call at function entry: `contract_pre_validate_size!(input_expr)`
 macro_rules! contract_pre_validate_size {
@@ -4564,8 +7084,26 @@ macro_rules! contract_pre_validate_size {
     }};
 }
 
+/// Invariants for equation `validate_size`.
+/// Check after computation: `contract_inv_validate_size!(result_expr)`
+macro_rules! contract_inv_validate_size {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/configuration-v1.yaml — DO NOT EDIT
 // Contract: configuration-v1
+
+/// Invariants for equation `config`.
+/// Check after computation: `contract_inv_config!(result_expr)`
+macro_rules! contract_inv_config {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
 
 // Auto-generated from contracts/configuration-v1.yaml — DO NOT EDIT
 // Contract: configuration-v1
@@ -4579,12 +7117,30 @@ macro_rules! contract_pre_insert {
     }};
 }
 
+/// Invariants for equation `insert`.
+/// Check after computation: `contract_inv_insert!(result_expr)`
+macro_rules! contract_inv_insert {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `query`.
 /// Call at function entry: `contract_pre_query!(input_expr)`
 macro_rules! contract_pre_query {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `query`.
+/// Check after computation: `contract_inv_query!(result_expr)`
+macro_rules! contract_inv_query {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4597,6 +7153,15 @@ macro_rules! contract_pre_config {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `config`.
+/// Check after computation: `contract_inv_config!(result_expr)`
+macro_rules! contract_inv_config {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4615,6 +7180,15 @@ macro_rules! contract_pre_generate_context {
 /// Postconditions for equation `generate_context`.
 /// Call before return: `contract_post_generate_context!(result_expr)`
 macro_rules! contract_post_generate_context {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `generate_context`.
+/// Check after computation: `contract_inv_generate_context!(result_expr)`
+macro_rules! contract_inv_generate_context {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4647,6 +7221,15 @@ macro_rules! contract_post_index_persistence {
     }};
 }
 
+/// Invariants for equation `index_persistence`.
+/// Check after computation: `contract_inv_index_persistence!(result_expr)`
+macro_rules! contract_inv_index_persistence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `index_persistence`.
 macro_rules! contract_index_persistence {
     ($input:expr, $body:expr) => {{
@@ -4669,12 +7252,30 @@ macro_rules! contract_pre_chunked_prefill {
     }};
 }
 
+/// Invariants for equation `chunked_prefill`.
+/// Check after computation: `contract_inv_chunked_prefill!(result_expr)`
+macro_rules! contract_inv_chunked_prefill {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `correctness_under_batching`.
 /// Call at function entry: `contract_pre_correctness_under_batching!(input_expr)`
 macro_rules! contract_pre_correctness_under_batching {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `correctness_under_batching`.
+/// Check after computation: `contract_inv_correctness_under_batching!(result_expr)`
+macro_rules! contract_inv_correctness_under_batching {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4689,12 +7290,30 @@ macro_rules! contract_pre_decode_degradation {
     }};
 }
 
+/// Invariants for equation `decode_degradation`.
+/// Check after computation: `contract_inv_decode_degradation!(result_expr)`
+macro_rules! contract_inv_decode_degradation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `request_state`.
 /// Call at function entry: `contract_pre_request_state!(input_expr)`
 macro_rules! contract_pre_request_state {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `request_state`.
+/// Check after computation: `contract_inv_request_state!(result_expr)`
+macro_rules! contract_inv_request_state {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4707,12 +7326,30 @@ macro_rules! contract_pre_scheduling_fairness {
     }};
 }
 
+/// Invariants for equation `scheduling_fairness`.
+/// Check after computation: `contract_inv_scheduling_fairness!(result_expr)`
+macro_rules! contract_inv_scheduling_fairness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `throughput_scaling`.
 /// Call at function entry: `contract_pre_throughput_scaling!(input_expr)`
 macro_rules! contract_pre_throughput_scaling {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `throughput_scaling`.
+/// Check after computation: `contract_inv_throughput_scaling!(result_expr)`
+macro_rules! contract_inv_throughput_scaling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4724,6 +7361,15 @@ macro_rules! contract_pre_token_budget {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract token_budget: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `token_budget`.
+/// Check after computation: `contract_inv_token_budget!(result_expr)`
+macro_rules! contract_inv_token_budget {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4741,6 +7387,15 @@ macro_rules! contract_pre_conv1d {
     }};
 }
 
+/// Invariants for equation `conv1d`.
+/// Check after computation: `contract_inv_conv1d!(result_expr)`
+macro_rules! contract_inv_conv1d {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/conversation-generation-v1.yaml — DO NOT EDIT
 // Contract: conversation-generation-v1
 
@@ -4755,6 +7410,15 @@ macro_rules! contract_pre_chatml_format {
     }};
 }
 
+/// Invariants for equation `chatml_format`.
+/// Check after computation: `contract_inv_chatml_format!(result_expr)`
+macro_rules! contract_inv_chatml_format {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `conversation_types`.
 /// Domain-specific. Call: `contract_pre_conversation_types!(slice_expr)`
 macro_rules! contract_pre_conversation_types {
@@ -4763,6 +7427,15 @@ macro_rules! contract_pre_conversation_types {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract conversation_types: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `conversation_types`.
+/// Check after computation: `contract_inv_conversation_types!(result_expr)`
+macro_rules! contract_inv_conversation_types {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4777,8 +7450,26 @@ macro_rules! contract_pre_quality_gate {
     }};
 }
 
+/// Invariants for equation `quality_gate`.
+/// Check after computation: `contract_inv_quality_gate!(result_expr)`
+macro_rules! contract_inv_quality_gate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/cooperative-matrix-gemm-v1.yaml — DO NOT EDIT
 // Contract: cooperative-matrix-gemm-v1
+
+/// Invariants for equation `cooperative_gemm`.
+/// Check after computation: `contract_inv_cooperative_gemm!(result_expr)`
+macro_rules! contract_inv_cooperative_gemm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
 
 // Auto-generated from contracts/copia-delta-v1.yaml — DO NOT EDIT
 // Contract: copia-delta-v1
@@ -4792,12 +7483,30 @@ macro_rules! contract_pre_block_reuse {
     }};
 }
 
+/// Invariants for equation `block_reuse`.
+/// Check after computation: `contract_inv_block_reuse!(result_expr)`
+macro_rules! contract_inv_block_reuse {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `delta_correctness`.
 /// Call at function entry: `contract_pre_delta_correctness!(input_expr)`
 macro_rules! contract_pre_delta_correctness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `delta_correctness`.
+/// Check after computation: `contract_inv_delta_correctness!(result_expr)`
+macro_rules! contract_inv_delta_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4810,12 +7519,30 @@ macro_rules! contract_pre_identity_sync {
     }};
 }
 
+/// Invariants for equation `identity_sync`.
+/// Check after computation: `contract_inv_identity_sync!(result_expr)`
+macro_rules! contract_inv_identity_sync {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transfer_minimality`.
 /// Domain-specific. Call: `contract_pre_transfer_minimality!(slice_expr)`
 macro_rules! contract_pre_transfer_minimality {
     () => {{}};
     ($input:expr) => {{
         let _pv_delta = &$input;
+    }};
+}
+
+/// Invariants for equation `transfer_minimality`.
+/// Check after computation: `contract_inv_transfer_minimality!(result_expr)`
+macro_rules! contract_inv_transfer_minimality {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -4834,6 +7561,15 @@ macro_rules! contract_pre_class_to_struct {
 /// Postconditions for equation `class_to_struct`.
 /// Call before return: `contract_post_class_to_struct!(result_expr)`
 macro_rules! contract_post_class_to_struct {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `class_to_struct`.
+/// Check after computation: `contract_inv_class_to_struct!(result_expr)`
+macro_rules! contract_inv_class_to_struct {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4866,6 +7602,15 @@ macro_rules! contract_post_inheritance_to_composition {
     }};
 }
 
+/// Invariants for equation `inheritance_to_composition`.
+/// Check after computation: `contract_inv_inheritance_to_composition!(result_expr)`
+macro_rules! contract_inv_inheritance_to_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `inheritance_to_composition`.
 macro_rules! contract_inheritance_to_composition {
     ($input:expr, $body:expr) => {{
@@ -4893,6 +7638,15 @@ macro_rules! contract_post_namespace_to_mod {
     }};
 }
 
+/// Invariants for equation `namespace_to_mod`.
+/// Check after computation: `contract_inv_namespace_to_mod!(result_expr)`
+macro_rules! contract_inv_namespace_to_mod {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `namespace_to_mod`.
 macro_rules! contract_namespace_to_mod {
     ($input:expr, $body:expr) => {{
@@ -4915,6 +7669,15 @@ macro_rules! contract_pre_operator_to_trait {
 /// Postconditions for equation `operator_to_trait`.
 /// Call before return: `contract_post_operator_to_trait!(result_expr)`
 macro_rules! contract_post_operator_to_trait {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `operator_to_trait`.
+/// Check after computation: `contract_inv_operator_to_trait!(result_expr)`
+macro_rules! contract_inv_operator_to_trait {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -4959,6 +7722,15 @@ macro_rules! contract_pre_speedup_bound {
     }};
 }
 
+/// Invariants for equation `speedup_bound`.
+/// Check after computation: `contract_inv_speedup_bound!(result_expr)`
+macro_rules! contract_inv_speedup_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `target_path`.
 /// Domain-specific. Call: `contract_pre_target_path!(slice_expr)`
 macro_rules! contract_pre_target_path {
@@ -4988,6 +7760,15 @@ macro_rules! contract_pre_l1_tiling {
     }};
 }
 
+/// Invariants for equation `l1_tiling`.
+/// Check after computation: `contract_inv_l1_tiling!(result_expr)`
+macro_rules! contract_inv_l1_tiling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rayon_overhead`.
 /// Domain-specific. Call: `contract_pre_rayon_overhead!(slice_expr)`
 macro_rules! contract_pre_rayon_overhead {
@@ -4998,6 +7779,15 @@ macro_rules! contract_pre_rayon_overhead {
             "Contract rayon_overhead: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract rayon_overhead: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `rayon_overhead`.
+/// Check after computation: `contract_inv_rayon_overhead!(result_expr)`
+macro_rules! contract_inv_rayon_overhead {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5027,6 +7817,15 @@ macro_rules! contract_post_cross_entropy {
     }};
 }
 
+/// Invariants for equation `cross_entropy`.
+/// Check after computation: `contract_inv_cross_entropy!(result_expr)`
+macro_rules! contract_inv_cross_entropy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `cross_entropy`.
 macro_rules! contract_cross_entropy {
     ($input:expr, $body:expr) => {{
@@ -5050,6 +7849,15 @@ macro_rules! contract_pre_log_softmax {
     }};
 }
 
+/// Invariants for equation `log_softmax`.
+/// Check after computation: `contract_inv_log_softmax!(result_expr)`
+macro_rules! contract_inv_log_softmax {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/cuda-classify-training-v1.yaml — DO NOT EDIT
 // Contract: cuda-classify-training-v1
 
@@ -5062,12 +7870,30 @@ macro_rules! contract_pre_device_dispatch {
     }};
 }
 
+/// Invariants for equation `device_dispatch`.
+/// Check after computation: `contract_inv_device_dispatch!(result_expr)`
+macro_rules! contract_inv_device_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gpu_forward`.
 /// Call at function entry: `contract_pre_gpu_forward!(input_expr)`
 macro_rules! contract_pre_gpu_forward {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `gpu_forward`.
+/// Check after computation: `contract_inv_gpu_forward!(result_expr)`
+macro_rules! contract_inv_gpu_forward {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5079,6 +7905,15 @@ macro_rules! contract_pre_weight_roundtrip {
         let _pv_weights = &$input;
         debug_assert!(_pv_weights.len() > 0,
             "Contract weight_roundtrip: precondition violated — weights.len() > 0");
+    }};
+}
+
+/// Invariants for equation `weight_roundtrip`.
+/// Check after computation: `contract_inv_weight_roundtrip!(result_expr)`
+macro_rules! contract_inv_weight_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5097,6 +7932,15 @@ macro_rules! contract_pre_host_transpilation {
 /// Postconditions for equation `host_transpilation`.
 /// Call before return: `contract_post_host_transpilation!(result_expr)`
 macro_rules! contract_post_host_transpilation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `host_transpilation`.
+/// Check after computation: `contract_inv_host_transpilation!(result_expr)`
+macro_rules! contract_inv_host_transpilation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -5129,6 +7973,15 @@ macro_rules! contract_post_kernel_ffi {
     }};
 }
 
+/// Invariants for equation `kernel_ffi`.
+/// Check after computation: `contract_inv_kernel_ffi!(result_expr)`
+macro_rules! contract_inv_kernel_ffi {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `kernel_ffi`.
 macro_rules! contract_kernel_ffi {
     ($input:expr, $body:expr) => {{
@@ -5156,6 +8009,15 @@ macro_rules! contract_post_qualifier_preservation {
     }};
 }
 
+/// Invariants for equation `qualifier_preservation`.
+/// Check after computation: `contract_inv_qualifier_preservation!(result_expr)`
+macro_rules! contract_inv_qualifier_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `qualifier_preservation`.
 macro_rules! contract_qualifier_preservation {
     ($input:expr, $body:expr) => {{
@@ -5178,12 +8040,30 @@ macro_rules! contract_pre_kahn_sort {
     }};
 }
 
+/// Invariants for equation `kahn_sort`.
+/// Check after computation: `contract_inv_kahn_sort!(result_expr)`
+macro_rules! contract_inv_kahn_sort {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `topological_sort`.
 /// Call at function entry: `contract_pre_topological_sort!(input_expr)`
 macro_rules! contract_pre_topological_sort {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `topological_sort`.
+/// Check after computation: `contract_inv_topological_sort!(result_expr)`
+macro_rules! contract_inv_topological_sort {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5199,12 +8079,30 @@ macro_rules! contract_pre_config_validity {
     }};
 }
 
+/// Invariants for equation `config_validity`.
+/// Check after computation: `contract_inv_config_validity!(result_expr)`
+macro_rules! contract_inv_config_validity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `serialize_roundtrip`.
 /// Call at function entry: `contract_pre_serialize_roundtrip!(input_expr)`
 macro_rules! contract_pre_serialize_roundtrip {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `serialize_roundtrip`.
+/// Check after computation: `contract_inv_serialize_roundtrip!(result_expr)`
+macro_rules! contract_inv_serialize_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5220,6 +8118,15 @@ macro_rules! contract_pre_include_resolution {
     }};
 }
 
+/// Invariants for equation `include_resolution`.
+/// Check after computation: `contract_inv_include_resolution!(result_expr)`
+macro_rules! contract_inv_include_resolution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpile_dispatch`.
 /// Call at function entry: `contract_pre_transpile_dispatch!(input_expr)`
 macro_rules! contract_pre_transpile_dispatch {
@@ -5229,12 +8136,30 @@ macro_rules! contract_pre_transpile_dispatch {
     }};
 }
 
+/// Invariants for equation `transpile_dispatch`.
+/// Check after computation: `contract_inv_transpile_dispatch!(result_expr)`
+macro_rules! contract_inv_transpile_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `type_preservation`.
 /// Call at function entry: `contract_pre_type_preservation!(input_expr)`
 macro_rules! contract_pre_type_preservation {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `type_preservation`.
+/// Check after computation: `contract_inv_type_preservation!(result_expr)`
+macro_rules! contract_inv_type_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5254,6 +8179,15 @@ macro_rules! contract_pre_gini_impurity {
     }};
 }
 
+/// Invariants for equation `gini_impurity`.
+/// Check after computation: `contract_inv_gini_impurity!(result_expr)`
+macro_rules! contract_inv_gini_impurity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gini_split`.
 /// Domain-specific. Call: `contract_pre_gini_split!(slice_expr)`
 macro_rules! contract_pre_gini_split {
@@ -5264,6 +8198,15 @@ macro_rules! contract_pre_gini_split {
             "Contract gini_split: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract gini_split: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `gini_split`.
+/// Check after computation: `contract_inv_gini_split!(result_expr)`
+macro_rules! contract_inv_gini_split {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5280,6 +8223,15 @@ macro_rules! contract_pre_mse_split {
     }};
 }
 
+/// Invariants for equation `mse_split`.
+/// Check after computation: `contract_inv_mse_split!(result_expr)`
+macro_rules! contract_inv_mse_split {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `prediction`.
 /// Domain-specific. Call: `contract_pre_prediction!(slice_expr)`
 macro_rules! contract_pre_prediction {
@@ -5290,6 +8242,15 @@ macro_rules! contract_pre_prediction {
             "Contract prediction: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract prediction: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `prediction`.
+/// Check after computation: `contract_inv_prediction!(result_expr)`
+macro_rules! contract_inv_prediction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5305,6 +8266,15 @@ macro_rules! contract_pre_delta_computation {
     }};
 }
 
+/// Invariants for equation `delta_computation`.
+/// Check after computation: `contract_inv_delta_computation!(result_expr)`
+macro_rules! contract_inv_delta_computation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `patch_apply`.
 /// Domain-specific. Call: `contract_pre_patch_apply!(slice_expr)`
 macro_rules! contract_pre_patch_apply {
@@ -5314,12 +8284,30 @@ macro_rules! contract_pre_patch_apply {
     }};
 }
 
+/// Invariants for equation `patch_apply`.
+/// Check after computation: `contract_inv_patch_apply!(result_expr)`
+macro_rules! contract_inv_patch_apply {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rolling_checksum`.
 /// Domain-specific. Call: `contract_pre_rolling_checksum!(slice_expr)`
 macro_rules! contract_pre_rolling_checksum {
     () => {{}};
     ($input:expr) => {{
         let _pv_window = &$input;
+    }};
+}
+
+/// Invariants for equation `rolling_checksum`.
+/// Check after computation: `contract_inv_rolling_checksum!(result_expr)`
+macro_rules! contract_inv_rolling_checksum {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5338,6 +8326,15 @@ macro_rules! contract_pre_display_format {
 /// Postconditions for equation `display_format`.
 /// Call before return: `contract_post_display_format!(result_expr)`
 macro_rules! contract_post_display_format {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `display_format`.
+/// Check after computation: `contract_inv_display_format!(result_expr)`
+macro_rules! contract_inv_display_format {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -5370,6 +8367,15 @@ macro_rules! contract_post_render {
     }};
 }
 
+/// Invariants for equation `render`.
+/// Check after computation: `contract_inv_render!(result_expr)`
+macro_rules! contract_inv_render {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `render`.
 macro_rules! contract_render {
     ($input:expr, $body:expr) => {{
@@ -5391,6 +8397,15 @@ macro_rules! contract_pre_gradient_allreduce {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract gradient_allreduce: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `gradient_allreduce`.
+/// Check after computation: `contract_inv_gradient_allreduce!(result_expr)`
+macro_rules! contract_inv_gradient_allreduce {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5456,12 +8471,30 @@ macro_rules! contract_pre_build_integrity {
     }};
 }
 
+/// Invariants for equation `build_integrity`.
+/// Check after computation: `contract_inv_build_integrity!(result_expr)`
+macro_rules! contract_inv_build_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `distribution_delivery`.
 /// Call at function entry: `contract_pre_distribution_delivery!(input_expr)`
 macro_rules! contract_pre_distribution_delivery {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `distribution_delivery`.
+/// Check after computation: `contract_inv_distribution_delivery!(result_expr)`
+macro_rules! contract_inv_distribution_delivery {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5479,6 +8512,15 @@ macro_rules! contract_pre_dpo_loss {
     }};
 }
 
+/// Invariants for equation `dpo_loss`.
+/// Check after computation: `contract_inv_dpo_loss!(result_expr)`
+macro_rules! contract_inv_dpo_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `implicit_reward`.
 /// Domain-specific. Call: `contract_pre_implicit_reward!(slice_expr)`
 macro_rules! contract_pre_implicit_reward {
@@ -5490,6 +8532,15 @@ macro_rules! contract_pre_implicit_reward {
     }};
 }
 
+/// Invariants for equation `implicit_reward`.
+/// Check after computation: `contract_inv_implicit_reward!(result_expr)`
+macro_rules! contract_inv_implicit_reward {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `log_ratio`.
 /// Domain-specific. Call: `contract_pre_log_ratio!(slice_expr)`
 macro_rules! contract_pre_log_ratio {
@@ -5498,6 +8549,15 @@ macro_rules! contract_pre_log_ratio {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract log_ratio: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `log_ratio`.
+/// Check after computation: `contract_inv_log_ratio!(result_expr)`
+macro_rules! contract_inv_log_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5513,6 +8573,15 @@ macro_rules! contract_pre_classify_drift {
     }};
 }
 
+/// Invariants for equation `classify_drift`.
+/// Check after computation: `contract_inv_classify_drift!(result_expr)`
+macro_rules! contract_inv_classify_drift {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `min_samples_guard`.
 /// Domain-specific. Call: `contract_pre_min_samples_guard!(slice_expr)`
 macro_rules! contract_pre_min_samples_guard {
@@ -5521,6 +8590,15 @@ macro_rules! contract_pre_min_samples_guard {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract min_samples_guard: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `min_samples_guard`.
+/// Check after computation: `contract_inv_min_samples_guard!(result_expr)`
+macro_rules! contract_inv_min_samples_guard {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5535,6 +8613,15 @@ macro_rules! contract_pre_performance_drift {
     }};
 }
 
+/// Invariants for equation `performance_drift`.
+/// Check after computation: `contract_inv_performance_drift!(result_expr)`
+macro_rules! contract_inv_performance_drift {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `univariate_drift`.
 /// Domain-specific. Call: `contract_pre_univariate_drift!(slice_expr)`
 macro_rules! contract_pre_univariate_drift {
@@ -5543,6 +8630,15 @@ macro_rules! contract_pre_univariate_drift {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract univariate_drift: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `univariate_drift`.
+/// Check after computation: `contract_inv_univariate_drift!(result_expr)`
+macro_rules! contract_inv_univariate_drift {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5562,6 +8658,15 @@ macro_rules! contract_pre_dropout_eval {
     }};
 }
 
+/// Invariants for equation `dropout_eval`.
+/// Check after computation: `contract_inv_dropout_eval!(result_expr)`
+macro_rules! contract_inv_dropout_eval {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `dropout_train`.
 /// Domain-specific. Call: `contract_pre_dropout_train!(slice_expr)`
 macro_rules! contract_pre_dropout_train {
@@ -5572,6 +8677,15 @@ macro_rules! contract_pre_dropout_train {
             "Contract dropout_train: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract dropout_train: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `dropout_train`.
+/// Check after computation: `contract_inv_dropout_train!(result_expr)`
+macro_rules! contract_inv_dropout_train {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5589,6 +8703,15 @@ macro_rules! contract_pre_embedding_lookup {
     }};
 }
 
+/// Invariants for equation `embedding_lookup`.
+/// Check after computation: `contract_inv_embedding_lookup!(result_expr)`
+macro_rules! contract_inv_embedding_lookup {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `embedding_norm`.
 /// Domain-specific. Call: `contract_pre_embedding_norm!(slice_expr)`
 macro_rules! contract_pre_embedding_norm {
@@ -5599,6 +8722,15 @@ macro_rules! contract_pre_embedding_norm {
             "Contract embedding_norm: precondition violated — input.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_input.len() > 0,
             "Contract embedding_norm: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `embedding_norm`.
+/// Check after computation: `contract_inv_embedding_norm!(result_expr)`
+macro_rules! contract_inv_embedding_norm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5613,6 +8745,15 @@ macro_rules! contract_pre_logit_temperature {
     }};
 }
 
+/// Invariants for equation `logit_temperature`.
+/// Check after computation: `contract_inv_logit_temperature!(result_expr)`
+macro_rules! contract_inv_logit_temperature {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `tied_weights`.
 /// Domain-specific. Call: `contract_pre_tied_weights!(slice_expr)`
 macro_rules! contract_pre_tied_weights {
@@ -5621,6 +8762,15 @@ macro_rules! contract_pre_tied_weights {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract tied_weights: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `tied_weights`.
+/// Check after computation: `contract_inv_tied_weights!(result_expr)`
+macro_rules! contract_inv_tied_weights {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5635,6 +8785,15 @@ macro_rules! contract_pre_unembedding_projection {
     }};
 }
 
+/// Invariants for equation `unembedding_projection`.
+/// Check after computation: `contract_inv_unembedding_projection!(result_expr)`
+macro_rules! contract_inv_unembedding_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `vocabulary_bounds`.
 /// Domain-specific. Call: `contract_pre_vocabulary_bounds!(slice_expr)`
 macro_rules! contract_pre_vocabulary_bounds {
@@ -5643,6 +8802,15 @@ macro_rules! contract_pre_vocabulary_bounds {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract vocabulary_bounds: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `vocabulary_bounds`.
+/// Check after computation: `contract_inv_vocabulary_bounds!(result_expr)`
+macro_rules! contract_inv_vocabulary_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5664,6 +8832,15 @@ macro_rules! contract_post_embedding_lookup {
     ($result:expr) => {{
         let _contract_result = &$result;
         debug_assert!(_contract_result.iter().all(|v| v.is_finite()), "Contract embedding_lookup: postcondition violated — result.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `embedding_lookup`.
+/// Check after computation: `contract_inv_embedding_lookup!(result_expr)`
+macro_rules! contract_inv_embedding_lookup {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5691,6 +8868,15 @@ macro_rules! contract_pre_cls_pooling {
     }};
 }
 
+/// Invariants for equation `cls_pooling`.
+/// Check after computation: `contract_inv_cls_pooling!(result_expr)`
+macro_rules! contract_inv_cls_pooling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `encoder_layer`.
 /// Domain-specific. Call: `contract_pre_encoder_layer!(slice_expr)`
 macro_rules! contract_pre_encoder_layer {
@@ -5699,6 +8885,15 @@ macro_rules! contract_pre_encoder_layer {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract encoder_layer: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `encoder_layer`.
+/// Check after computation: `contract_inv_encoder_layer!(result_expr)`
+macro_rules! contract_inv_encoder_layer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5716,6 +8911,15 @@ macro_rules! contract_pre_emit_posix {
     }};
 }
 
+/// Invariants for equation `emit_posix`.
+/// Check after computation: `contract_inv_emit_posix!(result_expr)`
+macro_rules! contract_inv_emit_posix {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `emit_purified`.
 /// Call at function entry: `contract_pre_emit_purified!(input_expr)`
 macro_rules! contract_pre_emit_purified {
@@ -5727,6 +8931,15 @@ macro_rules! contract_pre_emit_purified {
     }};
 }
 
+/// Invariants for equation `emit_purified`.
+/// Check after computation: `contract_inv_emit_purified!(result_expr)`
+macro_rules! contract_inv_emit_purified {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `roundtrip`.
 /// Call at function entry: `contract_pre_roundtrip!(input_expr)`
 macro_rules! contract_pre_roundtrip {
@@ -5735,6 +8948,15 @@ macro_rules! contract_pre_roundtrip {
         let _contract_input = &$input;
         debug_assert!(!_contract_input.is_empty(),
             "Contract roundtrip: precondition violated — !input.is_empty()");
+    }};
+}
+
+/// Invariants for equation `roundtrip`.
+/// Check after computation: `contract_inv_roundtrip!(result_expr)`
+macro_rules! contract_inv_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5752,6 +8974,15 @@ macro_rules! contract_pre_decode {
     }};
 }
 
+/// Invariants for equation `decode`.
+/// Check after computation: `contract_inv_decode!(result_expr)`
+macro_rules! contract_inv_decode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `encode`.
 /// Domain-specific. Call: `contract_pre_encode!(slice_expr)`
 macro_rules! contract_pre_encode {
@@ -5761,12 +8992,30 @@ macro_rules! contract_pre_encode {
     }};
 }
 
+/// Invariants for equation `encode`.
+/// Check after computation: `contract_inv_encode!(result_expr)`
+macro_rules! contract_inv_encode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `encoder_resolution`.
 /// Call at function entry: `contract_pre_encoder_resolution!(input_expr)`
 macro_rules! contract_pre_encoder_resolution {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `encoder_resolution`.
+/// Check after computation: `contract_inv_encoder_resolution!(result_expr)`
+macro_rules! contract_inv_encoder_resolution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5784,6 +9033,15 @@ macro_rules! contract_pre_send {
     }};
 }
 
+/// Invariants for equation `send`.
+/// Check after computation: `contract_inv_send!(result_expr)`
+macro_rules! contract_inv_send {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `send_error_propagation`.
 /// Domain-specific. Call: `contract_pre_send_error_propagation!(slice_expr)`
 macro_rules! contract_pre_send_error_propagation {
@@ -5792,6 +9050,15 @@ macro_rules! contract_pre_send_error_propagation {
         let _pv_send_result = &$input;
         debug_assert!(_pv_send_result.is_err(),
             "Contract send_error_propagation: precondition violated — send_result.is_err()");
+    }};
+}
+
+/// Invariants for equation `send_error_propagation`.
+/// Check after computation: `contract_inv_send_error_propagation!(result_expr)`
+macro_rules! contract_inv_send_error_propagation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5810,6 +9077,15 @@ macro_rules! contract_pre_error_handling {
 /// Postconditions for equation `error_handling`.
 /// Call before return: `contract_post_error_handling!(result_expr)`
 macro_rules! contract_post_error_handling {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `error_handling`.
+/// Check after computation: `contract_inv_error_handling!(result_expr)`
+macro_rules! contract_inv_error_handling {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -5837,6 +9113,15 @@ macro_rules! contract_pre_action_ordering {
     }};
 }
 
+/// Invariants for equation `action_ordering`.
+/// Check after computation: `contract_inv_action_ordering!(result_expr)`
+macro_rules! contract_inv_action_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `cooldown_deduplication`.
 /// Domain-specific. Call: `contract_pre_cooldown_deduplication!(slice_expr)`
 macro_rules! contract_pre_cooldown_deduplication {
@@ -5846,12 +9131,30 @@ macro_rules! contract_pre_cooldown_deduplication {
     }};
 }
 
+/// Invariants for equation `cooldown_deduplication`.
+/// Check after computation: `contract_inv_cooldown_deduplication!(result_expr)`
+macro_rules! contract_inv_cooldown_deduplication {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `trigger_dispatch_completeness`.
 /// Call at function entry: `contract_pre_trigger_dispatch_completeness!(input_expr)`
 macro_rules! contract_pre_trigger_dispatch_completeness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `trigger_dispatch_completeness`.
+/// Check after computation: `contract_inv_trigger_dispatch_completeness!(result_expr)`
+macro_rules! contract_inv_trigger_dispatch_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5867,12 +9170,30 @@ macro_rules! contract_pre_atomic_write {
     }};
 }
 
+/// Invariants for equation `atomic_write`.
+/// Check after computation: `contract_inv_atomic_write!(result_expr)`
+macro_rules! contract_inv_atomic_write {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `jidoka_stop`.
 /// Call at function entry: `contract_pre_jidoka_stop!(input_expr)`
 macro_rules! contract_pre_jidoka_stop {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `jidoka_stop`.
+/// Check after computation: `contract_inv_jidoka_stop!(result_expr)`
+macro_rules! contract_inv_jidoka_stop {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5890,6 +9211,15 @@ macro_rules! contract_pre_f16_to_f32_bias {
     }};
 }
 
+/// Invariants for equation `f16_to_f32_bias`.
+/// Check after computation: `contract_inv_f16_to_f32_bias!(result_expr)`
+macro_rules! contract_inv_f16_to_f32_bias {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `roundtrip`.
 /// Domain-specific. Call: `contract_pre_roundtrip!(slice_expr)`
 macro_rules! contract_pre_roundtrip {
@@ -5898,6 +9228,15 @@ macro_rules! contract_pre_roundtrip {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract roundtrip: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `roundtrip`.
+/// Check after computation: `contract_inv_roundtrip!(result_expr)`
+macro_rules! contract_inv_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5915,6 +9254,15 @@ macro_rules! contract_pre_flash_attention {
     }};
 }
 
+/// Invariants for equation `flash_attention`.
+/// Check after computation: `contract_inv_flash_attention!(result_expr)`
+macro_rules! contract_inv_flash_attention {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/format-parity-v1.yaml — DO NOT EDIT
 // Contract: format-parity-v1
 
@@ -5926,6 +9274,15 @@ macro_rules! contract_pre_element_count {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract element_count: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `element_count`.
+/// Check after computation: `contract_inv_element_count!(result_expr)`
+macro_rules! contract_inv_element_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5942,6 +9299,15 @@ macro_rules! contract_pre_identity_1d {
     }};
 }
 
+/// Invariants for equation `identity_1d`.
+/// Check after computation: `contract_inv_identity_1d!(result_expr)`
+macro_rules! contract_inv_identity_1d {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `name_bijection`.
 /// Domain-specific. Call: `contract_pre_name_bijection!(slice_expr)`
 macro_rules! contract_pre_name_bijection {
@@ -5953,6 +9319,15 @@ macro_rules! contract_pre_name_bijection {
     }};
 }
 
+/// Invariants for equation `name_bijection`.
+/// Check after computation: `contract_inv_name_bijection!(result_expr)`
+macro_rules! contract_inv_name_bijection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpose_involution`.
 /// Domain-specific. Call: `contract_pre_transpose_involution!(slice_expr)`
 macro_rules! contract_pre_transpose_involution {
@@ -5961,6 +9336,15 @@ macro_rules! contract_pre_transpose_involution {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract transpose_involution: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `transpose_involution`.
+/// Check after computation: `contract_inv_transpose_involution!(result_expr)`
+macro_rules! contract_inv_transpose_involution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -5978,6 +9362,15 @@ macro_rules! contract_pre_e4m3_encode {
     }};
 }
 
+/// Invariants for equation `e4m3_encode`.
+/// Check after computation: `contract_inv_e4m3_encode!(result_expr)`
+macro_rules! contract_inv_e4m3_encode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `e5m2_encode`.
 /// Domain-specific. Call: `contract_pre_e5m2_encode!(slice_expr)`
 macro_rules! contract_pre_e5m2_encode {
@@ -5986,6 +9379,15 @@ macro_rules! contract_pre_e5m2_encode {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract e5m2_encode: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `e5m2_encode`.
+/// Check after computation: `contract_inv_e5m2_encode!(result_expr)`
+macro_rules! contract_inv_e5m2_encode {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6000,6 +9402,15 @@ macro_rules! contract_pre_roundtrip {
     }};
 }
 
+/// Invariants for equation `roundtrip`.
+/// Check after computation: `contract_inv_roundtrip!(result_expr)`
+macro_rules! contract_inv_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/fused-qkv-projection-v1.yaml — DO NOT EDIT
 // Contract: fused-qkv-projection-v1
 
@@ -6011,6 +9422,15 @@ macro_rules! contract_pre_fused_qkv {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract fused_qkv: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `fused_qkv`.
+/// Check after computation: `contract_inv_fused_qkv!(result_expr)`
+macro_rules! contract_inv_fused_qkv {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6036,6 +9456,15 @@ macro_rules! contract_pre_shared_q8_qkv {
     }};
 }
 
+/// Invariants for equation `shared_q8_qkv`.
+/// Check after computation: `contract_inv_shared_q8_qkv!(result_expr)`
+macro_rules! contract_inv_shared_q8_qkv {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/gated-delta-net-v1.yaml — DO NOT EDIT
 // Contract: gated-delta-net-v1
 
@@ -6052,6 +9481,15 @@ macro_rules! contract_pre_decay {
     }};
 }
 
+/// Invariants for equation `decay`.
+/// Check after computation: `contract_inv_decay!(result_expr)`
+macro_rules! contract_inv_decay {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `delta`.
 /// Domain-specific. Call: `contract_pre_delta!(slice_expr)`
 macro_rules! contract_pre_delta {
@@ -6062,6 +9500,15 @@ macro_rules! contract_pre_delta {
             "Contract delta: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract delta: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `delta`.
+/// Check after computation: `contract_inv_delta!(result_expr)`
+macro_rules! contract_inv_delta {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6078,6 +9525,15 @@ macro_rules! contract_pre_output {
     }};
 }
 
+/// Invariants for equation `output`.
+/// Check after computation: `contract_inv_output!(result_expr)`
+macro_rules! contract_inv_output {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `read`.
 /// Domain-specific. Call: `contract_pre_read!(slice_expr)`
 macro_rules! contract_pre_read {
@@ -6091,6 +9547,15 @@ macro_rules! contract_pre_read {
     }};
 }
 
+/// Invariants for equation `read`.
+/// Check after computation: `contract_inv_read!(result_expr)`
+macro_rules! contract_inv_read {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `write`.
 /// Domain-specific. Call: `contract_pre_write!(slice_expr)`
 macro_rules! contract_pre_write {
@@ -6101,6 +9566,15 @@ macro_rules! contract_pre_write {
             "Contract write: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract write: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `write`.
+/// Check after computation: `contract_inv_write!(result_expr)`
+macro_rules! contract_inv_write {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6120,6 +9594,15 @@ macro_rules! contract_pre_gradient_boost {
     }};
 }
 
+/// Invariants for equation `gradient_boost`.
+/// Check after computation: `contract_inv_gradient_boost!(result_expr)`
+macro_rules! contract_inv_gradient_boost {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `negative_gradient`.
 /// Domain-specific. Call: `contract_pre_negative_gradient!(slice_expr)`
 macro_rules! contract_pre_negative_gradient {
@@ -6130,6 +9613,15 @@ macro_rules! contract_pre_negative_gradient {
             "Contract negative_gradient: precondition violated — grad_output.len() > 0");
         debug_assert!(_pv_grad_output.iter().all(|v| v.is_finite()),
             "Contract negative_gradient: precondition violated — grad_output.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `negative_gradient`.
+/// Check after computation: `contract_inv_negative_gradient!(result_expr)`
+macro_rules! contract_inv_negative_gradient {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6146,6 +9638,15 @@ macro_rules! contract_pre_predict {
     }};
 }
 
+/// Invariants for equation `predict`.
+/// Check after computation: `contract_inv_predict!(result_expr)`
+macro_rules! contract_inv_predict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `training_loss`.
 /// Domain-specific. Call: `contract_pre_training_loss!(slice_expr)`
 macro_rules! contract_pre_training_loss {
@@ -6154,6 +9655,15 @@ macro_rules! contract_pre_training_loss {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract training_loss: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `training_loss`.
+/// Check after computation: `contract_inv_training_loss!(result_expr)`
+macro_rules! contract_inv_training_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6173,6 +9683,15 @@ macro_rules! contract_pre_gelu {
     }};
 }
 
+/// Invariants for equation `gelu`.
+/// Check after computation: `contract_inv_gelu!(result_expr)`
+macro_rules! contract_inv_gelu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gelu_tanh_approx`.
 /// Domain-specific. Call: `contract_pre_gelu_tanh_approx!(slice_expr)`
 macro_rules! contract_pre_gelu_tanh_approx {
@@ -6183,6 +9702,15 @@ macro_rules! contract_pre_gelu_tanh_approx {
             "Contract gelu_tanh_approx: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract gelu_tanh_approx: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `gelu_tanh_approx`.
+/// Check after computation: `contract_inv_gelu_tanh_approx!(result_expr)`
+macro_rules! contract_inv_gelu_tanh_approx {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6200,6 +9728,15 @@ macro_rules! contract_pre_backward_a_gemm {
     }};
 }
 
+/// Invariants for equation `backward_a_gemm`.
+/// Check after computation: `contract_inv_backward_a_gemm!(result_expr)`
+macro_rules! contract_inv_backward_a_gemm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `backward_b_gemm`.
 /// Domain-specific. Call: `contract_pre_backward_b_gemm!(slice_expr)`
 macro_rules! contract_pre_backward_b_gemm {
@@ -6208,6 +9745,15 @@ macro_rules! contract_pre_backward_b_gemm {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract backward_b_gemm: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `backward_b_gemm`.
+/// Check after computation: `contract_inv_backward_b_gemm!(result_expr)`
+macro_rules! contract_inv_backward_b_gemm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6222,6 +9768,15 @@ macro_rules! contract_pre_shared_memory_per_tile {
     }};
 }
 
+/// Invariants for equation `shared_memory_per_tile`.
+/// Check after computation: `contract_inv_shared_memory_per_tile!(result_expr)`
+macro_rules! contract_inv_shared_memory_per_tile {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `tiled_gemm_arithmetic_intensity`.
 /// Domain-specific. Call: `contract_pre_tiled_gemm_arithmetic_intensity!(slice_expr)`
 macro_rules! contract_pre_tiled_gemm_arithmetic_intensity {
@@ -6233,6 +9788,15 @@ macro_rules! contract_pre_tiled_gemm_arithmetic_intensity {
     }};
 }
 
+/// Invariants for equation `tiled_gemm_arithmetic_intensity`.
+/// Check after computation: `contract_inv_tiled_gemm_arithmetic_intensity!(result_expr)`
+macro_rules! contract_inv_tiled_gemm_arithmetic_intensity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `unrolled_instruction_ratio`.
 /// Domain-specific. Call: `contract_pre_unrolled_instruction_ratio!(slice_expr)`
 macro_rules! contract_pre_unrolled_instruction_ratio {
@@ -6241,6 +9805,15 @@ macro_rules! contract_pre_unrolled_instruction_ratio {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract unrolled_instruction_ratio: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `unrolled_instruction_ratio`.
+/// Check after computation: `contract_inv_unrolled_instruction_ratio!(result_expr)`
+macro_rules! contract_inv_unrolled_instruction_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6276,6 +9849,15 @@ macro_rules! contract_post_alignment_enforcement {
     }};
 }
 
+/// Invariants for equation `alignment_enforcement`.
+/// Check after computation: `contract_inv_alignment_enforcement!(result_expr)`
+macro_rules! contract_inv_alignment_enforcement {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `alignment_enforcement`.
 macro_rules! contract_alignment_enforcement {
     ($input:expr, $body:expr) => {{
@@ -6298,6 +9880,15 @@ macro_rules! contract_pre_magic_validation {
 /// Postconditions for equation `magic_validation`.
 /// Call before return: `contract_post_magic_validation!(result_expr)`
 macro_rules! contract_post_magic_validation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `magic_validation`.
+/// Check after computation: `contract_inv_magic_validation!(result_expr)`
+macro_rules! contract_inv_magic_validation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -6330,6 +9921,15 @@ macro_rules! contract_post_metadata_kv_safety {
     }};
 }
 
+/// Invariants for equation `metadata_kv_safety`.
+/// Check after computation: `contract_inv_metadata_kv_safety!(result_expr)`
+macro_rules! contract_inv_metadata_kv_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `metadata_kv_safety`.
 macro_rules! contract_metadata_kv_safety {
     ($input:expr, $body:expr) => {{
@@ -6352,6 +9952,15 @@ macro_rules! contract_pre_tensor_metadata_integrity {
 /// Postconditions for equation `tensor_metadata_integrity`.
 /// Call before return: `contract_post_tensor_metadata_integrity!(result_expr)`
 macro_rules! contract_post_tensor_metadata_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tensor_metadata_integrity`.
+/// Check after computation: `contract_inv_tensor_metadata_integrity!(result_expr)`
+macro_rules! contract_inv_tensor_metadata_integrity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -6384,6 +9993,15 @@ macro_rules! contract_post_version_compatibility {
     }};
 }
 
+/// Invariants for equation `version_compatibility`.
+/// Check after computation: `contract_inv_version_compatibility!(result_expr)`
+macro_rules! contract_inv_version_compatibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `version_compatibility`.
 macro_rules! contract_version_compatibility {
     ($input:expr, $body:expr) => {{
@@ -6410,6 +10028,15 @@ macro_rules! contract_pre_binomial_link {
     }};
 }
 
+/// Invariants for equation `binomial_link`.
+/// Check after computation: `contract_inv_binomial_link!(result_expr)`
+macro_rules! contract_inv_binomial_link {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gamma_link`.
 /// Domain-specific. Call: `contract_pre_gamma_link!(slice_expr)`
 macro_rules! contract_pre_gamma_link {
@@ -6420,6 +10047,15 @@ macro_rules! contract_pre_gamma_link {
             "Contract gamma_link: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract gamma_link: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `gamma_link`.
+/// Check after computation: `contract_inv_gamma_link!(result_expr)`
+macro_rules! contract_inv_gamma_link {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6436,6 +10072,15 @@ macro_rules! contract_pre_irls_fit {
     }};
 }
 
+/// Invariants for equation `irls_fit`.
+/// Check after computation: `contract_inv_irls_fit!(result_expr)`
+macro_rules! contract_inv_irls_fit {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `poisson_link`.
 /// Domain-specific. Call: `contract_pre_poisson_link!(slice_expr)`
 macro_rules! contract_pre_poisson_link {
@@ -6446,6 +10091,15 @@ macro_rules! contract_pre_poisson_link {
             "Contract poisson_link: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract poisson_link: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `poisson_link`.
+/// Check after computation: `contract_inv_poisson_link!(result_expr)`
+macro_rules! contract_inv_poisson_link {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6461,12 +10115,30 @@ macro_rules! contract_pre_gcn_aggregate {
     }};
 }
 
+/// Invariants for equation `gcn_aggregate`.
+/// Check after computation: `contract_inv_gcn_aggregate!(result_expr)`
+macro_rules! contract_inv_gcn_aggregate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `global_max_pool`.
 /// Call at function entry: `contract_pre_global_max_pool!(input_expr)`
 macro_rules! contract_pre_global_max_pool {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `global_max_pool`.
+/// Check after computation: `contract_inv_global_max_pool!(result_expr)`
+macro_rules! contract_inv_global_max_pool {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6479,12 +10151,30 @@ macro_rules! contract_pre_global_mean_pool {
     }};
 }
 
+/// Invariants for equation `global_mean_pool`.
+/// Check after computation: `contract_inv_global_mean_pool!(result_expr)`
+macro_rules! contract_inv_global_mean_pool {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `message_passing`.
 /// Call at function entry: `contract_pre_message_passing!(input_expr)`
 macro_rules! contract_pre_message_passing {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `message_passing`.
+/// Check after computation: `contract_inv_message_passing!(result_expr)`
+macro_rules! contract_inv_message_passing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6500,6 +10190,15 @@ macro_rules! contract_pre_adaptive_sampling {
     }};
 }
 
+/// Invariants for equation `adaptive_sampling`.
+/// Check after computation: `contract_inv_adaptive_sampling!(result_expr)`
+macro_rules! contract_inv_adaptive_sampling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `trace_capture`.
 /// Call at function entry: `contract_pre_trace_capture!(input_expr)`
 macro_rules! contract_pre_trace_capture {
@@ -6509,12 +10208,30 @@ macro_rules! contract_pre_trace_capture {
     }};
 }
 
+/// Invariants for equation `trace_capture`.
+/// Check after computation: `contract_inv_trace_capture!(result_expr)`
+macro_rules! contract_inv_trace_capture {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `trace_validate`.
 /// Call at function entry: `contract_pre_trace_validate!(input_expr)`
 macro_rules! contract_pre_trace_validate {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `trace_validate`.
+/// Check after computation: `contract_inv_trace_validate!(result_expr)`
+macro_rules! contract_inv_trace_validate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6532,12 +10249,30 @@ macro_rules! contract_pre_context_health {
     }};
 }
 
+/// Invariants for equation `context_health`.
+/// Check after computation: `contract_inv_context_health!(result_expr)`
+macro_rules! contract_inv_context_health {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `cuda_graph_guard`.
 /// Call at function entry: `contract_pre_cuda_graph_guard!(input_expr)`
 macro_rules! contract_pre_cuda_graph_guard {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `cuda_graph_guard`.
+/// Check after computation: `contract_inv_cuda_graph_guard!(result_expr)`
+macro_rules! contract_inv_cuda_graph_guard {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6552,6 +10287,15 @@ macro_rules! contract_pre_culink_skip {
     }};
 }
 
+/// Invariants for equation `culink_skip`.
+/// Check after computation: `contract_inv_culink_skip!(result_expr)`
+macro_rules! contract_inv_culink_skip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `fp8_architecture_guard`.
 /// Domain-specific. Call: `contract_pre_fp8_architecture_guard!(slice_expr)`
 macro_rules! contract_pre_fp8_architecture_guard {
@@ -6560,6 +10304,15 @@ macro_rules! contract_pre_fp8_architecture_guard {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract fp8_architecture_guard: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `fp8_architecture_guard`.
+/// Check after computation: `contract_inv_fp8_architecture_guard!(result_expr)`
+macro_rules! contract_inv_fp8_architecture_guard {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6575,12 +10328,30 @@ macro_rules! contract_pre_decode_audio {
     }};
 }
 
+/// Invariants for equation `decode_audio`.
+/// Check after computation: `contract_inv_decode_audio!(result_expr)`
+macro_rules! contract_inv_decode_audio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `decode_video`.
 /// Domain-specific. Call: `contract_pre_decode_video!(slice_expr)`
 macro_rules! contract_pre_decode_video {
     () => {{}};
     ($input:expr) => {{
         let _pv_packet = &$input;
+    }};
+}
+
+/// Invariants for equation `decode_video`.
+/// Check after computation: `contract_inv_decode_video!(result_expr)`
+macro_rules! contract_inv_decode_video {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6598,6 +10369,15 @@ macro_rules! contract_pre_brick_ordering {
     }};
 }
 
+/// Invariants for equation `brick_ordering`.
+/// Check after computation: `contract_inv_brick_ordering!(result_expr)`
+macro_rules! contract_inv_brick_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `graph_disable`.
 /// Domain-specific. Call: `contract_pre_graph_disable!(slice_expr)`
 macro_rules! contract_pre_graph_disable {
@@ -6606,6 +10386,15 @@ macro_rules! contract_pre_graph_disable {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract graph_disable: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `graph_disable`.
+/// Check after computation: `contract_inv_graph_disable!(result_expr)`
+macro_rules! contract_inv_graph_disable {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6620,6 +10409,15 @@ macro_rules! contract_pre_report_completeness {
     }};
 }
 
+/// Invariants for equation `report_completeness`.
+/// Check after computation: `contract_inv_report_completeness!(result_expr)`
+macro_rules! contract_inv_report_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `report_denominator`.
 /// Domain-specific. Call: `contract_pre_report_denominator!(slice_expr)`
 macro_rules! contract_pre_report_denominator {
@@ -6628,6 +10426,15 @@ macro_rules! contract_pre_report_denominator {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract report_denominator: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `report_denominator`.
+/// Check after computation: `contract_inv_report_denominator!(result_expr)`
+macro_rules! contract_inv_report_denominator {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6642,6 +10449,15 @@ macro_rules! contract_pre_report_fidelity {
     }};
 }
 
+/// Invariants for equation `report_fidelity`.
+/// Check after computation: `contract_inv_report_fidelity!(result_expr)`
+macro_rules! contract_inv_report_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `report_metadata`.
 /// Domain-specific. Call: `contract_pre_report_metadata!(slice_expr)`
 macro_rules! contract_pre_report_metadata {
@@ -6650,6 +10466,15 @@ macro_rules! contract_pre_report_metadata {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract report_metadata: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `report_metadata`.
+/// Check after computation: `contract_inv_report_metadata!(result_expr)`
+macro_rules! contract_inv_report_metadata {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6664,6 +10489,15 @@ macro_rules! contract_pre_sync_verification {
     }};
 }
 
+/// Invariants for equation `sync_verification`.
+/// Check after computation: `contract_inv_sync_verification!(result_expr)`
+macro_rules! contract_inv_sync_verification {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `token_accounting`.
 /// Domain-specific. Call: `contract_pre_token_accounting!(slice_expr)`
 macro_rules! contract_pre_token_accounting {
@@ -6675,6 +10509,15 @@ macro_rules! contract_pre_token_accounting {
     }};
 }
 
+/// Invariants for equation `token_accounting`.
+/// Check after computation: `contract_inv_token_accounting!(result_expr)`
+macro_rules! contract_inv_token_accounting {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `wall_coverage`.
 /// Domain-specific. Call: `contract_pre_wall_coverage!(slice_expr)`
 macro_rules! contract_pre_wall_coverage {
@@ -6683,6 +10526,15 @@ macro_rules! contract_pre_wall_coverage {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract wall_coverage: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `wall_coverage`.
+/// Check after computation: `contract_inv_wall_coverage!(result_expr)`
+macro_rules! contract_inv_wall_coverage {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6700,6 +10552,15 @@ macro_rules! contract_pre_backend_priority {
     }};
 }
 
+/// Invariants for equation `backend_priority`.
+/// Check after computation: `contract_inv_backend_priority!(result_expr)`
+macro_rules! contract_inv_backend_priority {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `bandwidth_bound_theorem`.
 /// Domain-specific. Call: `contract_pre_bandwidth_bound_theorem!(slice_expr)`
 macro_rules! contract_pre_bandwidth_bound_theorem {
@@ -6708,6 +10569,15 @@ macro_rules! contract_pre_bandwidth_bound_theorem {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract bandwidth_bound_theorem: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `bandwidth_bound_theorem`.
+/// Check after computation: `contract_inv_bandwidth_bound_theorem!(result_expr)`
+macro_rules! contract_inv_bandwidth_bound_theorem {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6722,6 +10592,15 @@ macro_rules! contract_pre_jit_compilation_correctness {
     }};
 }
 
+/// Invariants for equation `jit_compilation_correctness`.
+/// Check after computation: `contract_inv_jit_compilation_correctness!(result_expr)`
+macro_rules! contract_inv_jit_compilation_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `multi_backend_parity`.
 /// Domain-specific. Call: `contract_pre_multi_backend_parity!(slice_expr)`
 macro_rules! contract_pre_multi_backend_parity {
@@ -6730,6 +10609,15 @@ macro_rules! contract_pre_multi_backend_parity {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract multi_backend_parity: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `multi_backend_parity`.
+/// Check after computation: `contract_inv_multi_backend_parity!(result_expr)`
+macro_rules! contract_inv_multi_backend_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6747,6 +10635,15 @@ macro_rules! contract_pre_pcie_overhead {
     }};
 }
 
+/// Invariants for equation `pcie_overhead`.
+/// Check after computation: `contract_inv_pcie_overhead!(result_expr)`
+macro_rules! contract_inv_pcie_overhead {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `throughput_target`.
 /// Domain-specific. Call: `contract_pre_throughput_target!(slice_expr)`
 macro_rules! contract_pre_throughput_target {
@@ -6755,6 +10652,15 @@ macro_rules! contract_pre_throughput_target {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract throughput_target: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `throughput_target`.
+/// Check after computation: `contract_inv_throughput_target!(result_expr)`
+macro_rules! contract_inv_throughput_target {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6772,6 +10678,15 @@ macro_rules! contract_pre_gqa {
     }};
 }
 
+/// Invariants for equation `gqa`.
+/// Check after computation: `contract_inv_gqa!(result_expr)`
+macro_rules! contract_inv_gqa {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/graph-centrality-v1.yaml — DO NOT EDIT
 // Contract: graph-centrality-v1
 
@@ -6784,12 +10699,30 @@ macro_rules! contract_pre_betweenness {
     }};
 }
 
+/// Invariants for equation `betweenness`.
+/// Check after computation: `contract_inv_betweenness!(result_expr)`
+macro_rules! contract_inv_betweenness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `closeness`.
 /// Call at function entry: `contract_pre_closeness!(input_expr)`
 macro_rules! contract_pre_closeness {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `closeness`.
+/// Check after computation: `contract_inv_closeness!(result_expr)`
+macro_rules! contract_inv_closeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6802,12 +10735,30 @@ macro_rules! contract_pre_degree {
     }};
 }
 
+/// Invariants for equation `degree`.
+/// Check after computation: `contract_inv_degree!(result_expr)`
+macro_rules! contract_inv_degree {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `eigenvector`.
 /// Call at function entry: `contract_pre_eigenvector!(input_expr)`
 macro_rules! contract_pre_eigenvector {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `eigenvector`.
+/// Check after computation: `contract_inv_eigenvector!(result_expr)`
+macro_rules! contract_inv_eigenvector {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6820,12 +10771,30 @@ macro_rules! contract_pre_harmonic {
     }};
 }
 
+/// Invariants for equation `harmonic`.
+/// Check after computation: `contract_inv_harmonic!(result_expr)`
+macro_rules! contract_inv_harmonic {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `katz`.
 /// Call at function entry: `contract_pre_katz!(input_expr)`
 macro_rules! contract_pre_katz {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `katz`.
+/// Check after computation: `contract_inv_katz!(result_expr)`
+macro_rules! contract_inv_katz {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -6844,6 +10813,15 @@ macro_rules! contract_pre_bm25_scoring {
 /// Postconditions for equation `bm25_scoring`.
 /// Call before return: `contract_post_bm25_scoring!(result_expr)`
 macro_rules! contract_post_bm25_scoring {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `bm25_scoring`.
+/// Check after computation: `contract_inv_bm25_scoring!(result_expr)`
+macro_rules! contract_inv_bm25_scoring {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -6876,6 +10854,15 @@ macro_rules! contract_post_csr_construction {
     }};
 }
 
+/// Invariants for equation `csr_construction`.
+/// Check after computation: `contract_inv_csr_construction!(result_expr)`
+macro_rules! contract_inv_csr_construction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `csr_construction`.
 macro_rules! contract_csr_construction {
     ($input:expr, $body:expr) => {{
@@ -6898,6 +10885,15 @@ macro_rules! contract_pre_fts5_consistency {
 /// Postconditions for equation `fts5_consistency`.
 /// Call before return: `contract_post_fts5_consistency!(result_expr)`
 macro_rules! contract_post_fts5_consistency {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `fts5_consistency`.
+/// Check after computation: `contract_inv_fts5_consistency!(result_expr)`
+macro_rules! contract_inv_fts5_consistency {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -6930,6 +10926,15 @@ macro_rules! contract_post_pagerank_convergence {
     }};
 }
 
+/// Invariants for equation `pagerank_convergence`.
+/// Check after computation: `contract_inv_pagerank_convergence!(result_expr)`
+macro_rules! contract_inv_pagerank_convergence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `pagerank_convergence`.
 macro_rules! contract_pagerank_convergence {
     ($input:expr, $body:expr) => {{
@@ -6957,6 +10962,15 @@ macro_rules! contract_post_sqlite_roundtrip {
     }};
 }
 
+/// Invariants for equation `sqlite_roundtrip`.
+/// Check after computation: `contract_inv_sqlite_roundtrip!(result_expr)`
+macro_rules! contract_inv_sqlite_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `sqlite_roundtrip`.
 macro_rules! contract_sqlite_roundtrip {
     ($input:expr, $body:expr) => {{
@@ -6979,12 +10993,30 @@ macro_rules! contract_pre_bfs_correctness {
     }};
 }
 
+/// Invariants for equation `bfs_correctness`.
+/// Check after computation: `contract_inv_bfs_correctness!(result_expr)`
+macro_rules! contract_inv_bfs_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pagerank_convergence`.
 /// Domain-specific. Call: `contract_pre_pagerank_convergence!(slice_expr)`
 macro_rules! contract_pre_pagerank_convergence {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `pagerank_convergence`.
+/// Check after computation: `contract_inv_pagerank_convergence!(result_expr)`
+macro_rules! contract_inv_pagerank_convergence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7003,6 +11035,15 @@ macro_rules! contract_pre_cors_negotiation {
 /// Postconditions for equation `cors_negotiation`.
 /// Call before return: `contract_post_cors_negotiation!(result_expr)`
 macro_rules! contract_post_cors_negotiation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cors_negotiation`.
+/// Check after computation: `contract_inv_cors_negotiation!(result_expr)`
+macro_rules! contract_inv_cors_negotiation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7035,6 +11076,15 @@ macro_rules! contract_post_error_envelope_preservation {
     }};
 }
 
+/// Invariants for equation `error_envelope_preservation`.
+/// Check after computation: `contract_inv_error_envelope_preservation!(result_expr)`
+macro_rules! contract_inv_error_envelope_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `error_envelope_preservation`.
 macro_rules! contract_error_envelope_preservation {
     ($input:expr, $body:expr) => {{
@@ -7062,6 +11112,15 @@ macro_rules! contract_post_request_response_schema {
     }};
 }
 
+/// Invariants for equation `request_response_schema`.
+/// Check after computation: `contract_inv_request_response_schema!(result_expr)`
+macro_rules! contract_inv_request_response_schema {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `request_response_schema`.
 macro_rules! contract_request_response_schema {
     ($input:expr, $body:expr) => {{
@@ -7084,6 +11143,15 @@ macro_rules! contract_pre_timeout_honoring {
 /// Postconditions for equation `timeout_honoring`.
 /// Call before return: `contract_post_timeout_honoring!(result_expr)`
 macro_rules! contract_post_timeout_honoring {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `timeout_honoring`.
+/// Check after computation: `contract_inv_timeout_honoring!(result_expr)`
+macro_rules! contract_inv_timeout_honoring {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7119,6 +11187,15 @@ macro_rules! contract_post_body_schema_compliance {
     }};
 }
 
+/// Invariants for equation `body_schema_compliance`.
+/// Check after computation: `contract_inv_body_schema_compliance!(result_expr)`
+macro_rules! contract_inv_body_schema_compliance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `body_schema_compliance`.
 macro_rules! contract_body_schema_compliance {
     ($input:expr, $body:expr) => {{
@@ -7141,6 +11218,15 @@ macro_rules! contract_pre_max_tokens_cap {
 /// Postconditions for equation `max_tokens_cap`.
 /// Call before return: `contract_post_max_tokens_cap!(result_expr)`
 macro_rules! contract_post_max_tokens_cap {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `max_tokens_cap`.
+/// Check after computation: `contract_inv_max_tokens_cap!(result_expr)`
+macro_rules! contract_inv_max_tokens_cap {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7173,6 +11259,15 @@ macro_rules! contract_post_response_schema {
     }};
 }
 
+/// Invariants for equation `response_schema`.
+/// Check after computation: `contract_inv_response_schema!(result_expr)`
+macro_rules! contract_inv_response_schema {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `response_schema`.
 macro_rules! contract_response_schema {
     ($input:expr, $body:expr) => {{
@@ -7195,6 +11290,15 @@ macro_rules! contract_pre_thinking_block_strip {
 /// Postconditions for equation `thinking_block_strip`.
 /// Call before return: `contract_post_thinking_block_strip!(result_expr)`
 macro_rules! contract_post_thinking_block_strip {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `thinking_block_strip`.
+/// Check after computation: `contract_inv_thinking_block_strip!(result_expr)`
+macro_rules! contract_inv_thinking_block_strip {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7224,6 +11328,15 @@ macro_rules! contract_pre_tool_format_fidelity {
 /// Postconditions for equation `tool_format_fidelity`.
 /// Call before return: `contract_post_tool_format_fidelity!(result_expr)`
 macro_rules! contract_post_tool_format_fidelity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tool_format_fidelity`.
+/// Check after computation: `contract_inv_tool_format_fidelity!(result_expr)`
+macro_rules! contract_inv_tool_format_fidelity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7259,6 +11372,15 @@ macro_rules! contract_post_error_propagation {
     }};
 }
 
+/// Invariants for equation `error_propagation`.
+/// Check after computation: `contract_inv_error_propagation!(result_expr)`
+macro_rules! contract_inv_error_propagation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `error_propagation`.
 macro_rules! contract_error_propagation {
     ($input:expr, $body:expr) => {{
@@ -7281,6 +11403,15 @@ macro_rules! contract_pre_lru_cache_eviction {
 /// Postconditions for equation `lru_cache_eviction`.
 /// Call before return: `contract_post_lru_cache_eviction!(result_expr)`
 macro_rules! contract_post_lru_cache_eviction {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `lru_cache_eviction`.
+/// Check after computation: `contract_inv_lru_cache_eviction!(result_expr)`
+macro_rules! contract_inv_lru_cache_eviction {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7313,6 +11444,15 @@ macro_rules! contract_post_multi_tier_routing {
     }};
 }
 
+/// Invariants for equation `multi_tier_routing`.
+/// Check after computation: `contract_inv_multi_tier_routing!(result_expr)`
+macro_rules! contract_inv_multi_tier_routing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `multi_tier_routing`.
 macro_rules! contract_multi_tier_routing {
     ($input:expr, $body:expr) => {{
@@ -7335,6 +11475,15 @@ macro_rules! contract_pre_request_construction {
 /// Postconditions for equation `request_construction`.
 /// Call before return: `contract_post_request_construction!(result_expr)`
 macro_rules! contract_post_request_construction {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `request_construction`.
+/// Check after computation: `contract_inv_request_construction!(result_expr)`
+macro_rules! contract_inv_request_construction {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7367,6 +11516,15 @@ macro_rules! contract_post_response_parsing {
     }};
 }
 
+/// Invariants for equation `response_parsing`.
+/// Check after computation: `contract_inv_response_parsing!(result_expr)`
+macro_rules! contract_inv_response_parsing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `response_parsing`.
 macro_rules! contract_response_parsing {
     ($input:expr, $body:expr) => {{
@@ -7389,6 +11547,15 @@ macro_rules! contract_pre_ssrf_prevention {
 /// Postconditions for equation `ssrf_prevention`.
 /// Call before return: `contract_post_ssrf_prevention!(result_expr)`
 macro_rules! contract_post_ssrf_prevention {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `ssrf_prevention`.
+/// Check after computation: `contract_inv_ssrf_prevention!(result_expr)`
+macro_rules! contract_inv_ssrf_prevention {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -7421,6 +11588,15 @@ macro_rules! contract_post_url_validation {
     }};
 }
 
+/// Invariants for equation `url_validation`.
+/// Check after computation: `contract_inv_url_validation!(result_expr)`
+macro_rules! contract_inv_url_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `url_validation`.
 macro_rules! contract_url_validation {
     ($input:expr, $body:expr) => {{
@@ -7445,6 +11621,15 @@ macro_rules! contract_pre_conv1d_causal {
     }};
 }
 
+/// Invariants for equation `conv1d_causal`.
+/// Check after computation: `contract_inv_conv1d_causal!(result_expr)`
+macro_rules! contract_inv_conv1d_causal {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `head_grouping`.
 /// Domain-specific. Call: `contract_pre_head_grouping!(slice_expr)`
 macro_rules! contract_pre_head_grouping {
@@ -7455,6 +11640,15 @@ macro_rules! contract_pre_head_grouping {
             "Contract head_grouping: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract head_grouping: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `head_grouping`.
+/// Check after computation: `contract_inv_head_grouping!(result_expr)`
+macro_rules! contract_inv_head_grouping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7471,6 +11665,15 @@ macro_rules! contract_pre_hybrid_dispatch {
     }};
 }
 
+/// Invariants for equation `hybrid_dispatch`.
+/// Check after computation: `contract_inv_hybrid_dispatch!(result_expr)`
+macro_rules! contract_inv_hybrid_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `linear_associativity`.
 /// Domain-specific. Call: `contract_pre_linear_associativity!(slice_expr)`
 macro_rules! contract_pre_linear_associativity {
@@ -7481,6 +11684,15 @@ macro_rules! contract_pre_linear_associativity {
             "Contract linear_associativity: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract linear_associativity: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `linear_associativity`.
+/// Check after computation: `contract_inv_linear_associativity!(result_expr)`
+macro_rules! contract_inv_linear_associativity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7497,6 +11709,15 @@ macro_rules! contract_pre_linear_no_softmax {
     }};
 }
 
+/// Invariants for equation `linear_no_softmax`.
+/// Check after computation: `contract_inv_linear_no_softmax!(result_expr)`
+macro_rules! contract_inv_linear_no_softmax {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `linear_shapes`.
 /// Domain-specific. Call: `contract_pre_linear_shapes!(slice_expr)`
 macro_rules! contract_pre_linear_shapes {
@@ -7507,6 +11728,15 @@ macro_rules! contract_pre_linear_shapes {
             "Contract linear_shapes: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract linear_shapes: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `linear_shapes`.
+/// Check after computation: `contract_inv_linear_shapes!(result_expr)`
+macro_rules! contract_inv_linear_shapes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7524,6 +11754,15 @@ macro_rules! contract_pre_fastica {
     }};
 }
 
+/// Invariants for equation `fastica`.
+/// Check after computation: `contract_inv_fastica!(result_expr)`
+macro_rules! contract_inv_fastica {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mixing`.
 /// Domain-specific. Call: `contract_pre_mixing!(slice_expr)`
 macro_rules! contract_pre_mixing {
@@ -7535,6 +11774,15 @@ macro_rules! contract_pre_mixing {
     }};
 }
 
+/// Invariants for equation `mixing`.
+/// Check after computation: `contract_inv_mixing!(result_expr)`
+macro_rules! contract_inv_mixing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `unmixing`.
 /// Domain-specific. Call: `contract_pre_unmixing!(slice_expr)`
 macro_rules! contract_pre_unmixing {
@@ -7543,6 +11791,15 @@ macro_rules! contract_pre_unmixing {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract unmixing: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `unmixing`.
+/// Check after computation: `contract_inv_unmixing!(result_expr)`
+macro_rules! contract_inv_unmixing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7560,12 +11817,30 @@ macro_rules! contract_pre_decode_step {
     }};
 }
 
+/// Invariants for equation `decode_step`.
+/// Check after computation: `contract_inv_decode_step!(result_expr)`
+macro_rules! contract_inv_decode_step {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `hybrid_layer_schedule`.
 /// Call at function entry: `contract_pre_hybrid_layer_schedule!(input_expr)`
 macro_rules! contract_pre_hybrid_layer_schedule {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `hybrid_layer_schedule`.
+/// Check after computation: `contract_inv_hybrid_layer_schedule!(result_expr)`
+macro_rules! contract_inv_hybrid_layer_schedule {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7580,6 +11855,15 @@ macro_rules! contract_pre_kv_cache_growth {
     }};
 }
 
+/// Invariants for equation `kv_cache_growth`.
+/// Check after computation: `contract_inv_kv_cache_growth!(result_expr)`
+macro_rules! contract_inv_kv_cache_growth {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `layer_composition`.
 /// Domain-specific. Call: `contract_pre_layer_composition!(slice_expr)`
 macro_rules! contract_pre_layer_composition {
@@ -7588,6 +11872,15 @@ macro_rules! contract_pre_layer_composition {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract layer_composition: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `layer_composition`.
+/// Check after computation: `contract_inv_layer_composition!(result_expr)`
+macro_rules! contract_inv_layer_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7600,12 +11893,30 @@ macro_rules! contract_pre_prefill_phase {
     }};
 }
 
+/// Invariants for equation `prefill_phase`.
+/// Check after computation: `contract_inv_prefill_phase!(result_expr)`
+macro_rules! contract_inv_prefill_phase {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `residual_stream`.
 /// Call at function entry: `contract_pre_residual_stream!(input_expr)`
 macro_rules! contract_pre_residual_stream {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `residual_stream`.
+/// Check after computation: `contract_inv_residual_stream!(result_expr)`
+macro_rules! contract_inv_residual_stream {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7621,6 +11932,15 @@ macro_rules! contract_pre_decode_step {
     }};
 }
 
+/// Invariants for equation `decode_step`.
+/// Check after computation: `contract_inv_decode_step!(result_expr)`
+macro_rules! contract_inv_decode_step {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `prefill_phase`.
 /// Domain-specific. Call: `contract_pre_prefill_phase!(slice_expr)`
 macro_rules! contract_pre_prefill_phase {
@@ -7632,12 +11952,30 @@ macro_rules! contract_pre_prefill_phase {
     }};
 }
 
+/// Invariants for equation `prefill_phase`.
+/// Check after computation: `contract_inv_prefill_phase!(result_expr)`
+macro_rules! contract_inv_prefill_phase {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `sampling_temperature`.
 /// Domain-specific. Call: `contract_pre_sampling_temperature!(slice_expr)`
 macro_rules! contract_pre_sampling_temperature {
     () => {{}};
     ($input:expr) => {{
         let _pv_logits = &$input;
+    }};
+}
+
+/// Invariants for equation `sampling_temperature`.
+/// Check after computation: `contract_inv_sampling_temperature!(result_expr)`
+macro_rules! contract_inv_sampling_temperature {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7655,6 +11993,15 @@ macro_rules! contract_pre_dequant_dot {
     }};
 }
 
+/// Invariants for equation `dequant_dot`.
+/// Check after computation: `contract_inv_dequant_dot!(result_expr)`
+macro_rules! contract_inv_dequant_dot {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `per_row_scale`.
 /// Domain-specific. Call: `contract_pre_per_row_scale!(slice_expr)`
 macro_rules! contract_pre_per_row_scale {
@@ -7666,6 +12013,15 @@ macro_rules! contract_pre_per_row_scale {
     }};
 }
 
+/// Invariants for equation `per_row_scale`.
+/// Check after computation: `contract_inv_per_row_scale!(result_expr)`
+macro_rules! contract_inv_per_row_scale {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `quantize`.
 /// Domain-specific. Call: `contract_pre_quantize!(slice_expr)`
 macro_rules! contract_pre_quantize {
@@ -7674,6 +12030,15 @@ macro_rules! contract_pre_quantize {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract quantize: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `quantize`.
+/// Check after computation: `contract_inv_quantize!(result_expr)`
+macro_rules! contract_inv_quantize {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7691,6 +12056,15 @@ macro_rules! contract_pre_iterator {
     }};
 }
 
+/// Invariants for equation `iterator`.
+/// Check after computation: `contract_inv_iterator!(result_expr)`
+macro_rules! contract_inv_iterator {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/kernel-fusion-v1.yaml — DO NOT EDIT
 // Contract: kernel-fusion-v1
 
@@ -7703,12 +12077,30 @@ macro_rules! contract_pre_fusion_decision_registry {
     }};
 }
 
+/// Invariants for equation `fusion_decision_registry`.
+/// Check after computation: `contract_inv_fusion_decision_registry!(result_expr)`
+macro_rules! contract_inv_fusion_decision_registry {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `fusion_performance`.
 /// Domain-specific. Call: `contract_pre_fusion_performance!(slice_expr)`
 macro_rules! contract_pre_fusion_performance {
     () => {{}};
     ($input:expr) => {{
         let _pv_benchmark = &$input;
+    }};
+}
+
+/// Invariants for equation `fusion_performance`.
+/// Check after computation: `contract_inv_fusion_performance!(result_expr)`
+macro_rules! contract_inv_fusion_performance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7737,6 +12129,15 @@ macro_rules! contract_pre_bsum_budget {
     }};
 }
 
+/// Invariants for equation `bsum_budget`.
+/// Check after computation: `contract_inv_bsum_budget!(result_expr)`
+macro_rules! contract_inv_bsum_budget {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `per_layer_decomposition`.
 /// Domain-specific. Call: `contract_pre_per_layer_decomposition!(slice_expr)`
 macro_rules! contract_pre_per_layer_decomposition {
@@ -7748,6 +12149,15 @@ macro_rules! contract_pre_per_layer_decomposition {
     }};
 }
 
+/// Invariants for equation `per_layer_decomposition`.
+/// Check after computation: `contract_inv_per_layer_decomposition!(result_expr)`
+macro_rules! contract_inv_per_layer_decomposition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `per_token_launches`.
 /// Domain-specific. Call: `contract_pre_per_token_launches!(slice_expr)`
 macro_rules! contract_pre_per_token_launches {
@@ -7756,6 +12166,15 @@ macro_rules! contract_pre_per_token_launches {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract per_token_launches: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `per_token_launches`.
+/// Check after computation: `contract_inv_per_token_launches!(result_expr)`
+macro_rules! contract_inv_per_token_launches {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7775,6 +12194,15 @@ macro_rules! contract_pre_assignment {
     }};
 }
 
+/// Invariants for equation `assignment`.
+/// Check after computation: `contract_inv_assignment!(result_expr)`
+macro_rules! contract_inv_assignment {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `objective`.
 /// Domain-specific. Call: `contract_pre_objective!(slice_expr)`
 macro_rules! contract_pre_objective {
@@ -7785,6 +12213,15 @@ macro_rules! contract_pre_objective {
             "Contract objective: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract objective: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `objective`.
+/// Check after computation: `contract_inv_objective!(result_expr)`
+macro_rules! contract_inv_objective {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7801,6 +12238,15 @@ macro_rules! contract_pre_update {
     }};
 }
 
+/// Invariants for equation `update`.
+/// Check after computation: `contract_inv_update!(result_expr)`
+macro_rules! contract_inv_update {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/kv-cache-equivalence-v1.yaml — DO NOT EDIT
 // Contract: kv-cache-equivalence-v1
 
@@ -7813,12 +12259,30 @@ macro_rules! contract_pre_batched_serial_equivalence {
     }};
 }
 
+/// Invariants for equation `batched_serial_equivalence`.
+/// Check after computation: `contract_inv_batched_serial_equivalence!(result_expr)`
+macro_rules! contract_inv_batched_serial_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `fused_kernel`.
 /// Call at function entry: `contract_pre_fused_kernel!(input_expr)`
 macro_rules! contract_pre_fused_kernel {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `fused_kernel`.
+/// Check after computation: `contract_inv_fused_kernel!(result_expr)`
+macro_rules! contract_inv_fused_kernel {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7831,12 +12295,30 @@ macro_rules! contract_pre_page_shape {
     }};
 }
 
+/// Invariants for equation `page_shape`.
+/// Check after computation: `contract_inv_page_shape!(result_expr)`
+macro_rules! contract_inv_page_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `prefill_incremental`.
 /// Call at function entry: `contract_pre_prefill_incremental!(input_expr)`
 macro_rules! contract_pre_prefill_incremental {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `prefill_incremental`.
+/// Check after computation: `contract_inv_prefill_incremental!(result_expr)`
+macro_rules! contract_inv_prefill_incremental {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7852,12 +12334,30 @@ macro_rules! contract_pre_bias_absence {
     }};
 }
 
+/// Invariants for equation `bias_absence`.
+/// Check after computation: `contract_inv_bias_absence!(result_expr)`
+macro_rules! contract_inv_bias_absence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `hybrid_accounting`.
 /// Call at function entry: `contract_pre_hybrid_accounting!(input_expr)`
 macro_rules! contract_pre_hybrid_accounting {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `hybrid_accounting`.
+/// Check after computation: `contract_inv_hybrid_accounting!(result_expr)`
+macro_rules! contract_inv_hybrid_accounting {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7872,6 +12372,15 @@ macro_rules! contract_pre_per_token_per_layer {
     }};
 }
 
+/// Invariants for equation `per_token_per_layer`.
+/// Check after computation: `contract_inv_per_token_per_layer!(result_expr)`
+macro_rules! contract_inv_per_token_per_layer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `total_kv_memory`.
 /// Call at function entry: `contract_pre_total_kv_memory!(input_expr)`
 macro_rules! contract_pre_total_kv_memory {
@@ -7881,12 +12390,30 @@ macro_rules! contract_pre_total_kv_memory {
     }};
 }
 
+/// Invariants for equation `total_kv_memory`.
+/// Check after computation: `contract_inv_total_kv_memory!(result_expr)`
+macro_rules! contract_inv_total_kv_memory {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `zero_input_identity`.
 /// Call at function entry: `contract_pre_zero_input_identity!(input_expr)`
 macro_rules! contract_pre_zero_input_identity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `zero_input_identity`.
+/// Check after computation: `contract_inv_zero_input_identity!(result_expr)`
+macro_rules! contract_inv_zero_input_identity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7901,6 +12428,15 @@ macro_rules! contract_pre_cosine_parity_gate {
         let _pv_cpu_logits = &$input;
         debug_assert!(_pv_cpu_logits.len() > 0,
             "Contract cosine_parity_gate: precondition violated — cpu_logits.len() > 0");
+    }};
+}
+
+/// Invariants for equation `cosine_parity_gate`.
+/// Check after computation: `contract_inv_cosine_parity_gate!(result_expr)`
+macro_rules! contract_inv_cosine_parity_gate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7919,6 +12455,15 @@ macro_rules! contract_pre_layer_parity {
     () => {{}};
     ($input:expr) => {{
         let _pv_cpu_output = &$input;
+    }};
+}
+
+/// Invariants for equation `layer_parity`.
+/// Check after computation: `contract_inv_layer_parity!(result_expr)`
+macro_rules! contract_inv_layer_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -7947,6 +12492,15 @@ macro_rules! contract_post_layernorm {
     }};
 }
 
+/// Invariants for equation `layernorm`.
+/// Check after computation: `contract_inv_layernorm!(result_expr)`
+macro_rules! contract_inv_layernorm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `layernorm`.
 macro_rules! contract_layernorm {
     ($input:expr, $body:expr) => {{
@@ -7970,6 +12524,15 @@ macro_rules! contract_pre_statistics {
     }};
 }
 
+/// Invariants for equation `statistics`.
+/// Check after computation: `contract_inv_statistics!(result_expr)`
+macro_rules! contract_inv_statistics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/lbfgs-kernel-v1.yaml — DO NOT EDIT
 // Contract: lbfgs-kernel-v1
 
@@ -7984,6 +12547,15 @@ macro_rules! contract_pre_line_search {
     }};
 }
 
+/// Invariants for equation `line_search`.
+/// Check after computation: `contract_inv_line_search!(result_expr)`
+macro_rules! contract_inv_line_search {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `secant_condition`.
 /// Domain-specific. Call: `contract_pre_secant_condition!(slice_expr)`
 macro_rules! contract_pre_secant_condition {
@@ -7992,6 +12564,15 @@ macro_rules! contract_pre_secant_condition {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract secant_condition: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `secant_condition`.
+/// Check after computation: `contract_inv_secant_condition!(result_expr)`
+macro_rules! contract_inv_secant_condition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8006,6 +12587,15 @@ macro_rules! contract_pre_two_loop_recursion {
     }};
 }
 
+/// Invariants for equation `two_loop_recursion`.
+/// Check after computation: `contract_inv_two_loop_recursion!(result_expr)`
+macro_rules! contract_inv_two_loop_recursion {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/learned-position-embedding-v1.yaml — DO NOT EDIT
 // Contract: learned-position-embedding-v1
 
@@ -8017,6 +12607,15 @@ macro_rules! contract_pre_position_embedding {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract position_embedding: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `position_embedding`.
+/// Check after computation: `contract_inv_position_embedding!(result_expr)`
+macro_rules! contract_inv_position_embedding {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8036,6 +12635,15 @@ macro_rules! contract_pre_logistic_predict_proba {
     }};
 }
 
+/// Invariants for equation `logistic_predict_proba`.
+/// Check after computation: `contract_inv_logistic_predict_proba!(result_expr)`
+macro_rules! contract_inv_logistic_predict_proba {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ols_fit`.
 /// Domain-specific. Call: `contract_pre_ols_fit!(slice_expr)`
 macro_rules! contract_pre_ols_fit {
@@ -8046,6 +12654,15 @@ macro_rules! contract_pre_ols_fit {
             "Contract ols_fit: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract ols_fit: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `ols_fit`.
+/// Check after computation: `contract_inv_ols_fit!(result_expr)`
+macro_rules! contract_inv_ols_fit {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8062,6 +12679,15 @@ macro_rules! contract_pre_ols_predict {
     }};
 }
 
+/// Invariants for equation `ols_predict`.
+/// Check after computation: `contract_inv_ols_predict!(result_expr)`
+macro_rules! contract_inv_ols_predict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `r_squared_training`.
 /// Domain-specific. Call: `contract_pre_r_squared_training!(slice_expr)`
 macro_rules! contract_pre_r_squared_training {
@@ -8072,6 +12698,15 @@ macro_rules! contract_pre_r_squared_training {
             "Contract r_squared_training: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract r_squared_training: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `r_squared_training`.
+/// Check after computation: `contract_inv_r_squared_training!(result_expr)`
+macro_rules! contract_inv_r_squared_training {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8089,6 +12724,15 @@ macro_rules! contract_pre_linear_probe {
     }};
 }
 
+/// Invariants for equation `linear_probe`.
+/// Check after computation: `contract_inv_linear_probe!(result_expr)`
+macro_rules! contract_inv_linear_probe {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/linear-projection-v1.yaml — DO NOT EDIT
 // Contract: linear-projection-v1
 
@@ -8103,6 +12747,15 @@ macro_rules! contract_pre_linear_forward {
     }};
 }
 
+/// Invariants for equation `linear_forward`.
+/// Check after computation: `contract_inv_linear_forward!(result_expr)`
+macro_rules! contract_inv_linear_forward {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `linear_no_bias`.
 /// Domain-specific. Call: `contract_pre_linear_no_bias!(slice_expr)`
 macro_rules! contract_pre_linear_no_bias {
@@ -8111,6 +12764,15 @@ macro_rules! contract_pre_linear_no_bias {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract linear_no_bias: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `linear_no_bias`.
+/// Check after computation: `contract_inv_linear_no_bias!(result_expr)`
+macro_rules! contract_inv_linear_no_bias {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8130,6 +12792,15 @@ macro_rules! contract_pre_dare_unbiased {
     }};
 }
 
+/// Invariants for equation `dare_unbiased`.
+/// Check after computation: `contract_inv_dare_unbiased!(result_expr)`
+macro_rules! contract_inv_dare_unbiased {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `eckart_young`.
 /// Domain-specific. Call: `contract_pre_eckart_young!(slice_expr)`
 macro_rules! contract_pre_eckart_young {
@@ -8140,6 +12811,15 @@ macro_rules! contract_pre_eckart_young {
             "Contract eckart_young: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract eckart_young: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `eckart_young`.
+/// Check after computation: `contract_inv_eckart_young!(result_expr)`
+macro_rules! contract_inv_eckart_young {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8156,6 +12836,15 @@ macro_rules! contract_pre_lora_shape {
     }};
 }
 
+/// Invariants for equation `lora_shape`.
+/// Check after computation: `contract_inv_lora_shape!(result_expr)`
+macro_rules! contract_inv_lora_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `shape_preservation`.
 /// Domain-specific. Call: `contract_pre_shape_preservation!(slice_expr)`
 macro_rules! contract_pre_shape_preservation {
@@ -8169,6 +12858,15 @@ macro_rules! contract_pre_shape_preservation {
     }};
 }
 
+/// Invariants for equation `shape_preservation`.
+/// Check after computation: `contract_inv_shape_preservation!(result_expr)`
+macro_rules! contract_inv_shape_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `task_vector`.
 /// Domain-specific. Call: `contract_pre_task_vector!(slice_expr)`
 macro_rules! contract_pre_task_vector {
@@ -8179,6 +12877,15 @@ macro_rules! contract_pre_task_vector {
             "Contract task_vector: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract task_vector: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `task_vector`.
+/// Check after computation: `contract_inv_task_vector!(result_expr)`
+macro_rules! contract_inv_task_vector {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8215,6 +12922,15 @@ macro_rules! contract_lora_forward {
 // Auto-generated from contracts/lora-target-selection-v1.yaml — DO NOT EDIT
 // Contract: lora-target-selection-v1
 
+/// Invariants for equation `lora_contribution`.
+/// Check after computation: `contract_inv_lora_contribution!(result_expr)`
+macro_rules! contract_inv_lora_contribution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/loss-functions-v1.yaml — DO NOT EDIT
 // Contract: loss-functions-v1
 
@@ -8229,6 +12945,15 @@ macro_rules! contract_pre_bce {
     }};
 }
 
+/// Invariants for equation `bce`.
+/// Check after computation: `contract_inv_bce!(result_expr)`
+macro_rules! contract_inv_bce {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `huber`.
 /// Domain-specific. Call: `contract_pre_huber!(slice_expr)`
 macro_rules! contract_pre_huber {
@@ -8237,6 +12962,15 @@ macro_rules! contract_pre_huber {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract huber: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `huber`.
+/// Check after computation: `contract_inv_huber!(result_expr)`
+macro_rules! contract_inv_huber {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8251,6 +12985,15 @@ macro_rules! contract_pre_l1_loss {
     }};
 }
 
+/// Invariants for equation `l1_loss`.
+/// Check after computation: `contract_inv_l1_loss!(result_expr)`
+macro_rules! contract_inv_l1_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mse_loss`.
 /// Domain-specific. Call: `contract_pre_mse_loss!(slice_expr)`
 macro_rules! contract_pre_mse_loss {
@@ -8259,6 +13002,15 @@ macro_rules! contract_pre_mse_loss {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract mse_loss: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `mse_loss`.
+/// Check after computation: `contract_inv_mse_loss!(result_expr)`
+macro_rules! contract_inv_mse_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8273,6 +13025,15 @@ macro_rules! contract_pre_nll {
     }};
 }
 
+/// Invariants for equation `nll`.
+/// Check after computation: `contract_inv_nll!(result_expr)`
+macro_rules! contract_inv_nll {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `smooth_l1`.
 /// Domain-specific. Call: `contract_pre_smooth_l1!(slice_expr)`
 macro_rules! contract_pre_smooth_l1 {
@@ -8281,6 +13042,15 @@ macro_rules! contract_pre_smooth_l1 {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract smooth_l1: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `smooth_l1`.
+/// Check after computation: `contract_inv_smooth_l1!(result_expr)`
+macro_rules! contract_inv_smooth_l1 {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8305,6 +13075,15 @@ macro_rules! contract_post_matmul {
     }};
 }
 
+/// Invariants for equation `matmul`.
+/// Check after computation: `contract_inv_matmul!(result_expr)`
+macro_rules! contract_inv_matmul {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `matmul`.
 macro_rules! contract_matmul {
     ($input:expr, $body:expr) => {{
@@ -8326,6 +13105,15 @@ macro_rules! contract_pre_quantized_dot {
     }};
 }
 
+/// Invariants for equation `quantized_dot`.
+/// Check after computation: `contract_inv_quantized_dot!(result_expr)`
+macro_rules! contract_inv_quantized_dot {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/mcp-protocol-sdk-v1.yaml — DO NOT EDIT
 // Contract: mcp-protocol-sdk-v1
 
@@ -8341,6 +13129,15 @@ macro_rules! contract_pre_batch_request_ordering {
 /// Postconditions for equation `batch_request_ordering`.
 /// Call before return: `contract_post_batch_request_ordering!(result_expr)`
 macro_rules! contract_post_batch_request_ordering {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `batch_request_ordering`.
+/// Check after computation: `contract_inv_batch_request_ordering!(result_expr)`
+macro_rules! contract_inv_batch_request_ordering {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8373,6 +13170,15 @@ macro_rules! contract_post_cancellation_safety {
     }};
 }
 
+/// Invariants for equation `cancellation_safety`.
+/// Check after computation: `contract_inv_cancellation_safety!(result_expr)`
+macro_rules! contract_inv_cancellation_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `cancellation_safety`.
 macro_rules! contract_cancellation_safety {
     ($input:expr, $body:expr) => {{
@@ -8395,6 +13201,15 @@ macro_rules! contract_pre_error_code_mapping {
 /// Postconditions for equation `error_code_mapping`.
 /// Call before return: `contract_post_error_code_mapping!(result_expr)`
 macro_rules! contract_post_error_code_mapping {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `error_code_mapping`.
+/// Check after computation: `contract_inv_error_code_mapping!(result_expr)`
+macro_rules! contract_inv_error_code_mapping {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8427,6 +13242,15 @@ macro_rules! contract_post_jsonrpc_framing {
     }};
 }
 
+/// Invariants for equation `jsonrpc_framing`.
+/// Check after computation: `contract_inv_jsonrpc_framing!(result_expr)`
+macro_rules! contract_inv_jsonrpc_framing {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `jsonrpc_framing`.
 macro_rules! contract_jsonrpc_framing {
     ($input:expr, $body:expr) => {{
@@ -8449,6 +13273,15 @@ macro_rules! contract_pre_payload_limits {
 /// Postconditions for equation `payload_limits`.
 /// Call before return: `contract_post_payload_limits!(result_expr)`
 macro_rules! contract_post_payload_limits {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `payload_limits`.
+/// Check after computation: `contract_inv_payload_limits!(result_expr)`
+macro_rules! contract_inv_payload_limits {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8481,6 +13314,15 @@ macro_rules! contract_post_protocol_version_negotiation {
     }};
 }
 
+/// Invariants for equation `protocol_version_negotiation`.
+/// Check after computation: `contract_inv_protocol_version_negotiation!(result_expr)`
+macro_rules! contract_inv_protocol_version_negotiation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `protocol_version_negotiation`.
 macro_rules! contract_protocol_version_negotiation {
     ($input:expr, $body:expr) => {{
@@ -8503,6 +13345,15 @@ macro_rules! contract_pre_session_lifecycle {
 /// Postconditions for equation `session_lifecycle`.
 /// Call before return: `contract_post_session_lifecycle!(result_expr)`
 macro_rules! contract_post_session_lifecycle {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `session_lifecycle`.
+/// Check after computation: `contract_inv_session_lifecycle!(result_expr)`
+macro_rules! contract_inv_session_lifecycle {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8535,6 +13386,15 @@ macro_rules! contract_post_tool_dispatch_integrity {
     }};
 }
 
+/// Invariants for equation `tool_dispatch_integrity`.
+/// Check after computation: `contract_inv_tool_dispatch_integrity!(result_expr)`
+macro_rules! contract_inv_tool_dispatch_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `tool_dispatch_integrity`.
 macro_rules! contract_tool_dispatch_integrity {
     ($input:expr, $body:expr) => {{
@@ -8557,6 +13417,15 @@ macro_rules! contract_pre_transport_abstraction {
 /// Postconditions for equation `transport_abstraction`.
 /// Call before return: `contract_post_transport_abstraction!(result_expr)`
 macro_rules! contract_post_transport_abstraction {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `transport_abstraction`.
+/// Check after computation: `contract_inv_transport_abstraction!(result_expr)`
+macro_rules! contract_inv_transport_abstraction {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8592,6 +13461,15 @@ macro_rules! contract_post_error_mapping_lossless {
     }};
 }
 
+/// Invariants for equation `error_mapping_lossless`.
+/// Check after computation: `contract_inv_error_mapping_lossless!(result_expr)`
+macro_rules! contract_inv_error_mapping_lossless {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `error_mapping_lossless`.
 macro_rules! contract_error_mapping_lossless {
     ($input:expr, $body:expr) => {{
@@ -8614,6 +13492,15 @@ macro_rules! contract_pre_idempotency {
 /// Postconditions for equation `idempotency`.
 /// Call before return: `contract_post_idempotency!(result_expr)`
 macro_rules! contract_post_idempotency {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `idempotency`.
+/// Check after computation: `contract_inv_idempotency!(result_expr)`
+macro_rules! contract_inv_idempotency {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8646,6 +13533,15 @@ macro_rules! contract_post_session_lifecycle {
     }};
 }
 
+/// Invariants for equation `session_lifecycle`.
+/// Check after computation: `contract_inv_session_lifecycle!(result_expr)`
+macro_rules! contract_inv_session_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `session_lifecycle`.
 macro_rules! contract_session_lifecycle {
     ($input:expr, $body:expr) => {{
@@ -8673,6 +13569,15 @@ macro_rules! contract_post_tool_schema_fidelity {
     }};
 }
 
+/// Invariants for equation `tool_schema_fidelity`.
+/// Check after computation: `contract_inv_tool_schema_fidelity!(result_expr)`
+macro_rules! contract_inv_tool_schema_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `tool_schema_fidelity`.
 macro_rules! contract_tool_schema_fidelity {
     ($input:expr, $body:expr) => {{
@@ -8695,12 +13600,30 @@ macro_rules! contract_pre_error_mapping {
     }};
 }
 
+/// Invariants for equation `error_mapping`.
+/// Check after computation: `contract_inv_error_mapping!(result_expr)`
+macro_rules! contract_inv_error_mapping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `idempotency_classification`.
 /// Call at function entry: `contract_pre_idempotency_classification!(input_expr)`
 macro_rules! contract_pre_idempotency_classification {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `idempotency_classification`.
+/// Check after computation: `contract_inv_idempotency_classification!(result_expr)`
+macro_rules! contract_inv_idempotency_classification {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8713,12 +13636,30 @@ macro_rules! contract_pre_session_state_machine {
     }};
 }
 
+/// Invariants for equation `session_state_machine`.
+/// Check after computation: `contract_inv_session_state_machine!(result_expr)`
+macro_rules! contract_inv_session_state_machine {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `tool_schema_fidelity`.
 /// Domain-specific. Call: `contract_pre_tool_schema_fidelity!(slice_expr)`
 macro_rules! contract_pre_tool_schema_fidelity {
     () => {{}};
     ($input:expr) => {{
         let _pv_tool = &$input;
+    }};
+}
+
+/// Invariants for equation `tool_schema_fidelity`.
+/// Check after computation: `contract_inv_tool_schema_fidelity!(result_expr)`
+macro_rules! contract_inv_tool_schema_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8734,6 +13675,15 @@ macro_rules! contract_pre_codec_dispatch {
     }};
 }
 
+/// Invariants for equation `codec_dispatch`.
+/// Check after computation: `contract_inv_codec_dispatch!(result_expr)`
+macro_rules! contract_inv_codec_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `encode_decode_roundtrip`.
 /// Call at function entry: `contract_pre_encode_decode_roundtrip!(input_expr)`
 macro_rules! contract_pre_encode_decode_roundtrip {
@@ -8743,12 +13693,30 @@ macro_rules! contract_pre_encode_decode_roundtrip {
     }};
 }
 
+/// Invariants for equation `encode_decode_roundtrip`.
+/// Check after computation: `contract_inv_encode_decode_roundtrip!(result_expr)`
+macro_rules! contract_inv_encode_decode_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `frame_integrity`.
 /// Call at function entry: `contract_pre_frame_integrity!(input_expr)`
 macro_rules! contract_pre_frame_integrity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `frame_integrity`.
+/// Check after computation: `contract_inv_frame_integrity!(result_expr)`
+macro_rules! contract_inv_frame_integrity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8766,6 +13734,15 @@ macro_rules! contract_pre_bounds_safety {
     }};
 }
 
+/// Invariants for equation `bounds_safety`.
+/// Check after computation: `contract_inv_bounds_safety!(result_expr)`
+macro_rules! contract_inv_bounds_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `drop_safety`.
 /// Domain-specific. Call: `contract_pre_drop_safety!(slice_expr)`
 macro_rules! contract_pre_drop_safety {
@@ -8774,6 +13751,15 @@ macro_rules! contract_pre_drop_safety {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract drop_safety: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `drop_safety`.
+/// Check after computation: `contract_inv_drop_safety!(result_expr)`
+macro_rules! contract_inv_drop_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8788,6 +13774,15 @@ macro_rules! contract_pre_escape_analysis {
     }};
 }
 
+/// Invariants for equation `escape_analysis`.
+/// Check after computation: `contract_inv_escape_analysis!(result_expr)`
+macro_rules! contract_inv_escape_analysis {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `lifetime_safety`.
 /// Domain-specific. Call: `contract_pre_lifetime_safety!(slice_expr)`
 macro_rules! contract_pre_lifetime_safety {
@@ -8796,6 +13791,15 @@ macro_rules! contract_pre_lifetime_safety {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract lifetime_safety: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `lifetime_safety`.
+/// Check after computation: `contract_inv_lifetime_safety!(result_expr)`
+macro_rules! contract_inv_lifetime_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8810,6 +13814,15 @@ macro_rules! contract_pre_ownership_invariant {
     }};
 }
 
+/// Invariants for equation `ownership_invariant`.
+/// Check after computation: `contract_inv_ownership_invariant!(result_expr)`
+macro_rules! contract_inv_ownership_invariant {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `use_after_move`.
 /// Domain-specific. Call: `contract_pre_use_after_move!(slice_expr)`
 macro_rules! contract_pre_use_after_move {
@@ -8818,6 +13831,15 @@ macro_rules! contract_pre_use_after_move {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract use_after_move: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `use_after_move`.
+/// Check after computation: `contract_inv_use_after_move!(result_expr)`
+macro_rules! contract_inv_use_after_move {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8836,6 +13858,15 @@ macro_rules! contract_pre_arena_lifecycle {
 /// Postconditions for equation `arena_lifecycle`.
 /// Call before return: `contract_post_arena_lifecycle!(result_expr)`
 macro_rules! contract_post_arena_lifecycle {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `arena_lifecycle`.
+/// Check after computation: `contract_inv_arena_lifecycle!(result_expr)`
+macro_rules! contract_inv_arena_lifecycle {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8868,6 +13899,15 @@ macro_rules! contract_post_index_memory_budget {
     }};
 }
 
+/// Invariants for equation `index_memory_budget`.
+/// Check after computation: `contract_inv_index_memory_budget!(result_expr)`
+macro_rules! contract_inv_index_memory_budget {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `index_memory_budget`.
 macro_rules! contract_index_memory_budget {
     ($input:expr, $body:expr) => {{
@@ -8890,6 +13930,15 @@ macro_rules! contract_pre_lru_eviction_correctness {
 /// Postconditions for equation `lru_eviction_correctness`.
 /// Call before return: `contract_post_lru_eviction_correctness!(result_expr)`
 macro_rules! contract_post_lru_eviction_correctness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `lru_eviction_correctness`.
+/// Check after computation: `contract_inv_lru_eviction_correctness!(result_expr)`
+macro_rules! contract_inv_lru_eviction_correctness {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -8919,6 +13968,15 @@ macro_rules! contract_pre_best_monotone {
     }};
 }
 
+/// Invariants for equation `best_monotone`.
+/// Check after computation: `contract_inv_best_monotone!(result_expr)`
+macro_rules! contract_inv_best_monotone {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ga_crossover`.
 /// Domain-specific. Call: `contract_pre_ga_crossover!(slice_expr)`
 macro_rules! contract_pre_ga_crossover {
@@ -8927,6 +13985,15 @@ macro_rules! contract_pre_ga_crossover {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract ga_crossover: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `ga_crossover`.
+/// Check after computation: `contract_inv_ga_crossover!(result_expr)`
+macro_rules! contract_inv_ga_crossover {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8941,6 +14008,15 @@ macro_rules! contract_pre_pso_velocity {
     }};
 }
 
+/// Invariants for equation `pso_velocity`.
+/// Check after computation: `contract_inv_pso_velocity!(result_expr)`
+macro_rules! contract_inv_pso_velocity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `sa_acceptance`.
 /// Domain-specific. Call: `contract_pre_sa_acceptance!(slice_expr)`
 macro_rules! contract_pre_sa_acceptance {
@@ -8949,6 +14025,15 @@ macro_rules! contract_pre_sa_acceptance {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract sa_acceptance: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `sa_acceptance`.
+/// Check after computation: `contract_inv_sa_acceptance!(result_expr)`
+macro_rules! contract_inv_sa_acceptance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8968,6 +14053,15 @@ macro_rules! contract_pre_accuracy {
     }};
 }
 
+/// Invariants for equation `accuracy`.
+/// Check after computation: `contract_inv_accuracy!(result_expr)`
+macro_rules! contract_inv_accuracy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `confusion_matrix`.
 /// Domain-specific. Call: `contract_pre_confusion_matrix!(slice_expr)`
 macro_rules! contract_pre_confusion_matrix {
@@ -8978,6 +14072,15 @@ macro_rules! contract_pre_confusion_matrix {
             "Contract confusion_matrix: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract confusion_matrix: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `confusion_matrix`.
+/// Check after computation: `contract_inv_confusion_matrix!(result_expr)`
+macro_rules! contract_inv_confusion_matrix {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -8994,6 +14097,15 @@ macro_rules! contract_pre_f1_score {
     }};
 }
 
+/// Invariants for equation `f1_score`.
+/// Check after computation: `contract_inv_f1_score!(result_expr)`
+macro_rules! contract_inv_f1_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `precision`.
 /// Domain-specific. Call: `contract_pre_precision!(slice_expr)`
 macro_rules! contract_pre_precision {
@@ -9004,6 +14116,15 @@ macro_rules! contract_pre_precision {
             "Contract precision: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract precision: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `precision`.
+/// Check after computation: `contract_inv_precision!(result_expr)`
+macro_rules! contract_inv_precision {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9020,6 +14141,15 @@ macro_rules! contract_pre_recall {
     }};
 }
 
+/// Invariants for equation `recall`.
+/// Check after computation: `contract_inv_recall!(result_expr)`
+macro_rules! contract_inv_recall {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/metrics-clustering-v1.yaml — DO NOT EDIT
 // Contract: metrics-clustering-v1
 
@@ -9032,6 +14162,15 @@ macro_rules! contract_pre_inertia {
     }};
 }
 
+/// Invariants for equation `inertia`.
+/// Check after computation: `contract_inv_inertia!(result_expr)`
+macro_rules! contract_inv_inertia {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `silhouette_coefficient`.
 /// Call at function entry: `contract_pre_silhouette_coefficient!(input_expr)`
 macro_rules! contract_pre_silhouette_coefficient {
@@ -9041,12 +14180,30 @@ macro_rules! contract_pre_silhouette_coefficient {
     }};
 }
 
+/// Invariants for equation `silhouette_coefficient`.
+/// Check after computation: `contract_inv_silhouette_coefficient!(result_expr)`
+macro_rules! contract_inv_silhouette_coefficient {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `silhouette_score`.
 /// Call at function entry: `contract_pre_silhouette_score!(input_expr)`
 macro_rules! contract_pre_silhouette_score {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `silhouette_score`.
+/// Check after computation: `contract_inv_silhouette_score!(result_expr)`
+macro_rules! contract_inv_silhouette_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9064,6 +14221,15 @@ macro_rules! contract_pre_hit_at_k {
     }};
 }
 
+/// Invariants for equation `hit_at_k`.
+/// Check after computation: `contract_inv_hit_at_k!(result_expr)`
+macro_rules! contract_inv_hit_at_k {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mrr`.
 /// Domain-specific. Call: `contract_pre_mrr!(slice_expr)`
 macro_rules! contract_pre_mrr {
@@ -9072,6 +14238,15 @@ macro_rules! contract_pre_mrr {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract mrr: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `mrr`.
+/// Check after computation: `contract_inv_mrr!(result_expr)`
+macro_rules! contract_inv_mrr {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9086,6 +14261,15 @@ macro_rules! contract_pre_ndcg_at_k {
     }};
 }
 
+/// Invariants for equation `ndcg_at_k`.
+/// Check after computation: `contract_inv_ndcg_at_k!(result_expr)`
+macro_rules! contract_inv_ndcg_at_k {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `reciprocal_rank`.
 /// Domain-specific. Call: `contract_pre_reciprocal_rank!(slice_expr)`
 macro_rules! contract_pre_reciprocal_rank {
@@ -9094,6 +14278,15 @@ macro_rules! contract_pre_reciprocal_rank {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract reciprocal_rank: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `reciprocal_rank`.
+/// Check after computation: `contract_inv_reciprocal_rank!(result_expr)`
+macro_rules! contract_inv_reciprocal_rank {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9111,6 +14304,15 @@ macro_rules! contract_pre_mae {
     }};
 }
 
+/// Invariants for equation `mae`.
+/// Check after computation: `contract_inv_mae!(result_expr)`
+macro_rules! contract_inv_mae {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mse`.
 /// Domain-specific. Call: `contract_pre_mse!(slice_expr)`
 macro_rules! contract_pre_mse {
@@ -9121,6 +14323,15 @@ macro_rules! contract_pre_mse {
             "Contract mse: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract mse: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `mse`.
+/// Check after computation: `contract_inv_mse!(result_expr)`
+macro_rules! contract_inv_mse {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9137,6 +14348,15 @@ macro_rules! contract_pre_r_squared {
     }};
 }
 
+/// Invariants for equation `r_squared`.
+/// Check after computation: `contract_inv_r_squared!(result_expr)`
+macro_rules! contract_inv_r_squared {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rmse`.
 /// Domain-specific. Call: `contract_pre_rmse!(slice_expr)`
 macro_rules! contract_pre_rmse {
@@ -9147,6 +14367,15 @@ macro_rules! contract_pre_rmse {
             "Contract rmse: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract rmse: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `rmse`.
+/// Check after computation: `contract_inv_rmse!(result_expr)`
+macro_rules! contract_inv_rmse {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9164,6 +14393,15 @@ macro_rules! contract_pre_bounds {
     }};
 }
 
+/// Invariants for equation `bounds`.
+/// Check after computation: `contract_inv_bounds!(result_expr)`
+macro_rules! contract_inv_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `cross_constraint`.
 /// Domain-specific. Call: `contract_pre_cross_constraint!(slice_expr)`
 macro_rules! contract_pre_cross_constraint {
@@ -9172,6 +14410,15 @@ macro_rules! contract_pre_cross_constraint {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract cross_constraint: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `cross_constraint`.
+/// Check after computation: `contract_inv_cross_constraint!(result_expr)`
+macro_rules! contract_inv_cross_constraint {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9186,6 +14433,15 @@ macro_rules! contract_pre_divisibility {
     }};
 }
 
+/// Invariants for equation `divisibility`.
+/// Check after computation: `contract_inv_divisibility!(result_expr)`
+macro_rules! contract_inv_divisibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `non_degeneracy`.
 /// Domain-specific. Call: `contract_pre_non_degeneracy!(slice_expr)`
 macro_rules! contract_pre_non_degeneracy {
@@ -9197,6 +14453,15 @@ macro_rules! contract_pre_non_degeneracy {
     }};
 }
 
+/// Invariants for equation `non_degeneracy`.
+/// Check after computation: `contract_inv_non_degeneracy!(result_expr)`
+macro_rules! contract_inv_non_degeneracy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ordering`.
 /// Domain-specific. Call: `contract_pre_ordering!(slice_expr)`
 macro_rules! contract_pre_ordering {
@@ -9205,6 +14470,15 @@ macro_rules! contract_pre_ordering {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract ordering: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `ordering`.
+/// Check after computation: `contract_inv_ordering!(result_expr)`
+macro_rules! contract_inv_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9223,6 +14497,15 @@ macro_rules! contract_pre_apr_tokenizer_embedding {
 /// Postconditions for equation `apr_tokenizer_embedding`.
 /// Call before return: `contract_post_apr_tokenizer_embedding!(result_expr)`
 macro_rules! contract_post_apr_tokenizer_embedding {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `apr_tokenizer_embedding`.
+/// Check after computation: `contract_inv_apr_tokenizer_embedding!(result_expr)`
+macro_rules! contract_inv_apr_tokenizer_embedding {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -9255,6 +14538,15 @@ macro_rules! contract_post_export_fidelity {
     }};
 }
 
+/// Invariants for equation `export_fidelity`.
+/// Check after computation: `contract_inv_export_fidelity!(result_expr)`
+macro_rules! contract_inv_export_fidelity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `export_fidelity`.
 macro_rules! contract_export_fidelity {
     ($input:expr, $body:expr) => {{
@@ -9282,6 +14574,15 @@ macro_rules! contract_post_format_conversion_roundtrip {
     }};
 }
 
+/// Invariants for equation `format_conversion_roundtrip`.
+/// Check after computation: `contract_inv_format_conversion_roundtrip!(result_expr)`
+macro_rules! contract_inv_format_conversion_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `format_conversion_roundtrip`.
 macro_rules! contract_format_conversion_roundtrip {
     ($input:expr, $body:expr) => {{
@@ -9304,6 +14605,15 @@ macro_rules! contract_pre_import_integrity {
 /// Postconditions for equation `import_integrity`.
 /// Call before return: `contract_post_import_integrity!(result_expr)`
 macro_rules! contract_post_import_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `import_integrity`.
+/// Check after computation: `contract_inv_import_integrity!(result_expr)`
+macro_rules! contract_inv_import_integrity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -9338,6 +14648,15 @@ macro_rules! contract_post_merge_weight_algebra {
     }};
 }
 
+/// Invariants for equation `merge_weight_algebra`.
+/// Check after computation: `contract_inv_merge_weight_algebra!(result_expr)`
+macro_rules! contract_inv_merge_weight_algebra {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `merge_weight_algebra`.
 macro_rules! contract_merge_weight_algebra {
     ($input:expr, $body:expr) => {{
@@ -9360,6 +14679,15 @@ macro_rules! contract_pre_quantization_bounds {
 /// Postconditions for equation `quantization_bounds`.
 /// Call before return: `contract_post_quantization_bounds!(result_expr)`
 macro_rules! contract_post_quantization_bounds {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `quantization_bounds`.
+/// Check after computation: `contract_inv_quantization_bounds!(result_expr)`
+macro_rules! contract_inv_quantization_bounds {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -9389,6 +14717,15 @@ macro_rules! contract_pre_config_bounds_check {
     }};
 }
 
+/// Invariants for equation `config_bounds_check`.
+/// Check after computation: `contract_inv_config_bounds_check!(result_expr)`
+macro_rules! contract_inv_config_bounds_check {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/model-qa-v1.yaml — DO NOT EDIT
 // Contract: model-qa-v1
 
@@ -9401,6 +14738,15 @@ macro_rules! contract_pre_grade_assignment {
     }};
 }
 
+/// Invariants for equation `grade_assignment`.
+/// Check after computation: `contract_inv_grade_assignment!(result_expr)`
+macro_rules! contract_inv_grade_assignment {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mqs_scoring`.
 /// Call at function entry: `contract_pre_mqs_scoring!(input_expr)`
 macro_rules! contract_pre_mqs_scoring {
@@ -9410,12 +14756,30 @@ macro_rules! contract_pre_mqs_scoring {
     }};
 }
 
+/// Invariants for equation `mqs_scoring`.
+/// Check after computation: `contract_inv_mqs_scoring!(result_expr)`
+macro_rules! contract_inv_mqs_scoring {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `regression_detection`.
 /// Call at function entry: `contract_pre_regression_detection!(input_expr)`
 macro_rules! contract_pre_regression_detection {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `regression_detection`.
+/// Check after computation: `contract_inv_regression_detection!(result_expr)`
+macro_rules! contract_inv_regression_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9431,6 +14795,15 @@ macro_rules! contract_pre_cpu_utilization {
     }};
 }
 
+/// Invariants for equation `cpu_utilization`.
+/// Check after computation: `contract_inv_cpu_utilization!(result_expr)`
+macro_rules! contract_inv_cpu_utilization {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `history_persistence`.
 /// Call at function entry: `contract_pre_history_persistence!(input_expr)`
 macro_rules! contract_pre_history_persistence {
@@ -9440,12 +14813,30 @@ macro_rules! contract_pre_history_persistence {
     }};
 }
 
+/// Invariants for equation `history_persistence`.
+/// Check after computation: `contract_inv_history_persistence!(result_expr)`
+macro_rules! contract_inv_history_persistence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `memory_usage`.
 /// Call at function entry: `contract_pre_memory_usage!(input_expr)`
 macro_rules! contract_pre_memory_usage {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `memory_usage`.
+/// Check after computation: `contract_inv_memory_usage!(result_expr)`
+macro_rules! contract_inv_memory_usage {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9465,6 +14856,15 @@ macro_rules! contract_pre_mqs_composite {
     }};
 }
 
+/// Invariants for equation `mqs_composite`.
+/// Check after computation: `contract_inv_mqs_composite!(result_expr)`
+macro_rules! contract_inv_mqs_composite {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mqs_deterministic`.
 /// Domain-specific. Call: `contract_pre_mqs_deterministic!(slice_expr)`
 macro_rules! contract_pre_mqs_deterministic {
@@ -9475,6 +14875,15 @@ macro_rules! contract_pre_mqs_deterministic {
             "Contract mqs_deterministic: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract mqs_deterministic: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `mqs_deterministic`.
+/// Check after computation: `contract_inv_mqs_deterministic!(result_expr)`
+macro_rules! contract_inv_mqs_deterministic {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9491,6 +14900,15 @@ macro_rules! contract_pre_mqs_grade {
     }};
 }
 
+/// Invariants for equation `mqs_grade`.
+/// Check after computation: `contract_inv_mqs_grade!(result_expr)`
+macro_rules! contract_inv_mqs_grade {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mqs_pass_rate`.
 /// Domain-specific. Call: `contract_pre_mqs_pass_rate!(slice_expr)`
 macro_rules! contract_pre_mqs_pass_rate {
@@ -9501,6 +14919,15 @@ macro_rules! contract_pre_mqs_pass_rate {
             "Contract mqs_pass_rate: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract mqs_pass_rate: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `mqs_pass_rate`.
+/// Check after computation: `contract_inv_mqs_pass_rate!(result_expr)`
+macro_rules! contract_inv_mqs_pass_rate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9519,6 +14946,15 @@ macro_rules! contract_pre_mqs_composite {
 /// Postconditions for equation `mqs_composite`.
 /// Call before return: `contract_post_mqs_composite!(result_expr)`
 macro_rules! contract_post_mqs_composite {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `mqs_composite`.
+/// Check after computation: `contract_inv_mqs_composite!(result_expr)`
+macro_rules! contract_inv_mqs_composite {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -9551,6 +14987,15 @@ macro_rules! contract_post_mqs_deterministic {
     }};
 }
 
+/// Invariants for equation `mqs_deterministic`.
+/// Check after computation: `contract_inv_mqs_deterministic!(result_expr)`
+macro_rules! contract_inv_mqs_deterministic {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `mqs_deterministic`.
 macro_rules! contract_mqs_deterministic {
     ($input:expr, $body:expr) => {{
@@ -9573,6 +15018,15 @@ macro_rules! contract_pre_mqs_grade {
 /// Postconditions for equation `mqs_grade`.
 /// Call before return: `contract_post_mqs_grade!(result_expr)`
 macro_rules! contract_post_mqs_grade {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `mqs_grade`.
+/// Check after computation: `contract_inv_mqs_grade!(result_expr)`
+macro_rules! contract_inv_mqs_grade {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -9604,6 +15058,15 @@ macro_rules! contract_pre_class_prior {
     }};
 }
 
+/// Invariants for equation `class_prior`.
+/// Check after computation: `contract_inv_class_prior!(result_expr)`
+macro_rules! contract_inv_class_prior {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gaussian_likelihood`.
 /// Domain-specific. Call: `contract_pre_gaussian_likelihood!(slice_expr)`
 macro_rules! contract_pre_gaussian_likelihood {
@@ -9614,6 +15077,15 @@ macro_rules! contract_pre_gaussian_likelihood {
             "Contract gaussian_likelihood: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract gaussian_likelihood: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `gaussian_likelihood`.
+/// Check after computation: `contract_inv_gaussian_likelihood!(result_expr)`
+macro_rules! contract_inv_gaussian_likelihood {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9630,6 +15102,15 @@ macro_rules! contract_pre_log_posterior {
     }};
 }
 
+/// Invariants for equation `log_posterior`.
+/// Check after computation: `contract_inv_log_posterior!(result_expr)`
+macro_rules! contract_inv_log_posterior {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/namespace-isolation-v1.yaml — DO NOT EDIT
 // Contract: namespace-isolation-v1
 
@@ -9642,6 +15123,15 @@ macro_rules! contract_pre_connect_lifecycle {
     }};
 }
 
+/// Invariants for equation `connect_lifecycle`.
+/// Check after computation: `contract_inv_connect_lifecycle!(result_expr)`
+macro_rules! contract_inv_connect_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `send_isolation`.
 /// Domain-specific. Call: `contract_pre_send_isolation!(slice_expr)`
 macro_rules! contract_pre_send_isolation {
@@ -9650,6 +15140,15 @@ macro_rules! contract_pre_send_isolation {
         let _pv_data = &$input;
         debug_assert!(_pv_data.len() > 0,
             "Contract send_isolation: precondition violated — data.len() > 0");
+    }};
+}
+
+/// Invariants for equation `send_isolation`.
+/// Check after computation: `contract_inv_send_isolation!(result_expr)`
+macro_rules! contract_inv_send_isolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9665,6 +15164,15 @@ macro_rules! contract_pre_layer_cache_hit {
     }};
 }
 
+/// Invariants for equation `layer_cache_hit`.
+/// Check after computation: `contract_inv_layer_cache_hit!(result_expr)`
+macro_rules! contract_inv_layer_cache_hit {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `layer_ordering`.
 /// Domain-specific. Call: `contract_pre_layer_ordering!(slice_expr)`
 macro_rules! contract_pre_layer_ordering {
@@ -9673,6 +15181,15 @@ macro_rules! contract_pre_layer_ordering {
         let _pv_layers = &$input;
         debug_assert!(_pv_layers.len() > 0,
             "Contract layer_ordering: precondition violated — layers.len() > 0");
+    }};
+}
+
+/// Invariants for equation `layer_ordering`.
+/// Check after computation: `contract_inv_layer_ordering!(result_expr)`
+macro_rules! contract_inv_layer_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9685,12 +15202,30 @@ macro_rules! contract_pre_manifest_digest_consistency {
     }};
 }
 
+/// Invariants for equation `manifest_digest_consistency`.
+/// Check after computation: `contract_inv_manifest_digest_consistency!(result_expr)`
+macro_rules! contract_inv_manifest_digest_consistency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `reproducible_build`.
 /// Call at function entry: `contract_pre_reproducible_build!(input_expr)`
 macro_rules! contract_pre_reproducible_build {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `reproducible_build`.
+/// Check after computation: `contract_inv_reproducible_build!(result_expr)`
+macro_rules! contract_inv_reproducible_build {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9707,6 +15242,15 @@ macro_rules! contract_pre_online_normalizer {
             "Contract online_normalizer: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract online_normalizer: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `online_normalizer`.
+/// Check after computation: `contract_inv_online_normalizer!(result_expr)`
+macro_rules! contract_inv_online_normalizer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9737,6 +15281,15 @@ macro_rules! contract_pre_cg_minimize {
     }};
 }
 
+/// Invariants for equation `cg_minimize`.
+/// Check after computation: `contract_inv_cg_minimize!(result_expr)`
+macro_rules! contract_inv_cg_minimize {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `convergence`.
 /// Domain-specific. Call: `contract_pre_convergence!(slice_expr)`
 macro_rules! contract_pre_convergence {
@@ -9748,6 +15301,15 @@ macro_rules! contract_pre_convergence {
     }};
 }
 
+/// Invariants for equation `convergence`.
+/// Check after computation: `contract_inv_convergence!(result_expr)`
+macro_rules! contract_inv_convergence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `line_search`.
 /// Domain-specific. Call: `contract_pre_line_search!(slice_expr)`
 macro_rules! contract_pre_line_search {
@@ -9756,6 +15318,15 @@ macro_rules! contract_pre_line_search {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract line_search: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `line_search`.
+/// Check after computation: `contract_inv_line_search!(result_expr)`
+macro_rules! contract_inv_line_search {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9771,6 +15342,15 @@ macro_rules! contract_pre_pull_resolve {
     }};
 }
 
+/// Invariants for equation `pull_resolve`.
+/// Check after computation: `contract_inv_pull_resolve!(result_expr)`
+macro_rules! contract_inv_pull_resolve {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `registry_list`.
 /// Call at function entry: `contract_pre_registry_list!(input_expr)`
 macro_rules! contract_pre_registry_list {
@@ -9780,12 +15360,30 @@ macro_rules! contract_pre_registry_list {
     }};
 }
 
+/// Invariants for equation `registry_list`.
+/// Check after computation: `contract_inv_registry_list!(result_expr)`
+macro_rules! contract_inv_registry_list {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `run_tracking`.
 /// Call at function entry: `contract_pre_run_tracking!(input_expr)`
 macro_rules! contract_pre_run_tracking {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `run_tracking`.
+/// Check after computation: `contract_inv_run_tracking!(result_expr)`
+macro_rules! contract_inv_run_tracking {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9803,6 +15401,15 @@ macro_rules! contract_pre_block_allocation {
     }};
 }
 
+/// Invariants for equation `block_allocation`.
+/// Check after computation: `contract_inv_block_allocation!(result_expr)`
+macro_rules! contract_inv_block_allocation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `block_table_lookup`.
 /// Domain-specific. Call: `contract_pre_block_table_lookup!(slice_expr)`
 macro_rules! contract_pre_block_table_lookup {
@@ -9814,6 +15421,15 @@ macro_rules! contract_pre_block_table_lookup {
     }};
 }
 
+/// Invariants for equation `block_table_lookup`.
+/// Check after computation: `contract_inv_block_table_lookup!(result_expr)`
+macro_rules! contract_inv_block_table_lookup {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `copy_on_write`.
 /// Domain-specific. Call: `contract_pre_copy_on_write!(slice_expr)`
 macro_rules! contract_pre_copy_on_write {
@@ -9822,6 +15438,15 @@ macro_rules! contract_pre_copy_on_write {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract copy_on_write: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `copy_on_write`.
+/// Check after computation: `contract_inv_copy_on_write!(result_expr)`
+macro_rules! contract_inv_copy_on_write {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9839,6 +15464,15 @@ macro_rules! contract_pre_block_allocation {
     }};
 }
 
+/// Invariants for equation `block_allocation`.
+/// Check after computation: `contract_inv_block_allocation!(result_expr)`
+macro_rules! contract_inv_block_allocation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `block_table_invariant`.
 /// Domain-specific. Call: `contract_pre_block_table_invariant!(slice_expr)`
 macro_rules! contract_pre_block_table_invariant {
@@ -9847,6 +15481,15 @@ macro_rules! contract_pre_block_table_invariant {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract block_table_invariant: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `block_table_invariant`.
+/// Check after computation: `contract_inv_block_table_invariant!(result_expr)`
+macro_rules! contract_inv_block_table_invariant {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9861,12 +15504,30 @@ macro_rules! contract_pre_fragmentation_free {
     }};
 }
 
+/// Invariants for equation `fragmentation_free`.
+/// Check after computation: `contract_inv_fragmentation_free!(result_expr)`
+macro_rules! contract_inv_fragmentation_free {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `graph_compatibility`.
 /// Call at function entry: `contract_pre_graph_compatibility!(input_expr)`
 macro_rules! contract_pre_graph_compatibility {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `graph_compatibility`.
+/// Check after computation: `contract_inv_graph_compatibility!(result_expr)`
+macro_rules! contract_inv_graph_compatibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9879,6 +15540,15 @@ macro_rules! contract_pre_paged_contiguous_equivalence {
     }};
 }
 
+/// Invariants for equation `paged_contiguous_equivalence`.
+/// Check after computation: `contract_inv_paged_contiguous_equivalence!(result_expr)`
+macro_rules! contract_inv_paged_contiguous_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `slot_mapping`.
 /// Domain-specific. Call: `contract_pre_slot_mapping!(slice_expr)`
 macro_rules! contract_pre_slot_mapping {
@@ -9887,6 +15557,15 @@ macro_rules! contract_pre_slot_mapping {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract slot_mapping: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `slot_mapping`.
+/// Check after computation: `contract_inv_slot_mapping!(result_expr)`
+macro_rules! contract_inv_slot_mapping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9902,12 +15581,30 @@ macro_rules! contract_pre_bfs {
     }};
 }
 
+/// Invariants for equation `bfs`.
+/// Check after computation: `contract_inv_bfs!(result_expr)`
+macro_rules! contract_inv_bfs {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pagerank`.
 /// Domain-specific. Call: `contract_pre_pagerank!(slice_expr)`
 macro_rules! contract_pre_pagerank {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `pagerank`.
+/// Check after computation: `contract_inv_pagerank!(result_expr)`
+macro_rules! contract_inv_pagerank {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9923,12 +15620,30 @@ macro_rules! contract_pre_pagerank {
     }};
 }
 
+/// Invariants for equation `pagerank`.
+/// Check after computation: `contract_inv_pagerank!(result_expr)`
+macro_rules! contract_inv_pagerank {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `power_iteration`.
 /// Call at function entry: `contract_pre_power_iteration!(input_expr)`
 macro_rules! contract_pre_power_iteration {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `power_iteration`.
+/// Check after computation: `contract_inv_power_iteration!(result_expr)`
+macro_rules! contract_inv_power_iteration {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9946,6 +15661,15 @@ macro_rules! contract_pre_lex {
     }};
 }
 
+/// Invariants for equation `lex`.
+/// Check after computation: `contract_inv_lex!(result_expr)`
+macro_rules! contract_inv_lex {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `parse`.
 /// Domain-specific. Call: `contract_pre_parse!(slice_expr)`
 macro_rules! contract_pre_parse {
@@ -9957,6 +15681,15 @@ macro_rules! contract_pre_parse {
     }};
 }
 
+/// Invariants for equation `parse`.
+/// Check after computation: `contract_inv_parse!(result_expr)`
+macro_rules! contract_inv_parse {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `semantic_analyze`.
 /// Domain-specific. Call: `contract_pre_semantic_analyze!(slice_expr)`
 macro_rules! contract_pre_semantic_analyze {
@@ -9965,6 +15698,15 @@ macro_rules! contract_pre_semantic_analyze {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract semantic_analyze: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `semantic_analyze`.
+/// Check after computation: `contract_inv_semantic_analyze!(result_expr)`
+macro_rules! contract_inv_semantic_analyze {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -9980,6 +15722,15 @@ macro_rules! contract_pre_block_scoping {
     }};
 }
 
+/// Invariants for equation `block_scoping`.
+/// Check after computation: `contract_inv_block_scoping!(result_expr)`
+macro_rules! contract_inv_block_scoping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `parse_correctness`.
 /// Call at function entry: `contract_pre_parse_correctness!(input_expr)`
 macro_rules! contract_pre_parse_correctness {
@@ -9989,12 +15740,30 @@ macro_rules! contract_pre_parse_correctness {
     }};
 }
 
+/// Invariants for equation `parse_correctness`.
+/// Check after computation: `contract_inv_parse_correctness!(result_expr)`
+macro_rules! contract_inv_parse_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpile_roundtrip`.
 /// Call at function entry: `contract_pre_transpile_roundtrip!(input_expr)`
 macro_rules! contract_pre_transpile_roundtrip {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `transpile_roundtrip`.
+/// Check after computation: `contract_inv_transpile_roundtrip!(result_expr)`
+macro_rules! contract_inv_transpile_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10014,6 +15783,15 @@ macro_rules! contract_pre_explained_variance {
     }};
 }
 
+/// Invariants for equation `explained_variance`.
+/// Check after computation: `contract_inv_explained_variance!(result_expr)`
+macro_rules! contract_inv_explained_variance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pca_transform`.
 /// Domain-specific. Call: `contract_pre_pca_transform!(slice_expr)`
 macro_rules! contract_pre_pca_transform {
@@ -10025,6 +15803,15 @@ macro_rules! contract_pre_pca_transform {
     }};
 }
 
+/// Invariants for equation `pca_transform`.
+/// Check after computation: `contract_inv_pca_transform!(result_expr)`
+macro_rules! contract_inv_pca_transform {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `reconstruction`.
 /// Domain-specific. Call: `contract_pre_reconstruction!(slice_expr)`
 macro_rules! contract_pre_reconstruction {
@@ -10033,6 +15820,15 @@ macro_rules! contract_pre_reconstruction {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract reconstruction: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `reconstruction`.
+/// Check after computation: `contract_inv_reconstruction!(result_expr)`
+macro_rules! contract_inv_reconstruction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10052,6 +15848,15 @@ macro_rules! contract_pre_concrete_instance {
     }};
 }
 
+/// Invariants for equation `concrete_instance`.
+/// Check after computation: `contract_inv_concrete_instance!(result_expr)`
+macro_rules! contract_inv_concrete_instance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `efficiency_grade`.
 /// Domain-specific. Call: `contract_pre_efficiency_grade!(slice_expr)`
 macro_rules! contract_pre_efficiency_grade {
@@ -10062,6 +15867,15 @@ macro_rules! contract_pre_efficiency_grade {
             "Contract efficiency_grade: precondition violated — grad_output.len() > 0");
         debug_assert!(_pv_grad_output.iter().all(|v| v.is_finite()),
             "Contract efficiency_grade: precondition violated — grad_output.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `efficiency_grade`.
+/// Check after computation: `contract_inv_efficiency_grade!(result_expr)`
+macro_rules! contract_inv_efficiency_grade {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10078,6 +15892,15 @@ macro_rules! contract_pre_llamacpp_parity {
     }};
 }
 
+/// Invariants for equation `llamacpp_parity`.
+/// Check after computation: `contract_inv_llamacpp_parity!(result_expr)`
+macro_rules! contract_inv_llamacpp_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ollama_parity`.
 /// Domain-specific. Call: `contract_pre_ollama_parity!(slice_expr)`
 macro_rules! contract_pre_ollama_parity {
@@ -10091,6 +15914,15 @@ macro_rules! contract_pre_ollama_parity {
     }};
 }
 
+/// Invariants for equation `ollama_parity`.
+/// Check after computation: `contract_inv_ollama_parity!(result_expr)`
+macro_rules! contract_inv_ollama_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `vllm_parity`.
 /// Domain-specific. Call: `contract_pre_vllm_parity!(slice_expr)`
 macro_rules! contract_pre_vllm_parity {
@@ -10101,6 +15933,15 @@ macro_rules! contract_pre_vllm_parity {
             "Contract vllm_parity: precondition violated — grad_output.len() > 0");
         debug_assert!(_pv_grad_output.iter().all(|v| v.is_finite()),
             "Contract vllm_parity: precondition violated — grad_output.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `vllm_parity`.
+/// Check after computation: `contract_inv_vllm_parity!(result_expr)`
+macro_rules! contract_inv_vllm_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10128,6 +15969,15 @@ macro_rules! contract_pre_lifecycle_state_machine {
     }};
 }
 
+/// Invariants for equation `lifecycle_state_machine`.
+/// Check after computation: `contract_inv_lifecycle_state_machine!(result_expr)`
+macro_rules! contract_inv_lifecycle_state_machine {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `permission_scoping`.
 /// Domain-specific. Call: `contract_pre_permission_scoping!(slice_expr)`
 macro_rules! contract_pre_permission_scoping {
@@ -10137,12 +15987,30 @@ macro_rules! contract_pre_permission_scoping {
     }};
 }
 
+/// Invariants for equation `permission_scoping`.
+/// Check after computation: `contract_inv_permission_scoping!(result_expr)`
+macro_rules! contract_inv_permission_scoping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `schema_validation`.
 /// Domain-specific. Call: `contract_pre_schema_validation!(slice_expr)`
 macro_rules! contract_pre_schema_validation {
     () => {{}};
     ($input:expr) => {{
         let _pv_schema = &$input;
+    }};
+}
+
+/// Invariants for equation `schema_validation`.
+/// Check after computation: `contract_inv_schema_validation!(result_expr)`
+macro_rules! contract_inv_schema_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10161,6 +16029,15 @@ macro_rules! contract_pre_baseline_integrity {
 /// Postconditions for equation `baseline_integrity`.
 /// Call before return: `contract_post_baseline_integrity!(result_expr)`
 macro_rules! contract_post_baseline_integrity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `baseline_integrity`.
+/// Check after computation: `contract_inv_baseline_integrity!(result_expr)`
+macro_rules! contract_inv_baseline_integrity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10193,6 +16070,15 @@ macro_rules! contract_post_contract_immutability {
     }};
 }
 
+/// Invariants for equation `contract_immutability`.
+/// Check after computation: `contract_inv_contract_immutability!(result_expr)`
+macro_rules! contract_inv_contract_immutability {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `contract_immutability`.
 macro_rules! contract_contract_immutability {
     ($input:expr, $body:expr) => {{
@@ -10215,6 +16101,15 @@ macro_rules! contract_pre_falsification_completeness {
 /// Postconditions for equation `falsification_completeness`.
 /// Call before return: `contract_post_falsification_completeness!(result_expr)`
 macro_rules! contract_post_falsification_completeness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `falsification_completeness`.
+/// Check after computation: `contract_inv_falsification_completeness!(result_expr)`
+macro_rules! contract_inv_falsification_completeness {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10247,6 +16142,15 @@ macro_rules! contract_post_monotonic_ledger {
     }};
 }
 
+/// Invariants for equation `monotonic_ledger`.
+/// Check after computation: `contract_inv_monotonic_ledger!(result_expr)`
+macro_rules! contract_inv_monotonic_ledger {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `monotonic_ledger`.
 macro_rules! contract_monotonic_ledger {
     ($input:expr, $body:expr) => {{
@@ -10269,6 +16173,15 @@ macro_rules! contract_pre_profile_determinism {
 /// Postconditions for equation `profile_determinism`.
 /// Call before return: `contract_post_profile_determinism!(result_expr)`
 macro_rules! contract_post_profile_determinism {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `profile_determinism`.
+/// Check after computation: `contract_inv_profile_determinism!(result_expr)`
+macro_rules! contract_inv_profile_determinism {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10301,6 +16214,15 @@ macro_rules! contract_post_rescue_bound {
     }};
 }
 
+/// Invariants for equation `rescue_bound`.
+/// Check after computation: `contract_inv_rescue_bound!(result_expr)`
+macro_rules! contract_inv_rescue_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `rescue_bound`.
 macro_rules! contract_rescue_bound {
     ($input:expr, $body:expr) => {{
@@ -10323,6 +16245,15 @@ macro_rules! contract_pre_subcontracting_soundness {
 /// Postconditions for equation `subcontracting_soundness`.
 /// Call before return: `contract_post_subcontracting_soundness!(result_expr)`
 macro_rules! contract_post_subcontracting_soundness {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `subcontracting_soundness`.
+/// Check after computation: `contract_inv_subcontracting_soundness!(result_expr)`
+macro_rules! contract_inv_subcontracting_soundness {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10354,6 +16285,15 @@ macro_rules! contract_pre_minmax_scaler {
     }};
 }
 
+/// Invariants for equation `minmax_scaler`.
+/// Check after computation: `contract_inv_minmax_scaler!(result_expr)`
+macro_rules! contract_inv_minmax_scaler {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `robust_scaler`.
 /// Domain-specific. Call: `contract_pre_robust_scaler!(slice_expr)`
 macro_rules! contract_pre_robust_scaler {
@@ -10364,6 +16304,15 @@ macro_rules! contract_pre_robust_scaler {
             "Contract robust_scaler: precondition violated — input.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_input.len() > 0,
             "Contract robust_scaler: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `robust_scaler`.
+/// Check after computation: `contract_inv_robust_scaler!(result_expr)`
+macro_rules! contract_inv_robust_scaler {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10380,6 +16329,15 @@ macro_rules! contract_pre_standard_scaler {
     }};
 }
 
+/// Invariants for equation `standard_scaler`.
+/// Check after computation: `contract_inv_standard_scaler!(result_expr)`
+macro_rules! contract_inv_standard_scaler {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/property-testing-v1.yaml — DO NOT EDIT
 // Contract: property-testing-v1
 
@@ -10392,12 +16350,30 @@ macro_rules! contract_pre_assertion_evaluation {
     }};
 }
 
+/// Invariants for equation `assertion_evaluation`.
+/// Check after computation: `contract_inv_assertion_evaluation!(result_expr)`
+macro_rules! contract_inv_assertion_evaluation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `coverage_collection`.
 /// Call at function entry: `contract_pre_coverage_collection!(input_expr)`
 macro_rules! contract_pre_coverage_collection {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `coverage_collection`.
+/// Check after computation: `contract_inv_coverage_collection!(result_expr)`
+macro_rules! contract_inv_coverage_collection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10410,12 +16386,30 @@ macro_rules! contract_pre_playbook_state_machine {
     }};
 }
 
+/// Invariants for equation `playbook_state_machine`.
+/// Check after computation: `contract_inv_playbook_state_machine!(result_expr)`
+macro_rules! contract_inv_playbook_state_machine {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `retry_assertion`.
 /// Call at function entry: `contract_pre_retry_assertion!(input_expr)`
 macro_rules! contract_pre_retry_assertion {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `retry_assertion`.
+/// Check after computation: `contract_inv_retry_assertion!(result_expr)`
+macro_rules! contract_inv_retry_assertion {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10428,12 +16422,30 @@ macro_rules! contract_pre_soft_assertion_collection {
     }};
 }
 
+/// Invariants for equation `soft_assertion_collection`.
+/// Check after computation: `contract_inv_soft_assertion_collection!(result_expr)`
+macro_rules! contract_inv_soft_assertion_collection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `test_result_reporting`.
 /// Call at function entry: `contract_pre_test_result_reporting!(input_expr)`
 macro_rules! contract_pre_test_result_reporting {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `test_result_reporting`.
+/// Check after computation: `contract_inv_test_result_reporting!(result_expr)`
+macro_rules! contract_inv_test_result_reporting {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10449,9 +16461,27 @@ macro_rules! contract_pre_backoff_jitter {
     }};
 }
 
+/// Invariants for equation `backoff_jitter`.
+/// Check after computation: `contract_inv_backoff_jitter!(result_expr)`
+macro_rules! contract_inv_backoff_jitter {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Postconditions for equation `cost_budget`.
 /// Call before return: `contract_post_cost_budget!(result_expr)`
 macro_rules! contract_post_cost_budget {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cost_budget`.
+/// Check after computation: `contract_inv_cost_budget!(result_expr)`
+macro_rules! contract_inv_cost_budget {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10468,6 +16498,24 @@ macro_rules! contract_pre_failover_cascade {
     }};
 }
 
+/// Invariants for equation `failover_cascade`.
+/// Check after computation: `contract_inv_failover_cascade!(result_expr)`
+macro_rules! contract_inv_failover_cascade {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `format_translation`.
+/// Check after computation: `contract_inv_format_translation!(result_expr)`
+macro_rules! contract_inv_format_translation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `privacy_enforcement`.
 /// Domain-specific. Call: `contract_pre_privacy_enforcement!(slice_expr)`
 macro_rules! contract_pre_privacy_enforcement {
@@ -10480,6 +16528,15 @@ macro_rules! contract_pre_privacy_enforcement {
 /// Postconditions for equation `privacy_enforcement`.
 /// Call before return: `contract_post_privacy_enforcement!(result_expr)`
 macro_rules! contract_post_privacy_enforcement {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `privacy_enforcement`.
+/// Check after computation: `contract_inv_privacy_enforcement!(result_expr)`
+macro_rules! contract_inv_privacy_enforcement {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -10511,6 +16568,15 @@ macro_rules! contract_pre_jit_compilation_success {
     }};
 }
 
+/// Invariants for equation `jit_compilation_success`.
+/// Check after computation: `contract_inv_jit_compilation_success!(result_expr)`
+macro_rules! contract_inv_jit_compilation_success {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `no_hardcoded_targets`.
 /// Domain-specific. Call: `contract_pre_no_hardcoded_targets!(slice_expr)`
 macro_rules! contract_pre_no_hardcoded_targets {
@@ -10524,6 +16590,15 @@ macro_rules! contract_pre_no_hardcoded_targets {
     }};
 }
 
+/// Invariants for equation `no_hardcoded_targets`.
+/// Check after computation: `contract_inv_no_hardcoded_targets!(result_expr)`
+macro_rules! contract_inv_no_hardcoded_targets {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `target_parity`.
 /// Domain-specific. Call: `contract_pre_target_parity!(slice_expr)`
 macro_rules! contract_pre_target_parity {
@@ -10534,6 +16609,15 @@ macro_rules! contract_pre_target_parity {
             "Contract target_parity: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract target_parity: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `target_parity`.
+/// Check after computation: `contract_inv_target_parity!(result_expr)`
+macro_rules! contract_inv_target_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10551,6 +16635,15 @@ macro_rules! contract_pre_bsum {
     }};
 }
 
+/// Invariants for equation `bsum`.
+/// Check after computation: `contract_inv_bsum!(result_expr)`
+macro_rules! contract_inv_bsum {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `dequantization`.
 /// Domain-specific. Call: `contract_pre_dequantization!(slice_expr)`
 macro_rules! contract_pre_dequantization {
@@ -10559,6 +16652,15 @@ macro_rules! contract_pre_dequantization {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract dequantization: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `dequantization`.
+/// Check after computation: `contract_inv_dequantization!(result_expr)`
+macro_rules! contract_inv_dequantization {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10573,6 +16675,15 @@ macro_rules! contract_pre_q4k_superblock {
     }};
 }
 
+/// Invariants for equation `q4k_superblock`.
+/// Check after computation: `contract_inv_q4k_superblock!(result_expr)`
+macro_rules! contract_inv_q4k_superblock {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `q6k_superblock`.
 /// Domain-specific. Call: `contract_pre_q6k_superblock!(slice_expr)`
 macro_rules! contract_pre_q6k_superblock {
@@ -10584,6 +16695,15 @@ macro_rules! contract_pre_q6k_superblock {
     }};
 }
 
+/// Invariants for equation `q6k_superblock`.
+/// Check after computation: `contract_inv_q6k_superblock!(result_expr)`
+macro_rules! contract_inv_q6k_superblock {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `total_bytes`.
 /// Domain-specific. Call: `contract_pre_total_bytes!(slice_expr)`
 macro_rules! contract_pre_total_bytes {
@@ -10592,6 +16712,15 @@ macro_rules! contract_pre_total_bytes {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract total_bytes: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `total_bytes`.
+/// Check after computation: `contract_inv_total_bytes!(result_expr)`
+macro_rules! contract_inv_total_bytes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10611,6 +16740,15 @@ macro_rules! contract_pre_qk_norm_load {
     }};
 }
 
+/// Invariants for equation `qk_norm_load`.
+/// Check after computation: `contract_inv_qk_norm_load!(result_expr)`
+macro_rules! contract_inv_qk_norm_load {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/qk-norm-v1.yaml — DO NOT EDIT
 // Contract: qk-norm-v1
 
@@ -10624,6 +16762,15 @@ macro_rules! contract_pre_qk_rmsnorm {
             "Contract qk_rmsnorm: precondition violated — input.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_input.len() > 0,
             "Contract qk_rmsnorm: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `qk_rmsnorm`.
+/// Check after computation: `contract_inv_qk_rmsnorm!(result_expr)`
+macro_rules! contract_inv_qk_rmsnorm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10641,6 +16788,15 @@ macro_rules! contract_pre_effective_batch_size {
     }};
 }
 
+/// Invariants for equation `effective_batch_size`.
+/// Check after computation: `contract_inv_effective_batch_size!(result_expr)`
+macro_rules! contract_inv_effective_batch_size {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `epoch_count_imbalanced`.
 /// Domain-specific. Call: `contract_pre_epoch_count_imbalanced!(slice_expr)`
 macro_rules! contract_pre_epoch_count_imbalanced {
@@ -10649,6 +16805,15 @@ macro_rules! contract_pre_epoch_count_imbalanced {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract epoch_count_imbalanced: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `epoch_count_imbalanced`.
+/// Check after computation: `contract_inv_epoch_count_imbalanced!(result_expr)`
+macro_rules! contract_inv_epoch_count_imbalanced {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10663,6 +16828,15 @@ macro_rules! contract_pre_gradient_clip_bound {
     }};
 }
 
+/// Invariants for equation `gradient_clip_bound`.
+/// Check after computation: `contract_inv_gradient_clip_bound!(result_expr)`
+macro_rules! contract_inv_gradient_clip_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `learning_rate_scaling`.
 /// Domain-specific. Call: `contract_pre_learning_rate_scaling!(slice_expr)`
 macro_rules! contract_pre_learning_rate_scaling {
@@ -10671,6 +16845,15 @@ macro_rules! contract_pre_learning_rate_scaling {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract learning_rate_scaling: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `learning_rate_scaling`.
+/// Check after computation: `contract_inv_learning_rate_scaling!(result_expr)`
+macro_rules! contract_inv_learning_rate_scaling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10685,6 +16868,15 @@ macro_rules! contract_pre_lora_alpha_ratio {
     }};
 }
 
+/// Invariants for equation `lora_alpha_ratio`.
+/// Check after computation: `contract_inv_lora_alpha_ratio!(result_expr)`
+macro_rules! contract_inv_lora_alpha_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `seq_len_from_data`.
 /// Domain-specific. Call: `contract_pre_seq_len_from_data!(slice_expr)`
 macro_rules! contract_pre_seq_len_from_data {
@@ -10696,6 +16888,15 @@ macro_rules! contract_pre_seq_len_from_data {
     }};
 }
 
+/// Invariants for equation `seq_len_from_data`.
+/// Check after computation: `contract_inv_seq_len_from_data!(result_expr)`
+macro_rules! contract_inv_seq_len_from_data {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `warmup_fraction`.
 /// Domain-specific. Call: `contract_pre_warmup_fraction!(slice_expr)`
 macro_rules! contract_pre_warmup_fraction {
@@ -10704,6 +16905,15 @@ macro_rules! contract_pre_warmup_fraction {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract warmup_fraction: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `warmup_fraction`.
+/// Check after computation: `contract_inv_warmup_fraction!(result_expr)`
+macro_rules! contract_inv_warmup_fraction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10719,6 +16929,15 @@ macro_rules! contract_pre_gate_composition {
     }};
 }
 
+/// Invariants for equation `gate_composition`.
+/// Check after computation: `contract_inv_gate_composition!(result_expr)`
+macro_rules! contract_inv_gate_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `validate_index`.
 /// Call at function entry: `contract_pre_validate_index!(input_expr)`
 macro_rules! contract_pre_validate_index {
@@ -10728,12 +16947,30 @@ macro_rules! contract_pre_validate_index {
     }};
 }
 
+/// Invariants for equation `validate_index`.
+/// Check after computation: `contract_inv_validate_index!(result_expr)`
+macro_rules! contract_inv_validate_index {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `validate_size`.
 /// Call at function entry: `contract_pre_validate_size!(input_expr)`
 macro_rules! contract_pre_validate_size {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `validate_size`.
+/// Check after computation: `contract_inv_validate_size!(result_expr)`
+macro_rules! contract_inv_validate_size {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10751,6 +16988,15 @@ macro_rules! contract_pre_alpha_scaling {
     }};
 }
 
+/// Invariants for equation `alpha_scaling`.
+/// Check after computation: `contract_inv_alpha_scaling!(result_expr)`
+macro_rules! contract_inv_alpha_scaling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `bytes_per_param`.
 /// Domain-specific. Call: `contract_pre_bytes_per_param!(slice_expr)`
 macro_rules! contract_pre_bytes_per_param {
@@ -10759,6 +17005,15 @@ macro_rules! contract_pre_bytes_per_param {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract bytes_per_param: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `bytes_per_param`.
+/// Check after computation: `contract_inv_bytes_per_param!(result_expr)`
+macro_rules! contract_inv_bytes_per_param {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10775,6 +17030,15 @@ macro_rules! contract_pre_dropout_expectation {
     }};
 }
 
+/// Invariants for equation `dropout_expectation`.
+/// Check after computation: `contract_inv_dropout_expectation!(result_expr)`
+macro_rules! contract_inv_dropout_expectation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `size_ordering`.
 /// Domain-specific. Call: `contract_pre_size_ordering!(slice_expr)`
 macro_rules! contract_pre_size_ordering {
@@ -10783,6 +17047,15 @@ macro_rules! contract_pre_size_ordering {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract size_ordering: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `size_ordering`.
+/// Check after computation: `contract_inv_size_ordering!(result_expr)`
+macro_rules! contract_inv_size_ordering {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10798,12 +17071,30 @@ macro_rules! contract_pre_bsum_decomposition {
     }};
 }
 
+/// Invariants for equation `bsum_decomposition`.
+/// Check after computation: `contract_inv_bsum_decomposition!(result_expr)`
+macro_rules! contract_inv_bsum_decomposition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `format_isolation`.
 /// Call at function entry: `contract_pre_format_isolation!(input_expr)`
 macro_rules! contract_pre_format_isolation {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `format_isolation`.
+/// Check after computation: `contract_inv_format_isolation!(result_expr)`
+macro_rules! contract_inv_format_isolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10827,6 +17118,15 @@ macro_rules! contract_pre_simd_scalar_equivalence {
     }};
 }
 
+/// Invariants for equation `simd_scalar_equivalence`.
+/// Check after computation: `contract_inv_simd_scalar_equivalence!(result_expr)`
+macro_rules! contract_inv_simd_scalar_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/qwen2-e2e-verification-v1.yaml — DO NOT EDIT
 // Contract: qwen2-e2e-verification-v1
 
@@ -10841,6 +17141,15 @@ macro_rules! contract_pre_contract_composition {
     }};
 }
 
+/// Invariants for equation `contract_composition`.
+/// Check after computation: `contract_inv_contract_composition!(result_expr)`
+macro_rules! contract_inv_contract_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `flops_per_token`.
 /// Domain-specific. Call: `contract_pre_flops_per_token!(slice_expr)`
 macro_rules! contract_pre_flops_per_token {
@@ -10849,6 +17158,15 @@ macro_rules! contract_pre_flops_per_token {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract flops_per_token: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `flops_per_token`.
+/// Check after computation: `contract_inv_flops_per_token!(result_expr)`
+macro_rules! contract_inv_flops_per_token {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10863,6 +17181,15 @@ macro_rules! contract_pre_memory_breakdown {
     }};
 }
 
+/// Invariants for equation `memory_breakdown`.
+/// Check after computation: `contract_inv_memory_breakdown!(result_expr)`
+macro_rules! contract_inv_memory_breakdown {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `model_parameter_count`.
 /// Domain-specific. Call: `contract_pre_model_parameter_count!(slice_expr)`
 macro_rules! contract_pre_model_parameter_count {
@@ -10871,6 +17198,15 @@ macro_rules! contract_pre_model_parameter_count {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract model_parameter_count: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `model_parameter_count`.
+/// Check after computation: `contract_inv_model_parameter_count!(result_expr)`
+macro_rules! contract_inv_model_parameter_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10885,6 +17221,15 @@ macro_rules! contract_pre_throughput_model {
     }};
 }
 
+/// Invariants for equation `throughput_model`.
+/// Check after computation: `contract_inv_throughput_model!(result_expr)`
+macro_rules! contract_inv_throughput_model {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `verification_ladder`.
 /// Domain-specific. Call: `contract_pre_verification_ladder!(slice_expr)`
 macro_rules! contract_pre_verification_ladder {
@@ -10893,6 +17238,15 @@ macro_rules! contract_pre_verification_ladder {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract verification_ladder: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `verification_ladder`.
+/// Check after computation: `contract_inv_verification_ladder!(result_expr)`
+macro_rules! contract_inv_verification_ladder {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10910,6 +17264,15 @@ macro_rules! contract_pre_head_dim_consistency {
     }};
 }
 
+/// Invariants for equation `head_dim_consistency`.
+/// Check after computation: `contract_inv_head_dim_consistency!(result_expr)`
+macro_rules! contract_inv_head_dim_consistency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `kv_projection_shape`.
 /// Domain-specific. Call: `contract_pre_kv_projection_shape!(slice_expr)`
 macro_rules! contract_pre_kv_projection_shape {
@@ -10918,6 +17281,15 @@ macro_rules! contract_pre_kv_projection_shape {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract kv_projection_shape: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `kv_projection_shape`.
+/// Check after computation: `contract_inv_kv_projection_shape!(result_expr)`
+macro_rules! contract_inv_kv_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10932,6 +17304,15 @@ macro_rules! contract_pre_o_projection_transpose {
     }};
 }
 
+/// Invariants for equation `o_projection_transpose`.
+/// Check after computation: `contract_inv_o_projection_transpose!(result_expr)`
+macro_rules! contract_inv_o_projection_transpose {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `q_projection_shape`.
 /// Domain-specific. Call: `contract_pre_q_projection_shape!(slice_expr)`
 macro_rules! contract_pre_q_projection_shape {
@@ -10940,6 +17321,15 @@ macro_rules! contract_pre_q_projection_shape {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract q_projection_shape: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `q_projection_shape`.
+/// Check after computation: `contract_inv_q_projection_shape!(result_expr)`
+macro_rules! contract_inv_q_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10954,6 +17344,15 @@ macro_rules! contract_pre_rope_frequency {
     }};
 }
 
+/// Invariants for equation `rope_frequency`.
+/// Check after computation: `contract_inv_rope_frequency!(result_expr)`
+macro_rules! contract_inv_rope_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_ratio`.
 /// Domain-specific. Call: `contract_pre_swiglu_ratio!(slice_expr)`
 macro_rules! contract_pre_swiglu_ratio {
@@ -10962,6 +17361,15 @@ macro_rules! contract_pre_swiglu_ratio {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract swiglu_ratio: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `swiglu_ratio`.
+/// Check after computation: `contract_inv_swiglu_ratio!(result_expr)`
+macro_rules! contract_inv_swiglu_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -10977,6 +17385,15 @@ macro_rules! contract_pre_kv_projection {
     }};
 }
 
+/// Invariants for equation `kv_projection`.
+/// Check after computation: `contract_inv_kv_projection!(result_expr)`
+macro_rules! contract_inv_kv_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `q_projection`.
 /// Call at function entry: `contract_pre_q_projection!(input_expr)`
 macro_rules! contract_pre_q_projection {
@@ -10986,12 +17403,30 @@ macro_rules! contract_pre_q_projection {
     }};
 }
 
+/// Invariants for equation `q_projection`.
+/// Check after computation: `contract_inv_q_projection!(result_expr)`
+macro_rules! contract_inv_q_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_expansion`.
 /// Call at function entry: `contract_pre_swiglu_expansion!(input_expr)`
 macro_rules! contract_pre_swiglu_expansion {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `swiglu_expansion`.
+/// Check after computation: `contract_inv_swiglu_expansion!(result_expr)`
+macro_rules! contract_inv_swiglu_expansion {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11018,6 +17453,15 @@ macro_rules! contract_pre_contract_composition {
     }};
 }
 
+/// Invariants for equation `contract_composition`.
+/// Check after computation: `contract_inv_contract_composition!(result_expr)`
+macro_rules! contract_inv_contract_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `flops_per_token`.
 /// Domain-specific. Call: `contract_pre_flops_per_token!(slice_expr)`
 macro_rules! contract_pre_flops_per_token {
@@ -11026,6 +17470,15 @@ macro_rules! contract_pre_flops_per_token {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract flops_per_token: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `flops_per_token`.
+/// Check after computation: `contract_inv_flops_per_token!(result_expr)`
+macro_rules! contract_inv_flops_per_token {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11040,6 +17493,15 @@ macro_rules! contract_pre_memory_breakdown {
     }};
 }
 
+/// Invariants for equation `memory_breakdown`.
+/// Check after computation: `contract_inv_memory_breakdown!(result_expr)`
+macro_rules! contract_inv_memory_breakdown {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `model_parameter_count`.
 /// Domain-specific. Call: `contract_pre_model_parameter_count!(slice_expr)`
 macro_rules! contract_pre_model_parameter_count {
@@ -11048,6 +17510,15 @@ macro_rules! contract_pre_model_parameter_count {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract model_parameter_count: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `model_parameter_count`.
+/// Check after computation: `contract_inv_model_parameter_count!(result_expr)`
+macro_rules! contract_inv_model_parameter_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11062,6 +17533,15 @@ macro_rules! contract_pre_throughput_model {
     }};
 }
 
+/// Invariants for equation `throughput_model`.
+/// Check after computation: `contract_inv_throughput_model!(result_expr)`
+macro_rules! contract_inv_throughput_model {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `verification_ladder`.
 /// Domain-specific. Call: `contract_pre_verification_ladder!(slice_expr)`
 macro_rules! contract_pre_verification_ladder {
@@ -11070,6 +17550,15 @@ macro_rules! contract_pre_verification_ladder {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract verification_ladder: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `verification_ladder`.
+/// Check after computation: `contract_inv_verification_ladder!(result_expr)`
+macro_rules! contract_inv_verification_ladder {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11087,6 +17576,15 @@ macro_rules! contract_pre_head_dim_consistency {
     }};
 }
 
+/// Invariants for equation `head_dim_consistency`.
+/// Check after computation: `contract_inv_head_dim_consistency!(result_expr)`
+macro_rules! contract_inv_head_dim_consistency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `kv_projection_shape`.
 /// Domain-specific. Call: `contract_pre_kv_projection_shape!(slice_expr)`
 macro_rules! contract_pre_kv_projection_shape {
@@ -11095,6 +17593,15 @@ macro_rules! contract_pre_kv_projection_shape {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract kv_projection_shape: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `kv_projection_shape`.
+/// Check after computation: `contract_inv_kv_projection_shape!(result_expr)`
+macro_rules! contract_inv_kv_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11109,6 +17616,15 @@ macro_rules! contract_pre_o_projection_transpose {
     }};
 }
 
+/// Invariants for equation `o_projection_transpose`.
+/// Check after computation: `contract_inv_o_projection_transpose!(result_expr)`
+macro_rules! contract_inv_o_projection_transpose {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `q_projection_shape`.
 /// Domain-specific. Call: `contract_pre_q_projection_shape!(slice_expr)`
 macro_rules! contract_pre_q_projection_shape {
@@ -11117,6 +17633,15 @@ macro_rules! contract_pre_q_projection_shape {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract q_projection_shape: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `q_projection_shape`.
+/// Check after computation: `contract_inv_q_projection_shape!(result_expr)`
+macro_rules! contract_inv_q_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11131,6 +17656,15 @@ macro_rules! contract_pre_rope_frequency {
     }};
 }
 
+/// Invariants for equation `rope_frequency`.
+/// Check after computation: `contract_inv_rope_frequency!(result_expr)`
+macro_rules! contract_inv_rope_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_ratio`.
 /// Domain-specific. Call: `contract_pre_swiglu_ratio!(slice_expr)`
 macro_rules! contract_pre_swiglu_ratio {
@@ -11139,6 +17673,15 @@ macro_rules! contract_pre_swiglu_ratio {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract swiglu_ratio: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `swiglu_ratio`.
+/// Check after computation: `contract_inv_swiglu_ratio!(result_expr)`
+macro_rules! contract_inv_swiglu_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11156,6 +17699,15 @@ macro_rules! contract_pre_contract_composition {
     }};
 }
 
+/// Invariants for equation `contract_composition`.
+/// Check after computation: `contract_inv_contract_composition!(result_expr)`
+macro_rules! contract_inv_contract_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `flops_per_token`.
 /// Domain-specific. Call: `contract_pre_flops_per_token!(slice_expr)`
 macro_rules! contract_pre_flops_per_token {
@@ -11164,6 +17716,15 @@ macro_rules! contract_pre_flops_per_token {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract flops_per_token: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `flops_per_token`.
+/// Check after computation: `contract_inv_flops_per_token!(result_expr)`
+macro_rules! contract_inv_flops_per_token {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11178,6 +17739,15 @@ macro_rules! contract_pre_memory_breakdown {
     }};
 }
 
+/// Invariants for equation `memory_breakdown`.
+/// Check after computation: `contract_inv_memory_breakdown!(result_expr)`
+macro_rules! contract_inv_memory_breakdown {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `model_parameter_count`.
 /// Domain-specific. Call: `contract_pre_model_parameter_count!(slice_expr)`
 macro_rules! contract_pre_model_parameter_count {
@@ -11186,6 +17756,15 @@ macro_rules! contract_pre_model_parameter_count {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract model_parameter_count: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `model_parameter_count`.
+/// Check after computation: `contract_inv_model_parameter_count!(result_expr)`
+macro_rules! contract_inv_model_parameter_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11200,6 +17779,15 @@ macro_rules! contract_pre_throughput_model {
     }};
 }
 
+/// Invariants for equation `throughput_model`.
+/// Check after computation: `contract_inv_throughput_model!(result_expr)`
+macro_rules! contract_inv_throughput_model {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `verification_ladder`.
 /// Domain-specific. Call: `contract_pre_verification_ladder!(slice_expr)`
 macro_rules! contract_pre_verification_ladder {
@@ -11208,6 +17796,15 @@ macro_rules! contract_pre_verification_ladder {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract verification_ladder: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `verification_ladder`.
+/// Check after computation: `contract_inv_verification_ladder!(result_expr)`
+macro_rules! contract_inv_verification_ladder {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11227,6 +17824,15 @@ macro_rules! contract_pre_activation_magnitude {
     }};
 }
 
+/// Invariants for equation `activation_magnitude`.
+/// Check after computation: `contract_inv_activation_magnitude!(result_expr)`
+macro_rules! contract_inv_activation_magnitude {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `attention_sublayer`.
 /// Domain-specific. Call: `contract_pre_attention_sublayer!(slice_expr)`
 macro_rules! contract_pre_attention_sublayer {
@@ -11235,6 +17841,15 @@ macro_rules! contract_pre_attention_sublayer {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract attention_sublayer: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `attention_sublayer`.
+/// Check after computation: `contract_inv_attention_sublayer!(result_expr)`
+macro_rules! contract_inv_attention_sublayer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11249,6 +17864,15 @@ macro_rules! contract_pre_ffn_sublayer {
     }};
 }
 
+/// Invariants for equation `ffn_sublayer`.
+/// Check after computation: `contract_inv_ffn_sublayer!(result_expr)`
+macro_rules! contract_inv_ffn_sublayer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gdn_sublayer`.
 /// Domain-specific. Call: `contract_pre_gdn_sublayer!(slice_expr)`
 macro_rules! contract_pre_gdn_sublayer {
@@ -11257,6 +17881,15 @@ macro_rules! contract_pre_gdn_sublayer {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract gdn_sublayer: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `gdn_sublayer`.
+/// Check after computation: `contract_inv_gdn_sublayer!(result_expr)`
+macro_rules! contract_inv_gdn_sublayer {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11273,6 +17906,15 @@ macro_rules! contract_pre_gradient_flow {
     }};
 }
 
+/// Invariants for equation `gradient_flow`.
+/// Check after computation: `contract_inv_gradient_flow!(result_expr)`
+macro_rules! contract_inv_gradient_flow {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `hybrid_block`.
 /// Domain-specific. Call: `contract_pre_hybrid_block!(slice_expr)`
 macro_rules! contract_pre_hybrid_block {
@@ -11281,6 +17923,15 @@ macro_rules! contract_pre_hybrid_block {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract hybrid_block: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `hybrid_block`.
+/// Check after computation: `contract_inv_hybrid_block!(result_expr)`
+macro_rules! contract_inv_hybrid_block {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11298,6 +17949,15 @@ macro_rules! contract_pre_kv_projection_shape {
     }};
 }
 
+/// Invariants for equation `kv_projection_shape`.
+/// Check after computation: `contract_inv_kv_projection_shape!(result_expr)`
+macro_rules! contract_inv_kv_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `o_projection_transpose`.
 /// Domain-specific. Call: `contract_pre_o_projection_transpose!(slice_expr)`
 macro_rules! contract_pre_o_projection_transpose {
@@ -11306,6 +17966,15 @@ macro_rules! contract_pre_o_projection_transpose {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract o_projection_transpose: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `o_projection_transpose`.
+/// Check after computation: `contract_inv_o_projection_transpose!(result_expr)`
+macro_rules! contract_inv_o_projection_transpose {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11320,6 +17989,15 @@ macro_rules! contract_pre_q_projection_shape {
     }};
 }
 
+/// Invariants for equation `q_projection_shape`.
+/// Check after computation: `contract_inv_q_projection_shape!(result_expr)`
+macro_rules! contract_inv_q_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rope_frequency`.
 /// Domain-specific. Call: `contract_pre_rope_frequency!(slice_expr)`
 macro_rules! contract_pre_rope_frequency {
@@ -11331,6 +18009,15 @@ macro_rules! contract_pre_rope_frequency {
     }};
 }
 
+/// Invariants for equation `rope_frequency`.
+/// Check after computation: `contract_inv_rope_frequency!(result_expr)`
+macro_rules! contract_inv_rope_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_ratio`.
 /// Domain-specific. Call: `contract_pre_swiglu_ratio!(slice_expr)`
 macro_rules! contract_pre_swiglu_ratio {
@@ -11339,6 +18026,15 @@ macro_rules! contract_pre_swiglu_ratio {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract swiglu_ratio: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `swiglu_ratio`.
+/// Check after computation: `contract_inv_swiglu_ratio!(result_expr)`
+macro_rules! contract_inv_swiglu_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11356,6 +18052,15 @@ macro_rules! contract_pre_active_parameter_count {
     }};
 }
 
+/// Invariants for equation `active_parameter_count`.
+/// Check after computation: `contract_inv_active_parameter_count!(result_expr)`
+macro_rules! contract_inv_active_parameter_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `contract_composition`.
 /// Domain-specific. Call: `contract_pre_contract_composition!(slice_expr)`
 macro_rules! contract_pre_contract_composition {
@@ -11364,6 +18069,15 @@ macro_rules! contract_pre_contract_composition {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract contract_composition: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `contract_composition`.
+/// Check after computation: `contract_inv_contract_composition!(result_expr)`
+macro_rules! contract_inv_contract_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11378,6 +18092,15 @@ macro_rules! contract_pre_flops_per_token {
     }};
 }
 
+/// Invariants for equation `flops_per_token`.
+/// Check after computation: `contract_inv_flops_per_token!(result_expr)`
+macro_rules! contract_inv_flops_per_token {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `memory_breakdown`.
 /// Domain-specific. Call: `contract_pre_memory_breakdown!(slice_expr)`
 macro_rules! contract_pre_memory_breakdown {
@@ -11386,6 +18109,15 @@ macro_rules! contract_pre_memory_breakdown {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract memory_breakdown: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `memory_breakdown`.
+/// Check after computation: `contract_inv_memory_breakdown!(result_expr)`
+macro_rules! contract_inv_memory_breakdown {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11400,6 +18132,15 @@ macro_rules! contract_pre_model_parameter_count {
     }};
 }
 
+/// Invariants for equation `model_parameter_count`.
+/// Check after computation: `contract_inv_model_parameter_count!(result_expr)`
+macro_rules! contract_inv_model_parameter_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `throughput_model`.
 /// Domain-specific. Call: `contract_pre_throughput_model!(slice_expr)`
 macro_rules! contract_pre_throughput_model {
@@ -11411,6 +18152,15 @@ macro_rules! contract_pre_throughput_model {
     }};
 }
 
+/// Invariants for equation `throughput_model`.
+/// Check after computation: `contract_inv_throughput_model!(result_expr)`
+macro_rules! contract_inv_throughput_model {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `verification_ladder`.
 /// Domain-specific. Call: `contract_pre_verification_ladder!(slice_expr)`
 macro_rules! contract_pre_verification_ladder {
@@ -11419,6 +18169,15 @@ macro_rules! contract_pre_verification_ladder {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract verification_ladder: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `verification_ladder`.
+/// Check after computation: `contract_inv_verification_ladder!(result_expr)`
+macro_rules! contract_inv_verification_ladder {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11436,6 +18195,15 @@ macro_rules! contract_pre_kv_projection_shape {
     }};
 }
 
+/// Invariants for equation `kv_projection_shape`.
+/// Check after computation: `contract_inv_kv_projection_shape!(result_expr)`
+macro_rules! contract_inv_kv_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `moe_expert_shape`.
 /// Domain-specific. Call: `contract_pre_moe_expert_shape!(slice_expr)`
 macro_rules! contract_pre_moe_expert_shape {
@@ -11444,6 +18212,15 @@ macro_rules! contract_pre_moe_expert_shape {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract moe_expert_shape: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `moe_expert_shape`.
+/// Check after computation: `contract_inv_moe_expert_shape!(result_expr)`
+macro_rules! contract_inv_moe_expert_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11458,6 +18235,15 @@ macro_rules! contract_pre_moe_router_shape {
     }};
 }
 
+/// Invariants for equation `moe_router_shape`.
+/// Check after computation: `contract_inv_moe_router_shape!(result_expr)`
+macro_rules! contract_inv_moe_router_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `o_projection_transpose`.
 /// Domain-specific. Call: `contract_pre_o_projection_transpose!(slice_expr)`
 macro_rules! contract_pre_o_projection_transpose {
@@ -11466,6 +18252,15 @@ macro_rules! contract_pre_o_projection_transpose {
         let _pv_a = &$input;
         debug_assert!(_pv_a.len() > 0,
             "Contract o_projection_transpose: precondition violated — a.len() > 0");
+    }};
+}
+
+/// Invariants for equation `o_projection_transpose`.
+/// Check after computation: `contract_inv_o_projection_transpose!(result_expr)`
+macro_rules! contract_inv_o_projection_transpose {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11480,6 +18275,15 @@ macro_rules! contract_pre_q_projection_shape {
     }};
 }
 
+/// Invariants for equation `q_projection_shape`.
+/// Check after computation: `contract_inv_q_projection_shape!(result_expr)`
+macro_rules! contract_inv_q_projection_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rope_frequency`.
 /// Domain-specific. Call: `contract_pre_rope_frequency!(slice_expr)`
 macro_rules! contract_pre_rope_frequency {
@@ -11491,6 +18295,15 @@ macro_rules! contract_pre_rope_frequency {
     }};
 }
 
+/// Invariants for equation `rope_frequency`.
+/// Check after computation: `contract_inv_rope_frequency!(result_expr)`
+macro_rules! contract_inv_rope_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_ratio`.
 /// Domain-specific. Call: `contract_pre_swiglu_ratio!(slice_expr)`
 macro_rules! contract_pre_swiglu_ratio {
@@ -11499,6 +18312,15 @@ macro_rules! contract_pre_swiglu_ratio {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract swiglu_ratio: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `swiglu_ratio`.
+/// Check after computation: `contract_inv_swiglu_ratio!(result_expr)`
+macro_rules! contract_inv_swiglu_ratio {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11514,6 +18336,15 @@ macro_rules! contract_pre_embed_insert {
     }};
 }
 
+/// Invariants for equation `embed_insert`.
+/// Check after computation: `contract_inv_embed_insert!(result_expr)`
+macro_rules! contract_inv_embed_insert {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `metric_correctness`.
 /// Call at function entry: `contract_pre_metric_correctness!(input_expr)`
 macro_rules! contract_pre_metric_correctness {
@@ -11523,12 +18354,30 @@ macro_rules! contract_pre_metric_correctness {
     }};
 }
 
+/// Invariants for equation `metric_correctness`.
+/// Check after computation: `contract_inv_metric_correctness!(result_expr)`
+macro_rules! contract_inv_metric_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `retrieve_rank`.
 /// Call at function entry: `contract_pre_retrieve_rank!(input_expr)`
 macro_rules! contract_pre_retrieve_rank {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `retrieve_rank`.
+/// Check after computation: `contract_inv_retrieve_rank!(result_expr)`
+macro_rules! contract_inv_retrieve_rank {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11546,6 +18395,15 @@ macro_rules! contract_pre_bootstrap_sample {
     }};
 }
 
+/// Invariants for equation `bootstrap_sample`.
+/// Check after computation: `contract_inv_bootstrap_sample!(result_expr)`
+macro_rules! contract_inv_bootstrap_sample {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ensemble_size`.
 /// Domain-specific. Call: `contract_pre_ensemble_size!(slice_expr)`
 macro_rules! contract_pre_ensemble_size {
@@ -11556,6 +18414,15 @@ macro_rules! contract_pre_ensemble_size {
             "Contract ensemble_size: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract ensemble_size: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `ensemble_size`.
+/// Check after computation: `contract_inv_ensemble_size!(result_expr)`
+macro_rules! contract_inv_ensemble_size {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11572,6 +18439,15 @@ macro_rules! contract_pre_majority_vote {
     }};
 }
 
+/// Invariants for equation `majority_vote`.
+/// Check after computation: `contract_inv_majority_vote!(result_expr)`
+macro_rules! contract_inv_majority_vote {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `predict`.
 /// Domain-specific. Call: `contract_pre_predict!(slice_expr)`
 macro_rules! contract_pre_predict {
@@ -11582,6 +18458,15 @@ macro_rules! contract_pre_predict {
             "Contract predict: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract predict: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `predict`.
+/// Check after computation: `contract_inv_predict!(result_expr)`
+macro_rules! contract_inv_predict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11597,12 +18482,30 @@ macro_rules! contract_pre_expand_recipe {
     }};
 }
 
+/// Invariants for equation `expand_recipe`.
+/// Check after computation: `contract_inv_expand_recipe!(result_expr)`
+macro_rules! contract_inv_expand_recipe {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `validate_input_type`.
 /// Call at function entry: `contract_pre_validate_input_type!(input_expr)`
 macro_rules! contract_pre_validate_input_type {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `validate_input_type`.
+/// Check after computation: `contract_inv_validate_input_type!(result_expr)`
+macro_rules! contract_inv_validate_input_type {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11614,6 +18517,15 @@ macro_rules! contract_pre_validate_inputs {
         let _pv_inputs = &$input;
         debug_assert!(_pv_inputs.len() > 0,
             "Contract validate_inputs: precondition violated — inputs.len() > 0");
+    }};
+}
+
+/// Invariants for equation `validate_inputs`.
+/// Check after computation: `contract_inv_validate_inputs!(result_expr)`
+macro_rules! contract_inv_validate_inputs {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11632,6 +18544,15 @@ macro_rules! contract_pre_format_iso_timestamp {
 /// Postconditions for equation `format_iso_timestamp`.
 /// Call before return: `contract_post_format_iso_timestamp!(result_expr)`
 macro_rules! contract_post_format_iso_timestamp {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `format_iso_timestamp`.
+/// Check after computation: `contract_inv_format_iso_timestamp!(result_expr)`
+macro_rules! contract_inv_format_iso_timestamp {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -11664,6 +18585,15 @@ macro_rules! contract_post_format_semver {
     }};
 }
 
+/// Invariants for equation `format_semver`.
+/// Check after computation: `contract_inv_format_semver!(result_expr)`
+macro_rules! contract_inv_format_semver {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `format_semver`.
 macro_rules! contract_format_semver {
     ($input:expr, $body:expr) => {{
@@ -11691,6 +18621,15 @@ macro_rules! contract_post_format_ticket_id {
     }};
 }
 
+/// Invariants for equation `format_ticket_id`.
+/// Check after computation: `contract_inv_format_ticket_id!(result_expr)`
+macro_rules! contract_inv_format_ticket_id {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `format_ticket_id`.
 macro_rules! contract_format_ticket_id {
     ($input:expr, $body:expr) => {{
@@ -11704,6 +18643,15 @@ macro_rules! contract_format_ticket_id {
 // Auto-generated from contracts/registry-integrity-v1.yaml — DO NOT EDIT
 // Contract: registry-integrity-v1
 
+/// Invariants for equation `list_completeness`.
+/// Check after computation: `contract_inv_list_completeness!(result_expr)`
+macro_rules! contract_inv_list_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pull_idempotency`.
 /// Call at function entry: `contract_pre_pull_idempotency!(input_expr)`
 macro_rules! contract_pre_pull_idempotency {
@@ -11713,12 +18661,30 @@ macro_rules! contract_pre_pull_idempotency {
     }};
 }
 
+/// Invariants for equation `pull_idempotency`.
+/// Check after computation: `contract_inv_pull_idempotency!(result_expr)`
+macro_rules! contract_inv_pull_idempotency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `run_lifecycle`.
 /// Call at function entry: `contract_pre_run_lifecycle!(input_expr)`
 macro_rules! contract_pre_run_lifecycle {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `run_lifecycle`.
+/// Check after computation: `contract_inv_run_lifecycle!(result_expr)`
+macro_rules! contract_inv_run_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11734,6 +18700,15 @@ macro_rules! contract_pre_draw_bounds {
     }};
 }
 
+/// Invariants for equation `draw_bounds`.
+/// Check after computation: `contract_inv_draw_bounds!(result_expr)`
+macro_rules! contract_inv_draw_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `layout_area_conservation`.
 /// Domain-specific. Call: `contract_pre_layout_area_conservation!(slice_expr)`
 macro_rules! contract_pre_layout_area_conservation {
@@ -11743,12 +18718,30 @@ macro_rules! contract_pre_layout_area_conservation {
     }};
 }
 
+/// Invariants for equation `layout_area_conservation`.
+/// Check after computation: `contract_inv_layout_area_conservation!(result_expr)`
+macro_rules! contract_inv_layout_area_conservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `line_connectivity`.
 /// Call at function entry: `contract_pre_line_connectivity!(input_expr)`
 macro_rules! contract_pre_line_connectivity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `line_connectivity`.
+/// Check after computation: `contract_inv_line_connectivity!(result_expr)`
+macro_rules! contract_inv_line_connectivity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11764,6 +18757,15 @@ macro_rules! contract_pre_embedding_insert {
     }};
 }
 
+/// Invariants for equation `embedding_insert`.
+/// Check after computation: `contract_inv_embedding_insert!(result_expr)`
+macro_rules! contract_inv_embedding_insert {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `metric_bounds`.
 /// Domain-specific. Call: `contract_pre_metric_bounds!(slice_expr)`
 macro_rules! contract_pre_metric_bounds {
@@ -11773,12 +18775,30 @@ macro_rules! contract_pre_metric_bounds {
     }};
 }
 
+/// Invariants for equation `metric_bounds`.
+/// Check after computation: `contract_inv_metric_bounds!(result_expr)`
+macro_rules! contract_inv_metric_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `retrieval_ranking`.
 /// Call at function entry: `contract_pre_retrieval_ranking!(input_expr)`
 macro_rules! contract_pre_retrieval_ranking {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `retrieval_ranking`.
+/// Check after computation: `contract_inv_retrieval_ranking!(result_expr)`
+macro_rules! contract_inv_retrieval_ranking {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11807,6 +18827,15 @@ macro_rules! contract_post_rmsnorm {
     }};
 }
 
+/// Invariants for equation `rmsnorm`.
+/// Check after computation: `contract_inv_rmsnorm!(result_expr)`
+macro_rules! contract_inv_rmsnorm {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `rmsnorm`.
 macro_rules! contract_rmsnorm {
     ($input:expr, $body:expr) => {{
@@ -11831,6 +18860,15 @@ macro_rules! contract_pre_bandwidth_ceiling {
     }};
 }
 
+/// Invariants for equation `bandwidth_ceiling`.
+/// Check after computation: `contract_inv_bandwidth_ceiling!(result_expr)`
+macro_rules! contract_inv_bandwidth_ceiling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `compute_ceiling`.
 /// Domain-specific. Call: `contract_pre_compute_ceiling!(slice_expr)`
 macro_rules! contract_pre_compute_ceiling {
@@ -11839,6 +18877,15 @@ macro_rules! contract_pre_compute_ceiling {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract compute_ceiling: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `compute_ceiling`.
+/// Check after computation: `contract_inv_compute_ceiling!(result_expr)`
+macro_rules! contract_inv_compute_ceiling {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11853,6 +18900,15 @@ macro_rules! contract_pre_model_bytes {
     }};
 }
 
+/// Invariants for equation `model_bytes`.
+/// Check after computation: `contract_inv_model_bytes!(result_expr)`
+macro_rules! contract_inv_model_bytes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `throughput_bound`.
 /// Domain-specific. Call: `contract_pre_throughput_bound!(slice_expr)`
 macro_rules! contract_pre_throughput_bound {
@@ -11861,6 +18917,15 @@ macro_rules! contract_pre_throughput_bound {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract throughput_bound: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `throughput_bound`.
+/// Check after computation: `contract_inv_throughput_bound!(result_expr)`
+macro_rules! contract_inv_throughput_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11878,6 +18943,15 @@ macro_rules! contract_pre_base_frequency {
     }};
 }
 
+/// Invariants for equation `base_frequency`.
+/// Check after computation: `contract_inv_base_frequency!(result_expr)`
+macro_rules! contract_inv_base_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `linear_interpolation`.
 /// Domain-specific. Call: `contract_pre_linear_interpolation!(slice_expr)`
 macro_rules! contract_pre_linear_interpolation {
@@ -11886,6 +18960,15 @@ macro_rules! contract_pre_linear_interpolation {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract linear_interpolation: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `linear_interpolation`.
+/// Check after computation: `contract_inv_linear_interpolation!(result_expr)`
+macro_rules! contract_inv_linear_interpolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11900,6 +18983,15 @@ macro_rules! contract_pre_ntk_scaled_base {
     }};
 }
 
+/// Invariants for equation `ntk_scaled_base`.
+/// Check after computation: `contract_inv_ntk_scaled_base!(result_expr)`
+macro_rules! contract_inv_ntk_scaled_base {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `rotation_matrix`.
 /// Domain-specific. Call: `contract_pre_rotation_matrix!(slice_expr)`
 macro_rules! contract_pre_rotation_matrix {
@@ -11908,6 +19000,15 @@ macro_rules! contract_pre_rotation_matrix {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract rotation_matrix: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `rotation_matrix`.
+/// Check after computation: `contract_inv_rotation_matrix!(result_expr)`
+macro_rules! contract_inv_rotation_matrix {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11922,6 +19023,15 @@ macro_rules! contract_pre_yarn_mixed_frequency {
     }};
 }
 
+/// Invariants for equation `yarn_mixed_frequency`.
+/// Check after computation: `contract_inv_yarn_mixed_frequency!(result_expr)`
+macro_rules! contract_inv_yarn_mixed_frequency {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `yarn_ramp`.
 /// Domain-specific. Call: `contract_pre_yarn_ramp!(slice_expr)`
 macro_rules! contract_pre_yarn_ramp {
@@ -11930,6 +19040,15 @@ macro_rules! contract_pre_yarn_ramp {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract yarn_ramp: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `yarn_ramp`.
+/// Check after computation: `contract_inv_yarn_ramp!(result_expr)`
+macro_rules! contract_inv_yarn_ramp {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -11958,6 +19077,15 @@ macro_rules! contract_post_rope {
     }};
 }
 
+/// Invariants for equation `rope`.
+/// Check after computation: `contract_inv_rope!(result_expr)`
+macro_rules! contract_inv_rope {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `rope`.
 macro_rules! contract_rope {
     ($input:expr, $body:expr) => {{
@@ -11982,6 +19110,15 @@ macro_rules! contract_pre_format_parity {
     }};
 }
 
+/// Invariants for equation `format_parity`.
+/// Check after computation: `contract_inv_format_parity!(result_expr)`
+macro_rules! contract_inv_format_parity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/safetensors-format-safety-v1.yaml — DO NOT EDIT
 // Contract: safetensors-format-safety-v1
 
@@ -11997,6 +19134,15 @@ macro_rules! contract_pre_dtype_consistency {
 /// Postconditions for equation `dtype_consistency`.
 /// Call before return: `contract_post_dtype_consistency!(result_expr)`
 macro_rules! contract_post_dtype_consistency {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `dtype_consistency`.
+/// Check after computation: `contract_inv_dtype_consistency!(result_expr)`
+macro_rules! contract_inv_dtype_consistency {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12029,6 +19175,15 @@ macro_rules! contract_post_header_size_validation {
     }};
 }
 
+/// Invariants for equation `header_size_validation`.
+/// Check after computation: `contract_inv_header_size_validation!(result_expr)`
+macro_rules! contract_inv_header_size_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `header_size_validation`.
 macro_rules! contract_header_size_validation {
     ($input:expr, $body:expr) => {{
@@ -12051,6 +19206,15 @@ macro_rules! contract_pre_mmap_zero_copy {
 /// Postconditions for equation `mmap_zero_copy`.
 /// Call before return: `contract_post_mmap_zero_copy!(result_expr)`
 macro_rules! contract_post_mmap_zero_copy {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `mmap_zero_copy`.
+/// Check after computation: `contract_inv_mmap_zero_copy!(result_expr)`
+macro_rules! contract_inv_mmap_zero_copy {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12083,6 +19247,15 @@ macro_rules! contract_post_no_overlap_invariant {
     }};
 }
 
+/// Invariants for equation `no_overlap_invariant`.
+/// Check after computation: `contract_inv_no_overlap_invariant!(result_expr)`
+macro_rules! contract_inv_no_overlap_invariant {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `no_overlap_invariant`.
 macro_rules! contract_no_overlap_invariant {
     ($input:expr, $body:expr) => {{
@@ -12105,6 +19278,15 @@ macro_rules! contract_pre_tensor_offset_bounds {
 /// Postconditions for equation `tensor_offset_bounds`.
 /// Call before return: `contract_post_tensor_offset_bounds!(result_expr)`
 macro_rules! contract_post_tensor_offset_bounds {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tensor_offset_bounds`.
+/// Check after computation: `contract_inv_tensor_offset_bounds!(result_expr)`
+macro_rules! contract_inv_tensor_offset_bounds {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12136,6 +19318,15 @@ macro_rules! contract_pre_classify_filesystem {
     }};
 }
 
+/// Invariants for equation `classify_filesystem`.
+/// Check after computation: `contract_inv_classify_filesystem!(result_expr)`
+macro_rules! contract_inv_classify_filesystem {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `classify_injection`.
 /// Domain-specific. Call: `contract_pre_classify_injection!(slice_expr)`
 macro_rules! contract_pre_classify_injection {
@@ -12146,6 +19337,15 @@ macro_rules! contract_pre_classify_injection {
             "Contract classify_injection: precondition violated — !source.is_empty()");
         debug_assert!(_pv_source.len() <= 1_000_000,
             "Contract classify_injection: precondition violated — source.len() <= 1_000_000");
+    }};
+}
+
+/// Invariants for equation `classify_injection`.
+/// Check after computation: `contract_inv_classify_injection!(result_expr)`
+macro_rules! contract_inv_classify_injection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12162,12 +19362,30 @@ macro_rules! contract_pre_classify_secrets {
     }};
 }
 
+/// Invariants for equation `classify_secrets`.
+/// Check after computation: `contract_inv_classify_secrets!(result_expr)`
+macro_rules! contract_inv_classify_secrets {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `lint_shell`.
 /// Call at function entry: `contract_pre_lint_shell!(input_expr)`
 macro_rules! contract_pre_lint_shell {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `lint_shell`.
+/// Check after computation: `contract_inv_lint_shell!(result_expr)`
+macro_rules! contract_inv_lint_shell {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12185,6 +19403,15 @@ macro_rules! contract_pre_greedy {
     }};
 }
 
+/// Invariants for equation `greedy`.
+/// Check after computation: `contract_inv_greedy!(result_expr)`
+macro_rules! contract_inv_greedy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `temperature`.
 /// Domain-specific. Call: `contract_pre_temperature!(slice_expr)`
 macro_rules! contract_pre_temperature {
@@ -12193,6 +19420,15 @@ macro_rules! contract_pre_temperature {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract temperature: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `temperature`.
+/// Check after computation: `contract_inv_temperature!(result_expr)`
+macro_rules! contract_inv_temperature {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12207,6 +19443,15 @@ macro_rules! contract_pre_top_k {
     }};
 }
 
+/// Invariants for equation `top_k`.
+/// Check after computation: `contract_inv_top_k!(result_expr)`
+macro_rules! contract_inv_top_k {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `top_p`.
 /// Domain-specific. Call: `contract_pre_top_p!(slice_expr)`
 macro_rules! contract_pre_top_p {
@@ -12215,6 +19460,15 @@ macro_rules! contract_pre_top_p {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract top_p: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `top_p`.
+/// Check after computation: `contract_inv_top_p!(result_expr)`
+macro_rules! contract_inv_top_p {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12230,6 +19484,15 @@ macro_rules! contract_pre_filesystem_isolation {
     }};
 }
 
+/// Invariants for equation `filesystem_isolation`.
+/// Check after computation: `contract_inv_filesystem_isolation!(result_expr)`
+macro_rules! contract_inv_filesystem_isolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `network_isolation`.
 /// Domain-specific. Call: `contract_pre_network_isolation!(slice_expr)`
 macro_rules! contract_pre_network_isolation {
@@ -12239,12 +19502,30 @@ macro_rules! contract_pre_network_isolation {
     }};
 }
 
+/// Invariants for equation `network_isolation`.
+/// Check after computation: `contract_inv_network_isolation!(result_expr)`
+macro_rules! contract_inv_network_isolation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `overlay_capture`.
 /// Domain-specific. Call: `contract_pre_overlay_capture!(slice_expr)`
 macro_rules! contract_pre_overlay_capture {
     () => {{}};
     ($input:expr) => {{
         let _pv_overlay = &$input;
+    }};
+}
+
+/// Invariants for equation `overlay_capture`.
+/// Check after computation: `contract_inv_overlay_capture!(result_expr)`
+macro_rules! contract_inv_overlay_capture {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12270,6 +19551,15 @@ macro_rules! contract_post_geometric_mean {
     ($result:expr) => {{
         let _contract_result = &$result;
         debug_assert!(*_contract_result >= 0.0 && *_contract_result <= 100.0, "Contract geometric_mean: postcondition violated — result >= 0.0 && result <= 100.0");
+    }};
+}
+
+/// Invariants for equation `geometric_mean`.
+/// Check after computation: `contract_inv_geometric_mean!(result_expr)`
+macro_rules! contract_inv_geometric_mean {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12304,6 +19594,15 @@ macro_rules! contract_post_grade_from_score {
     }};
 }
 
+/// Invariants for equation `grade_from_score`.
+/// Check after computation: `contract_inv_grade_from_score!(result_expr)`
+macro_rules! contract_inv_grade_from_score {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `grade_from_score`.
 macro_rules! contract_grade_from_score {
     ($input:expr, $body:expr) => {{
@@ -12326,6 +19625,15 @@ macro_rules! contract_pre_drift_detection {
     }};
 }
 
+/// Invariants for equation `drift_detection`.
+/// Check after computation: `contract_inv_drift_detection!(result_expr)`
+macro_rules! contract_inv_drift_detection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ephemeral_cleanup`.
 /// Domain-specific. Call: `contract_pre_ephemeral_cleanup!(slice_expr)`
 macro_rules! contract_pre_ephemeral_cleanup {
@@ -12335,12 +19643,30 @@ macro_rules! contract_pre_ephemeral_cleanup {
     }};
 }
 
+/// Invariants for equation `ephemeral_cleanup`.
+/// Check after computation: `contract_inv_ephemeral_cleanup!(result_expr)`
+macro_rules! contract_inv_ephemeral_cleanup {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `provider_dispatch`.
 /// Domain-specific. Call: `contract_pre_provider_dispatch!(slice_expr)`
 macro_rules! contract_pre_provider_dispatch {
     () => {{}};
     ($input:expr) => {{
         let _pv_ref = &$input;
+    }};
+}
+
+/// Invariants for equation `provider_dispatch`.
+/// Check after computation: `contract_inv_provider_dispatch!(result_expr)`
+macro_rules! contract_inv_provider_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12358,6 +19684,15 @@ macro_rules! contract_pre_comprehension_equivalence {
     }};
 }
 
+/// Invariants for equation `comprehension_equivalence`.
+/// Check after computation: `contract_inv_comprehension_equivalence!(result_expr)`
+macro_rules! contract_inv_comprehension_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `control_flow_equivalence`.
 /// Domain-specific. Call: `contract_pre_control_flow_equivalence!(slice_expr)`
 macro_rules! contract_pre_control_flow_equivalence {
@@ -12366,6 +19701,15 @@ macro_rules! contract_pre_control_flow_equivalence {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract control_flow_equivalence: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `control_flow_equivalence`.
+/// Check after computation: `contract_inv_control_flow_equivalence!(result_expr)`
+macro_rules! contract_inv_control_flow_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12380,6 +19724,15 @@ macro_rules! contract_pre_expression_equivalence {
     }};
 }
 
+/// Invariants for equation `expression_equivalence`.
+/// Check after computation: `contract_inv_expression_equivalence!(result_expr)`
+macro_rules! contract_inv_expression_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `observational_equivalence`.
 /// Domain-specific. Call: `contract_pre_observational_equivalence!(slice_expr)`
 macro_rules! contract_pre_observational_equivalence {
@@ -12391,6 +19744,15 @@ macro_rules! contract_pre_observational_equivalence {
     }};
 }
 
+/// Invariants for equation `observational_equivalence`.
+/// Check after computation: `contract_inv_observational_equivalence!(result_expr)`
+macro_rules! contract_inv_observational_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `statement_equivalence`.
 /// Domain-specific. Call: `contract_pre_statement_equivalence!(slice_expr)`
 macro_rules! contract_pre_statement_equivalence {
@@ -12399,6 +19761,15 @@ macro_rules! contract_pre_statement_equivalence {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract statement_equivalence: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `statement_equivalence`.
+/// Check after computation: `contract_inv_statement_equivalence!(result_expr)`
+macro_rules! contract_inv_statement_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12416,12 +19787,30 @@ macro_rules! contract_pre_deserialize {
     }};
 }
 
+/// Invariants for equation `deserialize`.
+/// Check after computation: `contract_inv_deserialize!(result_expr)`
+macro_rules! contract_inv_deserialize {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `serialize`.
 /// Call at function entry: `contract_pre_serialize!(input_expr)`
 macro_rules! contract_pre_serialize {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `serialize`.
+/// Check after computation: `contract_inv_serialize!(result_expr)`
+macro_rules! contract_inv_serialize {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12441,6 +19830,15 @@ macro_rules! contract_pre_serialization {
     }};
 }
 
+/// Invariants for equation `serialization`.
+/// Check after computation: `contract_inv_serialization!(result_expr)`
+macro_rules! contract_inv_serialization {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/session-v1.yaml — DO NOT EDIT
 // Contract: session-v1
 
@@ -12456,6 +19854,15 @@ macro_rules! contract_pre_age_filter {
 /// Postconditions for equation `age_filter`.
 /// Call before return: `contract_post_age_filter!(result_expr)`
 macro_rules! contract_post_age_filter {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `age_filter`.
+/// Check after computation: `contract_inv_age_filter!(result_expr)`
+macro_rules! contract_inv_age_filter {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12483,6 +19890,15 @@ macro_rules! contract_pre_append_only {
 /// Postconditions for equation `append_only`.
 /// Call before return: `contract_post_append_only!(result_expr)`
 macro_rules! contract_post_append_only {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `append_only`.
+/// Check after computation: `contract_inv_append_only!(result_expr)`
+macro_rules! contract_inv_append_only {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12517,6 +19933,15 @@ macro_rules! contract_post_jsonl_roundtrip {
     }};
 }
 
+/// Invariants for equation `jsonl_roundtrip`.
+/// Check after computation: `contract_inv_jsonl_roundtrip!(result_expr)`
+macro_rules! contract_inv_jsonl_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `jsonl_roundtrip`.
 macro_rules! contract_jsonl_roundtrip {
     ($input:expr, $body:expr) => {{
@@ -12539,6 +19964,15 @@ macro_rules! contract_pre_manifest_serde {
 /// Postconditions for equation `manifest_serde`.
 /// Call before return: `contract_post_manifest_serde!(result_expr)`
 macro_rules! contract_post_manifest_serde {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `manifest_serde`.
+/// Check after computation: `contract_inv_manifest_serde!(result_expr)`
+macro_rules! contract_inv_manifest_serde {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12570,6 +20004,15 @@ macro_rules! contract_pre_entropy {
     }};
 }
 
+/// Invariants for equation `entropy`.
+/// Check after computation: `contract_inv_entropy!(result_expr)`
+macro_rules! contract_inv_entropy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `uniform_entropy`.
 /// Domain-specific. Call: `contract_pre_uniform_entropy!(slice_expr)`
 macro_rules! contract_pre_uniform_entropy {
@@ -12580,6 +20023,15 @@ macro_rules! contract_pre_uniform_entropy {
             "Contract uniform_entropy: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract uniform_entropy: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `uniform_entropy`.
+/// Check after computation: `contract_inv_uniform_entropy!(result_expr)`
+macro_rules! contract_inv_uniform_entropy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12595,6 +20047,15 @@ macro_rules! contract_pre_config_validation {
     }};
 }
 
+/// Invariants for equation `config_validation`.
+/// Check after computation: `contract_inv_config_validation!(result_expr)`
+macro_rules! contract_inv_config_validation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `parser_correctness`.
 /// Domain-specific. Call: `contract_pre_parser_correctness!(slice_expr)`
 macro_rules! contract_pre_parser_correctness {
@@ -12606,12 +20067,30 @@ macro_rules! contract_pre_parser_correctness {
     }};
 }
 
+/// Invariants for equation `parser_correctness`.
+/// Check after computation: `contract_inv_parser_correctness!(result_expr)`
+macro_rules! contract_inv_parser_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `startup_budget`.
 /// Call at function entry: `contract_pre_startup_budget!(input_expr)`
 macro_rules! contract_pre_startup_budget {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `startup_budget`.
+/// Check after computation: `contract_inv_startup_budget!(result_expr)`
+macro_rules! contract_inv_startup_budget {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12631,6 +20110,15 @@ macro_rules! contract_pre_sigmoid {
     }};
 }
 
+/// Invariants for equation `sigmoid`.
+/// Check after computation: `contract_inv_sigmoid!(result_expr)`
+macro_rules! contract_inv_sigmoid {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `silu`.
 /// Domain-specific. Call: `contract_pre_silu!(slice_expr)`
 macro_rules! contract_pre_silu {
@@ -12641,6 +20129,15 @@ macro_rules! contract_pre_silu {
             "Contract silu: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract silu: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `silu`.
+/// Check after computation: `contract_inv_silu!(result_expr)`
+macro_rules! contract_inv_silu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12656,6 +20153,15 @@ macro_rules! contract_pre_audit_trail {
     }};
 }
 
+/// Invariants for equation `audit_trail`.
+/// Check after computation: `contract_inv_audit_trail!(result_expr)`
+macro_rules! contract_inv_audit_trail {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `step_determinism`.
 /// Domain-specific. Call: `contract_pre_step_determinism!(slice_expr)`
 macro_rules! contract_pre_step_determinism {
@@ -12665,12 +20171,30 @@ macro_rules! contract_pre_step_determinism {
     }};
 }
 
+/// Invariants for equation `step_determinism`.
+/// Check after computation: `contract_inv_step_determinism!(result_expr)`
+macro_rules! contract_inv_step_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `time_advancement`.
 /// Domain-specific. Call: `contract_pre_time_advancement!(slice_expr)`
 macro_rules! contract_pre_time_advancement {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `time_advancement`.
+/// Check after computation: `contract_inv_time_advancement!(result_expr)`
+macro_rules! contract_inv_time_advancement {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12686,6 +20210,15 @@ macro_rules! contract_pre_audit_completeness {
     }};
 }
 
+/// Invariants for equation `audit_completeness`.
+/// Check after computation: `contract_inv_audit_completeness!(result_expr)`
+macro_rules! contract_inv_audit_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `simulate_convergence`.
 /// Domain-specific. Call: `contract_pre_simulate_convergence!(slice_expr)`
 macro_rules! contract_pre_simulate_convergence {
@@ -12695,12 +20228,30 @@ macro_rules! contract_pre_simulate_convergence {
     }};
 }
 
+/// Invariants for equation `simulate_convergence`.
+/// Check after computation: `contract_inv_simulate_convergence!(result_expr)`
+macro_rules! contract_inv_simulate_convergence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `step_monotonicity`.
 /// Domain-specific. Call: `contract_pre_step_monotonicity!(slice_expr)`
 macro_rules! contract_pre_step_monotonicity {
     () => {{}};
     ($input:expr) => {{
         let _pv_x = &$input;
+    }};
+}
+
+/// Invariants for equation `step_monotonicity`.
+/// Check after computation: `contract_inv_step_monotonicity!(result_expr)`
+macro_rules! contract_inv_step_monotonicity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12718,6 +20269,15 @@ macro_rules! contract_pre_attention_sparsity {
     }};
 }
 
+/// Invariants for equation `attention_sparsity`.
+/// Check after computation: `contract_inv_attention_sparsity!(result_expr)`
+macro_rules! contract_inv_attention_sparsity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `causal_window_mask`.
 /// Domain-specific. Call: `contract_pre_causal_window_mask!(slice_expr)`
 macro_rules! contract_pre_causal_window_mask {
@@ -12726,6 +20286,15 @@ macro_rules! contract_pre_causal_window_mask {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract causal_window_mask: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `causal_window_mask`.
+/// Check after computation: `contract_inv_causal_window_mask!(result_expr)`
+macro_rules! contract_inv_causal_window_mask {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12740,6 +20309,15 @@ macro_rules! contract_pre_effective_context {
     }};
 }
 
+/// Invariants for equation `effective_context`.
+/// Check after computation: `contract_inv_effective_context!(result_expr)`
+macro_rules! contract_inv_effective_context {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `multi_layer_receptive_field`.
 /// Domain-specific. Call: `contract_pre_multi_layer_receptive_field!(slice_expr)`
 macro_rules! contract_pre_multi_layer_receptive_field {
@@ -12751,6 +20329,15 @@ macro_rules! contract_pre_multi_layer_receptive_field {
     }};
 }
 
+/// Invariants for equation `multi_layer_receptive_field`.
+/// Check after computation: `contract_inv_multi_layer_receptive_field!(result_expr)`
+macro_rules! contract_inv_multi_layer_receptive_field {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `window_mask`.
 /// Domain-specific. Call: `contract_pre_window_mask!(slice_expr)`
 macro_rules! contract_pre_window_mask {
@@ -12759,6 +20346,15 @@ macro_rules! contract_pre_window_mask {
         let _pv_q = &$input;
         debug_assert!(_pv_q.len() > 0,
             "Contract window_mask: precondition violated — q.len() > 0");
+    }};
+}
+
+/// Invariants for equation `window_mask`.
+/// Check after computation: `contract_inv_window_mask!(result_expr)`
+macro_rules! contract_inv_window_mask {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12788,6 +20384,15 @@ macro_rules! contract_post_softmax {
     }};
 }
 
+/// Invariants for equation `softmax`.
+/// Check after computation: `contract_inv_softmax!(result_expr)`
+macro_rules! contract_inv_softmax {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `softmax`.
 macro_rules! contract_softmax {
     ($input:expr, $body:expr) => {{
@@ -12801,6 +20406,15 @@ macro_rules! contract_softmax {
 // Auto-generated from contracts/sovereign-tensor-v1.yaml — DO NOT EDIT
 // Contract: sovereign-tensor-v1
 
+/// Invariants for equation `elementwise_binary`.
+/// Check after computation: `contract_inv_elementwise_binary!(result_expr)`
+macro_rules! contract_inv_elementwise_binary {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/special-tokens-registry-v1.yaml — DO NOT EDIT
 // Contract: special-tokens-registry-v1
 
@@ -12812,6 +20426,15 @@ macro_rules! contract_pre_token_bounds {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract token_bounds: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `token_bounds`.
+/// Check after computation: `contract_inv_token_bounds!(result_expr)`
+macro_rules! contract_inv_token_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12829,6 +20452,15 @@ macro_rules! contract_pre_acceptance_probability {
     }};
 }
 
+/// Invariants for equation `acceptance_probability`.
+/// Check after computation: `contract_inv_acceptance_probability!(result_expr)`
+macro_rules! contract_inv_acceptance_probability {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `output_equivalence`.
 /// Domain-specific. Call: `contract_pre_output_equivalence!(slice_expr)`
 macro_rules! contract_pre_output_equivalence {
@@ -12840,6 +20472,15 @@ macro_rules! contract_pre_output_equivalence {
     }};
 }
 
+/// Invariants for equation `output_equivalence`.
+/// Check after computation: `contract_inv_output_equivalence!(result_expr)`
+macro_rules! contract_inv_output_equivalence {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `token_acceptance`.
 /// Domain-specific. Call: `contract_pre_token_acceptance!(slice_expr)`
 macro_rules! contract_pre_token_acceptance {
@@ -12848,6 +20489,15 @@ macro_rules! contract_pre_token_acceptance {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract token_acceptance: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `token_acceptance`.
+/// Check after computation: `contract_inv_token_acceptance!(result_expr)`
+macro_rules! contract_inv_token_acceptance {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12867,6 +20517,15 @@ macro_rules! contract_pre_selective_gate {
     }};
 }
 
+/// Invariants for equation `selective_gate`.
+/// Check after computation: `contract_inv_selective_gate!(result_expr)`
+macro_rules! contract_inv_selective_gate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ssm_discretize`.
 /// Domain-specific. Call: `contract_pre_ssm_discretize!(slice_expr)`
 macro_rules! contract_pre_ssm_discretize {
@@ -12880,6 +20539,15 @@ macro_rules! contract_pre_ssm_discretize {
     }};
 }
 
+/// Invariants for equation `ssm_discretize`.
+/// Check after computation: `contract_inv_ssm_discretize!(result_expr)`
+macro_rules! contract_inv_ssm_discretize {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `ssm_scan`.
 /// Domain-specific. Call: `contract_pre_ssm_scan!(slice_expr)`
 macro_rules! contract_pre_ssm_scan {
@@ -12890,6 +20558,15 @@ macro_rules! contract_pre_ssm_scan {
             "Contract ssm_scan: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract ssm_scan: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `ssm_scan`.
+/// Check after computation: `contract_inv_ssm_scan!(result_expr)`
+macro_rules! contract_inv_ssm_scan {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -12908,6 +20585,15 @@ macro_rules! contract_pre_event_store_append_only {
 /// Postconditions for equation `event_store_append_only`.
 /// Call before return: `contract_post_event_store_append_only!(result_expr)`
 macro_rules! contract_post_event_store_append_only {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `event_store_append_only`.
+/// Check after computation: `contract_inv_event_store_append_only!(result_expr)`
+macro_rules! contract_inv_event_store_append_only {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -12940,6 +20626,15 @@ macro_rules! contract_post_refactor_transitions {
     }};
 }
 
+/// Invariants for equation `refactor_transitions`.
+/// Check after computation: `contract_inv_refactor_transitions!(result_expr)`
+macro_rules! contract_inv_refactor_transitions {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `refactor_transitions`.
 macro_rules! contract_refactor_transitions {
     ($input:expr, $body:expr) => {{
@@ -12967,6 +20662,15 @@ macro_rules! contract_post_snapshot_recovery {
     }};
 }
 
+/// Invariants for equation `snapshot_recovery`.
+/// Check after computation: `contract_inv_snapshot_recovery!(result_expr)`
+macro_rules! contract_inv_snapshot_recovery {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `snapshot_recovery`.
 macro_rules! contract_snapshot_recovery {
     ($input:expr, $body:expr) => {{
@@ -12989,12 +20693,30 @@ macro_rules! contract_pre_closure_completeness {
     }};
 }
 
+/// Invariants for equation `closure_completeness`.
+/// Check after computation: `contract_inv_closure_completeness!(result_expr)`
+macro_rules! contract_inv_closure_completeness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `derivation_determinism`.
 /// Domain-specific. Call: `contract_pre_derivation_determinism!(slice_expr)`
 macro_rules! contract_pre_derivation_determinism {
     () => {{}};
     ($input:expr) => {{
         let _pv_d = &$input;
+    }};
+}
+
+/// Invariants for equation `derivation_determinism`.
+/// Check after computation: `contract_inv_derivation_determinism!(result_expr)`
+macro_rules! contract_inv_derivation_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13009,6 +20731,15 @@ macro_rules! contract_pre_far_archive_roundtrip {
     }};
 }
 
+/// Invariants for equation `far_archive_roundtrip`.
+/// Check after computation: `contract_inv_far_archive_roundtrip!(result_expr)`
+macro_rules! contract_inv_far_archive_roundtrip {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `gc_safety`.
 /// Domain-specific. Call: `contract_pre_gc_safety!(slice_expr)`
 macro_rules! contract_pre_gc_safety {
@@ -13018,12 +20749,30 @@ macro_rules! contract_pre_gc_safety {
     }};
 }
 
+/// Invariants for equation `gc_safety`.
+/// Check after computation: `contract_inv_gc_safety!(result_expr)`
+macro_rules! contract_inv_gc_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `purity_monotonicity`.
 /// Domain-specific. Call: `contract_pre_purity_monotonicity!(slice_expr)`
 macro_rules! contract_pre_purity_monotonicity {
     () => {{}};
     ($input:expr) => {{
         let _pv_d = &$input;
+    }};
+}
+
+/// Invariants for equation `purity_monotonicity`.
+/// Check after computation: `contract_inv_purity_monotonicity!(result_expr)`
+macro_rules! contract_inv_purity_monotonicity {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13043,6 +20792,15 @@ macro_rules! contract_pre_tpot_definition {
     }};
 }
 
+/// Invariants for equation `tpot_definition`.
+/// Check after computation: `contract_inv_tpot_definition!(result_expr)`
+macro_rules! contract_inv_tpot_definition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/svm-v1.yaml — DO NOT EDIT
 // Contract: svm-v1
 
@@ -13059,6 +20817,15 @@ macro_rules! contract_pre_decision_function {
     }};
 }
 
+/// Invariants for equation `decision_function`.
+/// Check after computation: `contract_inv_decision_function!(result_expr)`
+macro_rules! contract_inv_decision_function {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `hinge_loss`.
 /// Domain-specific. Call: `contract_pre_hinge_loss!(slice_expr)`
 macro_rules! contract_pre_hinge_loss {
@@ -13067,6 +20834,15 @@ macro_rules! contract_pre_hinge_loss {
         let _pv_predicted = &$input;
         debug_assert!(_pv_predicted.len() > 0,
             "Contract hinge_loss: precondition violated — predicted.len() > 0");
+    }};
+}
+
+/// Invariants for equation `hinge_loss`.
+/// Check after computation: `contract_inv_hinge_loss!(result_expr)`
+macro_rules! contract_inv_hinge_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13083,6 +20859,15 @@ macro_rules! contract_pre_margin {
     }};
 }
 
+/// Invariants for equation `margin`.
+/// Check after computation: `contract_inv_margin!(result_expr)`
+macro_rules! contract_inv_margin {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `svm_predict`.
 /// Domain-specific. Call: `contract_pre_svm_predict!(slice_expr)`
 macro_rules! contract_pre_svm_predict {
@@ -13093,6 +20878,15 @@ macro_rules! contract_pre_svm_predict {
             "Contract svm_predict: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract svm_predict: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `svm_predict`.
+/// Check after computation: `contract_inv_svm_predict!(result_expr)`
+macro_rules! contract_inv_svm_predict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13109,6 +20903,15 @@ macro_rules! contract_pre_silu {
             "Contract silu: precondition violated — x.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_x.len() > 0,
             "Contract silu: precondition violated — x.len() > 0");
+    }};
+}
+
+/// Invariants for equation `silu`.
+/// Check after computation: `contract_inv_silu!(result_expr)`
+macro_rules! contract_inv_silu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13134,6 +20937,15 @@ macro_rules! contract_post_swiglu {
     }};
 }
 
+/// Invariants for equation `swiglu`.
+/// Check after computation: `contract_inv_swiglu!(result_expr)`
+macro_rules! contract_inv_swiglu {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `swiglu`.
 macro_rules! contract_swiglu {
     ($input:expr, $body:expr) => {{
@@ -13156,6 +20968,15 @@ macro_rules! contract_pre_health_check_retry {
     }};
 }
 
+/// Invariants for equation `health_check_retry`.
+/// Check after computation: `contract_inv_health_check_retry!(result_expr)`
+macro_rules! contract_inv_health_check_retry {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pipeline_dag_execution`.
 /// Domain-specific. Call: `contract_pre_pipeline_dag_execution!(slice_expr)`
 macro_rules! contract_pre_pipeline_dag_execution {
@@ -13164,6 +20985,15 @@ macro_rules! contract_pre_pipeline_dag_execution {
         let _pv_stages = &$input;
         debug_assert!(_pv_stages.len() > 0,
             "Contract pipeline_dag_execution: precondition violated — stages.len() > 0");
+    }};
+}
+
+/// Invariants for equation `pipeline_dag_execution`.
+/// Check after computation: `contract_inv_pipeline_dag_execution!(result_expr)`
+macro_rules! contract_inv_pipeline_dag_execution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13176,12 +21006,30 @@ macro_rules! contract_pre_quality_gate_enforcement {
     }};
 }
 
+/// Invariants for equation `quality_gate_enforcement`.
+/// Check after computation: `contract_inv_quality_gate_enforcement!(result_expr)`
+macro_rules! contract_inv_quality_gate_enforcement {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `task_status_terminal`.
 /// Call at function entry: `contract_pre_task_status_terminal!(input_expr)`
 macro_rules! contract_pre_task_status_terminal {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `task_status_terminal`.
+/// Check after computation: `contract_inv_task_status_terminal!(result_expr)`
+macro_rules! contract_inv_task_status_terminal {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13203,6 +21051,15 @@ macro_rules! contract_post_calculate_tdg {
     ($result:expr) => {{
         let _contract_result = &$result;
         debug_assert!(*_contract_result >= 0.0 && *_contract_result <= 100.0, "Contract calculate_tdg: postcondition violated — result >= 0.0 && result <= 100.0");
+    }};
+}
+
+/// Invariants for equation `calculate_tdg`.
+/// Check after computation: `contract_inv_calculate_tdg!(result_expr)`
+macro_rules! contract_inv_calculate_tdg {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13237,6 +21094,15 @@ macro_rules! contract_post_letter_grade {
     }};
 }
 
+/// Invariants for equation `letter_grade`.
+/// Check after computation: `contract_inv_letter_grade!(result_expr)`
+macro_rules! contract_inv_letter_grade {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `letter_grade`.
 macro_rules! contract_letter_grade {
     ($input:expr, $body:expr) => {{
@@ -13263,6 +21129,15 @@ macro_rules! contract_pre_architecture_delta {
     }};
 }
 
+/// Invariants for equation `architecture_delta`.
+/// Check after computation: `contract_inv_architecture_delta!(result_expr)`
+macro_rules! contract_inv_architecture_delta {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `parameter_decomposition`.
 /// Domain-specific. Call: `contract_pre_parameter_decomposition!(slice_expr)`
 macro_rules! contract_pre_parameter_decomposition {
@@ -13274,6 +21149,15 @@ macro_rules! contract_pre_parameter_decomposition {
     }};
 }
 
+/// Invariants for equation `parameter_decomposition`.
+/// Check after computation: `contract_inv_parameter_decomposition!(result_expr)`
+macro_rules! contract_inv_parameter_decomposition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `quantization_bytes`.
 /// Domain-specific. Call: `contract_pre_quantization_bytes!(slice_expr)`
 macro_rules! contract_pre_quantization_bytes {
@@ -13282,6 +21166,15 @@ macro_rules! contract_pre_quantization_bytes {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract quantization_bytes: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `quantization_bytes`.
+/// Check after computation: `contract_inv_quantization_bytes!(result_expr)`
+macro_rules! contract_inv_quantization_bytes {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13298,6 +21191,15 @@ macro_rules! contract_pre_tensor_count {
     }};
 }
 
+/// Invariants for equation `tensor_count`.
+/// Check after computation: `contract_inv_tensor_count!(result_expr)`
+macro_rules! contract_inv_tensor_count {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `tied_embeddings`.
 /// Domain-specific. Call: `contract_pre_tied_embeddings!(slice_expr)`
 macro_rules! contract_pre_tied_embeddings {
@@ -13306,6 +21208,15 @@ macro_rules! contract_pre_tied_embeddings {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract tied_embeddings: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `tied_embeddings`.
+/// Check after computation: `contract_inv_tied_embeddings!(result_expr)`
+macro_rules! contract_inv_tied_embeddings {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13332,12 +21243,30 @@ macro_rules! contract_pre_quant_dispatch_exhaustiveness {
     }};
 }
 
+/// Invariants for equation `quant_dispatch_exhaustiveness`.
+/// Check after computation: `contract_inv_quant_dispatch_exhaustiveness!(result_expr)`
+macro_rules! contract_inv_quant_dispatch_exhaustiveness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpose_invariant`.
 /// Call at function entry: `contract_pre_transpose_invariant!(input_expr)`
 macro_rules! contract_pre_transpose_invariant {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `transpose_invariant`.
+/// Check after computation: `contract_inv_transpose_invariant!(result_expr)`
+macro_rules! contract_inv_transpose_invariant {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13349,6 +21278,15 @@ macro_rules! contract_pre_validated_tensor_construction {
         let _pv_data = &$input;
         debug_assert!(_pv_data.len() > 0,
             "Contract validated_tensor_construction: precondition violated — data.len() > 0");
+    }};
+}
+
+/// Invariants for equation `validated_tensor_construction`.
+/// Check after computation: `contract_inv_validated_tensor_construction!(result_expr)`
+macro_rules! contract_inv_validated_tensor_construction {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13368,6 +21306,15 @@ macro_rules! contract_pre_architecture_normalization {
     }};
 }
 
+/// Invariants for equation `architecture_normalization`.
+/// Check after computation: `contract_inv_architecture_normalization!(result_expr)`
+macro_rules! contract_inv_architecture_normalization {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `name_resolution`.
 /// Domain-specific. Call: `contract_pre_name_resolution!(slice_expr)`
 macro_rules! contract_pre_name_resolution {
@@ -13378,6 +21325,15 @@ macro_rules! contract_pre_name_resolution {
             "Contract name_resolution: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract name_resolution: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `name_resolution`.
+/// Check after computation: `contract_inv_name_resolution!(result_expr)`
+macro_rules! contract_inv_name_resolution {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13409,6 +21365,15 @@ macro_rules! contract_pre_gqa_grouping {
     }};
 }
 
+/// Invariants for equation `gqa_grouping`.
+/// Check after computation: `contract_inv_gqa_grouping!(result_expr)`
+macro_rules! contract_inv_gqa_grouping {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `lm_head`.
 /// Domain-specific. Call: `contract_pre_lm_head!(slice_expr)`
 macro_rules! contract_pre_lm_head {
@@ -13419,6 +21384,15 @@ macro_rules! contract_pre_lm_head {
             "Contract lm_head: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract lm_head: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `lm_head`.
+/// Check after computation: `contract_inv_lm_head!(result_expr)`
+macro_rules! contract_inv_lm_head {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13435,6 +21409,15 @@ macro_rules! contract_pre_qkv_projection {
     }};
 }
 
+/// Invariants for equation `qkv_projection`.
+/// Check after computation: `contract_inv_qkv_projection!(result_expr)`
+macro_rules! contract_inv_qkv_projection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `residual`.
 /// Domain-specific. Call: `contract_pre_residual!(slice_expr)`
 macro_rules! contract_pre_residual {
@@ -13448,6 +21431,15 @@ macro_rules! contract_pre_residual {
     }};
 }
 
+/// Invariants for equation `residual`.
+/// Check after computation: `contract_inv_residual!(result_expr)`
+macro_rules! contract_inv_residual {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `swiglu_shape`.
 /// Domain-specific. Call: `contract_pre_swiglu_shape!(slice_expr)`
 macro_rules! contract_pre_swiglu_shape {
@@ -13458,6 +21450,15 @@ macro_rules! contract_pre_swiglu_shape {
             "Contract swiglu_shape: precondition violated — input.len() > 0");
         debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
             "Contract swiglu_shape: precondition violated — input.iter().all(|v| v.is_finite())");
+    }};
+}
+
+/// Invariants for equation `swiglu_shape`.
+/// Check after computation: `contract_inv_swiglu_shape!(result_expr)`
+macro_rules! contract_inv_swiglu_shape {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13476,6 +21477,15 @@ macro_rules! contract_pre_lock_order_invariant {
 /// Postconditions for equation `lock_order_invariant`.
 /// Call before return: `contract_post_lock_order_invariant!(result_expr)`
 macro_rules! contract_post_lock_order_invariant {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `lock_order_invariant`.
+/// Check after computation: `contract_inv_lock_order_invariant!(result_expr)`
+macro_rules! contract_inv_lock_order_invariant {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13508,6 +21518,15 @@ macro_rules! contract_post_race_freedom {
     }};
 }
 
+/// Invariants for equation `race_freedom`.
+/// Check after computation: `contract_inv_race_freedom!(result_expr)`
+macro_rules! contract_inv_race_freedom {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `race_freedom`.
 macro_rules! contract_race_freedom {
     ($input:expr, $body:expr) => {{
@@ -13529,6 +21548,15 @@ macro_rules! contract_pre_tied_lm_head {
         let _pv_indices = &$input;
         debug_assert!(_pv_indices.len() > 0,
             "Contract tied_lm_head: precondition violated — indices.len() > 0");
+    }};
+}
+
+/// Invariants for equation `tied_lm_head`.
+/// Check after computation: `contract_inv_tied_lm_head!(result_expr)`
+macro_rules! contract_inv_tied_lm_head {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13558,6 +21586,15 @@ macro_rules! contract_pre_byte_encoder_coverage {
     }};
 }
 
+/// Invariants for equation `byte_encoder_coverage`.
+/// Check after computation: `contract_inv_byte_encoder_coverage!(result_expr)`
+macro_rules! contract_inv_byte_encoder_coverage {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `identity`.
 /// Call at function entry: `contract_pre_identity!(input_expr)`
 macro_rules! contract_pre_identity {
@@ -13578,6 +21615,15 @@ macro_rules! contract_pre_roundtrip_encoding {
     }};
 }
 
+/// Invariants for equation `roundtrip_encoding`.
+/// Check after computation: `contract_inv_roundtrip_encoding!(result_expr)`
+macro_rules! contract_inv_roundtrip_encoding {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/tokenizer-v1.yaml — DO NOT EDIT
 // Contract: tokenizer-v1
 
@@ -13593,6 +21639,15 @@ macro_rules! contract_pre_deterministic_encode {
 /// Postconditions for equation `deterministic_encode`.
 /// Call before return: `contract_post_deterministic_encode!(result_expr)`
 macro_rules! contract_post_deterministic_encode {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `deterministic_encode`.
+/// Check after computation: `contract_inv_deterministic_encode!(result_expr)`
+macro_rules! contract_inv_deterministic_encode {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13625,6 +21680,15 @@ macro_rules! contract_post_empty_input {
     }};
 }
 
+/// Invariants for equation `empty_input`.
+/// Check after computation: `contract_inv_empty_input!(result_expr)`
+macro_rules! contract_inv_empty_input {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `empty_input`.
 macro_rules! contract_empty_input {
     ($input:expr, $body:expr) => {{
@@ -13647,6 +21711,15 @@ macro_rules! contract_pre_roundtrip {
 /// Postconditions for equation `roundtrip`.
 /// Call before return: `contract_post_roundtrip!(result_expr)`
 macro_rules! contract_post_roundtrip {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `roundtrip`.
+/// Check after computation: `contract_inv_roundtrip!(result_expr)`
+macro_rules! contract_inv_roundtrip {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13679,6 +21752,15 @@ macro_rules! contract_post_thread_safety {
     }};
 }
 
+/// Invariants for equation `thread_safety`.
+/// Check after computation: `contract_inv_thread_safety!(result_expr)`
+macro_rules! contract_inv_thread_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `thread_safety`.
 macro_rules! contract_thread_safety {
     ($input:expr, $body:expr) => {{
@@ -13706,6 +21788,15 @@ macro_rules! contract_post_vocab_size_bound {
     }};
 }
 
+/// Invariants for equation `vocab_size_bound`.
+/// Check after computation: `contract_inv_vocab_size_bound!(result_expr)`
+macro_rules! contract_inv_vocab_size_bound {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `vocab_size_bound`.
 macro_rules! contract_vocab_size_bound {
     ($input:expr, $body:expr) => {{
@@ -13728,12 +21819,30 @@ macro_rules! contract_pre_otel_format {
     }};
 }
 
+/// Invariants for equation `otel_format`.
+/// Check after computation: `contract_inv_otel_format!(result_expr)`
+macro_rules! contract_inv_otel_format {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `trace_capture`.
 /// Call at function entry: `contract_pre_trace_capture!(input_expr)`
 macro_rules! contract_pre_trace_capture {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `trace_capture`.
+/// Check after computation: `contract_inv_trace_capture!(result_expr)`
+macro_rules! contract_inv_trace_capture {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13745,6 +21854,15 @@ macro_rules! contract_pre_trace_comparison {
         let _pv_golden = &$input;
         debug_assert!(_pv_golden.len() > 0,
             "Contract trace_comparison: precondition violated — golden.len() > 0");
+    }};
+}
+
+/// Invariants for equation `trace_comparison`.
+/// Check after computation: `contract_inv_trace_comparison!(result_expr)`
+macro_rules! contract_inv_trace_comparison {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13763,6 +21881,15 @@ macro_rules! contract_pre_metric_monotonicity {
 /// Postconditions for equation `metric_monotonicity`.
 /// Call before return: `contract_post_metric_monotonicity!(result_expr)`
 macro_rules! contract_post_metric_monotonicity {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `metric_monotonicity`.
+/// Check after computation: `contract_inv_metric_monotonicity!(result_expr)`
+macro_rules! contract_inv_metric_monotonicity {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13795,6 +21922,15 @@ macro_rules! contract_post_renacer_backward_compat {
     }};
 }
 
+/// Invariants for equation `renacer_backward_compat`.
+/// Check after computation: `contract_inv_renacer_backward_compat!(result_expr)`
+macro_rules! contract_inv_renacer_backward_compat {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `renacer_backward_compat`.
 macro_rules! contract_renacer_backward_compat {
     ($input:expr, $body:expr) => {{
@@ -13817,6 +21953,15 @@ macro_rules! contract_pre_span_parentage {
 /// Postconditions for equation `span_parentage`.
 /// Call before return: `contract_post_span_parentage!(result_expr)`
 macro_rules! contract_post_span_parentage {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `span_parentage`.
+/// Check after computation: `contract_inv_span_parentage!(result_expr)`
+macro_rules! contract_inv_span_parentage {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13846,6 +21991,15 @@ macro_rules! contract_pre_ema_loss {
     }};
 }
 
+/// Invariants for equation `ema_loss`.
+/// Check after computation: `contract_inv_ema_loss!(result_expr)`
+macro_rules! contract_inv_ema_loss {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `val_split`.
 /// Domain-specific. Call: `contract_pre_val_split!(slice_expr)`
 macro_rules! contract_pre_val_split {
@@ -13859,6 +22013,15 @@ macro_rules! contract_pre_val_split {
     }};
 }
 
+/// Invariants for equation `val_split`.
+/// Check after computation: `contract_inv_val_split!(result_expr)`
+macro_rules! contract_inv_val_split {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `warmup_lr`.
 /// Domain-specific. Call: `contract_pre_warmup_lr!(slice_expr)`
 macro_rules! contract_pre_warmup_lr {
@@ -13867,6 +22030,15 @@ macro_rules! contract_pre_warmup_lr {
         let _pv_params = &$input;
         debug_assert!(_pv_params.len() > 0,
             "Contract warmup_lr: precondition violated — params.len() > 0");
+    }};
+}
+
+/// Invariants for equation `warmup_lr`.
+/// Check after computation: `contract_inv_warmup_lr!(result_expr)`
+macro_rules! contract_inv_warmup_lr {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13882,6 +22054,15 @@ macro_rules! contract_pre_parse_soundness {
     }};
 }
 
+/// Invariants for equation `parse_soundness`.
+/// Check after computation: `contract_inv_parse_soundness!(result_expr)`
+macro_rules! contract_inv_parse_soundness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpile_determinism`.
 /// Call at function entry: `contract_pre_transpile_determinism!(input_expr)`
 macro_rules! contract_pre_transpile_determinism {
@@ -13891,12 +22072,30 @@ macro_rules! contract_pre_transpile_determinism {
     }};
 }
 
+/// Invariants for equation `transpile_determinism`.
+/// Check after computation: `contract_inv_transpile_determinism!(result_expr)`
+macro_rules! contract_inv_transpile_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `type_preservation`.
 /// Call at function entry: `contract_pre_type_preservation!(input_expr)`
 macro_rules! contract_pre_type_preservation {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `type_preservation`.
+/// Check after computation: `contract_inv_type_preservation!(result_expr)`
+macro_rules! contract_inv_type_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13912,6 +22111,15 @@ macro_rules! contract_pre_ast_to_program {
     }};
 }
 
+/// Invariants for equation `ast_to_program`.
+/// Check after computation: `contract_inv_ast_to_program!(result_expr)`
+macro_rules! contract_inv_ast_to_program {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `pipeline_composition`.
 /// Domain-specific. Call: `contract_pre_pipeline_composition!(slice_expr)`
 macro_rules! contract_pre_pipeline_composition {
@@ -13923,12 +22131,30 @@ macro_rules! contract_pre_pipeline_composition {
     }};
 }
 
+/// Invariants for equation `pipeline_composition`.
+/// Check after computation: `contract_inv_pipeline_composition!(result_expr)`
+macro_rules! contract_inv_pipeline_composition {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `transpile_determinism`.
 /// Call at function entry: `contract_pre_transpile_determinism!(input_expr)`
 macro_rules! contract_pre_transpile_determinism {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `transpile_determinism`.
+/// Check after computation: `contract_inv_transpile_determinism!(result_expr)`
+macro_rules! contract_inv_transpile_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -13947,6 +22173,15 @@ macro_rules! contract_pre_semantic_equivalence {
 /// Postconditions for equation `semantic_equivalence`.
 /// Call before return: `contract_post_semantic_equivalence!(result_expr)`
 macro_rules! contract_post_semantic_equivalence {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `semantic_equivalence`.
+/// Check after computation: `contract_inv_semantic_equivalence!(result_expr)`
+macro_rules! contract_inv_semantic_equivalence {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -13979,6 +22214,15 @@ macro_rules! contract_post_transpile_determinism {
     }};
 }
 
+/// Invariants for equation `transpile_determinism`.
+/// Check after computation: `contract_inv_transpile_determinism!(result_expr)`
+macro_rules! contract_inv_transpile_determinism {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `transpile_determinism`.
 macro_rules! contract_transpile_determinism {
     ($input:expr, $body:expr) => {{
@@ -14001,6 +22245,15 @@ macro_rules! contract_pre_type_preservation {
 /// Postconditions for equation `type_preservation`.
 /// Call before return: `contract_post_type_preservation!(result_expr)`
 macro_rules! contract_post_type_preservation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `type_preservation`.
+/// Check after computation: `contract_inv_type_preservation!(result_expr)`
+macro_rules! contract_inv_type_preservation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14030,6 +22283,15 @@ macro_rules! contract_pre_transpose {
     }};
 }
 
+/// Invariants for equation `transpose`.
+/// Check after computation: `contract_inv_transpose!(result_expr)`
+macro_rules! contract_inv_transpose {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/tui-lifecycle-v1.yaml — DO NOT EDIT
 // Contract: tui-lifecycle-v1
 
@@ -14042,12 +22304,30 @@ macro_rules! contract_pre_event_dispatch {
     }};
 }
 
+/// Invariants for equation `event_dispatch`.
+/// Check after computation: `contract_inv_event_dispatch!(result_expr)`
+macro_rules! contract_inv_event_dispatch {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `render_cycle_correctness`.
 /// Domain-specific. Call: `contract_pre_render_cycle_correctness!(slice_expr)`
 macro_rules! contract_pre_render_cycle_correctness {
     () => {{}};
     ($input:expr) => {{
         let _pv_buffer = &$input;
+    }};
+}
+
+/// Invariants for equation `render_cycle_correctness`.
+/// Check after computation: `contract_inv_render_cycle_correctness!(result_expr)`
+macro_rules! contract_inv_render_cycle_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14060,12 +22340,30 @@ macro_rules! contract_pre_terminal_restore {
     }};
 }
 
+/// Invariants for equation `terminal_restore`.
+/// Check after computation: `contract_inv_terminal_restore!(result_expr)`
+macro_rules! contract_inv_terminal_restore {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `widget_lifecycle`.
 /// Call at function entry: `contract_pre_widget_lifecycle!(input_expr)`
 macro_rules! contract_pre_widget_lifecycle {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `widget_lifecycle`.
+/// Check after computation: `contract_inv_widget_lifecycle!(result_expr)`
+macro_rules! contract_inv_widget_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14084,6 +22382,15 @@ macro_rules! contract_pre_adaptive_degradation {
 /// Postconditions for equation `adaptive_degradation`.
 /// Call before return: `contract_post_adaptive_degradation!(result_expr)`
 macro_rules! contract_post_adaptive_degradation {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `adaptive_degradation`.
+/// Check after computation: `contract_inv_adaptive_degradation!(result_expr)`
+macro_rules! contract_inv_adaptive_degradation {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14116,6 +22423,15 @@ macro_rules! contract_post_brick_budget_enforcement {
     }};
 }
 
+/// Invariants for equation `brick_budget_enforcement`.
+/// Check after computation: `contract_inv_brick_budget_enforcement!(result_expr)`
+macro_rules! contract_inv_brick_budget_enforcement {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `brick_budget_enforcement`.
 macro_rules! contract_brick_budget_enforcement {
     ($input:expr, $body:expr) => {{
@@ -14129,6 +22445,15 @@ macro_rules! contract_brick_budget_enforcement {
 /// Postconditions for equation `cost_display_invariants`.
 /// Call before return: `contract_post_cost_display_invariants!(result_expr)`
 macro_rules! contract_post_cost_display_invariants {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `cost_display_invariants`.
+/// Check after computation: `contract_inv_cost_display_invariants!(result_expr)`
+macro_rules! contract_inv_cost_display_invariants {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14153,6 +22478,15 @@ macro_rules! contract_post_panel_layout_nonoverlap {
     }};
 }
 
+/// Invariants for equation `panel_layout_nonoverlap`.
+/// Check after computation: `contract_inv_panel_layout_nonoverlap!(result_expr)`
+macro_rules! contract_inv_panel_layout_nonoverlap {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `panel_layout_nonoverlap`.
 macro_rules! contract_panel_layout_nonoverlap {
     ($input:expr, $body:expr) => {{
@@ -14171,9 +22505,27 @@ macro_rules! contract_post_sandbox_violation_visibility {
     }};
 }
 
+/// Invariants for equation `sandbox_violation_visibility`.
+/// Check after computation: `contract_inv_sandbox_violation_visibility!(result_expr)`
+macro_rules! contract_inv_sandbox_violation_visibility {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Postconditions for equation `statusbar_state_display`.
 /// Call before return: `contract_post_statusbar_state_display!(result_expr)`
 macro_rules! contract_post_statusbar_state_display {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `statusbar_state_display`.
+/// Check after computation: `contract_inv_statusbar_state_display!(result_expr)`
+macro_rules! contract_inv_statusbar_state_display {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14191,6 +22543,15 @@ macro_rules! contract_pre_streaming_token_ordering {
 /// Postconditions for equation `streaming_token_ordering`.
 /// Call before return: `contract_post_streaming_token_ordering!(result_expr)`
 macro_rules! contract_post_streaming_token_ordering {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `streaming_token_ordering`.
+/// Check after computation: `contract_inv_streaming_token_ordering!(result_expr)`
+macro_rules! contract_inv_streaming_token_ordering {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14220,6 +22581,15 @@ macro_rules! contract_pre_tool_progress_monotonic {
 /// Postconditions for equation `tool_progress_monotonic`.
 /// Call before return: `contract_post_tool_progress_monotonic!(result_expr)`
 macro_rules! contract_post_tool_progress_monotonic {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `tool_progress_monotonic`.
+/// Check after computation: `contract_inv_tool_progress_monotonic!(result_expr)`
+macro_rules! contract_inv_tool_progress_monotonic {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14255,6 +22625,15 @@ macro_rules! contract_post_cellbuffer_bounds {
     }};
 }
 
+/// Invariants for equation `cellbuffer_bounds`.
+/// Check after computation: `contract_inv_cellbuffer_bounds!(result_expr)`
+macro_rules! contract_inv_cellbuffer_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `cellbuffer_bounds`.
 macro_rules! contract_cellbuffer_bounds {
     ($input:expr, $body:expr) => {{
@@ -14277,6 +22656,15 @@ macro_rules! contract_pre_color_mode_fallback {
 /// Postconditions for equation `color_mode_fallback`.
 /// Call before return: `contract_post_color_mode_fallback!(result_expr)`
 macro_rules! contract_post_color_mode_fallback {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `color_mode_fallback`.
+/// Check after computation: `contract_inv_color_mode_fallback!(result_expr)`
+macro_rules! contract_inv_color_mode_fallback {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14309,6 +22697,15 @@ macro_rules! contract_post_diff_renderer_correctness {
     }};
 }
 
+/// Invariants for equation `diff_renderer_correctness`.
+/// Check after computation: `contract_inv_diff_renderer_correctness!(result_expr)`
+macro_rules! contract_inv_diff_renderer_correctness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `diff_renderer_correctness`.
 macro_rules! contract_diff_renderer_correctness {
     ($input:expr, $body:expr) => {{
@@ -14331,6 +22728,15 @@ macro_rules! contract_pre_dirty_tracking {
 /// Postconditions for equation `dirty_tracking`.
 /// Call before return: `contract_post_dirty_tracking!(result_expr)`
 macro_rules! contract_post_dirty_tracking {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `dirty_tracking`.
+/// Check after computation: `contract_inv_dirty_tracking!(result_expr)`
+macro_rules! contract_inv_dirty_tracking {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14363,6 +22769,15 @@ macro_rules! contract_post_resize_safety {
     }};
 }
 
+/// Invariants for equation `resize_safety`.
+/// Check after computation: `contract_inv_resize_safety!(result_expr)`
+macro_rules! contract_inv_resize_safety {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `resize_safety`.
 macro_rules! contract_resize_safety {
     ($input:expr, $body:expr) => {{
@@ -14385,6 +22800,15 @@ macro_rules! contract_pre_unicode_width {
 /// Postconditions for equation `unicode_width`.
 /// Call before return: `contract_post_unicode_width!(result_expr)`
 macro_rules! contract_post_unicode_width {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `unicode_width`.
+/// Check after computation: `contract_inv_unicode_width!(result_expr)`
+macro_rules! contract_inv_unicode_width {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14418,6 +22842,15 @@ macro_rules! contract_post_zero_alloc_render {
     }};
 }
 
+/// Invariants for equation `zero_alloc_render`.
+/// Check after computation: `contract_inv_zero_alloc_render!(result_expr)`
+macro_rules! contract_inv_zero_alloc_render {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `zero_alloc_render`.
 macro_rules! contract_zero_alloc_render {
     ($input:expr, $body:expr) => {{
@@ -14442,6 +22875,15 @@ macro_rules! contract_pre_container_preservation {
     }};
 }
 
+/// Invariants for equation `container_preservation`.
+/// Check after computation: `contract_inv_container_preservation!(result_expr)`
+macro_rules! contract_inv_container_preservation {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `copy_semantics`.
 /// Domain-specific. Call: `contract_pre_copy_semantics!(slice_expr)`
 macro_rules! contract_pre_copy_semantics {
@@ -14450,6 +22892,15 @@ macro_rules! contract_pre_copy_semantics {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract copy_semantics: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `copy_semantics`.
+/// Check after computation: `contract_inv_copy_semantics!(result_expr)`
+macro_rules! contract_inv_copy_semantics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14464,6 +22915,15 @@ macro_rules! contract_pre_numeric_semantics {
     }};
 }
 
+/// Invariants for equation `numeric_semantics`.
+/// Check after computation: `contract_inv_numeric_semantics!(result_expr)`
+macro_rules! contract_inv_numeric_semantics {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `type_inference`.
 /// Domain-specific. Call: `contract_pre_type_inference!(slice_expr)`
 macro_rules! contract_pre_type_inference {
@@ -14475,6 +22935,15 @@ macro_rules! contract_pre_type_inference {
     }};
 }
 
+/// Invariants for equation `type_inference`.
+/// Check after computation: `contract_inv_type_inference!(result_expr)`
+macro_rules! contract_inv_type_inference {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `type_map`.
 /// Domain-specific. Call: `contract_pre_type_map!(slice_expr)`
 macro_rules! contract_pre_type_map {
@@ -14483,6 +22952,15 @@ macro_rules! contract_pre_type_map {
         let _pv_input = &$input;
         debug_assert!(_pv_input.len() > 0,
             "Contract type_map: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `type_map`.
+/// Check after computation: `contract_inv_type_map!(result_expr)`
+macro_rules! contract_inv_type_map {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14502,6 +22980,15 @@ macro_rules! contract_pre_density_gate {
     }};
 }
 
+/// Invariants for equation `density_gate`.
+/// Check after computation: `contract_inv_density_gate!(result_expr)`
+macro_rules! contract_inv_density_gate {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `l2_norm_nondegeneracy`.
 /// Domain-specific. Call: `contract_pre_l2_norm_nondegeneracy!(slice_expr)`
 macro_rules! contract_pre_l2_norm_nondegeneracy {
@@ -14512,6 +22999,15 @@ macro_rules! contract_pre_l2_norm_nondegeneracy {
             "Contract l2_norm_nondegeneracy: precondition violated — input.iter().all(|v| v.is_finite())");
         debug_assert!(_pv_input.len() > 0,
             "Contract l2_norm_nondegeneracy: precondition violated — input.len() > 0");
+    }};
+}
+
+/// Invariants for equation `l2_norm_nondegeneracy`.
+/// Check after computation: `contract_inv_l2_norm_nondegeneracy!(result_expr)`
+macro_rules! contract_inv_l2_norm_nondegeneracy {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14528,6 +23024,15 @@ macro_rules! contract_pre_nan_inf_rejection {
     }};
 }
 
+/// Invariants for equation `nan_inf_rejection`.
+/// Check after computation: `contract_inv_nan_inf_rejection!(result_expr)`
+macro_rules! contract_inv_nan_inf_rejection {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/verification-engine-v1.yaml — DO NOT EDIT
 // Contract: verification-engine-v1
 
@@ -14540,6 +23045,15 @@ macro_rules! contract_pre_generator_coverage {
     }};
 }
 
+/// Invariants for equation `generator_coverage`.
+/// Check after computation: `contract_inv_generator_coverage!(result_expr)`
+macro_rules! contract_inv_generator_coverage {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `mutation_soundness`.
 /// Call at function entry: `contract_pre_mutation_soundness!(input_expr)`
 macro_rules! contract_pre_mutation_soundness {
@@ -14549,12 +23063,30 @@ macro_rules! contract_pre_mutation_soundness {
     }};
 }
 
+/// Invariants for equation `mutation_soundness`.
+/// Check after computation: `contract_inv_mutation_soundness!(result_expr)`
+macro_rules! contract_inv_mutation_soundness {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `oracle_verdict`.
 /// Call at function entry: `contract_pre_oracle_verdict!(input_expr)`
 macro_rules! contract_pre_oracle_verdict {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `oracle_verdict`.
+/// Check after computation: `contract_inv_oracle_verdict!(result_expr)`
+macro_rules! contract_inv_oracle_verdict {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14572,6 +23104,15 @@ macro_rules! contract_pre_layout_treemap {
     }};
 }
 
+/// Invariants for equation `layout_treemap`.
+/// Check after computation: `contract_inv_layout_treemap!(result_expr)`
+macro_rules! contract_inv_layout_treemap {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `primitive_bounds`.
 /// Call at function entry: `contract_pre_primitive_bounds!(input_expr)`
 macro_rules! contract_pre_primitive_bounds {
@@ -14581,12 +23122,30 @@ macro_rules! contract_pre_primitive_bounds {
     }};
 }
 
+/// Invariants for equation `primitive_bounds`.
+/// Check after computation: `contract_inv_primitive_bounds!(result_expr)`
+macro_rules! contract_inv_primitive_bounds {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Preconditions for equation `render_output`.
 /// Call at function entry: `contract_pre_render_output!(input_expr)`
 macro_rules! contract_pre_render_output {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
+    }};
+}
+
+/// Invariants for equation `render_output`.
+/// Check after computation: `contract_inv_render_output!(result_expr)`
+macro_rules! contract_inv_render_output {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
     }};
 }
 
@@ -14625,6 +23184,15 @@ macro_rules! contract_post_checkpoint_verification {
     }};
 }
 
+/// Invariants for equation `checkpoint_verification`.
+/// Check after computation: `contract_inv_checkpoint_verification!(result_expr)`
+macro_rules! contract_inv_checkpoint_verification {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `checkpoint_verification`.
 macro_rules! contract_checkpoint_verification {
     ($input:expr, $body:expr) => {{
@@ -14647,6 +23215,15 @@ macro_rules! contract_pre_contract_profile {
 /// Postconditions for equation `contract_profile`.
 /// Call before return: `contract_post_contract_profile!(result_expr)`
 macro_rules! contract_post_contract_profile {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `contract_profile`.
+/// Check after computation: `contract_inv_contract_profile!(result_expr)`
+macro_rules! contract_inv_contract_profile {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14679,6 +23256,15 @@ macro_rules! contract_post_falsifiable_claim {
     }};
 }
 
+/// Invariants for equation `falsifiable_claim`.
+/// Check after computation: `contract_inv_falsifiable_claim!(result_expr)`
+macro_rules! contract_inv_falsifiable_claim {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `falsifiable_claim`.
 macro_rules! contract_falsifiable_claim {
     ($input:expr, $body:expr) => {{
@@ -14701,6 +23287,15 @@ macro_rules! contract_pre_meyer_triad {
 /// Postconditions for equation `meyer_triad`.
 /// Call before return: `contract_post_meyer_triad!(result_expr)`
 macro_rules! contract_post_meyer_triad {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `meyer_triad`.
+/// Check after computation: `contract_inv_meyer_triad!(result_expr)`
+macro_rules! contract_inv_meyer_triad {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14733,6 +23328,15 @@ macro_rules! contract_post_override_accountability {
     }};
 }
 
+/// Invariants for equation `override_accountability`.
+/// Check after computation: `contract_inv_override_accountability!(result_expr)`
+macro_rules! contract_inv_override_accountability {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `override_accountability`.
 macro_rules! contract_override_accountability {
     ($input:expr, $body:expr) => {{
@@ -14755,6 +23359,15 @@ macro_rules! contract_pre_rescue_protocol {
 /// Postconditions for equation `rescue_protocol`.
 /// Call before return: `contract_post_rescue_protocol!(result_expr)`
 macro_rules! contract_post_rescue_protocol {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Invariants for equation `rescue_protocol`.
+/// Check after computation: `contract_inv_rescue_protocol!(result_expr)`
+macro_rules! contract_inv_rescue_protocol {
+    () => {{}};
     ($result:expr) => {{
         let _contract_result = &$result;
     }};
@@ -14787,6 +23400,15 @@ macro_rules! contract_post_work_lifecycle {
     }};
 }
 
+/// Invariants for equation `work_lifecycle`.
+/// Check after computation: `contract_inv_work_lifecycle!(result_expr)`
+macro_rules! contract_inv_work_lifecycle {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 /// Combined pre+post contract for equation `work_lifecycle`.
 macro_rules! contract_work_lifecycle {
     ($input:expr, $body:expr) => {{
@@ -14797,4 +23419,4 @@ macro_rules! contract_work_lifecycle {
     }};
 }
 
-// Total: 646 preconditions, 15 postconditions from 278 contracts
+// Total: 646 preconditions, 15 postconditions, 0 invariants from 278 contracts
