@@ -1,0 +1,83 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr list disk-reconciliation contract — output MUST reflect what is actually on disk in the pacha cache dir, not only what is recorded in manifest.json; missing manifest entries must not hide existing cached model files"
+  references:
+    - "paiml/aprender#602 (Model cache registry broken: pull says cached but list shows empty)"
+    - "paiml/aprender#162 (pulled models don't show on list — pacha GH-162 manifest persistence fix)"
+  registry: true
+  tags:
+    - cli
+    - list
+    - cache
+    - reconciliation
+    - five-whys
+
+five_whys:
+  symptom: "apr list / apr list --json reports 0 cached models on a host where ~/.cache/pacha/models/ contains 5+ GGUF/SafeTensors files totaling 7+ GB"
+  why_1: "pacha::ModelFetcher::new() loads cache entries only from ~/.cache/pacha/manifest.json; if manifest is missing, list() returns empty"
+  why_2: "manifest.json does not exist on local — the actual disk files were pulled BEFORE pacha's GH-162 fix added save_manifest() calls, so they are orphaned from any manifest"
+  why_3: "pacha's architecture treats manifest-as-truth: list() reads self.entries (HashMap loaded from manifest) with no fallback to scanning cache_dir for extant files"
+  why_4: "No test case exercises 'manifest missing + disk files present' — only happy path (pull then list) is tested, which keeps manifest and disk in sync"
+  why_5: "No provable-contract binds apr list output to actual disk state — only to manifest state. The semantic 'shows what is cached' was never formalized as 'shows what is on disk'"
+  root_cause: "pacha treats manifest.json as sole source of truth; aprender trusts pacha's empty result; no contract required disk-state alignment."
+
+equations:
+  disk_reconciliation:
+    formula: "apr_list.models ⊇ {f ∈ pacha_cache_dir : ext(f) ∈ {.gguf, .apr, .safetensors, .ggml}}"
+    domain: "cached model files present on disk in pacha cache dir"
+    codomain: "set of models shown by apr list"
+    invariants:
+      - "Every model file on disk with a recognized extension MUST appear in apr list output"
+      - "Files MAY be augmented with manifest metadata (name, URI) when available"
+      - "Files without manifest entries MUST still appear (with filename-derived names)"
+
+  non_empty_list_when_files_present:
+    formula: "|files(pacha_cache_dir)| > 0 ⟹ |apr_list.models| > 0"
+    domain: "host with at least one cached model file"
+    codomain: "apr list output"
+    invariants:
+      - "apr list MUST NOT report zero models when cache files exist on disk"
+
+proof_obligations:
+  - type: invariant
+    property: "disk files visible in list output"
+    formal: "∀ f ∈ disk_files: f ∈ apr_list.models"
+    applies_to: disk_reconciliation
+  - type: invariant
+    property: "non-empty list when files present"
+    formal: "|disk_files| > 0 ⟹ |apr_list.models| > 0"
+    applies_to: non_empty_list_when_files_present
+
+falsification_tests:
+  - id: FALSIFY-LIST-DISK-001
+    rule: "apr list shows at least one model when disk has cached files"
+    prediction: "If any .gguf/.apr/.safetensors file exists in ~/.cache/pacha/models/, apr list shows >= 1 entry"
+    test: "N_DISK=$(find ~/.cache/pacha/models -maxdepth 1 -type f \\( -name '*.gguf' -o -name '*.apr' -o -name '*.safetensors' \\) 2>/dev/null | wc -l); N_LIST=$(apr list --json | jq -r '.total'); [ \"$N_DISK\" -eq 0 ] || [ \"$N_LIST\" -ge 1 ]"
+    if_fails: "Disk files orphaned from list output — disk-scan fallback missing or broken"
+  - id: FALSIFY-LIST-DISK-002
+    rule: "apr list total matches or exceeds disk file count"
+    prediction: "total in apr list --json >= count of model files on disk"
+    test: "N_DISK=$(find ~/.cache/pacha/models -maxdepth 1 -type f \\( -name '*.gguf' -o -name '*.apr' -o -name '*.safetensors' \\) 2>/dev/null | wc -l); N_LIST=$(apr list --json | jq -r '.total'); [ \"$N_LIST\" -ge \"$N_DISK\" ]"
+    if_fails: "list undercounts relative to disk — reconciliation incomplete"
+  - id: FALSIFY-LIST-DISK-003
+    rule: "apr list text output mentions actual filenames"
+    prediction: "apr list text output contains at least one model name derivable from a disk file"
+    test: "N_DISK=$(find ~/.cache/pacha/models -maxdepth 1 -type f \\( -name '*.gguf' -o -name '*.apr' -o -name '*.safetensors' \\) 2>/dev/null | wc -l); [ \"$N_DISK\" -eq 0 ] || apr list 2>&1 | grep -qvE 'No cached models found'"
+    if_fails: "list still shows 'No cached models found' despite disk files"
+
+kani_harnesses:
+  - id: KANI-LIST-DISK-001
+    obligation: "list size >= disk file count"
+    bound: 16
+    strategy: bounded_int
+
+qa_gate:
+  id: F-LIST-DISK-001
+  name: "apr list disk-reconciliation contract"
+  description: "apr list must reflect actual disk state, not only manifest state; orphan files must be visible"
+  checks:
+    - "disk_reconciliation"
+    - "non_empty_list_when_files_present"
+  pass_criteria: "FALSIFY-LIST-DISK-{001,002,003} all PASS on a host with model files in ~/.cache/pacha/models/"
