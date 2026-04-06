@@ -120,12 +120,12 @@ z3-proofs = []
 schema-validation = []
 
 [lib]
-name = "aprender_simulate"
+name = "simular"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "aprender_simulate"
+name = "simular"
 path = "src/main.rs"
 
 [[example]]

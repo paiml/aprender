@@ -2,7 +2,7 @@
 
 **Version**: 1.7
 **Date**: 2026-04-06
-**Status**: IN PROGRESS — 68 crates active, Phase 4 (build verification) complete
+**Status**: COMPLETE — 69 crates, 0 compile failures, 14 integration tests pass
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
@@ -153,14 +153,14 @@ Every successful large Rust project uses this pattern:
 | Phase 3a: Wire zram deps | DONE | 5 zram crates enabled (54 members) |
 | Phase 3b: Wire presentar deps | DONE | 9 presentar crates enabled (63 members) |
 | Phase 3c: Wire test/probar deps | DONE | 5 test crates + 12 renamed satellites (68 members) |
-| Phase 4a: Compilation verification | DONE | 62/68 compile, 6 pre-existing issues |
+| Phase 4a: Compilation verification | DONE | **69/69 compile**, 0 failures |
 | Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
 | Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 
-**Current count**: 68 active workspace members, 0 with old names.
+**Current count**: 69 active workspace members, 0 compile failures, 14 integration tests.
 **Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).
 
 ---

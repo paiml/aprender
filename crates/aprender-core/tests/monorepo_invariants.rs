@@ -68,6 +68,9 @@ fn test_flat_layout_no_nested_crates() {
     let metadata: serde_json::Value =
         serde_json::from_str(&stdout).expect("failed to parse cargo metadata");
 
+    // Get the actual workspace root from metadata
+    let ws_root = metadata["workspace_root"].as_str().unwrap_or("");
+
     let packages = metadata["packages"].as_array().expect("no packages");
     let mut violations = Vec::new();
 
@@ -78,7 +81,7 @@ fn test_flat_layout_no_nested_crates() {
 
         let manifest = pkg["manifest_path"].as_str().unwrap_or("");
         let rel = manifest
-            .strip_prefix(&workspace_root.to_string_lossy().to_string())
+            .strip_prefix(ws_root)
             .unwrap_or(manifest)
             .trim_start_matches('/');
 

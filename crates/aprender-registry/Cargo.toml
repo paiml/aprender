@@ -83,7 +83,7 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [lib]
-name = "aprender_registry"
+name = "pacha"
 path = "src/lib.rs"
 
 [[bench]]

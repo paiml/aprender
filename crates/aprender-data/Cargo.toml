@@ -112,7 +112,7 @@ predicates = "3"
 jugar-probar = "1.0.1"
 
 [[bin]]
-name = "aprender_data"
+name = "alimentar"
 path = "src/main.rs"
 required-features = ["cli"]
 
@@ -121,7 +121,7 @@ name = "generate_fixtures"
 path = "scripts/generate_fixtures.rs"
 
 [lib]
-name = "aprender_data"
+name = "alimentar"
 path = "src/lib.rs"
 
 [profile.release]

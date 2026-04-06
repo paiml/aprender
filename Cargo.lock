@@ -1493,7 +1493,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bollard",
- "chromiumoxide 0.7.0",
+ "chromiumoxide",
  "chrono",
  "criterion 0.5.1",
  "crossterm 0.28.1",
@@ -2887,19 +2887,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "async-tungstenite"
-version = "0.27.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5359381fd414fbdb272c48f2111c16cb0bb3447bfacd59311ff3736da9f6664"
-dependencies = [
- "futures-io",
- "futures-util",
- "log",
- "pin-project-lite",
- "tungstenite 0.23.0",
 ]
 
 [[package]]
@@ -4375,41 +4362,15 @@ dependencies = [
 
 [[package]]
 name = "chromiumoxide"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8380ce7721cc895fe8a184c49d615fe755b0c9a3d7986355cee847439fff907f"
-dependencies = [
- "async-tungstenite 0.27.0",
- "base64 0.22.1",
- "cfg-if",
- "chromiumoxide_cdp 0.7.0",
- "chromiumoxide_types 0.7.0",
- "dunce",
- "fnv",
- "futures",
- "futures-timer",
- "pin-project-lite",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tracing",
- "url",
- "which 6.0.3",
- "winreg 0.52.0",
-]
-
-[[package]]
-name = "chromiumoxide"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c18200611490f523adb497ddd4744d6d536e243f6add13e7eeeb1c05904fbb1"
 dependencies = [
- "async-tungstenite 0.32.1",
+ "async-tungstenite",
  "base64 0.22.1",
  "cfg-if",
- "chromiumoxide_cdp 0.8.0",
- "chromiumoxide_types 0.8.0",
+ "chromiumoxide_cdp",
+ "chromiumoxide_types",
  "dunce",
  "fnv",
  "futures",
@@ -4428,41 +4389,12 @@ dependencies = [
 
 [[package]]
 name = "chromiumoxide_cdp"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cadbfb52fa0aeca43626f6c42ca04184b108b786f8e45198dc41a42aedcf2e50"
-dependencies = [
- "chromiumoxide_pdl 0.7.0",
- "chromiumoxide_types 0.7.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "chromiumoxide_cdp"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8f78027ced540595dcbaf9e2f3413cbe3708b839ff239d2858acaea73915dcb"
 dependencies = [
- "chromiumoxide_pdl 0.8.0",
- "chromiumoxide_types 0.8.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "chromiumoxide_pdl"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c197aeb42872c5d4c923e7d8ad46d99a58fd0fec37f6491554ff677a6791d3c9"
-dependencies = [
- "chromiumoxide_types 0.7.0",
- "either",
- "heck 0.4.1",
- "once_cell",
- "proc-macro2",
- "quote",
- "regex",
+ "chromiumoxide_pdl",
+ "chromiumoxide_types",
  "serde",
  "serde_json",
 ]
@@ -4473,23 +4405,13 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d2c7b7c6b41a0de36d00a284e619017e0f4aec5c9bc8d90614b9e1687984f20"
 dependencies = [
- "chromiumoxide_types 0.8.0",
+ "chromiumoxide_types",
  "either",
  "heck 0.4.1",
  "once_cell",
  "proc-macro2",
  "quote",
  "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "chromiumoxide_types"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "923486888790528d55ac37ec2f7483ed19eb8ccbb44701878e5856d1ceadf5d8"
-dependencies = [
  "serde",
  "serde_json",
 ]
@@ -8667,7 +8589,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "bincode",
- "chromiumoxide 0.8.0",
+ "chromiumoxide",
  "chrono",
  "crossterm 0.28.1",
  "futures",
@@ -12527,7 +12449,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "winreg 0.50.0",
+ "winreg",
 ]
 
 [[package]]
@@ -15600,24 +15522,6 @@ dependencies = [
 
 [[package]]
 name = "tungstenite"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e2e2ce1e47ed2994fd43b04c8f618008d4cabdd5ee34027cf14f9d918edd9c8"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.4.0",
- "httparse",
- "log",
- "rand 0.8.5",
- "sha1",
- "thiserror 1.0.69",
- "utf-8",
-]
-
-[[package]]
-name = "tungstenite"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
@@ -17913,16 +17817,6 @@ name = "winreg"
 version = "0.50.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
-dependencies = [
- "cfg-if",
- "windows-sys 0.48.0",
-]
-
-[[package]]
-name = "winreg"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",

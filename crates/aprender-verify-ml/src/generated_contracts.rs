@@ -12932,3 +12932,16 @@ macro_rules! contract_work_lifecycle {
 }
 
 // Total: 637 preconditions, 15 postconditions from 265 contracts
+
+// APR-MONO: Stub macros for contracts not yet wired
+macro_rules! contract_pre_oracle_verdict {
+    ($($arg:tt)*) => {};
+}
+
+macro_rules! contract_pre_generator_coverage {
+    ($($arg:tt)*) => {};
+}
+
+macro_rules! contract_pre_mutation_soundness {
+    ($($arg:tt)*) => {};
+}

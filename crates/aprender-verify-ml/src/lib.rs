@@ -46,6 +46,10 @@
 // Note: Lint configuration is in Cargo.toml [workspace.lints]
 #![forbid(unsafe_code)]
 
+#[macro_use]
+#[allow(unused_macros, clippy::duplicated_attributes)]
+mod generated_contracts;
+
 pub mod audit;
 pub mod data;
 pub mod error;

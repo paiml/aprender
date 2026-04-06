@@ -233,7 +233,7 @@ tower-http = { version = "0.6", features = ["fs"] }
 mime_guess = "2"
 
 # Browser / WASM runtime (heavy optional deps for test framework)
-chromiumoxide = { version = "0.7", default-features = false }
+chromiumoxide = { version = "0.8", default-features = false, features = ["tokio-runtime"] }
 wasmtime = "27"
 bollard = "0.17"
 
