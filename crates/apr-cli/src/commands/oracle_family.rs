@@ -124,10 +124,17 @@ fn build_enhanced_sections(
 // ============================================================================
 
 /// Load the family registry from contracts/ directory.
-/// Searches for contracts relative to the executable, then falls back to CWD.
+/// GH-600: Searches multiple well-known locations so serve plan works without
+/// requiring the user to be in the aprender repo directory.
 fn contracts_candidate_paths() -> Vec<PathBuf> {
     let mut candidates = vec![PathBuf::from("contracts")];
 
+    // Env var override (highest priority)
+    if let Ok(path) = std::env::var("APRENDER_CONTRACTS") {
+        candidates.insert(0, PathBuf::from(path));
+    }
+
+    // Relative to executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
             candidates.push(exe_dir.join("contracts"));
@@ -135,6 +142,12 @@ fn contracts_candidate_paths() -> Vec<PathBuf> {
                 candidates.push(parent.join("contracts"));
             }
         }
+    }
+
+    // Well-known source locations
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(&home).join("src/aprender/contracts"));
+        candidates.push(PathBuf::from(&home).join(".config/apr/contracts"));
     }
 
     for ancestor in [".", "..", "../..", "../../.."] {
