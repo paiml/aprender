@@ -79,6 +79,9 @@ training-gpu = ["training", "entrenar/cuda", "entrenar/gpu"]
 whisper = ["whisper-apr"]
 dhat-heap = ["dep:dhat"]
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dependencies]
 # Core aprender library
 aprender = { path = "../..", version = "0.27.5", default-features = true, features = ["format-compression"] }

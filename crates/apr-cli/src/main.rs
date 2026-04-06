@@ -11,7 +11,25 @@ use std::process::ExitCode;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
+/// GH-667: Reset SIGPIPE to SIG_DFL so piping to head/less exits cleanly.
+#[cfg(unix)]
+#[allow(unsafe_code)]
+fn reset_sigpipe() {
+    // SAFETY: signal(SIGPIPE, SIG_DFL) is async-signal-safe per POSIX.
+    // Called once at program start before any threads are spawned.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn reset_sigpipe() {}
+
 fn main() -> ExitCode {
+    // GH-667: Reset SIGPIPE to default so piping to head/less doesn't panic.
+    // Rust sets SIG_IGN for SIGPIPE, causing panics on write to closed pipe.
+    reset_sigpipe();
+
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
     // Force colored output (matches pmat behavior) — users can disable with NO_COLOR=1
