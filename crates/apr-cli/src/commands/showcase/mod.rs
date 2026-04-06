@@ -91,7 +91,10 @@ pub fn run(config: &ShowcaseConfig) -> Result<()> {
         Some(step) => vec![step],
         None => {
             print_available_steps();
-            return Ok(());
+            // GH-677: Exit non-zero when no step specified (was exit 0)
+            return Err(crate::error::CliError::ValidationFailed(
+                "No step specified. Use --auto-verify or --step <step>".to_string(),
+            ));
         }
     };
 
