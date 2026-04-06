@@ -576,8 +576,14 @@ fn infer_quant_from_repo_name(repo: &str) -> Option<String> {
 
 fn contracts_candidate_paths() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+    // GH-600: Env var override
+    if let Ok(path) = std::env::var("APRENDER_CONTRACTS") {
+        candidates.push(PathBuf::from(path));
+    }
     if let Ok(home) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(&home).join("src/aprender/contracts"));
         candidates.push(PathBuf::from(&home).join(".aprender/contracts"));
+        candidates.push(PathBuf::from(&home).join(".config/apr/contracts"));
     }
     for ancestor in [".", "..", "../..", "../../.."] {
         candidates.push(PathBuf::from(ancestor).join("contracts"));
