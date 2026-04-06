@@ -155,6 +155,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.
 #[allow(clippy::many_single_char_names)]
 fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    contract_pre_no_side_effects!();
     Some(match cli.command.as_ref() {
         Commands::Inspect {
             file,
@@ -417,6 +418,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
 fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    contract_pre_output_path_validation!();
     Some(match cli.command.as_ref() {
         Commands::Merge {
             files,

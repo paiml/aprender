@@ -26,6 +26,9 @@ use crate::error::{CliError, Result};
 
 /// Serve command entry point (blocking)
 pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    contract_pre_graceful_shutdown!();
+    contract_pre_resource_cleanup!();
+    contract_pre_concurrent_isolation!();
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.
     #[cfg(feature = "inference")]
