@@ -1,0 +1,92 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Batch retrieval contract for multi-query search and RRF fusion"
+  crate: "trueno-rag"
+  references:
+    - "Cormack, Clarke & Buettcher (2009) Reciprocal Rank Fusion outperforms Condorcet and individual Rank Learning Methods"
+    - "Robertson & Zaragoza (2009) The Probabilistic Relevance Framework: BM25 and Beyond"
+
+equations:
+  batch_retrieve:
+    formula: "batch_retrieve(queries, k) = [retrieve(q_i, k) for q_i in queries]"
+    domain: "queries in Vec<String>, k >= 1, |queries| >= 1"
+    invariants:
+      - "Output length equals input query count"
+      - "Each result set has at most k documents"
+  rrf_score:
+    formula: "RRF(d) = Sum_{r in rankings} 1 / (k_rrf + rank_r(d))"
+    domain: "k_rrf = 60, rank_r(d) >= 1"
+    invariants:
+      - "RRF score > 0 for any ranked document"
+      - "RRF score monotonically decreases with rank position"
+  batch_throughput:
+    formula: "throughput(batch) = |batch| / latency(batch)"
+    domain: "|batch| >= 1, latency > 0"
+    invariants:
+      - "Batch latency <= |batch| * single_query_latency (no worse than sequential)"
+
+proof_obligations:
+  - type: invariant
+    property: "Batch output count matches input count"
+    formal: "|batch_retrieve(queries, k)| == |queries|"
+    applies_to: all
+  - type: bound
+    property: "Per-query result count bounded by k"
+    formal: "forall r in batch_retrieve(queries, k): |r| <= k"
+    applies_to: all
+  - type: monotonicity
+    property: "RRF score decreasing with rank"
+    formal: "rank_1 < rank_2 implies rrf_contrib(rank_1) > rrf_contrib(rank_2)"
+    applies_to: all
+  - type: invariant
+    property: "No duplicate documents in fused results"
+    formal: "forall d_i, d_j in fused: i != j implies d_i.id != d_j.id"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Output count equals input count"
+    test: "test_hybrid_retriever_index_batch"
+    prediction: "verified"
+    if_fails: "Batch retrieval drops or duplicates queries"
+  - id: FALSIFY-BATCH-002
+    rule: "Per-query result bounded by k"
+    test: "test_bm25_search_top_k"
+    prediction: "verified"
+    if_fails: "Top-k truncation not applied"
+  - id: FALSIFY-BATCH-003
+    rule: "RRF monotonicity"
+    test: "test_rrf_score_calculation"
+    prediction: "verified"
+    if_fails: "RRF fusion formula error"
+  - id: FALSIFY-BATCH-004
+    rule: "No duplicate documents after fusion"
+    test: "test_rrf_combines_ranks"
+    prediction: "verified"
+    if_fails: "Deduplication not applied in RRF merge"
+
+kani_harnesses:
+  - id: KANI-BATCH-001
+    obligation: PO-BATCH-001
+    property: "Batch count preservation"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_batch_count
+  - id: KANI-BATCH-002
+    obligation: PO-BATCH-002
+    property: "Top-k bound"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_topk_bound
+
+qa_gate:
+  id: QA-BATCH
+  name: "batch retrieval contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_hybrid_retriever_index_batch
+    - test_bm25_search_top_k
+    - test_rrf_score_calculation
+    - test_rrf_combines_ranks

@@ -1,0 +1,40 @@
+# trueno-rag metrics thresholds
+# Spec: PMAT O(1) hooks + quality gates
+
+[thresholds]
+lint_max_ms = 30_000
+test_tier1_max_ms = 10_000
+test_tier2_max_ms = 300_000
+coverage_max_ms = 600_000
+bench_max_ms = 600_000
+binary_max_bytes = 100_000_000
+build_release_max_ms = 600_000
+
+[staleness]
+max_age_days = 7
+
+[enforcement]
+fail_on_stale_metrics = false
+fail_on_missing_metrics = false
+fail_on_threshold_violation = true
+
+[trend_analysis]
+enabled = true
+retention_days = 90
+alert_on_regression = true
+regression_threshold_pct = 10.0
+
+[quality_gates]
+min_coverage_pct = 85.0
+min_mutation_score_pct = 60.0
+max_cyclomatic_complexity = 10
+min_tdg_grade = "B"
+max_unwrap_calls = 10
+
+[file_health]
+max_lines_per_file = 2000
+warning_lines_per_file = 1000
+target_avg_health_pct = 80.0
+
+[performance]
+max_regression_pct = 5.0

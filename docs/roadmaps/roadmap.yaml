@@ -1,0 +1,237 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/trueno-rag
+roadmap:
+- id: GH-1
+  github_issue: 1
+  item_type: task
+  title: 'feat: Implement production-ready CLI with real embeddings'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-30T18:27:50.974381087+00:00
+  updated: 2026-02-16T21:43:57Z
+  spec: null
+  acceptance_criteria:
+  - Integrate with local embedding models (e.g., sentence-transformers via candle or similar)
+  - Support configurable embedding dimensions
+  - Batch embedding for efficiency
+  - '`index` - Index documents with real embeddings, persist to disk'
+  - '`query` - Query with real semantic search'
+  - '`demo` - Self-contained demo with sample data'
+  - '`config` - Manage configuration (model path, dimensions, etc.)'
+  - Write tests BEFORE implementation
+  - Target 90%+ coverage on CLI
+  - Property-based tests for chunking/retrieval
+  - Integration tests for full pipeline
+  - Real embeddings working (not mock)
+  - Persistent index storage
+  - '`make lint` passes'
+  - '`make coverage` ≥ 90%'
+  - Published to crates.io
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-2
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-2'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-04T14:47:56.188811604+00:00
+  updated: 2026-02-16T21:43:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-003
+  github_issue: null
+  item_type: task
+  title: Implement WARP multi-vector retrieval (ColBERT-style)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-26T17:11:27Z
+  updated: 2026-02-16T22:37:07Z
+  spec: null
+  acceptance_criteria:
+  - Add ColBERT-style multi-vector retrieval using WARP algorithm with residual quantization, behind 'multivector' cargo feature flag. See docs/specifications/warp-spec.md for full specification.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - feature
+  - multivector
+  - warp
+  notes: null
+- id: PMAT-004
+  github_issue: null
+  item_type: task
+  title: Add --jobs parallel loading to index command
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T19:01:50Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 2.3: Add --jobs flag to index subcommand for parallel document loading via rayon or tokio tasks'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - phase2
+  notes: null
+- id: PMAT-005
+  github_issue: null
+  item_type: task
+  title: Add JSON manifest output to index command
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T19:01:51Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 2.5: Add --manifest flag to index command that writes a manifest.json with file list, loader assignments, and chunk counts'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - phase2
+  notes: null
+- id: PMAT-006
+  github_issue: null
+  item_type: task
+  title: Add --backend flag to transcribe CLI
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-16T19:01:53Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 3.5: Expose TranscriptionBackend (cpu/gpu/cuda) via --backend flag on transcribe subcommand'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - phase3
+  notes: null
+- id: PMAT-007
+  github_issue: null
+  item_type: task
+  title: Add manifest-based resume to transcribe
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T19:01:55Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 4.2: Write manifest.json during transcribe batch listing completed files. On restart, read manifest and skip already-completed files.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - phase4
+  notes: null
+- id: PMAT-008
+  github_issue: null
+  item_type: task
+  title: Add progress persistence and throughput reporting to transcribe
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T19:01:57Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 4.3-4.4: Persist progress across restarts via manifest updates. Report throughput (files/sec, realtime factor) during and after batch transcription.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - phase4
+  notes: null
+- id: PMAT-009
+  github_issue: null
+  item_type: task
+  title: Add full pipeline integration tests for media support
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-16T19:01:59Z
+  updated: 2026-02-16T21:39:12Z
+  spec: null
+  acceptance_criteria:
+  - 'Spec 11.3: (1) Load .srt -> chunk -> embed -> retrieve by query, verify results. (2) Verify timestamp metadata survives full pipeline. (3) Sidecar resolution: .mp4 + .srt in temp dir, verify subtitle loader selected.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - media-support
+  - testing
+  notes: null
+- id: PMAT-010
+  github_issue: null
+  item_type: task
+  title: 'Update book: fix API inaccuracies, add CLI ref, eval pipeline, new examples'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T15:46:08Z
+  updated: 2026-02-23T15:46:12.143757918+00:00
+  spec: null
+  acceptance_criteria:
+  - Fix HybridRetrieverConfig fields, add CLI reference page, eval pipeline docs, eval_hybrid example, expand examples table
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-011
+  github_issue: null
+  item_type: task
+  title: Add --dedup flag to index subcommand
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T18:44:13Z
+  updated: 2026-02-23T18:44:16.948039150+00:00
+  spec: null
+  acceptance_criteria:
+  - Content-hash deduplication for unified index — removes ~28.5% duplicate chunks
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-012
+  github_issue: null
+  item_type: task
+  title: Auto-detect semantic indexes in query and eval retrieve
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T20:43:26Z
+  updated: 2026-02-23T20:43:29.688775646+00:00
+  spec: null
+  acceptance_criteria:
+  - query_dense, query_hybrid, and eval retrieve hard-code TfIdfEmbedder. Extract create_query_embedder helper that checks persisted.embedder_type and creates the matching embedder (FastEmbedder or TfIdfEmbedder). Add impl Embedder for Box<dyn Embedder> for HybridRetriever dynamic dispatch.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

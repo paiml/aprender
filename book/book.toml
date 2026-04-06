@@ -1,0 +1,19 @@
+[book]
+title = "Trueno-RAG"
+authors = ["Noah Gift"]
+description = "Pure-Rust Retrieval-Augmented Generation Pipeline"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/noahgift/trueno-rag"
+edit-url-template = "https://github.com/noahgift/trueno-rag/edit/master/book/{path}"
+
+[output.html.fold]
+enable = true
+level = 1
