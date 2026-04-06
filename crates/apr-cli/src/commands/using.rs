@@ -166,8 +166,11 @@ fn print_results(result: &EvalResult) {
     output::kv("Eval time", format!("{:.2}s", result.eval_time_secs));
     println!();
 
-    // Quality interpretation
-    let quality = if result.perplexity < 10.0 {
+    // GH-599: Quality interpretation — suppress misleading labels for small samples.
+    // PPL on <100 tokens is statistically unreliable; don't label a valid model "Garbage".
+    let quality = if result.tokens_evaluated < 100 {
+        format!("PPL {:.1} (insufficient tokens for quality assessment)", result.perplexity).yellow()
+    } else if result.perplexity < 10.0 {
         "Excellent (competitive with SotA)".green()
     } else if result.perplexity < 15.0 {
         "Good (usable quality)".green()
