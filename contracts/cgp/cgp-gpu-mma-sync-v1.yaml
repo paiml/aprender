@@ -1,0 +1,40 @@
+kind: PerformanceContract
+name: cgp-gpu-mma-sync-64x64
+version: "1.0"
+kernel: gemm_cta64_mma_fp16
+hardware:
+  gpu: "NVIDIA RTX 4090"
+  compute_capability: "sm_89"
+
+bounds:
+  - size: 1024
+    description: "mma.sync 64×64 must match or exceed wmma 64×64 cp.async (measured 45.5 TF/s)"
+    min_tflops: 42.0
+    max_regression_pct: 5.0
+
+  - size: 512
+    description: "mma.sync must not regress at smaller sizes (measured 20.2 TF/s)"
+    min_tflops: 18.0
+
+  - size: 4096
+    description: "mma.sync scales well at large sizes (measured 49.8 TF/s)"
+    min_tflops: 45.0
+
+metrics:
+  ptx_instruction_count:
+    description: "mma.sync kernel should have fewer total PTX instructions than wmma"
+    max: 140
+  compute_ratio:
+    description: "Compute instructions / total instructions"
+    min: 0.05
+
+falsification:
+  - name: FALSIFY-MMA-SYNC-001
+    description: "mma.sync PTX compiles on target GPU (ptxas accepts)"
+    check: "CudaModule::from_ptx succeeds"
+  - name: FALSIFY-MMA-SYNC-002
+    description: "mma.sync kernel produces correct GEMM output (vs reference)"
+    check: "max_abs_diff(mma_sync, cublas_ref) < 1e-2"
+  - name: FALSIFY-MMA-SYNC-003
+    description: "mma.sync achieves >= wmma TFLOP/s at 1024"
+    check: "tflops_mma >= tflops_wmma * 0.95"

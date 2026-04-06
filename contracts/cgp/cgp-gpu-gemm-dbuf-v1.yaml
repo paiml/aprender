@@ -1,0 +1,59 @@
+# GPU GEMM double-buffered shared memory contract
+# Status: EXPERIMENT COMPLETED — NEGATIVE RESULT on 32×32 tiles.
+#
+# Measured 2026-04-05: dbuf on 32×32 regressed 0.77-0.98x due to register
+# pressure + PTX code bloat. See cta64 contract for the POSITIVE result
+# (64×64 tiles gave +62% improvement via 2× data reuse).
+#
+# Grounding:
+#   [25] Kerr et al., "CUTLASS," 2023 — double-buffered smem tiling
+#   [48] NVIDIA, "CUTLASS 3.0," 2024 — pipeline async copy + smem double-buffer
+#   [9]  Volkov, "Better Performance at Lower Occupancy," 2010 — register blocking
+kind: PerformanceContract
+name: cgp-gpu-gemm-dbuf
+version: "1.0.0"
+kernel: gemm_cta_wmma_fp16_dbuf
+
+description: |
+  Double-buffered variant of CTA WMMA GEMM. Allocates 2× shared memory
+  (4KB total), loads next K-tile into buffer B while computing on buffer A.
+  Hides ~400 cycle global memory latency behind ~8 cycle WMMA MMA.
+
+hardware:
+  gpu: "NVIDIA GeForce RTX 4090"
+  compute_capability: "8.9"
+  smem_per_sm_kb: 100
+  tensor_core: "FP16 → FP32 WMMA 16×16×16"
+
+bounds:
+  # Measured results (NEGATIVE for 32×32 tiles)
+  - size: [1024, 1024, 1024]
+    single_us: 117.3
+    dbuf_naive_us: 152.4
+    dbuf_separated_us: 155.1
+    note: "Negative: 0.77x (dbuf naive), 0.79x (separated loads)"
+    root_cause: "Register pressure + PTX 25KB vs 15KB thrashes I-cache"
+
+design:
+  approach: |
+    1. Double shared memory: 2× (A[32×16] + B[16×32]) FP16 = 4KB
+    2. K-loop prologue: load tile 0 into buffer 0, bar_sync
+    3. K-loop body: WMMA on buffer[cur], load next into buffer[1-cur], bar_sync
+    4. Toggle cur = 1 - cur each iteration (xor with smem_bytes offset)
+  risk: |
+    PTX builder complexity — need to parametrize all smem accesses with
+    buffer offset. 270 lines of carefully constructed PTX string emission.
+    High risk of correctness bugs. Must test with cuBLAS comparison.
+
+falsification:
+  - name: FALSIFY-GPU-DBUF-001
+    description: "Double-buffered output matches single-buffered within FP16 tolerance"
+    check: "max_diff(dbuf, single_buf) < 1e-2"
+  - name: FALSIFY-GPU-DBUF-002-DISPROVEN
+    description: "Double-buffered must be >= 1.2x faster (DISPROVEN on 32×32)"
+    check: "dbuf_time < single_buf_time * 0.83"
+    status: "DISPROVEN — measured 0.77-0.79x at 1024"
+  - name: FALSIFY-GPU-DBUF-003-DISPROVEN
+    description: "Double-buffered must achieve >= 0.45x cuBLAS (DISPROVEN on 32×32)"
+    check: "dbuf_tflops / cublas_tflops >= 0.45"
+    status: "DISPROVEN — see cgp-gpu-gemm-cta64 contract for POSITIVE result"

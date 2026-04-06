@@ -1,0 +1,75 @@
+# Inference Arena Allocator Contract
+# Contract-first: eliminate per-token heap allocations in forward pass.
+#
+# Current state: forward_layer() allocates ~15 Vec<f32> per layer per token.
+# For TinyLlama (8 layers): 120 allocs/token. For Qwen2.5 (28 layers): 420 allocs/token.
+# Each alloc is malloc+free (~50-100ns), totalling 6-42µs/token of pure overhead.
+#
+# Fix: pre-allocate scratch buffers in a ForwardArena, reuse across layers and tokens.
+# Expected: 2× throughput improvement (807 → 1500+ tok/s on TinyLlama 5M F16).
+#
+# Grounding:
+#   [1] llama.cpp ggml_scratch_buffer — pre-allocated work buffer, zero malloc in eval
+#   [2] Measured: trueno 807 tok/s vs llama.cpp 2481 tok/s = 0.33× (gap is glue, not kernels)
+kind: PerformanceContract
+name: cgp-inference-arena
+version: "1.0.0"
+module: inference::model
+
+description: |
+  Pre-allocated scratch buffers for the inference forward pass.
+  Eliminates all Vec<f32> allocations inside forward() and forward_layer().
+  Buffers are sized once at model load, reused across all layers and tokens.
+
+interface:
+  struct: ForwardArena
+  fields: |
+    attn_input:  Vec<f32>  -- [hidden_size]
+    q:           Vec<f32>  -- [hidden_size]
+    k:           Vec<f32>  -- [kv_dim]
+    v:           Vec<f32>  -- [kv_dim]
+    attn_out:    Vec<f32>  -- [hidden_size]
+    ffn_input:   Vec<f32>  -- [hidden_size]
+    gate:        Vec<f32>  -- [intermediate_size]
+    up:          Vec<f32>  -- [intermediate_size]
+    swiglu:      Vec<f32>  -- [intermediate_size]
+    residual:    Vec<f32>  -- [hidden_size]
+    normed:      Vec<f32>  -- [hidden_size]
+    k_cache_head: Vec<f32> -- [max_seq_len * head_dim] (reused per head)
+    v_cache_head: Vec<f32> -- [max_seq_len * head_dim]
+
+  changes:
+    - "forward() takes &mut ForwardArena instead of allocating internally"
+    - "forward_layer() writes into arena buffers, returns nothing"
+    - "generate() creates ForwardArena once, passes to all forward() calls"
+
+hardware:
+  cpu: "AMD Ryzen Threadripper 7960X"
+
+bounds:
+  - model: "TinyLlama 5M F16"
+    baseline_tok_s: 807
+    target_tok_s: 1400
+    min_speedup: 1.5
+    note: "Eliminating 120 allocs/token (8 layers × 15 allocs)"
+
+falsification:
+  - name: FALSIFY-ARENA-001
+    description: "Zero heap allocations inside forward() hot path"
+    check: |
+      After ForwardArena::new(), forward() and forward_layer()
+      must not call Vec::new(), vec![], .to_vec(), or .collect()
+      (verified by code audit — no runtime allocator hook needed)
+
+  - name: FALSIFY-ARENA-002
+    description: "Output matches pre-arena forward pass within f32 tolerance"
+    check: |
+      For same model + same prompt + same seed:
+        max_diff(arena_logits, baseline_logits) < 1e-5
+      Arena must not change numerical results.
+
+  - name: FALSIFY-ARENA-003
+    description: "Throughput improvement ≥ 1.5× on TinyLlama 5M F16"
+    check: |
+      arena_tok_s / baseline_tok_s >= 1.5
+      Measured over 100 tokens, greedy decode, 3-run average.

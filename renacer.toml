@@ -1,0 +1,132 @@
+# Renacer Configuration for Trueno
+# Performance assertions based on RTX 4090 + golden trace baselines
+
+[project]
+name = "trueno"
+version = "0.7.0"
+
+# Performance budgets from golden traces (empirically validated)
+[performance.budgets]
+# SIMD operations should complete in <2ms with <200 syscalls
+backend_detection = { max_time_ms = 2.0, max_syscalls = 200 }
+matrix_operations = { max_time_ms = 2.0, max_syscalls = 200 }
+activation_functions = { max_time_ms = 2.0, max_syscalls = 200 }
+performance_demo = { max_time_ms = 2.0, max_syscalls = 200 }
+ml_similarity = { max_time_ms = 2.0, max_syscalls = 200 }
+
+# Syscall pattern assertions (from golden traces)
+[[assertions]]
+name = "minimal_io_overhead"
+description = "SIMD operations should have minimal I/O overhead"
+check = "syscall_percentage"
+syscall = "write"
+max_percentage = 35.0  # From golden traces: write is 30.66% max
+
+[[assertions]]
+name = "memory_allocation_budget"
+description = "Memory allocation should be controlled"
+check = "syscall_count"
+syscall = "mmap"
+max_count = 30  # From golden traces: 13-28 mmap calls
+
+[[assertions]]
+name = "no_excessive_reads"
+description = "Minimal disk I/O for in-memory SIMD operations"
+check = "syscall_count"
+syscall = "read"
+max_count = 10  # From golden traces: 5-6 read calls
+
+[[assertions]]
+name = "fast_execution"
+description = "Total runtime should be sub-2ms for SIMD benchmarks"
+check = "total_time"
+max_time_ms = 2.0  # From golden traces: all examples <2ms
+
+# GPU-specific assertions (RTX 4090 empirical data)
+[[assertions]]
+name = "gpu_transfer_overhead"
+description = "GPU operations have ~3.5ms fixed overhead"
+check = "min_time"
+min_time_ms = 3.0  # GPU operations cannot be faster than transfer time
+applies_to = ["gpu_*"]
+
+# Regression detection thresholds
+[regression]
+# Alert if performance degrades by more than 10%
+time_threshold_percent = 10.0
+syscall_threshold_percent = 15.0
+
+# Golden trace comparison
+[golden_traces]
+directory = "golden_traces"
+format = "renacer-json-v1"
+
+# Compare against these baseline traces
+[[golden_traces.baselines]]
+name = "backend_detection"
+file = "golden_traces/backend_detection.json"
+max_deviation_percent = 10.0
+
+[[golden_traces.baselines]]
+name = "performance_demo"
+file = "golden_traces/performance_demo.json"
+max_deviation_percent = 10.0
+
+[[golden_traces.baselines]]
+name = "matrix_operations"
+file = "golden_traces/matrix_operations.json"
+max_deviation_percent = 10.0
+
+[[golden_traces.baselines]]
+name = "activation_functions"
+file = "golden_traces/activation_functions.json"
+max_deviation_percent = 10.0
+
+[[golden_traces.baselines]]
+name = "ml_similarity"
+file = "golden_traces/ml_similarity.json"
+max_deviation_percent = 10.0
+
+# Anti-pattern detection
+[anti_patterns]
+# Detect PCIe bottleneck for GPU workloads
+[[anti_patterns.rules]]
+name = "pcie_bottleneck"
+description = "Excessive GPU memory transfers relative to compute time"
+enabled = true
+check = "ratio"
+syscalls = ["write", "read"]  # GPU device I/O
+min_ratio = 0.5  # If >50% time in I/O, flag as bottleneck
+severity = "warning"
+
+# Detect memory thrashing
+[[anti_patterns.rules]]
+name = "memory_thrashing"
+description = "Excessive mmap/munmap calls indicate memory pressure"
+enabled = true
+check = "syscall_count"
+syscall = "mmap"
+max_count = 50
+severity = "error"
+
+# CI/CD integration
+[ci]
+# Fail build if performance budgets exceeded
+fail_on_budget_exceeded = true
+fail_on_regression = true
+fail_on_anti_patterns = ["error"]  # Only fail on error severity
+
+# Reporting
+[reporting]
+# Output formats for CI integration
+formats = ["json", "markdown", "junit"]
+output_dir = "target/renacer-reports"
+
+# Generate flamegraphs for performance investigation
+[profiling]
+enable_flamegraphs = false  # Set to true for deep performance analysis
+flamegraph_dir = "target/flamegraphs"
+
+# Comparison with baseline
+compare_with_baseline = true
+baseline_branch = "main"

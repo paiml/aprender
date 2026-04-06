@@ -1,0 +1,61 @@
+# cargo-mutants configuration for Trueno
+# Mutation testing for SIMD/GPU compute library
+# https://github.com/sourcefrog/cargo-mutants
+
+# Exclude SIMD intrinsics and GPU shader code from mutation testing
+# These use unsafe blocks with CPU-specific guarantees that mutations would break
+
+exclude_re = [
+    # SIMD intrinsics - mutations would break architecture guarantees
+    "target_feature.*avx512",
+    "target_feature.*avx2",
+    "target_feature.*avx",
+    "target_feature.*sse",
+    "target_feature.*neon",
+    "target_feature.*wasm",
+
+    # GPU device initialization - platform-specific, hard to test
+    "GpuDevice::new",
+    "GpuDevice::is_available",
+
+    # Inline assembly blocks (if any)
+    "asm!",
+
+    # CPU feature detection - architecture-dependent
+    "is_x86_feature_detected",
+    "is_aarch64_feature_detected",
+]
+
+# Skip entire modules that are hard to mutation test
+exclude_globs = [
+    # GPU shader code (WGSL files, not Rust)
+    "src/backends/gpu/shaders/*.wgsl",
+]
+
+# Timeout for individual test runs (seconds)
+# SIMD tests are fast, but GPU tests can be slow
+timeout = 120
+
+# Show execution times for mutants
+show_times = true
+
+# Minimum test timeout (prevents too-short timeouts)
+minimum_test_timeout = 20
+
+# Test timeout as multiple of baseline
+# Use 2x because some tests involve GPU initialization
+timeout_multiplier = 2.0
+
+# Additional test flags
+test_tool = "cargo"
+test_tool_args = ["test", "--all-features"]
+
+# Build in release mode for mutation testing (faster execution)
+# build_timeout = 300
+# build_timeout_multiplier = 2.0
+
+# Number of jobs for parallel testing
+# jobs = 4  # Uncomment to limit parallelism
+
+# Skip doctests (they're checked separately)
+# skip_doctests = true

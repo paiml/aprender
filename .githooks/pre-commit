@@ -1,0 +1,29 @@
+#!/bin/bash
+# Pre-commit hook: SIMD attribute validation
+#
+# This hook runs the Rust-based SIMD property checker to ensure:
+# 1. [CRITICAL] All SIMD functions have #[target_feature] attributes
+# 2. [ERROR] Attributes match the intrinsics actually used
+# 3. [ERROR] FMA intrinsics include 'fma' feature
+# 4. [WARNING] SAFETY comments and #[inline] attributes present
+#
+# To install: ./scripts/install-hooks.sh
+# To bypass (EMERGENCY ONLY): git commit --no-verify
+
+set -e
+
+echo "🔍 Running SIMD attribute validation..."
+echo ""
+
+# Run the Rust-based checker
+if cargo run --quiet --package xtask -- check-simd; then
+    exit 0
+else
+    echo ""
+    echo "❌ Pre-commit check FAILED"
+    echo ""
+    echo "To bypass this check (NOT RECOMMENDED):"
+    echo "  git commit --no-verify"
+    echo ""
+    exit 1
+fi

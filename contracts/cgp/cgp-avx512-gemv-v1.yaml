@@ -1,0 +1,79 @@
+# AVX-512 GEMV performance contract — negative result documentation
+# Contract-first: establishes that AVX-512 GEMV must NOT be used on Zen 4
+#
+# Background: GEMV is bandwidth-bound (AI ≈ 0.25 FLOP/byte [61]),
+# far below the roofline ridge point. AVX-512 frequency throttling [60]
+# on AMD Zen 4 reduces clock ~10-15%, making wider SIMD a net loss.
+#
+# This contract documents the negative result and prevents future
+# regressions where AVX-512 GEMV is accidentally re-enabled.
+kind: PerformanceContract
+name: cgp-avx512-gemv
+version: "1.0.0"
+kernel: gemv_tiled_avx512
+
+description: |
+  AVX-512 GEMV (NT=128, 8 ZMM accumulators, 4-way K-unroll) is slower
+  than AVX2 GEMV (NT=64, 8 YMM accumulators) at ALL tested sizes on
+  Zen 4 (Threadripper 7960X). Root cause: GEMV is bandwidth-bound,
+  and Zen 4 throttles clock during 512-bit operations [60].
+
+hardware:
+  cpu: "AMD Ryzen Threadripper 7960X"
+  architecture: "Zen 4"
+  l1d_bytes: 32768
+  dram_bandwidth_gbps: 20.4  # measured single-core
+
+bounds:
+  # AVX-512 GEMV must NOT be faster than AVX2 on Zen 4 (negative result)
+  - size: [128, 512]
+    avx2_gflops: 74.7
+    avx512_gflops: 61.6
+    ratio: 0.82
+    status: AVX2_WINS
+    note: "Attention scoring size. AVX2 21% faster."
+
+  - size: [128, 4096]
+    avx2_gflops: 40.8
+    avx512_gflops: 46.2
+    ratio: 1.13
+    status: AVX512_MARGINAL
+    note: "Only size where AVX-512 wins, and only by 13%."
+
+  - size: [4096, 4096]
+    avx2_gflops: 16.3
+    avx512_gflops: 10.2
+    ratio: 0.63
+    status: AVX2_WINS
+    note: "FFN projection size. AVX2 60% faster."
+
+analysis:
+  roofline_position: |
+    GEMV arithmetic intensity = 2*K*N / (K*N*4 + N*4) ≈ 0.5 FLOP/byte for large K.
+    Zen 4 single-core DRAM bandwidth: 20.4 GB/s (measured [61]).
+    Roofline ceiling: 0.5 * 20.4 = 10.2 GFLOP/s (matches 4096×4096 measurement).
+    AVX-512 FP32 peak: 224 GFLOP/s at full clock, ~190 GFLOP/s throttled.
+    Ridge point: 190 / 20.4 = 9.3 FLOP/byte.
+    GEMV at 0.5 FLOP/byte is 18.6× below ridge → purely memory-bound.
+  conclusion: |
+    AVX-512 dispatch for GEMV is disabled. AVX2 GEMV remains optimal.
+    Retained gemv_tiled_avx512() for future Intel SPR testing (no throttle).
+
+references:
+  - "[60] Lemire, arXiv:1811.01933 — AVX-512 frequency throttling measurement"
+  - "[61] Ofenbeck et al., IEEE ISPASS 2014 — Roofline model application"
+  - "[4] Williams et al., CACM 2009 — Original roofline model"
+
+falsification:
+  - name: FALSIFY-AVX512-GEMV-001
+    description: "AVX-512 GEMV matches scalar reference for attention-size dims"
+    test: "test_gemv_avx512_attention_size"
+    check: "max_diff(avx512_gemv, scalar_gemv) < 1e-2"
+  - name: FALSIFY-AVX512-GEMV-002
+    description: "AVX-512 GEMV remainder path (N not multiple of 128)"
+    test: "test_gemv_avx512_remainder"
+    check: "max_diff(avx512_gemv, scalar_gemv) < 1e-2"
+  - name: FALSIFY-AVX512-GEMV-003
+    description: "AVX-512 GEMV dispatch must be disabled for Zen 4"
+    test: "gemv dispatch does NOT call gemv_tiled_avx512 when avx512f detected"
+    check: "dispatch routes to gemv_tiled_avx2 or gemv_avx2 for all sizes"

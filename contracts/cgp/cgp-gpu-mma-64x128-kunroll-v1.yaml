@@ -1,0 +1,43 @@
+kind: PerformanceContract
+name: cgp-gpu-mma-64x128-kunroll
+version: "1.0"
+kernel: gemm_cta64x128_mma_kunroll_fp16
+hardware:
+  gpu: "NVIDIA RTX 4090"
+  compute_capability: "sm_89"
+description: |
+  K-unrolled 64×128 mma.sync kernel: tile_k=32 (2 K-steps per iteration).
+  Each loop iteration: 2 ldmatrix.x4 (A) + 4 ldmatrix.x2.trans (B) + 8 mma.sync.
+  Amortizes loop overhead (branch, barrier, cp.async) over 2× more compute.
+  A: 64×32 (4KB), B: 32×128 (8KB). Smem per buffer = 12KB, 2 buffers = 24KB.
+  Hypothesis: 10-15% from halving loop iteration count.
+  Risk: 24KB smem may reduce occupancy vs 12KB baseline.
+
+bounds:
+  - size: 1024
+    description: "K-unroll should match or exceed 57.0 TFLOP/s baseline"
+    min_tflops: 55.0
+    max_regression_pct: 5.0
+
+  - size: 4096
+    description: "Large size scaling"
+    min_tflops: 55.0
+
+metrics:
+  smem_bytes:
+    description: "2 buffers × 12KB = 24576 bytes"
+    value: 24576
+  mma_sync_per_ktile:
+    description: "8 mma.sync per iteration (4 per K-step × 2 K-steps)"
+    value: 8
+
+falsification:
+  - name: FALSIFY-KUNROLL-001
+    description: "K-unrolled PTX compiles with mma.sync"
+    check: "PTX contains mma.sync AND 24576 smem"
+  - name: FALSIFY-KUNROLL-002
+    description: "Output matches cuBLAS reference"
+    check: "max_abs_diff < 1e-2"
+  - name: FALSIFY-KUNROLL-003
+    description: "No regression vs baseline"
+    check: "tflops >= 55.0 at 1024"

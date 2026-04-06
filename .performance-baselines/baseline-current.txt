@@ -1,0 +1,1391 @@
+# Trueno Performance Baseline
+# Commit: d11c690
+# Branch: claude/continue-next-step-01NEN2Jw5zVsNK9DWCE1Hwqz
+# Date: 20251123-120155
+# CPU: unknown
+#
+    Finished `bench` profile [optimized + debuginfo] target(s) in 0.31s
+     Running benches/vector_ops.rs (target/release/deps/vector_ops-40e2c1a3562b4b85)
+Gnuplot not found, using plotters backend
+Benchmarking add/Scalar/100
+Benchmarking add/Scalar/100: Warming up for 3.0000 s
+Benchmarking add/Scalar/100: Collecting 20 samples in estimated 5.0000 s (89M iterations)
+Benchmarking add/Scalar/100: Analyzing
+add/Scalar/100          time:   [55.093 ns 55.710 ns 56.234 ns]
+                        thrpt:  [1.7783 Gelem/s 1.7950 Gelem/s 1.8151 Gelem/s]
+                 change:
+                        time:   [-11.656% -9.4170% -7.0078%] (p = 0.00 < 0.05)
+                        thrpt:  [+7.5359% +10.396% +13.194%]
+                        Performance has improved.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking add/SSE2/100
+Benchmarking add/SSE2/100: Warming up for 3.0000 s
+Benchmarking add/SSE2/100: Collecting 20 samples in estimated 5.0000 s (67M iterations)
+Benchmarking add/SSE2/100: Analyzing
+add/SSE2/100            time:   [72.446 ns 73.637 ns 74.911 ns]
+                        thrpt:  [1.3349 Gelem/s 1.3580 Gelem/s 1.3803 Gelem/s]
+                 change:
+                        time:   [-2.9435% -0.9456% +0.9258%] (p = 0.37 > 0.05)
+                        thrpt:  [-0.9173% +0.9547% +3.0327%]
+                        No change in performance detected.
+Benchmarking add/AVX2/100
+Benchmarking add/AVX2/100: Warming up for 3.0000 s
+Benchmarking add/AVX2/100: Collecting 20 samples in estimated 5.0000 s (59M iterations)
+Benchmarking add/AVX2/100: Analyzing
+add/AVX2/100            time:   [82.820 ns 84.818 ns 88.338 ns]
+                        thrpt:  [1.1320 Gelem/s 1.1790 Gelem/s 1.2074 Gelem/s]
+                 change:
+                        time:   [+4.6855% +8.2092% +11.481%] (p = 0.00 < 0.05)
+                        thrpt:  [-10.299% -7.5864% -4.4757%]
+                        Performance has regressed.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking add/AVX512/100
+Benchmarking add/AVX512/100: Warming up for 3.0000 s
+Benchmarking add/AVX512/100: Collecting 20 samples in estimated 5.0000 s (63M iterations)
+Benchmarking add/AVX512/100: Analyzing
+add/AVX512/100          time:   [78.568 ns 79.203 ns 79.979 ns]
+                        thrpt:  [1.2503 Gelem/s 1.2626 Gelem/s 1.2728 Gelem/s]
+                 change:
+                        time:   [-2.1723% -0.8934% +0.3460%] (p = 0.17 > 0.05)
+                        thrpt:  [-0.3448% +0.9015% +2.2205%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+Benchmarking add/Scalar/1000
+Benchmarking add/Scalar/1000: Warming up for 3.0000 s
+Benchmarking add/Scalar/1000: Collecting 20 samples in estimated 5.0000 s (29M iterations)
+Benchmarking add/Scalar/1000: Analyzing
+add/Scalar/1000         time:   [184.75 ns 186.65 ns 188.07 ns]
+                        thrpt:  [5.3172 Gelem/s 5.3576 Gelem/s 5.4128 Gelem/s]
+                 change:
+                        time:   [+3.5149% +5.3873% +7.1573%] (p = 0.00 < 0.05)
+                        thrpt:  [-6.6793% -5.1119% -3.3956%]
+                        Performance has regressed.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low severe
+  1 (5.00%) low mild
+  1 (5.00%) high severe
+Benchmarking add/SSE2/1000
+Benchmarking add/SSE2/1000: Warming up for 3.0000 s
+Benchmarking add/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (26M iterations)
+Benchmarking add/SSE2/1000: Analyzing
+add/SSE2/1000           time:   [193.51 ns 197.82 ns 203.23 ns]
+                        thrpt:  [4.9205 Gelem/s 5.0552 Gelem/s 5.1677 Gelem/s]
+                 change:
+                        time:   [+14.308% +17.674% +20.975%] (p = 0.00 < 0.05)
+                        thrpt:  [-17.339% -15.020% -12.517%]
+                        Performance has regressed.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking add/AVX2/1000
+Benchmarking add/AVX2/1000: Warming up for 3.0000 s
+Benchmarking add/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (34M iterations)
+Benchmarking add/AVX2/1000: Analyzing
+add/AVX2/1000           time:   [146.08 ns 146.92 ns 147.99 ns]
+                        thrpt:  [6.7572 Gelem/s 6.8066 Gelem/s 6.8454 Gelem/s]
+                 change:
+                        time:   [-13.248% -10.663% -8.9300%] (p = 0.00 < 0.05)
+                        thrpt:  [+9.8056% +11.936% +15.271%]
+                        Performance has improved.
+Benchmarking add/AVX512/1000
+Benchmarking add/AVX512/1000: Warming up for 3.0000 s
+Benchmarking add/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (23M iterations)
+Benchmarking add/AVX512/1000: Analyzing
+add/AVX512/1000         time:   [198.12 ns 198.76 ns 199.71 ns]
+                        thrpt:  [5.0073 Gelem/s 5.0312 Gelem/s 5.0475 Gelem/s]
+                 change:
+                        time:   [-3.4410% -2.5590% -1.6659%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.6941% +2.6262% +3.5636%]
+                        Performance has improved.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking add/Scalar/10000
+Benchmarking add/Scalar/10000: Warming up for 3.0000 s
+Benchmarking add/Scalar/10000: Collecting 20 samples in estimated 5.0002 s (2.4M iterations)
+Benchmarking add/Scalar/10000: Analyzing
+add/Scalar/10000        time:   [2.0911 µs 2.0941 µs 2.0989 µs]
+                        thrpt:  [4.7644 Gelem/s 4.7754 Gelem/s 4.7823 Gelem/s]
+                 change:
+                        time:   [-1.1211% -0.2885% +0.6164%] (p = 0.54 > 0.05)
+                        thrpt:  [-0.6126% +0.2894% +1.1338%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking add/SSE2/10000
+Benchmarking add/SSE2/10000: Warming up for 3.0000 s
+Benchmarking add/SSE2/10000: Collecting 20 samples in estimated 5.0002 s (2.3M iterations)
+Benchmarking add/SSE2/10000: Analyzing
+add/SSE2/10000          time:   [2.2472 µs 2.2540 µs 2.2613 µs]
+                        thrpt:  [4.4223 Gelem/s 4.4366 Gelem/s 4.4501 Gelem/s]
+                 change:
+                        time:   [+4.0167% +5.1483% +5.9755%] (p = 0.00 < 0.05)
+                        thrpt:  [-5.6386% -4.8962% -3.8616%]
+                        Performance has regressed.
+Benchmarking add/AVX2/10000
+Benchmarking add/AVX2/10000: Warming up for 3.0000 s
+Benchmarking add/AVX2/10000: Collecting 20 samples in estimated 5.0004 s (2.5M iterations)
+Benchmarking add/AVX2/10000: Analyzing
+add/AVX2/10000          time:   [1.9758 µs 1.9796 µs 1.9846 µs]
+                        thrpt:  [5.0389 Gelem/s 5.0514 Gelem/s 5.0611 Gelem/s]
+                 change:
+                        time:   [-0.6631% -0.1518% +0.2992%] (p = 0.57 > 0.05)
+                        thrpt:  [-0.2983% +0.1520% +0.6675%]
+                        No change in performance detected.
+Benchmarking add/AVX512/10000
+Benchmarking add/AVX512/10000: Warming up for 3.0000 s
+Benchmarking add/AVX512/10000: Collecting 20 samples in estimated 5.0002 s (2.2M iterations)
+Benchmarking add/AVX512/10000: Analyzing
+add/AVX512/10000        time:   [2.3895 µs 2.4020 µs 2.4196 µs]
+                        thrpt:  [4.1329 Gelem/s 4.1632 Gelem/s 4.1850 Gelem/s]
+                 change:
+                        time:   [+4.6838% +5.3030% +6.0388%] (p = 0.00 < 0.05)
+                        thrpt:  [-5.6949% -5.0359% -4.4743%]
+                        Performance has regressed.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking sub/Scalar/100
+Benchmarking sub/Scalar/100: Warming up for 3.0000 s
+Benchmarking sub/Scalar/100: Collecting 20 samples in estimated 5.0000 s (66M iterations)
+Benchmarking sub/Scalar/100: Analyzing
+sub/Scalar/100          time:   [73.192 ns 74.782 ns 76.784 ns]
+                        thrpt:  [1.3024 Gelem/s 1.3372 Gelem/s 1.3663 Gelem/s]
+                 change:
+                        time:   [+8.9596% +10.835% +12.992%] (p = 0.00 < 0.05)
+                        thrpt:  [-11.498% -9.7755% -8.2228%]
+                        Performance has regressed.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking sub/SSE2/100
+Benchmarking sub/SSE2/100: Warming up for 3.0000 s
+Benchmarking sub/SSE2/100: Collecting 20 samples in estimated 5.0000 s (66M iterations)
+Benchmarking sub/SSE2/100: Analyzing
+sub/SSE2/100            time:   [74.635 ns 77.240 ns 81.546 ns]
+                        thrpt:  [1.2263 Gelem/s 1.2947 Gelem/s 1.3399 Gelem/s]
+                 change:
+                        time:   [+2.9006% +4.9895% +8.2192%] (p = 0.00 < 0.05)
+                        thrpt:  [-7.5950% -4.7523% -2.8188%]
+                        Performance has regressed.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking sub/AVX2/100
+Benchmarking sub/AVX2/100: Warming up for 3.0000 s
+Benchmarking sub/AVX2/100: Collecting 20 samples in estimated 5.0000 s (65M iterations)
+Benchmarking sub/AVX2/100: Analyzing
+sub/AVX2/100            time:   [76.710 ns 78.117 ns 79.585 ns]
+                        thrpt:  [1.2565 Gelem/s 1.2801 Gelem/s 1.3036 Gelem/s]
+                 change:
+                        time:   [-14.353% -4.9774% +4.1234%] (p = 0.39 > 0.05)
+                        thrpt:  [-3.9601% +5.2382% +16.758%]
+                        No change in performance detected.
+Found 4 outliers among 20 measurements (20.00%)
+  2 (10.00%) high mild
+  2 (10.00%) high severe
+Benchmarking sub/AVX512/100
+Benchmarking sub/AVX512/100: Warming up for 3.0000 s
+Benchmarking sub/AVX512/100: Collecting 20 samples in estimated 5.0000 s (59M iterations)
+Benchmarking sub/AVX512/100: Analyzing
+sub/AVX512/100          time:   [79.629 ns 81.389 ns 83.336 ns]
+                        thrpt:  [1.2000 Gelem/s 1.2287 Gelem/s 1.2558 Gelem/s]
+                 change:
+                        time:   [+2.7827% +3.9255% +5.2844%] (p = 0.00 < 0.05)
+                        thrpt:  [-5.0191% -3.7772% -2.7073%]
+                        Performance has regressed.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking sub/Scalar/1000
+Benchmarking sub/Scalar/1000: Warming up for 3.0000 s
+Benchmarking sub/Scalar/1000: Collecting 20 samples in estimated 5.0000 s (29M iterations)
+Benchmarking sub/Scalar/1000: Analyzing
+sub/Scalar/1000         time:   [169.95 ns 173.37 ns 177.15 ns]
+                        thrpt:  [5.6448 Gelem/s 5.7681 Gelem/s 5.8842 Gelem/s]
+                 change:
+                        time:   [+1.1423% +2.6685% +4.3000%] (p = 0.00 < 0.05)
+                        thrpt:  [-4.1227% -2.5991% -1.1294%]
+                        Performance has regressed.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking sub/SSE2/1000
+Benchmarking sub/SSE2/1000: Warming up for 3.0000 s
+Benchmarking sub/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (30M iterations)
+Benchmarking sub/SSE2/1000: Analyzing
+sub/SSE2/1000           time:   [164.72 ns 166.72 ns 169.38 ns]
+                        thrpt:  [5.9040 Gelem/s 5.9980 Gelem/s 6.0711 Gelem/s]
+                 change:
+                        time:   [-1.2676% +0.8022% +2.7658%] (p = 0.46 > 0.05)
+                        thrpt:  [-2.6914% -0.7958% +1.2839%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking sub/AVX2/1000
+Benchmarking sub/AVX2/1000: Warming up for 3.0000 s
+Benchmarking sub/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (32M iterations)
+Benchmarking sub/AVX2/1000: Analyzing
+sub/AVX2/1000           time:   [156.44 ns 157.95 ns 159.83 ns]
+                        thrpt:  [6.2566 Gelem/s 6.3312 Gelem/s 6.3920 Gelem/s]
+                 change:
+                        time:   [-6.3137% -4.4027% -2.3694%] (p = 0.00 < 0.05)
+                        thrpt:  [+2.4269% +4.6055% +6.7392%]
+                        Performance has improved.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking sub/AVX512/1000
+Benchmarking sub/AVX512/1000: Warming up for 3.0000 s
+Benchmarking sub/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (28M iterations)
+Benchmarking sub/AVX512/1000: Analyzing
+sub/AVX512/1000         time:   [173.40 ns 178.44 ns 185.16 ns]
+                        thrpt:  [5.4006 Gelem/s 5.6042 Gelem/s 5.7669 Gelem/s]
+                 change:
+                        time:   [-11.080% -8.2213% -5.0474%] (p = 0.00 < 0.05)
+                        thrpt:  [+5.3157% +8.9578% +12.461%]
+                        Performance has improved.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking sub/Scalar/10000
+Benchmarking sub/Scalar/10000: Warming up for 3.0000 s
+Benchmarking sub/Scalar/10000: Collecting 20 samples in estimated 5.0002 s (2.4M iterations)
+Benchmarking sub/Scalar/10000: Analyzing
+sub/Scalar/10000        time:   [2.1087 µs 2.1393 µs 2.1796 µs]
+                        thrpt:  [4.5879 Gelem/s 4.6745 Gelem/s 4.7422 Gelem/s]
+                 change:
+                        time:   [-4.6258% -1.2874% +1.7752%] (p = 0.48 > 0.05)
+                        thrpt:  [-1.7442% +1.3042% +4.8502%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking sub/SSE2/10000
+Benchmarking sub/SSE2/10000: Warming up for 3.0000 s
+Benchmarking sub/SSE2/10000: Collecting 20 samples in estimated 5.0000 s (2.3M iterations)
+Benchmarking sub/SSE2/10000: Analyzing
+sub/SSE2/10000          time:   [2.1321 µs 2.1493 µs 2.1692 µs]
+                        thrpt:  [4.6100 Gelem/s 4.6527 Gelem/s 4.6902 Gelem/s]
+                 change:
+                        time:   [-1.8254% -0.7380% +0.1980%] (p = 0.20 > 0.05)
+                        thrpt:  [-0.1976% +0.7435% +1.8594%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking sub/AVX2/10000
+Benchmarking sub/AVX2/10000: Warming up for 3.0000 s
+Benchmarking sub/AVX2/10000: Collecting 20 samples in estimated 5.0003 s (2.5M iterations)
+Benchmarking sub/AVX2/10000: Analyzing
+sub/AVX2/10000          time:   [1.9717 µs 1.9769 µs 1.9848 µs]
+                        thrpt:  [5.0382 Gelem/s 5.0583 Gelem/s 5.0718 Gelem/s]
+                 change:
+                        time:   [-1.5665% -1.2027% -0.8232%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.8301% +1.2174% +1.5915%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking sub/AVX512/10000
+Benchmarking sub/AVX512/10000: Warming up for 3.0000 s
+Benchmarking sub/AVX512/10000: Collecting 20 samples in estimated 5.0004 s (2.2M iterations)
+Benchmarking sub/AVX512/10000: Analyzing
+sub/AVX512/10000        time:   [2.2789 µs 2.2839 µs 2.2899 µs]
+                        thrpt:  [4.3671 Gelem/s 4.3785 Gelem/s 4.3881 Gelem/s]
+                 change:
+                        time:   [-0.4060% -0.0928% +0.2253%] (p = 0.56 > 0.05)
+                        thrpt:  [-0.2248% +0.0929% +0.4077%]
+                        No change in performance detected.
+Benchmarking sub/Scalar/100000
+Benchmarking sub/Scalar/100000: Warming up for 3.0000 s
+Benchmarking sub/Scalar/100000: Collecting 20 samples in estimated 5.0007 s (208k iterations)
+Benchmarking sub/Scalar/100000: Analyzing
+sub/Scalar/100000       time:   [24.200 µs 24.393 µs 24.629 µs]
+                        thrpt:  [4.0602 Gelem/s 4.0995 Gelem/s 4.1322 Gelem/s]
+                 change:
+                        time:   [-2.6200% -1.9340% -1.1331%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.1461% +1.9721% +2.6904%]
+                        Performance has improved.
+Benchmarking sub/SSE2/100000
+Benchmarking sub/SSE2/100000: Warming up for 3.0000 s
+Benchmarking sub/SSE2/100000: Collecting 20 samples in estimated 5.0026 s (206k iterations)
+Benchmarking sub/SSE2/100000: Analyzing
+sub/SSE2/100000         time:   [23.902 µs 24.105 µs 24.338 µs]
+                        thrpt:  [4.1088 Gelem/s 4.1484 Gelem/s 4.1838 Gelem/s]
+                 change:
+                        time:   [-8.4888% -5.8477% -3.8055%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.9561% +6.2108% +9.2762%]
+                        Performance has improved.
+Benchmarking sub/AVX2/100000
+Benchmarking sub/AVX2/100000: Warming up for 3.0000 s
+Benchmarking sub/AVX2/100000: Collecting 20 samples in estimated 5.0030 s (217k iterations)
+Benchmarking sub/AVX2/100000: Analyzing
+sub/AVX2/100000         time:   [23.138 µs 23.506 µs 23.823 µs]
+                        thrpt:  [4.1976 Gelem/s 4.2542 Gelem/s 4.3220 Gelem/s]
+                 change:
+                        time:   [-4.0365% -2.8789% -1.7624%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.7941% +2.9643% +4.2063%]
+                        Performance has improved.
+Benchmarking sub/AVX512/100000
+Benchmarking sub/AVX512/100000: Warming up for 3.0000 s
+Benchmarking sub/AVX512/100000: Collecting 20 samples in estimated 5.0003 s (185k iterations)
+Benchmarking sub/AVX512/100000: Analyzing
+sub/AVX512/100000       time:   [26.943 µs 27.125 µs 27.357 µs]
+                        thrpt:  [3.6554 Gelem/s 3.6867 Gelem/s 3.7116 Gelem/s]
+                 change:
+                        time:   [-2.3415% -1.8274% -1.1372%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.1503% +1.8614% +2.3976%]
+                        Performance has improved.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+
+Benchmarking mul/Scalar/100
+Benchmarking mul/Scalar/100: Warming up for 3.0000 s
+Benchmarking mul/Scalar/100: Collecting 20 samples in estimated 5.0000 s (67M iterations)
+Benchmarking mul/Scalar/100: Analyzing
+mul/Scalar/100          time:   [74.045 ns 74.449 ns 74.833 ns]
+                        thrpt:  [1.3363 Gelem/s 1.3432 Gelem/s 1.3505 Gelem/s]
+                 change:
+                        time:   [-7.8567% -4.5155% -1.6632%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.6913% +4.7290% +8.5267%]
+                        Performance has improved.
+Benchmarking mul/SSE2/100
+Benchmarking mul/SSE2/100: Warming up for 3.0000 s
+Benchmarking mul/SSE2/100: Collecting 20 samples in estimated 5.0000 s (67M iterations)
+Benchmarking mul/SSE2/100: Analyzing
+mul/SSE2/100            time:   [75.481 ns 76.771 ns 77.997 ns]
+                        thrpt:  [1.2821 Gelem/s 1.3026 Gelem/s 1.3248 Gelem/s]
+                 change:
+                        time:   [+4.8819% +6.1029% +7.3877%] (p = 0.00 < 0.05)
+                        thrpt:  [-6.8795% -5.7518% -4.6547%]
+                        Performance has regressed.
+Benchmarking mul/AVX2/100
+Benchmarking mul/AVX2/100: Warming up for 3.0000 s
+Benchmarking mul/AVX2/100: Collecting 20 samples in estimated 5.0000 s (65M iterations)
+Benchmarking mul/AVX2/100: Analyzing
+mul/AVX2/100            time:   [75.281 ns 76.209 ns 77.383 ns]
+                        thrpt:  [1.2923 Gelem/s 1.3122 Gelem/s 1.3284 Gelem/s]
+                 change:
+                        time:   [+1.2553% +3.0415% +4.8396%] (p = 0.00 < 0.05)
+                        thrpt:  [-4.6162% -2.9517% -1.2398%]
+                        Performance has regressed.
+Benchmarking mul/AVX512/100
+Benchmarking mul/AVX512/100: Warming up for 3.0000 s
+Benchmarking mul/AVX512/100: Collecting 20 samples in estimated 5.0000 s (65M iterations)
+Benchmarking mul/AVX512/100: Analyzing
+mul/AVX512/100          time:   [74.271 ns 75.153 ns 75.920 ns]
+                        thrpt:  [1.3172 Gelem/s 1.3306 Gelem/s 1.3464 Gelem/s]
+                 change:
+                        time:   [-10.919% -8.9670% -6.9115%] (p = 0.00 < 0.05)
+                        thrpt:  [+7.4246% +9.8502% +12.258%]
+                        Performance has improved.
+Benchmarking mul/Scalar/1000
+Benchmarking mul/Scalar/1000: Warming up for 3.0000 s
+Benchmarking mul/Scalar/1000: Collecting 20 samples in estimated 5.0000 s (29M iterations)
+Benchmarking mul/Scalar/1000: Analyzing
+mul/Scalar/1000         time:   [168.56 ns 170.10 ns 172.69 ns]
+                        thrpt:  [5.7907 Gelem/s 5.8789 Gelem/s 5.9325 Gelem/s]
+                 change:
+                        time:   [-3.5706% -2.5009% -1.3219%] (p = 0.00 < 0.05)
+                        thrpt:  [+1.3396% +2.5650% +3.7028%]
+                        Performance has improved.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking mul/SSE2/1000
+Benchmarking mul/SSE2/1000: Warming up for 3.0000 s
+Benchmarking mul/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (30M iterations)
+Benchmarking mul/SSE2/1000: Analyzing
+mul/SSE2/1000           time:   [167.75 ns 170.21 ns 172.95 ns]
+                        thrpt:  [5.7819 Gelem/s 5.8752 Gelem/s 5.9611 Gelem/s]
+                 change:
+                        time:   [-5.3916% -1.1607% +2.2646%] (p = 0.61 > 0.05)
+                        thrpt:  [-2.2144% +1.1743% +5.6989%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking mul/AVX2/1000
+Benchmarking mul/AVX2/1000: Warming up for 3.0000 s
+Benchmarking mul/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (34M iterations)
+Benchmarking mul/AVX2/1000: Analyzing
+mul/AVX2/1000           time:   [144.82 ns 146.06 ns 147.91 ns]
+                        thrpt:  [6.7607 Gelem/s 6.8466 Gelem/s 6.9051 Gelem/s]
+                 change:
+                        time:   [-4.1500% -1.9534% +0.1322%] (p = 0.10 > 0.05)
+                        thrpt:  [-0.1320% +1.9923% +4.3297%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+Benchmarking mul/AVX512/1000
+Benchmarking mul/AVX512/1000: Warming up for 3.0000 s
+Benchmarking mul/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (30M iterations)
+Benchmarking mul/AVX512/1000: Analyzing
+mul/AVX512/1000         time:   [169.26 ns 171.29 ns 173.85 ns]
+                        thrpt:  [5.7522 Gelem/s 5.8382 Gelem/s 5.9081 Gelem/s]
+                 change:
+                        time:   [+1.7711% +2.8781% +4.0930%] (p = 0.00 < 0.05)
+                        thrpt:  [-3.9321% -2.7976% -1.7402%]
+                        Performance has regressed.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking mul/Scalar/10000
+Benchmarking mul/Scalar/10000: Warming up for 3.0000 s
+Benchmarking mul/Scalar/10000: Collecting 20 samples in estimated 5.0000 s (2.3M iterations)
+Benchmarking mul/Scalar/10000: Analyzing
+mul/Scalar/10000        time:   [2.1231 µs 2.1549 µs 2.2078 µs]
+                        thrpt:  [4.5295 Gelem/s 4.6406 Gelem/s 4.7100 Gelem/s]
+                 change:
+                        time:   [-0.4561% +0.6549% +1.9947%] (p = 0.33 > 0.05)
+                        thrpt:  [-1.9557% -0.6506% +0.4582%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking mul/SSE2/10000
+Benchmarking mul/SSE2/10000: Warming up for 3.0000 s
+Benchmarking mul/SSE2/10000: Collecting 20 samples in estimated 5.0002 s (2.3M iterations)
+Benchmarking mul/SSE2/10000: Analyzing
+mul/SSE2/10000          time:   [2.1329 µs 2.1491 µs 2.1726 µs]
+                        thrpt:  [4.6028 Gelem/s 4.6532 Gelem/s 4.6884 Gelem/s]
+                 change:
+                        time:   [-3.2330% -1.9097% -0.4186%] (p = 0.01 < 0.05)
+                        thrpt:  [+0.4204% +1.9469% +3.3410%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking mul/AVX2/10000
+Benchmarking mul/AVX2/10000: Warming up for 3.0000 s
+Benchmarking mul/AVX2/10000: Collecting 20 samples in estimated 5.0002 s (2.5M iterations)
+Benchmarking mul/AVX2/10000: Analyzing
+mul/AVX2/10000          time:   [1.9921 µs 1.9957 µs 1.9998 µs]
+                        thrpt:  [5.0004 Gelem/s 5.0107 Gelem/s 5.0199 Gelem/s]
+                 change:
+                        time:   [-0.9636% -0.1321% +0.6532%] (p = 0.78 > 0.05)
+                        thrpt:  [-0.6490% +0.1323% +0.9730%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking mul/AVX512/10000
+Benchmarking mul/AVX512/10000: Warming up for 3.0000 s
+Benchmarking mul/AVX512/10000: Collecting 20 samples in estimated 5.0000 s (2.0M iterations)
+Benchmarking mul/AVX512/10000: Analyzing
+mul/AVX512/10000        time:   [2.5335 µs 2.5572 µs 2.5875 µs]
+                        thrpt:  [3.8647 Gelem/s 3.9105 Gelem/s 3.9471 Gelem/s]
+                 change:
+                        time:   [-0.5858% +0.1315% +0.8110%] (p = 0.75 > 0.05)
+                        thrpt:  [-0.8045% -0.1314% +0.5893%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking dot/Scalar/100
+Benchmarking dot/Scalar/100: Warming up for 3.0000 s
+Benchmarking dot/Scalar/100: Collecting 20 samples in estimated 5.0000 s (67M iterations)
+Benchmarking dot/Scalar/100: Analyzing
+dot/Scalar/100          time:   [73.106 ns 73.460 ns 73.911 ns]
+                        thrpt:  [1.3530 Gelem/s 1.3613 Gelem/s 1.3679 Gelem/s]
+                 change:
+                        time:   [-2.8198% -1.8864% -0.9334%] (p = 0.08 > 0.05)
+                        thrpt:  [+0.9422% +1.9227% +2.9016%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking dot/SSE2/100
+Benchmarking dot/SSE2/100: Warming up for 3.0000 s
+Benchmarking dot/SSE2/100: Collecting 20 samples in estimated 5.0000 s (271M iterations)
+Benchmarking dot/SSE2/100: Analyzing
+dot/SSE2/100            time:   [18.154 ns 18.448 ns 18.896 ns]
+                        thrpt:  [5.2922 Gelem/s 5.4206 Gelem/s 5.5084 Gelem/s]
+                 change:
+                        time:   [-0.2761% +2.5020% +7.0312%] (p = 0.11 > 0.05)
+                        thrpt:  [-6.5693% -2.4409% +0.2769%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+Benchmarking dot/AVX2/100
+Benchmarking dot/AVX2/100: Warming up for 3.0000 s
+Benchmarking dot/AVX2/100: Collecting 20 samples in estimated 5.0000 s (482M iterations)
+Benchmarking dot/AVX2/100: Analyzing
+dot/AVX2/100            time:   [10.119 ns 10.307 ns 10.632 ns]
+                        thrpt:  [9.4057 Gelem/s 9.7025 Gelem/s 9.8820 Gelem/s]
+                 change:
+                        time:   [+0.0503% +2.2850% +5.4530%] (p = 0.04 < 0.05)
+                        thrpt:  [-5.1711% -2.2340% -0.0503%]
+                        Change within noise threshold.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking dot/AVX512/100
+Benchmarking dot/AVX512/100: Warming up for 3.0000 s
+Benchmarking dot/AVX512/100: Collecting 20 samples in estimated 5.0000 s (434M iterations)
+Benchmarking dot/AVX512/100: Analyzing
+dot/AVX512/100          time:   [11.488 ns 11.540 ns 11.579 ns]
+                        thrpt:  [8.6360 Gelem/s 8.6656 Gelem/s 8.7051 Gelem/s]
+                 change:
+                        time:   [-1.7058% -0.6978% +0.3321%] (p = 0.56 > 0.05)
+                        thrpt:  [-0.3310% +0.7027% +1.7354%]
+                        No change in performance detected.
+Benchmarking dot/Scalar/1000
+Benchmarking dot/Scalar/1000: Warming up for 3.0000 s
+Benchmarking dot/Scalar/1000: Collecting 20 samples in estimated 5.0001 s (4.4M iterations)
+Benchmarking dot/Scalar/1000: Analyzing
+dot/Scalar/1000         time:   [1.1462 µs 1.1477 µs 1.1492 µs]
+                        thrpt:  [870.21 Melem/s 871.34 Melem/s 872.45 Melem/s]
+                 change:
+                        time:   [-0.2331% -0.0270% +0.2103%] (p = 0.72 > 0.05)
+                        thrpt:  [-0.2098% +0.0270% +0.2337%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking dot/SSE2/1000
+Benchmarking dot/SSE2/1000: Warming up for 3.0000 s
+Benchmarking dot/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (19M iterations)
+Benchmarking dot/SSE2/1000: Analyzing
+dot/SSE2/1000           time:   [264.05 ns 265.50 ns 266.67 ns]
+                        thrpt:  [3.7500 Gelem/s 3.7664 Gelem/s 3.7872 Gelem/s]
+                 change:
+                        time:   [-0.6840% -0.2240% +0.2351%] (p = 0.40 > 0.05)
+                        thrpt:  [-0.2346% +0.2245% +0.6887%]
+                        No change in performance detected.
+Benchmarking dot/AVX2/1000
+Benchmarking dot/AVX2/1000: Warming up for 3.0000 s
+Benchmarking dot/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (48M iterations)
+Benchmarking dot/AVX2/1000: Analyzing
+dot/AVX2/1000           time:   [101.92 ns 102.49 ns 103.40 ns]
+                        thrpt:  [9.6716 Gelem/s 9.7566 Gelem/s 9.8115 Gelem/s]
+                 change:
+                        time:   [-6.1078% -4.7139% -3.3239%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.4382% +4.9471% +6.5052%]
+                        Performance has improved.
+Benchmarking dot/AVX512/1000
+Benchmarking dot/AVX512/1000: Warming up for 3.0000 s
+Benchmarking dot/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (77M iterations)
+Benchmarking dot/AVX512/1000: Analyzing
+dot/AVX512/1000         time:   [68.410 ns 68.593 ns 68.759 ns]
+                        thrpt:  [14.544 Gelem/s 14.579 Gelem/s 14.618 Gelem/s]
+                 change:
+                        time:   [-0.9584% +1.2016% +3.4480%] (p = 0.46 > 0.05)
+                        thrpt:  [-3.3331% -1.1874% +0.9677%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) low mild
+Benchmarking dot/Scalar/10000
+Benchmarking dot/Scalar/10000: Warming up for 3.0000 s
+Benchmarking dot/Scalar/10000: Collecting 20 samples in estimated 5.0025 s (417k iterations)
+Benchmarking dot/Scalar/10000: Analyzing
+dot/Scalar/10000        time:   [11.981 µs 12.005 µs 12.034 µs]
+                        thrpt:  [830.97 Melem/s 833.02 Melem/s 834.68 Melem/s]
+                 change:
+                        time:   [-0.3806% +0.1317% +0.6456%] (p = 0.73 > 0.05)
+                        thrpt:  [-0.6415% -0.1315% +0.3821%]
+                        No change in performance detected.
+Benchmarking dot/SSE2/10000
+Benchmarking dot/SSE2/10000: Warming up for 3.0000 s
+Benchmarking dot/SSE2/10000: Collecting 20 samples in estimated 5.0005 s (1.7M iterations)
+Benchmarking dot/SSE2/10000: Analyzing
+dot/SSE2/10000          time:   [2.9505 µs 2.9519 µs 2.9537 µs]
+                        thrpt:  [3.3856 Gelem/s 3.3876 Gelem/s 3.3893 Gelem/s]
+                 change:
+                        time:   [-0.4057% -0.2490% -0.1083%] (p = 0.02 < 0.05)
+                        thrpt:  [+0.1084% +0.2497% +0.4074%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking dot/AVX2/10000
+Benchmarking dot/AVX2/10000: Warming up for 3.0000 s
+Benchmarking dot/AVX2/10000: Collecting 20 samples in estimated 5.0001 s (3.5M iterations)
+Benchmarking dot/AVX2/10000: Analyzing
+dot/AVX2/10000          time:   [1.4462 µs 1.4473 µs 1.4484 µs]
+                        thrpt:  [6.9040 Gelem/s 6.9094 Gelem/s 6.9149 Gelem/s]
+                 change:
+                        time:   [-0.7138% -0.4881% -0.3078%] (p = 0.00 < 0.05)
+                        thrpt:  [+0.3088% +0.4904% +0.7189%]
+                        Change within noise threshold.
+Benchmarking dot/AVX512/10000
+Benchmarking dot/AVX512/10000: Warming up for 3.0000 s
+Benchmarking dot/AVX512/10000: Collecting 20 samples in estimated 5.0002 s (5.1M iterations)
+Benchmarking dot/AVX512/10000: Analyzing
+dot/AVX512/10000        time:   [994.66 ns 1.0317 µs 1.0597 µs]
+                        thrpt:  [9.4369 Gelem/s 9.6926 Gelem/s 10.054 Gelem/s]
+                 change:
+                        time:   [-27.513% -26.372% -24.702%] (p = 0.00 < 0.05)
+                        thrpt:  [+32.806% +35.819% +37.955%]
+                        Performance has improved.
+Found 4 outliers among 20 measurements (20.00%)
+  4 (20.00%) high severe
+
+Benchmarking max/Scalar/100
+Benchmarking max/Scalar/100: Warming up for 3.0000 s
+Benchmarking max/Scalar/100: Collecting 20 samples in estimated 5.0000 s (72M iterations)
+Benchmarking max/Scalar/100: Analyzing
+max/Scalar/100          time:   [68.369 ns 68.780 ns 69.178 ns]
+                        thrpt:  [1.4455 Gelem/s 1.4539 Gelem/s 1.4627 Gelem/s]
+                 change:
+                        time:   [-2.1314% -0.5548% +1.0975%] (p = 0.61 > 0.05)
+                        thrpt:  [-1.0856% +0.5579% +2.1778%]
+                        No change in performance detected.
+Benchmarking max/SSE2/100
+Benchmarking max/SSE2/100: Warming up for 3.0000 s
+Benchmarking max/SSE2/100: Collecting 20 samples in estimated 5.0000 s (384M iterations)
+Benchmarking max/SSE2/100: Analyzing
+max/SSE2/100            time:   [11.565 ns 11.825 ns 12.075 ns]
+                        thrpt:  [8.2814 Gelem/s 8.4563 Gelem/s 8.6469 Gelem/s]
+                 change:
+                        time:   [-7.3312% -5.4074% -3.3963%] (p = 0.00 < 0.05)
+                        thrpt:  [+3.5158% +5.7165% +7.9112%]
+                        Performance has improved.
+Benchmarking max/AVX2/100
+Benchmarking max/AVX2/100: Warming up for 3.0000 s
+Benchmarking max/AVX2/100: Collecting 20 samples in estimated 5.0000 s (530M iterations)
+Benchmarking max/AVX2/100: Analyzing
+max/AVX2/100            time:   [9.2737 ns 9.3611 ns 9.4873 ns]
+                        thrpt:  [10.540 Gelem/s 10.683 Gelem/s 10.783 Gelem/s]
+                 change:
+                        time:   [-1.9400% -0.4038% +2.3809%] (p = 0.81 > 0.05)
+                        thrpt:  [-2.3256% +0.4054% +1.9784%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking max/AVX512/100
+Benchmarking max/AVX512/100: Warming up for 3.0000 s
+Benchmarking max/AVX512/100: Collecting 20 samples in estimated 5.0000 s (521M iterations)
+Benchmarking max/AVX512/100: Analyzing
+max/AVX512/100          time:   [9.4458 ns 9.6146 ns 9.8195 ns]
+                        thrpt:  [10.184 Gelem/s 10.401 Gelem/s 10.587 Gelem/s]
+                 change:
+                        time:   [+1.5849% +7.8238% +16.132%] (p = 0.42 > 0.05)
+                        thrpt:  [-13.891% -7.2561% -1.5601%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking max/Scalar/1000
+Benchmarking max/Scalar/1000: Warming up for 3.0000 s
+Benchmarking max/Scalar/1000: Collecting 20 samples in estimated 5.0001 s (4.5M iterations)
+Benchmarking max/Scalar/1000: Analyzing
+max/Scalar/1000         time:   [1.1170 µs 1.1179 µs 1.1188 µs]
+                        thrpt:  [893.84 Melem/s 894.55 Melem/s 895.27 Melem/s]
+                 change:
+                        time:   [-0.1285% +0.0643% +0.2547%] (p = 0.73 > 0.05)
+                        thrpt:  [-0.2541% -0.0642% +0.1287%]
+                        No change in performance detected.
+Benchmarking max/SSE2/1000
+Benchmarking max/SSE2/1000: Warming up for 3.0000 s
+Benchmarking max/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (22M iterations)
+Benchmarking max/SSE2/1000: Analyzing
+max/SSE2/1000           time:   [223.91 ns 224.83 ns 225.94 ns]
+                        thrpt:  [4.4260 Gelem/s 4.4479 Gelem/s 4.4660 Gelem/s]
+                 change:
+                        time:   [-6.0572% -4.9901% -3.8659%] (p = 0.00 < 0.05)
+                        thrpt:  [+4.0213% +5.2522% +6.4477%]
+                        Performance has improved.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking max/AVX2/1000
+Benchmarking max/AVX2/1000: Warming up for 3.0000 s
+Benchmarking max/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (53M iterations)
+Benchmarking max/AVX2/1000: Analyzing
+max/AVX2/1000           time:   [91.800 ns 92.224 ns 92.803 ns]
+                        thrpt:  [10.775 Gelem/s 10.843 Gelem/s 10.893 Gelem/s]
+                 change:
+                        time:   [-0.6130% +0.4576% +1.3631%] (p = 0.27 > 0.05)
+                        thrpt:  [-1.3448% -0.4555% +0.6168%]
+                        No change in performance detected.
+Benchmarking max/AVX512/1000
+Benchmarking max/AVX512/1000: Warming up for 3.0000 s
+Benchmarking max/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (54M iterations)
+Benchmarking max/AVX512/1000: Analyzing
+max/AVX512/1000         time:   [92.963 ns 93.406 ns 93.851 ns]
+                        thrpt:  [10.655 Gelem/s 10.706 Gelem/s 10.757 Gelem/s]
+                 change:
+                        time:   [+0.2950% +1.6084% +2.9662%] (p = 0.39 > 0.05)
+                        thrpt:  [-2.8807% -1.5830% -0.2941%]
+                        No change in performance detected.
+Benchmarking max/Scalar/10000
+Benchmarking max/Scalar/10000: Warming up for 3.0000 s
+Benchmarking max/Scalar/10000: Collecting 20 samples in estimated 5.0024 s (422k iterations)
+Benchmarking max/Scalar/10000: Analyzing
+max/Scalar/10000        time:   [11.823 µs 11.833 µs 11.845 µs]
+                        thrpt:  [844.20 Melem/s 845.07 Melem/s 845.78 Melem/s]
+                 change:
+                        time:   [-0.0954% -0.0136% +0.0850%] (p = 0.67 > 0.05)
+                        thrpt:  [-0.0849% +0.0136% +0.0955%]
+                        No change in performance detected.
+Found 4 outliers among 20 measurements (20.00%)
+  3 (15.00%) high mild
+  1 (5.00%) high severe
+Benchmarking max/SSE2/10000
+Benchmarking max/SSE2/10000: Warming up for 3.0000 s
+Benchmarking max/SSE2/10000: Collecting 20 samples in estimated 5.0001 s (1.7M iterations)
+Benchmarking max/SSE2/10000: Analyzing
+max/SSE2/10000          time:   [2.9102 µs 2.9185 µs 2.9319 µs]
+                        thrpt:  [3.4107 Gelem/s 3.4264 Gelem/s 3.4362 Gelem/s]
+                 change:
+                        time:   [+0.0049% +0.2625% +0.5776%] (p = 0.05 < 0.05)
+                        thrpt:  [-0.5743% -0.2618% -0.0049%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking max/AVX2/10000
+Benchmarking max/AVX2/10000: Warming up for 3.0000 s
+Benchmarking max/AVX2/10000: Collecting 20 samples in estimated 5.0002 s (3.5M iterations)
+Benchmarking max/AVX2/10000: Analyzing
+max/AVX2/10000          time:   [1.4164 µs 1.4176 µs 1.4189 µs]
+                        thrpt:  [7.0478 Gelem/s 7.0542 Gelem/s 7.0603 Gelem/s]
+                 change:
+                        time:   [-0.2175% -0.0743% +0.0952%] (p = 0.46 > 0.05)
+                        thrpt:  [-0.0951% +0.0743% +0.2180%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking max/AVX512/10000
+Benchmarking max/AVX512/10000: Warming up for 3.0000 s
+Benchmarking max/AVX512/10000: Collecting 20 samples in estimated 5.0003 s (3.5M iterations)
+Benchmarking max/AVX512/10000: Analyzing
+max/AVX512/10000        time:   [1.4160 µs 1.4173 µs 1.4191 µs]
+                        thrpt:  [7.0469 Gelem/s 7.0555 Gelem/s 7.0623 Gelem/s]
+                 change:
+                        time:   [+0.0461% +0.1833% +0.3510%] (p = 0.29 > 0.05)
+                        thrpt:  [-0.3498% -0.1829% -0.0461%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking min/Scalar/100
+Benchmarking min/Scalar/100: Warming up for 3.0000 s
+Benchmarking min/Scalar/100: Collecting 20 samples in estimated 5.0000 s (72M iterations)
+Benchmarking min/Scalar/100: Analyzing
+min/Scalar/100          time:   [68.088 ns 68.226 ns 68.378 ns]
+                        thrpt:  [1.4625 Gelem/s 1.4657 Gelem/s 1.4687 Gelem/s]
+                 change:
+                        time:   [-0.3290% +0.6746% +1.7167%] (p = 0.75 > 0.05)
+                        thrpt:  [-1.6877% -0.6701% +0.3301%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) high mild
+  1 (5.00%) high severe
+Benchmarking min/SSE2/100
+Benchmarking min/SSE2/100: Warming up for 3.0000 s
+Benchmarking min/SSE2/100: Collecting 20 samples in estimated 5.0000 s (416M iterations)
+Benchmarking min/SSE2/100: Analyzing
+min/SSE2/100            time:   [12.505 ns 12.664 ns 12.795 ns]
+                        thrpt:  [7.8155 Gelem/s 7.8962 Gelem/s 7.9967 Gelem/s]
+                 change:
+                        time:   [-9.7334% -5.3615% -0.3178%] (p = 0.17 > 0.05)
+                        thrpt:  [+0.3189% +5.6652% +10.783%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking min/AVX2/100
+Benchmarking min/AVX2/100: Warming up for 3.0000 s
+Benchmarking min/AVX2/100: Collecting 20 samples in estimated 5.0000 s (514M iterations)
+Benchmarking min/AVX2/100: Analyzing
+min/AVX2/100            time:   [9.6310 ns 9.7015 ns 9.8098 ns]
+                        thrpt:  [10.194 Gelem/s 10.308 Gelem/s 10.383 Gelem/s]
+                 change:
+                        time:   [-0.4298% +1.1501% +2.6443%] (p = 0.07 > 0.05)
+                        thrpt:  [-2.5761% -1.1371% +0.4316%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking min/AVX512/100
+Benchmarking min/AVX512/100: Warming up for 3.0000 s
+Benchmarking min/AVX512/100: Collecting 20 samples in estimated 5.0000 s (519M iterations)
+Benchmarking min/AVX512/100: Analyzing
+min/AVX512/100          time:   [9.5080 ns 9.5557 ns 9.6239 ns]
+                        thrpt:  [10.391 Gelem/s 10.465 Gelem/s 10.517 Gelem/s]
+                 change:
+                        time:   [-1.6282% +0.3311% +2.3923%] (p = 0.94 > 0.05)
+                        thrpt:  [-2.3364% -0.3300% +1.6552%]
+                        No change in performance detected.
+Benchmarking min/Scalar/1000
+Benchmarking min/Scalar/1000: Warming up for 3.0000 s
+Benchmarking min/Scalar/1000: Collecting 20 samples in estimated 5.0002 s (4.5M iterations)
+Benchmarking min/Scalar/1000: Analyzing
+min/Scalar/1000         time:   [1.1192 µs 1.1220 µs 1.1264 µs]
+                        thrpt:  [887.80 Melem/s 891.25 Melem/s 893.46 Melem/s]
+                 change:
+                        time:   [+0.4228% +0.7960% +1.2265%] (p = 0.10 > 0.05)
+                        thrpt:  [-1.2117% -0.7897% -0.4210%]
+                        No change in performance detected.
+Benchmarking min/SSE2/1000
+Benchmarking min/SSE2/1000: Warming up for 3.0000 s
+Benchmarking min/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (22M iterations)
+Benchmarking min/SSE2/1000: Analyzing
+min/SSE2/1000           time:   [225.32 ns 226.04 ns 226.78 ns]
+                        thrpt:  [4.4095 Gelem/s 4.4239 Gelem/s 4.4382 Gelem/s]
+                 change:
+                        time:   [-0.6030% -0.2417% +0.1137%] (p = 0.27 > 0.05)
+                        thrpt:  [-0.1136% +0.2423% +0.6066%]
+                        No change in performance detected.
+Benchmarking min/AVX2/1000
+Benchmarking min/AVX2/1000: Warming up for 3.0000 s
+Benchmarking min/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (54M iterations)
+Benchmarking min/AVX2/1000: Analyzing
+min/AVX2/1000           time:   [92.902 ns 93.058 ns 93.186 ns]
+                        thrpt:  [10.731 Gelem/s 10.746 Gelem/s 10.764 Gelem/s]
+                 change:
+                        time:   [+2.8042% +3.3212% +3.8164%] (p = 0.00 < 0.05)
+                        thrpt:  [-3.6761% -3.2144% -2.7277%]
+                        Performance has regressed.
+Found 3 outliers among 20 measurements (15.00%)
+  2 (10.00%) low mild
+  1 (5.00%) high severe
+Benchmarking min/AVX512/1000
+Benchmarking min/AVX512/1000: Warming up for 3.0000 s
+Benchmarking min/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (55M iterations)
+Benchmarking min/AVX512/1000: Analyzing
+min/AVX512/1000         time:   [92.549 ns 92.892 ns 93.193 ns]
+                        thrpt:  [10.730 Gelem/s 10.765 Gelem/s 10.805 Gelem/s]
+                 change:
+                        time:   [-3.1239% -1.1368% +0.9714%] (p = 0.54 > 0.05)
+                        thrpt:  [-0.9621% +1.1499% +3.2247%]
+                        No change in performance detected.
+Benchmarking min/Scalar/10000
+Benchmarking min/Scalar/10000: Warming up for 3.0000 s
+Benchmarking min/Scalar/10000: Collecting 20 samples in estimated 5.0024 s (422k iterations)
+Benchmarking min/Scalar/10000: Analyzing
+min/Scalar/10000        time:   [11.821 µs 11.835 µs 11.858 µs]
+                        thrpt:  [843.30 Melem/s 844.98 Melem/s 845.96 Melem/s]
+                 change:
+                        time:   [-2.6798% -1.2862% +0.1434%] (p = 0.16 > 0.05)
+                        thrpt:  [-0.1432% +1.3030% +2.7536%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking min/SSE2/10000
+Benchmarking min/SSE2/10000: Warming up for 3.0000 s
+Benchmarking min/SSE2/10000: Collecting 20 samples in estimated 5.0005 s (1.7M iterations)
+Benchmarking min/SSE2/10000: Analyzing
+min/SSE2/10000          time:   [2.9034 µs 2.9086 µs 2.9133 µs]
+                        thrpt:  [3.4325 Gelem/s 3.4380 Gelem/s 3.4442 Gelem/s]
+                 change:
+                        time:   [-0.2560% -0.1001% +0.0553%] (p = 0.30 > 0.05)
+                        thrpt:  [-0.0553% +0.1002% +0.2567%]
+                        No change in performance detected.
+Benchmarking min/AVX2/10000
+Benchmarking min/AVX2/10000: Warming up for 3.0000 s
+Benchmarking min/AVX2/10000: Collecting 20 samples in estimated 5.0002 s (3.5M iterations)
+Benchmarking min/AVX2/10000: Analyzing
+min/AVX2/10000          time:   [1.4314 µs 1.4346 µs 1.4386 µs]
+                        thrpt:  [6.9511 Gelem/s 6.9704 Gelem/s 6.9861 Gelem/s]
+                 change:
+                        time:   [+0.6794% +0.9782% +1.2501%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.2347% -0.9687% -0.6748%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking min/AVX512/10000
+Benchmarking min/AVX512/10000: Warming up for 3.0000 s
+Benchmarking min/AVX512/10000: Collecting 20 samples in estimated 5.0002 s (3.5M iterations)
+Benchmarking min/AVX512/10000: Analyzing
+min/AVX512/10000        time:   [1.4192 µs 1.4207 µs 1.4221 µs]
+                        thrpt:  [7.0317 Gelem/s 7.0388 Gelem/s 7.0461 Gelem/s]
+                 change:
+                        time:   [-0.1445% -0.0061% +0.1524%] (p = 0.90 > 0.05)
+                        thrpt:  [-0.1522% +0.0061% +0.1447%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking argmax/Scalar/100
+Benchmarking argmax/Scalar/100: Warming up for 3.0000 s
+Benchmarking argmax/Scalar/100: Collecting 20 samples in estimated 5.0000 s (47M iterations)
+Benchmarking argmax/Scalar/100: Analyzing
+argmax/Scalar/100       time:   [104.66 ns 105.00 ns 105.53 ns]
+                        thrpt:  [947.57 Melem/s 952.36 Melem/s 955.48 Melem/s]
+                 change:
+                        time:   [-1.2142% -0.3114% +0.5815%] (p = 0.53 > 0.05)
+                        thrpt:  [-0.5781% +0.3124% +1.2291%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmax/SSE2/100
+Benchmarking argmax/SSE2/100: Warming up for 3.0000 s
+Benchmarking argmax/SSE2/100: Collecting 20 samples in estimated 5.0000 s (71M iterations)
+Benchmarking argmax/SSE2/100: Analyzing
+argmax/SSE2/100         time:   [70.612 ns 71.024 ns 71.407 ns]
+                        thrpt:  [1.4004 Gelem/s 1.4080 Gelem/s 1.4162 Gelem/s]
+                 change:
+                        time:   [-0.7049% -0.2361% +0.1972%] (p = 0.45 > 0.05)
+                        thrpt:  [-0.1968% +0.2366% +0.7099%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmax/AVX2/100
+Benchmarking argmax/AVX2/100: Warming up for 3.0000 s
+Benchmarking argmax/AVX2/100: Collecting 20 samples in estimated 5.0000 s (114M iterations)
+Benchmarking argmax/AVX2/100: Analyzing
+argmax/AVX2/100         time:   [43.992 ns 44.317 ns 44.634 ns]
+                        thrpt:  [2.2404 Gelem/s 2.2565 Gelem/s 2.2732 Gelem/s]
+                 change:
+                        time:   [-1.2111% -0.6095% -0.0168%] (p = 0.07 > 0.05)
+                        thrpt:  [+0.0168% +0.6133% +1.2259%]
+                        No change in performance detected.
+Benchmarking argmax/AVX512/100
+Benchmarking argmax/AVX512/100: Warming up for 3.0000 s
+Benchmarking argmax/AVX512/100: Collecting 20 samples in estimated 5.0000 s (113M iterations)
+Benchmarking argmax/AVX512/100: Analyzing
+argmax/AVX512/100       time:   [43.913 ns 44.217 ns 44.830 ns]
+                        thrpt:  [2.2307 Gelem/s 2.2616 Gelem/s 2.2772 Gelem/s]
+                 change:
+                        time:   [-0.5609% +0.9548% +2.6086%] (p = 0.84 > 0.05)
+                        thrpt:  [-2.5423% -0.9458% +0.5641%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking argmax/Scalar/1000
+Benchmarking argmax/Scalar/1000: Warming up for 3.0000 s
+Benchmarking argmax/Scalar/1000: Collecting 20 samples in estimated 5.0001 s (4.2M iterations)
+Benchmarking argmax/Scalar/1000: Analyzing
+argmax/Scalar/1000      time:   [1.1856 µs 1.1872 µs 1.1889 µs]
+                        thrpt:  [841.11 Melem/s 842.31 Melem/s 843.47 Melem/s]
+                 change:
+                        time:   [+0.3916% +0.6854% +1.0677%] (p = 0.04 < 0.05)
+                        thrpt:  [-1.0564% -0.6808% -0.3900%]
+                        Change within noise threshold.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking argmax/SSE2/1000
+Benchmarking argmax/SSE2/1000: Warming up for 3.0000 s
+Benchmarking argmax/SSE2/1000: Collecting 20 samples in estimated 5.0001 s (7.8M iterations)
+Benchmarking argmax/SSE2/1000: Analyzing
+argmax/SSE2/1000        time:   [633.00 ns 633.90 ns 635.01 ns]
+                        thrpt:  [1.5748 Gelem/s 1.5775 Gelem/s 1.5798 Gelem/s]
+                 change:
+                        time:   [-0.1481% +0.0947% +0.3141%] (p = 0.32 > 0.05)
+                        thrpt:  [-0.3131% -0.0946% +0.1483%]
+                        No change in performance detected.
+Benchmarking argmax/AVX2/1000
+Benchmarking argmax/AVX2/1000: Warming up for 3.0000 s
+Benchmarking argmax/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (17M iterations)
+Benchmarking argmax/AVX2/1000: Analyzing
+argmax/AVX2/1000        time:   [290.73 ns 291.68 ns 293.27 ns]
+                        thrpt:  [3.4098 Gelem/s 3.4284 Gelem/s 3.4396 Gelem/s]
+                 change:
+                        time:   [+0.2038% +0.5688% +0.9466%] (p = 0.00 < 0.05)
+                        thrpt:  [-0.9377% -0.5656% -0.2034%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmax/AVX512/1000
+Benchmarking argmax/AVX512/1000: Warming up for 3.0000 s
+Benchmarking argmax/AVX512/1000: Collecting 20 samples in estimated 5.0001 s (17M iterations)
+Benchmarking argmax/AVX512/1000: Analyzing
+argmax/AVX512/1000      time:   [291.30 ns 291.85 ns 292.47 ns]
+                        thrpt:  [3.4192 Gelem/s 3.4264 Gelem/s 3.4329 Gelem/s]
+                 change:
+                        time:   [-0.1588% +0.0291% +0.2777%] (p = 0.95 > 0.05)
+                        thrpt:  [-0.2770% -0.0291% +0.1590%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking argmax/Scalar/10000
+Benchmarking argmax/Scalar/10000: Warming up for 3.0000 s
+Benchmarking argmax/Scalar/10000: Collecting 20 samples in estimated 5.0014 s (416k iterations)
+Benchmarking argmax/Scalar/10000: Analyzing
+argmax/Scalar/10000     time:   [11.898 µs 11.913 µs 11.932 µs]
+                        thrpt:  [838.06 Melem/s 839.40 Melem/s 840.51 Melem/s]
+                 change:
+                        time:   [-0.1342% +0.0622% +0.2620%] (p = 0.96 > 0.05)
+                        thrpt:  [-0.2613% -0.0622% +0.1344%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking argmax/SSE2/10000
+Benchmarking argmax/SSE2/10000: Warming up for 3.0000 s
+Benchmarking argmax/SSE2/10000: Collecting 20 samples in estimated 5.0012 s (798k iterations)
+Benchmarking argmax/SSE2/10000: Analyzing
+argmax/SSE2/10000       time:   [6.2779 µs 6.2955 µs 6.3155 µs]
+                        thrpt:  [1.5834 Gelem/s 1.5884 Gelem/s 1.5929 Gelem/s]
+                 change:
+                        time:   [+0.2377% +0.5062% +0.7795%] (p = 0.00 < 0.05)
+                        thrpt:  [-0.7734% -0.5036% -0.2371%]
+                        Change within noise threshold.
+Benchmarking argmax/AVX2/10000
+Benchmarking argmax/AVX2/10000: Warming up for 3.0000 s
+Benchmarking argmax/AVX2/10000: Collecting 20 samples in estimated 5.0002 s (1.8M iterations)
+Benchmarking argmax/AVX2/10000: Analyzing
+argmax/AVX2/10000       time:   [2.7949 µs 2.8119 µs 2.8319 µs]
+                        thrpt:  [3.5312 Gelem/s 3.5563 Gelem/s 3.5779 Gelem/s]
+                 change:
+                        time:   [+0.2649% +0.7610% +1.2545%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.2389% -0.7553% -0.2642%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmax/AVX512/10000
+Benchmarking argmax/AVX512/10000: Warming up for 3.0000 s
+Benchmarking argmax/AVX512/10000: Collecting 20 samples in estimated 5.0001 s (1.8M iterations)
+Benchmarking argmax/AVX512/10000: Analyzing
+argmax/AVX512/10000     time:   [2.7713 µs 2.7744 µs 2.7786 µs]
+                        thrpt:  [3.5989 Gelem/s 3.6044 Gelem/s 3.6085 Gelem/s]
+                 change:
+                        time:   [+0.0275% +0.5461% +1.2864%] (p = 0.68 > 0.05)
+                        thrpt:  [-1.2701% -0.5431% -0.0275%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+
+Benchmarking argmin/Scalar/100
+Benchmarking argmin/Scalar/100: Warming up for 3.0000 s
+Benchmarking argmin/Scalar/100: Collecting 20 samples in estimated 5.0000 s (47M iterations)
+Benchmarking argmin/Scalar/100: Analyzing
+argmin/Scalar/100       time:   [106.62 ns 108.05 ns 110.19 ns]
+                        thrpt:  [907.48 Melem/s 925.46 Melem/s 937.91 Melem/s]
+                 change:
+                        time:   [+1.9314% +3.8966% +6.2628%] (p = 0.13 > 0.05)
+                        thrpt:  [-5.8937% -3.7505% -1.8948%]
+                        No change in performance detected.
+Benchmarking argmin/SSE2/100
+Benchmarking argmin/SSE2/100: Warming up for 3.0000 s
+Benchmarking argmin/SSE2/100: Collecting 20 samples in estimated 5.0000 s (72M iterations)
+Benchmarking argmin/SSE2/100: Analyzing
+argmin/SSE2/100         time:   [68.914 ns 68.955 ns 68.996 ns]
+                        thrpt:  [1.4494 Gelem/s 1.4502 Gelem/s 1.4511 Gelem/s]
+                 change:
+                        time:   [+0.6905% +0.8761% +1.1436%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.1307% -0.8685% -0.6857%]
+                        Change within noise threshold.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+Benchmarking argmin/AVX2/100
+Benchmarking argmin/AVX2/100: Warming up for 3.0000 s
+Benchmarking argmin/AVX2/100: Collecting 20 samples in estimated 5.0000 s (111M iterations)
+Benchmarking argmin/AVX2/100: Analyzing
+argmin/AVX2/100         time:   [44.002 ns 44.505 ns 45.032 ns]
+                        thrpt:  [2.2206 Gelem/s 2.2469 Gelem/s 2.2726 Gelem/s]
+                 change:
+                        time:   [+0.0493% +0.9287% +1.8698%] (p = 0.01 < 0.05)
+                        thrpt:  [-1.8355% -0.9201% -0.0493%]
+                        Change within noise threshold.
+Benchmarking argmin/AVX512/100
+Benchmarking argmin/AVX512/100: Warming up for 3.0000 s
+Benchmarking argmin/AVX512/100: Collecting 20 samples in estimated 5.0000 s (110M iterations)
+Benchmarking argmin/AVX512/100: Analyzing
+argmin/AVX512/100       time:   [44.296 ns 44.612 ns 45.002 ns]
+                        thrpt:  [2.2221 Gelem/s 2.2415 Gelem/s 2.2575 Gelem/s]
+                 change:
+                        time:   [-0.6697% +1.0096% +2.8423%] (p = 0.64 > 0.05)
+                        thrpt:  [-2.7638% -0.9995% +0.6742%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmin/Scalar/1000
+Benchmarking argmin/Scalar/1000: Warming up for 3.0000 s
+Benchmarking argmin/Scalar/1000: Collecting 20 samples in estimated 5.0001 s (4.2M iterations)
+Benchmarking argmin/Scalar/1000: Analyzing
+argmin/Scalar/1000      time:   [1.1857 µs 1.1878 µs 1.1910 µs]
+                        thrpt:  [839.66 Melem/s 841.86 Melem/s 843.40 Melem/s]
+                 change:
+                        time:   [-4.5655% -2.1441% +0.3737%] (p = 0.23 > 0.05)
+                        thrpt:  [-0.3723% +2.1910% +4.7839%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmin/SSE2/1000
+Benchmarking argmin/SSE2/1000: Warming up for 3.0000 s
+Benchmarking argmin/SSE2/1000: Collecting 20 samples in estimated 5.0001 s (8.1M iterations)
+Benchmarking argmin/SSE2/1000: Analyzing
+argmin/SSE2/1000        time:   [617.37 ns 618.72 ns 620.68 ns]
+                        thrpt:  [1.6111 Gelem/s 1.6162 Gelem/s 1.6198 Gelem/s]
+                 change:
+                        time:   [-0.1966% +0.1582% +0.5312%] (p = 0.36 > 0.05)
+                        thrpt:  [-0.5284% -0.1579% +0.1969%]
+                        No change in performance detected.
+Benchmarking argmin/AVX2/1000
+Benchmarking argmin/AVX2/1000: Warming up for 3.0000 s
+Benchmarking argmin/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (17M iterations)
+Benchmarking argmin/AVX2/1000: Analyzing
+argmin/AVX2/1000        time:   [292.22 ns 292.55 ns 293.04 ns]
+                        thrpt:  [3.4125 Gelem/s 3.4182 Gelem/s 3.4221 Gelem/s]
+                 change:
+                        time:   [+0.5474% +0.7983% +1.0620%] (p = 0.00 < 0.05)
+                        thrpt:  [-1.0508% -0.7919% -0.5445%]
+                        Change within noise threshold.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmin/AVX512/1000
+Benchmarking argmin/AVX512/1000: Warming up for 3.0000 s
+Benchmarking argmin/AVX512/1000: Collecting 20 samples in estimated 5.0000 s (17M iterations)
+Benchmarking argmin/AVX512/1000: Analyzing
+argmin/AVX512/1000      time:   [292.90 ns 293.47 ns 294.12 ns]
+                        thrpt:  [3.4000 Gelem/s 3.4076 Gelem/s 3.4142 Gelem/s]
+                 change:
+                        time:   [-0.1183% +0.2360% +0.5619%] (p = 0.58 > 0.05)
+                        thrpt:  [-0.5588% -0.2354% +0.1184%]
+                        No change in performance detected.
+Benchmarking argmin/Scalar/10000
+Benchmarking argmin/Scalar/10000: Warming up for 3.0000 s
+Benchmarking argmin/Scalar/10000: Collecting 20 samples in estimated 5.0003 s (419k iterations)
+Benchmarking argmin/Scalar/10000: Analyzing
+argmin/Scalar/10000     time:   [11.973 µs 12.009 µs 12.062 µs]
+                        thrpt:  [829.02 Melem/s 832.71 Melem/s 835.22 Melem/s]
+                 change:
+                        time:   [+0.6104% +0.9802% +1.3270%] (p = 0.05 > 0.05)
+                        thrpt:  [-1.3096% -0.9707% -0.6067%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking argmin/SSE2/10000
+Benchmarking argmin/SSE2/10000: Warming up for 3.0000 s
+Benchmarking argmin/SSE2/10000: Collecting 20 samples in estimated 5.0008 s (819k iterations)
+Benchmarking argmin/SSE2/10000: Analyzing
+argmin/SSE2/10000       time:   [6.0927 µs 6.1079 µs 6.1288 µs]
+                        thrpt:  [1.6316 Gelem/s 1.6372 Gelem/s 1.6413 Gelem/s]
+                 change:
+                        time:   [-0.0691% +0.1540% +0.4136%] (p = 0.12 > 0.05)
+                        thrpt:  [-0.4118% -0.1538% +0.0692%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking argmin/AVX2/10000
+Benchmarking argmin/AVX2/10000: Warming up for 3.0000 s
+Benchmarking argmin/AVX2/10000: Collecting 20 samples in estimated 5.0002 s (1.8M iterations)
+Benchmarking argmin/AVX2/10000: Analyzing
+argmin/AVX2/10000       time:   [2.7692 µs 2.7731 µs 2.7771 µs]
+                        thrpt:  [3.6009 Gelem/s 3.6061 Gelem/s 3.6111 Gelem/s]
+                 change:
+                        time:   [-1.3616% -0.7924% -0.3434%] (p = 0.03 < 0.05)
+                        thrpt:  [+0.3445% +0.7987% +1.3804%]
+                        Change within noise threshold.
+Benchmarking argmin/AVX512/10000
+Benchmarking argmin/AVX512/10000: Warming up for 3.0000 s
+Benchmarking argmin/AVX512/10000: Collecting 20 samples in estimated 5.0000 s (1.8M iterations)
+Benchmarking argmin/AVX512/10000: Analyzing
+argmin/AVX512/10000     time:   [2.7711 µs 2.7729 µs 2.7752 µs]
+                        thrpt:  [3.6033 Gelem/s 3.6063 Gelem/s 3.6087 Gelem/s]
+                 change:
+                        time:   [-0.1491% +0.0608% +0.2724%] (p = 0.89 > 0.05)
+                        thrpt:  [-0.2716% -0.0607% +0.1493%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+
+Benchmarking softmax/Scalar/100
+Benchmarking softmax/Scalar/100: Warming up for 3.0000 s
+Benchmarking softmax/Scalar/100: Collecting 20 samples in estimated 5.0001 s (8.8M iterations)
+Benchmarking softmax/Scalar/100: Analyzing
+softmax/Scalar/100      time:   [564.21 ns 566.72 ns 569.42 ns]
+                        thrpt:  [175.62 Melem/s 176.45 Melem/s 177.24 Melem/s]
+                 change:
+                        time:   [-0.8604% -0.1432% +0.5885%] (p = 0.73 > 0.05)
+                        thrpt:  [-0.5851% +0.1434% +0.8679%]
+                        No change in performance detected.
+Benchmarking softmax/SSE2/100
+Benchmarking softmax/SSE2/100: Warming up for 3.0000 s
+Benchmarking softmax/SSE2/100: Collecting 20 samples in estimated 5.0001 s (10M iterations)
+Benchmarking softmax/SSE2/100: Analyzing
+softmax/SSE2/100        time:   [489.09 ns 496.83 ns 502.91 ns]
+                        thrpt:  [198.84 Melem/s 201.28 Melem/s 204.46 Melem/s]
+Benchmarking softmax/AVX2/100
+Benchmarking softmax/AVX2/100: Warming up for 3.0000 s
+Benchmarking softmax/AVX2/100: Collecting 20 samples in estimated 5.0000 s (10M iterations)
+Benchmarking softmax/AVX2/100: Analyzing
+softmax/AVX2/100        time:   [477.40 ns 479.12 ns 481.41 ns]
+                        thrpt:  [207.73 Melem/s 208.72 Melem/s 209.47 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) low mild
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking softmax/Scalar/1000
+Benchmarking softmax/Scalar/1000: Warming up for 3.0000 s
+Benchmarking softmax/Scalar/1000: Collecting 20 samples in estimated 5.0009 s (871k iterations)
+Benchmarking softmax/Scalar/1000: Analyzing
+softmax/Scalar/1000     time:   [5.7111 µs 5.7322 µs 5.7510 µs]
+                        thrpt:  [173.88 Melem/s 174.45 Melem/s 175.10 Melem/s]
+                 change:
+                        time:   [-2.8262% -1.5819% -0.2775%] (p = 0.33 > 0.05)
+                        thrpt:  [+0.2783% +1.6074% +2.9084%]
+                        No change in performance detected.
+Benchmarking softmax/SSE2/1000
+Benchmarking softmax/SSE2/1000: Warming up for 3.0000 s
+Benchmarking softmax/SSE2/1000: Collecting 20 samples in estimated 5.0000 s (1.0M iterations)
+Benchmarking softmax/SSE2/1000: Analyzing
+softmax/SSE2/1000       time:   [4.8429 µs 4.9627 µs 5.1035 µs]
+                        thrpt:  [195.95 Melem/s 201.50 Melem/s 206.49 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking softmax/AVX2/1000
+Benchmarking softmax/AVX2/1000: Warming up for 3.0000 s
+Benchmarking softmax/AVX2/1000: Collecting 20 samples in estimated 5.0002 s (1.1M iterations)
+Benchmarking softmax/AVX2/1000: Analyzing
+softmax/AVX2/1000       time:   [4.7559 µs 4.8083 µs 4.8688 µs]
+                        thrpt:  [205.39 Melem/s 207.97 Melem/s 210.26 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking softmax/Scalar/10000
+Benchmarking softmax/Scalar/10000: Warming up for 3.0000 s
+Benchmarking softmax/Scalar/10000: Collecting 20 samples in estimated 5.0036 s (67k iterations)
+Benchmarking softmax/Scalar/10000: Analyzing
+softmax/Scalar/10000    time:   [73.157 µs 73.941 µs 75.304 µs]
+                        thrpt:  [132.80 Melem/s 135.24 Melem/s 136.69 Melem/s]
+                 change:
+                        time:   [+0.3348% +1.7614% +3.5112%] (p = 0.39 > 0.05)
+                        thrpt:  [-3.3921% -1.7309% -0.3336%]
+                        No change in performance detected.
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+Benchmarking softmax/SSE2/10000
+Benchmarking softmax/SSE2/10000: Warming up for 3.0000 s
+Benchmarking softmax/SSE2/10000: Collecting 20 samples in estimated 5.0119 s (77k iterations)
+Benchmarking softmax/SSE2/10000: Analyzing
+softmax/SSE2/10000      time:   [64.408 µs 64.831 µs 65.477 µs]
+                        thrpt:  [152.73 Melem/s 154.25 Melem/s 155.26 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking softmax/AVX2/10000
+Benchmarking softmax/AVX2/10000: Warming up for 3.0000 s
+Benchmarking softmax/AVX2/10000: Collecting 20 samples in estimated 5.0067 s (79k iterations)
+Benchmarking softmax/AVX2/10000: Analyzing
+softmax/AVX2/10000      time:   [62.858 µs 63.607 µs 64.962 µs]
+                        thrpt:  [153.94 Melem/s 157.21 Melem/s 159.09 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  3 (15.00%) high severe
+Benchmarking softmax/Scalar/100000
+Benchmarking softmax/Scalar/100000: Warming up for 3.0000 s
+Benchmarking softmax/Scalar/100000: Collecting 20 samples in estimated 5.1195 s (7140 iterations)
+Benchmarking softmax/Scalar/100000: Analyzing
+softmax/Scalar/100000   time:   [708.56 µs 710.29 µs 713.06 µs]
+                        thrpt:  [140.24 Melem/s 140.79 Melem/s 141.13 Melem/s]
+                 change:
+                        time:   [-0.9587% -0.3032% +0.4500%] (p = 0.36 > 0.05)
+                        thrpt:  [-0.4480% +0.3042% +0.9679%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking softmax/SSE2/100000
+Benchmarking softmax/SSE2/100000: Warming up for 3.0000 s
+Benchmarking softmax/SSE2/100000: Collecting 20 samples in estimated 5.0673 s (8190 iterations)
+Benchmarking softmax/SSE2/100000: Analyzing
+softmax/SSE2/100000     time:   [623.37 µs 628.92 µs 636.61 µs]
+                        thrpt:  [157.08 Melem/s 159.00 Melem/s 160.42 Melem/s]
+Found 3 outliers among 20 measurements (15.00%)
+  1 (5.00%) high mild
+  2 (10.00%) high severe
+Benchmarking softmax/AVX2/100000
+Benchmarking softmax/AVX2/100000: Warming up for 3.0000 s
+Benchmarking softmax/AVX2/100000: Collecting 20 samples in estimated 5.0493 s (8190 iterations)
+Benchmarking softmax/AVX2/100000: Analyzing
+softmax/AVX2/100000     time:   [615.06 µs 621.19 µs 627.57 µs]
+                        thrpt:  [159.34 Melem/s 160.98 Melem/s 162.59 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking log_softmax/Scalar/100
+Benchmarking log_softmax/Scalar/100: Warming up for 3.0000 s
+Benchmarking log_softmax/Scalar/100: Collecting 20 samples in estimated 5.0001 s (8.5M iterations)
+Benchmarking log_softmax/Scalar/100: Analyzing
+log_softmax/Scalar/100  time:   [579.37 ns 584.04 ns 590.36 ns]
+                        thrpt:  [169.39 Melem/s 171.22 Melem/s 172.60 Melem/s]
+                 change:
+                        time:   [-1.5108% +0.0249% +1.5610%] (p = 0.87 > 0.05)
+                        thrpt:  [-1.5370% -0.0249% +1.5339%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking log_softmax/SSE2/100
+Benchmarking log_softmax/SSE2/100: Warming up for 3.0000 s
+Benchmarking log_softmax/SSE2/100: Collecting 20 samples in estimated 5.0000 s (9.9M iterations)
+Benchmarking log_softmax/SSE2/100: Analyzing
+log_softmax/SSE2/100    time:   [494.92 ns 503.12 ns 516.22 ns]
+                        thrpt:  [193.72 Melem/s 198.76 Melem/s 202.05 Melem/s]
+Benchmarking log_softmax/AVX2/100
+Benchmarking log_softmax/AVX2/100: Warming up for 3.0000 s
+Benchmarking log_softmax/AVX2/100: Collecting 20 samples in estimated 5.0001 s (10M iterations)
+Benchmarking log_softmax/AVX2/100: Analyzing
+log_softmax/AVX2/100    time:   [490.22 ns 494.67 ns 499.68 ns]
+                        thrpt:  [200.13 Melem/s 202.15 Melem/s 203.99 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking log_softmax/Scalar/1000
+Benchmarking log_softmax/Scalar/1000: Warming up for 3.0000 s
+Benchmarking log_softmax/Scalar/1000: Collecting 20 samples in estimated 5.0003 s (887k iterations)
+Benchmarking log_softmax/Scalar/1000: Analyzing
+log_softmax/Scalar/1000 time:   [5.6694 µs 5.7762 µs 5.9044 µs]
+                        thrpt:  [169.37 Melem/s 173.13 Melem/s 176.38 Melem/s]
+                 change:
+                        time:   [+1.5854% +3.0084% +4.6421%] (p = 0.09 > 0.05)
+                        thrpt:  [-4.4362% -2.9205% -1.5607%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  1 (5.00%) high mild
+  1 (5.00%) high severe
+Benchmarking log_softmax/SSE2/1000
+Benchmarking log_softmax/SSE2/1000: Warming up for 3.0000 s
+Benchmarking log_softmax/SSE2/1000: Collecting 20 samples in estimated 5.0006 s (1.1M iterations)
+Benchmarking log_softmax/SSE2/1000: Analyzing
+log_softmax/SSE2/1000   time:   [4.8293 µs 4.8720 µs 4.9116 µs]
+                        thrpt:  [203.60 Melem/s 205.26 Melem/s 207.07 Melem/s]
+Benchmarking log_softmax/AVX2/1000
+Benchmarking log_softmax/AVX2/1000: Warming up for 3.0000 s
+Benchmarking log_softmax/AVX2/1000: Collecting 20 samples in estimated 5.0000 s (999k iterations)
+Benchmarking log_softmax/AVX2/1000: Analyzing
+log_softmax/AVX2/1000   time:   [4.8568 µs 4.9000 µs 4.9559 µs]
+                        thrpt:  [201.78 Melem/s 204.08 Melem/s 205.90 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+Benchmarking log_softmax/Scalar/10000
+Benchmarking log_softmax/Scalar/10000: Warming up for 3.0000 s
+Benchmarking log_softmax/Scalar/10000: Collecting 20 samples in estimated 5.0116 s (87k iterations)
+Benchmarking log_softmax/Scalar/10000: Analyzing
+log_softmax/Scalar/10000
+                        time:   [56.301 µs 56.469 µs 56.684 µs]
+                        thrpt:  [176.42 Melem/s 177.09 Melem/s 177.62 Melem/s]
+                 change:
+                        time:   [+0.8975% +1.6437% +2.4007%] (p = 0.07 > 0.05)
+                        thrpt:  [-2.3444% -1.6171% -0.8895%]
+                        No change in performance detected.
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high severe
+Benchmarking log_softmax/SSE2/10000
+Benchmarking log_softmax/SSE2/10000: Warming up for 3.0000 s
+Benchmarking log_softmax/SSE2/10000: Collecting 20 samples in estimated 5.0050 s (102k iterations)
+Benchmarking log_softmax/SSE2/10000: Analyzing
+log_softmax/SSE2/10000  time:   [47.328 µs 47.604 µs 47.967 µs]
+                        thrpt:  [208.48 Melem/s 210.07 Melem/s 211.29 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking log_softmax/AVX2/10000
+Benchmarking log_softmax/AVX2/10000: Warming up for 3.0000 s
+Benchmarking log_softmax/AVX2/10000: Collecting 20 samples in estimated 5.0055 s (102k iterations)
+Benchmarking log_softmax/AVX2/10000: Analyzing
+log_softmax/AVX2/10000  time:   [48.794 µs 48.924 µs 49.069 µs]
+                        thrpt:  [203.80 Melem/s 204.40 Melem/s 204.94 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking log_softmax/Scalar/100000
+Benchmarking log_softmax/Scalar/100000: Warming up for 3.0000 s
+Benchmarking log_softmax/Scalar/100000: Collecting 20 samples in estimated 5.0671 s (7560 iterations)
+Benchmarking log_softmax/Scalar/100000: Analyzing
+log_softmax/Scalar/100000
+                        time:   [671.24 µs 676.33 µs 684.50 µs]
+                        thrpt:  [146.09 Melem/s 147.86 Melem/s 148.98 Melem/s]
+                 change:
+                        time:   [-2.0577% -0.7591% +0.8455%] (p = 0.33 > 0.05)
+                        thrpt:  [-0.8384% +0.7649% +2.1009%]
+                        No change in performance detected.
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+Benchmarking log_softmax/SSE2/100000
+Benchmarking log_softmax/SSE2/100000: Warming up for 3.0000 s
+Benchmarking log_softmax/SSE2/100000: Collecting 20 samples in estimated 5.0384 s (8610 iterations)
+Benchmarking log_softmax/SSE2/100000: Analyzing
+log_softmax/SSE2/100000 time:   [576.62 µs 580.45 µs 583.44 µs]
+                        thrpt:  [171.40 Melem/s 172.28 Melem/s 173.43 Melem/s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+Benchmarking log_softmax/AVX2/100000
+Benchmarking log_softmax/AVX2/100000: Warming up for 3.0000 s
+Benchmarking log_softmax/AVX2/100000: Collecting 20 samples in estimated 5.0055 s (8820 iterations)
+Benchmarking log_softmax/AVX2/100000: Analyzing
+log_softmax/AVX2/100000 time:   [565.39 µs 572.00 µs 580.17 µs]
+                        thrpt:  [172.36 Melem/s 174.83 Melem/s 176.87 Melem/s]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high mild
+

@@ -1,0 +1,54 @@
+# Docker Compose for Grafana Tempo (Sprint 30: OpenTelemetry Integration)
+#
+# Tempo + Grafana stack for testing OTLP trace export from Renacer
+#
+# Usage:
+#   docker-compose -f docker-compose-tempo.yml up -d
+#   renacer --otlp-endpoint http://localhost:4317 --otlp-service-name my-app -- ./program
+#   open http://localhost:3000  # Grafana UI (admin/admin)
+#   Navigate to Explore > Tempo to query traces
+
+version: '3.8'
+
+services:
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo-renacer
+    command: [ "-config.file=/etc/tempo.yml" ]
+    volumes:
+      - ./tempo-config.yml:/etc/tempo.yml
+      - tempo-data:/var/tempo
+    ports:
+      # OTLP gRPC receiver
+      - "4317:4317"
+      # OTLP HTTP receiver
+      - "4318:4318"
+      # Tempo HTTP
+      - "3200:3200"
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-renacer
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - tempo
+    networks:
+      - observability
+
+volumes:
+  tempo-data:
+  grafana-data:
+
+networks:
+  observability:
+    driver: bridge

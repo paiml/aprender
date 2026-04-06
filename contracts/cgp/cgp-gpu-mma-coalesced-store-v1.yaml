@@ -1,0 +1,40 @@
+kind: PerformanceContract
+name: cgp-gpu-mma-coalesced-store
+version: "1.0"
+kernel: gemm_cta64_mma_fp16
+hardware:
+  gpu: "NVIDIA RTX 4090"
+  compute_capability: "sm_89"
+
+bounds:
+  - size: 1024
+    description: "mma.sync + v2 store must improve over wmma cp.async (measured 45.5 TF/s)"
+    min_tflops: 42.0
+    max_regression_pct: 0.0
+
+  - size: 512
+    description: "Must not regress at smaller sizes (measured 20.2 TF/s)"
+    min_tflops: 18.0
+
+  - size: 4096
+    description: "v2 stores scale well at large sizes (measured 49.8 TF/s)"
+    min_tflops: 45.0
+
+metrics:
+  store_overhead_pct:
+    description: "Store time / total time reduced via st.global.v2.f32 (4 stores vs 8 scalar)"
+    max: 35
+  c_store_instructions:
+    description: "Per-warp global store instructions (4 v2 = 4 instructions, 0 scalar)"
+    max: 4
+
+falsification:
+  - name: FALSIFY-COAL-STORE-001
+    description: "Coalesced store PTX compiles with mma.sync + ldmatrix + v2 stores"
+    check: "PTX contains mma.sync.aligned.m16n8k16 AND st.global.v2.f32"
+  - name: FALSIFY-COAL-STORE-002
+    description: "Output matches cuBLAS reference (same correctness)"
+    check: "max_abs_diff < 1e-2"
+  - name: FALSIFY-COAL-STORE-003
+    description: "End-to-end TFLOP/s >= 42 at 1024 (45.5 measured)"
+    check: "tflops >= 42.0"

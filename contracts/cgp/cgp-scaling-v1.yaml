@@ -1,0 +1,32 @@
+# cgp profile scaling command contract
+# Contract-first: defines the scaling sweep interface and output parsing
+kind: PerformanceContract
+name: cgp-profile-scaling
+version: "1.0.0"
+kernel: profile_scaling
+
+description: |
+  Thread-count sweep command that measures GEMM throughput at each
+  thread count by parsing benchmark_matrix_suite output.
+  Uses min-of-N timing for stable measurements.
+
+interface:
+  command: "cgp profile scaling --size SIZE --max-threads N --runs R"
+  output_format: |
+    Parses "Matrix Multiplication (MxMxM)...  X.XX ms  (Y.YY GFLOPS)"
+    from benchmark_matrix_suite stdout.
+  json_output: "Array of {threads, time_us, gflops, scaling}"
+
+bounds:
+  - claim: "Reported GFLOPS matches 2*M*N*K/time formula"
+    check: "abs(gflops - 2*size^3/(time_us*1e-6)/1e9) < 0.1"
+  - claim: "Scaling factor is relative to single-thread"
+    check: "scaling == baseline_time / this_time"
+
+falsification:
+  - name: FALSIFY-CGP-SCALING-001
+    description: "JSON output is valid array with required fields"
+    check: "json_parse(output).every(p => p.threads && p.gflops && p.scaling)"
+  - name: FALSIFY-CGP-SCALING-002
+    description: "Single-thread scaling is 1.0x (within noise)"
+    check: "abs(results[0].scaling - 1.0) < 0.1"

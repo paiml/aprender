@@ -1,0 +1,31 @@
+{
+  "name": "trueno-gpu",
+  "type": "module",
+  "collaborators": [
+    "Pragmatic AI Labs"
+  ],
+  "description": "Pure Rust PTX generation for NVIDIA CUDA - no LLVM, no nvcc",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paiml/trueno"
+  },
+  "files": [
+    "trueno_gpu_bg.wasm",
+    "trueno_gpu.js",
+    "trueno_gpu.d.ts"
+  ],
+  "main": "trueno_gpu.js",
+  "types": "trueno_gpu.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "cuda",
+    "ptx",
+    "gpu",
+    "simd",
+    "nvidia"
+  ]
+}

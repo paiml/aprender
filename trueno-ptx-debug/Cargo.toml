@@ -1,0 +1,30 @@
+[package]
+name = "trueno-ptx-debug"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+description = "Pure Rust PTX debugging and static analysis tool"
+repository = "https://github.com/paiml/trueno"
+readme = "README.md"
+keywords = ["ptx", "cuda", "gpu", "static-analysis", "debugging"]
+categories = ["development-tools::debugging", "development-tools::testing"]
+
+[dependencies]
+thiserror = "2.0"
+
+# Inherit workspace lints
+[lints]
+workspace = true
+
+[dev-dependencies]
+proptest = "1.9"
+
+[features]
+default = []
+# Enable renacer integration for runtime tracing
+runtime-trace = []
+
+[[bin]]
+name = "trueno-ptx-debug"
+path = "src/bin/main.rs"

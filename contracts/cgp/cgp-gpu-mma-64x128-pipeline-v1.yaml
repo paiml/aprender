@@ -1,0 +1,49 @@
+kind: PerformanceContract
+name: cgp-gpu-mma-64x128-pipeline
+version: "1.0"
+kernel: gemm_cta64x128_mma_pipeline_fp16
+hardware:
+  gpu: "NVIDIA RTX 4090"
+  compute_capability: "sm_89"
+description: |
+  Software-pipelined 64×128 mma.sync kernel with 2-stage cp.async overlap.
+  Current 64×128 uses wait_group(0) which fully serializes load-compute.
+  Pipeline: prologue loads tiles 0+1, K-loop computes tile i while loading
+  tile i+2 via wait_group(1). Epilogue drains last 2 tiles.
+  Hypothesis: 10-20% improvement from overlapping load latency with tensor
+  core compute. 3 smem buffers × 6KB = 18KB (fits in 48KB static smem).
+
+bounds:
+  - size: 1024
+    description: "Pipeline must match or exceed 57.0 TFLOP/s baseline"
+    min_tflops: 55.0
+    max_regression_pct: 5.0
+
+  - size: 4096
+    description: "Large size scaling (baseline 59.1 TF/s)"
+    min_tflops: 55.0
+
+metrics:
+  smem_bytes:
+    description: "3-buffer pipeline: 6KB × 3 = 18432 bytes"
+    value: 18432
+  mma_sync_per_ktile:
+    description: "4 mma.sync per warp per K-tile (same as non-pipelined)"
+    value: 4
+  pipeline_depth:
+    description: "2-stage software pipeline (compute k while loading k+2)"
+    value: 2
+
+falsification:
+  - name: FALSIFY-PIPELINE-001
+    description: "Pipelined PTX compiles with mma.sync + cp.async + wait_group"
+    check: "PTX contains mma.sync AND cp.async.wait_group 1"
+  - name: FALSIFY-PIPELINE-002
+    description: "Output matches cuBLAS reference (correctness)"
+    check: "max_abs_diff(pipeline, cublas_ref) < 1e-2"
+  - name: FALSIFY-PIPELINE-003
+    description: "No regression vs baseline (≥55 TFLOP/s at 1024)"
+    check: "tflops >= 55.0 at 1024"
+  - name: FALSIFY-PIPELINE-004
+    description: "Uses 3 smem buffers (3-stage pipeline)"
+    check: "smem[18432] in PTX"

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>trueno-gpu Visual Testing - WASM</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --success: #3fb950;
+            --error: #f85149;
+            --border: #30363d;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header {
+            text-align: center;
+            padding: 2rem 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .subtitle { color: var(--text-secondary); }
+        .badges {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+        .badge {
+            background: var(--bg-secondary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            border: 1px solid var(--border);
+        }
+        .badge.success { border-color: var(--success); color: var(--success); }
+        #status {
+            text-align: center;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+        }
+        .tests {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .test-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+        .test-card.pass { border-color: var(--success); }
+        .test-card.fail { border-color: var(--error); }
+        .test-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+        .test-name { font-weight: 600; }
+        .test-status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+        }
+        .test-status.pass { background: var(--success); color: #000; }
+        .test-status.fail { background: var(--error); color: #fff; }
+        .test-image {
+            background: #000;
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100px;
+            margin: 0.5rem 0;
+        }
+        .test-image img {
+            image-rendering: pixelated;
+            width: 128px;
+            height: 128px;
+        }
+        .test-stats {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .btn {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn.stop { background: var(--error); color: #fff; }
+        .cycle-info {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        .cycle-count {
+            font-weight: bold;
+            color: var(--accent);
+        }
+        #interval-select {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            border-radius: 4px;
+        }
+        .summary {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>trueno-gpu Visual Testing</h1>
+            <p class="subtitle">Pure Rust WASM GPU Kernel Validation</p>
+            <div class="badges">
+                <span class="badge">100% Rust</span>
+                <span class="badge">trueno-viz</span>
+                <span class="badge">WASM</span>
+                <span class="badge success" id="version-badge">Loading...</span>
+            </div>
+        </header>
+
+        <div id="status">Loading WASM module...</div>
+
+        <div class="controls">
+            <button id="run-btn" class="btn" disabled>Run Once</button>
+            <button id="cycle-btn" class="btn" disabled>Start Cycles</button>
+            <select id="interval-select">
+                <option value="1000">1s interval</option>
+                <option value="2000" selected>2s interval</option>
+                <option value="5000">5s interval</option>
+                <option value="10000">10s interval</option>
+            </select>
+            <span class="cycle-info">
+                Cycle: <span class="cycle-count" id="cycle-count">0</span> |
+                Pass: <span id="pass-count" style="color: var(--success)">0</span> |
+                Fail: <span id="fail-count" style="color: var(--error)">0</span>
+            </span>
+        </div>
+
+        <div class="tests" id="tests"></div>
+
+        <div class="summary" id="summary" style="display: none;"></div>
+    </div>
+
+    <script type="module">
+        import init, {
+            version,
+            run_all_tests,
+            test_identity_matrix,
+            test_gradient,
+            test_bug_detection,
+            test_special_values,
+            test_deterministic_rng,
+            get_correct_gemm
+        } from './pkg/trueno_gpu.js';
+
+        const $ = id => document.getElementById(id);
+        const statusEl = $('status');
+        const testsEl = $('tests');
+        const runBtn = $('run-btn');
+        const cycleBtn = $('cycle-btn');
+        const intervalSelect = $('interval-select');
+        const cycleCountEl = $('cycle-count');
+        const passCountEl = $('pass-count');
+        const failCountEl = $('fail-count');
+        const summaryEl = $('summary');
+        const versionBadge = $('version-badge');
+
+        let cycleInterval = null;
+        let cycleCount = 0;
+        let totalPassed = 0;
+        let totalFailed = 0;
+
+        function pngToDataUrl(pngData) {
+            const blob = new Blob([pngData], { type: 'image/png' });
+            return URL.createObjectURL(blob);
+        }
+
+        function renderTest(result) {
+            const card = document.createElement('div');
+            card.className = `test-card ${result.passed ? 'pass' : 'fail'}`;
+            const imgUrl = pngToDataUrl(result.png_data);
+            card.innerHTML = `
+                <div class="test-header">
+                    <span class="test-name">${result.name}</span>
+                    <span class="test-status ${result.passed ? 'pass' : 'fail'}">
+                        ${result.passed ? 'PASS' : 'FAIL'}
+                    </span>
+                </div>
+                <div class="test-image">
+                    <img src="${imgUrl}" alt="${result.name}">
+                </div>
+                <div class="test-stats">
+                    Diff: ${result.diff_pixels}/${result.total_pixels} (${result.diff_percent.toFixed(1)}%)
+                </div>
+            `;
+            return card;
+        }
+
+        async function runTests(isCycle = false) {
+            if (!isCycle) {
+                runBtn.disabled = true;
+                runBtn.textContent = 'Running...';
+            }
+            testsEl.innerHTML = '';
+
+            try {
+                const results = run_all_tests();
+                let passed = 0;
+                let failed = 0;
+
+                for (const result of results) {
+                    testsEl.appendChild(renderTest(result));
+                    if (result.passed) passed++;
+                    else failed++;
+                }
+
+                // Reference GEMM
+                const correctGemm = get_correct_gemm();
+                const correctCard = document.createElement('div');
+                correctCard.className = 'test-card pass';
+                correctCard.innerHTML = `
+                    <div class="test-header">
+                        <span class="test-name">Correct GEMM (Reference)</span>
+                        <span class="test-status pass">REF</span>
+                    </div>
+                    <div class="test-image">
+                        <img src="${pngToDataUrl(correctGemm)}" alt="Correct GEMM">
+                    </div>
+                    <div class="test-stats">Reference baseline for bug detection</div>
+                `;
+                testsEl.appendChild(correctCard);
+
+                if (isCycle) {
+                    cycleCount++;
+                    totalPassed += passed;
+                    totalFailed += failed;
+                    cycleCountEl.textContent = cycleCount;
+                    passCountEl.textContent = totalPassed;
+                    failCountEl.textContent = totalFailed;
+                }
+
+                summaryEl.innerHTML = `
+                    <strong>Cycle ${cycleCount}:</strong> ${passed} passed, ${failed} failed |
+                    <strong>Total:</strong> ${totalPassed} passed, ${totalFailed} failed<br>
+                    <span style="color: ${failed === 0 ? 'var(--success)' : 'var(--error)'}">
+                        ${failed === 0 ? '✓ All tests passed!' : '✗ Some tests failed'}
+                    </span>
+                `;
+                summaryEl.style.display = 'block';
+
+            } catch (e) {
+                statusEl.textContent = `Error: ${e.message}`;
+                statusEl.style.color = 'var(--error)';
+                stopCycles();
+            }
+
+            if (!isCycle) {
+                runBtn.disabled = false;
+                runBtn.textContent = 'Run Once';
+            }
+        }
+
+        function startCycles() {
+            if (cycleInterval) return;
+            const interval = parseInt(intervalSelect.value);
+            cycleBtn.textContent = 'Stop Cycles';
+            cycleBtn.classList.add('stop');
+            intervalSelect.disabled = true;
+            runBtn.disabled = true;
+
+            // Run immediately, then at interval
+            runTests(true);
+            cycleInterval = setInterval(() => runTests(true), interval);
+        }
+
+        function stopCycles() {
+            if (cycleInterval) {
+                clearInterval(cycleInterval);
+                cycleInterval = null;
+            }
+            cycleBtn.textContent = 'Start Cycles';
+            cycleBtn.classList.remove('stop');
+            intervalSelect.disabled = false;
+            runBtn.disabled = false;
+        }
+
+        function toggleCycles() {
+            if (cycleInterval) {
+                stopCycles();
+            } else {
+                startCycles();
+            }
+        }
+
+        async function main() {
+            try {
+                await init();
+                const v = version();
+                versionBadge.textContent = `v${v}`;
+                statusEl.textContent = `✓ WASM loaded (trueno-gpu v${v})`;
+                statusEl.style.color = 'var(--success)';
+                runBtn.disabled = false;
+                cycleBtn.disabled = false;
+
+                // Auto-run once
+                await runTests(false);
+            } catch (e) {
+                statusEl.textContent = `Failed to load WASM: ${e.message}`;
+                statusEl.style.color = 'var(--error)';
+            }
+        }
+
+        runBtn.addEventListener('click', () => runTests(false));
+        cycleBtn.addEventListener('click', toggleCycles);
+        main();
+    </script>
+</body>
+</html>

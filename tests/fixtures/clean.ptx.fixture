@@ -1,0 +1,24 @@
+.version 8.0
+.target sm_70
+.address_size 64
+
+.entry clean_kernel(
+    .param .u64 param_base
+)
+{
+    .reg .u32 %r<10>;
+    .reg .u64 %rd<10>;
+
+    // Load base address
+    ld.param.u64 %rd0, [param_base];
+
+    // SAFE: Compute address using constant offset
+    // This is clean: %rd3 depends on %rd0 (param) and 128 (constant)
+    add.u64 %rd3, %rd0, 128;
+
+    // Store to computed address (should PASS)
+    mov.u32 %r5, 0xCAFEBABE;
+    st.global.u32 [%rd3], %r5;
+
+    ret;
+}

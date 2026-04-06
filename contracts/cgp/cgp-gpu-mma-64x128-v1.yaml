@@ -1,0 +1,49 @@
+kind: PerformanceContract
+name: cgp-gpu-mma-64x128
+version: "1.0"
+kernel: gemm_cta64x128_mma_fp16
+hardware:
+  gpu: "NVIDIA RTX 4090"
+  compute_capability: "sm_89"
+
+bounds:
+  - size: 1024
+    description: "64×128 tile must exceed 50 TFLOP/s (measured 57.0)"
+    min_tflops: 50.0
+    max_regression_pct: 5.0
+
+  - size: 4096
+    description: "64×128 scales at large sizes (measured 59.1 TF/s)"
+    min_tflops: 50.0
+
+  - size: 1024
+    description: "64×128 must exceed 0.5× cuBLAS (measured 0.52×)"
+    min_ratio_vs_cublas: 0.48
+
+metrics:
+  smem_bytes:
+    description: "Double-buffered 6KB × 2 = 12288 bytes"
+    value: 12288
+  mma_sync_per_ktile:
+    description: "4 mma.sync per warp per K-tile (2× more than 64×64)"
+    value: 4
+  arithmetic_intensity:
+    description: "42.7 FLOP/byte (+33% over 64×64's 32)"
+    min: 40.0
+
+falsification:
+  - name: FALSIFY-CTA64x128-001
+    description: "64×128 PTX compiles with mma.sync + ldmatrix + mixed cp.async"
+    check: "PTX contains mma.sync AND cp.async with both 8 and 16 byte sizes"
+  - name: FALSIFY-CTA64x128-002
+    description: "Output matches cuBLAS reference (correctness)"
+    check: "max_abs_diff(cta64x128, cublas_ref) < 1e-2"
+  - name: FALSIFY-CTA64x128-003
+    description: "End-to-end TFLOP/s >= 50 at 1024"
+    check: "tflops >= 50.0"
+  - name: FALSIFY-CTA64x128-004
+    description: "8 v2 stores (double the 64×64's 4)"
+    check: "st.global.v2.f32 count == 8"
+  - name: FALSIFY-CTA64x128-005
+    description: "12288 bytes shared memory"
+    check: "smem[12288] in PTX"

@@ -1,0 +1,19 @@
+[package]
+name = "trueno-gemm-codegen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+description = "Compile-time GEMM microkernel code generation for trueno (sovereign, no external BLAS)"
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1"
+syn = { version = "2", features = ["full"] }
+proc-macro2 = "1"
