@@ -1227,6 +1227,7 @@ fn display_finetune_plan(
     } else {
         display_plan_text(config, &req, vram_gb);
     }
+    contract_post_vram_feasibility!(&());
 }
 
 /// Display run header with model info.

@@ -76,6 +76,7 @@ async fn health_handler(
         HealthStatus::Unhealthy => StatusCode::SERVICE_UNAVAILABLE,
     };
 
+    contract_post_timeout_honoring!(&health);
     (status_code, Json(health))
 }
 
@@ -150,6 +151,7 @@ async fn predict_handler(
     let duration_ms = start.elapsed().as_millis() as u64;
     state.metrics.record_request(true, 0, duration_ms);
 
+    contract_post_request_response_schema!(&());
     (
         StatusCode::OK,
         Json(serde_json::json!({
@@ -321,9 +323,11 @@ async fn method_not_allowed(State(state): State<Arc<ServerState>>) -> impl IntoR
 async fn fallback_handler(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
     contract_pre_error_envelope_preservation!();
     state.metrics.record_client_error();
+    let result = ErrorResponse::new("not_found", "Endpoint not found");
+    contract_post_error_envelope_preservation!(&result);
     (
         StatusCode::NOT_FOUND,
-        Json(ErrorResponse::new("not_found", "Endpoint not found")),
+        Json(result),
     )
 }
 

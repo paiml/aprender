@@ -150,7 +150,10 @@ pub(crate) fn run(
     print_welcome_banner(path, &config);
 
     // Run the REPL
-    run_repl(path, &config)
+    let result = run_repl(path, &config);
+    contract_post_temperature_bounds!(&());
+    contract_post_session_state_machine!(&());
+    result
 }
 
 /// Model format variants (Y14: format-agnostic)

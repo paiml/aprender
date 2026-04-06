@@ -72,6 +72,7 @@ fn scaled_dot_product_attention(
     // Weighted sum: attn_weights @ V
     let output = matmul_batched(&attn_weights, value);
 
+    contract_post_attention!(output.data());
     (output, attn_weights)
 }
 
@@ -197,6 +198,7 @@ impl MultiHeadAttention {
     /// Self-attention: query, key, value are the same.
     #[must_use]
     pub fn forward_self(&self, x: &Tensor, attn_mask: Option<&Tensor>) -> (Tensor, Tensor) {
+        contract_pre_bidirectional_attention!(x.shape());
         self.forward_qkv(x, x, x, attn_mask)
     }
 
@@ -317,6 +319,7 @@ impl TransformerEncoderLayer {
 
     /// Forward with optional attention mask.
     pub fn forward_with_mask(&self, src: &Tensor, src_mask: Option<&Tensor>) -> Tensor {
+        contract_pre_encoder_layer!(src.shape());
         // Pre-norm architecture (more stable)
         // Self-attention block
         let src_norm = self.norm1.forward(src);

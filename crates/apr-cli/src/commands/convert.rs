@@ -153,6 +153,7 @@ pub(crate) fn run(
                 }
             }
 
+            contract_post_format_conversion_roundtrip!(&());
             Ok(())
         }
         Err(e) => {

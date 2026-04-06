@@ -290,11 +290,15 @@ impl SelfPacedCurriculum {
 
         if start >= eligible.len() {
             self.batch_idx = 0;
-            return vec![];
+            let result: Vec<&ScoredSample> = vec![];
+            contract_post_streaming_data_loader!(&result);
+            return result;
         }
 
         self.batch_idx = end;
-        eligible[start..end].to_vec()
+        let result = eligible[start..end].to_vec();
+        contract_post_streaming_data_loader!(&result);
+        result
     }
 
     /// Get all samples below current threshold

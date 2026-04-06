@@ -152,6 +152,7 @@ pub(crate) fn run(
         print_integration_guide();
     }
 
+    contract_post_probar_property_tests!(&());
     Ok(())
 }
 

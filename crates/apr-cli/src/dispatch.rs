@@ -26,7 +26,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     }
 
     // Try model management commands (merge, finetune, prune, distill, pull, list, rm, tui)
-    dispatch_model_commands(cli)
+    let result = dispatch_model_commands(cli);
+    contract_post_side_effect_classification!(&());
+    contract_post_output_format_fidelity!(&());
+    result
 }
 
 /// Dispatch runtime commands: check, run, serve.
@@ -217,7 +220,10 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Canary { command } => canary::run(command.clone()),
 
         _ => return None,
-    })
+    });
+    contract_post_no_side_effects!(&());
+    contract_post_idempotent_output!(&());
+    Some(result)
 }
 
 /// Dispatch diagnostic commands: trace, tensors, diff.

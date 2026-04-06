@@ -43,13 +43,17 @@ pub(crate) fn run_plan(
     json_output: bool,
 ) -> Result<()> {
     contract_pre_training_plan_apply_semantics!();
-    match task {
+    let result = match task {
         "pretrain" | "causal_lm" => run_plan_pretrain(config_path, json_output),
         "classify" => Err(classify_not_available()),
         _ => Err(CliError::ValidationFailed(format!(
             "Unknown task type: {task}. Supported: classify, pretrain"
         ))),
+    };
+    if let Ok(ref r) = result {
+        contract_post_training_plan_apply_semantics!(r);
     }
+    result
 }
 
 /// Plan for causal LM pre-training from YAML config (ALB-009).

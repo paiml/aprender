@@ -535,6 +535,7 @@ pub(crate) fn run_audit(
         path: path.display().to_string(),
     });
 
+    contract_post_data_validation!(&());
     Ok(())
 }
 
@@ -656,6 +657,7 @@ pub(crate) fn run_split(
         output_dir.display()
     );
 
+    contract_post_data_split_determinism!(&());
     Ok(())
 }
 

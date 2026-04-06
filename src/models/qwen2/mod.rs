@@ -129,6 +129,7 @@ impl Embedding {
         self.forward_into(input_ids, &mut output);
         let result = Tensor::new(&output, &[batch_size, input_ids.len(), self.hidden_size]);
         contract_post_embedding_lookup!(result.data());
+        contract_post_inference_determinism!(result.data());
         result
     }
 

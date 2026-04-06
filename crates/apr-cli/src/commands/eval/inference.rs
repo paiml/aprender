@@ -174,11 +174,14 @@ pub(super) fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64
     contract_pre_generation_temperature_zero!();
     if temperature <= 0.0 || logits.is_empty() {
         // Greedy argmax
-        return logits
+        let result = logits
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map_or(0, |(idx, _)| idx as u32);
+        contract_post_repeat_penalty!(&result);
+        contract_post_generation_temperature_zero!(&result);
+        return result;
     }
 
     // Temperature-scaled softmax sampling
@@ -205,10 +208,16 @@ pub(super) fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64
     for (i, &p) in probs.iter().enumerate() {
         cumulative += p;
         if r < cumulative {
-            return i as u32;
+            let result = i as u32;
+            contract_post_repeat_penalty!(&result);
+            contract_post_generation_temperature_zero!(&result);
+            return result;
         }
     }
-    (probs.len() - 1) as u32
+    let result = (probs.len() - 1) as u32;
+    contract_post_repeat_penalty!(&result);
+    contract_post_generation_temperature_zero!(&result);
+    result
 }
 
 /// ALB-084: Run HumanEval with actual model inference + Python test execution.

@@ -52,14 +52,18 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
     // GH-213: Resolve HuggingFace URI — detect single vs sharded models
     let resolved = resolve_hf_model(model_ref)?;
 
-    match resolved {
+    let result = match resolved {
         ResolvedModel::SingleFile(ref uri) => run_single_file(uri, force),
         ResolvedModel::Sharded {
             ref org,
             ref repo,
             ref shard_files,
         } => run_sharded(org, repo, shard_files, force),
+    };
+    if let Ok(ref r) = result {
+        contract_post_pull_cache_integrity!(r);
     }
+    result
 }
 
 /// Pull a single-file model.

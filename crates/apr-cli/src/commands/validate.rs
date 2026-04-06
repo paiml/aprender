@@ -44,14 +44,18 @@ pub(crate) fn run(
         .or_else(|_| FormatType::from_extension(path))
         .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
 
-    match format {
+    let result = match format {
         FormatType::Apr => {
             run_apr_validation(path, quality, strict, min_score, json, skip_contract)
         }
         FormatType::Gguf | FormatType::SafeTensors => {
             run_rosetta_validation(path, format, quality, strict, json, skip_contract)
         }
+    };
+    if let Ok(ref r) = result {
+        contract_post_validate_exit_code_consistency!(r);
     }
+    result
 }
 
 /// APR validation via 100-point QA checklist (existing path)

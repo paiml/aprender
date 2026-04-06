@@ -157,6 +157,7 @@ impl GgufModelConfig {
                 );
             }
         }
+        contract_post_architecture_config_invariants!(&());
     }
 
     fn check_usize_bound(value: Option<usize>, min: usize, max: usize, field: &str) {

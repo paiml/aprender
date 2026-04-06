@@ -96,14 +96,18 @@ pub(crate) struct CanaryCheckResult {
 /// Run the canary command
 pub(crate) fn run(command: CanaryCommands) -> Result<()> {
     contract_pre_canary_regression_detection!();
-    match command {
+    let result = match command {
         CanaryCommands::Create {
             file,
             input,
             output,
         } => create_canary(&file, &input, &output),
         CanaryCommands::Check { file, canary } => check_canary(&file, &canary),
+    };
+    if let Ok(ref r) = result {
+        contract_post_canary_regression_detection!(r);
     }
+    result
 }
 
 /// Loaded tensor data: name → (f32 values, shape)

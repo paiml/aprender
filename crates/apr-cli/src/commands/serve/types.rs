@@ -427,14 +427,16 @@ fn extract_tool_call(parsed: &serde_json::Value) -> Option<ToolCall> {
     let name = tool_call.get("name")?.as_str()?;
     let arguments = tool_call.get("arguments")?;
 
-    Some(ToolCall {
+    let result = ToolCall {
         id: format!("call_{}", uuid_simple()),
         tool_type: "function".to_string(),
         function: FunctionCall {
             name: name.to_string(),
             arguments: arguments.to_string(),
         },
-    })
+    };
+    contract_post_tool_schema_fidelity!(&result);
+    Some(result)
 }
 
 /// Find embedded `{"tool_call"...}` JSON in text, returning the balanced JSON substring.

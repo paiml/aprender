@@ -305,7 +305,12 @@ pub(crate) fn run(
         output::pipeline_stage("Exporting", output::StageStatus::Running);
     }
 
-    execute_and_display(file, output, export_format, quant_type, json_output)
+    let result = execute_and_display(file, output, export_format, quant_type, json_output);
+    contract_post_format_conversion_roundtrip!(&());
+    contract_post_atomic_write_safety!(&());
+    contract_post_export_roundtrip!(&());
+    contract_post_export_fidelity!(&());
+    result
 }
 
 /// PMAT-261: Export to stdout — write raw bytes, no ANSI, no status messages.

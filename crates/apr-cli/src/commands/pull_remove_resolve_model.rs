@@ -64,6 +64,7 @@ pub fn resolve_model_path(model_ref: &str) -> Result<std::path::PathBuf> {
         eprintln!(); // Newline after progress
     }
 
+    contract_post_model_path_resolution!(&());
     Ok(result.path)
 }
 

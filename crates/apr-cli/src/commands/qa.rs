@@ -435,6 +435,7 @@ pub fn run(
         return Err(CliError::ValidationFailed(report.summary));
     }
 
+    contract_post_qa_gate_composition!(&());
     Ok(())
 }
 

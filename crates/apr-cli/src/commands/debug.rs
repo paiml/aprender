@@ -94,6 +94,7 @@ pub(crate) fn run(
         run_basic_mode(path, file_size, &info);
     }
 
+    contract_post_flag_integrity!(&());
     Ok(())
 }
 

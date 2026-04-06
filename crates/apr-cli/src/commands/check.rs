@@ -81,6 +81,8 @@ pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Resul
             .green()
             .bold()
         );
+        contract_post_apr_model_validity!(&());
+        contract_post_model_integrity_check!(&());
         Ok(())
     } else {
         println!(

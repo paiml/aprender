@@ -130,7 +130,9 @@ impl Qwen2BpeTokenizer {
         contract_pre_encode!();
         contract_pre_roundtrip_encoding!();
         contract_pre_tokenizer_consistency!();
-        self.base.encode(text)
+        let result = self.base.encode(text);
+        contract_post_tokenizer_consistency!(&result);
+        result
     }
 
     /// Decode token IDs to text.

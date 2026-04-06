@@ -244,13 +244,15 @@ impl RotaryPositionEmbedding {
             }
         }
 
-        Self {
+        let result = Self {
             head_dim,
             max_seq_len,
             base,
             cos_cache,
             sin_cache,
-        }
+        };
+        contract_post_rope_position_encoding!(&result);
+        result
     }
 
     /// Apply rotary embedding to query or key tensor.

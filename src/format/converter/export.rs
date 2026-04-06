@@ -430,6 +430,7 @@ fn detect_num_layers_from_names<'a>(names: impl Iterator<Item = &'a str>) -> usi
 ///
 /// PMAT-285: Delegates to trueno's cache-blocked transpose.
 fn transpose_2d_f32(data: &[f32], rows: usize, cols: usize) -> Vec<f32> {
+    contract_pre_transpose_involution!(data);
     let mut out = vec![0.0f32; rows * cols];
     trueno::blis::transpose::transpose(rows, cols, data, &mut out)
         .expect("transpose_2d_f32: dimension mismatch");

@@ -77,7 +77,7 @@ const PARALLEL_THRESHOLD: usize = 1_000;
 pub fn select_backend(size: usize, gpu_available: bool) -> BackendCategory {
     contract_pre_backend_selection!();
     contract_pre_gpu_detection_accuracy!();
-    if size < PARALLEL_THRESHOLD {
+    let result = if size < PARALLEL_THRESHOLD {
         BackendCategory::SimdOnly
     } else if size < GPU_THRESHOLD {
         BackendCategory::SimdParallel
@@ -85,7 +85,10 @@ pub fn select_backend(size: usize, gpu_available: bool) -> BackendCategory {
         BackendCategory::Gpu
     } else {
         BackendCategory::SimdParallel // Graceful fallback
-    }
+    };
+    contract_post_backend_selection!(&result);
+    contract_post_gpu_detection_accuracy!(&result);
+    result
 }
 
 /// Check if GPU would be beneficial for this operation size

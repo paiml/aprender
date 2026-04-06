@@ -50,7 +50,9 @@ impl BundleFormat {
     #[must_use]
     pub fn validate_magic(bytes: &[u8]) -> bool {
         contract_pre_magic_validation!();
-        bytes.len() >= 8 && bytes.get(0..8) == Some(BUNDLE_MAGIC)
+        let result = bytes.len() >= 8 && bytes.get(0..8) == Some(BUNDLE_MAGIC);
+        contract_post_magic_validation!(&result);
+        result
     }
 
     /// Extract version from header.

@@ -97,6 +97,8 @@ impl GenerationConfig {
         contract_pre_temperature_bounds!();
         contract_pre_seed_determinism!();
         self.temperature = temperature;
+        contract_post_temperature_bounds!(&self);
+        contract_post_seed_determinism!(&self);
         self
     }
 
@@ -112,6 +114,7 @@ impl GenerationConfig {
     pub fn with_top_p(mut self, top_p: f32) -> Self {
         contract_pre_top_k_top_p_interaction!();
         self.top_p = Some(top_p);
+        contract_post_top_k_top_p_interaction!(&self);
         self
     }
 

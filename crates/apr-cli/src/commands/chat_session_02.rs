@@ -101,7 +101,7 @@ impl ChatSession {
                 if failed { cuda_init_failed = true; }
             }
 
-            Ok(Self {
+            let session = Self {
                 model_bytes,
                 model_path: model_path_buf,
                 format,
@@ -119,6 +119,8 @@ impl ChatSession {
                 cached_safetensors_cuda,
                 #[cfg(feature = "cuda")]
                 cuda_init_failed,
-            })
+            };
+            contract_post_session_persistence!(&());
+            Ok(session)
         }
 }

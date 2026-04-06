@@ -108,7 +108,11 @@ pub(crate) fn run(
 
     // Run import pipeline
     output::pipeline_stage("Importing", output::StageStatus::Running);
-    print_import_result(apr_import(source, output, options))
+    let result = print_import_result(apr_import(source, output, options));
+    contract_post_format_conversion_roundtrip!(&());
+    contract_post_import_format_detection!(&());
+    contract_post_import_integrity!(&());
+    result
 }
 
 /// F-GT-001: Enforce provenance chain — reject pre-baked GGUF imports.

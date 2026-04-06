@@ -244,6 +244,7 @@ pub fn run_inspect(file: &Path, hexdump: bool, json: bool) -> Result<()> {
         print_inspection_report(&report, hexdump);
     }
 
+    contract_post_magic_byte_validation!(&());
     Ok(())
 }
 

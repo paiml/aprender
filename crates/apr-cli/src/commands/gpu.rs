@@ -72,5 +72,6 @@ pub fn run(json: bool) -> Result<()> {
         }
     }
 
+    contract_post_json_output_consistency!(&());
     Ok(())
 }

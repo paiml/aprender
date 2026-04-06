@@ -63,6 +63,7 @@ pub(crate) fn run_plan(
         ));
     }
 
+    contract_post_tokenizer_training_correctness!(&());
     Ok(())
 }
 

@@ -33,11 +33,14 @@ pub fn validate_magic(header: &[u8]) -> Option<u8> {
     if header.len() < 4 {
         return None;
     }
-    match &header[..4] {
+    let result = match &header[..4] {
         b"APR\0" => Some(2),
         b"APRN" => Some(1),
         _ => None,
-    }
+    };
+    contract_post_magic_byte_validation!(&result);
+    contract_post_header_integrity!(&result);
+    result
 }
 
 /// Compute aligned offset for tensor data placement.

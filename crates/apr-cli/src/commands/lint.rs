@@ -40,6 +40,8 @@ pub(crate) fn run(file: &Path, json: bool, quiet: bool) -> Result<()> {
     // GH-601: Exit non-zero when report says "Lint failed" — exit code must match display.
     // report.passed() returns false when error_count > 0 OR warn_count > 0.
     if report.passed() {
+        contract_post_apr_model_validity!(&());
+        contract_post_lint_model_conventions!(&());
         Ok(())
     } else {
         Err(CliError::ValidationFailed(format!(

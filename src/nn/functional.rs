@@ -97,7 +97,9 @@ pub fn silu(x: &Tensor) -> Tensor {
     for i in 0..n {
         data[i] = trueno::silu_scalar(src[i]);
     }
-    Tensor::from_vec(data, x.shape())
+    let result = Tensor::from_vec(data, x.shape());
+    contract_post_silu!(result.data());
+    result
 }
 
 /// Scalar SiLU for non-Tensor contexts.
@@ -127,7 +129,9 @@ pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
     for i in 0..n {
         data[i] = src_x[i] * trueno::silu_scalar(src_g[i]);
     }
-    Tensor::from_vec(data, x.shape())
+    let result = Tensor::from_vec(data, x.shape());
+    contract_post_swiglu!(result.data());
+    result
 }
 
 /// Scalar SwiGLU for non-Tensor contexts.
@@ -150,7 +154,9 @@ pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
 #[must_use]
 pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
     contract_pre_softmax!(logits);
-    trueno::blis::softmax::softmax_1d_alloc(logits)
+    let result = trueno::blis::softmax::softmax_1d_alloc(logits);
+    contract_post_softmax!(&result);
+    result
 }
 
 /// Softmax on a 1D slice of f64 values.
@@ -233,7 +239,9 @@ pub fn gelu(x: &Tensor) -> Tensor {
     for i in 0..n {
         data[i] = trueno::gelu_scalar(src[i]);
     }
-    Tensor::from_vec(data, x.shape())
+    let result = Tensor::from_vec(data, x.shape());
+    contract_post_gelu!(result.data());
+    result
 }
 
 /// Softmax along the last dimension of an ND tensor.
@@ -280,6 +288,9 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
         for i in 0..last_dim {
             out[i] *= inv_sum;
         }
+
+        // Per-row postcondition (contract is 1D: sum ≈ 1.0)
+        contract_post_softmax!(out);
     }
 
     Tensor::from_vec(output, shape)

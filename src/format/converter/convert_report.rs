@@ -389,7 +389,9 @@ pub(crate) fn quantize_tensors(
         result.insert(name.clone(), (quantized_data, shape.clone()));
     }
 
-    Ok(NativeF32Tensors::new(result))
+    let result = NativeF32Tensors::new(result);
+    contract_post_quantization_bounds!(&result);
+    Ok(result)
 }
 
 // NOTE: dequantize_q4_k_to_f32 moved to trueno-quant crate (Toyota Way consolidation)

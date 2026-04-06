@@ -173,14 +173,18 @@ pub fn run_serve_plan(
     quant_override: Option<&str>,
 ) -> Result<(), CliError> {
     contract_pre_server_lifecycle!();
-    match parse_model_source(model) {
+    let result = match parse_model_source(model) {
         ServePlanSource::Local(path) => {
             run_serve_plan_local(&path, gpu, batch_size, seq_len, format)
         }
         ServePlanSource::HuggingFace { repo_id } => {
             run_serve_plan_hf(&repo_id, gpu, batch_size, seq_len, format, quant_override)
         }
+    };
+    if let Ok(ref r) = result {
+        contract_post_server_lifecycle!(r);
     }
+    result
 }
 
 /// Local file path — existing logic (header-only RosettaStone inspection).

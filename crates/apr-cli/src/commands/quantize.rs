@@ -122,7 +122,9 @@ pub(crate) fn run(
         return quantize_to_gguf(file, quant_scheme, output_path, json_output);
     }
 
-    run_apr_quantize(file, quant_scheme, output_path, json_output)
+    let result = run_apr_quantize(file, quant_scheme, output_path, json_output);
+    contract_post_quantize_precision_bound!(&());
+    result
 }
 
 /// F-CONV-064: Overwrite protection check.

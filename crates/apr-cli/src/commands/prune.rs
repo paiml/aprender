@@ -201,6 +201,7 @@ pub(crate) fn run(
         json_output,
     );
 
+    contract_post_exit_code_on_failure!(&());
     Ok(())
 }
 

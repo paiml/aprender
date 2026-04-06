@@ -163,6 +163,7 @@ pub(crate) fn parse_and_validate_header(
             ),
         });
     }
+    contract_post_header_size_validation!(&header);
     Ok(header)
 }
 

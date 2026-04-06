@@ -93,15 +93,24 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     // Try to start real server with realizar
     #[cfg(feature = "inference")]
-    {
+    let result = {
         handlers::start_realizar_server(model_path, config)
-    }
+    };
 
     // Fallback: stub mode
     #[cfg(not(feature = "inference"))]
-    {
+    let result = {
         println!();
         println!("{}", "[Server requires --features inference]".yellow());
         Ok(())
-    }
+    };
+
+    contract_post_graceful_shutdown!(&());
+    contract_post_resource_cleanup!(&());
+    contract_post_concurrent_isolation!(&());
+    contract_post_request_routing!(&());
+    contract_post_cors_negotiation!(&());
+    contract_post_concurrent_model_access!(&());
+    contract_post_server_lifecycle!(&());
+    result
 }
