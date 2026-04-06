@@ -2,6 +2,7 @@
 ///
 /// Delegates to sub-dispatchers to keep cyclomatic complexity below 10 per function.
 fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
+    contract_pre_dispatch_core_command!();
     // Try runtime commands first (check, run, serve)
     if let Some(result) = dispatch_runtime_commands(cli) {
         return Some(result);

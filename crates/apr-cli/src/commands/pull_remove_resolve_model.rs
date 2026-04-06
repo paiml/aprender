@@ -27,6 +27,7 @@ pub fn remove(model_ref: &str) -> Result<()> {
 /// Downloads if not cached and auto_pull is enabled
 #[allow(dead_code)]
 pub fn resolve_model_path(model_ref: &str) -> Result<std::path::PathBuf> {
+    contract_pre_resolve_model_path!();
     // If it's already a local file path, use it directly
     let path = std::path::Path::new(model_ref);
     if path.exists() && path.is_file() {

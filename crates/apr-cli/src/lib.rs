@@ -6,6 +6,11 @@
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
+// Contract assertions from YAML (pv codegen)
+#[macro_use]
+#[allow(unused_macros, clippy::duplicated_attributes)]
+mod generated_contracts;
+
 mod commands;
 pub mod error;
 mod output;
