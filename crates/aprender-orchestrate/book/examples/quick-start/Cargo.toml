@@ -1,0 +1,9 @@
+[package]
+name = "batuta-quick-start"
+version = "0.1.0"
+edition = "2021"
+description = "Quick start example for The Batuta Book"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"

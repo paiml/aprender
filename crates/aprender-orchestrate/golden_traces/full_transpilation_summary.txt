@@ -1,0 +1,153 @@
+==========================================
+
+📋 Detecting available tools...
+   ✅ Found 6 tools:
+      • Depyler (Python → Rust)
+      • Bashrs (Shell → Rust)
+      • Ruchy (Rust scripting)
+      • PMAT (Quality analysis)
+      • Realizar (Inference runtime)
+      • Renacer (Syscall tracing)
+
+📊 Tool Versions:
+─────────────────
+  Depyler: 3.21.0 (/home/noah/.cargo/bin/depyler)
+  Bashrs:  6.39.0 (/home/noah/.cargo/bin/bashrs)
+  PMAT:    2.208.0 (/home/noah/.cargo/bin/pmat)
+  Ruchy:   3.213.0 (/home/noah/.cargo/bin/ruchy)
+
+🎯 Transpilation Capabilities:
+───────────────────────────────
+  ✅ Python → Rust (Depyler)
+     • NumPy → Trueno tensor operations
+     • sklearn → Aprender ML algorithms
+     • PyTorch → Realizar inference
+     • Full project structure generation
+     • Type inference and safety guarantees
+
+  ✅ Shell → Rust (Bashrs)
+     • POSIX shell script transpilation
+     • Formal verification support
+     • Deterministic execution guarantees
+     • Standalone binary compilation
+     • ShellCheck integration
+
+  ❌ C/C++ → Rust (install decy)
+
+  ✅ Quality Analysis (PMAT)
+     • TDG scoring (Technical Debt Grade)
+     • Complexity analysis
+     • Code quality metrics
+     • Adaptive analysis (Muda elimination)
+
+  ✅ Ruchy Scripting
+     • Ruby-like syntax with Rust performance
+     • Gradual typing (permissive/strict modes)
+     • Interactive REPL
+     • Formal verification (provability)
+
+📝 Example Workflow:
+────────────────────
+
+1. Analyze Python project:
+   batuta analyze --languages --tdg /path/to/python_project
+
+2. Transpile to Rust:
+   batuta transpile --input /path/to/python_project \
+                     --output /path/to/rust_project
+
+3. Optimize with MoE backend selection:
+   batuta optimize --enable-gpu --enable-simd \
+                   /path/to/rust_project
+
+4. Validate with syscall tracing:
+   batuta validate --trace-syscalls \
+                   /path/to/rust_project
+
+5. Build production binary:
+   batuta build --release /path/to/rust_project
+
+6. Generate migration report:
+   batuta report --format html --output report.html
+
+🤖 ML Library Conversion:
+──────────────────────────
+
+For Python projects using ML libraries:
+  • NumPy operations → Trueno (SIMD/GPU)
+  • sklearn algorithms → Aprender
+  • PyTorch inference → Realizar
+
+Batuta automatically detects and converts:
+  ✓ np.add(a, b) → trueno::add(&a, &b)
+  ✓ sklearn.LinearRegression() → aprender::LinearRegression::new()
+  ✓ model.generate() → realizar::generate_text()
+
+🏭 Toyota Way Integration:
+───────────────────────────
+
+Batuta implements Toyota Production System principles:
+  • Jidoka: Stop-the-line quality (error on warnings)
+  • Muda: Waste elimination (adaptive analysis)
+  • Kaizen: Continuous improvement (MoE optimization)
+  • Andon: Problem visualization (PARF analysis)
+  • Heijunka: Level scheduling (pipeline orchestration)
+
+⚡ EXTREME TDD Quality Gates:
+──────────────────────────────
+
+All transpilations pass through:
+  1. Pre-commit checks (< 30s)
+  2. Fast test suite (< 5min)
+  3. Coverage analysis (< 10min)
+  4. Mutation testing (optional)
+
+Run quality checks:
+  make pre-commit  # Fast checks before commit
+  make test-fast   # Full test suite
+  make coverage    # Coverage report
+  make tdg         # TDG score with PMAT
+
+📦 Install Missing Tools:
+─────────────────────────
+  Install Decy: cargo install decy
+
+✅ Batuta Orchestration Framework Ready!
+
+   Convert ANY project (Python/C/C++/Shell) to Rust with:
+   • Automatic transpilation
+   • ML library conversion (NumPy/sklearn/PyTorch)
+   • MoE backend optimization (SIMD/GPU)
+   • Quality analysis and reporting
+   • Formal verification support
+
+   Start with: batuta analyze <project_path>
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+  5.07    0.001140           7       145       139 statx
+  4.77    0.001073           8       124           write
+  1.57    0.000354           6        52           unknown
+  1.24    0.000279           8        34           close
+  1.33    0.000299          10        29         6 read
+  0.77    0.000174           9        19           mmap
+  0.55    0.000123           6        18           ioctl
+ 78.11    0.017575        1351        13           poll
+  0.35    0.000079           6        12           rt_sigprocmask
+  0.45    0.000101          10        10           openat
+  0.30    0.000068           7         9           getcwd
+  0.47    0.000106          13         8           munmap
+  0.22    0.000049           7         7         1 access
+  0.29    0.000066          11         6           mprotect
+  3.39    0.000763         127         6           clone3
+  0.42    0.000094          15         6           wait4
+  0.14    0.000032           6         5           rt_sigaction
+  0.12    0.000026           6         4           newfstatat
+  0.11    0.000025           6         4           pread64
+  0.10    0.000023           7         3           brk
+  0.08    0.000019           6         3           sigaltstack
+  0.06    0.000013           6         2         1 arch_prctl
+  0.03    0.000006           6         1           set_robust_list
+  0.03    0.000006           6         1           set_tid_address
+  0.04    0.000008           8         1           getrandom
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.022501          43       522       147 total

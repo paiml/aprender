@@ -1,0 +1,87 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Cost circuit breaker budget conservation law — Muda elimination"
+  references:
+    - "Banco Spec §5: Failover Strategy"
+    - "Toyota Way: Muda (waste) elimination"
+  depends_on: []
+
+equations:
+  budget_check:
+    formula: "check(cost) = Ok iff accumulated + cost ≤ budget"
+    domain: "cost ∈ ℝ≥0, accumulated ∈ ℝ≥0, budget ∈ ℝ>0"
+    codomain: "Result<(), CircuitBreakerError>"
+    invariants:
+      - "accumulated monotonically increases within a day"
+      - "accumulated resets to 0 on new day"
+      - "circuit opens (state = Open) when budget exceeded"
+
+  record:
+    formula: "record(cost) → accumulated' = accumulated + cost"
+    domain: "cost ∈ ℝ≥0"
+    codomain: "() (side effect: updates accumulated)"
+    invariants:
+      - "accumulated stored as millicents (u64) for atomic operations"
+      - "budget exceeded triggers state transition to Open"
+
+  per_request_limit:
+    formula: "check(cost) = Err(RequestTooExpensive) if cost > max_request_cost"
+    domain: "cost ∈ ℝ≥0, max_request_cost ∈ ℝ>0"
+    codomain: "Err before budget check"
+    invariants:
+      - "Per-request check happens before budget check"
+
+proof_obligations:
+  - type: conservation
+    property: "Total spend never exceeds budget + max_request_cost"
+    formal: "accumulated ≤ budget + max_request_cost"
+    tolerance: 0.01
+    applies_to: all
+  - type: monotonicity
+    property: "Accumulated cost only increases within a day"
+    formal: "record(x) → accumulated' ≥ accumulated"
+    applies_to: all
+  - type: invariant
+    property: "Open state blocks requests during cooldown"
+    formal: "state = Open ∧ ¬cooldown_elapsed → check() = Err(BudgetExceeded)"
+    applies_to: all
+  - type: invariant
+    property: "Per-request limit checked first"
+    formal: "cost > max_request_cost → Err(RequestTooExpensive) regardless of budget"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BUDGET-001
+    rule: "Budget conservation"
+    prediction: "After recording costs totaling > budget, check() returns Err(BudgetExceeded)"
+    test: "test_SERVE_CBR_003_check_blocks_over_budget"
+    if_fails: "Millicent arithmetic overflow or comparison bug"
+  - id: FALSIFY-BUDGET-002
+    rule: "Monotonicity"
+    prediction: "accumulated_usd() never decreases within a day"
+    test: "test_SERVE_CBR_003_record_accumulates"
+    if_fails: "Atomic arithmetic underflow"
+  - id: FALSIFY-BUDGET-003
+    rule: "Daily reset"
+    prediction: "After date boundary, accumulated resets to 0 and state to Closed"
+    test: "test_SERVE_CBR_004_reset_closes_circuit"
+    if_fails: "Date comparison or reset logic bug"
+  - id: FALSIFY-BUDGET-004
+    rule: "Per-request limit precedes budget"
+    prediction: "Expensive request rejected even with ample budget"
+    test: "test_SERVE_CBR_005_rejects_expensive_request"
+    if_fails: "Check order wrong (budget checked before per-request)"
+
+kani_harnesses:
+  - id: KANI-BUDGET-001
+    obligation: "Conservation"
+    bound: 8
+    strategy: bounded_int
+    harness: "verify_budget_never_exceeded"
+  - id: KANI-BUDGET-002
+    obligation: "Monotonicity"
+    bound: 4
+    strategy: bounded_int
+    harness: "verify_accumulated_monotonic"

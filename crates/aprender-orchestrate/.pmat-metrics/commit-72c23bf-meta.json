@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "RAG-SQLITE-CLEANUP",
+  "prompt": "New task: RAG-SQLITE-CLEANUP",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-09T09:59:19.531342889Z"
+}

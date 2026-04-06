@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="conductor" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366f1"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <g transform="translate(640, 280)">
+    <circle cx="0" cy="0" r="60" fill="url(#conductor)" opacity="0.9"/>
+    <path d="M-20,-30 L0,-50 L20,-30" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M-15,0 L0,-20 L15,0" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M-10,25 L0,10 L10,25" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <circle cx="-90" cy="-40" r="15" fill="#22d3ee" opacity="0.7"/>
+    <circle cx="90" cy="-40" r="15" fill="#22d3ee" opacity="0.7"/>
+    <circle cx="-90" cy="40" r="15" fill="#22d3ee" opacity="0.7"/>
+    <circle cx="90" cy="40" r="15" fill="#22d3ee" opacity="0.7"/>
+    <path d="M-75,-40 L-60,-20" stroke="#fff" stroke-width="2" opacity="0.5"/>
+    <path d="M75,-40 L60,-20" stroke="#fff" stroke-width="2" opacity="0.5"/>
+    <path d="M-75,40 L-60,20" stroke="#fff" stroke-width="2" opacity="0.5"/>
+    <path d="M75,40 L60,20" stroke="#fff" stroke-width="2" opacity="0.5"/>
+  </g>
+  <text x="640" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">batuta</text>
+  <text x="640" y="530" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">Sovereign AI Stack Orchestration</text>
+</svg>

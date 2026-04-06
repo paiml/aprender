@@ -1,0 +1,81 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Spillover router determinism and correctness — Heijunka load leveling"
+  references:
+    - "Banco Spec §5: Failover Strategy"
+    - "Toyota Way: Heijunka (level loading)"
+  depends_on:
+    - "privacy-enforcement-v1.yaml"
+
+equations:
+  route:
+    formula: "route() = Local(primary) if depth < threshold, Spillover(best) if depth ≥ threshold, Reject if full"
+    domain: "state: {depth ∈ ℕ, threshold ∈ ℕ, max_depth ∈ ℕ, spillover_enabled ∈ bool}"
+    codomain: "RoutingDecision ∈ {Local(b), Spillover(b), Reject(reason)}"
+    invariants:
+      - "Empty queue (depth=0) always routes local"
+      - "Full queue (depth ≥ max_depth) with spillover disabled rejects"
+      - "Sovereign spillover targets are all local backends"
+      - "No hidden randomness — same state always produces same decision"
+
+  find_spillover:
+    formula: "find_available_spillover() = first b in spillover_backends where privacy.allows(b) ∧ depth(b) < max_depth"
+    domain: "spillover_backends: Vec<ServingBackend>, privacy: PrivacyTier"
+    codomain: "Option<ServingBackend>"
+    invariants:
+      - "Priority order preserved (first match wins)"
+      - "Privacy filter applied before depth check"
+
+proof_obligations:
+  - type: determinism
+    property: "Same state produces same decision"
+    formal: "∀ s: route(s) = route(s)"
+    applies_to: all
+  - type: completeness
+    property: "All queue depths produce a decision"
+    formal: "∀ depth ∈ [0, max_depth]: route() ∈ {Local, Spillover, Reject}"
+    applies_to: all
+  - type: soundness
+    property: "Sovereign spillover stays local"
+    formal: "tier = Sovereign → Spillover(b) → b.is_local()"
+    applies_to: all
+  - type: invariant
+    property: "Empty queue routes local"
+    formal: "depth = 0 → route() = Local(primary)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-ROUTE-001
+    rule: "Empty queue routes local"
+    prediction: "route() = Local(Realizar) when no requests enqueued"
+    test: "test_SERVE_RTR_003_route_local_empty_queue"
+    if_fails: "Default queue depth not zero or config error"
+  - id: FALSIFY-ROUTE-002
+    rule: "Sovereign spillover is local"
+    prediction: "All spillover backends are local under Sovereign config"
+    test: "test_SERVE_RTR_003_route_spillover_when_busy"
+    if_fails: "Sovereign config includes remote spillover backends"
+  - id: FALSIFY-ROUTE-003
+    rule: "Full queue rejects when spillover disabled"
+    prediction: "route() = Reject(QueueFull) when depth ≥ max_depth and spillover disabled"
+    test: "test_SERVE_RTR_003_route_reject_when_full"
+    if_fails: "Reject condition not checked or wrong comparison"
+  - id: FALSIFY-ROUTE-004
+    rule: "Determinism"
+    prediction: "Two calls to route() with identical state produce identical decisions"
+    test: "test_routing_decision_equality"
+    if_fails: "Hidden mutable state or non-deterministic selection"
+
+kani_harnesses:
+  - id: KANI-ROUTE-001
+    obligation: "Determinism"
+    bound: 4
+    strategy: exhaustive
+    harness: "verify_routing_deterministic"
+  - id: KANI-ROUTE-002
+    obligation: "Empty queue local"
+    bound: 1
+    strategy: exhaustive
+    harness: "verify_empty_queue_routes_local"

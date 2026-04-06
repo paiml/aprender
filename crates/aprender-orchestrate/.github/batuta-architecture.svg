@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="batutaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#238636"/>
+      <stop offset="100%" style="stop-color:#2ea043"/>
+    </linearGradient>
+    <linearGradient id="realizarGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1f6feb"/>
+      <stop offset="100%" style="stop-color:#388bfd"/>
+    </linearGradient>
+    <linearGradient id="pachaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8957e5"/>
+      <stop offset="100%" style="stop-color:#a371f7"/>
+    </linearGradient>
+    <linearGradient id="aprenderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#bf4b8a"/>
+      <stop offset="100%" style="stop-color:#db61a2"/>
+    </linearGradient>
+    <linearGradient id="truenoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#da3633"/>
+      <stop offset="100%" style="stop-color:#f85149"/>
+    </linearGradient>
+    <linearGradient id="privacyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a9396"/>
+      <stop offset="100%" style="stop-color:#14b8a6"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="480" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="450" y="35" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="bold">Sovereign AI Stack</text>
+  <text x="450" y="55" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12">Privacy-Preserving ML Infrastructure in Pure Rust</text>
+
+  <!-- Main Stack (Center) -->
+  <g transform="translate(200, 75)">
+    <!-- Batuta Layer -->
+    <rect x="0" y="0" width="500" height="60" rx="8" fill="url(#batutaGrad)" filter="url(#shadow)"/>
+    <text x="250" y="28" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="16" font-weight="bold">batuta v0.1.3</text>
+    <text x="250" y="46" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="11">Orchestration Layer</text>
+
+    <!-- Realizar + Pacha Layer -->
+    <rect x="0" y="70" width="245" height="60" rx="8" fill="url(#realizarGrad)" filter="url(#shadow)"/>
+    <text x="122" y="98" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">realizar v0.2.2</text>
+    <text x="122" y="116" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="10">Inference Engine</text>
+
+    <rect x="255" y="70" width="245" height="60" rx="8" fill="url(#pachaGrad)" filter="url(#shadow)"/>
+    <text x="377" y="98" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">pacha v0.1.1</text>
+    <text x="377" y="116" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="10">Model Registry</text>
+
+    <!-- Aprender Layer -->
+    <rect x="0" y="140" width="500" height="60" rx="8" fill="url(#aprenderGrad)" filter="url(#shadow)"/>
+    <text x="250" y="168" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender v0.14.1</text>
+    <text x="250" y="186" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="10">ML Algorithms &amp; Formats</text>
+
+    <!-- Trueno Layer -->
+    <rect x="0" y="210" width="500" height="60" rx="8" fill="url(#truenoGrad)" filter="url(#shadow)"/>
+    <text x="250" y="238" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">trueno v0.7.4</text>
+    <text x="250" y="256" text-anchor="middle" fill="#ffffffcc" font-family="system-ui, sans-serif" font-size="10">SIMD/GPU Compute Primitives</text>
+  </g>
+
+  <!-- Privacy Tiers (Left) -->
+  <g transform="translate(30, 100)">
+    <text x="70" y="0" text-anchor="middle" fill="#58a6ff" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Privacy Tiers</text>
+
+    <rect x="0" y="15" width="140" height="50" rx="6" fill="#21262d" stroke="#238636" stroke-width="2"/>
+    <text x="70" y="40" text-anchor="middle" fill="#238636" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">Sovereign</text>
+    <text x="70" y="55" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="9">Local Only</text>
+
+    <rect x="0" y="75" width="140" height="50" rx="6" fill="#21262d" stroke="#1f6feb" stroke-width="2"/>
+    <text x="70" y="100" text-anchor="middle" fill="#1f6feb" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">Private</text>
+    <text x="70" y="115" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="9">VPC/Dedicated</text>
+
+    <rect x="0" y="135" width="140" height="50" rx="6" fill="#21262d" stroke="#8b949e" stroke-width="2"/>
+    <text x="70" y="160" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">Standard</text>
+    <text x="70" y="175" text-anchor="middle" fill="#6e7681" font-family="system-ui, sans-serif" font-size="9">Public APIs</text>
+  </g>
+
+  <!-- Security Features (Right) -->
+  <g transform="translate(730, 100)">
+    <text x="70" y="0" text-anchor="middle" fill="#f85149" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Security</text>
+
+    <rect x="0" y="15" width="140" height="50" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="70" y="38" text-anchor="middle" fill="#a371f7" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">Ed25519</text>
+    <text x="70" y="55" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="9">Model Signatures</text>
+
+    <rect x="0" y="75" width="140" height="50" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="70" y="98" text-anchor="middle" fill="#a371f7" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">ChaCha20</text>
+    <text x="70" y="115" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="9">Encryption at Rest</text>
+
+    <rect x="0" y="135" width="140" height="50" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="70" y="158" text-anchor="middle" fill="#a371f7" font-family="system-ui, sans-serif" font-size="11" font-weight="bold">BLAKE3</text>
+    <text x="70" y="175" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="9">Content Addressing</text>
+  </g>
+
+  <!-- API Compatibility -->
+  <g transform="translate(200, 360)">
+    <text x="250" y="0" text-anchor="middle" fill="#79c0ff" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">API Compatibility</text>
+
+    <rect x="0" y="15" width="160" height="40" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="80" y="40" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="11">/v1/completions</text>
+
+    <rect x="170" y="15" width="160" height="40" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="250" y="40" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="11">/v1/chat/completions</text>
+
+    <rect x="340" y="15" width="160" height="40" rx="6" fill="#21262d" filter="url(#shadow)"/>
+    <text x="420" y="40" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="11">/v1/embeddings</text>
+  </g>
+
+  <!-- Observability -->
+  <g transform="translate(30, 300)">
+    <text x="70" y="0" text-anchor="middle" fill="#e3b341" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Observability</text>
+
+    <rect x="0" y="15" width="140" height="35" rx="5" fill="#21262d"/>
+    <text x="70" y="38" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="10">Prometheus Metrics</text>
+
+    <rect x="0" y="55" width="140" height="35" rx="5" fill="#21262d"/>
+    <text x="70" y="78" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="10">Distributed Tracing</text>
+
+    <rect x="0" y="95" width="140" height="35" rx="5" fill="#21262d"/>
+    <text x="70" y="118" text-anchor="middle" fill="#8b949e" font-family="system-ui, sans-serif" font-size="10">A/B Testing</text>
+  </g>
+
+  <!-- Model Formats -->
+  <g transform="translate(730, 300)">
+    <text x="70" y="0" text-anchor="middle" fill="#db61a2" font-family="system-ui, sans-serif" font-size="13" font-weight="bold">Model Formats</text>
+
+    <rect x="0" y="15" width="65" height="30" rx="4" fill="#21262d"/>
+    <text x="32" y="35" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">GGUF</text>
+
+    <rect x="75" y="15" width="65" height="30" rx="4" fill="#21262d"/>
+    <text x="107" y="35" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">SafeTensors</text>
+
+    <rect x="0" y="50" width="65" height="30" rx="4" fill="#21262d"/>
+    <text x="32" y="70" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">ONNX</text>
+
+    <rect x="75" y="50" width="65" height="30" rx="4" fill="#21262d"/>
+    <text x="107" y="70" text-anchor="middle" fill="#8b949e" font-family="monospace" font-size="10">.apr</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="450" y="455" text-anchor="middle" fill="#484f58" font-family="system-ui, sans-serif" font-size="11">Batuta v0.1.3 - Orchestrating Sovereign AI Infrastructure</text>
+  <text x="450" y="470" text-anchor="middle" fill="#30363d" font-family="system-ui, sans-serif" font-size="10">MIT License | github.com/paiml/batuta</text>
+</svg>

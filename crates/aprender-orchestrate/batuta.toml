@@ -1,0 +1,75 @@
+version = "1.0"
+
+[project]
+name = "untitled"
+primary_language = "Rust"
+authors = []
+license = "MIT"
+
+[source]
+path = "."
+exclude = [
+    ".git",
+    "target",
+    "build",
+    "dist",
+    "node_modules",
+    "__pycache__",
+    "*.pyc",
+    ".venv",
+    "venv",
+]
+include = []
+
+[transpilation]
+output_dir = "./rust-output"
+incremental = true
+cache = true
+use_ruchy = false
+ruchy_strictness = "gradual"
+modules = []
+
+[transpilation.decy]
+ownership_inference = true
+actionable_diagnostics = true
+use_static_fixer = true
+
+[transpilation.depyler]
+type_inference = true
+numpy_to_trueno = true
+sklearn_to_aprender = true
+pytorch_to_realizar = true
+
+[transpilation.bashrs]
+target_shell = "bash"
+use_clap = true
+
+[optimization]
+profile = "balanced"
+enable_simd = true
+enable_gpu = false
+gpu_threshold = 500
+use_moe_routing = false
+
+[optimization.trueno]
+backends = [
+    "simd",
+    "cpu",
+]
+adaptive_thresholds = false
+cpu_threshold = 500
+
+[validation]
+trace_syscalls = true
+run_original_tests = true
+diff_output = true
+benchmark = false
+
+[validation.renacer]
+trace_syscalls = []
+output_format = "json"
+
+[build]
+release = true
+wasm = false
+cargo_flags = []

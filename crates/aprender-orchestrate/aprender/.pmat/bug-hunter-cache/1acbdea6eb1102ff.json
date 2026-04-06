@@ -1,0 +1,1 @@
+{"findings":[{"id":"BH-ANALYZE-NOCLIPPY","file":"../aprender/Cargo.toml","line":1,"column":null,"title":"Clippy not available","description":"","severity":"Info","category":"Unknown","suspiciousness":0.5,"discovered_by":"Analyze","evidence":[],"suggested_fix":null,"related":[],"regression_risk":null}],"mode":"Analyze","config_hash":"1acbdea6eb1102ff"}

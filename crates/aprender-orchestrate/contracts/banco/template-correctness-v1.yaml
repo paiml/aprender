@@ -1,0 +1,86 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Chat template correctness — format preserves content, Raw is identity"
+  references:
+    - "Banco Spec §5: Architecture (ChatTemplateEngine)"
+  depends_on: []
+
+equations:
+  apply:
+    formula: "apply(msgs) = format-specific wrapping of each msg.content"
+    domain: "msgs ∈ Vec<ChatMessage>, format ∈ {Llama2, Mistral, ChatML, Alpaca, Vicuna, Raw}"
+    codomain: "String"
+    invariants:
+      - "All user content appears verbatim in output"
+      - "Output is non-empty for non-empty input"
+
+  apply_raw:
+    formula: "apply_raw(msgs) = msgs.map(|m| m.content).join('\\n')"
+    domain: "msgs ∈ Vec<ChatMessage>"
+    codomain: "String"
+    invariants:
+      - "Raw format is content-preserving join"
+      - "Single message: apply_raw([msg]) = msg.content"
+
+  from_model_name:
+    formula: "from_model_name(name) = detected TemplateFormat based on name patterns"
+    domain: "name ∈ String"
+    codomain: "TemplateFormat"
+    invariants:
+      - "'llama-2' or 'llama2' → Llama2"
+      - "'mistral' or 'mixtral' → Mistral"
+      - "Unknown → Raw (safe default)"
+
+proof_obligations:
+  - type: invariant
+    property: "User content preserved"
+    formal: "∀ msg ∈ msgs: apply(msgs).contains(msg.content)"
+    applies_to: all
+  - type: idempotency
+    property: "Raw single message is identity"
+    formal: "apply_raw([msg]) = msg.content"
+    applies_to: all
+  - type: completeness
+    property: "All formats produce non-empty output for non-empty input"
+    formal: "∀ fmt, msgs where len(msgs) > 0: apply(msgs).len() > 0"
+    applies_to: all
+  - type: completeness
+    property: "Unknown model names default to Raw"
+    formal: "from_model_name('unknown-xyz') = Raw"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TPL-001
+    rule: "Content preservation"
+    prediction: "Every message content appears as substring in formatted output"
+    test: "test_SERVE_TPL_008_raw_passthrough"
+    if_fails: "Template drops, truncates, or corrupts message content"
+  - id: FALSIFY-TPL-002
+    rule: "Raw identity"
+    prediction: "apply_raw([ChatMessage::user('hello')]) = 'hello'"
+    test: "test_SERVE_TPL_001_chat_message_user"
+    if_fails: "Raw format adds unexpected wrapping"
+  - id: FALSIFY-TPL-003
+    rule: "Non-empty output"
+    prediction: "No format produces empty string from non-empty messages"
+    test: "test_SERVE_TPL_003_llama2_simple"
+    if_fails: "Format-specific edge case drops content"
+  - id: FALSIFY-TPL-004
+    rule: "Unknown model detection"
+    prediction: "from_model_name with nonsense string returns Raw"
+    test: "test_SERVE_TPL_002_detect_raw_fallback"
+    if_fails: "Pattern matching too greedy"
+
+kani_harnesses:
+  - id: KANI-TPL-001
+    obligation: "Raw identity"
+    bound: 4
+    strategy: exhaustive
+    harness: "verify_raw_format_is_identity"
+  - id: KANI-TPL-002
+    obligation: "Non-empty output"
+    bound: 8
+    strategy: exhaustive
+    harness: "verify_all_formats_nonempty"

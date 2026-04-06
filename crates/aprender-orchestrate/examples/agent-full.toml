@@ -1,0 +1,66 @@
+# Full-capability agent manifest for batuta agent runtime.
+#
+# Demonstrates all available capabilities and configuration options.
+# See: batuta agent validate --manifest examples/agent-full.toml
+# See: batuta agent status --manifest examples/agent-full.toml
+#
+# This manifest grants Memory, Rag, Shell, Compute, and Browser
+# capabilities. In sovereign privacy mode, BrowserTool restricts
+# navigation to localhost and file:// URLs only.
+
+name = "full-capability-agent"
+version = "0.2.0"
+description = "Agent with all sovereign capabilities enabled"
+
+[model]
+# Option A: explicit local path (forjar-provisioned)
+# model_path = "/models/llama-3-8b-q4k.gguf"
+#
+# Option B: pacha cache (apr pull'd)
+# model_path = "~/.cache/pacha/models/meta-llama--Llama-3-8B-GGUF-q4_k_m.gguf"
+#
+# Option C: auto-pull at startup (Phase 2)
+# model_repo = "meta-llama/Llama-3-8B-GGUF"
+# model_quantization = "q4_k_m"
+max_tokens = 4096
+temperature = 0.3
+context_window = 8192
+system_prompt = """
+You are a sovereign AI assistant running on local hardware.
+You have access to RAG search, persistent memory, shell commands,
+parallel compute tasks, and a headless browser.
+
+Use tools strategically:
+- Memory: store and recall facts across conversations
+- RAG: search indexed documentation for accurate answers
+- Shell: run allowlisted commands (ls, cat, echo, grep, find)
+- Compute: execute tasks in parallel for efficiency
+- Browser: navigate localhost pages and take screenshots
+"""
+
+[resources]
+max_iterations = 30
+max_tool_calls = 100
+max_cost_usd = 0.0  # 0 = unlimited (sovereign = free)
+
+# Granted capabilities (Poka-Yoke: only these tools are accessible)
+# Each capability uses [[capabilities]] array-of-tables format.
+
+[[capabilities]]
+type = "memory"
+
+[[capabilities]]
+type = "rag"
+
+[[capabilities]]
+type = "shell"
+allowed_commands = ["ls", "cat", "echo", "grep", "find", "wc"]
+
+[[capabilities]]
+type = "compute"
+
+[[capabilities]]
+type = "browser"
+
+# Privacy tier: Sovereign = local-only, no network egress
+privacy = "Sovereign"

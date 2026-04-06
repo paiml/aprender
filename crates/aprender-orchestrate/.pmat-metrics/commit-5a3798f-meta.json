@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "DEP-REDUCE",
+  "prompt": "Reduce external dependencies - replace with PAIML stack components",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-01-13T12:45:21.987212728Z"
+}

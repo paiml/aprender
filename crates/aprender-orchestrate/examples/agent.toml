@@ -1,0 +1,27 @@
+# Example agent manifest for batuta agent runtime.
+# See: batuta agent validate --manifest examples/agent.toml
+
+name = "demo-agent"
+version = "0.1.0"
+description = "Demonstration agent for the sovereign runtime"
+
+[model]
+# model_path = "/path/to/llama3-8b.gguf"  # Uncomment for real model
+max_tokens = 4096
+temperature = 0.3
+system_prompt = "You are a helpful coding assistant. Use tools when needed."
+
+[resources]
+max_iterations = 20
+max_tool_calls = 50
+max_cost_usd = 0.0  # 0 = unlimited (sovereign, local-only)
+
+# Granted capabilities (Poka-Yoke: only these tools are accessible)
+[[capabilities]]
+type = "rag"
+
+[[capabilities]]
+type = "memory"
+
+# Privacy tier: Sovereign = local-only, no network
+privacy = "Sovereign"

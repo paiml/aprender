@@ -1,0 +1,97 @@
+# Bug-hunter allowlist configuration
+# Suppresses intentional patterns that are not actual bugs
+
+# Cross-encoder is documented future work
+[[allow]]
+file = "src/oracle/rag/falsification.rs"
+pattern = "placeholder"
+reason = "Cross-encoder is documented future work"
+
+# Fingerprint uses deterministic placeholder hashing
+[[allow]]
+file = "src/oracle/rag/fingerprint.rs"
+pattern = "placeholder"
+reason = "Placeholder provides deterministic hashing by design"
+
+# TUI refresh trigger is intentionally minimal
+[[allow]]
+file = "src/oracle/rag/tui.rs"
+pattern = "placeholder"
+reason = "Refresh trigger is intentionally minimal"
+
+# Releaser preflight checks - documented future implementation
+[[allow]]
+file = "src/stack/releaser_preflight/*.rs"
+pattern = "placeholder"
+reason = "Preflight checks are documented stubs awaiting implementation"
+
+# Releaser orchestrator uses placeholder for crate info
+[[allow]]
+file = "src/stack/releaser/orchestrator.rs"
+pattern = "placeholder"
+reason = "Crate info lookup is documented future work"
+
+# Test stub generation uses placeholder comments
+[[allow]]
+file = "src/oracle/falsify/generator.rs"
+pattern = "placeholder"
+reason = "Test stub template includes placeholder markers by design"
+
+# Ignored tests with documented reasons
+[[allow]]
+file = "src/backend.rs"
+pattern = "#[ignore]"
+reason = "Tests ignored due to Trueno API type inference issues (documented TODO)"
+
+# HOME env var fallback - sensible default when HOME isn't set
+[[allow]]
+file = "src/pacha/crypto.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "Fallback to current directory when HOME not set is intentional"
+
+# Porter stemmer fallback - returning original word when stemming fails is correct
+[[allow]]
+file = "src/oracle/rag/retriever.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "Returning original word when stemming fails is correct behavior"
+
+# SIMD unsafe blocks - required for performance-critical dot product operations
+[[allow]]
+file = "src/oracle/rag/quantization/simd.rs"
+pattern = "unsafe {"
+reason = "SIMD intrinsics require unsafe; safety ensured by architecture detection"
+
+# JSON serialization fallback - unlikely to fail with well-defined structs
+[[allow]]
+file = "src/comply/report.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "JSON serialization of well-defined struct rarely fails"
+
+[[allow]]
+file = "src/oracle/falsify/report.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "JSON serialization of well-defined struct rarely fails"
+
+# CSR graph construction fallback - empty graph is valid fallback
+[[allow]]
+file = "src/stack/graph.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "Empty graph is a reasonable fallback when edge list is invalid"
+
+# Git HEAD fallback - "no-git" is a sensible placeholder
+[[allow]]
+file = "src/stack/publish_status/cache.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "no-git is sensible default for non-git directories"
+
+# Config loading fallback - default config is correct when file doesn't exist
+[[allow]]
+file = "src/comply/config.rs"
+pattern = ".unwrap_or_else(|_|"
+reason = "Using default config when config file missing is intentional"
+
+# todo!() in falsification generator - documented future work
+[[allow]]
+file = "src/oracle/falsify/generator.rs"
+pattern = "todo!"
+reason = "Falsification test generation is documented future work"

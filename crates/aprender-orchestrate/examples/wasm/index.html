@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batuta WASM Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+        }
+
+        h2::before {
+            content: "🔧";
+            margin-right: 10px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-bottom: 15px;
+            resize: vertical;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .output {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .output.success {
+            border-color: #28a745;
+            background: #f0fdf4;
+        }
+
+        .output.error {
+            border-color: #dc3545;
+            background: #fef2f2;
+            color: #dc3545;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+
+        .badge.python {
+            background: #3776ab;
+            color: white;
+        }
+
+        .badge.rust {
+            background: #f74c00;
+            color: white;
+        }
+
+        .badge.gpu {
+            background: #76b900;
+            color: white;
+        }
+
+        .badge.simd {
+            background: #0078d7;
+            color: white;
+        }
+
+        .badge.scalar {
+            background: #999;
+            color: white;
+        }
+
+        footer {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-top: 30px;
+        }
+
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .examples {
+            margin-top: 15px;
+        }
+
+        .example-btn {
+            background: #f8f9fa;
+            color: #667eea;
+            padding: 8px 16px;
+            margin: 5px;
+            font-size: 13px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .example-btn:hover {
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦀 Batuta WASM Demo</h1>
+            <p class="subtitle">Sovereign AI Stack - Running in Your Browser</p>
+        </header>
+
+        <div class="grid">
+            <!-- Language Detection -->
+            <div class="card">
+                <h2>Language Detection</h2>
+                <textarea id="analyze-input" placeholder="Paste code here...
+Example:
+import numpy as np
+x = np.array([1, 2, 3])"></textarea>
+                <button onclick="analyzeCode()">🔍 Analyze Code</button>
+                <div class="examples">
+                    <button class="example-btn" onclick="setAnalyzeExample()">Try Example</button>
+                </div>
+                <div id="analyze-output" class="output" style="display: none;"></div>
+            </div>
+
+            <!-- NumPy Conversion -->
+            <div class="card">
+                <h2>NumPy → Trueno</h2>
+                <textarea id="numpy-input" placeholder="Enter NumPy operation...
+Example: np.add(a, b)"></textarea>
+                <label>Data size: <input type="number" id="numpy-size" value="10000" min="1" style="width: 120px; padding: 8px; border-radius: 4px; border: 2px solid #e0e0e0;"></label>
+                <br><br>
+                <button onclick="convertNumPy()">🔄 Convert to Trueno</button>
+                <div class="examples">
+                    <button class="example-btn" onclick="setNumPyExample('add')">np.add</button>
+                    <button class="example-btn" onclick="setNumPyExample('dot')">np.dot</button>
+                    <button class="example-btn" onclick="setNumPyExample('sum')">np.sum</button>
+                </div>
+                <div id="numpy-output" class="output" style="display: none;"></div>
+            </div>
+
+            <!-- sklearn Conversion -->
+            <div class="card">
+                <h2>sklearn → Aprender</h2>
+                <textarea id="sklearn-input" placeholder="Enter sklearn algorithm...
+Example: LinearRegression()"></textarea>
+                <label>Data size: <input type="number" id="sklearn-size" value="1000" min="1" style="width: 120px; padding: 8px; border-radius: 4px; border: 2px solid #e0e0e0;"></label>
+                <br><br>
+                <button onclick="convertSklearn()">🔄 Convert to Aprender</button>
+                <div class="examples">
+                    <button class="example-btn" onclick="setSklearnExample('linear')">LinearRegression</button>
+                    <button class="example-btn" onclick="setSklearnExample('kmeans')">KMeans</button>
+                    <button class="example-btn" onclick="setSklearnExample('forest')">RandomForest</button>
+                </div>
+                <div id="sklearn-output" class="output" style="display: none;"></div>
+            </div>
+
+            <!-- PyTorch Conversion -->
+            <div class="card">
+                <h2>PyTorch → Realizar</h2>
+                <textarea id="pytorch-input" placeholder="Enter PyTorch operation...
+Example: model.generate()"></textarea>
+                <label>Model size: <input type="number" id="pytorch-size" value="7000000000" min="1" style="width: 150px; padding: 8px; border-radius: 4px; border: 2px solid #e0e0e0;"></label>
+                <br><br>
+                <button onclick="convertPyTorch()">🔄 Convert to Realizar</button>
+                <div class="examples">
+                    <button class="example-btn" onclick="setPyTorchExample('load')">Load Model</button>
+                    <button class="example-btn" onclick="setPyTorchExample('generate')">Generate</button>
+                    <button class="example-btn" onclick="setPyTorchExample('forward')">Forward</button>
+                </div>
+                <div id="pytorch-output" class="output" style="display: none;"></div>
+            </div>
+
+            <!-- Backend Recommendation -->
+            <div class="card">
+                <h2>Backend Selector</h2>
+                <label>Operation Type:
+                    <select id="backend-type" style="width: 100%; padding: 10px; margin: 10px 0; border-radius: 8px; border: 2px solid #e0e0e0;">
+                        <option value="element-wise">Element-wise</option>
+                        <option value="reduction">Reduction</option>
+                        <option value="matmul">Matrix Multiply</option>
+                    </select>
+                </label>
+                <label>Data Size: <input type="number" id="backend-size" value="100000" min="1" style="width: 100%; padding: 10px; border-radius: 8px; border: 2px solid #e0e0e0;"></label>
+                <br><br>
+                <button onclick="getBackendRecommendation()">⚡ Get Recommendation</button>
+                <div id="backend-output" class="output" style="display: none;"></div>
+            </div>
+
+            <!-- Version Info -->
+            <div class="card">
+                <h2>System Info</h2>
+                <button onclick="showVersion()">📋 Show Version</button>
+                <div id="version-output" class="output" style="display: none;"></div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by <strong>Batuta</strong> • Compiled to WebAssembly with Rust 🦀</p>
+            <p style="margin-top: 10px; color: #666;">
+                <a href="https://github.com/paiml/Batuta" target="_blank" style="color: #667eea; text-decoration: none;">GitHub</a> •
+                <a href="https://docs.rs/batuta" target="_blank" style="color: #667eea; text-decoration: none;">Documentation</a>
+            </p>
+        </footer>
+    </div>
+
+    <script type="module">
+        import init, {
+            analyze_code,
+            convert_numpy,
+            convert_sklearn,
+            convert_pytorch,
+            backend_recommend,
+            version
+        } from './batuta.js';
+
+        // Initialize WASM module
+        let wasmReady = false;
+        init().then(() => {
+            wasmReady = true;
+            console.log('Batuta WASM module loaded successfully');
+            document.body.style.cursor = 'default';
+        }).catch(err => {
+            console.error('Failed to load WASM module:', err);
+            alert('Failed to load Batuta WASM module. Please check the console for errors.');
+        });
+
+        // Make functions globally available
+        window.analyzeCode = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const input = document.getElementById('analyze-input').value;
+            const output = document.getElementById('analyze-output');
+
+            try {
+                const result = analyze_code(input);
+                output.innerHTML = `<strong>Language:</strong> <span class="badge ${result.language.toLowerCase()}">${result.language}</span><br>
+                    <strong>Lines of Code:</strong> ${result.lines_of_code}<br>
+                    <strong>NumPy detected:</strong> ${result.has_numpy ? '✅' : '❌'}<br>
+                    <strong>sklearn detected:</strong> ${result.has_sklearn ? '✅' : '❌'}<br>
+                    <strong>PyTorch detected:</strong> ${result.has_pytorch ? '✅' : '❌'}`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        window.convertNumPy = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const input = document.getElementById('numpy-input').value;
+            const size = parseInt(document.getElementById('numpy-size').value);
+            const output = document.getElementById('numpy-output');
+
+            try {
+                const result = convert_numpy(input, size);
+                output.innerHTML = `<strong>Rust Code:</strong>\n${result.rust_code}\n\n<strong>Imports:</strong>\n${result.imports}\n\n<strong>Backend:</strong> <span class="badge ${result.backend_recommendation.toLowerCase()}">${result.backend_recommendation}</span>\n<strong>Complexity:</strong> ${result.complexity}`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        window.convertSklearn = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const input = document.getElementById('sklearn-input').value;
+            const size = parseInt(document.getElementById('sklearn-size').value);
+            const output = document.getElementById('sklearn-output');
+
+            try {
+                const result = convert_sklearn(input, size);
+                output.innerHTML = `<strong>Rust Code:</strong>\n${result.rust_code}\n\n<strong>Imports:</strong>\n${result.imports}\n\n<strong>Backend:</strong> <span class="badge ${result.backend_recommendation.toLowerCase()}">${result.backend_recommendation}</span>\n<strong>Complexity:</strong> ${result.complexity}`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        window.convertPyTorch = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const input = document.getElementById('pytorch-input').value;
+            const size = parseInt(document.getElementById('pytorch-size').value);
+            const output = document.getElementById('pytorch-output');
+
+            try {
+                const result = convert_pytorch(input, size);
+                output.innerHTML = `<strong>Rust Code:</strong>\n${result.rust_code}\n\n<strong>Imports:</strong>\n${result.imports}\n\n<strong>Backend:</strong> <span class="badge ${result.backend_recommendation.toLowerCase()}">${result.backend_recommendation}</span>\n<strong>Complexity:</strong> ${result.complexity}`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        window.getBackendRecommendation = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const type = document.getElementById('backend-type').value;
+            const size = parseInt(document.getElementById('backend-size').value);
+            const output = document.getElementById('backend-output');
+
+            try {
+                const result = backend_recommend(type, size);
+                output.innerHTML = `<strong>Recommended Backend:</strong> <span class="badge ${result.toLowerCase()}">${result}</span>\n\n<strong>Operation:</strong> ${type}\n<strong>Data Size:</strong> ${size.toLocaleString()} elements`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        window.showVersion = async function() {
+            if (!wasmReady) { alert('WASM module not ready yet'); return; }
+            const output = document.getElementById('version-output');
+
+            try {
+                const ver = version();
+                output.innerHTML = `<strong>Batuta Version:</strong> ${ver}\n<strong>Target:</strong> wasm32-unknown-unknown\n<strong>Compiled with:</strong> Rust + wasm-bindgen`;
+                output.className = 'output success';
+                output.style.display = 'block';
+            } catch (e) {
+                output.textContent = `Error: ${e}`;
+                output.className = 'output error';
+                output.style.display = 'block';
+            }
+        };
+
+        // Example setters
+        window.setAnalyzeExample = () => {
+            document.getElementById('analyze-input').value = `import numpy as np\nimport sklearn\nfrom sklearn.linear_model import LinearRegression\n\nx = np.array([1, 2, 3])\nmodel = LinearRegression()`;
+        };
+
+        window.setNumPyExample = (type) => {
+            const examples = {
+                'add': 'np.add(a, b)',
+                'dot': 'np.dot(matrix_a, matrix_b)',
+                'sum': 'np.sum(array, axis=0)'
+            };
+            document.getElementById('numpy-input').value = examples[type];
+        };
+
+        window.setSklearnExample = (type) => {
+            const examples = {
+                'linear': 'LinearRegression()',
+                'kmeans': 'KMeans(n_clusters=3)',
+                'forest': 'RandomForestClassifier(n_estimators=100)'
+            };
+            document.getElementById('sklearn-input').value = examples[type];
+        };
+
+        window.setPyTorchExample = (type) => {
+            const examples = {
+                'load': 'torch.load("model.pt")',
+                'generate': 'model.generate(**inputs, max_length=50)',
+                'forward': 'model.forward(input_tensor)'
+            };
+            document.getElementById('pytorch-input').value = examples[type];
+        };
+    </script>
+</body>
+</html>

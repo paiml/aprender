@@ -1,0 +1,445 @@
+[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "0.7.3"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+repository = "https://github.com/paiml/Batuta"
+rust-version = "1.89"
+
+[workspace.dependencies]
+
+[package]
+name = "batuta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Sovereign AI orchestration: autonomous agents, ML serving, code analysis, and transpilation pipelines"
+repository.workspace = true
+keywords = ["ai-agent", "ml-serving", "code-analysis", "transpiler", "sovereign-ai"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+exclude = [
+    "book/",
+    "docs/specifications/",
+    ".github/",
+    "*.md.bak",
+    "target/",
+    "*.profraw",
+    "*.profdata",
+    ".vscode/",
+    ".idea/",
+    ".pmat/",
+    "proptest-regressions/",
+]
+
+[dependencies]
+# Core dependencies (WASM-compatible)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "2.0"
+chrono = { version = "0.4", features = ["serde"] }
+async-trait = "0.1"
+# CLI and configuration (native-only)
+clap = { version = "4.5", features = ["derive", "env"], optional = true }
+serde_yaml_ng = { version = "0.10", optional = true }
+toml = { version = "0.9", optional = true }
+
+# Async runtime (different for WASM vs native)
+tokio = { version = "1.48", features = ["full"], optional = true }
+
+# Logging and tracing (native-only)
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+# File system and paths (native-only)
+walkdir = { version = "2.5", optional = true }
+glob = { version = "0.3", optional = true }
+
+# Process execution (native-only)
+which = { version = "6.0", optional = true }
+
+# Syscall tracing (native-only)
+renacer = { version = "0.10", optional = true }
+
+# High-performance compute (SIMD/GPU, native-only)
+trueno = { version = "0.16", features = ["gpu"], optional = true }
+
+# SIMD/GPU memory compression (LZ4/ZSTD, native-only)
+trueno-zram-core = { version = "0.3", optional = true }
+
+# GPU-accelerated block device via ublk (native-only)
+trueno-ublk = { version = "0.3", optional = true }
+
+# Distributed compute (CPU/GPU/Remote executors, native-only)
+repartir = { version = "2.0", features = ["cpu", "remote"], optional = true }
+
+# Graph database for Oracle Mode knowledge graph (native-only)
+trueno-graph = { version = "0.1.17", optional = true }
+
+# Vector database for similarity search (native-only)
+trueno-db = { version = "0.3.16", optional = true }
+
+# Utilities (native-only)
+dirs = { version = "5.0", optional = true }
+
+# Shared math/display utilities (sovereign stack)
+batuta-common = "0.1"
+
+# Content-addressable hashing (native-only, used by playbook cache)
+blake3 = { version = "1.8", optional = true }
+
+# Ordered maps preserving YAML key order (native-only, used by playbook stages)
+indexmap = { version = "2.7", features = ["serde"], optional = true }
+
+# Syntax highlighting for code output (native-only)
+syntect = { version = "5.2", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"], optional = true }
+
+# TUI dashboard (native-only) - uses presentar-terminal instead of ratatui
+presentar-terminal = { version = "0.3", optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# Stack orchestration dependencies (native-only)
+cargo_metadata = { version = "0.19", optional = true }
+semver = { version = "1.0", features = ["serde"], optional = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false, optional = true }
+futures-util = { version = "0.3", optional = true }
+
+# XML parsing for arXiv Atom API (native-only)
+quick-xml = { version = "0.37", optional = true }
+
+# Pacha model registry (native-only)
+pacha = { version = "0.2", optional = true }
+
+# Realizar inference engine (GGUF/safetensors, native-only)
+# PMAT-159: local path dep with cuda feature for GPU-accelerated apr code
+realizar = { version = "0.8", optional = true, features = ["cuda"] }
+
+# ML algorithms and training (native-only)
+aprender = { version = "0.27", optional = true }
+entrenar = { version = "0.7", optional = true }
+alimentar = { version = "0.2", optional = true }
+
+# RAG and visualization (native-only)
+trueno-rag = { version = "0.2", features = ["sqlite"], optional = true }
+trueno-viz = { version = "0.2", optional = true }
+presentar = { version = "0.3", optional = true }
+
+# Speech recognition (native-only)
+whisper-apr = { version = "0.2", optional = true }
+
+# Tiny kernel (native-only)
+pepita = { version = "0.1", optional = true }
+
+# Simulation engine (native-only)
+simular = { version = "0.3", optional = true }
+
+# Transpilers (native-only)
+# depyler = { version = "3.20", optional = true }  # blocked: serde version conflict (1.0.200-1.0.219)
+bashrs = { version = "6.65", optional = true }
+
+# Testing and quality (native-only)
+probar = { version = "0.1", optional = true }
+
+# HTTP server for Banco workbench API
+axum = { version = "0.7", features = ["json", "multipart", "ws"], optional = true }
+tower = { version = "0.4", features = ["util"], optional = true }
+async-stream = { version = "0.3", optional = true }
+tokio-stream = { version = "0.1", optional = true }
+
+# Headless browser automation (agent BrowserTool)
+jugar-probar = { version = "1.0", features = ["browser"], optional = true }
+base64 = { version = "0.22", optional = true }
+
+# MCP protocol: client (consume external tools) + server (expose agent tools)
+pmcp = { version = "1.10", optional = true }
+pforge-runtime = { version = "0.1", optional = true }
+
+# Provable design-by-contract (compile-time contract binding)
+provable-contracts = { version = "0.2", optional = true }
+provable-contracts-macros = { version = "0.2", optional = true }
+
+# PNG rasterization for Coursera banner assets (native-only)
+resvg = { version = "0.47", optional = true }
+
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", features = ["console"], optional = true }
+
+[features]
+default = ["native", "rag", "agents", "inference"]
+
+# Native build with core features (lean: ~249 deps)
+native = [
+    "clap",
+    "serde_yaml_ng",
+    "toml",
+    "tokio",
+    "tracing",
+    "tracing-subscriber",
+    "walkdir",
+    "glob",
+    "which",
+    "dirs",
+    "cargo_metadata",
+    "semver",
+    "reqwest",
+    "futures-util",
+    "pacha",
+    "quick-xml",
+    "blake3",
+    "indexmap",
+]
+
+# TUI dashboards (stack status, RAG oracle)
+tui = ["presentar-terminal", "crossterm", "native"]
+
+# Syntax highlighting for code output
+highlighting = ["syntect", "native"]
+
+# WASM build with limited features
+wasm = [
+    "wasm-bindgen",
+    "web-sys",
+]
+
+# Optional feature for Trueno integration (native only)
+trueno-integration = ["trueno", "native"]
+
+# Oracle Mode with full knowledge graph support
+oracle-mode = ["trueno-graph", "trueno-db", "native"]
+
+# Inference engine integration (GGUF/safetensors serving)
+inference = ["realizar", "native"]
+
+# Distributed compute integration (CPU/GPU/Remote)
+distributed = ["repartir", "native"]
+
+# ML training and algorithms
+ml = ["aprender", "entrenar", "alimentar", "native"]
+
+# RAG pipeline integration
+rag = ["trueno-rag", "oracle-mode"]
+
+# Visualization (terminal and WASM)
+viz = ["trueno-viz", "presentar", "native"]
+
+# Speech recognition (Whisper ASR)
+speech = ["whisper-apr", "native"]
+
+# Tiny kernel integration
+kernel = ["pepita", "native"]
+
+# SIMD/GPU compression (LZ4/ZSTD with AVX2/AVX-512/NEON)
+compression = ["trueno-zram-core", "native"]
+
+# GPU-accelerated block device (ublk)
+block-device = ["trueno-ublk", "compression"]
+
+# Simulation engine
+simulation = ["simular", "native"]
+
+# Transpilers (native-only)
+# depyler blocked until serde versions aligned
+transpilers = ["bashrs", "native"]
+
+# Testing and quality
+testing = ["probar", "native"]
+
+# Banco: local-first AI workbench HTTP API (batteries included)
+# Includes: realizar (inference), aprender (BPE), alimentar (Arrow), entrenar (training/merge)
+banco = ["native", "axum", "tower", "async-stream", "tokio-stream", "aprender", "alimentar", "entrenar", "realizar"]
+
+# Coursera reading asset generation (banner PNG rasterization)
+coursera-assets = ["resvg", "native"]
+
+# Autonomous agent runtime (perceive-reason-act loop)
+agents = ["native"]
+# Agent with local inference (RealizarDriver)
+agents-inference = ["agents", "inference"]
+# Agent with RAG (TruenoMemory + RagTool)
+agents-rag = ["agents", "rag"]
+# Agent with headless browser (jugar-probar)
+agents-browser = ["agents", "jugar-probar", "base64"]
+# MCP integration: client (consume external tools) + server (expose agent tools)
+agents-mcp = ["agents", "pmcp", "pforge-runtime"]
+# Provable design-by-contract (compile-time contract binding)
+agents-contracts = ["agents", "provable-contracts", "provable-contracts-macros"]
+# WASM visualization for agent dashboards in wos
+agents-viz = ["agents", "presentar"]
+# Full sovereign agent (all agent features)
+agents-full = ["agents-inference", "agents-rag"]
+
+# Full sovereign stack (all components)
+sovereign-stack = [
+    "trueno-integration", "oracle-mode", "inference", "distributed",
+    "ml", "rag", "viz", "speech", "compression",
+    "simulation", "transpilers",
+    "testing",
+    "tui", "highlighting",
+    "agents", "agents-mcp",
+]
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3.23"
+criterion = { version = "0.8", features = ["html_reports"] }
+proptest = "1.5"
+blake3 = "1.8"
+filetime = "0.2"
+trueno-cuda-edge = { version = "0.1" }
+jugar-probar = { version = "1.0", features = ["browser"] }
+tokio-tungstenite = "0.24"
+
+[[bench]]
+name = "backend_selection"
+harness = false
+
+[[bench]]
+name = "converter_performance"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.bench]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# ============================================================================
+# LINTS (Per pmat rust-project-score recommendations)
+# ============================================================================
+
+[workspace.lints.rust]
+# Safety and correctness
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "allow"
+# Documentation
+missing_docs = "allow"
+
+[workspace.lints.clippy]
+# Correctness - MUST pass
+correctness = { level = "deny", priority = -1 }
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Performance - should pass
+perf = { level = "warn", priority = -1 }
+# Style - should pass
+style = { level = "warn", priority = -1 }
+# Complexity - advisory
+cognitive_complexity = "warn"
+too_many_arguments = "warn"
+# unwrap_used: allowed at workspace level because test code uses it pervasively.
+# Production code enforces via #[warn(clippy::unwrap_used)] in lib.rs.
+unwrap_used = "allow"
+expect_used = "allow"
+# Allow common pedantic lints (noise without safety value)
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+needless_pass_by_value = "allow"
+clone_on_ref_ptr = "allow"
+# Casting — intentional in metrics/scoring code
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_lossless = "allow"
+# Test-only noise (production enforced via lib.rs cfg_attr)
+float_cmp = "allow"
+float_cmp_const = "allow"
+field_reassign_with_default = "allow"
+default_trait_access = "allow"
+len_zero = "allow"
+useless_vec = "allow"
+cloned_ref_to_slice_refs = "allow"
+for_kv_map = "allow"
+assertions_on_constants = "warn"
+# Noise suppressors
+trivially_copy_pass_by_ref = "allow"
+unused_self = "allow"
+match_same_arms = "allow"
+doc_markdown = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+struct_field_names = "allow"
+unreadable_literal = "allow"
+items_after_statements = "allow"
+unnecessary_wraps = "allow"
+single_match_else = "allow"
+redundant_closure_for_method_calls = "allow"
+map_unwrap_or = "allow"
+if_not_else = "allow"
+manual_string_new = "allow"
+uninlined_format_args = "allow"
+used_underscore_binding = "allow"
+wildcard_imports = "allow"
+option_if_let_else = "allow"
+manual_let_else = "allow"
+fn_params_excessive_bools = "allow"
+unused_async = "allow"
+iter_without_into_iter = "allow"
+format_push_string = "allow"
+assigning_clones = "allow"
+explicit_iter_loop = "allow"
+into_iter_without_iter = "allow"
+stable_sort_primitive = "allow"
+unnecessary_literal_bound = "allow"
+unnecessary_debug_formatting = "allow"
+unnested_or_patterns = "allow"
+implicit_clone = "allow"
+ref_as_ptr = "allow"
+many_single_char_names = "allow"
+cast_possible_wrap = "allow"
+cast_ptr_alignment = "allow"
+large_stack_arrays = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+implicit_hasher = "allow"
+match_wildcard_for_single_variants = "allow"
+bool_to_int_with_if = "allow"
+if_then_some_else_none = "allow"
+needless_raw_string_hashes = "allow"
+needless_continue = "allow"
+option_option = "allow"
+ref_option = "allow"
+str_to_string = "allow"
+format_collect = "allow"
+comparison_chain = "allow"
+no_effect_underscore_binding = "allow"
+doc_link_with_quotes = "allow"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[profile.dev]
+panic = "abort"
+

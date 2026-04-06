@@ -1,0 +1,94 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Batch orchestration contract for parallel mutation testing and analysis runs"
+  crate: "batuta"
+  references:
+    - "Dean et al. (2012) Large Scale Distributed Deep Networks"
+    - "Papadakis et al. (2019) Mutation Testing Advances: An Analysis and Survey"
+
+equations:
+  batch_mutate:
+    formula: "batch_mutate(sources, operators) = [mutate(s_i, op_j) for s_i in sources, op_j in operators]"
+    domain: "sources in Vec<Source>, |sources| >= 1, |operators| >= 1"
+    invariants:
+      - "Output count = |sources| * |operators| (cartesian product)"
+      - "Each mutation is independent"
+  batch_test:
+    formula: "batch_test(mutants) = [run_tests(m_i) for m_i in mutants]"
+    domain: "mutants in Vec<Mutant>, |mutants| >= 1"
+    invariants:
+      - "Output count equals input count"
+      - "Each mutant tested in isolation"
+      - "Total wallclock <= timeout * |mutants| (bounded)"
+  mutation_score:
+    formula: "score = killed / (killed + survived)"
+    domain: "killed >= 0, survived >= 0, killed + survived > 0"
+    invariants:
+      - "0.0 <= score <= 1.0"
+      - "score = 1.0 iff survived == 0"
+
+proof_obligations:
+  - type: invariant
+    property: "Batch output count"
+    formal: "|batch_test(mutants)| == |mutants|"
+    applies_to: all
+  - type: invariant
+    property: "Mutation isolation"
+    formal: "result(m_i) independent of result(m_j) for i != j"
+    applies_to: all
+  - type: bound
+    property: "Mutation score in [0, 1]"
+    formal: "0.0 <= score <= 1.0"
+    applies_to: all
+  - type: invariant
+    property: "Batch completion guarantee"
+    formal: "batch_test terminates within global_timeout"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BORCH-001
+    rule: "Output count matches"
+    test: "test_BATCH_001_run_batch"
+    prediction: "verified"
+    if_fails: "Batch drops or duplicates mutant results"
+  - id: FALSIFY-BORCH-002
+    rule: "Score in [0, 1]"
+    test: "test_accuracy_in_range"
+    prediction: "verified"
+    if_fails: "Score computation out of range"
+  - id: FALSIFY-BORCH-003
+    rule: "Batch completion"
+    test: "test_SERVE_LAM_001_timeout_clamping"
+    prediction: "verified"
+    if_fails: "Batch hangs past global timeout"
+  - id: FALSIFY-BORCH-004
+    rule: "Isolation"
+    test: "test_kv_isolation"
+    prediction: "verified"
+    if_fails: "Mutant test results leak between runs"
+
+kani_harnesses:
+  - id: KANI-BORCH-001
+    obligation: PO-BORCH-001
+    property: "Batch count preservation"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_batch_count
+  - id: KANI-BORCH-002
+    obligation: PO-BORCH-003
+    property: "Score range"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_score_range
+
+qa_gate:
+  id: QA-BATCHORCH
+  name: "batch orchestration contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_BATCH_001_run_batch
+    - test_accuracy_in_range
+    - test_batch_completes_within_timeout
+    - test_mutant_isolation

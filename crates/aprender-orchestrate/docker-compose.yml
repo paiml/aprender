@@ -1,0 +1,110 @@
+version: '3.8'
+
+services:
+  # Production service - minimal runtime
+  batuta:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: batuta:latest
+    container_name: batuta-prod
+    volumes:
+      # Mount current directory as workspace
+      - .:/workspace:rw
+      # Cache Rust build artifacts
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - RUST_BACKTRACE=1
+      - BATUTA_LOG_LEVEL=info
+    working_dir: /workspace
+    # Override default CMD
+    command: batuta --help
+    restart: unless-stopped
+
+  # Development service - with hot reload
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: batuta:dev
+    container_name: batuta-dev
+    volumes:
+      # Mount entire project for development
+      - .:/workspace:rw
+      # Persistent cargo cache
+      - cargo-cache:/home/batuta/.cargo/registry
+      - cargo-git:/home/batuta/.cargo/git
+      # Persistent target directory for faster rebuilds
+      - target-cache:/workspace/target
+    environment:
+      - RUST_BACKTRACE=full
+      - BATUTA_LOG_LEVEL=debug
+    working_dir: /workspace
+    ports:
+      - "8080:8080"
+    stdin_open: true
+    tty: true
+    command: cargo watch -x check -x test
+
+  # CI/CD service - runs tests
+  ci:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: batuta:ci
+    container_name: batuta-ci
+    volumes:
+      - .:/workspace:ro
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - RUST_BACKTRACE=1
+      - CI=true
+    working_dir: /workspace
+    command: >
+      bash -c "
+        cargo test --all --features native &&
+        cargo clippy --all-targets --all-features -- -D warnings &&
+        cargo fmt -- --check
+      "
+
+  # WASM build service
+  wasm:
+    image: rust:1.75-slim
+    container_name: batuta-wasm
+    volumes:
+      - .:/workspace:rw
+      - cargo-cache:/usr/local/cargo/registry
+    working_dir: /workspace
+    environment:
+      - RUST_BACKTRACE=1
+    command: >
+      bash -c "
+        rustup target add wasm32-unknown-unknown &&
+        cargo install wasm-bindgen-cli &&
+        cargo build --target wasm32-unknown-unknown --no-default-features --features wasm --release &&
+        wasm-bindgen target/wasm32-unknown-unknown/release/batuta.wasm --out-dir wasm-dist --target web
+      "
+
+  # Documentation server
+  docs:
+    image: nginx:alpine
+    container_name: batuta-docs
+    volumes:
+      - ./book/book:/usr/share/nginx/html:ro
+      - ./wasm-dist:/usr/share/nginx/html/wasm:ro
+    ports:
+      - "8000:80"
+    restart: unless-stopped
+
+volumes:
+  # Persistent volumes for caching
+  cargo-cache:
+    driver: local
+  cargo-git:
+    driver: local
+  target-cache:
+    driver: local
+
+networks:
+  default:
+    name: batuta-network
