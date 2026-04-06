@@ -1,0 +1,122 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Model Quality Score (MQS) — composite scoring for model validation playbooks
+  references:
+  - APR model format specification (paiml.com)
+equations:
+  mqs_composite:
+    formula: |
+      mqs: (ModelEvidence, Playbook) -> f64
+        score = w_accuracy * accuracy + w_latency * latency_score + w_safety * safety + w_robustness * robustness
+        score in [0.0, 100.0]
+    domain: Model evidence with playbook weights
+    codomain: f64 in [0.0, 100.0]
+    invariants:
+    - Score bounded in [0.0, 100.0]
+    - Weights sum to 1.0
+    preconditions:
+    - evidence has all required metrics
+    - weights are non-negative
+    postconditions:
+    - score in [0.0, 100.0]
+    lean_theorem: Theorems.MqsComposite
+  mqs_deterministic:
+    formula: |
+      deterministic: (Evidence, Playbook) -> bool
+        mqs(e, p) = mqs(e, p) for all e, p
+    domain: Any evidence and playbook pair
+    codomain: bool
+    invariants:
+    - Same inputs always produce same score
+    preconditions:
+    - inputs are valid
+    postconditions:
+    - f(x) = f(x) always
+    lean_theorem: Theorems.MqsDeterministic
+  mqs_grade:
+    formula: |
+      grade: f64 -> LetterGrade
+        A+ if score >= 97, A if score >= 93, ...
+        F otherwise
+    domain: MQS score in [0.0, 100.0]
+    codomain: LetterGrade enum
+    invariants:
+    - Grade monotonically non-decreasing with score
+    - Every score maps to exactly one grade
+    preconditions:
+    - score in [0.0, 100.0]
+    postconditions:
+    - grade is valid LetterGrade variant
+    lean_theorem: Theorems.MqsGrade
+proof_obligations:
+- type: bound
+  property: MQS score bounded
+  formal: 0.0 <= mqs(e, p) <= 100.0
+  applies_to: all
+- type: determinism
+  property: MQS deterministic
+  formal: mqs(e, p) = mqs(e, p) always
+  applies_to: all
+- type: monotonicity
+  property: Grade monotonic
+  formal: score1 > score2 => grade(score1) >= grade(score2)
+  applies_to: all
+- type: conservation
+  property: Weights sum to unity
+  formal: sum(weights) = 1.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MQA-001
+  rule: Score bounded
+  prediction: Extreme inputs produce score in [0.0, 100.0]
+  test: Create evidence with all-zero and all-max metrics
+  if_fails: Weight overflow or underflow in scoring
+- id: FALSIFY-MQA-002
+  rule: Score deterministic
+  prediction: Same evidence produces same score twice
+  test: Run mqs() twice with identical inputs
+  if_fails: Non-deterministic state in scorer
+- id: FALSIFY-MQA-003
+  rule: Grade monotonic
+  prediction: Higher score never maps to lower grade
+  test: Sweep scores 0-100 in increments of 0.1, check monotonicity
+  if_fails: Grade threshold boundary error
+- id: FALSIFY-MQA-004
+  rule: Weights sum to unity
+  prediction: Default playbook weights sum to exactly 1.0
+  test: Load default playbook, sum weights, assert within f64 epsilon
+  if_fails: Weight initialization not normalized
+kani_harnesses:
+- id: KANI-MQA-001
+  obligation: MQS score bounded
+  property: 0.0 <= score <= 100.0
+  bound: 16
+  strategy: stub_float
+  harness: verify_mqs_bounded
+- id: KANI-MQA-002
+  obligation: MQS deterministic
+  property: f(x) = f(x)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_mqs_deterministic
+- id: KANI-MQA-003
+  obligation: Grade monotonic
+  property: monotonic non-decreasing
+  bound: 16
+  strategy: stub_float
+  harness: verify_grade_monotonic
+- id: KANI-MQA-004
+  obligation: Weights sum to unity
+  property: sum = 1.0
+  bound: 8
+  strategy: stub_float
+  harness: verify_weight_unity
+qa_gate:
+  id: F-MQA-001
+  name: mqs-scoring-v1 Contract
+  description: Quality gate for Model Quality Score
+  checks:
+  - validation
+  - falsification

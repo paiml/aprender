@@ -1,0 +1,50 @@
+contract: blis-profiling-guard-v1
+version: 1.0.0
+status: implemented
+kaizen: 038
+invariants:
+- id: C-BLISPROFILE-001
+  description: Instant::now() only called when profiler is active
+  preconditions:
+  - profiler parameter is Option<&mut BlisProfiler>
+  postconditions:
+  - 'When profiler.is_none(): zero Instant::now() syscalls per macroblock'
+  - 'When profiler.is_some(): timing behavior unchanged'
+  - Numerical output identical regardless of profiler state
+  invariants:
+  - track_time flag computed once per gemm_blis call
+  - record_prof accepts Option<Instant> — no-op when None
+  verified_by:
+  - 240 BLIS tests passed, 0 failures
+  - cargo check (clean compilation)
+affected_files:
+- path: src/blis/compute.rs
+  functions:
+  - 'compute_macroblock: Instant::now() gated by track_time'
+  - 'gemm_blis: start/pack_start gated by track_time'
+  - 'record_prof: signature changed to accept Option<Instant>'
+  change: '- midi_start/micro_start now Option<Instant>, only Some when profiling
+
+    - record_prof takes Option<Instant> instead of Instant
+
+    - All 6 Instant::now() call sites gated by profiler.is_some()
+
+    '
+performance_note: 'For 1024x1024 GEMM (MC=128, KC=256, MR=8, NR=6):
+
+  - Microkernels per macroblock: ~1366 (128/8 × 64/6)
+
+  - Instant::now() cost: ~20-40ns per call
+
+  - Total overhead per macroblock: ~27-55μs
+
+  - With fix: 0μs when profiler is disabled (the common case)
+
+  '
+qa_gate:
+  id: F-BPGV-001
+  name: blis-profiling-guard-v1 Contract
+  description: Quality gate for blis-profiling-guard-v1
+  checks:
+  - validation
+  - falsification

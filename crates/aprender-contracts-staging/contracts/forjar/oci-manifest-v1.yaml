@@ -1,0 +1,163 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: OCI manifest — digest consistency, layer ordering, cache hits, reproducible builds
+  references:
+  - 'OCI Image Spec v1.1 (2024)'
+  - 'Reproducible Builds Project (reproducible-builds.org)'
+equations:
+  manifest_digest_consistency:
+    formula: 'digest = "sha256:" ++ hex(SHA256(canonical_json(manifest)))'
+    domain: manifest ∈ OciManifest
+    codomain: String matching /^sha256:[0-9a-f]{64}$/
+    invariants:
+    - Output always has prefix 'sha256:'
+    - Output length = 71 (7 prefix + 64 hex)
+    - 'Deterministic: digest(m) = digest(m) for all m'
+    - Canonical JSON means sorted keys
+    preconditions:
+    - manifest.schema_version == 2
+    - manifest.layers.len() > 0
+    lean_theorem: Theorems.Manifest_Digest_Consistency
+  layer_ordering:
+    formula: 'apply(layers[0..n]) = apply(layers[0..n-1]) ∪ layers[n]'
+    domain: layers ∈ Vec<Layer>
+    codomain: Filesystem
+    invariants:
+    - Later layers override earlier layers
+    - 'Order matters: apply([A, B]) ≠ apply([B, A]) in general'
+    - Empty layer is identity
+    preconditions:
+    - layers.len() > 0
+    - '∀ layer: layer.media_type is valid OCI layer type'
+    lean_theorem: Theorems.Layer_Ordering
+  layer_cache_hit:
+    formula: 'digest(layer) ∈ cache → (cached_descriptor, hit=true)'
+    domain: (cache ∈ LayerCache, layer ∈ Layer)
+    codomain: (Descriptor, bool)
+    invariants:
+    - Cache hit avoids rebuild and re-upload
+    - Cached descriptor equals freshly built descriptor by digest
+    - Cache miss triggers full build
+    preconditions:
+    - cache is initialized
+    lean_theorem: Theorems.Layer_Cache_Hit
+  reproducible_build:
+    formula: 'build(df, ctx₁) = build(df, ctx₂) when file_hashes(ctx₁) = file_hashes(ctx₂)'
+    domain: (df ∈ Dockerfile, ctx ∈ Context)
+    codomain: OciManifest
+    invariants:
+    - Same Dockerfile + same context files → same image digest
+    - Requires deterministic timestamps
+    - Requires sorted directory entries
+    preconditions:
+    - df is valid Dockerfile
+    - ctx directory exists
+    lean_theorem: Theorems.Reproducible_Build
+proof_obligations:
+- type: determinism
+  property: Manifest digest deterministic
+  formal: same content → same digest
+  applies_to: all
+- type: ordering
+  property: Layer application order
+  formal: later layers override earlier
+  applies_to: all
+- type: equivalence
+  property: Cache hit avoids rebuild
+  formal: cached layer = built layer (by digest)
+  applies_to: all
+- type: determinism
+  property: Reproducible build
+  formal: same inputs → same manifest
+  applies_to: all
+- type: bound
+  property: Digest format
+  formal: 'len("sha256:") + 64 hex chars'
+  applies_to: all
+enforcement:
+  manifest_digest:
+    description: Manifest digest must be deterministic
+    check: contract_tests::FALSIFY-OCI-001
+    severity: ERROR
+  layer_ordering:
+    description: Later layers must override earlier layers
+    check: contract_tests::FALSIFY-OCI-002
+    severity: ERROR
+  cache_correctness:
+    description: Cached layer must match freshly built layer
+    check: contract_tests::FALSIFY-OCI-003
+    severity: ERROR
+  reproducible_build:
+    description: Same inputs must produce same manifest
+    check: contract_tests::FALSIFY-OCI-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-OCI-001
+  rule: Canonical JSON digest
+  prediction: Manifest with reordered JSON keys produces same digest
+  test: serialize manifest with different key orders, compare digests
+  if_fails: JSON serialization not canonical (key order affects hash)
+- id: FALSIFY-OCI-002
+  rule: Layer override
+  prediction: Image with 3 layers, file in layer 3 overrides layer 1
+  test: construct 3-layer image with conflicting files, verify layer 3 wins
+  if_fails: Layer application order reversed or flattened incorrectly
+- id: FALSIFY-OCI-003
+  rule: Cache consistency
+  prediction: Cached layer digest matches freshly built layer digest
+  test: build layer, cache it, rebuild same layer, compare digests
+  if_fails: Cache key computation differs from build digest
+- id: FALSIFY-OCI-004
+  rule: Build reproducibility
+  prediction: Two builds from identical context produce identical manifest digest
+  test: build image twice from same context, compare manifest digests
+  if_fails: Non-deterministic timestamp or directory ordering in build
+- id: FALSIFY-OCI-005
+  rule: Empty layer validity
+  prediction: Empty layer produces valid descriptor with size=0
+  test: create empty layer, verify descriptor is well-formed
+  if_fails: Empty layer rejected or produces invalid descriptor
+kani_harnesses:
+- id: KANI-OCI-001
+  obligation: Manifest digest deterministic
+  property: Digest consistency
+  bound: 8
+  strategy: exhaustive
+  harness: verify_manifest_digest
+- id: KANI-OCI-002
+  obligation: Layer application order
+  property: Layer ordering
+  bound: 16
+  strategy: exhaustive
+  harness: verify_layer_ordering
+- id: KANI-OCI-003
+  obligation: Cache hit avoids rebuild
+  property: Cache equivalence
+  bound: 8
+  strategy: exhaustive
+  harness: verify_cache_hit
+- id: KANI-OCI-004
+  obligation: Reproducible build
+  property: Build determinism
+  bound: 8
+  strategy: exhaustive
+  harness: verify_reproducible_build
+- id: KANI-OCI-005
+  obligation: Digest format
+  property: Digest format bound
+  bound: 8
+  strategy: exhaustive
+  harness: verify_digest_format
+qa_gate:
+  id: F-OCI-001
+  name: OCI Manifest Contract
+  description: OCI container image quality gate
+  checks:
+  - manifest_digest
+  - layer_ordering
+  - cache_correctness
+  - reproducible_build
+  pass_criteria: All 5 falsification tests pass
+  falsification: Remove canonical JSON sorting from manifest serialization

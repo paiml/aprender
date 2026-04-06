@@ -1,0 +1,182 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Active learning query strategies for label-efficient training
+  references:
+  - Settles (2012) Active Learning, Synthesis Lectures on AI and ML
+  - Lewis & Gale (1994) A Sequential Algorithm for Training Text Classifiers
+equations:
+  uncertainty_score:
+    formula: u(p) = 1 - max_i(p_i)
+    domain: p in R^k, p_i in [0, 1], sum(p_i) = 1
+    codomain: u in [0, 1]
+    invariants:
+    - Score is 0 when model is perfectly confident (one class has probability 1)
+    - Score is 1 - 1/k when uniform distribution over k classes
+    - Score is always in [0, 1] for valid probability vectors
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Uncertainty_Score
+  margin_score:
+    formula: m(p) = 1 - (p_(1) - p_(2))
+    domain: p sorted descending, p_i in [0, 1], sum(p_i) = 1, |p| >= 2
+    codomain: m in [0, 1]
+    invariants:
+    - Score is 0 when top class has probability 1 (maximum margin)
+    - Score is 1 when top two classes have equal probability (zero margin)
+    - Score is always in [0, 1] for valid probability vectors
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Margin_Score
+  entropy_score:
+    formula: H(p) = -sum_i(p_i * ln(p_i))
+    domain: p in R^k, p_i in [0, 1], sum(p_i) = 1, 0*ln(0) defined as 0
+    codomain: H >= 0
+    invariants:
+    - Entropy is 0 for degenerate distributions (single class has probability 1)
+    - Entropy is maximized at ln(k) for uniform distribution
+    - Entropy is always non-negative
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Entropy_Score
+  qbc_score:
+    formula: H_vote(x) = -sum_c(V(c)/C * ln(V(c)/C))
+    domain: V(c) = vote count for class c, C = committee size, sum(V(c)) = C
+    codomain: H_vote >= 0
+    invariants:
+    - Vote entropy is 0 when all committee members agree
+    - Vote entropy is maximized when votes are uniformly split
+    - Vote entropy is always non-negative
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Qbc_Score
+proof_obligations:
+- type: bound
+  property: Uncertainty score in [0, 1]
+  formal: 'forall p valid prob vec: 0 <= u(p) <= 1'
+  applies_to: all
+- type: bound
+  property: Margin score in [0, 1]
+  formal: 'forall p valid prob vec with |p| >= 2: 0 <= m(p) <= 1'
+  applies_to: all
+- type: bound
+  property: Entropy is non-negative
+  formal: 'forall p valid prob vec: H(p) >= 0'
+  applies_to: all
+- type: bound
+  property: Vote entropy is non-negative
+  formal: 'forall committee predictions: H_vote >= 0'
+  applies_to: all
+- type: invariant
+  property: Higher uncertainty selects more ambiguous samples
+  formal: u(uniform(k)) >= u(one_hot(k)) for all k >= 2
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-AL-001
+  rule: Uncertainty score bounds
+  prediction: 0 <= u(p) <= 1 for any valid probability vector
+  test: 'proptest: generate random probability vectors, compute uncertainty, check bounds'
+  if_fails: Uncertainty score formula violates [0, 1] range
+- id: FALSIFY-AL-002
+  rule: Margin score bounds
+  prediction: 0 <= m(p) <= 1 for any valid probability vector with >= 2 classes
+  test: 'proptest: generate random probability vectors with k >= 2, compute margin, check bounds'
+  if_fails: Margin score formula violates [0, 1] range
+- id: FALSIFY-AL-003
+  rule: Entropy non-negativity
+  prediction: H(p) >= 0 for any valid probability vector
+  test: 'proptest: generate random probability vectors, compute entropy, check >= 0'
+  if_fails: Entropy computation produces negative values (numerical error)
+- id: FALSIFY-AL-004
+  rule: Vote entropy non-negativity
+  prediction: H_vote >= 0 for any committee vote distribution
+  test: 'proptest: generate random committee predictions, compute vote entropy, check >= 0'
+  if_fails: Vote entropy computation produces negative values
+- id: FALSIFY-AL-005
+  rule: Uncertainty monotonicity
+  prediction: Uniform distribution has higher uncertainty than one-hot
+  test: 'proptest: compare uncertainty of uniform vs one-hot for random k'
+  if_fails: Uncertainty does not rank ambiguous samples higher
+- id: FALSIFY-AL-006
+  rule: Entropy finiteness
+  prediction: H(p) is finite for any valid probability vector
+  test: 'proptest: generate random probability vectors including near-zero entries, check finite'
+  if_fails: 0*ln(0) not handled correctly, produces NaN or Inf
+enforcement:
+  uncertainty_bounds:
+    description: Uncertainty score must be in [0, 1]
+    check: contract_tests::FALSIFY-AL-001
+    severity: ERROR
+  margin_bounds:
+    description: Margin score must be in [0, 1]
+    check: contract_tests::FALSIFY-AL-002
+    severity: ERROR
+  entropy_non_negative:
+    description: Entropy must be non-negative
+    check: contract_tests::FALSIFY-AL-003
+    severity: ERROR
+kani_harnesses:
+- id: KANI-AL-001
+  obligation: AL-BND-001
+  property: Uncertainty score bounded in [0, 1]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_uncertainty_bounds
+- id: KANI-AL-002
+  obligation: AL-BND-002
+  property: Margin score bounded in [0, 1]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_margin_bounds
+- id: KANI-AL-003
+  obligation: AL-BND-003
+  property: Entropy is non-negative
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_entropy_non_negative
+- id: KANI-ACTIVE-004
+  obligation: Uncertainty score in [0, 1]
+  property: Uncertainty score in [0, 1]
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVE-005
+  obligation: Margin score in [0, 1]
+  property: Margin score in [0, 1]
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVE-006
+  obligation: Entropy is non-negative
+  property: Entropy is non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVE-007
+  obligation: Vote entropy is non-negative
+  property: Vote entropy is non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVE-008
+  obligation: Higher uncertainty selects more ambiguous samples
+  property: Higher uncertainty selects more ambiguous samples
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AL-001
+  name: Active Learning Contract
+  description: Active learning query strategy correctness quality gate
+  checks:
+  - uncertainty_bounds
+  - margin_bounds
+  - entropy_non_negativity
+  - vote_entropy_non_negativity
+  - uncertainty_monotonicity
+  - entropy_finiteness
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Uncertainty score exceeds [0, 1] bounds or entropy becomes negative

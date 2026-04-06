@@ -1,0 +1,155 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: Pipeline cache + single encoder eliminates per-op shader compilation and queue submission
+  registry: true
+  references:
+  - 'KAIZEN-022: Pipeline recreation per GPU op — 180 shader compilations per forward pass'
+  - 'tiled-matmul-shader-v1.yaml (KAIZEN-021: tiled shader being cached)'
+caching:
+- id: C-PIPELINE-CACHE-001
+  name: Pipeline compiled at most once per unique shader
+  description: 'The PipelineCache (HashMap<usize, CachedPipeline>) is keyed by the
+
+    shader source string''s pointer address.  Since all shader sources are
+
+    &''static str constants (MATMUL_SHADER, RELU_SHADER, etc.), their
+
+    pointers are stable for the lifetime of the program.
+
+
+    First call with a given shader: compiles shader module, creates bind
+
+    group layout + pipeline layout + compute pipeline, stores in cache.
+
+    Subsequent calls: returns cached pipeline, skips all compilation.
+
+    '
+  severity: P0
+  critical: true
+  verification: Batch tests pass with multiple operations using same shader
+- id: C-PIPELINE-CACHE-002
+  name: Single command encoder per execute() call
+  description: 'execute() creates ONE CommandEncoder and passes it to all encode_*_op
+
+    functions.  All compute passes are recorded into this single encoder.
+
+    One queue.submit() call at the end submits all work.
+
+
+    Before KAIZEN-022: N encoders + N submits (one per operation)
+
+    After KAIZEN-022: 1 encoder + 1 submit per batch
+
+
+    wgpu automatically inserts barriers between compute passes within a
+
+    single command buffer, so data dependencies are handled correctly.
+
+    '
+  severity: P0
+  critical: true
+impact:
+- id: C-PIPELINE-IMPACT-001
+  name: Compilation reduction for Qwen3-4B FFN
+  description: 'Per-layer FFN batch: 3 matmuls + 1 swish + 1 mul = 5 operations
+
+    36 layers per forward pass = 180 operations total
+
+
+    Before: 180 pipeline compilations + 180 queue submissions
+
+    After (within batch): 3 unique compilations + 1 submission per batch
+
+    After (across 36 batches): 3 compilations + 36 submissions
+
+
+    Note: cross-batch caching requires moving cache to GpuDevice (future work).
+
+    Current implementation caches within a single batch execution only.
+
+    '
+  severity: P0
+  critical: true
+proof_obligations:
+- id: PO-PIPELINE-CACHE-001
+  name: Cache hit guarantees no recompilation
+  property: 'For all shader sources s: if cache.contains_key(hash(s)) then
+    get_or_create_pipeline(s) returns the cached pipeline without invoking
+    device.create_shader_module() or device.create_compute_pipeline().'
+  type: invariant
+  severity: P0
+  status: specified
+- id: PO-PIPELINE-CACHE-002
+  name: Single encoder submission atomicity
+  property: 'For all execute() calls: exactly one CommandEncoder is created,
+    exactly one queue.submit() is called, and all N operations are encoded
+    into that single encoder regardless of N.'
+  type: invariant
+  severity: P0
+  status: specified
+- id: PO-PIPELINE-CACHE-003
+  name: Static pointer stability for cache keys
+  property: 'For all &''static str shader sources s: the pointer address of s
+    is stable across the entire program lifetime, ensuring cache key equality
+    is deterministic and collision-free.'
+  type: invariant
+  severity: P0
+  status: specified
+kani_harnesses:
+- id: KH-PIPELINE-CACHE-001
+  name: verify_cache_hit_idempotent
+  description: 'Verify that inserting a pipeline and retrieving it twice returns
+    the same CachedPipeline reference, and no new compilation occurs on the
+    second retrieval.'
+  obligation: PO-PIPELINE-CACHE-001
+  bound: 8
+  status: specified
+- id: KH-PIPELINE-CACHE-002
+  name: verify_single_encoder_per_batch
+  description: 'Verify that for any batch of 1..=MAX_OPS operations, execute()
+    creates exactly one CommandEncoder and calls queue.submit() exactly once.'
+  obligation: PO-PIPELINE-CACHE-002
+  bound: 8
+  status: specified
+falsification_tests:
+- id: FT-PIPELINE-CACHE-001
+  rule: Cache hit prevents recompilation
+  prediction: Submitting same shader 100 times causes only 1 compilation
+  test: Submit same shader source 100 times, count compilations
+  if_fails: Cache lookup or key comparison is broken
+- id: FT-PIPELINE-CACHE-002
+  rule: Single encoder per batch
+  prediction: Batch of 5 ops creates exactly 1 CommandEncoder
+  test: Execute 5 heterogeneous ops, count queue.submit() calls
+  if_fails: Encoder batching logic not aggregating
+equations:
+  cache_hit_no_recompile:
+    formula: "cache.contains(hash(shader)) => get_or_create(shader) returns cached (no compile)"
+    domain: Shader source string, pipeline cache
+    codomain: CachedPipeline reference
+    invariants:
+    - Cache hit is O(1) hash lookup
+    - No GPU compilation on cache hit
+    preconditions:
+    - capacity > 0
+    postconditions:
+    - result.is_some()
+    lean_theorem: Theorems.CacheHitNoRecompile
+  single_encoder_batch:
+    formula: "forall N ops: execute(ops) creates exactly 1 CommandEncoder + 1 submit"
+    domain: Batch of N compute operations
+    codomain: Single GPU command submission
+    preconditions:
+    - N >= 1
+    postconditions:
+    - result.is_ok()
+    lean_theorem: Theorems.SingleEncoderBatch
+qa_gate:
+  id: F-PCV-001
+  name: pipeline-cache-v1 Contract
+  description: Quality gate for Pipeline cache + single encoder eliminates per-op shader com
+  checks:
+  - validation
+  - falsification

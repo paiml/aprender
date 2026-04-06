@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-085",
+  "prompt": "Add qa_gate to 22 contracts missing SCHEMA-013 + fix 3 AUD-003 missing obligations",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T15:43:15.157934486Z"
+}

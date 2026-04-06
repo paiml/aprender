@@ -1,0 +1,239 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: |
+    HTTP API contract for AprServeDriver — the OpenAI-compatible HTTP layer
+    between batuta code agent and the apr serve inference subprocess.
+
+    AprServeDriver auto-launches `apr serve run <model>` on a random localhost
+    port, sends OpenAI-compatible chat/completions requests, and parses responses.
+    This contract enforces request schema, max_tokens caps, tool format fidelity,
+    thinking-block stripping, and response schema correctness.
+
+    Motivated by PMAT-170 (max_tokens truncation), PMAT-173 (tool format mismatch),
+    PMAT-176 (system prompt strip), PMAT-180 (thinking block leak).
+  references:
+  - 'PMAT-160: AprServeDriver architecture'
+  - 'PMAT-170: max_tokens raised to 1024'
+  - 'PMAT-173: tool format alignment'
+  - 'PMAT-176: system prompt strip logic'
+  - 'PMAT-180: thinking block stripping'
+  - 'OpenAI Chat Completions API: https://platform.openai.com/docs/api-reference/chat'
+  depends_on:
+  - apr-code-v1
+  - chat-template-v1
+
+equations:
+  body_schema_compliance:
+    formula: |
+      build_openai_body(messages, tools, system) produces JSON with:
+        model: String (non-empty)
+        messages: Array<{role: String, content: String}>
+        max_tokens: u32
+        temperature: f32
+      AND messages[0].role == "system" when system prompt present
+    domain: CompletionRequest with optional system prompt and tools
+    codomain: serde_json::Value conforming to OpenAI chat/completions schema
+    invariants:
+    - model field is always present and non-empty
+    - messages array preserves input ordering
+    - System prompt is first message when present
+    - Role values are "system", "user", or "assistant" only
+    preconditions:
+    - At least one user message exists
+    postconditions:
+    - JSON body parseable by any OpenAI-compatible server
+    lean_theorem: Theorems.Body_Schema_Compliance
+
+  max_tokens_cap:
+    formula: |
+      forall request R sent by AprServeDriver:
+        R.max_tokens <= 1024
+    domain: All HTTP requests from AprServeDriver
+    codomain: max_tokens ∈ u32, bounded
+    invariants:
+    - Never exceeds 1024 (prevents small model runaway)
+    - Applies to both interactive and -p mode
+    - Cap is on the request side, not response parsing
+    preconditions:
+    - AprServeDriver is the sender
+    postconditions:
+    - max_tokens in JSON body <= 1024
+    lean_theorem: Theorems.Max_Tokens_Cap
+    notes: |
+      PMAT-170: 512 cap truncated file edits mid-output. 1024 accommodates
+      tool calls + code blocks without allowing infinite generation.
+
+  tool_format_fidelity:
+    formula: |
+      forall tool T in build_openai_body(_, tools, _).messages:
+        T described using <tool_call> format consistent with parser
+    domain: Tool definitions in system prompt section of HTTP body
+    codomain: Tool descriptions in system prompt text
+    invariants:
+    - Tool names in system prompt match registered tool names
+    - Tool format instruction matches parse_tool_calls() expectation
+    - No conflicting format instructions (e.g., raw JSON vs XML)
+    preconditions:
+    - tools.len() > 0
+    postconditions:
+    - Model sees consistent tool format in system prompt
+    lean_theorem: Theorems.Tool_Format_Fidelity
+    notes: |
+      PMAT-173: System prompt taught <tool_call> but HTTP compact list
+      said "respond with JSON object". Conflicting instructions confused
+      small models.
+
+  thinking_block_strip:
+    formula: |
+      strip_thinking_blocks(text) removes:
+        1. <think>...</think> blocks (including content)
+        2. Bare </think> tags (model sometimes emits only closing tag)
+        3. Leading/trailing whitespace after stripping
+      AND preserves all non-thinking content unchanged
+    domain: Raw model response text (may contain thinking blocks)
+    codomain: Cleaned text with thinking blocks removed
+    invariants:
+    - No <think> or </think> tags in output
+    - Non-thinking content preserved byte-for-byte
+    - Nested thinking blocks handled (though unlikely)
+    - Empty string returned when response is ALL thinking
+    preconditions:
+    - text is valid UTF-8
+    postconditions:
+    - result.contains("<think>") == false
+    - result.contains("</think>") == false
+    lean_theorem: Theorems.Thinking_Block_Strip
+    notes: |
+      PMAT-180: Qwen3 without Qwen3NoThinkTemplate produces responses
+      that are entirely </think> tokens. PMAT-190: empty text after strip
+      now shows diagnostic message.
+
+  response_schema:
+    formula: |
+      parse_response(http_body) extracts:
+        choices[0].message.content as String
+      OR returns error with diagnostic info
+    domain: HTTP response body from apr serve
+    codomain: Result<String, Error> (extracted content or error)
+    invariants:
+    - Successful parse yields non-None content string
+    - Parse failure includes raw body in error for debugging
+    - HTTP status codes propagated correctly
+    preconditions:
+    - HTTP response received (status 200)
+    postconditions:
+    - content is the model's response text
+    lean_theorem: Theorems.Response_Schema
+
+proof_obligations:
+- type: invariant
+  property: max_tokens never exceeds 1024
+  formal: forall R in requests. R.max_tokens <= 1024
+  applies_to: max_tokens_cap
+- type: invariant
+  property: Thinking blocks fully stripped
+  formal: forall R in responses. !R.contains("<think>")
+  applies_to: thinking_block_strip
+- type: roundtrip
+  property: Tool definitions survive HTTP serialization
+  formal: parse(serialize(tools)) == tools
+  applies_to: tool_format_fidelity
+- type: postcondition
+  property: Response has extractable content
+  formal: parse(response).choices[0].message.content.is_some()
+  applies_to: response_schema
+
+falsification_tests:
+- id: FALSIFY-HTTP-001
+  rule: Body schema compliance
+  prediction: build_openai_body produces valid OpenAI-compatible JSON
+  test: |
+    Construct CompletionRequest with system prompt, 3 messages, 2 tools.
+    Call build_openai_body(). Assert JSON has model, messages array,
+    max_tokens, temperature. Assert messages[0].role == "system".
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Malformed request body rejected by inference server with 400
+
+- id: FALSIFY-HTTP-002
+  rule: max_tokens capped at 1024
+  prediction: Request body never has max_tokens > 1024
+  test: |
+    Construct CompletionRequest with max_tokens = 999999.
+    Call build_openai_body(). Assert body.max_tokens <= 1024.
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Uncapped max_tokens causes OOM or excessive generation cost
+
+- id: FALSIFY-HTTP-003
+  rule: Tool format fidelity
+  prediction: Tool definitions in body use <tool_call> format
+  test: |
+    Register 3 tools with different schemas. Call build_openai_body().
+    Assert system prompt contains all tool names.
+    Assert no conflicting "respond with JSON object" instructions.
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Model cannot invoke tools, agent loop stalls
+
+- id: FALSIFY-HTTP-004
+  rule: Thinking block strip
+  prediction: strip_thinking_blocks removes all thinking content
+  test: |
+    Input: "<think>internal reasoning</think>The answer is 42"
+    Assert output == "The answer is 42"
+    Input: "</think>\n\nThe answer is 42"
+    Assert output == "The answer is 42"
+    Input: "<think>only thinking</think>"
+    Assert output == ""
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Think tags leak into user-visible output
+
+- id: FALSIFY-HTTP-005
+  rule: Response schema extraction
+  prediction: parse_response extracts content from OpenAI response JSON
+  test: |
+    Construct mock response: {"choices":[{"message":{"content":"hello"}}]}
+    Assert parse extracts "hello".
+    Construct malformed response: {}
+    Assert parse returns error.
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Failed response parsing crashes agent instead of graceful error
+
+qa_gate:
+  id: F-HTTP-001
+  name: HTTP API Contract
+  description: AprServeDriver OpenAI-compatible HTTP layer correctness
+  checks:
+  - body_schema_compliance
+  - max_tokens_cap
+  - tool_format_fidelity
+  - thinking_block_strip
+  - response_schema
+  pass_criteria: All 5 falsification tests pass
+  falsification: Unit tests with mock HTTP bodies
+kani_harnesses:
+- id: KANI-HTTP-001
+  obligation: max_tokens never exceeds 1024
+  property: Request body max_tokens bounded at 1024
+  bound: 16
+  strategy: bounded_int
+- id: KANI-HTTP-002
+  obligation: build_openai_body produces valid OpenAI-compatible JSON
+  property: Body contains required OpenAI keys (messages, model, max_tokens)
+  bound: 8
+  strategy: bounded_int
+- id: KANI-HTTP-003
+  obligation: Tool definitions in body use tool_call format
+  property: Every registered tool renders with tool_call wrapping in the body
+  bound: 4
+  strategy: bounded_int
+- id: KANI-HTTP-004
+  obligation: strip_thinking_blocks removes all thinking content
+  property: Output contains no <think>...</think> substring after strip
+  bound: 32
+  strategy: bounded_int
+- id: KANI-HTTP-005
+  obligation: parse_response extracts content from OpenAI response JSON
+  property: Result mirrors choices[0].message.content exactly
+  bound: 16
+  strategy: bounded_int

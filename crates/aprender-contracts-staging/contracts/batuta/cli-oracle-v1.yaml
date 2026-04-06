@@ -1,0 +1,239 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Oracle CLI dispatch, RAG query correctness, index freshness enforcement
+  registry: true
+  references:
+  - 'batuta/src/cli/oracle/ — Oracle subcommand modules'
+  - 'batuta/src/cli/oracle_classic.rs — Classic query interface'
+  - 'batuta/src/cli/oracle/rag.rs — RAG pipeline'
+  - 'batuta/src/cli/oracle/rag_index.rs — Index build and refresh'
+  - 'Robertson & Zaragoza (2009). The Probabilistic Relevance Framework: BM25 and Beyond. FnTIR.'
+  depends_on: []
+oracle_config:
+  subcommands:
+  - query
+  - component
+  - cookbook
+  - coursera
+  - rag
+  - rag-index
+  - rag-stats
+  output_formats:
+  - text
+  - json
+  - code
+  exit_codes:
+    success: 0
+    general_error: 1
+    no_code_available: 1
+    index_not_found: 2
+    stale_index: 2
+  rag_index:
+    backend: sqlite_fts5
+    staleness_threshold_hours: 24
+    auto_rebuild: true
+equations:
+  dispatch_correctness:
+    formula: |
+      dispatch(oracle_cmd) = match oracle_cmd {
+        Query(q) → run_query(q),
+        Component(c) → show_component(c),
+        Cookbook(r) → show_recipe(r),
+        Rag(q) → rag_search(q),
+        RagIndex → build_rag_index(),
+        RagStats → show_rag_stats(),
+      }
+      ∀ cmd ∈ OracleCommands::variants(): ∃ handler(cmd)
+    domain: OracleCommands (clap subcommand enum)
+    codomain: Result<(), anyhow::Error>
+    invariants:
+    - Every oracle subcommand variant has a dispatch handler
+    - --format code exits with code 1 and stderr message when no code available
+    - --format json always produces valid parseable JSON
+    - Unknown subcommands rejected by clap before dispatch
+    preconditions:
+    - batuta binary invoked with oracle subcommand
+    lean_theorem: Theorems.Dispatch_Correctness
+  rag_query_correctness:
+    formula: |
+      rag_search(query, index) = {
+        results: BM25_rank(FTS5_match(query, index), k=10),
+        scores: [score_i ∈ [0.0, 1.0] | i ∈ results],
+        ordering: ∀ i < j: scores[i] >= scores[j]
+      }
+    domain: (query ∈ String, index ∈ SQLiteDB with FTS5)
+    codomain: Vec<RagResult> sorted by BM25 score descending
+    invariants:
+    - Results are sorted by relevance score descending
+    - Empty query returns empty results (not all documents)
+    - Score is normalized to [0.0, 1.0] range
+    - Results reference real documents that exist in the index
+    - Query terms are highlighted in result snippets
+    preconditions:
+    - Index exists and is loaded
+    - query.len() > 0
+    lean_theorem: Theorems.RAG_Query_Correctness
+  index_freshness:
+    formula: |
+      fresh(index) = (now() - index.last_built) < staleness_threshold
+      stale(index) = ¬fresh(index)
+      query(stale_index) → Warn("Index stale") ∧ proceed_with_results
+      rag_index(force=true) → rebuild_regardless_of_freshness
+    domain: (index ∈ RagIndex, threshold ∈ Duration)
+    codomain: FreshnessStatus ∈ {Fresh, Stale, Missing}
+    invariants:
+    - Stale index triggers warning but still returns results
+    - Missing index triggers auto-build before first query
+    - --force flag rebuilds even if fresh
+    - Index timestamp is persisted in SQLite metadata
+    - Staleness threshold defaults to 24 hours
+    preconditions:
+    - SQLite DB path is writable
+    lean_theorem: Theorems.Index_Freshness
+proof_obligations:
+- type: invariant
+  property: RAG results are sorted by score descending
+  formal: '∀ i < j: results[i].score >= results[j].score'
+  applies_to: rag_query_correctness
+- type: invariant
+  property: Empty query returns empty results
+  formal: 'query = "" → results.len() = 0'
+  applies_to: rag_query_correctness
+- type: invariant
+  property: Stale index produces warning not error
+  formal: 'stale(index) → (warn_emitted ∧ results.is_some())'
+  applies_to: index_freshness
+- type: invariant
+  property: Format code exits 1 when no code
+  formal: '--format code ∧ no_code → exit(1) ∧ stderr.contains("No code available")'
+  applies_to: dispatch_correctness
+falsification_tests:
+- id: FALSIFY-ORA-001
+  rule: dispatch_correctness
+  prediction: All oracle subcommands dispatch without panic
+  test: |
+    #[test]
+    fn falsify_ora_001_dispatch_completeness() {
+        let subcommands = vec![
+            "query", "component", "cookbook",
+        ];
+        for cmd in &subcommands {
+            let result = std::process::Command::new("batuta")
+                .args(&["oracle", cmd, "--help"])
+                .output();
+            assert!(result.is_ok(), "Oracle subcommand '{}' not recognized", cmd);
+            let out = result.unwrap();
+            assert!(out.status.success(),
+                "batuta oracle {} --help failed with {:?}", cmd, out.status);
+        }
+    }
+  if_fails: Oracle subcommand variant missing dispatch handler
+- id: FALSIFY-ORA-002
+  rule: rag_query_correctness
+  prediction: RAG results are sorted by score descending
+  test: |
+    #[test]
+    fn falsify_ora_002_rag_results_sorted() {
+        // Requires index built via `batuta oracle --rag-index`
+        let output = std::process::Command::new("batuta")
+            .args(&["oracle", "--rag", "error handling", "--format", "json"])
+            .output()
+            .expect("Failed to run batuta oracle --rag");
+        if output.status.success() {
+            let results: Vec<serde_json::Value> =
+                serde_json::from_slice(&output.stdout).unwrap();
+            for window in results.windows(2) {
+                let s1 = window[0]["score"].as_f64().unwrap_or(0.0);
+                let s2 = window[1]["score"].as_f64().unwrap_or(0.0);
+                assert!(s1 >= s2,
+                    "Results not sorted: {} < {}", s1, s2);
+            }
+        }
+    }
+  if_fails: BM25 ranking not applied or sort order inverted
+- id: FALSIFY-ORA-003
+  rule: index_freshness
+  prediction: Missing index triggers auto-build on first RAG query
+  test: |
+    #[test]
+    fn falsify_ora_003_auto_build_on_missing() {
+        // Remove index, query, verify it was rebuilt
+        let db_path = std::path::Path::new(".batuta/rag.db");
+        if db_path.exists() {
+            std::fs::rename(db_path, db_path.with_extension("bak")).ok();
+        }
+        let output = std::process::Command::new("batuta")
+            .args(&["oracle", "--rag", "test query"])
+            .output()
+            .expect("Failed to run batuta");
+        // Restore backup
+        let bak = db_path.with_extension("bak");
+        if bak.exists() {
+            std::fs::rename(&bak, db_path).ok();
+        }
+        // Index should have been created or error about indexing
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success() || stderr.contains("index"),
+            "Missing index not handled: {}", stderr);
+    }
+  if_fails: RAG query crashes on missing index instead of auto-building
+- id: FALSIFY-ORA-004
+  rule: dispatch_correctness
+  prediction: --format json always produces parseable JSON output
+  test: |
+    #[test]
+    fn falsify_ora_004_json_output_valid() {
+        let output = std::process::Command::new("batuta")
+            .args(&["oracle", "query", "rust", "--format", "json"])
+            .output()
+            .expect("Failed to run batuta");
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parsed: serde_json::Result<serde_json::Value> =
+                serde_json::from_str(&stdout);
+            assert!(parsed.is_ok(),
+                "JSON output not parseable: {}", stdout);
+        }
+    }
+  if_fails: JSON serialization produces invalid JSON (mixed text/JSON output)
+kani_harnesses:
+- id: KANI-ORA-001
+  obligation: RAG results sorted descending
+  property: Score ordering is monotonically non-increasing
+  bound: 16
+  strategy: exhaustive
+  harness: verify_rag_sort_order
+- id: KANI-ORA-002
+  obligation: Index freshness threshold
+  property: Staleness detection matches threshold comparison
+  bound: 8
+  strategy: exhaustive
+  harness: verify_freshness_check
+qa_gate:
+  id: F-ORA-GATE
+  name: Oracle CLI Contract
+  description: Batuta oracle subcommand quality gate
+  checks:
+  - dispatch_correctness
+  - rag_query_correctness
+  - index_freshness
+  pass_criteria: All 4 falsification tests pass
+  falsification: Remove FTS5 ORDER BY rank to break result ordering
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — index staleness is detected and warned
+    before query execution. Missing index triggers automatic rebuild with
+    progress indication. Corrupt SQLite DB is detected and rebuilt from scratch.
+  poka_yoke: >
+    "Mistake-proofing" — output format is validated at parse time. --format code
+    fails fast with exit code 1 when no code is available, preventing piping
+    empty output into editors or scripts.
+  genchi_genbutsu: >
+    "Go and see" — falsification tests invoke the real batuta binary, querying
+    actual indexed documentation. No mocked FTS5 results or fake BM25 scores.
+  kaizen: >
+    "Continuous improvement" — RAG index auto-updates via post-commit hooks.
+    Index freshness is monotonically tracked. Adding new documentation to the
+    stack automatically appears in search results after next index rebuild.

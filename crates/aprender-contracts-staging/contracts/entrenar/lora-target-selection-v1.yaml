@@ -1,0 +1,90 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    LoRA target module selection — configurable subset of projection matrices
+    to apply LoRA adapters. Standard QLoRA uses q_proj + v_proj (2 targets).
+    All-linear uses all 7 projections (q/k/v/o/gate/up/down).
+  references:
+    - "Dettmers et al. (2023) QLoRA — default targets: q_proj, v_proj"
+    - "Hu et al. (2021) LoRA — attention projections only"
+
+equations:
+  lora_contribution:
+    formula: "h_proj = W_base @ x + scale * (x @ A) @ B"
+    lean_theorem: Theorems.Lora_Contribution
+    domain: "Only for projections in target_modules set"
+    codomain: "h_proj ∈ ℝ^{seq × out_dim}"
+    invariants:
+      - "Non-target projections use base weights only (no LoRA)"
+      - "Backward compute proportional to |target_modules|"
+
+invariants:
+  target_subset:
+    statement: "target_modules ⊆ {q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj}"
+    rationale: "Only valid transformer projection names"
+
+  speed_proportional:
+    statement: "backward_time(2_targets) ≈ backward_time(7_targets) * 2/7"
+    rationale: "Fewer LoRA projections = fewer backward GEMMs"
+
+  quality_preserved:
+    statement: "loss(2_target, epoch_N) < loss(2_target, epoch_1)"
+    rationale: "Training must converge regardless of target count"
+
+proof_obligations:
+  - type: invariant
+    property: Target set is a valid subset of projections
+    formal: "for all t in target_modules: t ∈ {q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj}"
+    applies_to: all
+  - type: invariant
+    property: Non-target projections have zero LoRA contribution
+    formal: "for all p not in target_modules: lora_a[p] = None AND lora_b[p] = None"
+    applies_to: all
+  - type: bound
+    property: Backward compute proportional to target count
+    formal: "backward_time(N) / backward_time(7) ∈ [N/7 * 0.8, N/7 * 1.2]"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TARGET-001
+    rule: speed_proportional
+    prediction: "2-target training < 30 min for 99 samples × 3 epochs"
+    if_fails: "Target count introduces unexpected overhead — profile per-layer backward"
+  - id: FALSIFY-TARGET-002
+    rule: quality_preserved
+    prediction: "Loss decreases across epochs with 2-target LoRA"
+    if_fails: "Gradient flow broken for subset targets — check backward skip logic"
+  - id: FALSIFY-TARGET-003
+    rule: target_subset
+    prediction: "Invalid target names rejected at construction time"
+    if_fails: "Input validation missing — add target name allowlist check"
+
+kani_harnesses:
+  - id: KANI-TARGET-001
+    obligation: Target set valid subset
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+    description: Verify all target module names are in the valid set
+  - id: KANI-TARGET-002
+    obligation: Non-target projections zero
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+    description: Verify non-target LoRA adapters are None
+  - id: KANI-TARGET-003
+    obligation: Backward proportional
+    strategy: bounded_int
+    solver: cadical
+    bound: 8
+    description: Verify backward time scales with target count
+
+qa_gate:
+  id: F-LTSV-001
+  name: lora-target-selection-v1 Contract
+  description: Quality gate for LoRA target module selection
+  checks:
+    - validation
+    - falsification

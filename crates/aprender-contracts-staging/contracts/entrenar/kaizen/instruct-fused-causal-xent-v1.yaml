@@ -1,0 +1,134 @@
+contract: C-CAUSALXENT-001
+title: Fused GPU Causal Cross-Entropy for InstructPipeline
+kaizen: KAIZEN-064
+parent: C-GPUTRAIN-002
+status: implemented
+date: 2026-03-04
+baseline:
+  logits_d2h_bytes: 311427072
+  grad_h2d_bytes: 311427072
+  total_pcie_bytes: 622854144
+  cpu_softmax_us: 15000
+  per_step_overhead_us: 39000
+  pcie_bandwidth_utilization: 0.065
+target:
+  logits_d2h_bytes: 0
+  grad_h2d_bytes: 0
+  total_pcie_bytes: 4096
+  cpu_softmax_us: 0
+  per_step_overhead_us: 500
+  per_step_savings_us: 38500
+api:
+  fused_causal_cross_entropy_kernel: 'New FusedCausalCrossEntropyKernel in trueno-gpu. Extends FusedCrossEntropyKernel
+
+    with loss_start/loss_end parameters. Positions outside [loss_start, loss_end)
+
+    get zero gradient and zero loss. Same 3-phase algorithm (max, sum_exp, grad+loss)
+
+    for loss positions. Masked positions zero their row via grid-stride loop and return.
+
+    '
+  fused_causal_cross_entropy_cuda: 'New wrapper in cuda_optim.rs. Takes logits_buf (in-place), target_ids, seq_len,
+
+    vocab_size, loss_start, loss_end, scale, stream. Uploads targets (~2KB),
+
+    launches kernel, downloads loss partials (~2KB), averages over loss range only.
+
+    '
+  forward_logits_gpu_resident: 'New method on InstructPipeline. Same as forward_logits_gpu but skips the
+
+    final logits D2H download (~296MB). Logits stay in training.logits_buf.
+
+    Returns bool instead of Option<Vec<f32>>.
+
+    '
+  cuda_train_step_rewrite: 'Rewritten to use GPU-resident path:
+
+    1. forward_logits_gpu_resident (no D2H)
+
+    2. fused_causal_cross_entropy_cuda (GPU in-place loss + gradient)
+
+    3. gemm_forward (lm_head backward — grad already in logits_buf)
+
+    Falls back to cuda_train_step_cpu_loss on failure.
+
+    '
+  cuda_train_step_cpu_loss: 'CPU fallback method. Identical to old cuda_train_step behavior.
+
+    Used when forward_logits_gpu_resident or fused kernel fails.
+
+    '
+safety:
+  causal_masking: 'Kernel adds loss_start/loss_end parameters. Two sequential branches at kernel
+
+    entry: pos < loss_start → masked, pos >= loss_end → masked. Masked positions
+
+    zero their gradient row via grid-stride loop and write loss[pos]=0.0.
+
+    Loss positions run the full 3-phase algorithm identically to base kernel.
+
+    '
+  gradient_zeroing: 'Masked positions zero all vocab_size gradient elements for their row.
+
+    This is critical for lm_head backward GEMM correctness: grad_hidden =
+
+    grad_logits @ embed. Non-zero gradient at masked positions would produce
+
+    incorrect hidden gradients, corrupting LoRA weight updates.
+
+    '
+  target_preparation: 'Targets prepared as targets[pos] = full_ids[pos+1] for all positions.
+
+    Masked positions'' targets are irrelevant since gradient is zeroed.
+
+    For loss positions, target = next token (standard causal LM).
+
+    '
+  loss_averaging: 'Loss averaged over [loss_start, loss_end) positions only, matching
+
+    the original compute_causal_lm_loss behavior. Scale = 1/num_loss_tokens.
+
+    '
+  barrier_safety: 'Masked blocks return early (after zeroing) without touching shared memory.
+
+    Loss blocks run the same barrier-protected 3-phase algorithm as base kernel.
+
+    barrier_safety_validated via trueno-gpu''s emit_ptx_validated().
+
+    '
+  fallback_path: 'If GPU forward or fused kernel fails, falls back to cuda_train_step_cpu_loss
+
+    which uses the original D2H → CPU loss → H2D path. Training continues.
+
+    '
+preconditions:
+- InstructGpuTrainingState initialized (logits_buf, lm_head_hidden_buf allocated)
+- loss_start < loss_end <= seq_len
+- vocab_size > 0
+- Kernel cache initialized (OPTIM_KERNEL_CACHE)
+postconditions:
+- Forward/backward behavior identical — same loss, same gradients, same optimizer
+- Zero logits D2H traffic per step
+- Zero gradient H2D traffic per step
+- ~2KB PCIe per step (targets + loss partials only)
+- Masked positions have exactly zero gradient
+invariants:
+- logits_buf contains gradient after fused kernel (in-place)
+- Loss averaged over [loss_start, loss_end) only
+- Inference-only path unchanged (no training state)
+- CPU fallback available if GPU kernel fails
+files:
+- path: trueno-gpu/src/kernels/backward/cross_entropy.rs
+  repo: trueno
+  change: Added FusedCausalCrossEntropyKernel with loss_start/loss_end masking
+- path: entrenar/src/autograd/cuda_optim.rs
+  change: Added fused_causal_cross_entropy_cuda wrapper function
+- path: entrenar/src/finetune/instruct_pipeline.rs
+  change: Rewrote cuda_train_step to use GPU-resident loss; added forward_logits_gpu_resident and cuda_train_step_cpu_loss
+qa_gate:
+  id: F-IFCX-001
+  name: instruct-fused-causal-xent-v1 Contract
+  description: Quality gate for instruct-fused-causal-xent-v1
+  checks:
+  - validation
+  - falsification

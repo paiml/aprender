@@ -1,0 +1,234 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: Continuous batching scheduler — unified prefill/decode with token budget
+  references:
+  - 'Yu et al. (2022). Orca: A Distributed Serving System for Transformer-Based Generative Models.'
+  - Kwon et al. (2023). Efficient Memory Management for Large Language Model Serving with PagedAttention. SOSP.
+  - 'vLLM v1 source: v1/core/sched/scheduler.py, v1/engine/core.py'
+  depends_on:
+  - inference-pipeline-v1
+  - paged-kv-cache-v1
+  - kv-cache-equivalence-v1
+equations:
+  token_budget:
+    formula: sum_{r in scheduled} num_new_tokens(r) <= max_batch_tokens
+    domain: max_batch_tokens ∈ ℤ⁺ (typically 4096-16384)
+    invariants:
+    - Total tokens per step bounded
+    - No single request exceeds budget
+    - Running requests prioritized over waiting
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Token_Budget
+  request_state:
+    formula: num_new_tokens(r) = total_tokens(r) - num_computed_tokens(r)
+    domain: r is an active request with computed KV cache
+    invariants:
+    - 'Decode request: num_new_tokens = 1 (single token generation)'
+    - 'Prefill request: num_new_tokens = min(remaining_prompt, budget)'
+    - num_computed_tokens monotonically increases per request
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Request_State
+  chunked_prefill:
+    formula: chunk_size(r) = min(prompt_len(r) - computed(r), max_chunk, remaining_budget)
+    domain: Long prompt split across multiple steps
+    invariants:
+    - Each chunk processes at least 1 token
+    - 'Total chunks cover entire prompt: sum(chunks) = prompt_len'
+    - Chunked prefill produces same KV cache as full prefill
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Chunked_Prefill
+  throughput_scaling:
+    formula: aggregate_tok_s(c) >= c * single_tok_s * efficiency(c)
+    domain: c = concurrency level, efficiency ∈ (0, 1]
+    invariants:
+    - efficiency(1) = 1.0 (no overhead at c=1)
+    - efficiency(c) > 0 for c <= max_batch_size
+    - 'Monotonic degradation: efficiency(c+1) <= efficiency(c)'
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Throughput_Scaling
+  decode_degradation:
+    formula: per_req_decode(c) / per_req_decode(1) >= min_ratio
+    domain: c concurrent decode requests, min_ratio ∈ (0, 1]
+    invariants:
+    - Per-request decode does not collapse under load
+    - 'vLLM target: min_ratio >= 0.90 for c <= 8'
+    - 'Bounded degradation: GEMV reads weights once for M requests'
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Decode_Degradation
+  scheduling_fairness:
+    formula: max_wait_time(r) <= max_wait_bound for all active requests r
+    domain: Continuous batching with FCFS scheduling
+    invariants:
+    - No request starved indefinitely
+    - Running requests always scheduled before waiting
+    - Preemption only when KV cache pressure exceeds threshold
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Scheduling_Fairness
+  correctness_under_batching:
+    formula: '|output_batched(r, c) - output_single(r, 1)| < epsilon'
+    domain: Same request r processed at concurrency c vs alone
+    invariants:
+    - Numerical output within tolerance (epsilon <= 1e-3)
+    - No garbage or empty outputs
+    - Token count matches (same max_tokens)
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Correctness_Under_Batching
+proof_obligations:
+- type: bound
+  property: Token budget respected
+  formal: sum(num_new_tokens) <= max_batch_tokens per step
+  applies_to: all
+- type: monotonicity
+  property: Computed tokens monotonic
+  formal: num_computed_tokens(r, t) <= num_computed_tokens(r, t+1)
+  applies_to: all
+- type: equivalence
+  property: Chunked prefill equivalence
+  formal: '|chunked_kv - full_kv| < 1e-5'
+  tolerance: 1e-5
+  applies_to: all
+- type: bound
+  property: Decode degradation bounded
+  formal: per_req_decode(c) / per_req_decode(1) >= 0.50 for c <= 8
+  applies_to: all
+- type: invariant
+  property: No starvation
+  formal: '∀ r in waiting: wait_time(r) < max_wait_bound'
+  applies_to: all
+- type: equivalence
+  property: Correctness under batching
+  formal: '|batched_output - single_output| < 1e-3'
+  tolerance: 1e-3
+  applies_to: all
+- type: invariant
+  property: No empty outputs
+  formal: '∀ r in completed: output_tokens(r) > 0'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CB-001
+  rule: Token budget
+  prediction: Scheduled tokens never exceed max_batch_tokens
+  test: 'proptest: random request arrivals, verify budget constraint per step'
+  if_fails: Scheduler over-schedules tokens
+- id: FALSIFY-CB-002
+  rule: Computed tokens monotonic
+  prediction: num_computed_tokens never decreases for a request
+  test: 'proptest: track computed tokens across steps, verify monotonic'
+  if_fails: KV cache corruption or scheduler regression
+- id: FALSIFY-CB-003
+  rule: Chunked prefill equivalence
+  prediction: Chunked and full prefill produce same KV cache
+  test: Compare KV cache after chunked vs full prefill on same prompt
+  if_fails: Cross-chunk boundary corrupts attention computation
+- id: FALSIFY-CB-004
+  rule: Decode degradation bounded
+  prediction: c=4 per-request decode >= 50% of c=1
+  test: Run c=1 and c=4 benchmarks, verify ratio >= 0.50
+  if_fails: Architectural serialization or lock contention
+- id: FALSIFY-CB-005
+  rule: No starvation
+  prediction: All requests eventually scheduled within max_wait_bound
+  test: 'proptest: 100 requests with random arrivals, verify max wait time'
+  if_fails: FCFS violated or preemption loop
+- id: FALSIFY-CB-006
+  rule: Correctness under batching
+  prediction: Same prompt at c=1 and c=4 produces equivalent output
+  test: probador correctness at c=1 and c=4, compare token-level output
+  if_fails: Cross-request KV cache contamination or batch indexing error
+- id: FALSIFY-CB-007
+  rule: No empty outputs
+  prediction: Every completed request has at least 1 output token
+  test: probador load test c=4, verify 0 failed requests with 0 tokens
+  if_fails: Batch scheduler drops request or decode loop exits early
+- id: FALSIFY-CB-008
+  rule: No frozen slots
+  prediction: All M slots produce distinct tokens per decode step (not constant)
+  test: BATCHED_DECODE_TRACE log shows token_ids[i] changes between steps for all i
+  if_fails: KV cache not populated for slot, or hidden state not indexed by slot
+- id: FALSIFY-CB-009
+  rule: KV cache populated for all slots after prefill
+  prediction: batched_kv_lengths[i] == prefill_len for all i in 0..M
+  test: Add trace after prefill_and_scatter, verify batched_kv_lengths == [S, S, S, S]
+  if_fails: prefill_attention_from_packed scatter or batched_kv_lengths update buggy
+kani_harnesses:
+- id: KANI-CB-001
+  obligation: CB-INV-001
+  property: Token budget invariant for bounded request count
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_token_budget
+- id: KANI-CB-002
+  obligation: CB-INV-002
+  property: Computed tokens monotonicity
+  bound: 32
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_computed_monotonic
+- id: KANI-CB-003
+  obligation: CB-INV-003
+  property: No starvation under bounded arrivals
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_no_starvation
+- id: KANI-CONTIN-004
+  obligation: Token budget respected
+  property: Token budget respected
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTIN-005
+  obligation: Computed tokens monotonic
+  property: Computed tokens monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTIN-006
+  obligation: Chunked prefill equivalence
+  property: Chunked prefill equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTIN-007
+  obligation: Decode degradation bounded
+  property: Decode degradation bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-CONTIN-008
+  obligation: No starvation
+  property: No starvation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTIN-009
+  obligation: Correctness under batching
+  property: Correctness under batching
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTIN-010
+  obligation: No empty outputs
+  property: No empty outputs
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CB-001
+  name: Continuous Batching Contract
+  description: Unified scheduler correctness — throughput scaling and fairness
+  checks:
+  - token_budget
+  - computed_monotonic
+  - chunked_equivalence
+  - decode_degradation
+  - no_starvation
+  - correctness_under_batching
+  - no_empty_outputs
+  pass_criteria: All 9 falsification tests pass + 3 Kani harnesses verify
+  falsification: Schedule more tokens than budget to break throughput invariant

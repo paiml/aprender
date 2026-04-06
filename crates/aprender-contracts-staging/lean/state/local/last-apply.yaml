@@ -1,0 +1,13 @@
+machine: local
+resources_converged: 0
+resources_unchanged: 0
+resources_failed: 1
+total_duration: 86.757534824
+resource_reports:
+- resource_id: mathlib-cache
+  resource_type: task
+  status: failed
+  duration_seconds: 86.757337576
+  exit_code: null
+  hash: null
+  error: null

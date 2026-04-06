@@ -1,0 +1,93 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: SafeTensors CPU path must dispatch to quantized kernels after runtime
+    Q4K conversion
+  references:
+  - 'qwen-coder-deploy bench-results-v2: SafeTensors CPU 6.0 vs GGUF CPU 9.5 tok/s
+    (36% gap)'
+  - realizar matmul_fused.rs — dispatch logic for quantized vs float paths
+  - realizar float16_matmul — F32 fallback path (suspected regression)
+  depends_on:
+  - cpu-q4k-activation-quant-v1.yaml
+  - format-parity-v1.yaml
+equations:
+  format_parity:
+    formula: "After SafeTensors → Q4K runtime conversion:\n  tensor_type(converted)\
+      \ == Q4_K\n  matmul_dispatch(converted, acts) → fused_q4k_parallel_matvec\n\n\
+      If dispatch falls through to float path:\n  float16_matmul operates on F32 weights\
+      \ (4× more memory traffic)\n  throughput_loss = sizeof(f32) / sizeof(q4k_effective)\
+      \ ≈ 4-8×\n\nMeasured gap: 6.0 / 9.5 = 0.63 (37% slower)\nExpected if F32 fallback:\
+      \ 9.5 / 4 ≈ 2.4 (consistent with partial fallback)\n"
+    domain: SafeTensors → Q4K conversion, CPU inference
+    invariants:
+    - All matmuls after conversion use Q4K kernel, not F32
+    - SafeTensors CPU throughput within 10% of GGUF CPU
+    preconditions:
+    - 'input.len() > 0'
+    - data.len() > 0
+    lean_theorem: Theorems.Format_Parity
+proof_obligations:
+- type: equivalence
+  property: SafeTensors CPU matches GGUF CPU throughput
+  formal: tok/s(SafeTensors CPU) ≥ 0.9 × tok/s(GGUF CPU)
+  tolerance: 0.1
+  applies_to: all
+- type: invariant
+  property: Quantized dispatch after conversion
+  formal: All weight tensors have type Q4_K after SafeTensors→Q4K conversion
+  applies_to: all
+- type: equivalence
+  property: Output parity across formats
+  formal: argmax(logits_safetensors) == argmax(logits_gguf) for same prompts
+  tolerance: 0.0001
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SD-001
+  rule: Format throughput parity
+  prediction: SafeTensors CPU within 10% of GGUF CPU tok/s
+  test: probador llm bench for both formats, compare CI ranges
+  if_fails: Dispatch falling through to F32 path
+- id: FALSIFY-SD-002
+  rule: Tensor type after conversion
+  prediction: All weight tensors report Q4_K type in /metrics endpoint
+  test: Start SafeTensors server, query /metrics for tensor types
+  if_fails: Conversion incomplete — some tensors remain F32
+- id: FALSIFY-SD-003
+  rule: Output parity
+  prediction: 20-token greedy generation identical between SafeTensors and GGUF CPU
+  test: Compare token sequences side-by-side
+  if_fails: Conversion rounding differs from GGUF quantization
+kani_harnesses:
+- id: KANI-SD-001
+  obligation: SafeTensors CPU matches GGUF CPU throughput
+  property: Throughput ratio >= 0.9 after Q4K conversion
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_throughput_parity
+- id: KANI-SD-002
+  obligation: Quantized dispatch after conversion
+  property: All weight tensors have Q4_K type post-conversion
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_quantized_dispatch
+- id: KANI-SD-003
+  obligation: Output parity across formats
+  property: argmax(logits) identical between SafeTensors and GGUF paths
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_output_parity
+qa_gate:
+  id: F-SD-001
+  name: SafeTensors CPU Dispatch Contract
+  description: SafeTensors must use quantized kernels after conversion
+  checks:
+  - format_throughput_parity
+  - tensor_type_verification
+  - output_parity
+  pass_criteria: All 3 falsification tests pass + throughput within 10% of GGUF
+  falsification: Force F32 path on converted tensors — measure throughput delta

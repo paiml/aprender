@@ -1,0 +1,129 @@
+metadata:
+  version: 1.0.0
+  description: Valid ranges for model configuration dimensions
+  registry: true
+  references:
+  - enforce-provable-DbC.md Section 4 Gap 2
+  - realizar/src/gguf/config.rs ValidatedModelConfig::validate()
+equations:
+  config_bounds_check:
+    formula: validate(cfg) = all(field_min <= cfg.field <= field_max for field in
+      required_fields)
+    domain: 'cfg: ModelConfig with hidden_dim, num_layers, num_heads, num_kv_heads,
+      vocab_size, intermediate_dim, context_length, rope_theta, eps'
+    codomain: Result<ValidatedModelConfig, ConfigError>
+    invariants:
+    - hidden_dim ∈ [1, 65536] and divisible by num_heads
+    - num_kv_heads divides num_heads evenly (GQA ratio)
+    - eps ∈ [1e-10, 0.01] when configured
+    - rope_theta ∈ [1.0, 1e8] when configured
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Config_Bounds_Check
+fields:
+  hidden_dim:
+    required: true
+    type: usize
+    min: 1
+    max: 65536
+    comment: Must be divisible by num_heads (checked separately in validate())
+  num_layers:
+    required: true
+    type: usize
+    min: 1
+    max: 256
+  num_heads:
+    required: true
+    type: usize
+    min: 1
+    max: 256
+  num_kv_heads:
+    required: true
+    type: usize
+    min: 1
+    max: 256
+    comment: Must divide num_heads evenly (GQA ratio)
+  vocab_size:
+    required: true
+    type: usize
+    min: 1
+    max: 1000000
+  intermediate_dim:
+    required: true
+    type: usize
+    min: 1
+    max: 262144
+  context_length:
+    required: false
+    type: usize
+    min: 0
+    max: 2097152
+    comment: 0 = unknown
+  rope_theta:
+    required: false
+    type: f32
+    min: 1.0
+    max: 100000000.0
+    comment: 0.0 means not configured; when > 0, must be >= 1.0
+    default_by_architecture:
+      qwen2: 1000000.0
+      qwen3: 1000000.0
+      llama: 10000.0
+      mistral: 10000.0
+      gemma: 10000.0
+      deepseek: 10000.0
+      phi: 10000.0
+  eps:
+    required: false
+    type: f32
+    min: 1.0e-10
+    max: 0.01
+    default: 1.0e-06
+    comment: 0.0 means not configured; when > 0, must be in [1e-10, 0.01]
+proof_obligations:
+- type: bound
+  property: All required fields within min/max bounds
+  formal: '∀ field ∈ required: field.min ≤ cfg[field] ≤ field.max'
+- type: invariant
+  property: hidden_dim divisible by num_heads
+  formal: cfg.hidden_dim % cfg.num_heads == 0
+- type: invariant
+  property: num_kv_heads divides num_heads
+  formal: cfg.num_heads % cfg.num_kv_heads == 0
+falsification_tests:
+- id: FALSIFY-MMB-001
+  rule: Bounds rejection
+  prediction: validate() rejects hidden_dim = 0
+  if_fails: Lower bound check missing for hidden_dim
+- id: FALSIFY-MMB-002
+  rule: Bounds rejection
+  prediction: validate() rejects hidden_dim = 131072
+  if_fails: Upper bound check missing for hidden_dim
+- id: FALSIFY-MMB-003
+  rule: GQA divisibility
+  prediction: validate() rejects num_heads=7, num_kv_heads=3
+  if_fails: Missing GQA divisibility check
+kani_harnesses:
+- id: KANI-MODEL_-001
+  obligation: All required fields within min/max bounds
+  property: All required fields within min/max bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-MODEL_-002
+  obligation: hidden_dim divisible by num_heads
+  property: hidden_dim divisible by num_heads
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MODEL_-003
+  obligation: num_kv_heads divides num_heads
+  property: num_kv_heads divides num_heads
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-MMBV-001
+  name: model-metadata-bounds-v1 Contract
+  description: Quality gate for Valid ranges for model configuration dimensions
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,154 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: Efficient per-head Q/K/V extraction — zero intermediate allocations
+  registry: true
+  references:
+  - 'KAIZEN-016: Attention head extraction creates 3.5M temporary allocations per forward pass'
+  - wgpu-resident-weights-v1.yaml (GPU-side optimization, complements this CPU-side fix)
+head_extraction:
+- id: C-ATTN-EXTRACT-001
+  name: Hoisted data borrows
+  description: 'Q/K/V tensor data borrows (.data().as_slice()) are acquired ONCE
+
+    before the per-head loop, not inside flat_map closures. This reduces
+
+    RefCell borrow acquisitions from num_heads × 3 × seq_len to exactly 3
+
+    per attention forward call.
+
+    '
+  severity: P1
+  critical: true
+  measurement: RefCell borrow count per attention call
+  before: num_heads × 3 × seq_len (e.g., 12,288 for Qwen3-4B)
+  after: 3 (one per Q, K, V)
+- id: C-ATTN-EXTRACT-002
+  name: extend_from_slice replaces flat_map+to_vec
+  description: 'Per-head Q/K/V vectors are built using pre-allocated Vec with
+
+    extend_from_slice(), not flat_map(|s| slice.to_vec()).collect().
+
+    This eliminates num_heads × 3 × seq_len intermediate Vec heap
+
+    allocations per attention call. Each intermediate Vec was head_dim
+
+    elements (e.g., 80 × 4 = 320 bytes for Qwen3-4B).
+
+    '
+  severity: P1
+  critical: true
+  measurement: Heap allocations per attention forward call
+  before: num_heads × 3 × seq_len intermediates (e.g., 12,288 Vecs)
+  after: num_heads × 3 final Vecs only (e.g., 96 Vecs)
+- id: C-ATTN-EXTRACT-003
+  name: copy_from_slice for head concatenation
+  description: 'Head output concatenation uses copy_from_slice for bulk memory copy
+
+    instead of element-by-element indexing. The inner loop copies head_dim
+
+    elements at once, enabling LLVM to emit memcpy/SIMD instructions.
+
+    '
+  severity: P2
+  critical: false
+performance:
+- id: C-ATTN-PERF-001
+  name: Allocation reduction for Qwen3-4B
+  description: 'For Qwen3-4B (32 heads, seq_len=128, batch_size=8, 36 layers):
+
+    - Before: 8 × 36 × 12,288 = 3,538,944 intermediate allocations/forward
+
+    - After: 8 × 36 × 96 = 27,648 final allocations/forward
+
+    - Reduction: 99.2% fewer heap allocations
+
+    - Allocator churn eliminated: ~1.1 GB per forward pass
+
+    '
+  measurement: Count heap allocations in forward pass (jemalloc stats)
+  target: < 30,000 allocations per forward pass for attention head extraction
+- id: C-ATTN-PERF-002
+  name: All three forward paths optimized
+  description: 'The optimization is applied to all three attention forward paths:
+
+    1. MultiHeadAttention::forward() — inference without LoRA
+
+    2. MultiHeadAttention::forward_with_lora() — training with LoRA
+
+    3. MultiHeadAttentionWithLoRA::forward() — deep LoRA injection
+
+    No code path falls back to the flat_map+to_vec pattern.
+
+    '
+  severity: P1
+  critical: true
+correctness:
+- id: C-ATTN-CORRECT-001
+  name: Numerical equivalence
+  description: 'The optimized extraction produces bit-identical outputs to the
+
+    original flat_map+to_vec pattern. Both patterns copy the same
+
+    elements in the same order — extend_from_slice is a contiguous
+
+    memcpy of the same slice range.
+
+    '
+  verification: 45 attention tests pass including gradient checks
+- id: C-ATTN-CORRECT-002
+  name: Backward gradient flow preserved
+  description: 'The backward path (AttentionBlockBackward) is unmodified by this
+
+    optimization. Gradient flow through Q/K/V projections and per-head
+
+    attention is unchanged. Verified by prop_attention_backward_gradient_check
+
+    property tests for Q, K, and V.
+
+    '
+  verification: prop_attention_backward_gradient_check_{q,k,v} property tests pass
+equations:
+  extract_heads:
+    formula: |
+      extract: (QKV_tensor, num_heads, head_dim) -> Vec<(Q_head, K_head, V_head)>
+      len(result) == num_heads, each head has seq_len * head_dim elements
+    domain: QKV tensor with shape [3, seq_len, num_heads * head_dim]
+    codomain: Vec of per-head (Q, K, V) tuples
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    - num_heads > 0 && head_dim > 0
+    postconditions:
+    - result.len() == num_heads
+    - result numerically identical to flat_map+to_vec baseline
+    lean_theorem: Theorems.ExtractHeads
+proof_obligations:
+- type: equivalence
+  property: Numerical equivalence with baseline
+  formal: extract_optimized(qkv) == extract_baseline(qkv) (bit-identical)
+  tolerance: 0.0
+  applies_to: all
+- type: invariant
+  property: Zero intermediate allocations in hot loop
+  formal: heap_allocs(extract_optimized) < num_heads * 3 + 10
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-AHE-001
+  rule: Numerical equivalence
+  prediction: Optimized extraction matches baseline element-by-element
+  test: Run both paths on random QKV tensor, compare outputs
+  if_fails: extend_from_slice order differs from flat_map pattern
+- id: FALSIFY-AHE-002
+  rule: Allocation reduction
+  prediction: Less than 100 heap allocations per attention call
+  test: Measure allocations with jemalloc stats during forward pass
+  if_fails: Allocation hoisting not applied to all paths
+qa_gate:
+  id: F-AHEV-001
+  name: attention-head-extraction-v1 Contract
+  description: Quality gate for Efficient per-head Q/K/V extraction — zero intermediate allo
+  checks:
+  - validation
+  - falsification

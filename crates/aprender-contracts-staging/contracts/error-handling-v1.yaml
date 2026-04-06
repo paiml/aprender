@@ -1,0 +1,42 @@
+metadata:
+  version: 1.0.0
+  description: Generic error-handling contract — common Rust API pattern
+  references:
+  - 'Rust API Guidelines: https://rust-lang.github.io/api-guidelines/'
+equations:
+  error_handling:
+    formula: "Result<T, E> where E: Error + Send + Sync + 'static"
+    domain: "Rust error types implementing std::error::Error trait chain"
+    invariants:
+    - "Error::source() forms a DAG (no cycles in error chain)"
+    - "Display output includes root cause (no silent swallowing)"
+    - "downcast_ref recovers original error type"
+    preconditions:
+    - "E implements std::error::Error"
+    - "E implements Display with human-readable message"
+    postconditions:
+    - "Err(e) preserves full causal chain via source()"
+    - "error.to_string() is non-empty and contains context"
+    lean_theorem: Theorems.Error_Handling
+proof_obligations:
+- type: invariant
+  property: error-handling correctness
+falsification_tests:
+- id: FALSIFY-GEN-001
+  rule: error-handling contract
+  prediction: Function follows error-handling pattern
+  if_fails: Implementation deviates from pattern
+kani_harnesses:
+- id: KANI-GEN-001
+  obligation: error-handling correctness
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+qa_gate:
+  id: F-EHV-001
+  name: error-handling-v1 Contract
+  description: Quality gate for Generic error-handling contract — common Rust API
+    pattern
+  checks:
+  - validation
+  - falsification

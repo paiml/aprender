@@ -1,0 +1,161 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: KV cache memory sizing and bias absence invariants
+  references:
+  - Qwen3 Performance Parity Spec — KV cache analysis
+  - Qwen3.5 Fine-Tune Spec — hybrid layer accounting
+  depends_on:
+  - model-config-algebra-v1
+equations:
+  per_token_per_layer:
+    formula: kv_bytes = 2 * n_kv * d_k * sizeof(dtype)
+    domain: n_kv ∈ ℤ⁺, d_k ∈ ℤ⁺, sizeof(f16)=2, sizeof(f32)=4
+    invariants:
+    - Factor of 2 for K and V
+    - Proportional to n_kv * d_k
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Per_Token_Per_Layer
+  total_kv_memory:
+    formula: kv_total = L * S * 2 * n_kv * d_k * bytes_per_element
+    domain: L=layers, S=sequence_length
+    invariants:
+    - Linear in sequence length
+    - Linear in layer count
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Total_Kv_Memory
+  hybrid_accounting:
+    formula: kv_layers = count(layer_type == 'attention')
+    domain: Hybrid architecture with mixed layer types
+    invariants:
+    - Only attention layers contribute to KV cache
+    - kv_layers <= total_layers
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Hybrid_Accounting
+  bias_absence:
+    formula: has_bias=false => count(bias_tensors) == 0
+    domain: Model configuration
+    invariants:
+    - No bias in projection when config says no bias
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Bias_Absence
+  zero_input_identity:
+    formula: W @ zeros = zeros when no bias
+    domain: W ∈ ℝ^{m×n}, bias-free projection
+    invariants:
+    - Matmul with zero input produces zero output
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Zero_Input_Identity
+proof_obligations:
+- type: invariant
+  property: Per-token KV bytes
+  formal: kv_bytes = 2 * n_kv * d_k * bpe
+  applies_to: all
+- type: monotonicity
+  property: KV total monotonic in sequence length
+  formal: S1 < S2 => kv_total(S1) < kv_total(S2)
+  applies_to: all
+- type: bound
+  property: Hybrid KV layers bounded
+  formal: kv_layers <= total_layers
+  applies_to: all
+- type: invariant
+  property: Bias absence
+  formal: has_bias=false => 0 bias tensors
+  applies_to: all
+- type: invariant
+  property: Zero input identity
+  formal: W @ 0 = 0 for bias-free projection
+  applies_to: all
+- type: equivalence
+  property: SIMD KV equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-KV-001
+  rule: Per-token KV bytes
+  prediction: Formula matches expected byte count
+  test: proptest with random n_kv, d_k, dtype
+  if_fails: Missing factor of 2 (K+V) or wrong bpe
+- id: FALSIFY-KV-002
+  rule: KV total monotonic
+  prediction: Longer sequence => more KV cache
+  test: proptest comparing two sequence lengths
+  if_fails: Non-linear component in formula
+- id: FALSIFY-KV-003
+  rule: Hybrid accounting
+  prediction: Only attention layers counted
+  test: proptest with random layer type arrays
+  if_fails: Linear layers incorrectly counted
+- id: FALSIFY-KV-004
+  rule: Bias absence
+  prediction: has_bias=false => 0 bias tensors
+  test: proptest with random configs, verify bias count
+  if_fails: Bias present despite config setting
+- id: FALSIFY-KV-005
+  rule: Zero input identity
+  prediction: W @ zeros = zeros for bias-free projection
+  test: proptest with random W dimensions
+  if_fails: Bias term leaking into zero-input result
+- id: FALSIFY-KV-006
+  rule: SIMD KV equivalence
+  prediction: SIMD KV sizing matches scalar
+  test: 'proptest: compare scalar vs SIMD KV byte calc'
+  if_fails: SIMD path uses different byte formula
+kani_harnesses:
+- id: KANI-KV-001
+  obligation: KV-INV-001
+  property: KV bytes positive for bounded configs
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_kv_bytes_positive
+- id: KANI-KV_CAC-002
+  obligation: Per-token KV bytes
+  property: Per-token KV bytes
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-003
+  obligation: KV total monotonic in sequence length
+  property: KV total monotonic in sequence length
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-004
+  obligation: Hybrid KV layers bounded
+  property: Hybrid KV layers bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-KV_CAC-005
+  obligation: Bias absence
+  property: Bias absence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-006
+  obligation: Zero input identity
+  property: Zero input identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-007
+  obligation: SIMD KV equivalence
+  property: SIMD KV equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-KV-001
+  name: KV Cache Sizing Contract
+  description: KV cache memory quality gate
+  checks:
+  - per_token_bytes
+  - total_monotonic
+  - hybrid_accounting
+  - bias_absence
+  - zero_input_identity
+  pass_criteria: All 6 falsification tests pass
+  falsification: Forget factor of 2 to halve KV cache estimate

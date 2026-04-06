@@ -1,0 +1,188 @@
+{
+  "id": "019c7139-f4d8-7923-b282-643704aee02b",
+  "git_sha": "e7a2c4ef4cde72a0d669480bc6d10fd6c65cbc59",
+  "timestamp": "2026-02-18T14:49:09.592949674+00:00",
+  "trigger": "WorkComplete",
+  "work_item_id": "PMAT-018",
+  "verdicts": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "method": "ManifestIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All 25 files present",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "method": "MetaFalsification",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Detected dummy gaming pattern correctly",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "method": "CoverageGaming",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No gaming patterns found in 25 files",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "method": "DifferentialCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "8 changed files (coverage check requires llvm-cov data)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "method": "AbsoluteCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No coverage data (run 'make coverage' to establish baseline), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "method": "TdgRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No TDG data (baseline: 0.0)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "method": "ComplexityRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Complexity check passed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "method": "SupplyChainIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No vulnerabilities (cached 38 min ago)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "method": "FileSizeRegression",
+      "falsified": true,
+      "is_blocking": false,
+      "explanation": "1 file(s) exceed 500 lines: crates/provable-contracts/src/probar_gen/wired.rs (728 lines)",
+      "evidence_summary": "FileList([\"crates/provable-contracts/src/probar_gen/wired.rs\"])"
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "method": "SpecQuality",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No spec file found (optional)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "method": "GitHubSync",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "1 unpushed commit(s), 1 uncommitted file(s)",
+      "evidence_summary": "GitState { unpushed_commits: 1, dirty_files: 1 }"
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "method": "ExamplesCompile",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No examples directory found (skipping)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "method": "BookValidation",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "pmat-book not found (skipping validation)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "method": "SatdDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No new SATD markers (0 existing)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "method": "DeadCodeDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No dead code detected",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "method": "PerFileCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No per-file coverage data (run 'make coverage'), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "method": "LintPass",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "PASSED (cached 38 min ago)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "method": "VariantCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "8 changed file(s) — all match variants tested",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "method": "FixChainLimit",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No fix chains > 3 consecutive commits",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "method": "CrossCrateParity",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No cross-crate config (create .pmat-work/cross-crate.json to enable)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "method": "RegressionGate",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No benchmark cache (run benchmarks to populate .pmat-metrics/benchmark-status.json)",
+      "evidence_summary": null
+    }
+  ],
+  "overrides": [],
+  "summary": {
+    "total": 21,
+    "passed": 19,
+    "failed": 1,
+    "warnings": 1,
+    "overridden": 0,
+    "allows_completion": false,
+    "health_score": 0.9047619047619048
+  },
+  "content_hash": "08a52583955452f55ab90eef17a154e593f436a88f1d537e0a35c32694f7016f"
+}

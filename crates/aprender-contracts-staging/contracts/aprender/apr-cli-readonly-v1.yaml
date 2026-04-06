@@ -1,0 +1,188 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: "ReadOnly CLI commands — no side effects, idempotent output, deterministic results"
+  references:
+  - 'POSIX.1-2017 Utility Conventions (IEEE Std 1003.1-2017, Section 12)'
+  - 'aprender GH-688: ReadOnly commands need no_side_effects annotation'
+  - 'apr-cli/src/dispatch.rs — dispatch_inspection_commands()'
+  depends_on:
+  - cli-dispatch-v1
+readonly_commands:
+  - check
+  - inspect
+  - debug
+  - validate
+  - lint
+  - explain
+  - list
+  - eval
+  - bench
+  - profile
+  - parity
+  - ptx
+  - ptx-map
+  - flow
+  - tree
+  - tensors
+  - diff
+  - hex
+  - cbtop
+  - rosetta
+  - qa
+  - qualify
+  - compare-hf
+  - showcase
+  - diagnose
+  - oracle
+  - layer
+  - details
+equations:
+  no_side_effects:
+    formula: |
+      ∀ cmd ∈ ReadOnlyCommands:
+        fs_state_before(cmd(args)) = fs_state_after(cmd(args))
+        ∧ env_state_before(cmd(args)) = env_state_after(cmd(args))
+    domain: (cmd ∈ ReadOnlyCommands, args ∈ CliArgs)
+    codomain: No mutation to filesystem, environment, or model state
+    invariants:
+    - No files created, modified, or deleted
+    - No environment variables changed
+    - No network connections opened (except diagnostic endpoints)
+    - No model state mutated (weights, config unchanged)
+    - Temp files cleaned up via RAII if created for scratch
+    preconditions:
+    - Input files exist and are readable
+    postconditions:
+    - "filesystem snapshot before == filesystem snapshot after"
+    - "model file checksum before == model file checksum after"
+    lean_theorem: Theorems.No_Side_Effects
+  idempotent_output:
+    formula: |
+      ∀ cmd ∈ ReadOnlyCommands, args:
+        output(cmd(args)) = output(cmd(args))
+    domain: (cmd ∈ ReadOnlyCommands, args ∈ CliArgs)
+    codomain: String (identical stdout on repeated invocation)
+    invariants:
+    - Same input produces identical output on repeated runs
+    - No timestamp or random content in output (deterministic)
+    - bench command exempt (timing varies but structure is stable)
+    preconditions:
+    - Input files unchanged between invocations
+    postconditions:
+    - "stdout(run1) == stdout(run2) for deterministic commands"
+    lean_theorem: Theorems.Idempotent_Output
+  exit_code_on_error:
+    formula: |
+      ∀ cmd ∈ ReadOnlyCommands:
+        result(cmd) = Err(e) → exit_code != 0
+        ∧ result(cmd) = Ok(()) → exit_code == 0
+    domain: Result<(), CliError>
+    codomain: (exit_code ∈ {0} ∪ {1, 3..11})
+    invariants:
+    - Error always produces non-zero exit code
+    - FileNotFound returns exit code 3 (not generic 1)
+    - Invalid format returns exit code 4
+    - Validation failure returns exit code 5
+    preconditions:
+    - Command has completed execution
+    postconditions:
+    - "Err(e) → exit_code = e.exit_code()"
+    lean_theorem: Theorems.ReadOnly_Exit_Code
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify input files exist, are readable, match expected format
+  - name: execute
+    description: Read-only analysis, formatting, reporting
+  - name: verify_output
+    description: Verify no side effects, map errors to exit codes
+
+proof_obligations:
+- type: invariant
+  property: ReadOnly commands have no side effects
+  formal: '∀ cmd ∈ ReadOnlySet: fs_snapshot_before == fs_snapshot_after'
+  applies_to: no_side_effects
+- type: invariant
+  property: Idempotent output on repeated invocation
+  formal: '∀ cmd, args: output(cmd(args)) = output(cmd(args))'
+  applies_to: idempotent_output
+- type: invariant
+  property: Error produces non-zero exit code
+  formal: '∀ cmd, e: Err(e) → exit_code != 0'
+  applies_to: exit_code_on_error
+
+falsification_tests:
+- id: FALSIFY-RO-001
+  rule: ReadOnly commands have no side effects
+  prediction: check command does not create any files
+  test: |
+    #[test]
+    fn falsify_ro_001_check_no_side_effects() {
+        let dir = tempfile::tempdir().unwrap();
+        let snapshot_before: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap().map(|e| e.unwrap().path()).collect();
+        let _ = std::process::Command::new("apr")
+            .args(&["check", "test-model.gguf"])
+            .current_dir(dir.path())
+            .output();
+        let snapshot_after: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap().map(|e| e.unwrap().path()).collect();
+        assert_eq!(snapshot_before, snapshot_after,
+            "ReadOnly command created files in working directory");
+    }
+  if_fails: Check command writes temp files or logs to working directory
+- id: FALSIFY-RO-002
+  rule: Idempotent output on repeated invocation
+  prediction: check --json produces identical output on two runs
+  test: |
+    #[test]
+    fn falsify_ro_002_idempotent_check_json() {
+        let run = || {
+            std::process::Command::new("apr")
+                .args(&["check", "test-model.gguf", "--json"])
+                .output()
+                .expect("Failed to run apr")
+        };
+        let out1 = run();
+        let out2 = run();
+        assert_eq!(out1.stdout, out2.stdout,
+            "check --json produced different output on second run");
+    }
+  if_fails: Non-deterministic content in JSON output (timestamps, random IDs)
+- id: FALSIFY-RO-003
+  rule: Error produces non-zero exit code
+  prediction: check on non-existent file returns exit code 3
+  test: |
+    #[test]
+    fn falsify_ro_003_check_nonexistent_exit_code() {
+        let output = std::process::Command::new("apr")
+            .args(&["check", "/nonexistent/model.gguf"])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(code, 3,
+            "FileNotFound should return exit code 3, got {}", code);
+    }
+  if_fails: FileNotFound returns generic exit code 1
+
+kani_harnesses:
+- id: KANI-RO-001
+  obligation: ReadOnly commands have no side effects
+  property: No filesystem mutation in readonly command paths
+  bound: 8
+  strategy: exhaustive
+  harness: verify_readonly_no_side_effects
+
+qa_gate:
+  id: F-RO-GATE
+  name: ReadOnly Command Contract
+  description: No-side-effects quality gate for 28 readonly apr commands
+  checks:
+  - no_side_effects
+  - idempotent_output
+  - exit_code_on_error
+  pass_criteria: All 3 falsification tests pass
+  falsification: Write a log file from check command to break no_side_effects

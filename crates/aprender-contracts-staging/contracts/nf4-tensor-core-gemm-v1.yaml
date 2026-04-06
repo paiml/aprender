@@ -1,0 +1,91 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    NF4 tensor core GEMM — WMMA 16×16×16 with inline NF4 dequantization.
+    Dequantizes NF4 blocks to FP16 in shared memory, uses tensor cores for
+    matmul. Expected 10-40x compute improvement over naive tiled NF4 GEMM.
+  pmat: [PMAT-479]
+  references:
+  - "TensorCoreQ4KGemmKernel: proven WMMA+quantized GEMM pattern in trueno"
+  - "NVIDIA WMMA: 16×16×16 FP16 → FP32 accumulate"
+
+equations:
+  naive_nf4_gemm:
+    formula: |
+      Current: 1 thread per output element, scalar FMA
+      Compute: M×N×K scalar FMA operations at ~2 TFLOPS (Ada SIMD)
+      For Qwen 1.5B (M=2048, K=1536, N=1536):
+        FLOPs = 2 × 2048 × 1536 × 1536 = 9.66 GFLOP
+        Time at 2 TFLOPS = 4.8 ms per GEMM
+    domain: M, K, N in u32
+
+  tensor_core_nf4_gemm:
+    formula: |
+      Proposed: WMMA 16×16×16 tiles, FP16 compute → FP32 accumulate
+      Compute: same FLOPs but at ~83 TFLOPS (Ada tensor cores)
+      For Qwen 1.5B: 9.66 GFLOP at 83 TFLOPS = 0.12 ms per GEMM
+      Speedup: ~40x compute (if not memory-bound)
+    domain: same
+    invariants:
+    - NF4 dequant to FP16 in shared memory (16 values per block)
+    - WMMA load from shared memory (row-major A, col-major B)
+    - FP32 accumulator written to global memory
+
+proof_obligations:
+- type: equivalence
+  property: Tensor core NF4 GEMM matches naive NF4 GEMM
+  formal: '|tc_gemm(A, B_nf4) - naive_gemm(A, B_nf4)| < ε element-wise'
+  tolerance: 1.0e-3
+  applies_to: all
+- type: bound
+  property: Throughput improvement via tensor cores
+  formal: throughput(tc_gemm) >= 5 * throughput(naive_gemm)
+  applies_to: tensor_core_nf4_gemm
+- type: invariant
+  property: NF4 dequant to FP16 in shared memory before WMMA load
+  formal: dequant_location == shared_memory AND wmma_input_type == fp16
+  applies_to: tensor_core_nf4_gemm
+
+kani_harnesses:
+- id: KANI-NF4TC-001
+  obligation: Tensor core GEMM equivalence
+  property: TC GEMM matches naive within tolerance
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_tc_gemm_equivalence
+- id: KANI-NF4TC-002
+  obligation: NF4 dequant to FP16 precision
+  property: Dequant preserves value within FP16 range
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_nf4_fp16_dequant
+
+falsification_tests:
+- id: F-NF4-TC-001
+  rule: Tensor core NF4 GEMM matches naive within 1e-3
+  prediction: Max absolute difference < 1e-3 at Qwen dimensions
+  test: Run both paths at Qwen dims (M=2048, K=1536, N=1536). Compare element-wise.
+  if_fails: FP16 accumulation precision loss — check if FP32 accumulate is used in WMMA
+
+- id: F-NF4-TC-002
+  rule: Throughput improvement via tensor cores
+  prediction: Throughput >= 5x naive NF4 GEMM
+  test: Compare tok/s with NF4_FUSED_GEMM=1 (naive) vs NF4_TC_GEMM=1 (tensor core).
+  if_fails: Memory-bound at these dimensions — profile with nsys to check compute vs memory
+
+- id: F-NF4-TC-003
+  rule: NF4 dequant to FP16 in shared memory before WMMA load
+  prediction: Dequantized FP16 values in shared memory match standalone NF4 dequant
+  test: Dump shared memory after dequant phase, compare against CPU NF4 dequant reference. Max diff < 1e-3.
+  if_fails: Shared memory bank conflicts corrupting dequant values — check padding and stride
+
+qa_gate:
+  id: F-NF4TC-001
+  name: nf4-tensor-core-gemm-v1 Contract
+  checks:
+  - validation
+  - falsification

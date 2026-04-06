@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-094",
+  "prompt": "depyler: A-score enforcement — binding coverage 64%→90%",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T16:24:26.766604051Z"
+}

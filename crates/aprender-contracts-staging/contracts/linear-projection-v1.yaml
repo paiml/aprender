@@ -1,0 +1,156 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Linear projection — matrix multiply with optional bias (dense layer forward pass)
+  references:
+  - Bishop (2006) Pattern Recognition and Machine Learning
+equations:
+  linear_forward:
+    formula: y = x @ W^T + b
+    domain: x in R^{batch x d_in}, W in R^{d_out x d_in}, b in R^{d_out}
+    codomain: y in R^{batch x d_out}
+    invariants:
+    - y.shape = (batch, d_out) for x.shape = (batch, d_in)
+    - y[i] = sum_j(x[i][j] * W[k][j]) + b[k] for each output element
+    - f(alpha * x) + b = alpha * (x @ W^T) + b (scaling with bias)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Linear_Forward
+  linear_no_bias:
+    formula: y = x @ W^T
+    domain: x in R^{batch x d_in}, W in R^{d_out x d_in}
+    codomain: y in R^{batch x d_out}
+    invariants:
+    - f(alpha * x) = alpha * f(x) (homogeneity / linearity)
+    - f(0) = 0 (zero preservation without bias)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Linear_No_Bias
+proof_obligations:
+- type: bound
+  property: Output shape correctness
+  formal: y.shape = (batch, d_out) for x.shape = (batch, d_in), W.shape = (d_out, d_in)
+  applies_to: all
+- type: linearity
+  property: Homogeneity without bias
+  formal: linear_no_bias(alpha * x, W) = alpha * linear_no_bias(x, W)
+  applies_to: all
+- type: invariant
+  property: Bias additivity
+  formal: linear_forward(x, W, b) = linear_no_bias(x, W) + b (broadcast)
+  applies_to: all
+- type: invariant
+  property: Zero input produces bias
+  formal: linear_forward(0, W, b) = b (broadcast to batch)
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 4.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: matmul
+    description: Compute x @ W^T via tiled matrix multiplication
+    invariant: intermediate.shape = (batch, d_out)
+  - name: bias_add
+    description: Add bias vector b to each row of intermediate
+    invariant: output[i] = intermediate[i] + b for all rows i
+simd_dispatch:
+  linear_forward:
+    scalar: linear_forward_scalar
+    avx2: linear_forward_avx2
+    ptx: linear_forward_ptx
+enforcement:
+  output_shape:
+    description: Output must have shape (batch, d_out)
+    check: contract_tests::FALSIFY-LP-001
+    severity: ERROR
+  homogeneity:
+    description: No-bias projection must satisfy f(alpha*x) = alpha*f(x)
+    check: contract_tests::FALSIFY-LP-002
+    severity: ERROR
+  bias_additivity:
+    description: Bias must add independently of matmul
+    check: contract_tests::FALSIFY-LP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-LP-001
+  rule: Output shape correctness
+  prediction: y.shape = (batch, d_out) for all valid dimension combinations
+  test: proptest with batch in [1, 64], d_in in [1, 256], d_out in [1, 256]
+  if_fails: Matmul dimension mismatch or transposition error
+- id: FALSIFY-LP-002
+  rule: Homogeneity without bias
+  prediction: linear_no_bias(alpha * x, W) = alpha * linear_no_bias(x, W) within 4 ULP
+  test: proptest with random alpha in [-10, 10], random x and W
+  if_fails: Floating-point accumulation order violates linearity
+- id: FALSIFY-LP-003
+  rule: Bias additivity
+  prediction: linear_forward(x, W, b) - linear_no_bias(x, W) = b (broadcast)
+  test: proptest with random x, W, b; subtract and compare
+  if_fails: Bias fused into matmul incorrectly
+- id: FALSIFY-LP-004
+  rule: Zero input produces bias
+  prediction: linear_forward(0, W, b) = b for every row
+  test: direct evaluation with x = 0 matrix, verify output equals broadcast b
+  if_fails: Matmul of zero not producing zero intermediate
+- id: FALSIFY-LP-005
+  rule: SIMD equivalence
+  prediction: '|linear_forward_avx2(x, W, b) - linear_forward_scalar(x, W, b)| < 4 ULP'
+  test: proptest comparing scalar vs SIMD output element-wise
+  if_fails: SIMD FMA instruction accumulation differs from scalar
+kani_harnesses:
+- id: KANI-LP-001
+  obligation: LP-SHP-001
+  property: Linear projection output shape equals (batch, d_out)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_linear_output_shape
+- id: KANI-LP-002
+  obligation: LP-LIN-001
+  property: No-bias projection satisfies homogeneity f(ax) = a*f(x)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_linear_homogeneity
+- id: KANI-LINEAR-003
+  obligation: Output shape correctness
+  property: Output shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-004
+  obligation: Homogeneity without bias
+  property: Homogeneity without bias
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-005
+  obligation: Bias additivity
+  property: Bias additivity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-006
+  obligation: Zero input produces bias
+  property: Zero input produces bias
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-LP-001
+  name: Linear Projection Contract
+  description: Dense layer forward pass (matmul + bias) quality gate
+  checks:
+  - output_shape
+  - homogeneity
+  - bias_additivity
+  - zero_input_bias
+  - simd_equivalence
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
+  falsification: Replace matmul with identity (skip W^T multiplication)

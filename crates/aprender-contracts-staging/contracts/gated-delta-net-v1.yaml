@@ -1,0 +1,167 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Gated Delta Net — Qwen3.5 linear attention with decay, delta rule, and causal conv1d
+  references:
+  - 'Yang et al. (2024) Gated Delta Networks: Improving Mamba2 with Delta Rule'
+  - Qwen3.5 Technical Report — Qwen3_5GatedDeltaNet layer
+  - GH-278 implementation notes
+  depends_on:
+  - conv1d-kernel-v1
+equations:
+  decay:
+    formula: α_t = sigmoid(A_log.exp() × dt + dt_bias)
+    domain: A_log ∈ ℝ, dt ∈ ℝ, dt_bias ∈ ℝ
+    codomain: α_t ∈ (0, 1)
+    invariants:
+    - sigmoid output strictly in (0,1)
+    - Decay controls information retention
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Decay
+  read:
+    formula: r_t = state^T @ k_t
+    domain: state ∈ ℝ^{k_dim × v_dim}, k_t ∈ ℝ^{k_dim}
+    codomain: r_t ∈ ℝ^{v_dim}
+    invariants:
+    - Read is linear projection from state
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Read
+  delta:
+    formula: δ_t = β_t × (v_t - r_t)
+    domain: β_t ∈ ℝ, v_t ∈ ℝ^{v_dim}, r_t ∈ ℝ^{v_dim}
+    codomain: δ_t ∈ ℝ^{v_dim}
+    invariants:
+    - Delta rule corrects toward target v_t
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Delta
+  write:
+    formula: state_{t+1} = α_t × state_t + k_t ⊗ δ_t
+    domain: state_t ∈ ℝ^{k_dim × v_dim}, k_t ∈ ℝ^{k_dim}, δ_t ∈ ℝ^{v_dim}
+    codomain: state_{t+1} ∈ ℝ^{k_dim × v_dim}
+    invariants:
+    - State shape preserved across timesteps
+    - Outer product k_t ⊗ δ_t has shape [k_dim, v_dim]
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Write
+  output:
+    formula: o_t = state_t^T @ q_t × z_t
+    domain: state_t ∈ ℝ^{k_dim × v_dim}, q_t ∈ ℝ^{k_dim}, z_t ∈ ℝ^{v_dim}
+    codomain: o_t ∈ ℝ^{v_dim}
+    invariants:
+    - Output gated by z_t element-wise
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Output
+proof_obligations:
+- type: bound
+  property: Decay in unit interval
+  formal: α_t ∈ (0, 1) since sigmoid maps ℝ → (0, 1)
+  applies_to: all
+- type: invariant
+  property: State shape preserved
+  formal: shape(state_{t+1}) == shape(state_t) == [k_dim, v_dim]
+  applies_to: all
+- type: invariant
+  property: Causal conv1d
+  formal: conv1d output at t depends only on t..t-k+1
+  applies_to: all
+- type: invariant
+  property: L2 norm preserves direction
+  formal: L2(q) / ||L2(q)|| ≈ q / ||q||
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-GDN-001
+  rule: Decay bound
+  prediction: sigmoid(x) ∈ (0, 1) for all finite x
+  test: proptest with extreme values
+  if_fails: Sigmoid implementation not numerically stable
+- id: FALSIFY-GDN-002
+  rule: State shape
+  prediction: State [k_dim, v_dim] after any number of updates
+  test: proptest running recurrence for random timesteps
+  if_fails: Outer product dimension mismatch
+- id: FALSIFY-GDN-003
+  rule: Causal conv
+  prediction: Modifying future input does not change current output
+  test: proptest comparing outputs with/without future modification
+  if_fails: Conv1d not properly causal
+- id: FALSIFY-GDN-004
+  rule: L2 direction
+  prediction: L2-normalized vector has same direction as input
+  test: proptest checking cosine similarity ≈ 1
+  if_fails: L2 normalization changes direction
+- id: FALSIFY-GDN-005
+  rule: SIMD equivalence
+  prediction: SIMD and scalar give same result within ULP
+  test: proptest comparing backends
+  if_fails: SIMD reduction order differs
+kani_harnesses:
+- id: KANI-GDN-001
+  obligation: GDN-BND-001
+  property: Sigmoid output in (0,1) for bounded inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_decay_bound
+- id: KANI-GDN-002
+  obligation: GDN-INV-002
+  property: State shape preserved after recurrence update
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_state_shape_preserved
+- id: KANI-GATED_-003
+  obligation: Decay in unit interval
+  property: Decay in unit interval
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GATED_-004
+  obligation: State shape preserved
+  property: State shape preserved
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GATED_-005
+  obligation: Causal conv1d
+  property: Causal conv1d
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GATED_-006
+  obligation: L2 norm preserves direction
+  property: L2 norm preserves direction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GATED_-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GDN-001
+  name: Gated Delta Net Contract
+  description: Qwen3.5 linear attention recurrence quality gate
+  checks:
+  - decay_bound
+  - state_shape
+  - causal_conv
+  - l2_direction
+  pass_criteria: All 5 falsification tests pass
+  falsification: Set A_log to extreme value to trigger sigmoid saturation
+simd_dispatch:
+  gated_delta_net:
+    scalar: gdn_recurrence_scalar
+    avx2: gdn_recurrence_avx2
+    ptx: gated_delta_net_ptx

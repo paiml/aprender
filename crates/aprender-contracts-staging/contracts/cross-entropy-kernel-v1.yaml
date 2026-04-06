@@ -1,0 +1,206 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Cross-entropy kernel — log-sum-exp stable cross-entropy loss
+  references:
+  - Shannon (1948) A Mathematical Theory of Communication
+  - Milakov & Gimelshein (2018) Online normalizer calculation for softmax
+  depends_on:
+  - softmax-kernel-v1
+equations:
+  cross_entropy:
+    formula: CE(targets, logits) = -sum(targets_i * log_softmax(logits)_i)
+    domain: targets in {0,1}^n with sum=1, logits in R^n, n >= 2
+    codomain: CE in [0, +inf)
+    invariants:
+    - CE >= 0 (non-negativity)
+    - CE(one_hot(k), logits) = -log_softmax(logits)_k
+    - CE(p, p_logits) = H(p) when p = softmax(p_logits)
+    preconditions:
+    - logits.len() > 0
+    - logits.iter().all(|v| v.is_finite())
+    - target < logits.len()
+    lean_theorem: Theorems.Cross_Entropy
+    postconditions:
+    - result.is_finite()
+    - result >= 0.0
+  log_softmax:
+    formula: log_softmax(x)_i = x_i - max(x) - log(sum(exp(x_j - max(x))))
+    domain: x in R^n, n >= 1
+    codomain: log_softmax(x) in (-inf, 0]
+    invariants:
+    - log_softmax(x)_i <= 0 for all i
+    - exp(log_softmax(x)) = softmax(x)
+    - log_sum_exp trick preserves numerical stability
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Log_Softmax
+proof_obligations:
+- type: invariant
+  property: Non-negativity
+  formal: CE(targets, logits) >= 0
+  applies_to: all
+  lean:
+    theorem: CrossEntropy.cross_entropy_nonneg
+    module: ProvableContracts.CrossEntropy
+    status: proved
+    depends_on:
+    - CrossEntropy.log_softmax_le_zero
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Basic
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: Requires non-negative targets; log_softmax ≤ 0 gives -sum(t·ls) ≥ 0
+- type: bound
+  property: Log-softmax bounded above by zero
+  formal: log_softmax(x)_i <= 0 for all i
+  applies_to: all
+  lean:
+    theorem: CrossEntropy.log_softmax_le_zero
+    module: ProvableContracts.CrossEntropy
+    status: proved
+    depends_on:
+    - CrossEntropy.exp_le_sum
+    - Real.log_le_log
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.Log.Basic
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: exp(xᵢ) ≤ Σ exp(xⱼ), so log(exp(xᵢ)) ≤ log(Σ exp(xⱼ))
+- type: equivalence
+  property: LogSoftmax + NLL equals CrossEntropy
+  formal: '|CE(t, x) - (-sum(t_i * log_softmax(x)_i))| < eps'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: Finite output for finite inputs
+  formal: CE is finite when logits and targets are finite
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 3
+  l4_lean_proved: 2
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+kernel_structure:
+  phases:
+  - name: find_max
+    description: Compute max(logits) for numerical stability
+    invariant: max >= logits_i for all i
+  - name: log_sum_exp
+    description: Compute log(sum(exp(logits_i - max)))
+    invariant: result is finite for finite inputs
+  - name: log_softmax
+    description: Compute logits_i - max - log_sum_exp
+    invariant: log_softmax_i <= 0
+  - name: nll
+    description: Compute -sum(targets_i * log_softmax_i)
+    invariant: result >= 0
+simd_dispatch:
+  cross_entropy:
+    scalar: cross_entropy_scalar
+    avx2: cross_entropy_avx2
+    ptx: cross_entropy_ptx
+enforcement:
+  non_negativity:
+    description: Cross-entropy loss must be non-negative
+    check: contract_tests::FALSIFY-CE-001
+    severity: ERROR
+  numerical_stability:
+    description: No NaN or Inf for finite inputs
+    check: contract_tests::FALSIFY-CE-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CE-001
+  rule: Non-negativity
+  prediction: CE(targets, logits) >= 0 for valid probability targets
+  test: proptest with random one-hot targets and logits, dim 2..128
+  if_fails: Sign error in NLL computation
+- id: FALSIFY-CE-002
+  rule: Log-softmax upper bound
+  prediction: log_softmax(x)_i <= 0 for all i
+  test: proptest with random logits in [-1000, 1000]
+  if_fails: Missing max subtraction in log-sum-exp
+- id: FALSIFY-CE-003
+  rule: Numerical stability
+  prediction: No NaN/Inf in output for finite logits
+  test: proptest with extreme values near f32::MIN/MAX
+  if_fails: Log-sum-exp trick not applied or overflow in exp
+- id: FALSIFY-CE-004
+  rule: Decomposition equivalence
+  prediction: '|CE(t,x) - NLL(t, log_softmax(x))| < 1e-6'
+  test: proptest comparing fused CE vs separate log_softmax + NLL
+  if_fails: Fused computation introduces different rounding
+- id: FALSIFY-CE-005
+  rule: SIMD equivalence
+  prediction: '|cross_entropy_avx2(t,x) - cross_entropy_scalar(t,x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD log/exp approximation differs
+- id: FALSIFY-CE-006
+  rule: Boundary - perfect prediction
+  prediction: CE(one_hot(k), logits) approaches 0 as logits_k >> logits_j
+  test: proptest with dominant logit at target index
+  if_fails: Loss not approaching zero for confident predictions
+kani_harnesses:
+- id: KANI-CE-001
+  obligation: CE-INV-001
+  property: Cross-entropy is non-negative for small inputs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cross_entropy_non_negative
+- id: KANI-CE-002
+  obligation: CE-BND-001
+  property: Log-softmax bounded above by zero
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_log_softmax_upper_bound
+- id: KANI-CE-003
+  obligation: CE-BND-002
+  property: Output finite for finite inputs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cross_entropy_finite
+- id: KANI-CROSS_-004
+  obligation: Non-negativity
+  property: Non-negativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CROSS_-005
+  obligation: Log-softmax bounded above by zero
+  property: Log-softmax bounded above by zero
+  bound: 8
+  strategy: stub_float
+- id: KANI-CROSS_-006
+  obligation: LogSoftmax + NLL equals CrossEntropy
+  property: LogSoftmax + NLL equals CrossEntropy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CROSS_-007
+  obligation: Finite output for finite inputs
+  property: Finite output for finite inputs
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CROSS_-008
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CE-001
+  name: Cross-Entropy Contract
+  description: Numerically stable cross-entropy loss quality gate
+  checks:
+  - non_negativity
+  - log_softmax_bound
+  - numerical_stability
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Remove max subtraction from log-sum-exp

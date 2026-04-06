@@ -1,0 +1,37 @@
+//
+// x86-64 AVX2 stub: dot-kernel-v1
+// Dot product kernel — inner product
+// Equation dot: y = Σ x_i · w_i
+//
+
+.intel_syntax noprefix
+.text
+.globl dot_avx2
+.p2align 4
+
+dot_avx2:
+    push rbp
+    mov rbp, rsp
+    // rdi = input ptr, rsi = output ptr, edx = n
+
+    // AVX2 registers: ymm x 16
+    vxorps ymm0, ymm0, ymm0
+    vxorps ymm1, ymm1, ymm1
+    vxorps ymm2, ymm2, ymm2
+    vxorps ymm3, ymm3, ymm3
+
+    // Phase 1: multiply
+    // Element-wise x_i * w_i
+    // Invariant: prod_i = x_i * w_i
+
+    // Phase 2: reduce
+    // Sum all products
+    // Invariant: y = Σ prod_i
+
+    // Proof obligations:
+    //   [linearity] Scalar linearity
+    //   [invariant] Zero annihilation
+    //   [equivalence] SIMD matches scalar
+
+    pop rbp
+    ret

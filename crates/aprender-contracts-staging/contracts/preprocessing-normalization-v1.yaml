@@ -1,0 +1,165 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Preprocessing normalization — data scaling and standardization transforms
+  references:
+  - 'Scikit-learn: Preprocessing data (StandardScaler, MinMaxScaler)'
+  - Bishop (2006) Pattern Recognition and Machine Learning, §1.1
+equations:
+  standard_scaler:
+    formula: z = (x - μ) / σ where μ = mean(X), σ = std(X)
+    domain: X ∈ ℝ^{n×d}, n ≥ 2
+    codomain: Z ∈ ℝ^{n×d}
+    invariants:
+    - mean(Z_j) ≈ 0 for each feature j (within float tolerance)
+    - std(Z_j) ≈ 1 for each feature j (when σ_j > 0)
+    - 'Inverse transform recovers original: x = z * σ + μ'
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Standard_Scaler
+  minmax_scaler:
+    formula: x_scaled = (x - x_min) / (x_max - x_min) * (max - min) + min
+    domain: X ∈ ℝ^{n×d}, target range [min, max]
+    codomain: X_scaled ∈ [min, max]^{n×d} (for training data)
+    invariants:
+    - X_scaled ∈ [min, max] for training data (exact bounds)
+    - x_min maps to min, x_max maps to max
+    - Inverse transform recovers original
+    - 'Monotone: x_i ≤ x_j ⟹ scaled(x_i) ≤ scaled(x_j)'
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Minmax_Scaler
+  robust_scaler:
+    formula: z = (x - median) / IQR where IQR = Q3 - Q1
+    domain: X ∈ ℝ^{n×d}, n ≥ 4
+    codomain: Z ∈ ℝ^{n×d}
+    invariants:
+    - median(Z_j) ≈ 0 for each feature j
+    - IQR(Z_j) ≈ 1 for each feature j (when IQR > 0)
+    - Robust to outliers (only uses quartiles)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Robust_Scaler
+proof_obligations:
+- type: invariant
+  property: StandardScaler zero mean
+  formal: '|mean(Z_j)| < ε for each feature j'
+  applies_to: all
+- type: invariant
+  property: StandardScaler unit variance
+  formal: '|std(Z_j) - 1| < ε for each feature j where σ_j > ε'
+  applies_to: all
+- type: bound
+  property: MinMaxScaler bounded
+  formal: X_scaled ∈ [min, max] for training data
+  applies_to: all
+- type: invariant
+  property: MinMaxScaler extremes
+  formal: scaled(x_min) = min, scaled(x_max) = max
+  applies_to: all
+- type: invariant
+  property: StandardScaler inverse
+  formal: inverse_transform(transform(X)) ≈ X
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-PP-001
+  rule: StandardScaler zero mean
+  prediction: mean of each standardized feature ≈ 0
+  test: proptest with random matrices, fit then transform
+  if_fails: Mean subtraction not applied per-feature
+- id: FALSIFY-PP-002
+  rule: StandardScaler unit variance
+  prediction: std of each standardized feature ≈ 1
+  test: proptest with non-constant columns
+  if_fails: Division by std not applied or Bessel correction wrong
+- id: FALSIFY-PP-003
+  rule: MinMaxScaler bounded
+  prediction: all transformed values in [min, max]
+  test: proptest with random data and various target ranges
+  if_fails: Range computation error or off-by-one
+- id: FALSIFY-PP-004
+  rule: MinMaxScaler extremes
+  prediction: min(X) maps to min, max(X) maps to max
+  test: proptest with random data
+  if_fails: Boundary condition not handled
+- id: FALSIFY-PP-005
+  rule: StandardScaler inverse roundtrip
+  prediction: inverse_transform(transform(X)) ≈ X
+  test: proptest with random matrices
+  if_fails: Inverse formula incorrect
+- id: FALSIFY-PP-006
+  rule: MinMaxScaler inverse roundtrip
+  prediction: inverse_transform(transform(X)) ≈ X
+  test: proptest with random matrices
+  if_fails: Inverse formula incorrect
+enforcement:
+  bounded:
+    description: MinMax must produce values in [min, max]
+    check: contract_tests::FALSIFY-PP-003
+    severity: ERROR
+  zero_mean:
+    description: StandardScaler must produce zero-mean features
+    check: contract_tests::FALSIFY-PP-001
+    severity: ERROR
+kani_harnesses:
+- id: KANI-PP-001
+  obligation: PP-INV-001
+  property: StandardScaler produces zero-mean output
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_standard_scaler_zero_mean
+- id: KANI-PP-002
+  obligation: PP-BND-001
+  property: MinMaxScaler output bounded in [min, max]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_minmax_scaler_bounded
+- id: KANI-PREPRO-003
+  obligation: StandardScaler zero mean
+  property: StandardScaler zero mean
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PREPRO-004
+  obligation: StandardScaler unit variance
+  property: StandardScaler unit variance
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PREPRO-005
+  obligation: MinMaxScaler bounded
+  property: MinMaxScaler bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-PREPRO-006
+  obligation: MinMaxScaler extremes
+  property: MinMaxScaler extremes
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PREPRO-007
+  obligation: StandardScaler inverse
+  property: StandardScaler inverse
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PREPRO-008
+  obligation: MinMaxScaler inverse
+  property: MinMaxScaler inverse
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-PP-001
+  name: Preprocessing Normalization Contract
+  description: Preprocessing normalization correctness quality gate
+  checks:
+  - standard_zero_mean
+  - standard_unit_variance
+  - minmax_bounded
+  - minmax_extremes
+  - standard_inverse
+  - minmax_inverse
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Apply same mean/std to all features instead of per-feature

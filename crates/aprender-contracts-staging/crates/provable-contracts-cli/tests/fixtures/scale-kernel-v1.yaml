@@ -1,0 +1,54 @@
+metadata:
+  version: "1.0.0"
+  description: "Affine scale kernel — fused multiply-add"
+  references:
+    - "IEEE 754-2019"
+
+equations:
+  scale:
+    formula: "y_i = α · x_i + β"
+    domain: "x ∈ ℝ^n, α ∈ ℝ, β ∈ ℝ"
+    codomain: "y ∈ ℝ^n"
+    invariants:
+      - "y finite when x finite"
+
+proof_obligations:
+  - type: invariant
+    property: "Finiteness"
+    formal: "|y_i| < ∞ when |x_i| < ∞ and |α| < ∞ and |β| < ∞"
+    applies_to: all
+  - type: equivalence
+    property: "SIMD matches scalar"
+    tolerance: 0.0
+    applies_to: simd
+
+kernel_structure:
+  phases:
+    - name: fma
+      description: "Fused multiply-add α·x + β"
+      invariant: "y_i = α·x_i + β"
+
+simd_dispatch:
+  scale:
+    scalar: scale_scalar
+    avx2: scale_avx2
+
+falsification_tests:
+  - id: FALSIFY-SC-001
+    rule: "Finiteness"
+    prediction: "scale(x) is finite for finite inputs"
+    if_fails: "Overflow in multiply-add"
+
+kani_harnesses:
+  - id: KANI-SC-001
+    obligation: SC-INV-001
+    property: "Finiteness for bounded inputs"
+    bound: 16
+    strategy: exhaustive
+
+qa_gate:
+  id: F-SC-001
+  name: "Scale Contract"
+  checks:
+    - "finiteness"
+  pass_criteria: "All 1 falsification tests pass"

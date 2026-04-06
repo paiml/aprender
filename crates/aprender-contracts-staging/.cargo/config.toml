@@ -1,0 +1,18 @@
+# Build configuration for provable-contracts
+# See: https://doc.rust-lang.org/cargo/reference/config.html
+
+[build]
+# Cargo defaults to num_cpus for parallel compilation
+
+[target.'cfg(target_os = "linux")']
+rustflags = ["-C", "target-cpu=native"]
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "target-cpu=native"]
+
+[term]
+verbose = false
+color = "auto"
+
+[net]
+retry = 3

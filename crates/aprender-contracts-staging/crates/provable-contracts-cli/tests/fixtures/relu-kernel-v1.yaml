@@ -1,0 +1,66 @@
+metadata:
+  version: "1.0.0"
+  description: "ReLU activation — rectified linear unit"
+  references:
+    - "Nair & Hinton (2010)"
+
+equations:
+  relu:
+    formula: "y_i = max(0, x_i)"
+    domain: "x ∈ ℝ^n"
+    codomain: "y ∈ [0, ∞)^n"
+    invariants:
+      - "y_i ≥ 0 for all i"
+      - "relu(relu(x)) = relu(x)"
+
+proof_obligations:
+  - type: invariant
+    property: "Non-negativity"
+    formal: "y_i ≥ 0 for all i"
+    applies_to: all
+  - type: bound
+    property: "Output bounded below by zero"
+    formal: "0 ≤ y_i ≤ x_i when x_i > 0"
+    applies_to: all
+  - type: idempotency
+    property: "Idempotent application"
+    formal: "relu(relu(x)) = relu(x)"
+    applies_to: all
+  - type: equivalence
+    property: "SIMD matches scalar"
+    tolerance: 0.0
+    applies_to: simd
+
+kernel_structure:
+  phases:
+    - name: compare
+      description: "Compare each x_i against zero"
+      invariant: "mask_i = (x_i > 0)"
+    - name: select
+      description: "Select x_i if positive, else zero"
+      invariant: "y_i = mask_i ? x_i : 0"
+
+simd_dispatch:
+  relu:
+    scalar: relu_scalar
+    avx2: relu_avx2
+
+falsification_tests:
+  - id: FALSIFY-RELU-001
+    rule: "Non-negativity"
+    prediction: "relu(x)_i >= 0 for all x"
+    if_fails: "Comparison logic inverted"
+
+kani_harnesses:
+  - id: KANI-RELU-001
+    obligation: RELU-INV-001
+    property: "Non-negativity for bounded inputs"
+    bound: 16
+    strategy: exhaustive
+
+qa_gate:
+  id: F-RELU-001
+  name: "ReLU Contract"
+  checks:
+    - "non_negativity"
+  pass_criteria: "All 1 falsification tests pass"

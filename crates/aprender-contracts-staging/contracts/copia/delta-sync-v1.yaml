@@ -1,0 +1,144 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: rsync-style delta synchronization — block hash, delta computation, patch correctness
+  references:
+  - 'Tridgell & Mackerras (1996) The rsync algorithm'
+  - 'O''Connor et al. (2019) BLAKE3: One function, fast everywhere'
+equations:
+  rolling_checksum:
+    formula: R(k+1) = ((a(k+1) mod M) << 16) | (b(k+1) mod M), where a(k+1) = a(k) - d(k) + d(k+L), b(k+1) = b(k) - L*d(k) + a(k+1), M = 65521
+    domain: byte window of length L over input stream
+    codomain: u32 checksum
+    invariants:
+    - 'Components a, b always < MOD (65521)'
+    - 'Sliding: R(k+1) computable in O(1) from R(k)'
+    - 'Deterministic: same window always produces same checksum'
+    preconditions:
+    - window.len() == block_size
+    - block_size > 0
+    lean_theorem: Theorems.Rolling_Checksum
+  delta_computation:
+    formula: D(basis, source) = [DeltaOp] where apply(basis, D) = source
+    domain: basis ∈ Read, source ∈ Read, signature ∈ Signature
+    codomain: Delta containing Vec<DeltaOp>
+    invariants:
+    - 'Correctness: patch(basis, delta(basis, source)) = source byte-for-byte'
+    - 'bytes_matched + bytes_literal = source_size'
+    - 'block_hits + block_misses = total blocks scanned'
+    preconditions:
+    - basis is readable
+    - source is readable
+    - signature.block_size > 0
+    lean_theorem: Theorems.Delta_Computation
+  patch_apply:
+    formula: P(basis, delta) = output where |output| = delta.source_size
+    domain: basis ∈ Read, delta ∈ Delta
+    codomain: Result<Vec<u8>, CopiaError>
+    invariants:
+    - 'Output size equals delta.source_size'
+    - 'Copy ops read from basis at valid offsets'
+    - 'Literal ops emit exact bytes'
+    - 'Roundtrip: patch(basis, delta(basis, source)) = source'
+    preconditions:
+    - basis is readable
+    - delta.source_size > 0
+    - all Copy ops reference valid basis ranges
+    lean_theorem: Theorems.Patch_Apply
+proof_obligations:
+- type: invariant
+  property: Rolling checksum components bounded by MOD
+  formal: '∀ window: checksum.a < 65521 ∧ checksum.b < 65521'
+  applies_to: rolling_checksum
+- type: invariant
+  property: Delta roundtrip correctness
+  formal: '∀ basis, source: patch(basis, delta(basis, source)) = source'
+  applies_to: delta_computation
+- type: invariant
+  property: Patch output size equals declared source_size
+  formal: '∀ basis, delta: |patch(basis, delta)| = delta.source_size'
+  applies_to: patch_apply
+- type: conservation
+  property: Byte accounting conservation
+  formal: '∀ delta: delta.stats.bytes_matched + delta.stats.bytes_literal = delta.source_size'
+  applies_to: delta_computation
+enforcement:
+  checksum_bounds:
+    description: Rolling checksum a and b components must be < 65521
+    check: contract_tests::FALSIFY-CPS-001
+    severity: ERROR
+  roundtrip_correctness:
+    description: Patch of delta must reconstruct original source
+    check: contract_tests::FALSIFY-CPS-002
+    severity: ERROR
+  output_size:
+    description: Patch output size must equal declared source_size
+    check: contract_tests::FALSIFY-CPS-003
+    severity: ERROR
+  byte_conservation:
+    description: bytes_matched + bytes_literal must equal source_size
+    check: contract_tests::FALSIFY-CPS-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CPS-001
+  rule: Checksum bounds
+  prediction: After any number of slide operations, a < 65521 and b < 65521
+  test: proptest with random byte sequences and sliding window operations
+  if_fails: Missing modular reduction in rolling checksum update
+- id: FALSIFY-CPS-002
+  rule: Roundtrip correctness
+  prediction: For any basis and source, patch(basis, delta(basis, source)) = source
+  test: proptest with random byte vectors of varying sizes
+  if_fails: Incorrect delta encoding or patch application logic
+- id: FALSIFY-CPS-003
+  rule: Output size invariant
+  prediction: patch output length always equals delta.source_size
+  test: proptest with random inputs, verify output length
+  if_fails: Off-by-one in literal or copy op emission
+- id: FALSIFY-CPS-004
+  rule: Byte accounting conservation
+  prediction: bytes_matched + bytes_literal = source_size for any delta
+  test: proptest with diverse file pairs, verify stats
+  if_fails: Stats not updated for some code path in delta scan
+- id: FALSIFY-CPS-005
+  rule: Identity sync produces zero literal bytes
+  prediction: delta(file, file) has bytes_literal = 0 and bytes_matched = file_size
+  test: proptest with random files, compute self-delta
+  if_fails: Rolling checksum or strong hash mismatch on identical data
+kani_harnesses:
+- id: KANI-CPS-001
+  obligation: Checksum bounds
+  property: Rolling checksum components always < MOD
+  bound: 16
+  strategy: exhaustive
+  harness: verify_checksum_bounds
+- id: KANI-CPS-002
+  obligation: Delta roundtrip correctness
+  property: Patch of delta reconstructs source
+  bound: 32
+  strategy: exhaustive
+  harness: verify_delta_roundtrip
+- id: KANI-CPS-003
+  obligation: Output size invariant
+  property: Patch output size equals source_size
+  bound: 32
+  strategy: exhaustive
+  harness: verify_patch_output_size
+- id: KANI-CPS-004
+  obligation: Byte accounting conservation
+  property: bytes_matched + bytes_literal = source_size
+  bound: 32
+  strategy: exhaustive
+  harness: verify_byte_conservation
+qa_gate:
+  id: F-CPS-001
+  name: Delta Sync Contract
+  description: rsync-style delta synchronization quality gate
+  checks:
+  - checksum_bounds
+  - roundtrip_correctness
+  - output_size
+  - byte_conservation
+  pass_criteria: All 5 falsification tests pass
+  falsification: Corrupt a single byte in delta encoding and verify patch detects it

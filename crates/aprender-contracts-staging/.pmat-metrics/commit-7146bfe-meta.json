@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-130",
+  "prompt": "Fix codegen to emit real YAML preconditions + dogfood on all repos",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-29T07:48:55.579998109Z"
+}

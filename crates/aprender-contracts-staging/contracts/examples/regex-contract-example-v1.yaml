@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: |
+    Example regex contract — demonstrates how to specify string-output
+    contracts using regex patterns as postconditions. Use this as a
+    template for CLI output, serialization, and protocol message contracts.
+  references:
+  - 'pv-spec.md §3: Contract Expression Languages'
+  - 'pmat Component 22: provable-contracts.md (regex contracts)'
+equations:
+  format_ticket_id:
+    formula: |
+      format_ticket_id: (prefix: String, number: u64) -> String
+        result = format!("{}-{}", prefix.to_uppercase(), number)
+    domain: prefix ∈ {"PMAT", "GH", "EPIC"}, number ∈ u64
+    codomain: String matching ^(PMAT|GH|EPIC)-\d+$
+    invariants:
+    - Output always contains exactly one hyphen
+    - Prefix is always uppercase
+    - Number portion is always numeric (no leading zeros)
+    preconditions:
+    - '!prefix.is_empty()'
+    - 'number > 0'
+    postconditions:
+    # Regex postcondition (L3: Regex::is_match assertion)
+    - 'Regex::new(r"^(PMAT|GH|EPIC)-\d+$").unwrap().is_match(&result)'
+    - 'result.contains("-")'
+    lean_theorem: Theorems.Format_Ticket_Id
+  format_iso_timestamp:
+    formula: |
+      format_iso_timestamp: (epoch_secs: i64) -> String
+        result = chrono::DateTime::from_timestamp(epoch_secs).to_rfc3339()
+    domain: epoch_secs ∈ i64 (valid Unix timestamp)
+    codomain: String matching ISO 8601
+    invariants:
+    - Output is always valid UTF-8
+    - Output contains exactly one 'T' separator
+    preconditions:
+    - 'epoch_secs >= 0'
+    - 'epoch_secs <= 253402300799'
+    postconditions:
+    # Regex postcondition (L3: Regex::is_match assertion)
+    - 'Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}").unwrap().is_match(&result)'
+    - 'result.contains("T")'
+    lean_theorem: Theorems.Format_Iso_Timestamp
+  format_semver:
+    formula: |
+      format_semver: (major: u32, minor: u32, patch: u32, pre: Option<String>) -> String
+        result = format!("{}.{}.{}", major, minor, patch) + pre suffix
+    domain: major, minor, patch ∈ u32; pre ∈ Option<String>
+    codomain: String matching semver 2.0.0
+    invariants:
+    - Version components are non-negative
+    - No leading zeros in version numbers
+    preconditions:
+    - 'major <= 999'
+    - 'minor <= 999'
+    - 'patch <= 999'
+    postconditions:
+    # Regex postcondition (L3: Regex::is_match assertion)
+    - 'Regex::new(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$").unwrap().is_match(&result)'
+    lean_theorem: Theorems.Format_Semver
+proof_obligations:
+- type: postcondition
+  property: Ticket ID format always valid
+  formal: "∀ prefix ∈ {PMAT,GH,EPIC}, n ∈ u64 → format_ticket_id(prefix, n) ∈ L(^(PMAT|GH|EPIC)-\\d+$)"
+  applies_to: format_ticket_id
+- type: postcondition
+  property: ISO timestamp always valid
+  formal: "∀ t ∈ [0, 253402300799] → format_iso_timestamp(t) ∈ L(^\\d{4}-\\d{2}-\\d{2}T)"
+  applies_to: format_iso_timestamp
+- type: postcondition
+  property: Semver always valid
+  formal: "∀ (M,m,p) ∈ u32^3 → format_semver(M,m,p,None) ∈ L(^\\d+\\.\\d+\\.\\d+$)"
+  applies_to: format_semver
+falsification_tests:
+- id: FALSIFY-REGEX-001
+  rule: Empty prefix rejected
+  prediction: format_ticket_id("", 42) returns error (precondition violation)
+  test: Call with empty prefix
+  if_fails: Missing precondition check on prefix
+- id: FALSIFY-REGEX-002
+  rule: Zero number rejected
+  prediction: format_ticket_id("PMAT", 0) returns error (precondition violation)
+  test: Call with number=0
+  if_fails: Missing precondition check on number
+- id: FALSIFY-REGEX-003
+  rule: Negative epoch rejected
+  prediction: format_iso_timestamp(-1) returns error (precondition violation)
+  test: Call with negative epoch
+  if_fails: Missing precondition check on epoch
+kani_harnesses:
+- id: KANI-REGEX-001
+  obligation: Ticket ID format
+  property: All valid inputs produce regex-matching output
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ticket_id_regex
+- id: KANI-REGEX-002
+  obligation: Semver format
+  property: All valid version triples produce valid semver
+  bound: 16
+  strategy: exhaustive
+  harness: verify_semver_regex
+
+qa_gate:
+  id: F-REGEX-EX-001
+  name: Regex Contract Example Contract
+  description: Quality gate for regex-based string-output postcondition contracts
+  checks:
+  - validation
+  - falsification

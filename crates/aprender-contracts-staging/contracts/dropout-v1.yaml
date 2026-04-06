@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Dropout kernel — stochastic regularization via random masking
+  references:
+  - 'Srivastava et al. (2014) Dropout: A Simple Way to Prevent Neural Networks from Overfitting'
+equations:
+  dropout_train:
+    formula: y = mask * x / (1 - p), where mask_i ~ Bernoulli(1 - p)
+    domain: x in R^n, p in [0, 1)
+    codomain: y in R^n
+    invariants:
+    - E[y_i] = x_i (unbiased expectation via inverted dropout)
+    - y_i = 0 when mask_i = 0 (dropped units are exactly zero)
+    - y_i = x_i / (1 - p) when mask_i = 1 (surviving units scaled)
+    - Output shape equals input shape
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Dropout_Train
+  dropout_eval:
+    formula: y = x
+    domain: x in R^n
+    codomain: y in R^n
+    invariants:
+    - y_i = x_i for all i (identity in eval mode)
+    - No randomness applied during evaluation
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Dropout_Eval
+proof_obligations:
+- type: invariant
+  property: Eval mode is identity
+  formal: dropout_eval(x) = x for all x
+  applies_to: all
+- type: bound
+  property: Train mode is unbiased
+  formal: E[dropout_train(x, p)] = x for all x, p in [0, 1)
+  applies_to: all
+- type: invariant
+  property: Output shape preserved
+  formal: shape(dropout(x)) = shape(x) for both train and eval modes
+  applies_to: all
+- type: bound
+  property: Drop probability in valid range
+  formal: p in [0, 1) — p = 1 would cause division by zero
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: generate_mask
+    description: Sample Bernoulli(1 - p) mask of same shape as input
+    invariant: mask_i in {0, 1}, P(mask_i = 1) = 1 - p
+  - name: apply_mask
+    description: Element-wise multiply input by mask
+    invariant: y_i = 0 when mask_i = 0
+  - name: scale
+    description: Divide by (1 - p) for inverted dropout
+    invariant: y_i = x_i / (1 - p) when mask_i = 1
+simd_dispatch:
+  dropout:
+    scalar: dropout_scalar
+    avx2: dropout_avx2
+    ptx: dropout_ptx
+enforcement:
+  eval_identity:
+    description: Eval mode must return input unchanged
+    check: contract_tests::FALSIFY-DO-001
+    severity: ERROR
+  unbiased_expectation:
+    description: Train mode expectation must equal input
+    check: contract_tests::FALSIFY-DO-002
+    severity: ERROR
+  shape_preservation:
+    description: Output shape must equal input shape
+    check: contract_tests::FALSIFY-DO-003
+    severity: ERROR
+  probability_range:
+    description: Drop probability must be in [0, 1)
+    check: contract_tests::FALSIFY-DO-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-DO-001
+  rule: Eval identity
+  prediction: dropout_eval(x) = x for all x
+  test: proptest with random vectors, verify bitwise equality in eval mode
+  if_fails: Eval mode incorrectly applies masking or scaling
+- id: FALSIFY-DO-002
+  rule: Unbiased expectation
+  prediction: mean(dropout_train(x, p)) converges to x over 10000 trials
+  test: statistical test with fixed seed, check |E[y] - x| < 0.05 for each element
+  if_fails: Scale factor not 1/(1-p) or mask probability incorrect
+- id: FALSIFY-DO-003
+  rule: Shape preservation
+  prediction: shape(dropout(x)) = shape(x) for dims 1..128
+  test: proptest with random shapes, verify output length matches input
+  if_fails: Buffer allocation does not match input dimensions
+- id: FALSIFY-DO-004
+  rule: Probability boundary
+  prediction: p = 0.0 yields identity, p near 1.0 drops almost all, p = 1.0 panics or errors
+  test: direct evaluation at p = 0.0, p = 0.5, p = 0.999; verify p = 1.0 is rejected
+  if_fails: Missing guard for p = 1.0 causing division by zero
+kani_harnesses:
+- id: KANI-DO-001
+  obligation: DO-INV-001
+  property: Eval mode returns input unchanged
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_dropout_eval_identity
+- id: KANI-DO-002
+  obligation: DO-BND-001
+  property: Drop probability must be in [0, 1)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_dropout_probability_range
+- id: KANI-DROPOU-003
+  obligation: Eval mode is identity
+  property: Eval mode is identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DROPOU-004
+  obligation: Train mode is unbiased
+  property: Train mode is unbiased
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DROPOU-005
+  obligation: Output shape preserved
+  property: Output shape preserved
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DROPOU-006
+  obligation: Drop probability in valid range
+  property: Drop probability in valid range
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DO-001
+  name: Dropout Contract
+  description: Stochastic dropout regularization quality gate
+  checks:
+  - eval_identity
+  - unbiased_expectation
+  - shape_preservation
+  - probability_range
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Replace scale factor 1/(1-p) with 1.0 to break unbiasedness

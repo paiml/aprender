@@ -1,0 +1,173 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Task pipeline — DAG execution order, quality gate enforcement, terminal states, health check retry
+  references:
+  - 'Kahn (1962) Topological sorting of large networks'
+  - 'Imai (1986) Kaizen quality gate methodology'
+equations:
+  pipeline_dag_execution:
+    formula: '∀ stage S with depends_on = [A, B]: start_time(S) > end_time(A) ∧ start_time(S) > end_time(B)'
+    domain: stages ∈ Vec<PipelineStage>
+    codomain: Vec<(StageId, TaskStatus)>
+    invariants:
+    - Dependencies satisfied before stage starts
+    - Independent stages may execute in parallel
+    - Cycle detection fails fast before execution
+    preconditions:
+    - stages form a valid DAG (no cycles)
+    - stages.len() > 0
+    lean_theorem: Theorems.Pipeline_Dag_Execution
+  quality_gate_enforcement:
+    formula: 'gate.operator.eval(value, gate.threshold) = false → stage FAILS, all dependents SKIPPED'
+    domain: (gate ∈ QualityGate, value ∈ MetricValue)
+    codomain: bool
+    invariants:
+    - Failed gate blocks all downstream stages
+    - Passed gate allows stage to proceed
+    - 'Gate evaluation is deterministic: same metric → same result'
+    preconditions:
+    - gate.threshold is finite
+    - value is finite
+    lean_theorem: Theorems.Quality_Gate_Enforcement
+  task_status_terminal:
+    formula: 'terminal(Succeeded) = true, terminal(Failed) = true, terminal(Skipped) = true, terminal(Cancelled) = true'
+    domain: status ∈ TaskStatus
+    codomain: bool
+    invariants:
+    - 'Terminal states are final: no further transitions'
+    - 'Non-terminal states: Pending, Running'
+    - Once terminal, status cannot change
+    preconditions:
+    - status is a valid TaskStatus variant
+    lean_theorem: Theorems.Task_Status_Terminal
+  health_check_retry:
+    formula: 'attempts > retries → Failed; attempts ≤ retries → retry after interval'
+    domain: (hc ∈ HealthCheck, attempts ∈ u32)
+    codomain: TaskStatus
+    invariants:
+    - Health check always terminates
+    - 'Total wall clock ≤ retries × (timeout + interval)'
+    - Retry count is bounded by retries field
+    preconditions:
+    - hc.retries >= 0
+    - hc.timeout > Duration::ZERO
+    - hc.interval > Duration::ZERO
+    lean_theorem: Theorems.Health_Check_Retry
+proof_obligations:
+- type: ordering
+  property: DAG execution order
+  formal: depends_on satisfied before start
+  applies_to: all
+- type: postcondition
+  property: Quality gate blocks dependents
+  formal: gate fails → all dependents skipped
+  applies_to: all
+- type: state_machine
+  property: Terminal states are final
+  formal: no transition from Succeeded/Failed/Skipped/Cancelled
+  applies_to: all
+- type: termination
+  property: Health check terminates
+  formal: attempts ≤ retries + 1
+  applies_to: all
+- type: bound
+  property: Wall clock bounded
+  formal: 'total ≤ retries × (timeout + interval)'
+  applies_to: all
+enforcement:
+  dag_ordering:
+    description: Stage dependencies must be satisfied before execution
+    check: contract_tests::FALSIFY-PIPE-001
+    severity: ERROR
+  quality_gate:
+    description: Failed quality gate must block downstream stages
+    check: contract_tests::FALSIFY-PIPE-002
+    severity: ERROR
+  terminal_states:
+    description: Terminal states must be final
+    check: contract_tests::FALSIFY-PIPE-004
+    severity: ERROR
+  health_check:
+    description: Health check must terminate after max retries
+    check: contract_tests::FALSIFY-PIPE-005
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PIPE-001
+  rule: Dependency ordering
+  prediction: Stage with failed dependency is skipped, not run
+  test: create pipeline with failed stage, verify dependent is skipped
+  if_fails: Stage executes without checking dependency status
+- id: FALSIFY-PIPE-002
+  rule: Quality gate blocks
+  prediction: Quality gate with threshold 0.8 blocks stage scoring 0.7
+  test: create gate with threshold 0.8, feed value 0.7, verify blocked
+  if_fails: Gate comparison operator inverted or threshold ignored
+- id: FALSIFY-PIPE-003
+  rule: Quality gate passes
+  prediction: Quality gate with threshold 0.8 passes stage scoring 0.9
+  test: create gate with threshold 0.8, feed value 0.9, verify passed
+  if_fails: Gate always blocks regardless of value
+- id: FALSIFY-PIPE-004
+  rule: Terminal state finality
+  prediction: Task in Succeeded state cannot transition to Failed
+  test: attempt transition from Succeeded to Failed, verify rejected
+  if_fails: State machine allows invalid transitions
+- id: FALSIFY-PIPE-005
+  rule: Health check exhaustion
+  prediction: Health check with 0 retries fails immediately on first failure
+  test: create health check with retries=0, fail once, verify Failed status
+  if_fails: Health check retries beyond configured limit
+- id: FALSIFY-PIPE-006
+  rule: Diamond dependency
+  prediction: Pipeline with diamond dependency (A→B, A→C, B→D, C→D) executes D last
+  test: create diamond DAG, verify D starts after both B and C complete
+  if_fails: DAG traversal misses multi-parent dependencies
+- id: FALSIFY-PIPE-007
+  rule: Parallel independence
+  prediction: Independent stages B and C run in parallel (wall clock < sequential)
+  test: create pipeline with independent stages, measure wall clock
+  if_fails: Pipeline serializes independent stages unnecessarily
+kani_harnesses:
+- id: KANI-PIPE-001
+  obligation: DAG execution order
+  property: Dependency ordering
+  bound: 16
+  strategy: exhaustive
+  harness: verify_dag_execution
+- id: KANI-PIPE-002
+  obligation: Quality gate blocks dependents
+  property: Quality gate enforcement
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quality_gate
+- id: KANI-PIPE-003
+  obligation: Terminal states are final
+  property: Terminal state finality
+  bound: 8
+  strategy: exhaustive
+  harness: verify_terminal_states
+- id: KANI-PIPE-004
+  obligation: Health check terminates
+  property: Health check termination
+  bound: 8
+  strategy: exhaustive
+  harness: verify_health_check
+- id: KANI-PIPE-005
+  obligation: Wall clock bounded
+  property: Wall clock bound
+  bound: 8
+  strategy: exhaustive
+  harness: verify_wall_clock_bound
+qa_gate:
+  id: F-PIPE-001
+  name: Task Pipeline Contract
+  description: Task/pipeline execution quality gate
+  checks:
+  - dag_ordering
+  - quality_gate
+  - terminal_states
+  - health_check
+  pass_criteria: All 7 falsification tests pass
+  falsification: Remove dependency check from stage execution

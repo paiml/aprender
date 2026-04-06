@@ -1,0 +1,92 @@
+contract: C-XENT-003
+title: In-Place Fused Cross-Entropy — Eliminate grad_gpu Allocation
+kaizen: KAIZEN-052
+parent: C-XENT-002
+status: implemented
+date: 2026-03-04
+baseline:
+  grad_alloc_bytes: 77824000
+  grad_alloc_per_step: 1
+  kernel_params: 6
+target:
+  grad_alloc_bytes: 0
+  grad_alloc_per_step: 0
+  kernel_params: 5
+safety:
+  race_condition: 'Thread 0 reads logits[target] for loss computation.
+
+    Without barrier, other threads could overwrite logits[target] in grad loop.
+
+    bar_sync(4) ensures thread 0 completes loss read before any thread writes grad.
+
+    '
+  phase_isolation: 'Phases 1-2 (max/sum reduction) read logits via grid-stride loops.
+
+    Phase 3 (grad write) overwrites logits with gradients.
+
+    bar_sync(3) separates phases 2 and 3.
+
+    bar_sync(4) separates loss computation from grad loop.
+
+    '
+  thread_disjointness: 'In phase 3, thread k processes indices [k, k+256, k+512, ...].
+
+    No two threads write to the same address. No read-after-write hazard
+
+    within phase 3 because each element is read once then immediately overwritten.
+
+    '
+preconditions:
+- logits_buf has seq_len * vocab_size f32 elements on GPU
+- logits_buf is mutable (&mut GpuBuffer<f32>)
+- target_ids in [0, vocab_size) for all positions
+- Caller does not need logits after this call (overwritten with gradient)
+postconditions:
+- logits_buf[pos][i] = (softmax(logits[pos])[i] - one_hot(target[pos])[i]) * scale
+- loss = mean(-log(softmax(logits[pos])[target[pos]])) across positions
+- No separate grad_gpu buffer allocated
+invariants:
+- fused_cross_entropy_cuda returns f32 (not (f32, GpuBuffer<f32>))
+- gpu_backward reads gradient from self.gpu_training.logits_buf
+- Next gpu_forward overwrites logits_buf — stale grad is harmless
+- eval_batch in-place is safe — logits_buf refreshed each iteration
+files:
+- path: trueno-gpu/src/kernels/backward/cross_entropy.rs
+  change: '- Renamed logits_ptr → logits_grad_ptr param
+
+    - Removed grad_ptr param (6 → 5 params)
+
+    - Removed row_grad computation
+
+    - Phase 3 writes to addr3 (same as read address)
+
+    - Added bar_sync(4) before grad loop (race safety)
+
+    '
+- path: entrenar/src/autograd/cuda_optim.rs
+  change: '- fused_cross_entropy_cuda takes &mut GpuBuffer<f32>
+
+    - Returns f32 (not (f32, GpuBuffer<f32>))
+
+    - Removed grad_gpu allocation (77.8MB saved)
+
+    - Args reduced from 6 to 5
+
+    '
+- path: entrenar/src/train/transformer_trainer/cuda_trainer.rs
+  change: '- train_step_single destructures f32 (not tuple)
+
+    - gpu_backward no longer takes GpuBuffer param
+
+    - gemm_backward_{a,b} read from self.gpu_training.logits_buf
+
+    - eval_batch uses &mut for in-place API
+
+    '
+qa_gate:
+  id: F-ICEV-001
+  name: inplace-cross-entropy-v1 Contract
+  description: Quality gate for inplace-cross-entropy-v1
+  checks:
+  - validation
+  - falsification

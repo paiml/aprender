@@ -1,0 +1,47 @@
+contract: lora-grad-zero-reuse-v1
+version: 1.0.0
+status: implemented
+kaizen: '043'
+invariants:
+- id: C-ZEROREUSE-001
+  description: Single pre-allocated zero buffer reused for all accumulator zeroing
+  preconditions:
+  - grad_accum contains valid GpuBuffer entries
+  postconditions:
+  - All accumulator GPU buffers contain zeros after step
+  - '1 CPU allocation per batch (was: 6 × num_layers)'
+  - Zero buffer sized to max accumulator length, sliced per buffer
+  invariants:
+  - Zero buffer computed once before layer loop
+  - Slicing (&zeros[..buf.len()]) avoids copy overhead
+  verified_by:
+  - 31 classify_pipeline tests passed
+affected_files:
+- path: src/finetune/classify_pipeline.rs
+  functions:
+  - 'nf4_lora_batch_optimizer_step: pre-allocate max-sized zero buffer'
+  change: '- Compute max accumulator length across all layers before loop
+
+    - Allocate single vec![0.0f32; max_accum_len]
+
+    - Reuse via &zeros[..buf.len()] slice for each copy_from_host
+
+    '
+performance_note: 'For Qwen3-4B LoRA rank=16 (36 layers):
+
+  - Before: 216 vec allocations/batch (6 bufs × 36 layers)
+
+  - Each alloc: up to 40,960 elements = 160 KB
+
+  - Total alloc churn: ~18.7 MB CPU alloc/batch
+
+  - After: 1 allocation of 160 KB, reused 216 times
+
+  '
+qa_gate:
+  id: F-LGZR-001
+  name: lora-grad-zero-reuse-v1 Contract
+  description: Quality gate for lora-grad-zero-reuse-v1
+  checks:
+  - validation
+  - falsification

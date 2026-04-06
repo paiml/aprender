@@ -1,0 +1,267 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    CellBuffer + DiffRenderer core rendering invariants for presentar-terminal.
+    Covers bounds safety, diff correctness, dirty tracking, Unicode width,
+    color mode fallback, and zero-alloc steady state.
+  references:
+  - 'presentar-terminal 0.3: direct crossterm backend'
+  - 'UAX #11: East Asian Width for Unicode character widths'
+  - 'WCAG 2.1 Level AA: contrast ratio 4.5:1'
+  - 'Tufte (1983): The Visual Display of Quantitative Information'
+  depends_on:
+  - display-format-v1
+equations:
+  cellbuffer_bounds:
+    formula: |
+      get(x, y) is defined iff 0 <= x < width AND 0 <= y < height
+      set(x, y, cell) is defined iff 0 <= x < width AND 0 <= y < height
+      out-of-bounds access returns default Cell (space, no style)
+    domain: CellBuffer of dimensions width x height
+    invariants:
+    - No panic on any (x, y) input
+    - Out-of-bounds reads return default Cell (space character, no attributes)
+    - Out-of-bounds writes are silently ignored (no truncation corruption)
+    - Buffer size == width * height at all times
+    preconditions:
+    - width > 0
+    - height > 0
+    postconditions:
+    - buffer.len() == width * height
+    lean_theorem: Theorems.CellBuffer_Bounds
+
+  diff_renderer_correctness:
+    formula: |
+      render_diff(prev, next) outputs ONLY cells where prev[x,y] != next[x,y]
+      render_full(buffer) outputs ALL cells
+      visual(render_diff(prev, next)) == visual(render_full(next))
+    domain: Two CellBuffers of identical dimensions
+    invariants:
+    - Diff produces identical visual output to full render
+    - Diff writes fewer bytes than full render (or equal if all cells changed)
+    - Empty diff (identical buffers) produces zero terminal writes
+    - Cursor position after diff render == cursor position after full render
+    preconditions:
+    - prev.width == next.width
+    - prev.height == next.height
+    postconditions:
+    - terminal_state(diff) == terminal_state(full)
+    lean_theorem: Theorems.DiffRenderer_Correctness
+
+  dirty_tracking:
+    formula: |
+      set(x, y, cell) marks cell (x, y) as dirty
+      render_diff only visits dirty cells
+      after render_diff, all cells marked clean
+    domain: BitVec dirty mask over CellBuffer
+    invariants:
+    - Dirty bit set on write, cleared on render
+    - No cell rendered twice in a single diff pass
+    - Clean cells never written to terminal
+    - Dirty mask size == buffer size
+    preconditions:
+    - dirty_mask.len() == width * height
+    postconditions:
+    - dirty_mask.count_ones() == 0 after render_diff
+    lean_theorem: Theorems.Dirty_Tracking
+
+  unicode_width:
+    formula: |
+      display_width(char) =
+        0 for zero-width (combining marks, ZWJ)
+        1 for narrow (ASCII, most Latin/Cyrillic/Greek)
+        2 for wide (CJK, fullwidth forms)
+      cell_span(string) = sum(display_width(c) for c in string)
+    domain: Unicode characters per UAX #11
+    invariants:
+    - Wide characters occupy 2 adjacent cells (right cell is continuation)
+    - Continuation cells are never directly addressable
+    - Truncating at cell boundary never splits a wide character
+    - Emoji sequences (multi-codepoint) treated as width 2
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - cell_span >= 0
+    - cell_span <= 2 * input.chars().count()
+    lean_theorem: Theorems.Unicode_Width
+
+  color_mode_fallback:
+    formula: |
+      render(cell, TrueColor) uses RGB(r, g, b)
+      render(cell, Color256)  uses nearest_256(RGB(r, g, b))
+      render(cell, Color16)   uses nearest_16(RGB(r, g, b))
+      render(cell, Mono)      uses bold/underline for emphasis only
+    domain: Terminal color capabilities
+    invariants:
+    - Downgrade path is monotonic (TrueColor > 256 > 16 > Mono)
+    - No information lost in downgrade that affects readability
+    - Contrast ratio preserved within each mode (WCAG AA)
+    - Auto-detection uses COLORTERM / TERM env vars
+    preconditions:
+    - color_mode is detected or user-configured
+    postconditions:
+    - output uses only escapes valid for detected mode
+    lean_theorem: Theorems.Color_Mode_Fallback
+
+  zero_alloc_render:
+    formula: |
+      after initial allocation:
+        render_diff(prev, next) performs 0 heap allocations
+        render_full(buffer) performs 0 heap allocations
+      data path (token append, state update) MAY allocate
+    domain: Steady-state rendering after warm-up
+    invariants:
+    - Render path uses pre-allocated write buffer
+    - CompactString avoids heap for strings <= 24 bytes
+    - No Vec growth during render (capacity pre-reserved)
+    preconditions:
+    - buffer.capacity() >= width * height
+    postconditions:
+    - allocator_count_during_render == 0
+    lean_theorem: Theorems.Zero_Alloc_Render
+
+  resize_safety:
+    formula: |
+      resize(new_width, new_height) creates new buffer
+      content from old buffer copied to intersection region
+      cells outside intersection initialized to default
+    domain: Terminal resize event
+    invariants:
+    - No panic on any (new_width, new_height) > 0
+    - Resize within one frame (16ms)
+    - Content in overlapping region preserved
+    - Dirty mask reset to all-dirty after resize (force full redraw)
+    preconditions:
+    - new_width > 0
+    - new_height > 0
+    postconditions:
+    - buffer.width == new_width
+    - buffer.height == new_height
+    lean_theorem: Theorems.Resize_Safety
+
+proof_obligations:
+- type: invariant
+  property: CellBuffer bounds safety
+  formal: No panic on any (x, y) input
+  applies_to: all
+- type: equivalence
+  property: Diff render equals full render
+  formal: visual(diff) == visual(full) for all buffer pairs
+  applies_to: all
+- type: invariant
+  property: Dirty tracking consistency
+  formal: dirty_count == 0 after render_diff
+  applies_to: all
+- type: equivalence
+  property: Unicode width matches UAX #11
+  formal: display_width(c) == uax11_width(c) for all Unicode codepoints
+  applies_to: all
+- type: invariant
+  property: Color mode preserves contrast
+  formal: contrast_ratio >= 4.5 in all color modes
+  applies_to: all
+- type: bound
+  property: Zero allocations in render path
+  formal: heap_alloc_count == 0 during render_diff and render_full
+  applies_to: all
+- type: postcondition
+  property: Resize creates valid buffer
+  formal: buffer.len() == new_width * new_height after resize
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-TR-001
+  rule: CellBuffer bounds
+  prediction: Out-of-bounds get returns default Cell, never panics
+  test: proptest with (x, y) in [0, 2*width] x [0, 2*height]; assert no panic
+  if_fails: Buffer overflow — potential memory corruption or crash
+- id: FALSIFY-TR-002
+  rule: Diff renderer correctness
+  prediction: Diff render produces identical visual output to full render
+  test: Generate 10K random buffer pairs; compare terminal output byte-for-byte
+  if_fails: Visual glitches from missed or stale cells
+- id: FALSIFY-TR-003
+  rule: Dirty tracking
+  prediction: After render_diff, zero dirty bits remain
+  test: Set random cells, render_diff, assert dirty_mask.count_ones() == 0
+  if_fails: Stale dirty bits cause redundant writes or missed updates
+- id: FALSIFY-TR-004
+  rule: Unicode wide character handling
+  prediction: CJK character at column (width-1) wraps to next line, never split
+  test: Place U+4E2D at last column for 100 terminal widths; assert no split
+  if_fails: Wide character corrupts adjacent cell — garbled CJK display
+- id: FALSIFY-TR-005
+  rule: Color mode contrast preservation
+  prediction: WCAG AA contrast maintained after 256->16 color downgrade
+  test: All Tokyo Night theme colors through nearest_16(); check contrast ratio
+  if_fails: Accessibility broken on low-color terminals
+- id: FALSIFY-TR-006
+  rule: Zero-alloc render
+  prediction: render_diff performs 0 heap allocations after warm-up
+  test: Custom allocator hook counting allocs during 1000 render_diff calls
+  if_fails: Allocation pressure causes GC pauses — frame drops
+- id: FALSIFY-TR-007
+  rule: Resize safety
+  prediction: Resize from 120x40 to 80x24 preserves visible content
+  test: Fill buffer with known pattern, resize smaller, verify intersection content
+  if_fails: Content lost on terminal resize — user loses visual context
+- id: FALSIFY-TR-008
+  rule: Diff minimality
+  prediction: Diff writes fewer bytes than full render when <50% cells changed
+  test: Change 10% of cells; measure diff output size vs full output size
+  if_fails: Diff is not minimal — no performance benefit over full redraw
+
+kani_harnesses:
+- id: KANI-TR-001
+  obligation: CellBuffer bounds safety
+  property: No panic on any (x, y)
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_cellbuffer_bounds
+- id: KANI-TR-002
+  obligation: Diff render equals full render
+  property: Visual equivalence
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_diff_visual_equivalence
+- id: KANI-TR-003
+  obligation: Dirty tracking consistency
+  property: All dirty bits cleared after render
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_dirty_tracking
+- id: KANI-TR-004
+  obligation: Resize creates valid buffer
+  property: Buffer dimensions match after resize
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_resize_dimensions
+- id: KANI-TR-005
+  obligation: Unicode width matches UAX #11
+  property: Width function total for all codepoints
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_unicode_width_total
+
+qa_gate:
+  id: F-TR-001
+  name: TUI Rendering Contract
+  description: CellBuffer bounds, DiffRenderer correctness, dirty tracking, Unicode, color, zero-alloc, resize
+  checks:
+  - cellbuffer_bounds_safety
+  - diff_visual_equivalence
+  - dirty_tracking_consistency
+  - unicode_wide_char_handling
+  - color_mode_contrast
+  - zero_alloc_render
+  - resize_content_preservation
+  - diff_minimality
+  pass_criteria: All 8 falsification tests pass + 5 Kani harnesses verify
+  falsification: proptest with random buffer pairs + custom allocator hook + Unicode edge cases

@@ -1,0 +1,213 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: Paged KV cache with block tables — correctness invariants for PagedAttention
+  references:
+  - Kwon et al. (2023). Efficient Memory Management for Large Language Model Serving with PagedAttention. SOSP.
+  - 'vLLM v1 source: v1/worker/gpu/block_table.py, v1/core/kv_cache_manager.py'
+  depends_on:
+  - kv-cache-sizing-v1
+  - kv-cache-equivalence-v1
+equations:
+  slot_mapping:
+    formula: slot(req, pos) = block_table[req][pos / B] * B + pos mod B
+    domain: req ∈ [0, max_reqs), pos ∈ [0, seq_len), B = block_size
+    codomain: slot ∈ [0, num_blocks * B)
+    invariants:
+    - 'Bijective: no two (req, pos) pairs map to the same slot'
+    - 'Within-block contiguity: pos and pos+1 in same block map to adjacent slots'
+    - 'Block boundary: pos = k*B maps to start of block_table[req][k]'
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Slot_Mapping
+  block_allocation:
+    formula: num_blocks(req) = ceil(seq_len(req) / B)
+    domain: seq_len ∈ ℤ⁺, B ∈ {16, 32, 64}
+    invariants:
+    - 'Monotonic in seq_len: longer sequence requires more blocks'
+    - 'Tight: num_blocks * B - seq_len < B (at most B-1 waste)'
+    - Total allocated <= pool_size
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Block_Allocation
+  block_table_invariant:
+    formula: block_table[req] = [b_0, b_1, ..., b_{n-1}] where each b_i is a unique block ID
+    domain: Active request req with n = ceil(seq_len / B) blocks
+    invariants:
+    - No duplicate block IDs within a request
+    - No block shared between requests (unless prefix caching enabled)
+    - All block IDs in [0, pool_size)
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Block_Table_Invariant
+  paged_contiguous_equivalence:
+    formula: '|attention_paged(Q, KV_paged, block_table) - attention_contiguous(Q, KV_contiguous)| < epsilon'
+    domain: Same Q, K, V data arranged in paged vs contiguous layout
+    invariants:
+    - Paged attention produces identical output to contiguous
+    - Epsilon bounded by floating-point accumulation (1e-5 for FP32, 1e-3 for FP16)
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Paged_Contiguous_Equivalence
+  fragmentation_free:
+    formula: utilization = sum(seq_len(req)) / (sum(num_blocks(req)) * B)
+    domain: All active requests
+    codomain: utilization ∈ (0, 1]
+    invariants:
+    - Waste per request < B tokens (last block only)
+    - 'No internal fragmentation: freed blocks immediately reusable'
+    - Pool utilization = allocated_blocks / pool_size
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Fragmentation_Free
+  graph_compatibility:
+    formula: block_table is a fixed-shape tensor [max_reqs, max_blocks_per_req]
+    domain: CUDA graph capture requirements
+    invariants:
+    - Shape does not change between graph capture and replay
+    - Only values (block IDs) change, not tensor dimensions
+    - Pad unused entries with INVALID_BLOCK_ID (-1)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Graph_Compatibility
+proof_obligations:
+- type: invariant
+  property: Slot mapping bijectivity
+  formal: (r1, p1) != (r2, p2) => slot(r1, p1) != slot(r2, p2)
+  applies_to: all
+- type: equivalence
+  property: Paged/contiguous attention equivalence
+  formal: '|paged - contiguous| < 1e-5'
+  tolerance: 1e-5
+  applies_to: all
+- type: monotonicity
+  property: Block allocation monotonic in seq_len
+  formal: s1 < s2 => num_blocks(s1) <= num_blocks(s2)
+  applies_to: all
+- type: bound
+  property: Block waste bounded
+  formal: num_blocks * B - seq_len < B
+  applies_to: all
+- type: invariant
+  property: No duplicate blocks within request
+  formal: '∀ i != j: block_table[req][i] != block_table[req][j]'
+  applies_to: all
+- type: invariant
+  property: Graph-compatible fixed shape
+  formal: shape(block_table) constant across graph replay
+  applies_to: all
+- type: invariant
+  property: Block pool conservation
+  formal: allocated + free = pool_size
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-PKV-001
+  rule: Slot bijectivity
+  prediction: No two (req, pos) pairs produce same slot
+  test: 'proptest: generate random block tables for M requests, verify all slots unique'
+  if_fails: Block table contains duplicate block IDs or slot formula is wrong
+- id: FALSIFY-PKV-002
+  rule: Paged/contiguous equivalence
+  prediction: Paged attention matches contiguous within tolerance
+  test: Random Q/K/V, compute both paged and contiguous attention, compare
+  if_fails: Block boundary crossing corrupts attention computation
+- id: FALSIFY-PKV-003
+  rule: Block allocation monotonicity
+  prediction: Longer sequence needs more or equal blocks
+  test: 'proptest: pairs (s1, s2) with s1 < s2, verify blocks(s1) <= blocks(s2)'
+  if_fails: ceil division error in allocation formula
+- id: FALSIFY-PKV-004
+  rule: Waste bounded by block_size
+  prediction: At most B-1 wasted slots per request
+  test: 'proptest: random seq_len, verify waste < B'
+  if_fails: Over-allocation beyond one block
+- id: FALSIFY-PKV-005
+  rule: No duplicate blocks
+  prediction: Each block ID appears at most once per request
+  test: 'proptest: allocate blocks for M requests, check uniqueness'
+  if_fails: Allocator returns same block twice
+- id: FALSIFY-PKV-006
+  rule: Pool conservation
+  prediction: allocated + free = pool_size after any sequence of alloc/free
+  test: 'proptest: random alloc/free sequences, verify conservation'
+  if_fails: Block leak or double-free
+- id: FALSIFY-PKV-007
+  rule: Graph compatibility
+  prediction: Block table shape unchanged after request add/remove
+  test: Add/remove requests, verify tensor shape constant
+  if_fails: Dynamic resizing breaks CUDA graph capture
+kani_harnesses:
+- id: KANI-PKV-001
+  obligation: PKV-INV-001
+  property: Slot mapping bijectivity for bounded configs
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_slot_mapping_bijective
+- id: KANI-PKV-002
+  obligation: PKV-INV-002
+  property: Block allocation monotonicity
+  bound: 256
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_block_alloc_monotonic
+- id: KANI-PKV-003
+  obligation: PKV-INV-003
+  property: Pool conservation under alloc/free
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_pool_conservation
+- id: KANI-PAGED_-004
+  obligation: Slot mapping bijectivity
+  property: Slot mapping bijectivity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-005
+  obligation: Paged/contiguous attention equivalence
+  property: Paged/contiguous attention equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-006
+  obligation: Block allocation monotonic in seq_len
+  property: Block allocation monotonic in seq_len
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-007
+  obligation: Block waste bounded
+  property: Block waste bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-PAGED_-008
+  obligation: No duplicate blocks within request
+  property: No duplicate blocks within request
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-009
+  obligation: Graph-compatible fixed shape
+  property: Graph-compatible fixed shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-010
+  obligation: Block pool conservation
+  property: Block pool conservation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-PKV-001
+  name: Paged KV Cache Contract
+  description: Block-table KV cache correctness — prerequisite for CUDA graph capture at c>1
+  checks:
+  - slot_bijectivity
+  - paged_contiguous_equivalence
+  - block_allocation
+  - no_duplicate_blocks
+  - pool_conservation
+  - graph_compatibility
+  pass_criteria: All 7 falsification tests pass + 3 Kani harnesses verify
+  falsification: Corrupt block_table entry to map two positions to same physical slot

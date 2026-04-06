@@ -1,0 +1,173 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: Classification LoRA fine-tuning — Poka-Yoke types + config factories
+  references:
+  - Shingo, S. (1986) Zero Quality Control (Poka-Yoke)
+  - Popper, K. (1959) The Logic of Scientific Discovery
+  - Brady, E. (2017) Type-Driven Development with Idris
+  - 'Hu et al. (2021) LoRA: Low-Rank Adaptation'
+  depends_on:
+  - cross-entropy-kernel-v1
+  - adamw-kernel-v1
+  - lora-algebra-v1
+equations:
+  logit_shape:
+    formula: logits.len() == num_classes AND num_classes >= 2
+    domain: logits in R^n, num_classes in Z, num_classes >= 2
+    codomain: ValidatedClassLogits or ContractValidationError
+    invariants:
+    - data.len() == num_classes
+    - num_classes >= 2 (binary classification minimum)
+    - No NaN or Inf values in data
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Logit_Shape
+  label_bounds:
+    formula: label_index < num_classes
+    domain: label_index in Z_>=0, num_classes in Z_>=2
+    codomain: ValidatedSafetyLabel or ContractValidationError
+    invariants:
+    - index < num_classes (strict upper bound)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Label_Bounds
+  classifier_weight_shape:
+    formula: weights.len() == hidden_size * num_classes
+    domain: hidden_size > 0, num_classes >= 2
+    codomain: ValidatedClassifierWeight or ContractValidationError
+    invariants:
+    - data.len() == hidden_size * num_classes
+    - hidden_size > 0
+    - num_classes >= 2
+    - No NaN or Inf values in data
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Classifier_Weight_Shape
+  softmax_sum:
+    formula: '|sum(softmax(logits)) - 1.0| < epsilon'
+    domain: logits in R^n, n >= 2, all finite
+    codomain: probs in [0,1]^n with sum = 1
+    invariants:
+    - Each probability in [0, 1]
+    - Sum within 1e-5 of 1.0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Softmax_Sum
+proof_obligations:
+- type: invariant
+  property: Logit shape matches num_classes
+  formal: ValidatedClassLogits::new(data, n) => data.len() == n
+  applies_to: all
+- type: invariant
+  property: Label index in bounds
+  formal: ValidatedSafetyLabel::new(idx, n) => idx < n
+  applies_to: all
+- type: invariant
+  property: Classifier weight shape
+  formal: ValidatedClassifierWeight::new(data, h, n) => data.len() == h*n
+  applies_to: all
+- type: bound
+  property: Softmax sum to one
+  formal: '|sum(softmax(logits)) - 1.0| < 1e-5'
+  applies_to: all
+- type: invariant
+  property: NaN/Inf rejection
+  formal: new() rejects data containing NaN or Inf
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CLASS-001
+  rule: Logit shape
+  prediction: ValidatedClassLogits::new rejects data.len() != num_classes
+  test: proptest with random data lengths != num_classes
+  if_fails: Shape validation not enforced in constructor
+- id: FALSIFY-CLASS-002
+  rule: Label bounds
+  prediction: ValidatedSafetyLabel::new rejects index >= num_classes
+  test: proptest with random indices >= num_classes
+  if_fails: Bounds checking not enforced in constructor
+- id: FALSIFY-CLASS-003
+  rule: Softmax sum
+  prediction: softmax(logits) sums to 1.0 within 1e-5
+  test: proptest with random finite logits
+  if_fails: Softmax normalization error
+- id: FALSIFY-CLASS-004
+  rule: Classifier weight shape
+  prediction: ValidatedClassifierWeight::new rejects data.len() != hidden*classes
+  test: proptest with random mismatched sizes
+  if_fails: Weight shape validation not enforced
+- id: FALSIFY-CLASS-005
+  rule: NaN rejection
+  prediction: ValidatedClassLogits::new rejects NaN values
+  test: proptest injecting NaN at random positions
+  if_fails: NaN checking not enforced
+- id: FALSIFY-CLASS-006
+  rule: Degenerate class count
+  prediction: ValidatedClassLogits::new rejects num_classes < 2
+  test: proptest with num_classes in {0, 1}
+  if_fails: Minimum class count not enforced
+kani_harnesses:
+- id: KANI-FT-001
+  obligation: FT-INV-001
+  property: ValidatedClassLogits::new rejects wrong len
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: proof_validated_class_logits_rejects_wrong_len
+- id: KANI-FT-002
+  obligation: FT-INV-002
+  property: ValidatedSafetyLabel::new rejects out-of-bounds
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: proof_validated_safety_label_rejects_out_of_bounds
+- id: KANI-FT-003
+  obligation: FT-INV-003
+  property: Classifier weight shape matches hidden * classes
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: proof_classifier_weight_shape_invariant
+- id: KANI-CLASSI-004
+  obligation: Logit shape matches num_classes
+  property: Logit shape matches num_classes
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CLASSI-005
+  obligation: Label index in bounds
+  property: Label index in bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-CLASSI-006
+  obligation: Classifier weight shape
+  property: Classifier weight shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CLASSI-007
+  obligation: Softmax sum to one
+  property: Softmax sum to one
+  bound: 8
+  strategy: stub_float
+- id: KANI-CLASSI-008
+  obligation: NaN/Inf rejection
+  property: NaN/Inf rejection
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-FT-001
+  name: Classification Fine-Tuning Contract
+  description: Poka-Yoke types + config factory quality gate
+  checks:
+  - logit_shape_validation
+  - label_bounds_validation
+  - weight_shape_validation
+  - softmax_sum_invariant
+  - nan_inf_rejection
+  - config_factory_contract_sync
+  pass_criteria: All 6 falsification tests pass
+  falsification: Bypass ValidatedClassLogits::new() with unsafe or wrong constructor

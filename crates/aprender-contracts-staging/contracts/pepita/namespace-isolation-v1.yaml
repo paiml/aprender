@@ -1,0 +1,83 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Namespace isolation contract — network namespace send/connect isolation and connection tracking
+  references:
+  - 'Kerrisk (2013) Namespaces in Operation, LWN.net'
+  - 'Biederman & Networker (2006) Linux Network Namespaces'
+equations:
+  send_isolation:
+    formula: 'send(ns, data) delivers data only within namespace ns'
+    domain: ns ∈ Namespace, data ∈ [u8]
+    codomain: Result<usize>
+    invariants:
+    - Data sent in namespace A is not visible in namespace B
+    - send returns byte count equal to data.len() on success
+    - Send to disconnected peer returns Err
+    preconditions:
+    - namespace is active
+    - data.len() > 0
+    lean_theorem: Theorems.Send_Isolation
+  connect_lifecycle:
+    formula: 'connect(addr) -> handle; connection_count() incremented'
+    domain: addr ∈ SocketAddr
+    codomain: Result<Connection>
+    invariants:
+    - 'connection_count monotonically increases with connect calls'
+    - Each connect produces a unique connection handle
+    - Failed connects do not increment connection_count
+    preconditions:
+    - addr is valid and reachable within namespace
+    lean_theorem: Theorems.Connect_Lifecycle
+proof_obligations:
+- type: soundness
+  property: Namespace isolation
+  formal: '∀ ns_a, ns_b, data: send(ns_a, data) ∧ ns_a ≠ ns_b → ¬recv(ns_b, data)'
+  applies_to: send_isolation
+- type: invariant
+  property: Connection count consistency
+  formal: '∀ n connects: connection_count() >= n (no undercount)'
+  applies_to: connect_lifecycle
+enforcement:
+  isolation:
+    description: Data does not leak across namespace boundaries
+    check: contract_tests::FALSIFY-PEP-001
+    severity: ERROR
+  count_consistency:
+    description: Connection count reflects actual connections
+    check: contract_tests::FALSIFY-PEP-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PEP-001
+  rule: Namespace isolation
+  prediction: send in ns_a, recv in ns_b times out (no data received)
+  test: create two namespaces, send in one, attempt recv in other with timeout
+  if_fails: Namespace boundary not enforced in virtio send path
+- id: FALSIFY-PEP-002
+  rule: Connection count consistency
+  prediction: after N successful connects, connection_count() = N
+  test: connect 50 times, verify connection_count() = 50
+  if_fails: Counter not incremented atomically or fails to track
+kani_harnesses:
+- id: KANI-PEP-001
+  obligation: Namespace isolation
+  property: cross-namespace data isolation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_namespace_isolation
+- id: KANI-PEP-002
+  obligation: Connection count consistency
+  property: count tracks connections
+  bound: 16
+  strategy: exhaustive
+  harness: verify_connection_count
+qa_gate:
+  id: F-PEP-001
+  name: Namespace Isolation Contract
+  description: Network namespace isolation and connection tracking quality gate
+  checks:
+  - isolation
+  - count_consistency
+  pass_criteria: All 2 falsification tests pass
+  falsification: Remove namespace binding from send syscall wrapper

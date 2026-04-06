@@ -1,0 +1,177 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-27"
+  author: "PAIML Engineering"
+  description: "Cross-repo inference pipeline: aprender(tokenize,embed) → trueno(transformer blocks) → realizar(sample)"
+  pipeline: true
+  registry: true
+  references:
+    - "Vaswani et al. (2017) Attention Is All You Need. arXiv:1706.03762"
+    - "Yuan et al. (2024) LLM Inference Unveiled: Roofline Model Insights. arXiv:2402.16363"
+    - "Dardik & Kang (2025) Compositional Invariant Inference via AG Reasoning. arXiv:2509.06250"
+  depends_on:
+    - inference-pipeline-v1
+    - softmax-kernel-v1
+    - attention-kernel-v1
+    - rmsnorm-kernel-v1
+    - swiglu-kernel-v1
+    - embedding-lookup-v1
+    - bpe-tokenization-v1
+    - sampling-algorithms-v1
+    - roofline-model-v1
+
+equations:
+  pipeline_composition:
+    formula: |
+      forward(tokens) = sample(lm_head(transformer^L(embed(tokens))))
+      Where L = num_layers, transformer = norm + attention + ffn + residual
+    domain: tokens in Vec<u32>, all t in [0, vocab_size)
+    codomain: token_id in [0, vocab_size)
+    invariants:
+    - Shape preserved through all stages
+    - All intermediate tensors are finite (no NaN/Inf)
+    lean_theorem: Theorems.PipelineComposition
+
+stages:
+  - name: tokenize
+    repo: aprender
+    contract: bpe-tokenization-v1
+    equation: encode
+    output_invariant: "token_ids: Vec<u32>, all t in token_ids: 0 <= t < vocab_size"
+    output_shape: "[seq_len]"
+
+  - name: embed
+    repo: aprender
+    contract: embedding-lookup-v1
+    equation: embedding_lookup
+    input_requires: "token_ids: Vec<u32>, 0 <= t < vocab_size for all t"
+    output_invariant: "H_0: Tensor, shape=[seq_len, d_model], all finite"
+    output_shape: "[seq_len, d_model]"
+
+  - name: transformer_block
+    repo: trueno
+    repeat: num_layers
+    substages:
+      - name: pre_norm
+        contract: rmsnorm-kernel-v1
+        equation: rmsnorm
+        input_requires: "h: Tensor, shape=[seq_len, d_model], all finite"
+        output_invariant: "normalized: Tensor, shape=[seq_len, d_model], unit variance per row"
+        output_shape: "[seq_len, d_model]"
+
+      - name: self_attention
+        contract: attention-kernel-v1
+        equation: attention
+        input_requires: "Q,K,V derived from normalized h, all finite"
+        output_invariant: "attn_out: Tensor, shape=[seq_len, d_model], all finite"
+        output_shape: "[seq_len, d_model]"
+        depends_on_contracts:
+          - softmax-kernel-v1
+
+      - name: residual_add_1
+        contract: inference-pipeline-v1
+        equation: residual_stream
+        input_requires: "h_l and attn_out both shape=[seq_len, d_model]"
+        output_invariant: "h_mid = h_l + attn_out, shape preserved"
+        output_shape: "[seq_len, d_model]"
+
+      - name: post_norm
+        contract: rmsnorm-kernel-v1
+        equation: rmsnorm
+        input_requires: "h_mid: Tensor, shape=[seq_len, d_model], all finite"
+        output_invariant: "normalized: Tensor, shape=[seq_len, d_model], unit variance"
+        output_shape: "[seq_len, d_model]"
+
+      - name: ffn
+        contract: swiglu-kernel-v1
+        equation: swiglu
+        input_requires: "normalized: Tensor, shape=[seq_len, d_model], all finite"
+        output_invariant: "ffn_out: Tensor, shape=[seq_len, d_model], all finite"
+        output_shape: "[seq_len, d_model]"
+
+      - name: residual_add_2
+        contract: inference-pipeline-v1
+        equation: residual_stream
+        input_requires: "h_mid and ffn_out both shape=[seq_len, d_model]"
+        output_invariant: "h_{l+1} = h_mid + ffn_out, shape preserved"
+        output_shape: "[seq_len, d_model]"
+
+  - name: final_norm
+    repo: trueno
+    contract: rmsnorm-kernel-v1
+    equation: rmsnorm
+    input_requires: "H_L: Tensor, shape=[seq_len, d_model], all finite"
+    output_invariant: "normalized: Tensor, shape=[seq_len, d_model]"
+    output_shape: "[seq_len, d_model]"
+
+  - name: lm_head
+    repo: aprender
+    contract: linear-projection-v1
+    equation: linear_projection
+    input_requires: "normalized: Tensor, shape=[seq_len, d_model]"
+    output_invariant: "logits: Tensor, shape=[seq_len, vocab_size], all finite"
+    output_shape: "[seq_len, vocab_size]"
+
+  - name: sample
+    repo: realizar
+    contract: sampling-algorithms-v1
+    equation: sample
+    input_requires: "logits: Tensor, shape=[vocab_size], all finite"
+    output_invariant: "token_id: u32, 0 <= token_id < vocab_size"
+    output_shape: "[1]"
+
+cross_boundary_obligations:
+  - id: PIPE-INF-001
+    property: "Tokenizer output valid for embedder"
+    from_stage: tokenize
+    to_stage: embed
+    formal: "for all t in encode(text): 0 <= t < vocab_size"
+    verification: "Kani exhaustive for vocab_size <= 2^16"
+
+  - id: PIPE-INF-002
+    property: "Embedding output valid for transformer"
+    from_stage: embed
+    to_stage: transformer_block
+    formal: "shape(embed(tokens)) = [len(tokens), d_model] AND all_finite(embed(tokens))"
+    verification: "Property test with random token sequences"
+
+  - id: PIPE-INF-003
+    property: "Transformer output valid for LM head"
+    from_stage: transformer_block
+    to_stage: lm_head
+    formal: "shape(H_L) = [seq_len, d_model] AND all_finite(H_L)"
+    verification: "Shape invariant preserved through residual stream"
+
+  - id: PIPE-INF-004
+    property: "LM head output valid for sampler"
+    from_stage: lm_head
+    to_stage: sample
+    formal: "shape(logits) = [vocab_size] AND all_finite(logits)"
+    verification: "Linear projection preserves finiteness"
+
+  - id: PIPE-INF-005
+    property: "Sampler output valid for next iteration"
+    from_stage: sample
+    to_stage: tokenize
+    formal: "0 <= sample(logits) < vocab_size"
+    verification: "Kani exhaustive for vocab_size <= 2^16"
+
+  - id: PIPE-INF-006
+    property: "Shape preservation through transformer block"
+    from_stage: transformer_block
+    to_stage: transformer_block
+    formal: "shape(block_l(h)) = shape(h) for all layers l"
+    verification: "Residual stream equation guarantees dimension preservation"
+
+  - id: PIPE-INF-007
+    property: "Softmax normalization consumed correctly by attention"
+    from_stage: transformer_block
+    to_stage: transformer_block
+    formal: "sum(softmax(scores)) = 1.0 AND attention weights = softmax(QK^T/sqrt(d_k))"
+    verification: "Compositional Kani with stub_verified softmax"
+
+performance_contract:
+  roofline: roofline-model-v1
+  prefill_bound: "compute-limited (high arithmetic intensity)"
+  decode_bound: "memory-limited (low arithmetic intensity, 1 token at a time)"
+  throughput_ceiling: "min(bw_ceiling, compute_ceiling) tokens/sec"

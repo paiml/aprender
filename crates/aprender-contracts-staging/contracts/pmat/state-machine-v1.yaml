@@ -1,0 +1,113 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: State machine contracts — refactor transitions, event store append-only, snapshot recovery
+  references:
+  - Meyer (1997). Object-Oriented Software Construction. Prentice Hall
+  - pmat state machine boundary (pv-spec §32.9)
+equations:
+  refactor_transitions:
+    formula: |
+      transition: (State, Event) -> Result<State, InvalidTransition>
+        Valid edges:
+          Scan -> Analyze -> Plan -> Refactor -> Test -> Lint -> Emit -> Complete
+        No skip: Scan -> Plan is INVALID
+        No backward: Refactor -> Scan is INVALID
+    domain: RefactorStateMachine state with any event
+    codomain: Next valid state or error
+    invariants:
+    - Only adjacent forward transitions allowed
+    - No skip transitions
+    - No backward transitions
+    preconditions:
+    - current state is not Complete
+    postconditions:
+    - new state is exactly one step forward
+    lean_theorem: Theorems.RefactorTransitions
+  event_store_append_only:
+    formula: |
+      append_only: EventStore -> bool
+        for-all event at index i: event_i is immutable after insert
+        replay(events[0..n]) = state_n
+    domain: Event store with any number of events
+    codomain: bool (immutability invariant)
+    invariants:
+    - Past events are never mutated
+    - Replay produces consistent state
+    preconditions:
+    - event store is initialized
+    postconditions:
+    - events[0..n] unchanged after new append
+    lean_theorem: Theorems.EventStoreAppendOnly
+  snapshot_recovery:
+    formula: |
+      recovery: (Snapshot, MissedEvents) -> State
+        restore(snapshot) + replay(missed) = build_from_scratch(all_events)
+    domain: Snapshot with any number of missed events
+    codomain: Recovered state equivalent to fresh build
+    invariants:
+    - Snapshot + replay equals fresh build
+    preconditions:
+    - snapshot is valid (not corrupted)
+    - missed events are ordered by timestamp
+    postconditions:
+    - recovered state = fresh build state
+    lean_theorem: Theorems.SnapshotRecovery
+proof_obligations:
+- type: state_machine
+  property: Valid transitions only
+  formal: No skip transitions, no backward edges
+  applies_to: all
+- type: invariant
+  property: Append-only event store
+  formal: events[0..n] immutable after write
+  applies_to: all
+- type: equivalence
+  property: Snapshot recovery equals fresh build
+  formal: restore(snapshot) + replay(missed) = build_from_scratch(all)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-STM-001
+  rule: Skip transition rejected
+  prediction: Scan->Plan transition returns InvalidTransition error
+  test: Create state machine in Scan, attempt transition to Plan
+  if_fails: Transition validation missing adjacency check
+- id: FALSIFY-STM-002
+  rule: Backward transition rejected
+  prediction: Refactor->Scan backward transition returns error
+  test: Create state machine in Refactor, attempt transition to Scan
+  if_fails: Transition validation not checking forward-only
+- id: FALSIFY-STM-003
+  rule: Empty replay produces initial state
+  prediction: Event replay from empty store produces initial state
+  test: Create empty store, replay, verify state = initial
+  if_fails: Empty event list not handled as base case
+- id: FALSIFY-STM-004
+  rule: Snapshot identity
+  prediction: Snapshot restore + 0 missed events = snapshot state exactly
+  test: Take snapshot, restore with no events, compare
+  if_fails: Restore not preserving all state fields
+kani_harnesses:
+- id: KANI-STM-001
+  obligation: Valid transitions only
+  property: all transitions are adjacent forward
+  bound: 8
+  strategy: exhaustive
+- id: KANI-STM-002
+  obligation: Append-only invariant
+  property: past events immutable
+  bound: 16
+  strategy: exhaustive
+- id: KANI-STM-003
+  obligation: Snapshot recovery equivalence
+  property: restore + replay = fresh build
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SM-001
+  name: state-machine-v1 Contract
+  description: Quality gate for state machine correctness
+  checks:
+  - validation
+  - falsification

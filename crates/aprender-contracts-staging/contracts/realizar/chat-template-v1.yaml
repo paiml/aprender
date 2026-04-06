@@ -1,0 +1,257 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: |
+    Chat template correctness contract — template selection, trait completeness,
+    thinking mode suppression, architecture-aware dispatch.
+
+    Motivated by PMAT-181 dogfood: three separate template bugs shipped
+    (missing trait methods, wrong template for Qwen3, uncached architecture)
+    because no contract enforced invariants. All caught by manual dogfood,
+    NOT by tests or contracts.
+  references:
+  - 'PMAT-181: Qwen3 thinking block loops'
+  - 'PMAT-182: apr-cli ChatMLTemplate missing trait methods'
+  - 'PMAT-185: AppState cached_architecture was None for GGUF'
+  depends_on:
+  - inference-pipeline-v1
+  - special-tokens-registry-v1
+
+equations:
+  trait_completeness:
+    formula: |
+      forall T: impl ChatTemplateEngine =>
+        T::format_message is defined
+        AND T::format_conversation is defined
+        AND T::special_tokens is defined
+        AND T::format is defined
+        AND T::supports_system_prompt is defined
+    domain: All types implementing ChatTemplateEngine trait
+    codomain: compile-time guarantee (Rust trait system)
+    invariants:
+    - Every impl block satisfies all 5 required methods
+    - No partial implementations (caught at compile time)
+    - Default methods, if any, are semantically correct
+    preconditions:
+    - Type declares `impl ChatTemplateEngine for T`
+    postconditions:
+    - Rust compiler rejects incomplete impls
+    lean_theorem: Theorems.Trait_Completeness
+    notes: |
+      PMAT-182 bug: ChatMLTemplate lost 3 methods during mid-edit of
+      Qwen3NoThinkTemplate. Rust caught this at compile time, but the
+      broken code was committed to the repo. Contract enforcement via
+      explicit test prevents regressions if code is feature-gated.
+
+  architecture_aware_selection:
+    formula: |
+      detect_format_from_name(name) where name contains "qwen3"
+        => TemplateFormat::Qwen3NoThink
+
+      detect_format_from_name(name) where name contains "qwen" AND NOT "qwen3"
+        => TemplateFormat::ChatML
+
+      detect_format_from_name(name) where name contains "llama"
+        => TemplateFormat::Llama2
+    domain: model_name ∈ String (from GGUF metadata or filename)
+    codomain: TemplateFormat enum variant
+    invariants:
+    - Qwen3 ALWAYS gets Qwen3NoThink (NEVER ChatML)
+    - More specific patterns match before generic ones
+    - Unknown models get Raw template (safe default)
+    preconditions:
+    - model_name is non-empty
+    postconditions:
+    - Returned format matches the most specific pattern
+    lean_theorem: Theorems.Architecture_Aware_Selection
+    notes: |
+      PMAT-181 root cause: Qwen3 got ChatML template, entered thinking
+      mode, looped on </think> tokens. Cost: ~1024 wasted tokens per
+      response. Qwen3NoThink pre-fills empty <think></think> block.
+
+  appstate_architecture_cache:
+    formula: |
+      forall constructor C that accepts OwnedQuantizedModel:
+        C(model, ...).cached_architecture == Some(model.config.architecture)
+    domain: AppState construction with GGUF model
+    codomain: cached_architecture ∈ Option<String>
+    invariants:
+    - cached_architecture is NEVER None when a quantized model is loaded
+    - Architecture string matches GGUF general.architecture metadata
+    - Cache is populated at construction time (not lazy)
+    preconditions:
+    - quantized_model.config.architecture is non-empty
+    postconditions:
+    - state.model_architecture() returns Some(arch) immediately
+    lean_theorem: Theorems.AppState_Architecture_Cache
+    notes: |
+      PMAT-185 root cause: with_quantized_model_and_vocab() set
+      cached_architecture: None. model_architecture() fell through
+      to RwLock-guarded model access, sometimes returning None on
+      first request. Chat template detection got no hint, defaulted
+      to Raw/ChatML instead of Qwen3NoThink.
+
+  thinking_block_suppression:
+    formula: |
+      forall response from Qwen3NoThinkTemplate::format_conversation():
+        response ends with "<think>\n</think>\n"
+        => model output SHOULD NOT contain additional <think> blocks
+
+      forall output O from strip_thinking_blocks(raw):
+        O does not contain "<think>" OR "</think>"
+    domain: Model output strings from Qwen3 models
+    codomain: Cleaned output string
+    invariants:
+    - Pre-filled empty thinking block signals model to skip thinking
+    - strip_thinking_blocks is defense-in-depth (catches leaks)
+    - No thinking content visible to user
+    preconditions:
+    - Template is Qwen3NoThinkTemplate (not ChatML)
+    postconditions:
+    - Final output contains zero <think> or </think> substrings
+    lean_theorem: Theorems.Thinking_Block_Suppression
+
+  format_conversation_determinism:
+    formula: |
+      forall template T, messages M:
+        T.format_conversation(M) == T.format_conversation(M)
+    domain: Any ChatTemplateEngine impl, any message sequence
+    codomain: Formatted prompt string
+    invariants:
+    - Same inputs always produce same output
+    - No internal state mutation between calls
+    - Thread-safe (Send + Sync required by trait bound)
+    preconditions:
+    - messages.len() >= 0
+    postconditions:
+    - Output is deterministic and reproducible
+
+proof_obligations:
+- type: invariant
+  property: Qwen3 never gets ChatML template
+  formal: '!name.contains("qwen3") || detect_format_from_name(name) == Qwen3NoThink'
+  applies_to: architecture_aware_selection
+- type: invariant
+  property: AppState always caches GGUF architecture
+  formal: 'with_quantized_model_and_vocab(m, v).cached_architecture.is_some()'
+  applies_to: appstate_architecture_cache
+- type: invariant
+  property: strip_thinking_blocks removes all tags
+  formal: '!strip_thinking_blocks(s).contains("<think>") && !strip_thinking_blocks(s).contains("</think>")'
+  applies_to: thinking_block_suppression
+- type: invariant
+  property: format_conversation is pure
+  formal: '∀ T, M: T.format_conversation(M) == T.format_conversation(M)'
+  applies_to: format_conversation_determinism
+
+enforcement:
+  qwen3_template_selection:
+    description: Qwen3 models must use Qwen3NoThinkTemplate
+    check: contract_tests::FALSIFY-CT-001
+    severity: ERROR
+  architecture_cache_populated:
+    description: GGUF AppState constructors must cache architecture
+    check: contract_tests::FALSIFY-CT-002
+    severity: ERROR
+  thinking_block_clean:
+    description: No thinking blocks in stripped output
+    check: contract_tests::FALSIFY-CT-003
+    severity: ERROR
+  template_determinism:
+    description: Same messages produce same prompt
+    check: contract_tests::FALSIFY-CT-004
+    severity: ERROR
+  template_trait_coverage:
+    description: All ChatTemplateEngine impls have all methods
+    check: contract_tests::FALSIFY-CT-005
+    severity: ERROR
+
+falsification_tests:
+- id: FALSIFY-CT-001
+  rule: Qwen3 template selection
+  prediction: detect_format_from_name("Qwen3-1.7B") returns Qwen3NoThink
+  test: |
+    assert_eq!(detect_format_from_name("Qwen3-1.7B-Q4_K_M"), TemplateFormat::Qwen3NoThink);
+    assert_eq!(detect_format_from_name("qwen3-0.6b"), TemplateFormat::Qwen3NoThink);
+    assert_eq!(detect_format_from_name("Qwen3-8B-Instruct"), TemplateFormat::Qwen3NoThink);
+    // Must NOT match Qwen2
+    assert_ne!(detect_format_from_name("Qwen2.5-Coder-1.5B"), TemplateFormat::Qwen3NoThink);
+    assert_eq!(detect_format_from_name("Qwen2.5-Coder-1.5B"), TemplateFormat::ChatML);
+  file: src/chat_template_helpers.rs
+  if_fails: Qwen3 model gets wrong chat template, enters thinking mode or wrong format
+
+- id: FALSIFY-CT-002
+  rule: AppState architecture cache
+  prediction: with_quantized_model_and_vocab populates cached_architecture
+  test: |
+    let model = create_test_quantized_model("qwen3");
+    let state = AppState::with_quantized_model_and_vocab(model, vocab).unwrap();
+    assert_eq!(state.model_architecture(), Some("qwen3".to_string()));
+  file: src/api/mod_app_state_gpu.rs
+  if_fails: Architecture not cached, template auto-detection falls back to wrong default
+
+- id: FALSIFY-CT-003
+  rule: Thinking block suppression
+  prediction: strip_thinking_blocks removes all think tags
+  test: |
+    assert_eq!(strip_thinking_blocks("</think>\n\n4"), "4");
+    assert_eq!(strip_thinking_blocks("<think>reasoning</think>answer"), "answer");
+    assert_eq!(strip_thinking_blocks("</think></think></think>"), "");
+    assert_eq!(strip_thinking_blocks("clean text"), "clean text");
+    assert!(!strip_thinking_blocks("<think>x</think>y</think>z").contains("</think>"));
+  file: src/agent/driver/apr_serve.rs
+  if_fails: Think tags leak into user-visible output, corrupting responses
+
+- id: FALSIFY-CT-004
+  rule: Template determinism
+  prediction: Same messages produce identical prompts
+  test: |
+    let template = Qwen3NoThinkTemplate::new();
+    let messages = vec![ChatMessage { role: "user", content: "hello" }];
+    let a = template.format_conversation(&messages).unwrap();
+    let b = template.format_conversation(&messages).unwrap();
+    assert_eq!(a, b);
+  file: src/chat_template_qwen3_nothink.rs
+  if_fails: Non-deterministic prompts cause inconsistent model behavior
+
+- id: FALSIFY-CT-005
+  rule: Template trait coverage
+  prediction: All template impls satisfy ChatTemplateEngine
+  test: |
+    // Compile-time check — these lines fail to compile if any impl is incomplete
+    let templates: Vec<Box<dyn ChatTemplateEngine>> = vec![
+        Box::new(ChatMLTemplate::new()),
+        Box::new(Qwen3NoThinkTemplate::new()),
+        Box::new(Llama2Template::new()),
+        Box::new(ZephyrTemplate::new()),
+        Box::new(MistralTemplate::new()),
+        Box::new(PhiTemplate::new()),
+        Box::new(AlpacaTemplate::new()),
+        Box::new(RawTemplate::new()),
+    ];
+    for t in &templates {
+        let _ = t.format();
+        let _ = t.supports_system_prompt();
+        let _ = t.special_tokens();
+    }
+  file: src/chat_template.rs
+  if_fails: Incomplete trait impl causes runtime panic on unsupported template method
+
+- id: FALSIFY-CT-006
+  rule: Qwen3NoThink pre-fills empty thinking block
+  prediction: format_conversation output ends with pre-filled think block before assistant content
+  test: |
+    let template = Qwen3NoThinkTemplate::new();
+    let messages = vec![ChatMessage { role: "user", content: "hello" }];
+    let output = template.format_conversation(&messages).unwrap();
+    assert!(output.contains("<think>\n</think>"), "must pre-fill empty thinking block");
+    assert!(output.ends_with("<think>\n</think>\n"), "thinking block must be at end");
+  file: src/chat_template_qwen3_nothink.rs
+  if_fails: Missing pre-filled think block causes model to generate thinking tokens
+kani_harnesses:
+- id: KANI-CT-001
+  obligation: Qwen3 never gets ChatML template
+  property: detect_format_from_name returns Qwen3NoThink for qwen3 names
+  bound: 8
+  strategy: exhaustive

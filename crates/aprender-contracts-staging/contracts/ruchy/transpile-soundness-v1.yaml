@@ -1,0 +1,107 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Transpile soundness contract — AST-to-program transpilation for the ruchy language
+  references:
+  - 'Appel (1998) Modern Compiler Implementation'
+equations:
+  ast_to_program:
+    formula: transpile_to_program(AST) = Program where Program.instructions preserve AST semantics
+    domain: AST ∈ valid ruchy parse tree
+    codomain: Result<Program, TranspileError>
+    invariants:
+    - All AST functions appear in Program
+    - 'Deterministic: same AST always produces same Program'
+    - Module declarations scoped correctly
+    preconditions:
+    - AST is well-formed (no dangling references)
+    lean_theorem: Theorems.AST_To_Program
+  transpile_determinism:
+    formula: '∀ source: transpile(source) = transpile(source)'
+    domain: source ∈ String, valid ruchy source
+    codomain: Result<String, TranspileError>
+    invariants:
+    - Identical source produces identical Rust output
+    - transpile_to_string and transpile_minimal are consistent subsets
+    - Lambda expressions correctly captured
+    preconditions:
+    - source parses without errors
+    lean_theorem: Theorems.Transpile_Determinism
+  pipeline_composition:
+    formula: transpile_pipeline(stages) = compose(stage_1, stage_2, ..., stage_n)
+    domain: stages ∈ [TranspileStage]
+    codomain: Result<Program, PipelineError>
+    invariants:
+    - Pipeline stages execute in declared order
+    - Each stage input matches previous stage output type
+    - 'Error in stage_k propagates: no silent drops'
+    preconditions:
+    - stages.len() > 0
+    - stage types are compatible
+    lean_theorem: Theorems.Pipeline_Composition
+proof_obligations:
+- type: invariant
+  property: Transpile determinism
+  formal: '∀ src: transpile(src) = transpile(src)'
+  applies_to: transpile_determinism
+- type: invariant
+  property: Function preservation
+  formal: '∀ AST: |functions(transpile_to_program(AST))| >= |functions(AST)|'
+  applies_to: ast_to_program
+- type: invariant
+  property: Pipeline error propagation
+  formal: '∀ stages, k: err(stage_k) → err(pipeline(stages))'
+  applies_to: pipeline_composition
+enforcement:
+  transpile_deterministic:
+    description: Transpiling same source twice yields identical output
+    check: contract_tests::FALSIFY-TS-001
+    severity: ERROR
+  function_preservation:
+    description: All AST functions present in transpiled program
+    check: contract_tests::FALSIFY-TS-002
+    severity: ERROR
+  pipeline_error_propagation:
+    description: Stage errors propagate to pipeline result
+    check: contract_tests::FALSIFY-TS-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TS-001
+  rule: Transpile determinism
+  prediction: transpile(src) called twice produces identical Rust code
+  test: transpile 50 ruchy programs twice each, diff outputs
+  if_fails: Non-deterministic name generation or HashMap ordering
+- id: FALSIFY-TS-002
+  rule: Function preservation
+  prediction: every function in AST has corresponding output in Program
+  test: parse programs with N functions, verify N outputs
+  if_fails: Transpiler silently drops unreachable or complex functions
+- id: FALSIFY-TS-003
+  rule: Pipeline error propagation
+  prediction: injecting error at stage k causes pipeline to return Err
+  test: create pipeline with intentionally failing middle stage
+  if_fails: Error swallowed by catch-all or default fallback
+kani_harnesses:
+- id: KANI-TS-001
+  obligation: Transpile determinism
+  property: same input same output
+  bound: 16
+  strategy: exhaustive
+  harness: verify_transpile_determinism
+- id: KANI-TS-002
+  obligation: Function preservation
+  property: all AST functions appear in output
+  bound: 8
+  strategy: exhaustive
+  harness: verify_function_preservation
+qa_gate:
+  id: F-TS-001
+  name: Transpile Soundness Contract
+  description: Ruchy transpilation correctness quality gate
+  checks:
+  - transpile_deterministic
+  - function_preservation
+  - pipeline_error_propagation
+  pass_criteria: All 3 falsification tests pass
+  falsification: Use HashMap for function output ordering

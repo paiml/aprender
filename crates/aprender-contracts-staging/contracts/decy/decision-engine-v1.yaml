@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Decision engine contract — transpile dispatch, type checking, code generation correctness
+  references:
+  - 'Aho et al. (2006) Compilers: Principles, Techniques, and Tools'
+  - 'Pierce (2002) Types and Programming Languages'
+equations:
+  transpile_dispatch:
+    formula: T(source) = codegen(typecheck(parse(source)))
+    domain: source ∈ String, valid C/C++ translation unit
+    codomain: Result<String> where output is valid Rust
+    invariants:
+    - 'Pipeline composition: parse → HIR → codegen is total for supported subset'
+    - 'Deterministic: T(s) = T(s) for all s'
+    - Error at any stage short-circuits with diagnostic
+    preconditions:
+    - '!source.is_empty()'
+    - source is syntactically valid C/C++ (per decy-parser)
+    lean_theorem: Theorems.Transpile_Dispatch
+  type_preservation:
+    formula: '∀ type t in AST: from_ast_type(t) preserves semantic width and signedness'
+    domain: AST types from decy-parser
+    codomain: HIR types in decy-hir
+    invariants:
+    - Primitive type widths preserved (int → i32, long → i64)
+    - Pointer types map to raw pointers or references
+    - 'Struct/class types preserve field count: |fields(AST)| = |fields(HIR)|'
+    preconditions:
+    - AST node is well-formed (produced by decy-parser)
+    lean_theorem: Theorems.Type_Preservation
+  include_resolution:
+    formula: R(source, includes) = transpile(inline(source, resolve(includes)))
+    domain: source ∈ String, includes ∈ [Path]
+    codomain: Result<String>
+    invariants:
+    - Include directives resolved before transpilation
+    - Circular includes detected and reported as errors
+    - Missing includes produce clear diagnostics
+    preconditions:
+    - include paths are relative or absolute valid paths
+    lean_theorem: Theorems.Include_Resolution
+proof_obligations:
+- type: invariant
+  property: Transpile determinism
+  formal: '∀ source: transpile(source) = transpile(source)'
+  applies_to: transpile_dispatch
+- type: invariant
+  property: Type width preservation
+  formal: '∀ t: sizeof(from_ast_type(t)) = sizeof(t) for primitive types'
+  applies_to: type_preservation
+- type: soundness
+  property: Include cycle detection
+  formal: '∀ G(includes): cycle(G) → Err(CircularInclude)'
+  applies_to: include_resolution
+enforcement:
+  transpile_determinism:
+    description: Same source always produces same Rust output
+    check: contract_tests::FALSIFY-DCY-001
+    severity: ERROR
+  type_width:
+    description: Primitive type widths are preserved across transpilation
+    check: contract_tests::FALSIFY-DCY-002
+    severity: ERROR
+  include_cycles:
+    description: Circular includes are detected and rejected
+    check: contract_tests::FALSIFY-DCY-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-DCY-001
+  rule: Transpile determinism
+  prediction: transpile(s) = transpile(s) for any valid C source s
+  test: proptest with 500 random valid C snippets, call twice each
+  if_fails: Non-deterministic state in parser or codegen
+- id: FALSIFY-DCY-002
+  rule: Type width preservation
+  prediction: int maps to i32, long to i64, char to c_char for all inputs
+  test: enumerate all C primitive types, verify Rust equivalents
+  if_fails: Type mapping table is incomplete or incorrect
+- id: FALSIFY-DCY-003
+  rule: Include cycle detection
+  prediction: transpile_with_includes rejects circular include graphs
+  test: construct DAG with cycle, verify Err returned
+  if_fails: Include resolver does not track visited set
+kani_harnesses:
+- id: KANI-DCY-001
+  obligation: Transpile determinism
+  property: transpile output is deterministic
+  bound: 16
+  strategy: exhaustive
+  harness: verify_transpile_determinism
+- id: KANI-DCY-002
+  obligation: Type width preservation
+  property: primitive type widths preserved
+  bound: 8
+  strategy: exhaustive
+  harness: verify_type_width_preservation
+- id: KANI-DCY-003
+  obligation: Include cycle detection
+  property: circular includes produce error
+  bound: 8
+  strategy: exhaustive
+  harness: verify_include_cycle_detection
+qa_gate:
+  id: F-DCY-001
+  name: Decision Engine Contract
+  description: Transpile dispatch, type preservation, and include resolution quality gate
+  checks:
+  - transpile_determinism
+  - type_width
+  - include_cycles
+  pass_criteria: All 3 falsification tests pass
+  falsification: Swap int→i64 mapping in from_ast_type

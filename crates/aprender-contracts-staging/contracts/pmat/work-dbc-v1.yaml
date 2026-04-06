@@ -1,0 +1,394 @@
+metadata:
+  version: 2.0.0
+  created: '2026-04-03'
+  updated: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Work DBC contracts — pmat work item lifecycle, Meyer triad (require/ensure/invariant),
+    falsifiable claims, contract profiles, checkpoint verification, rescue protocol.
+    v2.0: Fixed lifecycle states to match ItemStatus enum, added meyer_triad and
+    checkpoint_verification equations, expanded falsification tests.
+  references:
+  - Meyer (1997). Object-Oriented Software Construction. Prentice Hall
+  - Popper (1959). The Logic of Scientific Discovery. Routledge
+  - pmat work DBC system (pv-spec §32.9)
+  depends_on:
+  - tdg-scoring-v1
+  - comply-check-v1
+equations:
+  work_lifecycle:
+    formula: |
+      lifecycle: (WorkItem, Event) -> Result<WorkItem, LifecycleError>
+        Valid transitions (matching ItemStatus enum):
+          Planned -> InProgress   (pmat work start)
+          Planned -> Cancelled    (pmat work delete)
+          InProgress -> Blocked   (external dependency)
+          InProgress -> Review    (pmat work complete --skip-quality)
+          InProgress -> Completed (pmat work complete)
+          Blocked -> InProgress   (pmat work continue)
+          Review -> InProgress    (rework after review)
+          Review -> Completed     (merge)
+        No skip: Planned -> Completed is INVALID
+        Terminal: Completed, Cancelled are final (no outgoing edges)
+    domain: WorkItem with ItemStatus in {Planned, InProgress, Blocked, Review, Completed, Cancelled}
+    codomain: Next valid ItemStatus or LifecycleError
+    invariants:
+    - Only defined transitions allowed (adjacency matrix)
+    - Terminal states have no outgoing edges
+    - Blocked state is always recoverable (-> InProgress)
+    - work_item.id is immutable across transitions
+    preconditions:
+    - work item exists in roadmap.yaml with valid ID (PMAT-NNN, GH-NNN, or #NNN)
+    - event is a valid lifecycle event for current state
+    - .pmat-work/{id}/contract.json exists for InProgress items
+    postconditions:
+    - new state follows transition rules
+    - roadmap.yaml updated with new status and timestamp
+    lean_theorem: Theorems.WorkLifecycle
+  meyer_triad:
+    formula: |
+      triad: (Contract, Phase) -> Result<TriadReport, ClauseError>
+        Phase = Start | Checkpoint | Complete
+        Start:      check all require clauses
+        Checkpoint: check all invariant clauses
+        Complete:   check all ensure clauses + invariant clauses
+        Each clause: (description, falsification_method, threshold, blocking)
+        blocking clause failure -> Jidoka stop-the-line
+        non-blocking clause failure -> warning only
+    domain: WorkContract v5.0 with require/ensure/invariant clause lists
+    codomain: TriadReport with per-clause verdict and blocking status
+    invariants:
+    - require clauses checked only at Start
+    - ensure clauses checked only at Complete
+    - invariant clauses checked at every phase (Start, Checkpoint, Complete)
+    - blocking clause failure prevents state transition
+    preconditions:
+    - contract version >= 5.0 (Meyer triad fields present)
+    - at least one clause exists in the relevant phase list
+    postconditions:
+    - all clauses evaluated, none skipped
+    - blocking failures prevent transition
+    - non-blocking failures logged but allowed
+    lean_theorem: Theorems.MeyerTriad
+  checkpoint_verification:
+    formula: |
+      checkpoint: (WorkItem, Contract) -> Result<CheckpointReport, VerifyError>
+        For each invariant clause:
+          evidence = gather(clause.falsification_method)
+          verdict = evaluate(evidence, clause.threshold)
+        report.passed = all invariants verified
+        report.score_delta = current_tdg - baseline_tdg
+    domain: InProgress WorkItem with active contract
+    codomain: CheckpointReport with invariant verdicts and quality delta
+    invariants:
+    - Checkpoint does not modify contract (read-only check)
+    - Score delta is computed against immutable baseline
+    - Checkpoint is idempotent (running twice gives same result)
+    preconditions:
+    - work item is in InProgress state
+    - contract.json exists with baseline metrics
+    - project builds successfully (invariant.compiles)
+    postconditions:
+    - all invariant clauses evaluated
+    - no file in baseline manifest deleted (ManifestIntegrity)
+    - report includes score delta from baseline
+    lean_theorem: Theorems.CheckpointVerification
+  falsifiable_claim:
+    formula: |
+      claim: (Claim, Evidence) -> Verdict
+        claim.prediction is testable (Popperian falsifiability)
+        evidence = run(claim.falsification_method)
+        evidence matches claim.prediction -> Verified
+        evidence contradicts claim.prediction -> Falsified
+        evidence inconclusive -> Blocked
+      25 default claims (Pmat profile): ManifestIntegrity, DifferentialCoverage, AbsoluteCoverage,
+        TdgRegression, ComplexityRegression, FileSizeRegression, SpecQuality,
+        RoadmapUpdate, GitHubSync, CoverageGaming, SupplyChainIntegrity,
+        MetaFalsification, ExamplesCompile, BookValidation, SatdDetection,
+        DeadCodeDetection, PerFileCoverage, LintPass, VariantCoverage,
+        FixChainLimit, CrossCrateParity, RegressionGate
+    domain: FalsifiableClaim with executable test procedure
+    codomain: Verdict in {Verified, Falsified, Blocked}
+    invariants:
+    - Every claim has a testable prediction (no untestable claims)
+    - Verdict is deterministic given same evidence
+    - Falsified claim blocks work completion (unless overridden with --ticket)
+    preconditions:
+    - claim.prediction is non-empty string
+    - claim.falsification_method is a known FalsificationMethod variant
+    postconditions:
+    - verdict is exactly one of {Verified, Falsified, Blocked}
+    - evidence collected and stored in falsification receipt
+    lean_theorem: Theorems.FalsifiableClaim
+  contract_profile:
+    formula: |
+      profile: (WorkItem, ProfileName) -> ContractProfile
+        ProfileName in {Universal, Rust, Pmat, Stack, Custom}
+        Each profile activates a subset of the 25 claims:
+          Universal: compiles, tests, manifest, meta, coverage_gaming, roadmap (6 claims)
+          Rust: Universal + clippy, examples, cargo-deny, satd, dead_code,
+                unwrap, per_file_coverage, lint (14 claims)
+          Pmat: Rust + coverage, tdg, complexity, file_size, spec, github_sync,
+                supply_chain, book, variant, cross_crate, regression (25 claims)
+          Stack: Pmat + third-party tool claims from manifest (variable)
+          Custom: user cherry-picked claims subset (variable)
+        score = active_claims_verified / total_active_claims
+        grade = letter_grade(score * 100)
+    domain: WorkItem with profile name string
+    codomain: ContractProfile with active claims list, score, grade
+    invariants:
+    - Profile composition is monotonic (rust ⊇ universal)
+    - Score is bounded [0.0, 1.0]
+    - contract_quality.active_claims <= applicable_claims
+    preconditions:
+    - profile name is a known variant or composition (e.g. "rust+pmat")
+    - work item has associated source files
+    postconditions:
+    - profile.score in [0.0, 1.0]
+    - all active claims evaluated, none silently skipped
+    lean_theorem: Theorems.ContractProfile
+  override_accountability:
+    formula: |
+      override: (ClaimId, TicketId) -> Result<Override, AccountabilityError>
+        --override-claims requires --ticket (no anonymous overrides)
+        ticket must match pattern DEBT-NNN or PMAT-NNN
+        override is logged in falsification receipt (immutable)
+        overridden claim shows Override status, not Verified
+    domain: Failed claim with override request and ticket reference
+    codomain: Override record with accountability trail
+    invariants:
+    - No override without ticket (accountability)
+    - Override logged immutably in receipt
+    - Overridden claim NOT counted as Verified in score
+    preconditions:
+    - claim exists and was Falsified
+    - ticket ID is non-empty and matches valid pattern
+    postconditions:
+    - override recorded in contract.json
+    - falsification receipt updated with override entry
+    lean_theorem: Theorems.OverrideAccountability
+  rescue_protocol:
+    formula: |
+      rescue: (WorkItem, Failure) -> RescueStrategy
+        retry -> re-run failed claim with fresh evidence
+        fallback -> use lower quality threshold
+        escalate -> notify human reviewer
+        abandon -> cancel work item (-> Cancelled state)
+        Max retries bounded: retries <= max_retries (default 3)
+    domain: Failed work item with failure context
+    codomain: RescueStrategy in {Retry, Fallback, Escalate, Abandon}
+    invariants:
+    - Retry count bounded by max_retries
+    - Escalation always available as last resort
+    - Abandon transitions item to Cancelled (terminal)
+    preconditions:
+    - work item has at least one Falsified claim
+    - failure context is non-empty
+    postconditions:
+    - rescue strategy is one of {Retry, Fallback, Escalate, Abandon}
+    - retry counter decremented on each Retry
+    lean_theorem: Theorems.RescueProtocol
+proof_obligations:
+- type: state_machine
+  property: Work lifecycle valid transitions
+  formal: >
+    forall s1 s2 : ItemStatus, transition(s1, s2) -> (s1, s2) in adjacency_set.
+    Planned->Completed not in adjacency_set.
+    forall s : {Completed, Cancelled}, no outgoing edge from s.
+  applies_to: all
+  lean:
+    theorem: Theorems.WorkLifecycle
+    status: sorry
+- type: determinism
+  property: Falsifiable claim determinism
+  formal: forall c e, evaluate(c, e) = evaluate(c, e) (same evidence -> same verdict)
+  applies_to: all
+  lean:
+    theorem: Theorems.FalsifiableClaimDeterminism
+    status: sorry
+- type: bound
+  property: Contract profile score bounded
+  formal: 0.0 <= score <= 1.0 for all profiles
+  applies_to: all
+  lean:
+    theorem: Theorems.ContractProfileScoreBounded
+    status: sorry
+- type: postcondition
+  property: Falsified blocks completion
+  formal: any_falsified(claims) AND NOT overridden -> completion returns Error
+  applies_to: all
+  lean:
+    theorem: Theorems.FalsifiedBlocksCompletion
+    status: sorry
+  requires: claim.falsification_method is executable
+- type: termination
+  property: Rescue retry bounded
+  formal: retries <= max_retries, after max_retries either Escalate or Abandon
+  applies_to: all
+  lean:
+    theorem: Theorems.RescueRetryBounded
+    status: sorry
+- type: conservation
+  property: Profile weights sum to unity
+  formal: active_claims / applicable_claims = contract_quality.score
+  applies_to: all
+  lean:
+    theorem: Theorems.ProfileWeightsSumToUnity
+    status: sorry
+- type: invariant
+  property: Meyer triad phase correctness
+  formal: >
+    require checked only at Start,
+    ensure checked only at Complete,
+    invariant checked at Start AND Checkpoint AND Complete
+  applies_to: all
+  lean:
+    theorem: Theorems.MeyerTriadPhaseCorrectness
+    status: sorry
+- type: idempotency
+  property: Checkpoint is idempotent
+  formal: checkpoint(item, contract) = checkpoint(item, contract) (no side effects)
+  applies_to: all
+  lean:
+    theorem: Theorems.CheckpointIsIdempotent
+    status: sorry
+- type: monotonicity
+  property: Profile composition is monotonic
+  formal: claims(rust) superset claims(universal), claims(pmat) superset claims(rust)
+  applies_to: all
+  lean:
+    theorem: Theorems.ProfileCompositionIsMonotonic
+    status: sorry
+- type: precondition
+  property: Override requires ticket
+  formal: override(claim, None) -> AccountabilityError
+  applies_to: all
+  lean:
+    theorem: Theorems.OverrideRequiresTicket
+    status: sorry
+falsification_tests:
+- id: FALSIFY-WDB-001
+  rule: Work lifecycle valid transitions
+  prediction: Planned->Completed transition returns LifecycleError (no skip)
+  test: Create work item in Planned, attempt direct transition to Completed
+  if_fails: Transition validation missing adjacency check
+- id: FALSIFY-WDB-002
+  rule: Falsified blocks completion
+  prediction: Work item with falsified claim cannot transition to Completed
+  test: Create claim, falsify it, attempt Complete without override
+  if_fails: Falsification check not wired to lifecycle
+- id: FALSIFY-WDB-003
+  rule: Contract profile score bounded
+  prediction: Extreme inputs produce score in [0.0, 1.0]
+  test: Create work item with all-zero and all-max metrics
+  if_fails: Score overflow or division by zero
+- id: FALSIFY-WDB-004
+  rule: Rescue retry bounded
+  prediction: After max_retries, rescue escalates (not infinite loop)
+  test: Set max_retries=3, fail 4 times, verify escalation
+  if_fails: Retry counter not decrementing or not checked
+- id: FALSIFY-WDB-005
+  rule: Falsifiable claim determinism
+  prediction: Same test evidence produces same verdict twice
+  test: Run claim twice with fixed inputs, compare verdicts
+  if_fails: Non-deterministic state in claim evaluation
+- id: FALSIFY-WDB-006
+  rule: Work lifecycle valid transitions
+  prediction: Completed work item cannot transition to any state (terminal finality)
+  test: Create Completed item, attempt all 6 transitions
+  if_fails: Terminal check missing for Completed state
+- id: FALSIFY-WDB-007
+  rule: Override requires ticket
+  prediction: --override-claims without --ticket returns AccountabilityError
+  test: Run pmat work complete with --override-claims but no --ticket
+  if_fails: Override accountability not enforced
+- id: FALSIFY-WDB-008
+  rule: Checkpoint is idempotent
+  prediction: Two consecutive checkpoints produce identical reports
+  test: Run checkpoint twice without code changes, diff reports
+  if_fails: Checkpoint has side effects or non-deterministic metric collection
+- id: FALSIFY-WDB-009
+  rule: Meyer triad phase correctness
+  prediction: require clauses NOT checked at checkpoint (only at start)
+  test: Start work, modify precondition state, run checkpoint - require not re-checked
+  if_fails: Phase isolation violated, require clauses leaking into checkpoint
+- id: FALSIFY-WDB-010
+  rule: Profile composition is monotonic
+  prediction: pmat profile claims are strict superset of rust profile claims
+  test: Generate both profiles, verify set inclusion
+  if_fails: Profile composition breaks monotonicity
+- id: FALSIFY-WDB-011
+  rule: Profile weights sum to unity
+  prediction: contract_quality.score = active_claims / applicable_claims exactly
+  test: Create contract with 10/10 claims verified, verify score = 1.0
+  if_fails: Score calculation arithmetic error
+kani_harnesses:
+- id: KANI-WDB-001
+  obligation: Work lifecycle valid transitions
+  property: Only defined edges allowed
+  bound: 8
+  strategy: exhaustive
+  harness: verify_work_lifecycle_transitions
+- id: KANI-WDB-002
+  obligation: Falsifiable claim determinism
+  property: same evidence same verdict
+  bound: 8
+  strategy: exhaustive
+  harness: verify_claim_determinism
+- id: KANI-WDB-003
+  obligation: Contract profile score bounded
+  property: 0.0 <= score <= 1.0
+  bound: 16
+  strategy: stub_float
+  harness: verify_profile_score_bounded
+- id: KANI-WDB-004
+  obligation: Rescue retry bounded
+  property: retries <= max_retries
+  bound: 8
+  strategy: exhaustive
+  harness: verify_rescue_bounded
+- id: KANI-WDB-005
+  obligation: Profile weights sum to unity
+  property: active_claims / applicable_claims = score
+  bound: 8
+  strategy: stub_float
+  harness: verify_weight_unity
+- id: KANI-WDB-006
+  obligation: Falsified blocks completion
+  property: falsified AND NOT overridden -> Error
+  bound: 8
+  strategy: exhaustive
+  harness: verify_falsified_blocks
+- id: KANI-WDB-007
+  obligation: Override requires ticket
+  property: override(claim, None) -> Error
+  bound: 4
+  strategy: exhaustive
+  harness: verify_override_accountability
+- id: KANI-WDB-008
+  obligation: Checkpoint is idempotent
+  property: checkpoint(x) = checkpoint(x)
+  bound: 4
+  strategy: exhaustive
+  harness: verify_checkpoint_idempotent
+- id: KANI-WDB-009
+  obligation: Meyer triad phase correctness
+  property: require at Start only, ensure at Complete only, invariant at all
+  bound: 8
+  strategy: exhaustive
+  harness: verify_meyer_triad_phases
+- id: KANI-WDB-010
+  obligation: Profile composition is monotonic
+  property: claims(pmat) superset claims(rust) superset claims(universal)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_profile_monotonicity
+qa_gate:
+  id: F-WDB-001
+  name: work-dbc-v2 Contract
+  description: Quality gate for pmat work DBC system
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 10 falsification tests pass
+  falsification: FALSIFY-WDB-001 through FALSIFY-WDB-010

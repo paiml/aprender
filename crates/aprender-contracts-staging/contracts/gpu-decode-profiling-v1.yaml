@@ -1,0 +1,364 @@
+metadata:
+  version: 2.0.0
+  created: '2026-03-06'
+  updated: '2026-03-06'
+  author: PAIML Engineering
+  description: GPU decode profiling contract — ensures BrickProfiler data reflects real GPU execution time AND report output
+    faithfully represents profiler measurements (no hardcoded scores, no silent truncation, no fake metadata)
+  references:
+  - REALIZAR-GPU-PERF-001 v2.10.0 §5 — BrickProfiler Decode Breakdown
+  - REALIZAR-GPU-PERF-001 v2.9.0 — BrickProfiler Deferred sync mode bug
+  - trueno BrickProfiler (src/brick/profiler/mod.rs) — SyncMode enum
+  - realizar executor_api.rs — start_brick_id/stop_brick_id sync gates
+  - aprender crates/apr-cli/src/commands/gguf.rs — brick_scores_from_profiler (B1-B5)
+  - aprender crates/apr-cli/src/commands/cbtop_measure_batch.rs — build_and_output_report (B6-B13)
+  - aprender crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs — simulated path (B14-B18)
+  - Hoefler & Belli SC'15 — Scientific Benchmarking of Parallel Computing Systems
+equations:
+  wall_coverage:
+    formula: coverage = sum(brick_total_ns) / wall_clock_ns
+    domain: brick_total_ns >= 0, wall_clock_ns > 0
+    codomain: coverage in [0, 1]
+    invariants:
+    - coverage >= 0.85 when profiling is valid (bricks account for >=85% of wall time)
+    - coverage < 0.50 indicates graph replay hiding brick instrumentation
+    - coverage > 1.0 is impossible (bricks are subsets of wall time)
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Wall_Coverage
+  sync_verification:
+    formula: is_immediate = (measured_brick_us / expected_brick_us) > 0.5
+    domain: measured_brick_us > 0, expected_brick_us = wall_clock_us / num_bricks_per_token
+    invariants:
+    - 'Deferred sync: brick avg < 100us regardless of kernel (CPU launch latency)'
+    - 'Immediate sync: brick avg correlates with kernel complexity (large GEMV > small norm)'
+    - LmHead (n=151936) must be >10x RmsNorm in Immediate mode
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Sync_Verification
+  token_accounting:
+    formula: decoded_tokens = iterations * tokens_per_iteration
+    domain: iterations > 0, tokens_per_iteration > 0
+    invariants:
+    - profiler.total_tokens counts brick elements, NOT decoded tokens
+    - calls_per_decoded_token(LmHead) = 1
+    - calls_per_decoded_token(AttentionScore) = num_layers
+    - calls_per_decoded_token(RmsNorm) = 2 * num_layers + 1
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Token_Accounting
+  brick_ordering:
+    formula: rank(bricks, by=per_call_avg) must respect kernel complexity
+    domain: All bricks with count > 0
+    invariants:
+    - LmHead per-call avg > GateProjection per-call avg (vocab GEMV > layer GEMV)
+    - GateProjection per-call avg > RmsNorm per-call avg (GEMV > elementwise)
+    - AttentionScore per-call avg > Residual per-call avg (flash attn > vector add)
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Brick_Ordering
+  graph_disable:
+    formula: valid_profiling => NOT has_decode_graph
+    domain: Boolean
+    invariants:
+    - CUDA graph replay executes all kernels in one opaque launch
+    - Bricks instrumented during graph CAPTURE only (first token), not REPLAY
+    - Profiling with graphs enabled measures 1/N of actual decode time
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Graph_Disable
+  report_fidelity:
+    formula: 'for each brick b: JSON.actual_us(b) == profiler.avg_us(b)'
+    domain: All bricks emitted in JSON output, profiler.avg_us > 0
+    codomain: relative_error in [0, 0.01]
+    invariants:
+    - JSON actual_us must equal profiler per-call avg (not per-element, not per-token)
+    - JSON score must equal compute_brick_score(actual_us, budget_us) — never hardcoded
+    - JSON grade must equal score_to_grade(score) — never hardcoded
+    - JSON gap_factor must equal actual_us / budget_us — never 1.0 unless actual == budget
+    - 'No BrickScore field may be a compile-time constant (score: 100, grade: ''R'', gap: 1.0)'
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Report_Fidelity
+  report_completeness:
+    formula: len(JSON.brick_scores) == len(profiler.all_brick_stats())
+    domain: profiler has collected data
+    invariants:
+    - Every profiler brick appears in JSON output — no silent truncation
+    - Aggregate brick_score uses all N bricks — zip with fixed-length array forbidden
+    - FalsificationSummary.total_points == len(JSON.brick_scores)
+    - FalsificationSummary.passed + failed == total_points
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Report_Completeness
+  report_denominator:
+    formula: decoded_tokens = LmHead.count (exactly 1 LmHead per decoded token)
+    domain: LmHead.count > 0
+    invariants:
+    - per_decoded_tok_us(b) = (b.count * b.avg_us) / decoded_tokens
+    - profiler.total_tokens counts brick ELEMENTS — must NEVER be used as decoded token count
+    - Dividing total_ns by profiler.total_tokens produces values 100-300x too small
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Report_Denominator
+  report_metadata:
+    formula: metadata fields must be measured or zero — never hardcoded nonzero
+    domain: All numeric fields in PmatScores and FalsificationSummary
+    invariants:
+    - 'rust_project_score: 0.0 unless computed by pmat in this run'
+    - 'tdg_score: 0.0 unless computed by pmat in this run'
+    - 'cuda_tdg_score: 0.0 unless computed by pmat in this run'
+    - FalsificationSummary must derive from actual pass/fail counts, not constants
+    - 'No hardcoded magic numbers: 137, 173.9, 98.1, 95.2, 976.0'
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Report_Metadata
+proof_obligations:
+- type: invariant
+  property: Wall coverage threshold
+  formal: sum(brick_total_ns for all bricks) / wall_clock_ns >= 0.85
+  applies_to: all
+- type: invariant
+  property: Coverage upper bound
+  formal: sum(brick_total_ns) <= wall_clock_ns
+  applies_to: all
+- type: invariant
+  property: Graph disable for profiling
+  formal: profiling_enabled => !has_decode_graph
+  applies_to: all
+- type: invariant
+  property: LmHead call count
+  formal: lm_head.count == decoded_tokens
+  applies_to: all
+- type: invariant
+  property: Layer brick call count
+  formal: attention.count == decoded_tokens * num_layers
+  applies_to: all
+- type: monotonicity
+  property: Brick ordering respects complexity
+  formal: per_call_avg(LmHead) > per_call_avg(GateProjection) > per_call_avg(RmsNorm)
+  applies_to: all
+- type: invariant
+  property: Immediate sync detectable
+  formal: sync_mode == Immediate => LmHead.avg_us > 10 * RmsNorm.avg_us
+  applies_to: all
+- type: bound
+  property: Deferred sync ceiling
+  formal: sync_mode == Deferred => max(brick.avg_us for all bricks) < 200
+  applies_to: all
+- type: invariant
+  property: Report fidelity — actual_us matches profiler
+  formal: abs(JSON.actual_us(b) - profiler.avg_us(b)) / profiler.avg_us(b) < 0.01
+  applies_to: all
+- type: invariant
+  property: Report fidelity — score computed not hardcoded
+  formal: JSON.score(b) == compute_brick_score(JSON.actual_us(b), JSON.budget_us(b))
+  applies_to: all
+- type: invariant
+  property: Report completeness — no truncation
+  formal: len(JSON.brick_scores) == len(profiler.all_brick_stats())
+  applies_to: all
+- type: invariant
+  property: Report completeness — falsification accounting
+  formal: JSON.falsification.total_points == len(JSON.brick_scores)
+  applies_to: all
+- type: invariant
+  property: Report denominator — decoded tokens from LmHead
+  formal: decoded_tokens == LmHead.count AND decoded_tokens != profiler.total_tokens
+  applies_to: all
+- type: invariant
+  property: Report metadata — no hardcoded nonzero constants
+  formal: rust_project_score == 0 AND tdg_score == 0 AND cuda_tdg_score == 0 (unless pmat computed)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-GDP-001
+  rule: Wall coverage threshold
+  prediction: Brick time accounts for >=85% of wall time
+  test: Run decode with profiling, compare sum(brick_total_ns) to wall_clock_ns
+  if_fails: CUDA graph replay hiding brick instrumentation — bricks only measured during capture pass
+- id: FALSIFY-GDP-002
+  rule: Graph disable enforcement
+  prediction: Profiling with graphs enabled produces <50% coverage
+  test: Enable profiling WITHOUT clearing decode graph, verify coverage < 0.50
+  if_fails: Graph replay path has brick instrumentation (unexpected — verify code)
+- id: FALSIFY-GDP-003
+  rule: Immediate sync vs Deferred
+  prediction: Immediate sync LmHead avg > 100us; Deferred LmHead avg < 100us
+  test: Run same model with Immediate then Deferred sync, compare LmHead avg
+  if_fails: set_profiler_sync_mode not propagating to executor start/stop_brick calls
+- id: FALSIFY-GDP-004
+  rule: LmHead call count invariant
+  prediction: LmHead.count == decoded_tokens (exactly 1 per token)
+  test: Generate N tokens, verify LmHead brick count == N
+  if_fails: LmHead brick instrumentation missing from some code path, or called >1 per token
+- id: FALSIFY-GDP-005
+  rule: Brick ordering by complexity
+  prediction: LmHead per-call > Gate per-call > RmsNorm per-call
+  test: Run profiling, sort bricks by per_call_avg, verify ordering
+  if_fails: Sync mode not Immediate (all bricks show ~same launch latency) or kernel regression
+- id: FALSIFY-GDP-006
+  rule: Token accounting consistency
+  prediction: profiler.total_tokens != decoded_tokens (elements, not tokens)
+  test: Generate 32 tokens, verify profiler.total_tokens > 32 (should be ~9920 for 28-layer model)
+  if_fails: Profiler counting decoded tokens instead of brick elements — API misuse risk
+- id: FALSIFY-GDP-007
+  rule: Coverage upper bound
+  prediction: sum(brick_total_ns) <= wall_clock_ns (bricks are subset of wall time)
+  test: Compare profiler total to Instant-measured wall time
+  if_fails: Timer corruption or double-counting in brick profiler
+- id: FALSIFY-GDP-008
+  rule: Reproducibility
+  prediction: CV of per-token time < 0.15 across 3 runs (same config, locked clocks)
+  test: Run profiling 3x, compute coefficient of variation of total per-token time
+  if_fails: Clock frequency unstable (need jetson_clocks) or thermal throttling
+- id: FALSIFY-GDP-009
+  rule: Report fidelity — actual_us matches profiler avg
+  prediction: JSON actual_us for LmHead within 1% of profiler.avg_us (e.g. ~595us, not ~1.9us)
+  test: Run cbtop --headless --json, parse JSON actual_us for LmHead, compare to stderr profiler avg
+  if_fails: BrickScore construction uses wrong value (per-element instead of per-call avg) — B1 regression
+- id: FALSIFY-GDP-010
+  rule: Report fidelity — no hardcoded scores
+  prediction: At least one brick has score != 100 (real GPU times vary vs budget)
+  test: Run cbtop --headless --json, verify not all brick_scores[].score == 100
+  if_fails: compute_brick_score not called — scores are hardcoded constants (B3 regression)
+- id: FALSIFY-GDP-011
+  rule: Report completeness — brick count
+  prediction: JSON brick_scores has 11 entries (matching profiler brick count for Qwen 1.5B)
+  test: Run cbtop --headless --json, count brick_scores array length
+  if_fails: Bricks silently dropped by zip truncation (B6 regression)
+- id: FALSIFY-GDP-012
+  rule: Report completeness — falsification accounting
+  prediction: falsification.total_points == len(brick_scores) AND passed + failed == total_points
+  test: Parse JSON, verify falsification totals match brick count
+  if_fails: FalsificationSummary still hardcoded (B10-B12 regression)
+- id: FALSIFY-GDP-013
+  rule: Report denominator — decoded tokens
+  prediction: LmHead per_decoded_tok_us > 100us (not 1.9us from element denominator)
+  test: Run cbtop, verify LmHead budget_us > 100 in JSON (per-decoded-token cost)
+  if_fails: Denominator uses profiler.total_tokens (brick elements ~952K) instead of LmHead.count (~3K)
+- id: FALSIFY-GDP-014
+  rule: Report metadata — no magic constants
+  prediction: rust_project_score == 0.0 AND tdg_score == 0.0 AND cuda_tdg_score == 0.0
+  test: Parse JSON pmat_scores, verify all three are 0.0
+  if_fails: Hardcoded constants 173.9/98.1/95.2 still present (B7-B9 regression)
+- id: FALSIFY-GDP-015
+  rule: Report metadata — no 137 constant
+  prediction: falsification.total_points != 137 (must equal actual brick count)
+  test: Parse JSON, verify total_points != 137
+  if_fails: Hardcoded FalsificationSummary constant still present (B10 regression)
+kani_harnesses:
+- id: KANI-GDP-001
+  obligation: GDP-INV-001
+  property: Coverage in valid range
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_coverage_bounds
+- id: KANI-GDP-002
+  obligation: GDP-INV-003
+  property: Graph disable implies valid coverage
+  bound: 2
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_graph_disable_coverage
+- id: KANI-GPU_DE-003
+  obligation: Wall coverage threshold
+  property: Wall coverage threshold
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-004
+  obligation: Coverage upper bound
+  property: Coverage upper bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-GPU_DE-005
+  obligation: Graph disable for profiling
+  property: Graph disable for profiling
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-006
+  obligation: LmHead call count
+  property: LmHead call count
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-007
+  obligation: Layer brick call count
+  property: Layer brick call count
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-008
+  obligation: Brick ordering respects complexity
+  property: Brick ordering respects complexity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-009
+  obligation: Immediate sync detectable
+  property: Immediate sync detectable
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-010
+  obligation: Deferred sync ceiling
+  property: Deferred sync ceiling
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-011
+  obligation: Report fidelity — actual_us matches profiler
+  property: Report fidelity — actual_us matches profiler
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-012
+  obligation: Report fidelity — score computed not hardcoded
+  property: Report fidelity — score computed not hardcoded
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-013
+  obligation: Report completeness — no truncation
+  property: Report completeness — no truncation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-014
+  obligation: Report completeness — falsification accounting
+  property: Report completeness — falsification accounting
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-015
+  obligation: Report denominator — decoded tokens from LmHead
+  property: Report denominator — decoded tokens from LmHead
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_DE-016
+  obligation: Report metadata — no hardcoded nonzero constants
+  property: Report metadata — no hardcoded nonzero constants
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GDP-001
+  name: GPU Decode Profiling Contract
+  description: Ensures BrickProfiler data reflects real GPU execution AND report output is faithful
+  checks:
+  - wall_coverage_threshold
+  - graph_disable_enforcement
+  - immediate_sync_verification
+  - lm_head_call_count
+  - brick_ordering
+  - token_accounting
+  - coverage_upper_bound
+  - reproducibility
+  - report_fidelity_actual_us
+  - report_fidelity_no_hardcoded_scores
+  - report_completeness_brick_count
+  - report_completeness_falsification_accounting
+  - report_denominator_decoded_tokens
+  - report_metadata_no_magic_constants
+  - report_metadata_no_137
+  pass_criteria: All 15 falsification tests pass (GDP-001 through GDP-015)
+  falsification: Enable CUDA graphs during profiling to break wall coverage; hardcode score:100 to break report fidelity

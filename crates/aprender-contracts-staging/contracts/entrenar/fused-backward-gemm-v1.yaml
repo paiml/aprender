@@ -1,0 +1,187 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Fused backward GEMM contract — backward pass analog of forward NF4 kernel fusion.
+
+    Forward fusion shipped (PMAT-475, PMAT-478): Gate+Up fused (336 MB/step saved),
+    K+V fused (352 MB/step saved), total 688 MB/step DRAM reduction.
+
+    Backward pass has ZERO fusion — every backward GEMM is a separate cuBLAS call.
+    Since backward is 2-3x forward time, unfused backward dominates step time.
+
+    Five-whys:
+    1. Training step time dominated by backward pass (~60-70% of step)
+    2. Forward pass is fused (688 MB/step saved) but backward is not
+    3. Backward has same GEMM pair patterns: dL/d(gate,up), dL/d(k,v)
+    4. These gradient GEMMs share the same input activations (cached from forward)
+    5. ROOT CAUSE: No backward fusion contract — forward was prioritized
+
+    Impact estimate: Backward fusion should save ~500-700 MB/step additional DRAM,
+    matching forward savings, and reducing total DRAM traffic by ~1.2-1.4 GB/step.
+  pmat: [PMAT-484]
+  references:
+    - "nf4-fused-gate-up-swiglu-v1.yaml — forward Gate+Up fusion (336 MB saved)"
+    - "PMAT-478 — forward K+V fusion (352 MB saved)"
+    - "per-operation-training-profiling-v1.yaml — per-op measurement contract"
+
+equations:
+  gate_up_backward_fusion:
+    formula: |
+      Unfused (2 GEMMs):
+        dL/d_gate = dL/d_ffn @ W_gate.T    # GEMM_A: [B*S, D_ff] x [D_ff, D_model]
+        dL/d_up   = dL/d_ffn @ W_up.T      # GEMM_B: [B*S, D_ff] x [D_ff, D_model]
+        Both share dL/d_ffn input — loaded from DRAM twice.
+
+      Fused (1 kernel, 2 GEMM outputs):
+        [dL/d_gate, dL/d_up] = dL/d_ffn @ [W_gate, W_up].T
+        dL/d_ffn loaded once. Output written as [D_model * 2].
+
+      DRAM savings per layer:
+        Unfused: 2 * (D_ff * D_model * 2 bytes) = 2 * 4608 * 1536 * 2 = 28.3 MB
+        Fused:   1 * (D_ff * D_model * 2 bytes) + output = ~14.2 MB + output
+        Savings: ~12 MB/layer * 28 layers = ~336 MB/step (matches forward savings)
+    domain: B=batch, S=seq_len, D_model=1536, D_ff=4608 (Qwen 1.5B)
+    invariants:
+      - '|fused_grad - unfused_grad| < 1e-5 per element (numerical parity)'
+      - fused_dram < unfused_dram * 0.85 (>= 15% DRAM reduction)
+
+  kv_backward_fusion:
+    formula: |
+      Unfused (2 GEMMs):
+        dL/d_k = dL/d_attn @ W_k.T    # [B*S, D_head*N_kv] x [D_head*N_kv, D_model]
+        dL/d_v = dL/d_attn @ W_v.T    # [B*S, D_head*N_kv] x [D_head*N_kv, D_model]
+        Both share dL/d_attn (or per-head gradients).
+
+      Fused (1 kernel):
+        [dL/d_k, dL/d_v] = dL/d_attn @ [W_k, W_v].T
+        GQA: N_kv=2, D_head=128 → D_kv = 256
+
+      DRAM savings per layer:
+        Unfused: 2 * (256 * 1536 * 2 bytes) = 1.57 MB
+        Fused:   ~0.8 MB + output
+        Savings: ~0.77 MB/layer * 28 = ~21.6 MB/step
+        (Smaller than Gate+Up due to GQA compression)
+
+      Total backward fusion savings: ~336 + 21.6 = ~358 MB/step
+    domain: D_head=128, N_kv=2 (Qwen 1.5B GQA)
+    invariants:
+      - '|fused_grad - unfused_grad| < 1e-5 (numerical parity)'
+
+  weight_gradient_fusion:
+    formula: |
+      LoRA weight gradients also have fusible pairs:
+        dL/dW_gate = activation.T @ dL/d_gate    # [D_model, B*S] x [B*S, D_ff]
+        dL/dW_up   = activation.T @ dL/d_up      # same input activation
+        These share the activation input — can be fused.
+
+      For LoRA: dL/dB = dL/dW @ A.T, fusing A/B gradient pairs.
+      LoRA gradient fusion eliminates 168 D2H sync points (PMAT-477 fused forward clips).
+    domain: LoRA rank=16
+    invariants:
+      - Weight gradient fusion must preserve LoRA rank separation
+
+falsification_tests:
+  - id: F-FBG-001
+    rule: Gradient parity
+    prediction: Fused Gate+Up backward produces identical gradients to unfused
+    test: >
+      Run 10 steps with NF4_FUSED_BWD_GEMM=0, capture grad_gate, grad_up per layer.
+      Run 10 steps with NF4_FUSED_BWD_GEMM=1, capture same.
+      Max absolute difference < 1e-5 per element.
+    if_fails: Numerical precision issue in fused kernel — check accumulation order
+
+  - id: F-FBG-002
+    rule: DRAM traffic reduction
+    prediction: Fused backward reduces DRAM traffic >= 15%
+    test: >
+      Profile DRAM bandwidth with nsys/ncu.
+      Unfused backward DRAM > fused backward DRAM * 1.15.
+    if_fails: Fusion not reducing loads — check SHMEM usage, tiling
+
+  - id: F-FBG-003
+    rule: Wall time improvement
+    prediction: Fused backward is >= 10% faster than unfused (wall time)
+    test: >
+      20-step profiled run: unfused_bwd_ms > fused_bwd_ms * 1.10.
+    if_fails: DRAM savings offset by fusion overhead — check occupancy
+
+  - id: F-FBG-004
+    rule: Loss convergence parity
+    prediction: Loss parity with fused backward (divergence < 0.01)
+    test: >
+      Run 100 steps unfused, record loss curve.
+      Run 100 steps fused, record loss curve.
+      Max loss divergence < 0.01 at every step.
+    if_fails: Gradient numerical divergence accumulates — reduce fusion scope
+
+  - id: F-FBG-005
+    rule: Total DRAM savings
+    prediction: Total backward fusion saves >= 300 MB/step DRAM
+    test: >
+      Gate+Up backward saves ~336 MB + K+V backward saves ~22 MB = ~358 MB.
+      Measure actual DRAM reduction via cuMemGetInfo before/after.
+    if_fails: Theoretical savings don't match measured — check allocation patterns
+
+proof_obligations:
+  - type: equivalence
+    property: Gradient parity
+    formal: '|fused_grad - unfused_grad|_inf < 1e-5'
+    applies_to: all fused backward GEMMs
+  - type: bound
+    property: DRAM reduction
+    formal: unfused_dram - fused_dram >= 300 MB/step
+    applies_to: full backward pass
+  - type: invariant
+    property: Loss convergence parity
+    formal: '|fused_loss[t] - unfused_loss[t]| < 0.01 for all t in [0, 100]'
+    applies_to: 100-step training
+
+kani_harnesses:
+  - id: KANI-FBG-001
+    obligation: Gradient parity
+    property: Gradient parity
+    bound: 8
+    strategy: stub_float
+  - id: KANI-FBG-002
+    obligation: DRAM reduction
+    property: DRAM reduction
+    bound: 8
+    strategy: stub_float
+  - id: KANI-FBG-003
+    obligation: Loss convergence parity
+    property: Loss convergence parity
+    bound: 8
+    strategy: stub_float
+
+implementation_requirements:
+  entrenar_changes:
+    - description: Fused Gate+Up backward kernel
+      detail: >
+        Analogous to forward nf4_fused_gate_up_gemm (PMAT-475).
+        Single kernel computes dL/d_gate and dL/d_up from shared dL/d_ffn.
+        Store fused output in contiguous [D_model * 2] buffer.
+    - description: Fused K+V backward kernel
+      detail: >
+        Analogous to forward nf4_fused_kv_gemm (PMAT-478).
+        Single kernel computes dL/d_k and dL/d_v from shared attention gradient.
+    - description: Environment variable toggle
+      detail: >
+        NF4_FUSED_BWD_GEMM=1 enables backward fusion.
+        Default: disabled (matches forward fusion toggle pattern).
+    - description: Per-op profiling integration
+      detail: >
+        Wire backward fusion into per-operation profiling (PMAT-483).
+        Report fused vs unfused backward GEMM time.
+
+qa_gate:
+  id: F-FBG-001
+  name: fused-backward-gemm-v1 Contract
+  checks:
+    - gradient_parity
+    - dram_reduction
+    - wall_time_improvement
+    - loss_parity
+    - total_dram_savings
+  pass_criteria: All 5 falsification tests pass

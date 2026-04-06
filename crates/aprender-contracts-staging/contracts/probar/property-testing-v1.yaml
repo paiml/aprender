@@ -1,0 +1,242 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >-
+    Probar property-based testing framework — assertion validation, soft assertion
+    collection, retry polling, playbook state machine execution, and coverage
+    collection for WASM game testing
+  references:
+  - Lamport (2002) Specifying Systems — TLA+ state machine foundations
+  - McCabe (1976) A Complexity Measure — complexity-bounded playbook analysis
+  - Toyota Production System — Andon Cord fail-fast, Jidoka quality gates
+
+equations:
+  assertion_evaluation:
+    formula: |
+      Assertion::equals: (T, T) -> AssertionResult
+        equals(expected, actual) = Pass  iff expected == actual
+        equals(expected, actual) = Fail  iff expected != actual
+      Assertion::approx_eq: (f64, f64, f64) -> AssertionResult
+        approx_eq(a, b, eps) = Pass  iff |a - b| < eps
+        approx_eq(a, b, eps) = Fail  iff |a - b| >= eps
+    domain: Comparable values T with PartialEq + Debug
+    codomain: AssertionResult with passed in {true, false}
+    invariants:
+    - 'Reflexivity: equals(x, x) always passes'
+    - 'Symmetry: equals(a, b).passed == equals(b, a).passed'
+    - 'approx_eq is symmetric: approx_eq(a, b, eps).passed == approx_eq(b, a, eps).passed'
+    preconditions:
+    - epsilon > 0.0 for approx_eq
+    lean_theorem: Theorems.Assertion_Evaluation
+
+  soft_assertion_collection:
+    formula: |
+      SoftAssertions::verify: SoftAssertions -> Result<AssertionSummary, SoftAssertionError>
+        verify(soft) = Ok(summary)  iff soft.failures.is_empty()
+        verify(soft) = Err(error)   iff soft.failures.len() > 0
+      Invariant: assertion_count >= failures.len() at all times
+    domain: SoftAssertions with mode in {Collect, FailFast}
+    codomain: Result<AssertionSummary, SoftAssertionError>
+    invariants:
+    - 'Failure count monotonic: failures only grows (never shrinks)'
+    - 'assertion_count >= failures.len() always'
+    - 'Empty failures means verify() returns Ok'
+    preconditions:
+    - SoftAssertions initialized via new() or with_mode()
+    lean_theorem: Theorems.Soft_Assertion_Collection
+
+  retry_assertion:
+    formula: |
+      RetryAssertion::verify: RetryAssertion -> RetryResult
+        verify(ra) polls check_fn at poll_interval until:
+          check_fn() = Pass  => return Ok(attempts, elapsed)
+          elapsed >= timeout => return Err(RetryError::Timeout)
+          attempts >= max_retries (if > 0) => return Err(RetryError::MaxRetries)
+    domain: RetryAssertion with RetryConfig (timeout, poll_interval, max_retries)
+    codomain: RetryResult = Result<(usize, Duration), RetryError>
+    invariants:
+    - 'Termination: verify always terminates (bounded by timeout or max_retries)'
+    - 'Poll interval respected: attempts <= ceil(timeout / poll_interval) + 1'
+    - 'Monotonic elapsed: elapsed time increases between attempts'
+    preconditions:
+    - timeout > Duration::ZERO
+    - poll_interval > Duration::ZERO
+    - poll_interval <= timeout
+    lean_theorem: Theorems.Retry_Assertion
+
+  playbook_state_machine:
+    formula: |
+      StateMachineValidator::validate: Playbook -> ValidationResult
+        Computes:
+          reachability = BFS from initial_state
+          orphans = all_states - reachable_states
+          determinism = forall (s, event): |transitions(s, event)| <= 1
+        ValidationResult.is_valid = orphans.is_empty() && determinism.is_deterministic
+    domain: Playbook with states, transitions, initial state, final states
+    codomain: ValidationResult with is_valid, issues, reachability, determinism
+    invariants:
+    - 'Initial state always reachable (trivially)'
+    - 'Orphaned states cannot appear in any execution path'
+    - 'Dead-end non-final states are flagged as errors'
+    preconditions:
+    - Playbook has at least one state (initial)
+    - Playbook has at least one final state
+    lean_theorem: Theorems.Playbook_State_Machine
+
+  test_result_reporting:
+    formula: |
+      TestResult::pass: String -> TestResult { passed: true, error: None }
+      TestResult::fail: (String, String) -> TestResult { passed: false, error: Some(msg) }
+      TestSuite::test_count: TestSuite -> usize = tests.len()
+    domain: Test name strings and optional error messages
+    codomain: TestResult with passed in {true, false}, duration >= Duration::ZERO
+    invariants:
+    - 'Pass result has no error: pass(name).error == None'
+    - 'Fail result has error: fail(name, msg).error == Some(msg)'
+    - 'test_count == tests.len() always'
+    preconditions:
+    - Test name is non-empty
+    lean_theorem: Theorems.Test_Result_Reporting
+
+  coverage_collection:
+    formula: |
+      CoverageCollector::record_hit: (BlockId) -> ()
+        Increments hit count for the given block
+      CoverageCollector::report: () -> CoverageReport
+        report.coverage_pct = hit_blocks / total_blocks * 100.0
+        report.total_blocks >= report.hit_blocks
+    domain: BlockId identifiers for instrumented code blocks
+    codomain: CoverageReport with coverage_pct in [0.0, 100.0]
+    invariants:
+    - 'Coverage bounded: 0.0 <= coverage_pct <= 100.0'
+    - 'Hit count monotonic: record_hit only increments'
+    - 'hit_blocks <= total_blocks always'
+    preconditions:
+    - BlockId must be registered before recording hits
+    lean_theorem: Theorems.Coverage_Collection
+
+proof_obligations:
+- type: determinism
+  property: Assertion evaluation is deterministic
+  formal: forall x y. equals(x, y) called twice with same inputs produces same AssertionResult.passed
+  applies_to: assertion_evaluation
+
+- type: idempotency
+  property: Soft assertion verify is idempotent on state
+  formal: verify(soft) called multiple times without new assertions returns same result
+  applies_to: soft_assertion_collection
+
+- type: termination
+  property: Retry assertion always terminates
+  formal: forall config. config.timeout > 0 => verify(retry) terminates within timeout + poll_interval
+  applies_to: retry_assertion
+
+- type: soundness
+  property: State machine validation is sound
+  formal: validate(pb).is_valid => no orphan states and deterministic transitions in pb
+  applies_to: playbook_state_machine
+
+- type: completeness
+  property: All reachable states discovered by BFS
+  formal: forall s in states(pb). reachable(initial, s) => s in reachability.reachable_states
+  applies_to: playbook_state_machine
+
+- type: invariant
+  property: Coverage percentage bounded
+  formal: 0.0 <= coverage_pct <= 100.0 for all CoverageReport instances
+  applies_to: coverage_collection
+
+- type: monotonicity
+  property: Failure count in SoftAssertions never decreases
+  formal: forall t1 < t2. soft.failures.len() at t1 <= soft.failures.len() at t2
+  applies_to: soft_assertion_collection
+
+- type: equivalence
+  property: Assertion symmetry
+  formal: Assertion::equals(a, b).passed == Assertion::equals(b, a).passed for all a, b
+  applies_to: assertion_evaluation
+
+falsification_tests:
+- id: FALSIFY-PROB-001
+  rule: Assertion reflexivity
+  prediction: equals(x, x) always returns passed=true for any x
+  test: proptest with arbitrary values of multiple types
+  if_fails: PartialEq implementation violates reflexivity or Debug formatting interferes
+
+- id: FALSIFY-PROB-002
+  rule: Retry terminates within timeout
+  prediction: RetryAssertion::verify returns within timeout + 2*poll_interval
+  test: proptest with various timeout/interval combinations and always-failing check_fn
+  if_fails: Polling loop does not check elapsed time correctly
+
+- id: FALSIFY-PROB-003
+  rule: Soft assertion failure count monotonic
+  prediction: After N assert calls with K failures, failures.len() == K and K <= N
+  test: proptest with random sequences of passing/failing assertions
+  if_fails: Assertion counter or failure vector has off-by-one or reset bug
+
+- id: FALSIFY-PROB-004
+  rule: State machine orphan detection complete
+  prediction: Every state unreachable from initial is in orphaned_states
+  test: proptest generating random state machines with known orphans
+  if_fails: BFS traversal misses edges or state enumeration incomplete
+
+- id: FALSIFY-PROB-005
+  rule: TestResult pass/fail consistency
+  prediction: TestResult::pass(name).passed == true and TestResult::fail(name, err).passed == false
+  test: exhaustive check of pass/fail constructors
+  if_fails: Constructor sets wrong boolean value
+
+- id: FALSIFY-PROB-006
+  rule: Coverage percentage bounded
+  prediction: CoverageReport.coverage_pct in [0.0, 100.0] for any block hit pattern
+  test: proptest with random block hit sequences including edge cases (0 blocks, all hit)
+  if_fails: Division by zero or overflow in percentage calculation
+
+- id: FALSIFY-PROB-007
+  rule: Assertion symmetry holds for equals
+  prediction: Assertion::equals(a, b).passed == Assertion::equals(b, a).passed for all a, b
+  test: proptest with pairs of arbitrary integers and strings
+  if_fails: PartialEq is asymmetric or comparison order affects result
+
+- id: FALSIFY-PROB-008
+  rule: Soft assertion verify idempotent
+  prediction: Calling verify() twice on same SoftAssertions returns same Ok/Err classification
+  test: create SoftAssertions with known failures, verify twice, compare
+  if_fails: verify() mutates internal state or failure vector between calls
+
+kani_harnesses:
+- id: KANI-PROB-001
+  obligation: Assertion evaluation determinism
+  property: Same inputs to Assertion::equals always produce same output
+  bound: 16
+  strategy: exhaustive
+
+- id: KANI-PROB-002
+  obligation: Retry termination guarantee
+  property: RetryAssertion::verify terminates for all valid RetryConfig
+  bound: 8
+  strategy: exhaustive
+
+- id: KANI-PROB-003
+  obligation: State machine validation soundness
+  property: validate().is_valid implies no orphans and deterministic
+  bound: 12
+  strategy: exhaustive
+
+- id: KANI-PROB-004
+  obligation: Coverage percentage bounded
+  property: 0.0 <= coverage_pct <= 100.0 for all valid CoverageReport
+  bound: 8
+  strategy: exhaustive
+
+qa_gate:
+  id: F-PROB-001
+  name: property-testing-v1 Contract
+  description: >-
+    Quality gate for probar property testing — assertion evaluation, soft collection,
+    retry polling, state machine validation, and coverage collection
+  checks:
+  - validation
+  - falsification

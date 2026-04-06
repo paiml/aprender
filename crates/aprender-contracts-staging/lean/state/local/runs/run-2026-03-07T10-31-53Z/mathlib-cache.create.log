@@ -1,0 +1,14 @@
+--- FORJAR RESOURCE LOG ---
+resource: mathlib-cache
+action: create
+machine: local
+exit_code: 1
+duration: 86.757s
+
+--- STDOUT ---
+
+--- STDERR ---
+info: provableContracts: no previous manifest, creating one from scratch
+error: ././.lake/packages/mathlib: could not resolve 'HEAD' to a commit; the repository may be corrupt, so you may need to remove it and try again
+
+--- END ---

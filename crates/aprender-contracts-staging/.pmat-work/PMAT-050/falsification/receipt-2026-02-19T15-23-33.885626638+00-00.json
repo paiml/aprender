@@ -1,0 +1,204 @@
+{
+  "id": "019c767f-d07d-7933-b99e-8a1851fff798",
+  "git_sha": "96227407b472112ca73a4a702aba4a2091ed69a1",
+  "timestamp": "2026-02-19T15:23:33.885626638+00:00",
+  "trigger": "WorkComplete",
+  "work_item_id": "PMAT-050",
+  "verdicts": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "method": "ManifestIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All 103 files present",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "method": "MetaFalsification",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Detected dummy gaming pattern correctly",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "method": "CoverageGaming",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No gaming patterns found in 103 files",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "method": "DifferentialCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No Rust files changed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "method": "AbsoluteCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No coverage data (run 'make coverage' to establish baseline), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "method": "TdgRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No TDG data (baseline: 0.0)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "method": "ComplexityRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Complexity check passed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "method": "SupplyChainIntegrity",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "Deny cache too old (1513 min). Run 'cargo deny check' first.",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "method": "FileSizeRegression",
+      "falsified": true,
+      "is_blocking": false,
+      "explanation": "18 file(s) exceed 500 lines: crates/provable-contracts-cli/tests/cli_integration.rs (938 lines), crates/provable-contracts/src/diff.rs (529 lines), crates/provable-contracts/src/audit/mod.rs (519 lines), crates/provable-contracts/src/probar_gen/wired.rs (1319 lines), crates/provable-contracts/src/kernels/activation.rs (554 lines), crates/provable-contracts/src/kernels/flash_attention.rs (701 lines), crates/provable-contracts/src/kernels/attention.rs (525 lines), crates/provable-contracts/src/kernels/gqa.rs (638 lines), crates/provable-contracts/src/kernels/softmax.rs (552 lines), crates/provable-contracts/src/kernels/batchnorm.rs (773 lines), crates/provable-contracts/src/kernels/layernorm.rs (615 lines), crates/provable-contracts/src/kernels/cross_entropy.rs (587 lines), crates/provable-contracts/src/kernels/kani_proofs.rs (1490 lines), crates/provable-contracts/tests/falsify_matrix_attention.rs (712 lines), crates/provable-contracts/tests/falsify_cross_kernel.rs (1269 lines), crates/provable-contracts/tests/falsify_optimizer_sequence.rs (1487 lines), crates/provable-contracts/tests/falsify_normalization.rs (666 lines), crates/provable-contracts/tests/falsify_activation_gated.rs (650 lines)",
+      "evidence_summary": "FileList([\"crates/provable-contracts-cli/tests/cli_integration.rs\", \"crates/provable-contracts/src/diff.rs\", \"crates/provable-contracts/src/audit/mod.rs\", \"crates/provable-contracts/src/probar_gen/wired.rs\", \"crates/provable-contracts/src/kernels/activation.rs\", \"crates/provable-contracts/src/kernels/flash_attention.rs\", \"crates/provable-contracts/src/kernels/attention.rs\", \"crates/provable-contracts/src/kernels/gqa.rs\", \"crates/provable-contracts/src/kernels/softmax.rs\", \"crates/provable-contracts/src/kernels/batchnorm.rs\", \"crates/provable-contracts/src/kernels/layernorm.rs\", \"crates/provable-contracts/src/kernels/cross_entropy.rs\", \"crates/provable-contracts/src/kernels/kani_proofs.rs\", \"crates/provable-contracts/tests/falsify_matrix_attention.rs\", \"crates/provable-contracts/tests/falsify_cross_kernel.rs\", \"crates/provable-contracts/tests/falsify_optimizer_sequence.rs\", \"crates/provable-contracts/tests/falsify_normalization.rs\", \"crates/provable-contracts/tests/falsify_activation_gated.rs\"])"
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "method": "SpecQuality",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No spec file found (optional)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "method": "GitHubSync",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "1 unpushed commit(s), 2 uncommitted file(s)",
+      "evidence_summary": "GitState { unpushed_commits: 1, dirty_files: 2 }"
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "method": "ExamplesCompile",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No examples directory found (skipping)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "method": "BookValidation",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "pmat-book not found (skipping validation)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "method": "SatdDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No new SATD markers (0 existing)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "method": "DeadCodeDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No dead code detected",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "method": "PerFileCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No per-file coverage data (run 'make coverage'), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "method": "LintPass",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "Lint cache too old (1513 min). Run 'make lint' first.",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "method": "VariantCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No Rust files changed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "method": "FixChainLimit",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No fix chains > 3 consecutive commits",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "method": "CrossCrateParity",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No cross-crate config (create .pmat-work/cross-crate.json to enable)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "method": "RegressionGate",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No benchmark cache (run benchmarks to populate .pmat-metrics/benchmark-status.json)",
+      "evidence_summary": null
+    }
+  ],
+  "overrides": [
+    {
+      "claim_id": "supply-chain",
+      "ticket": "PMAT-050",
+      "reason": "Override approved via --override-claims (ticket: PMAT-050)"
+    },
+    {
+      "claim_id": "github-sync",
+      "ticket": "PMAT-050",
+      "reason": "Override approved via --override-claims (ticket: PMAT-050)"
+    },
+    {
+      "claim_id": "lint",
+      "ticket": "PMAT-050",
+      "reason": "Override approved via --override-claims (ticket: PMAT-050)"
+    }
+  ],
+  "summary": {
+    "total": 21,
+    "passed": 17,
+    "failed": 3,
+    "warnings": 1,
+    "overridden": 3,
+    "allows_completion": true,
+    "health_score": 0.8095238095238095
+  },
+  "content_hash": "dbe43a44bac674e993acb01d1b00c7e4ea33dbef3c25dda4f0013a7517a0db89"
+}

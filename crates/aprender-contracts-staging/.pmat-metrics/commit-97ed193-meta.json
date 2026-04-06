@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-073",
+  "prompt": "Implement pv lint quality gates (SARIF, diff-aware, suppression, config)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-07T18:16:33.607031983Z"
+}

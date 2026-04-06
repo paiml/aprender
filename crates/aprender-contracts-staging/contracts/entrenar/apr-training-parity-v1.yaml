@@ -1,0 +1,352 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    Parity contract for APR (entrenar) training throughput vs unsloth baseline.
+    Defines falsification conditions for every hypothesis about WHY apr is slow
+    and what fix SHOULD work — so hypotheses are tested before effort is spent.
+  references:
+    - training-canary-spec.md Section 3.0 (APR Fine-Tune Canary)
+    - optimization-roadmap.md P0/P1/P2
+    - F-WL-06 falsification condition
+    - paiml/aprender#566 (structured metrics)
+  depends_on:
+    - canary-metrics-schema-v1
+    - canary-score-gate-v1
+
+# The parity target: unsloth QLoRA on same hardware
+parity_target:
+  runtime: unsloth
+  host: yoga
+  measured_tok_s: 6628
+  config: "QLoRA NF4, rank=16, alpha=32, batch=4, seq=512"
+
+# Current state: training working, 154x gap remains (throughput)
+current_state:
+  runtime: apr (entrenar)
+  host: yoga
+  measured_tok_s: 43
+  gap_ratio: 154
+  gpu_utilization_pct: 7
+  cpu_utilization_pct: 100
+  root_symptom: "Memory bandwidth bound — cuBLAS fp32 GEMM reads 9.4MB/layer"
+  training_status: "WORKING — 20+ steps finite loss, cuBLAS + NF4 fused both confirmed"
+  canary_date: 2026-04-03
+
+# =============================================================================
+# MANDATORY DIAGNOSTIC PROTOCOL — run BEFORE forming any hypothesis
+# =============================================================================
+# Five-whys lesson (2026-04-02): We spent hours on V-proj dequant, VRAM budget,
+# and rank override when the real bug was cuBLAS GEMM returning zeros. The
+# contract had pipeline-level hypotheses but no operation-level postconditions.
+# These checks would have caught the zeros on the FIRST run.
+
+diagnostic_protocol:
+  - id: DIAG-001
+    name: "Per-operation output non-zero check"
+    description: >
+      After EVERY compute operation (RMSNorm, GEMM, Attention, SwiGLU, Residual),
+      verify output[:4] contains at least one non-zero value. Zeros indicate the
+      operation produced no output — either the op didn't execute, wrote to the
+      wrong buffer, or received zero input.
+    when: "FIRST forward pass of FIRST training step"
+    check: "output[:4].any(|x| x != 0.0)"
+    if_fails: "The specific operation that first produces zeros IS the root cause"
+    postcondition: "Every intermediate buffer (norm1_out, q, k, v, attn_out, ffn_out, output) is non-zero"
+
+  - id: DIAG-002
+    name: "cuBLAS GEMM input/output verification"
+    description: >
+      After the first cuBLAS GEMM call, verify: A[:4] non-zero, B[:4] non-zero,
+      C[:4] non-zero. If A and B are non-zero but C is zero, cuBLAS GEMM is
+      silently failing — check stream sync, handle validity, or dimension mismatch.
+    when: "FIRST GEMM call in FIRST forward pass"
+    check: "A[:4].any(!=0) AND B[:4].any(!=0) AND C[:4].any(!=0)"
+    if_fails: "cuBLAS GEMM broken — check cublas_gemm_forward parameters"
+
+  - id: DIAG-003
+    name: "Weight buffer residency check"
+    description: >
+      After GPU upload, verify each weight buffer[:4] matches the CPU source[:4].
+      The TRACE logs show nonzero counts but don't verify the uploaded values
+      are accessible from the compute stream.
+    when: "After CudaNf4TransformerBlock::new completes"
+    check: "gpu_download(w_q_fp32)[:4] == cpu_transposed[:4]"
+    if_fails: "Upload succeeded but memory is inaccessible from compute context"
+
+# =============================================================================
+# MEASURED FINDING (2026-04-02): cuBLAS GEMM returns zeros
+# =============================================================================
+# [ENT-318] cuBLAS m=74 k=1536 n=1536 c[:4]=[0.0, 0.0, 0.0, 0.0]
+#
+# cuBLAS returns Ok(()) but output is ALL ZEROS. This means either:
+# 1. Input A (norm1_out after RMSNorm) is zero → check DIAG-001
+# 2. Input B (w_q_fp32 dequantized weight) is zero ON GPU → check DIAG-003
+# 3. cuBLAS handle is on wrong stream/context → check DIAG-002
+# 4. cuBLAS wrote to a different memory address than C's device pointer
+
+# Each hypothesis MUST be falsified before investing engineering effort.
+# A hypothesis that survives falsification becomes an action item.
+# A hypothesis that fails falsification is RETRACTED — saving wasted effort.
+hypotheses:
+  - id: H-PARITY-001
+    name: "Q4K model format causes NaN → switching to FP16 fixes GPU forward"
+    description: >
+      Hypothesis: Q4K (pre-quantized GGUF) produces near-uniform logits that
+      cause NaN after 28 transformer layers. FP16 model with runtime NF4
+      quantization (--quantize-nf4) will produce differentiated logits and
+      the GPU forward path will work.
+    prediction: >
+      apr finetune with FP16 model produces GPU utilization > 50% and
+      tokens_per_sec > 500 (at least 10x improvement over Q4K's 44 tok/s).
+    falsification_test: >
+      Run: apr finetune qwen2.5-coder-1.5b-instruct-fp16.apr --quantize-nf4
+      Measure: nvidia-smi GPU utilization during training.
+      If GPU utilization == 0%: FALSIFIED — the NaN is in entrenar's NF4
+      quantization kernel, not the input format. The fix is in trueno/entrenar
+      NF4 code, not the model file.
+    status: FALSIFIED
+    date: 2026-04-02
+    evidence: >
+      FP16 model with --quantize-nf4 shows identical behavior: 0% GPU,
+      146% CPU, stderr shows "[CUDA] NaN in forward output". The NaN is
+      in entrenar's runtime NF4 quantization, not the Q4K input format.
+      Q4K and FP16+NF4 both produce the same NaN.
+    wasted_effort_saved: "~2 days of model conversion and testing"
+
+  - id: H-PARITY-002
+    name: "NaN is in trueno's NF4 dequant kernel — specifically V projection weights"
+    description: >
+      Layer tracing (`apr finetune` stderr + grep nonzero=0) found the
+      precise root cause: 11 of 196 weight tensors dequantize to ALL ZEROS.
+      All 11 are shape 256x1536 — the V (value) projection weights in GQA.
+      K projection (same shape) dequantizes correctly. V projection is zeroed.
+      Zero V → zero attention values → softmax(0/0) = NaN → propagates 28 layers.
+    prediction: >
+      Fixing trueno's NF4 dequant for V projection weights will eliminate NaN
+      and enable GPU forward. GPU utilization > 50%, throughput > 500 tok/s.
+    falsification_test: >
+      DIAGNOSTIC (completed): apr trace shows 11 zero V-projection tensors.
+      CONFIRMATION TEST: Run apr finetune with --method lora (NO NF4).
+      If GPU forward works without NF4: CONFIRMED — NF4 V-proj dequant is root cause.
+      If NaN persists: FALSIFIED — deeper issue in forward pass.
+    status: CONFIRMED_AND_RESOLVED
+    date: 2026-04-03
+    evidence: >
+      V-proj zero bug FIXED (trueno#233). Additional 20 upstream fixes resolved
+      remaining issues: VRAM halving (1780→890MB), scratch zeroing (entrenar#318),
+      gemm_forward_bt for lm_head, training state buffer zeroing (entrenar#319).
+      APR NF4 QLoRA now training at 43 tok/s on yoga 8GB with finite loss.
+      Both cuBLAS (43 tok/s) and NF4 fused PTX (33 tok/s) backends confirmed.
+    resolution: >
+      21 upstream fixes across entrenar/trueno/aprender. Root cause chain:
+      V-proj zeros → VRAM overflow → scratch contamination → training state NaN cascade.
+      All fixed. Training working. Remaining gap (154x) is memory bandwidth bound.
+
+  - id: H-PARITY-003
+    name: "Forward pass itself is broken → entrenar transformer block bug"
+    description: >
+      If H-PARITY-002 is also falsified (FP16 LoRA without NF4 also produces
+      NaN), then entrenar's transformer forward pass has a bug unrelated to
+      quantization — possibly in attention scaling, RoPE, or RMSNorm.
+    prediction: >
+      The forward pass produces correct (non-NaN) output with full FP16
+      weights and no quantization.
+    falsification_test: >
+      Run: apr finetune with --method full (full fine-tune, FP16, no LoRA).
+      If NaN persists: FALSIFIED — the transformer block itself is broken.
+      This requires deep debugging of entrenar's CUDA kernels.
+    status: NOT_APPLICABLE
+    date: 2026-04-03
+    evidence: "Forward pass works correctly after H-PARITY-002 fixes. 43 tok/s confirmed."
+
+  - id: H-PARITY-004
+    name: "GPU lm_head memory check is too conservative"
+    description: >
+      The stderr shows: "[CUDA] Skipping GPU embeddings (1780MB > 1228MB free)"
+      The embedding matrix (151936 * 1536 * 2 bytes = 446 MB in FP16) should
+      fit in remaining VRAM, but entrenar's check says 1780 MB > 1228 MB free.
+      The 1780 MB figure may include unnecessary padding or be using the wrong
+      data type size.
+    prediction: >
+      Fixing the VRAM check to accurately reflect FP16 embedding size will
+      keep lm_head on GPU, eliminating the CPU fallback entirely.
+    falsification_test: >
+      Check entrenar source: what does the 1780 MB figure represent?
+      If 1780 MB is accurate (e.g., includes activation memory): FALSIFIED
+      — the check is correct, GPU genuinely can't fit lm_head with 8 GB.
+      Fix: chunked GPU lm_head instead.
+    status: RESOLVED
+    date: 2026-04-02
+    evidence: >
+      VRAM halved from 1780→890MB via single embedding layout (entrenar f9845e07).
+      Rank override (aprender ba0e392f) reduced optimizer states. GPU lm_head now
+      works via gemm_forward_bt using embed_original (no transposed copy needed).
+
+  - id: H-PARITY-006
+    name: "cuBLAS GEMM silently produces zeros — handle/stream/context issue"
+    description: >
+      MEASURED: cuBLAS m=74 k=1536 n=1536 returns c[:4]=[0,0,0,0] (entrenar#318).
+      cuBLAS_gemm_forward returns Ok(()) but output is all zeros.
+      Three sub-hypotheses to test via DIAG protocol:
+      A) RMSNorm output (GEMM input A) is zero → RMSNorm bug
+      B) Weight buffer (GEMM input B) is zero on GPU despite upload trace showing nonzero
+         → upload went to wrong address or different CUDA context
+      C) cuBLAS wrote to wrong C address → pointer stale after buffer realloc
+    prediction: >
+      One of DIAG-001/002/003 will identify which input/output is zero.
+      The ZERO input is the root cause. Fix that operation.
+    falsification_test: >
+      Add A[:4], B[:4], C[:4] trace to first cuBLAS call.
+      If A is zero: RMSNorm bug.
+      If B is zero: weight upload failed or context mismatch.
+      If A and B non-zero but C zero: cuBLAS handle issue (stream/context).
+    status: RESOLVED
+    date: 2026-04-02
+    evidence: >
+      Root cause: `let _ =` on copy_to_host silenced a partial readback error.
+      The 4-element readback buffer didn't match GPU buffer length. copy_to_host
+      returned Err but `let _ =` discarded it, leaving the readback buffer at zeros.
+      Weights WERE on GPU (nonzero=2.1M verified after trueno partial readback fix).
+      cuBLAS GEMM was working correctly the entire time. The diagnostic was wrong.
+      L5 lesson: NEVER use `let _ =` on GPU ops (#[must_use] enforcement).
+
+  - id: H-PARITY-005
+    name: "Chunked GPU lm_head eliminates CPU bottleneck"
+    description: >
+      Even if full lm_head doesn't fit, chunked computation (process
+      vocab in chunks of 32K) would keep the matmul on GPU while fitting
+      in available VRAM. This is how unsloth handles large vocabularies
+      on constrained GPUs.
+    prediction: >
+      Chunked GPU lm_head produces throughput > 1000 tok/s (at least 20x
+      improvement) because the bottleneck shifts from CPU matmul to GPU
+      GEMM kernels.
+    falsification_test: >
+      Implement chunked lm_head in entrenar. If throughput < 500 tok/s:
+      FALSIFIED — the bottleneck is elsewhere (memory bandwidth, kernel
+      launch overhead, etc.).
+    status: SUPERSEDED
+    date: 2026-04-02
+    evidence: >
+      Chunked lm_head not needed — gemm_forward_bt uses embed_original directly
+      with cuBLAS transposed GEMM (C = hidden @ embed^T). Full lm_head fits on
+      8GB yoga after VRAM optimizations. Throughput bottleneck is memory BW, not lm_head.
+
+equations:
+  parity_ratio:
+    formula: ratio = apr_tok_s / unsloth_tok_s
+    preconditions:
+      - apr_tok_s > 0
+      - unsloth_tok_s > 0
+    lean_theorem: Theorems.Parity_Ratio
+  gpu_utilization_gate:
+    formula: gpu_parity = (gpu_util_pct > 50)
+    preconditions:
+      - gpu_util_pct >= 0
+      - gpu_util_pct <= 100
+    lean_theorem: Theorems.GPU_Utilization_Gate
+
+proof_obligations:
+  - type: invariant
+    property: Parity ratio improves with each fix tier
+    formal: "P0_tok_s > current_tok_s AND P1_tok_s > P0_tok_s"
+    applies_to: all
+  - type: invariant
+    property: GPU utilization > 0 is prerequisite for parity
+    formal: "gpu_util_pct > 50 => tok_s > 500"
+    applies_to: all
+  - type: bound
+    property: Hypothesis tested before effort invested
+    formal: "for all h in hypotheses: h.status != UNTESTED before implementing h.fix"
+    applies_to: all
+  - type: invariant
+    property: Every forward op produces non-zero output
+    formal: "for all op in [RMSNorm, GEMM, Attention, SwiGLU, Residual]: output[:4].any(!=0)"
+    applies_to: forward_pass
+  - type: invariant
+    property: cuBLAS GEMM inputs and output are non-zero
+    formal: "A[:4].any(!=0) AND B[:4].any(!=0) => C[:4].any(!=0)"
+    applies_to: gemm_forward
+
+falsification_tests:
+  - id: FALSIFY-PAR-001
+    rule: H-PARITY-001 (Q4K → FP16 fixes GPU forward)
+    prediction: FP16 model produces GPU util > 50%
+    test: |
+      def test_fp16_enables_gpu():
+          result = run_apr_canary(model="fp16.apr", method="qlora")
+          assert result["gpu_utilization"] > 50, "FALSIFIED: FP16 still 0% GPU"
+    if_fails: NaN is in NF4 quantization kernel, not input format
+  - id: FALSIFY-PAR-002
+    rule: H-PARITY-002 (NF4 dequant causes NaN)
+    prediction: FP16 LoRA (no NF4) produces GPU util > 50%
+    test: |
+      def test_fp16_lora_no_nf4():
+          result = run_apr_canary(model="fp16.apr", method="lora")
+          assert result["gpu_utilization"] > 50, "FALSIFIED: forward broken without NF4"
+    if_fails: Transformer forward pass itself is broken
+  - id: FALSIFY-PAR-003
+    rule: H-PARITY-004 (VRAM check too conservative)
+    prediction: Actual embedding size < available VRAM
+    test: |
+      def test_vram_check_accurate():
+          embed_size_mb = 151936 * 1536 * 2 / (1024*1024)  # ~446 MB FP16
+          assert embed_size_mb < 1228, "FALSIFIED: embedding genuinely too large"
+    if_fails: Check is correct, need chunked approach
+  - id: FALSIFY-PAR-004
+    rule: DIAG-001 (Every forward op non-zero)
+    prediction: Layer 0 first GEMM output is non-zero
+    test: |
+      def test_layer0_gemm_output_nonzero():
+          # After cuBLAS GEMM in NF4 forward, output[:4] must be non-zero
+          result = run_apr_with_gemm_trace()
+          assert any(v != 0 for v in result["c_first4"]), "cuBLAS GEMM output is zeros"
+    if_fails: cuBLAS GEMM broken — check inputs A/B, handle, stream
+  - id: FALSIFY-PAR-005
+    rule: DIAG-002 (cuBLAS inputs non-zero implies output non-zero)
+    prediction: If A[:4] and B[:4] non-zero, C[:4] must be non-zero
+    test: |
+      def test_cublas_inputs_imply_output():
+          result = run_apr_with_gemm_trace()
+          a_nz = any(v != 0 for v in result["a_first4"])
+          b_nz = any(v != 0 for v in result["b_first4"])
+          c_nz = any(v != 0 for v in result["c_first4"])
+          if a_nz and b_nz:
+              assert c_nz, "cuBLAS A/B non-zero but C zero — handle/stream broken"
+          elif not a_nz:
+              assert False, "RMSNorm output (A) is zero — norm bug"
+          else:
+              assert False, "Weight buffer (B) is zero on GPU — upload/context bug"
+    if_fails: Identifies exact broken component (A=norm, B=weight, C=cublas)
+
+kani_harnesses:
+  - id: KANI-PAR-001
+    obligation: Parity ratio improves monotonically
+    strategy: bounded_int
+    solver: cadical
+    bound: 16
+    description: Verify each fix tier strictly improves throughput
+  - id: KANI-PAR-002
+    obligation: GPU utilization prerequisite
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+    description: Verify GPU util > 50% implies tok/s > 500
+  - id: KANI-PAR-003
+    obligation: Hypotheses tested before implementation
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+    description: Verify no fix implemented with UNTESTED hypothesis
+
+qa_gate:
+  id: F-WL-06-PARITY
+  name: apr-training-parity-v1 Contract
+  description: Validate APR parity hypotheses before investing engineering effort
+  checks:
+    - hypothesis_falsification
+    - parity_ratio_improvement
+    - gpu_utilization_gate
+  pass_criteria: All hypotheses either CONFIRMED or FALSIFIED before implementation

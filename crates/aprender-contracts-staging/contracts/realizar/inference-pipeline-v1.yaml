@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Inference pipeline contract — prefill, decode, sampling correctness
+  references:
+  - 'Vaswani et al. (2017) Attention Is All You Need'
+  - 'Dao et al. (2022) FlashAttention: Fast and Memory-Efficient Exact Attention'
+  depends_on:
+  - softmax-kernel-v1
+  - attention-kernel-v1
+equations:
+  prefill_phase:
+    formula: KV[0..n] = Attention(Embed(tokens[0..n])) for all layers
+    domain: tokens ∈ [u32], len > 0, len ≤ max_seq_len
+    codomain: Result<Vec<f32>>
+    invariants:
+    - KV cache positions [0..n) populated after prefill
+    - Output logits have shape [vocab_size]
+    - 'Batched prefill ≡ serial prefill: identical KV cache state'
+    preconditions:
+    - tokens.len() > 0
+    - tokens.len() <= model.max_seq_len
+    - all tokens < vocab_size
+    lean_theorem: Theorems.Prefill_Phase
+  decode_step:
+    formula: logits = Forward(model, token, position) where position = len(KV)
+    domain: token ∈ u32, position ∈ usize
+    codomain: Result<Vec<f32>>
+    invariants:
+    - Output length = vocab_size
+    - KV cache position incremented by 1
+    - 'Deterministic: same model state + token → same logits'
+    preconditions:
+    - token < vocab_size
+    - position < max_seq_len
+    lean_theorem: Theorems.Decode_Step
+  sampling_temperature:
+    formula: P(token_i) = exp(logit_i / T) / Σ_j exp(logit_j / T)
+    domain: logits ∈ [f32], T > 0
+    codomain: token_id ∈ usize
+    invariants:
+    - 'T = 0 (greedy): argmax(logits)'
+    - 'T → ∞: uniform distribution'
+    - Selected token_id < vocab_size
+    preconditions:
+    - temperature > 0.0 || greedy mode
+    - logits.len() == vocab_size
+    lean_theorem: Theorems.Sampling_Temperature
+proof_obligations:
+- type: invariant
+  property: Batched-serial prefill equivalence
+  formal: '∀ tokens: prefill_batch(tokens).kv_cache = prefill_serial(tokens).kv_cache'
+  applies_to: prefill_phase
+- type: invariant
+  property: Decode output dimension
+  formal: '∀ token, pos: forward(token, pos).len() = vocab_size'
+  applies_to: decode_step
+- type: invariant
+  property: Greedy determinism
+  formal: '∀ logits: sample(logits, T=0) = argmax(logits)'
+  applies_to: sampling_temperature
+enforcement:
+  prefill_equivalence:
+    description: Batched prefill produces same KV cache as serial
+    check: contract_tests::FALSIFY-IP-001
+    severity: ERROR
+  decode_dimension:
+    description: Forward pass output has vocab_size elements
+    check: contract_tests::FALSIFY-IP-002
+    severity: ERROR
+  greedy_argmax:
+    description: Greedy sampling selects max logit
+    check: contract_tests::FALSIFY-IP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-IP-001
+  rule: Prefill equivalence
+  prediction: batched prefill and serial prefill produce identical KV cache
+  test: run both paths on same prompt, compare KV cache entries
+  if_fails: Batched prefill has position or attention mask bug
+- id: FALSIFY-IP-002
+  rule: Decode output shape
+  prediction: forward() returns exactly vocab_size logits
+  test: proptest with random valid tokens and positions
+  if_fails: Output projection dimension mismatch
+- id: FALSIFY-IP-003
+  rule: Greedy determinism
+  prediction: sample(logits, T=0) = argmax(logits) for any logit vector
+  test: proptest with 1000 random logit vectors
+  if_fails: Temperature not applied correctly at T=0
+kani_harnesses:
+- id: KANI-IP-001
+  obligation: Decode output dimension
+  property: forward output length equals vocab_size
+  bound: 16
+  strategy: exhaustive
+  harness: verify_decode_output_dim
+- id: KANI-IP-002
+  obligation: Greedy determinism
+  property: greedy sample equals argmax
+  bound: 8
+  strategy: exhaustive
+  harness: verify_greedy_argmax
+qa_gate:
+  id: F-IP-001
+  name: Inference Pipeline Contract
+  description: Prefill/decode/sampling correctness quality gate
+  checks:
+  - prefill_equivalence
+  - decode_dimension
+  - greedy_argmax
+  pass_criteria: All 3 falsification tests pass
+  falsification: Corrupt KV cache position during batched prefill

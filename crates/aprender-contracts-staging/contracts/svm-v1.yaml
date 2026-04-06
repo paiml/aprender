@@ -1,0 +1,142 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Support Vector Machine — linear binary classification with hinge loss
+  references:
+  - Cortes & Vapnik (1995) Support-Vector Networks
+  - Hastie, Tibshirani, Friedman (2009) ESL, §12
+equations:
+  hinge_loss:
+    formula: L = max(0, 1 - y_i(w·x_i + b))
+    domain: w ∈ ℝ^d, x_i ∈ ℝ^d, y_i ∈ {-1, +1}, b ∈ ℝ
+    codomain: L ∈ [0, ∞)
+    invariants:
+    - L ≥ 0 (non-negative by construction)
+    - L = 0 when y_i(w·x_i + b) ≥ 1 (correct with margin)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Hinge_Loss
+  decision_function:
+    formula: f(x) = w·x + b
+    domain: x ∈ ℝ^d, fitted w ∈ ℝ^d, b ∈ ℝ
+    codomain: f ∈ ℝ
+    invariants:
+    - sign(f(x)) determines classification
+    - Deterministic for same input
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Decision_Function
+  svm_predict:
+    formula: ŷ = sign(w·x + b), mapped to {0, 1}
+    domain: x ∈ ℝ^d, fitted model
+    codomain: ŷ ∈ {0, 1}
+    invariants:
+    - Prediction ∈ {0, 1} (binary only)
+    - Prediction is deterministic
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Svm_Predict
+  margin:
+    formula: margin = 2 / ||w||
+    domain: w ∈ ℝ^d, ||w|| > 0
+    codomain: margin > 0
+    invariants:
+    - margin > 0 for fitted model
+    - Larger margin → better generalization (SRM principle)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Margin
+proof_obligations:
+- type: bound
+  property: Hinge loss non-negative
+  formal: L ≥ 0 for all inputs
+  applies_to: all
+- type: invariant
+  property: Binary prediction
+  formal: predict(x) ∈ {0, 1} for all x
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(x) = predict(x) for all x
+  applies_to: all
+- type: invariant
+  property: Separable data perfect accuracy
+  formal: Linearly separable data ⟹ accuracy = 1.0 (given sufficient iterations)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SVM-001
+  rule: Binary prediction
+  prediction: All predictions ∈ {0, 1}
+  test: 'proptest: fit LinearSVM on random binary data, predict, check labels'
+  if_fails: Prediction not mapped to {0, 1}
+- id: FALSIFY-SVM-002
+  rule: Prediction deterministic
+  prediction: predict(X) = predict(X)
+  test: 'proptest: predict twice, compare'
+  if_fails: Non-deterministic learning rate or state
+- id: FALSIFY-SVM-003
+  rule: Separable data accuracy
+  prediction: accuracy > 0.9 on well-separated 2D binary data
+  test: 'proptest: generate linearly separable clusters, fit, evaluate'
+  if_fails: Convergence failure or wrong sign convention
+- id: FALSIFY-SVM-004
+  rule: Fit-predict consistency
+  prediction: Predictions only contain labels seen in training
+  test: 'proptest: check prediction set subset of training labels'
+  if_fails: Label mapping error
+enforcement:
+  binary:
+    description: Predictions must be binary
+    check: contract_tests::FALSIFY-SVM-001
+    severity: ERROR
+kani_harnesses:
+- id: KANI-SVM-001
+  obligation: SVM-BND-001
+  property: Hinge loss is non-negative for all inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_hinge_loss_non_negative
+- id: KANI-SVM-002
+  obligation: SVM-INV-001
+  property: SVM predictions are binary {0, 1}
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_svm_binary_prediction
+- id: KANI-SVM_V1-003
+  obligation: Hinge loss non-negative
+  property: Hinge loss non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVM_V1-004
+  obligation: Binary prediction
+  property: Binary prediction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVM_V1-005
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SVM_V1-006
+  obligation: Separable data perfect accuracy
+  property: Separable data perfect accuracy
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SVM-001
+  name: SVM Contract
+  description: SVM correctness quality gate
+  checks:
+  - binary_prediction
+  - prediction_deterministic
+  - separable_accuracy
+  - fit_predict_consistency
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Forget to map decision function to {0,1}

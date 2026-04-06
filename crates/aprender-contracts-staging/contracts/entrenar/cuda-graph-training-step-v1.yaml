@@ -1,0 +1,260 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    CUDA Graph training step capture — eliminates 84.6% kernel launch overhead.
+
+    This is THE highest-impact single optimization in the entire stack.
+    Current state: 194 tok/s at 84.6% launch overhead = 89,756µs wasted per decode.
+    With graph capture: all kernel launches consolidated into single graph replay.
+
+    Five-whys:
+    1. 34x gap (194 vs 6,628 tok/s) persists despite 47 upstream fixes
+    2. 84.6% of step time is kernel launch overhead (not GPU compute)
+    3. Training step launches 840+ kernels (28 layers × 30 kernels fwd+bwd)
+    4. Forward graph shipped (PMAT-464) but backward graph deferred
+    5. ROOT CAUSE: backward graph blocked by optimizer sync + gradient clipping
+       — BUT fused gradient clipping shipped (PMAT-477) REMOVES this blocker
+
+    Combined impact estimate:
+      Launch overhead elimination: 6.5x (84.6% → <5%)
+      + NaN fix (PMAT-486): 2.9x (35% → 100% valid steps)
+      + Tensor core utilization: 2.0x (NF4 TC GEMM)
+      = 6.5 × 2.9 × 2.0 = 37.7x → ~7,300 tok/s (parity with unsloth)
+
+    Research basis:
+    - PyGraph (arXiv:2503.19779): >2x benefit from CUDA Graph in PyTorch training
+    - CUDA Graph Batching (arXiv:2501.09398): >1.4x speedup, optimal batch size
+    - Mirage Persistent Kernel (arXiv:2512.22219): entire model as single megakernel
+    - NVIDIA constant-time graph launch: O(1) dispatch for straight-line graphs
+  pmat: [PMAT-488]
+  references:
+    - "arXiv:2503.19779 — PyGraph: Robust Compiler Support for CUDA Graphs in PyTorch"
+    - "arXiv:2501.09398 — Boosting Performance of Iterative Applications on GPUs"
+    - "arXiv:2512.22219 — Mirage Persistent Kernel: Mega-Kernelizing Tensor Programs"
+    - "arXiv:2407.08608 — FlashAttention-3: Fast and Accurate Attention"
+    - "NVIDIA Developer Blog — Constant Time Launch for Straight-Line CUDA Graphs"
+    - "entrenar forward CUDA graph: PMAT-464 (shipped)"
+    - "entrenar fused LoRA gradient clipping: PMAT-477 (shipped, unblocks backward)"
+
+equations:
+  graph_capture_speedup:
+    formula: |
+      Without graph:
+        step_time = sum(kernel_time[i]) + sum(launch_overhead[i]) for i in 1..N_kernels
+        launch_fraction = sum(launch_overhead) / step_time
+
+      With graph:
+        step_time_graph = sum(kernel_time[i]) + graph_replay_overhead
+        graph_replay_overhead ≈ 10-50µs (constant, independent of N_kernels)
+
+      Speedup = step_time / step_time_graph
+             = 1 / (1 - launch_fraction + graph_replay_overhead/step_time)
+
+      For yoga RTX 4060L (measured):
+        launch_fraction = 0.846 (84.6%)
+        step_time ≈ 106ms
+        graph_replay_overhead ≈ 50µs
+        Speedup ≈ 1 / (1 - 0.846 + 0.00005) = 1 / 0.154 = 6.49x
+    domain: Training step with N_kernels > 100
+    invariants:
+      - speedup >= 1.0 (graph never slower than ungraphed)
+      - launch_fraction in [0.0, 1.0]
+
+  backward_graph_requirements:
+    formula: |
+      Backward graph capture requires:
+      1. No dynamic control flow (if/else based on runtime values)
+         → NaN skip check must move OUTSIDE the graph
+      2. No host-device synchronization inside graph
+         → Fused LoRA gradient clipping eliminates 168 D2H syncs (PMAT-477)
+      3. Fixed tensor addresses across replays
+         → Pre-allocated scratch buffers (KAIZEN-045, already done)
+      4. Gradient accumulation compatibility
+         → optimizer.step() can be inside graph if learning rate is static
+
+      Graph boundary:
+        OUTSIDE: loss computation (may produce NaN), learning rate schedule
+        INSIDE: forward pass, backward pass, gradient clipping, optimizer step
+    domain: entrenar NF4 QLoRA training step
+    invariants:
+      - All scratch buffers pre-allocated before graph capture
+      - No cudaStreamSynchronize inside captured region
+      - Loss check (NaN detection) happens before or after graph replay
+
+  megakernel_roadmap:
+    formula: |
+      Evolution path (each tier subsumes previous):
+
+      Tier 7: CUDA Graph backward (this contract)
+        - Capture forward + backward as single graph
+        - Replay with single cuGraphLaunch per step
+        - Expected: 6.5x (launch overhead elimination)
+
+      Tier 8: Flash Attention integration
+        - Replace 420 attention kernel launches with 28 fused kernels
+        - Reduce graph size from ~840 nodes to ~280 nodes
+        - Expected: additional 2-3x (memory BW optimization)
+
+      Tier 9: Mirage-style persistent megakernel (arXiv:2512.22219)
+        - Compile entire transformer block as single persistent kernel
+        - SM-level pipelining across layers
+        - Expected: additional 1.5-2x (SHMEM data locality)
+
+      Combined: 6.5 × 2.5 × 1.7 = 27.6x → ~5,300 tok/s minimum
+    domain: Optimization roadmap tiers 7-9
+    invariants:
+      - Each tier's speedup is multiplicative (not overlapping)
+      - Numerical parity maintained at each tier (loss divergence < 0.01)
+
+proof_obligations:
+  - type: bound
+    property: Launch overhead reduction
+    formal: 'graphed_launch_overhead / ungraphed_launch_overhead < 0.10'
+    applies_to: training step with 840+ kernels
+
+  - type: equivalence
+    property: Numerical parity
+    formal: '|graphed_loss[t] - ungraphed_loss[t]| < 0.01 for t in [0, 100]'
+    applies_to: 100-step training comparison
+
+  - type: bound
+    property: Throughput improvement
+    formal: 'graphed_tok_s / ungraphed_tok_s >= 3.0'
+    applies_to: 20-step canary comparison
+
+  - type: invariant
+    property: No host-device sync inside graph
+    formal: 'zero cudaStreamSynchronize calls in captured kernel stream'
+    applies_to: graph capture region
+
+  - type: invariant
+    property: Memory stability across replays
+    formal: 'peak_vram[replay_n] == peak_vram[replay_1] for all n'
+    applies_to: 100-step graph replay
+
+falsification_tests:
+  - id: F-CGT-001
+    rule: Throughput improvement
+    prediction: >
+      CUDA graph training step achieves >= 3x throughput vs ungraphed.
+      Expected: 6.5x based on 84.6% launch overhead measurement.
+    test: Run 20-step canary with CUDA_GRAPH=1 vs default, compare tok/s
+    if_fails: Graph capture overhead or replay overhead higher than expected
+
+  - id: F-CGT-002
+    rule: Numerical parity
+    prediction: >
+      Graphed and ungraphed training produce identical loss curves
+      (divergence < 0.01 at every step for 100 steps).
+    test: Run 100 steps both ways, compare loss[t] at each step
+    if_fails: Dynamic shapes or stale buffer addresses in graph replay
+
+  - id: F-CGT-003
+    rule: No NaN regression
+    prediction: >
+      CUDA graph training produces ZERO NaN backward skips
+      (NaN check moved outside graph boundary).
+    test: Run 20-step canary with CUDA_GRAPH=1, count NaN skips
+    if_fails: NaN check incorrectly placed inside graph
+
+  - id: F-CGT-004
+    rule: VRAM stability
+    prediction: >
+      Peak VRAM is constant across graph replays (no memory leak).
+      peak_vram[step_100] == peak_vram[step_1] within 1%.
+    test: Monitor VRAM every 10 steps during 100-step run
+    if_fails: Buffer allocation inside graph or CUDA allocator fragmentation
+
+  - id: F-CGT-005
+    rule: Backward graph captures correctly
+    prediction: >
+      Backward pass runs inside graph (not fallback to ungraphed).
+      Verify: graph node count includes backward kernels (>400 nodes total).
+    test: Capture graph, inspect node count via CUDA driver API
+    if_fails: Backward has dynamic control flow blocking capture
+
+  - id: F-CGT-006
+    rule: Fused gradient clipping inside graph
+    prediction: >
+      All 168 per-layer gradient clipping operations run inside graph
+      (no D2H sync inside captured region).
+    test: renacer trace shows zero cudaStreamSynchronize inside graph replay
+    if_fails: Fused clip regression — some layers falling back to sync clip
+
+kani_harnesses:
+  - id: KANI-CGT-001
+    obligation: Launch overhead reduction
+    property: Graph replay overhead < 10% of ungraphed overhead
+    bound: 8
+    strategy: stub_float
+    harness: verify_launch_overhead_reduction
+    solver: cadical
+
+  - id: KANI-CGT-002
+    obligation: Numerical parity
+    property: Graphed loss matches ungraphed loss
+    bound: 8
+    strategy: stub_float
+    harness: verify_graph_loss_parity
+    solver: cadical
+
+  - id: KANI-CGT-003
+    obligation: No host-device sync inside graph
+    property: Zero sync calls in captured region
+    bound: 16
+    strategy: exhaustive
+    harness: verify_no_sync_in_graph
+    solver: cadical
+
+  - id: KANI-CGT-004
+    obligation: Memory stability across replays
+    property: Peak VRAM constant within 1%
+    bound: 8
+    strategy: stub_float
+    harness: verify_vram_stability
+    solver: cadical
+
+implementation_requirements:
+  entrenar_changes:
+    - description: Enable backward graph capture
+      detail: >
+        Forward graph capture exists (PMAT-464). Extend to capture backward pass.
+        Key: NaN loss check must move OUTSIDE the graph (before replay or after).
+        Fused LoRA gradient clipping (PMAT-477) already eliminates sync blockers.
+        Use cudaGraphCreate + cudaStreamBeginCapture for full step.
+    - description: Graph replay with parameter update
+      detail: >
+        Learning rate and gradient buffers must have stable addresses.
+        Use cudaGraphExecUpdate for parameter changes between replays.
+    - description: Canary target canary-apr-graph
+      detail: >
+        CUDA_GRAPH=1 env var enables full training step graph.
+        Compare against ungraphed baseline for speedup measurement.
+
+  trueno_changes:
+    - description: Graph-compatible kernel launches
+      detail: >
+        All trueno PTX kernels must be graph-capture compatible.
+        Verify: no host-side allocations inside kernel dispatch.
+        TransformerBlockMegakernel is the long-term target (Tier 9).
+
+  sovereign_stack_permanent:
+    - description: Update batuta oracle with Tier 7-9 roadmap
+      detail: >
+        Add entrenar capability "cuda_graph_training".
+        Update trueno capability to include "megakernel".
+        Add optimization tier metadata to oracle knowledge base.
+
+qa_gate:
+  id: F-CGT-001
+  name: cuda-graph-training-step-v1 Contract
+  checks:
+    - throughput_improvement
+    - numerical_parity
+    - nan_regression
+    - vram_stability
+    - backward_capture
+    - fused_clip_in_graph
+  pass_criteria: All 6 falsification tests pass

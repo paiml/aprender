@@ -1,0 +1,112 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits in last 24h
+        id: check
+        run: |
+          sha=$(git rev-parse --short HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ -n "$(git log --since='24 hours ago' --oneline)" ]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Ensure target is installed
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --package provable-contracts-cli
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../pv-${{ matrix.target }}.tar.gz pv
+          cd ../../..
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          7z a ../../../pv-${{ matrix.target }}.zip pv.exe
+          cd ../../..
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pv-${{ matrix.target }}
+          path: pv-${{ matrix.target }}.*
+
+  release:
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or update nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          make_latest: false
+          body: |
+            Nightly build from `main` at ${{ needs.check.outputs.sha }}.
+            Built on ${{ github.event.repository.updated_at || github.event.head_commit.timestamp }}.
+
+            |Platform|Archive|
+            |---|---|
+            |Linux x86_64|`pv-x86_64-unknown-linux-gnu.tar.gz`|
+            |macOS x86_64|`pv-x86_64-apple-darwin.tar.gz`|
+            |macOS aarch64|`pv-aarch64-apple-darwin.tar.gz`|
+            |Windows x86_64|`pv-x86_64-pc-windows-msvc.zip`|
+
+            **Commit:** ${{ github.sha }}
+          files: artifacts/*

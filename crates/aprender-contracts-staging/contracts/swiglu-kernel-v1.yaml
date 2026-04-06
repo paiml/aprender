@@ -1,0 +1,180 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: SwiGLU kernel — gated linear unit with SiLU activation
+  references:
+  - Shazeer (2020) GLU Variants Improve Transformer
+  - Ramachandran et al. (2017) Searching for Activation Functions
+  depends_on:
+  - silu-kernel-v1
+  - matmul-kernel-v1
+equations:
+  swiglu:
+    formula: SwiGLU(x, W, V, b, c) = SiLU(xW + b) * (xV + c)
+    domain: x in R^d, W in R^{d x h}, V in R^{d x h}, b in R^h, c in R^h
+    codomain: SwiGLU(x) in R^h
+    invariants:
+    - SwiGLU(0, W, V, 0, 0) = 0 (zero preservation)
+    - Decomposable as gate * value where gate = SiLU(xW+b)
+    preconditions:
+    - x.len() > 0
+    - gate.len() == x.len()
+    - x.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Swiglu
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    assumes:
+      constraints:
+      - "SiLU gate values are finite"
+      from_contract: silu-kernel-v1
+      from_equation: silu
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output is finite"
+      - "output.len() == x.len()"
+  silu:
+    formula: SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x))
+    domain: x in R
+    codomain: SiLU(x) in (-0.279, +inf)
+    invariants:
+    - SiLU(0) = 0
+    - SiLU(x) > -0.279 for all x (global minimum)
+    - SiLU is monotonic for x > 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Silu
+proof_obligations:
+- type: invariant
+  property: Zero preservation
+  formal: SwiGLU(0, W, V, 0, 0) = 0
+  applies_to: all
+- type: equivalence
+  property: Fused matches unfused
+  formal: '|fused_swiglu(x) - (silu(xW+b) * (xV+c))| < eps'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: Gate output bounded below
+  formal: SiLU(xW+b)_i > -0.279 for all i
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: linear_gate
+    description: Compute xW + b (gate projection)
+    invariant: result has dimension h
+  - name: linear_value
+    description: Compute xV + c (value projection)
+    invariant: result has dimension h
+  - name: silu_activation
+    description: 'Apply SiLU to gate: x * sigmoid(x)'
+    invariant: output_i > -0.279 for all i
+  - name: elementwise_multiply
+    description: Multiply SiLU(gate) * value element-wise
+    invariant: output dimension equals h
+simd_dispatch:
+  swiglu:
+    scalar: swiglu_scalar
+    avx2: swiglu_avx2
+    ptx: swiglu_ptx
+enforcement:
+  zero_preservation:
+    description: SwiGLU(0) must equal 0 with zero biases
+    check: contract_tests::FALSIFY-SG-001
+    severity: ERROR
+  fused_equivalence:
+    description: Fused SwiGLU must match component-wise computation
+    check: contract_tests::FALSIFY-SG-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SG-001
+  rule: Zero preservation
+  prediction: SwiGLU(0, W, V, 0, 0) = 0 for random W, V
+  test: proptest with random W, V matrices, zero x/b/c
+  if_fails: Bias term incorrectly initialized or fused
+- id: FALSIFY-SG-002
+  rule: Fused equivalence
+  prediction: '|fused(x) - silu(xW+b)*(xV+c)| < 1e-6'
+  test: proptest with random x, W, V, b, c
+  if_fails: Fusion optimization changed computation order
+- id: FALSIFY-SG-003
+  rule: SiLU lower bound
+  prediction: SiLU(z) > -0.279 for all z in [-1000, 1000]
+  test: proptest with random z values near global minimum
+  if_fails: Activation function has numerical instability
+- id: FALSIFY-SG-004
+  rule: SIMD equivalence
+  prediction: '|swiglu_avx2(x) - swiglu_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD reduction order or FMA differs from scalar
+- id: FALSIFY-SG-005
+  rule: Boundary - zero dimension
+  prediction: SwiGLU on empty input returns empty output
+  test: proptest with zero-length vectors
+  if_fails: Edge case in dimension handling
+- id: FALSIFY-SG-006
+  rule: Monotonicity of gate
+  prediction: For fixed value, increasing gate input increases output when gate > 0
+  test: proptest with sorted gate inputs and fixed value
+  if_fails: SiLU monotonicity violated in positive domain
+kani_harnesses:
+- id: KANI-SG-001
+  obligation: SG-INV-001
+  property: SwiGLU preserves zero with zero biases
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_swiglu_zero_preservation
+- id: KANI-SG-002
+  obligation: SG-EQV-001
+  property: Fused SwiGLU matches unfused for small vectors
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_swiglu_fused_equivalence
+- id: KANI-SG-003
+  obligation: SG-BND-001
+  property: SiLU gate output bounded below by -0.279
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_silu_lower_bound
+- id: KANI-SWIGLU-004
+  obligation: Zero preservation
+  property: Zero preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SWIGLU-005
+  obligation: Fused matches unfused
+  property: Fused matches unfused
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SWIGLU-006
+  obligation: Gate output bounded below
+  property: Gate output bounded below
+  bound: 8
+  strategy: stub_float
+- id: KANI-SWIGLU-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SG-001
+  name: SwiGLU Contract
+  description: Gated linear unit with SiLU activation quality gate
+  checks:
+  - zero_preservation
+  - fused_equivalence
+  - silu_bound
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Replace SiLU with ReLU in gate path

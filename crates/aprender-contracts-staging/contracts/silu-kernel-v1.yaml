@@ -1,0 +1,188 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: SiLU kernel — sigmoid linear unit activation function
+  references:
+  - Ramachandran et al. (2017) Searching for Activation Functions
+  - Elfwing et al. (2018) Sigmoid-Weighted Linear Units
+equations:
+  silu:
+    formula: SiLU(x) = x * sigmoid(x) = x / (1 + exp(-x))
+    domain: x in R
+    codomain: SiLU(x) in (-0.279, +inf)
+    invariants:
+    - SiLU(0) = 0 (zero preservation)
+    - SiLU(x) > -0.279 for all x (global minimum at x ~ -1.278)
+    - SiLU(x) ~ x for large positive x (asymptotic linearity)
+    - SiLU is monotonic for x > 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Silu
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output is finite"
+      - "output.len() == x.len()"
+  sigmoid:
+    formula: sigmoid(x) = 1 / (1 + exp(-x))
+    domain: x in R
+    codomain: sigmoid(x) in (0, 1)
+    invariants:
+    - sigmoid(0) = 0.5
+    - sigmoid(-x) = 1 - sigmoid(x) (symmetry)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Sigmoid
+proof_obligations:
+- type: invariant
+  property: Zero preservation
+  formal: SiLU(0) = 0
+  applies_to: all
+  lean:
+    theorem: Sigmoid.silu_zero
+    module: ProvableContracts.Sigmoid
+    status: proved
+    depends_on: []
+    mathlib_imports: []
+    notes: SiLU(0) = 0 · σ(0) = 0 by ring
+- type: bound
+  property: Global lower bound
+  formal: SiLU(x) > -0.279 for all x
+  applies_to: all
+- type: monotonicity
+  property: Monotonic for positive inputs
+  formal: x > y > 0 implies SiLU(x) > SiLU(y)
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: bound
+  property: Asymptotic linearity
+  formal: '|SiLU(x) - x| < 0.01 for x > 10'
+  applies_to: all
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 3
+  l4_lean_proved: 1
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+kernel_structure:
+  phases:
+  - name: compute_sigmoid
+    description: Compute sigmoid(x) = 1 / (1 + exp(-x))
+    invariant: output in (0, 1)
+  - name: multiply
+    description: Compute x * sigmoid(x)
+    invariant: result > -0.279
+simd_dispatch:
+  silu:
+    scalar: silu_scalar
+    avx2: silu_avx2
+    ptx: silu_ptx
+enforcement:
+  zero_preservation:
+    description: SiLU(0) must equal 0
+    check: contract_tests::FALSIFY-SI-001
+    severity: ERROR
+  lower_bound:
+    description: SiLU output must be above -0.279
+    check: contract_tests::FALSIFY-SI-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SI-001
+  rule: Zero preservation
+  prediction: SiLU(0) = 0 exactly
+  test: direct evaluation at x = 0
+  if_fails: Implementation does not handle zero correctly
+- id: FALSIFY-SI-002
+  rule: Global lower bound
+  prediction: SiLU(x) > -0.279 for x in [-1000, 1000]
+  test: proptest with random x, focus on x near -1.278
+  if_fails: Numerical instability near global minimum
+- id: FALSIFY-SI-003
+  rule: Positive monotonicity
+  prediction: SiLU(x) > SiLU(y) when x > y > 0
+  test: proptest with sorted positive pairs
+  if_fails: Sigmoid saturation causing non-monotonicity
+- id: FALSIFY-SI-004
+  rule: SIMD equivalence
+  prediction: '|silu_avx2(x) - silu_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD exp approximation differs from scalar
+- id: FALSIFY-SI-005
+  rule: Asymptotic linearity
+  prediction: '|SiLU(x) - x| < 0.01 for x > 10'
+  test: proptest with large positive x
+  if_fails: sigmoid(x) not approaching 1 for large x
+- id: FALSIFY-SI-006
+  rule: Boundary - large negative input
+  prediction: '|SiLU(x)| < 0.01 for x < -10'
+  test: proptest with large negative x
+  if_fails: exp overflow for large negative input
+kani_harnesses:
+- id: KANI-SI-001
+  obligation: SI-INV-001
+  property: SiLU preserves zero
+  bound: 1
+  strategy: stub_float
+  solver: cadical
+  harness: verify_silu_zero
+- id: KANI-SI-002
+  obligation: SI-BND-001
+  property: SiLU output bounded below by -0.279
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_silu_lower_bound
+- id: KANI-SI-003
+  obligation: SI-MON-001
+  property: SiLU monotonic for positive inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_silu_positive_monotonicity
+- id: KANI-SILU_K-004
+  obligation: Zero preservation
+  property: Zero preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SILU_K-005
+  obligation: Global lower bound
+  property: Global lower bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-SILU_K-006
+  obligation: Monotonic for positive inputs
+  property: Monotonic for positive inputs
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SILU_K-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SILU_K-008
+  obligation: Asymptotic linearity
+  property: Asymptotic linearity
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SI-001
+  name: SiLU Contract
+  description: Sigmoid linear unit activation quality gate
+  checks:
+  - zero_preservation
+  - lower_bound
+  - positive_monotonicity
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Replace sigmoid with constant 0.5

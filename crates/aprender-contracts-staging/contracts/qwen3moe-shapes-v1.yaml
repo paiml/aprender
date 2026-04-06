@@ -1,0 +1,222 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-21'
+  author: PAIML Engineering
+  description: Qwen3-235B-A22B (MoE) concrete shape instantiation, MoE routing, and
+    RoPE frequency scaling
+  references:
+  - Qwen3 Technical Report — MoE architecture with top-8 routing
+  - Su et al. (2021) RoFormer — Rotary Position Embedding
+  - Fedus et al. (2022) Switch Transformers — MoE scaling
+  depends_on:
+  - model-config-algebra-v1
+equations:
+  q_projection_shape:
+    formula: '[n_h * d_k, hidden] = [64*128, 4096] = [8192, 4096]'
+    domain: 'Qwen3-235B-A22B config: n_h=64, d_k=128, hidden=4096'
+    invariants:
+    - Q projection is expanding (8192 > 4096) due to n_h*d_k > hidden
+    - Q output dim = 8192
+    preconditions:
+    - 'input.len() > 0'
+    - num_heads > 0
+    lean_theorem: Theorems.Q_Projection_Shape
+  kv_projection_shape:
+    formula: '[n_kv * d_k, hidden] = [4*128, 4096] = [512, 4096]'
+    domain: 'Qwen3-235B-A22B config: n_kv=4, d_k=128'
+    invariants:
+    - 'GQA ratio: n_h / n_kv = 64 / 4 = 16'
+    - Aggressive GQA with 16:1 head ratio
+    preconditions:
+    - 'input.len() > 0'
+    - num_heads > 0
+    lean_theorem: Theorems.Kv_Projection_Shape
+  moe_expert_shape:
+    formula: 'expert_i: gate[moe_inter, hidden] * up[moe_inter, hidden] -> down[hidden,
+      moe_inter]'
+    domain: 128 experts, each with moe_intermediate_size=1536
+    invariants:
+    - Each expert has 3 * hidden * moe_inter = 3 * 4096 * 1536 params
+    - Total expert params per layer = 128 * 3 * 4096 * 1536
+    - Active expert params per token = 8 * 3 * 4096 * 1536
+    preconditions:
+    - 'input.len() > 0'
+    - num_heads > 0
+    lean_theorem: Theorems.Moe_Expert_Shape
+  moe_router_shape:
+    formula: 'router: [num_experts, hidden] = [128, 4096]'
+    domain: Top-k routing with k=8
+    invariants:
+    - Router selects top-8 of 128 experts per token
+    - norm_topk_prob normalizes selected expert weights
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Moe_Router_Shape
+  swiglu_ratio:
+    formula: moe_intermediate / hidden = 1536 / 4096 = 0.375
+    domain: Per-expert SwiGLU ratio (compact experts)
+    invariants:
+    - 'Per-expert expansion ratio 0.375 (sub-unity: compact experts)'
+    - 'Effective expansion with 8 active: 8 * 1536 / 4096 = 3.0'
+    preconditions:
+    - 'input.len() > 0'
+    - intermediate_size > 0
+    lean_theorem: Theorems.Swiglu_Ratio
+  o_projection_transpose:
+    formula: shape(o_proj) = [hidden, n_h * d_k] = [4096, 8192]
+    domain: O projection contracts attention back to hidden dim
+    invariants:
+    - 'O projection is contracting: [4096, 8192]'
+    - shape(o_proj) == transpose(shape(q_proj))
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.O_Projection_Transpose
+  rope_frequency:
+    formula: freq_i = base^(-2i/d_k) for i in [0, d_k/2)
+    domain: base = 1000000, d_k = 128
+    invariants:
+    - len(freqs) = d_k / 2 = 64
+    - freq_0 = 1.0
+    - Strictly decreasing
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Rope_Frequency
+proof_obligations:
+- type: invariant
+  property: Q projection shape
+  formal: n_h * d_k = 8192 for Qwen3-235B-A22B
+  applies_to: all
+- type: invariant
+  property: KV projection shape
+  formal: n_kv * d_k = 512 for Qwen3-235B-A22B
+  applies_to: all
+- type: invariant
+  property: GQA divisibility
+  formal: n_h mod n_kv = 64 mod 4 = 0, ratio = 16
+  applies_to: all
+- type: invariant
+  property: MoE expert shape
+  formal: 'each expert: 3 * 4096 * 1536 params'
+  applies_to: all
+- type: invariant
+  property: MoE router top-k
+  formal: router selects exactly 8 of 128 experts
+  applies_to: all
+- type: invariant
+  property: O projection transpose
+  formal: shape(o_proj) == reverse(shape(q_proj))
+  applies_to: all
+- type: monotonicity
+  property: RoPE frequency decreasing
+  formal: freq_i > freq_{i+1} for all i
+  applies_to: all
+- type: equivalence
+  property: SIMD shape equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-QM3-001
+  rule: Q projection shape
+  prediction: n_h * d_k = 8192 for Qwen3-235B-A22B
+  test: 'Deterministic: 64 * 128 == 8192'
+  if_fails: n_h or d_k config constant wrong
+- id: FALSIFY-QM3-002
+  rule: KV projection shape
+  prediction: n_kv * d_k = 512 for Qwen3-235B-A22B
+  test: 'Deterministic: 4 * 128 == 512'
+  if_fails: n_kv config constant wrong
+- id: FALSIFY-QM3-003
+  rule: GQA divisibility
+  prediction: 64 mod 4 = 0, ratio = 16
+  test: 'Deterministic: 64 % 4 == 0'
+  if_fails: GQA ratio not integral
+- id: FALSIFY-QM3-004
+  rule: MoE expert shape
+  prediction: per-expert params = 3 * 4096 * 1536 = 18874368
+  test: 'Deterministic: compute and verify'
+  if_fails: Expert intermediate size wrong
+- id: FALSIFY-QM3-005
+  rule: MoE router top-k
+  prediction: top_k=8 selects 8 of 128 experts
+  test: 'Deterministic: 8 < 128 and 128 % 8 == 0'
+  if_fails: Router k exceeds num_experts
+- id: FALSIFY-QM3-006
+  rule: O projection transpose
+  prediction: O shape [4096, 8192] is transpose of Q shape [8192, 4096]
+  test: 'Deterministic: dimension swap check'
+  if_fails: O projection dimensions wrong
+- id: FALSIFY-QM3-007
+  rule: RoPE frequency decreasing
+  prediction: freq_i > freq_{i+1} for all i
+  test: proptest with random base and head_dim
+  if_fails: Exponent sign error in frequency formula
+- id: FALSIFY-QM3-008
+  rule: SIMD shape equivalence
+  prediction: SIMD shapes match scalar shapes
+  test: 'proptest: compare scalar vs SIMD projection shapes'
+  if_fails: SIMD implementation uses different dimensions
+kani_harnesses:
+- id: KANI-QM3-001
+  obligation: QM3-INV-001
+  property: Shape consistency for Qwen3 MoE config
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_qwen3moe_shapes
+- id: KANI-QWEN3M-002
+  obligation: Q projection shape
+  property: Q projection shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-003
+  obligation: KV projection shape
+  property: KV projection shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-004
+  obligation: GQA divisibility
+  property: GQA divisibility
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-005
+  obligation: MoE expert shape
+  property: MoE expert shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-006
+  obligation: MoE router top-k
+  property: MoE router top-k
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-007
+  obligation: O projection transpose
+  property: O projection transpose
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-008
+  obligation: RoPE frequency decreasing
+  property: RoPE frequency decreasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-009
+  obligation: SIMD shape equivalence
+  property: SIMD shape equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QM3-001
+  name: Qwen3 MoE Shapes Contract
+  description: MoE model shape instantiation quality gate
+  checks:
+  - q_projection
+  - kv_projection
+  - gqa_divisibility
+  - moe_expert_shape
+  - moe_router
+  - o_projection
+  - rope_frequencies
+  pass_criteria: All 8 falsification tests pass
+  falsification: Change n_kv from 4 to 3 to break GQA divisibility with n_h=64

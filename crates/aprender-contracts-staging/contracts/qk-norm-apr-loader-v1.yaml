@@ -1,0 +1,108 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-12'
+  author: PAIML Engineering
+  description: QK norm weight loading contract for APR format loaders (GH-479)
+  references:
+  - qk-norm-v1.yaml — normalization algorithm contract
+  - arch-constraints-v1.yaml — per-architecture feature flags
+  depends_on:
+  - qk-norm-v1
+  - arch-constraints-v1
+invariants:
+- id: QKN-LOAD-001
+  property: APR loader resolves QK norm weights when present
+  formal: '∀ arch where has_qk_norm=true: if tensor exists in APR index → loaded into layer'
+  description: 'Both APR loaders (loader_apr_quantized.rs, loading.rs) must attempt to load attn_q_norm_weight and attn_k_norm_weight
+    using HF and GGUF tensor name fallbacks, consistent with how other optional tensors (biases, gate weights) are loaded.
+
+    '
+- id: QKN-LOAD-002
+  property: QK norm tensor names match HF and GGUF conventions
+  formal: 'HF: model.layers.{n}.self_attn.{q,k}_norm.weight GGUF: blk.{n}.attn_{q,k}_norm.weight
+
+    '
+  description: 'Both naming conventions must be tried via .or_else() fallback, same pattern used for all other optional per-layer
+    tensors.
+
+    '
+- id: QKN-LOAD-003
+  property: QK norm weights are optional (None for non-Qwen3 architectures)
+  formal: apr_try_load_f32 returns Option<Vec<f32>> — None is valid
+  description: 'Loading uses apr_try_load_f32 (returns Option), not apr_load_f32_tensor (returns Result). Missing QK norm
+    tensors produce None, not an error. This preserves backward compatibility with Qwen2, LLaMA, GPT-2, etc.
+
+    '
+- id: QKN-LOAD-004
+  property: Forward pass applies QK norm when weights are present
+  formal: "if layer.attn_q_norm_weight.is_some():\n  apply_per_head_rms_norm(&mut q, weight, num_heads, eps)\nsame for K with\
+    \ num_kv_heads\n"
+  description: 'QK norm is applied AFTER QKV projection + bias, BEFORE RoPE. Per-head RMSNorm with weight shape [head_dim].
+    Qwen3 ordering: project → QK norm → RoPE → attention.
+
+    '
+proof_obligations:
+- type: invariant
+  property: Non-regression for non-QK-norm models
+  formal: Qwen2, LLaMA, GPT-2 output unchanged (weights = None, no norm applied)
+  applies_to: all
+- type: invariant
+  property: Weight shape matches head_dim
+  formal: len(q_norm_weight) == hidden_dim / num_heads
+  applies_to: all
+- type: equivalence
+  property: APR loader matches SafeTensors loader
+  formal: APR path loads same QK norm weights as safetensors_infer_convert.rs path
+  tolerance: 0.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QKN-LOAD-001
+  rule: QK norm loaded from APR
+  prediction: Qwen3 APR file yields non-None attn_q_norm_weight
+  test: Build APR with QK norm tensors, load via APR loader, assert Some
+  if_fails: Tensor name mismatch or wrong loader function
+- id: FALSIFY-QKN-LOAD-002
+  rule: Non-regression
+  prediction: Qwen2 APR file yields None attn_q_norm_weight
+  test: Existing Qwen2 test passes unchanged
+  if_fails: Optional loading broke required tensor path
+- id: FALSIFY-QKN-LOAD-003
+  rule: Forward pass applies norm
+  prediction: With QK norm weights present, Q values differ from raw projection
+  test: Inject known Q norm weight [2.0; head_dim], verify Q scaled
+  if_fails: Forward pass not checking for QK norm weights
+qa_gate:
+  id: F-QKN-LOAD-001
+  name: QK Norm APR Loader Contract
+  checks:
+  - qk_norm_loaded
+  - non_regression
+  - forward_applied
+  pass_criteria: All 3 falsification tests pass
+equations:
+  qk_norm_load:
+    formula: load(arch, layer_n) = try_f32(hf_name) ∨ try_f32(gguf_name)
+    domain: arch ∈ {qwen3, ...}, layer_n ∈ ℕ
+    codomain: Option<Vec<f32>>
+    invariants:
+    - Non-QK-norm architectures return None
+    - QK-norm architectures return Some(w) where len(w) = head_dim
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Qk_Norm_Load
+kani_harnesses:
+- id: qk-norm-apr-loader-v1-kani-001
+  obligation: Weight shape matches head_dim
+  bound: 8
+  strategy: bounded_int
+- id: KANI-QK_NOR-002
+  obligation: Non-regression for non-QK-norm models
+  property: Non-regression for non-QK-norm models
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-003
+  obligation: APR loader matches SafeTensors loader
+  property: APR loader matches SafeTensors loader
+  bound: 8
+  strategy: exhaustive

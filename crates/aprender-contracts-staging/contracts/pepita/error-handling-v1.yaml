@@ -1,0 +1,103 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Pepita virtio send — message delivery guarantees and error propagation for network namespaces
+  references:
+  - 'Russell (2008) virtio: Towards a De-Facto Standard for Virtual I/O Devices'
+equations:
+  send:
+    formula: S(msg, conn) = result where result.is_ok() → msg delivered to namespace
+    domain: msg ∈ Vec<u8>, conn ∈ Connection where conn.is_active()
+    codomain: Result<usize, SendError>
+    invariants:
+    - Bytes sent count equals msg.len() on success
+    - Closed connection returns Err(SendError::ConnectionClosed)
+    - 'Partial writes are retried: sent bytes = msg.len() or error'
+    preconditions:
+    - conn.is_active()
+    - msg.len() > 0
+    - msg.len() <= MAX_MSG_SIZE
+    lean_theorem: Theorems.Send_Complete
+  send_error_propagation:
+    formula: E(send_result) = error_kind where error_kind ∈ {ConnectionClosed, Timeout, BufferFull}
+    domain: send_result ∈ Err(SendError)
+    codomain: SendErrorKind
+    invariants:
+    - All errors are categorized (no generic/unknown errors)
+    - Timeout errors include elapsed duration
+    - Error Display impl produces non-empty string
+    preconditions:
+    - send_result.is_err()
+    lean_theorem: Theorems.Error_Categorized
+proof_obligations:
+- type: invariant
+  property: Complete send or error
+  formal: '∀ msg, conn: send(msg, conn).is_ok() → send(msg, conn).unwrap() = msg.len()'
+  applies_to: send
+- type: invariant
+  property: All errors are categorized
+  formal: '∀ err ∈ SendError: err.kind() ∈ {ConnectionClosed, Timeout, BufferFull}'
+  applies_to: send_error_propagation
+- type: soundness
+  property: Send on closed connection does not panic
+  formal: '∀ msg, closed_conn: send(msg, closed_conn) = Err(_)'
+  applies_to: send
+enforcement:
+  complete_send:
+    description: Send must deliver all bytes or return error
+    check: contract_tests::FALSIFY-PE-001
+    severity: ERROR
+  error_categorization:
+    description: All send errors must be categorized
+    check: contract_tests::FALSIFY-PE-002
+    severity: ERROR
+  closed_conn_safety:
+    description: Send on closed connection must not panic
+    check: contract_tests::FALSIFY-PE-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PE-001
+  rule: Complete send
+  prediction: send(msg, conn) returns Ok(msg.len()) for active connections
+  test: send messages of varying sizes over active virtio connection
+  if_fails: Partial write not retried or byte count mismatch
+- id: FALSIFY-PE-002
+  rule: Error categorization
+  prediction: All SendError variants map to a known SendErrorKind
+  test: enumerate all SendError variants and verify kind() is in known set
+  if_fails: New error variant added without updating kind mapping
+- id: FALSIFY-PE-003
+  rule: Closed connection safety
+  prediction: send(msg, closed_conn) returns Err, never panics
+  test: close connection then send, assert Err(ConnectionClosed)
+  if_fails: Use-after-close on file descriptor or missing connection state check
+kani_harnesses:
+- id: KANI-PE-001
+  obligation: Complete send
+  property: Bytes sent equals message length
+  bound: 16
+  strategy: exhaustive
+  harness: verify_send_complete
+- id: KANI-PE-002
+  obligation: Error categorization
+  property: All errors have known kind
+  bound: 4
+  strategy: exhaustive
+  harness: verify_error_kinds
+- id: KANI-PE-003
+  obligation: Closed connection safety
+  property: Send on closed connection returns Err
+  bound: 8
+  strategy: exhaustive
+  harness: verify_closed_conn_send
+qa_gate:
+  id: F-PE-001
+  name: Pepita Send Contract
+  description: Virtio message delivery quality gate
+  checks:
+  - complete_send
+  - error_categorization
+  - closed_conn_safety
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return Ok(0) from send to trigger FALSIFY-PE-001

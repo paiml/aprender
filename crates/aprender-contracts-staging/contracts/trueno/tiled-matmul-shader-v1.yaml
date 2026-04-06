@@ -1,0 +1,171 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: 16×16 shared memory tiled matmul shader — reduces global memory bandwidth by ~16×
+  registry: true
+  references:
+  - 'KAIZEN-021: Naive wgpu matmul shader — no tiling, ~5% GPU utilization'
+  - Standard tiled matmul algorithm (GPU Computing Gems, Ch. 2)
+tiling:
+- id: C-TILED-MATMUL-001
+  name: Binding layout backward compatible
+  description: "The tiled shader uses the same binding layout as the naive shader:\n  binding 0: storage<read> a — input matrix\
+    \ A (M×K, row-major)\n  binding 1: storage<read> b — input matrix B (K×N, row-major)\n  binding 2: storage<read_write>\
+    \ c — output matrix C (M×N, row-major)\n  binding 3: uniform dims — Dimensions { M, K, N } (16-byte aligned with padding)\n\
+    \nNo changes to bind group layout, pipeline creation, or dispatch code.\n"
+  severity: P0
+  critical: true
+  verification: Existing GPU matmul tests pass unchanged
+- id: C-TILED-MATMUL-002
+  name: 16×16 shared memory tiles reduce bandwidth by ~16×
+  description: "Each workgroup loads a 16×16 tile of A and a 16×16 tile of B into\nvar<workgroup> shared memory (2 × 256 ×\
+    \ 4 bytes = 2 KB per workgroup).\nEach element loaded from global memory is reused by 16 threads in the\nworkgroup, reducing\
+    \ global memory reads by a factor of ~TILE_SIZE = 16.\n\nFor Qwen3-4B FFN down projection (2560×13824 @ 13824×2560):\n\
+    \  Naive: each thread reads 13,824 elements from A and 13,824 from B\n  Tiled: each thread loads 13,824/16 = 864 elements\
+    \ total (shared with 15 others)\n  Bandwidth reduction: ~16×\n"
+  severity: P0
+  critical: true
+  verification: GPU matmul tests verify numerical correctness
+- id: C-TILED-MATMUL-003
+  name: workgroupBarrier synchronization is correct
+  description: "Two workgroupBarrier() calls per tile iteration:\n1. After loading tiles: ensures all 256 threads have written\
+    \ their tile\n   elements before any thread reads from shared memory\n2. After computing partial products: ensures all\
+    \ threads have finished\n   reading from the current tile before any thread overwrites with the\n   next tile\n\nWithout\
+    \ barrier 1: data races on tile_a/tile_b reads\nWithout barrier 2: data races on tile_a/tile_b writes\n"
+  severity: P0
+  critical: true
+  verification: Correctness verified by matmul unit tests on GPU
+- id: C-TILED-MATMUL-004
+  name: Boundary handling for non-multiple-of-16 dimensions
+  description: 'When M, K, or N are not multiples of 16, boundary threads load 0.0
+
+    into shared memory tiles. This is equivalent to zero-padding:
+
+    - A tile: if row >= M or a_col >= K, store 0.0
+
+    - B tile: if b_row >= K or col >= N, store 0.0
+
+
+    The final write also bounds-checks: only threads with
+
+    row < M && col < N write to the output buffer.
+
+
+    This handles all dimension combinations without extra dispatch logic.
+
+    '
+  severity: P0
+  critical: true
+  verification: test_gpu_matmul_non_square (2×3 @ 3×2)
+dispatch:
+- id: C-TILED-DISPATCH-001
+  name: Workgroup dispatch formula unchanged
+  description: 'Dispatch: ceil(M/16) × ceil(N/16) × 1 workgroups
+
+    Workgroup size: 16 × 16 = 256 threads
+
+
+    Both dispatch paths (standalone matmul_async and batched execute_matmul_op)
+
+    use this formula. The tiled shader is a drop-in replacement — no dispatch
+
+    code changes needed.
+
+    '
+  severity: P0
+  critical: true
+impact:
+- id: C-TILED-IMPACT-001
+  name: Expected 5–15× speedup for large matmuls
+  description: "The naive shader is bandwidth-bound: each thread reads the entire K\ndimension from global memory independently.\
+    \ The tiled shader makes\neach workgroup cooperative: 256 threads share 2 KB of tile data.\n\nFor Qwen3-4B FFN matmuls\
+    \ (2560×13824, 2560×2560):\n  Naive: ~5-10% GPU ALU utilization (memory bandwidth bottleneck)\n  Tiled: ~60-80% GPU ALU\
+    \ utilization (compute-bound)\n  Expected speedup: 5–15× depending on GPU memory hierarchy\n\nFor the full forward pass\
+    \ (4 FFN matmuls × 36 layers = 144 matmuls):\n  Naive: ~10s per forward pass on Radeon Pro W5700X\n  Tiled: ~1-2s per\
+    \ forward pass (estimated)\n"
+  severity: P0
+  critical: true
+proof_obligations:
+- id: PO-TILED-MATMUL-001
+  name: Tiled matmul numerical equivalence
+  property: 'For all matrices A(M×K) and B(K×N): tiled_matmul(A, B) produces
+    the same result as naive_matmul(A, B) within f32 epsilon tolerance,
+    regardless of whether M, K, N are multiples of TILE_SIZE=16.'
+  type: equivalence
+  severity: P0
+  status: specified
+- id: PO-TILED-MATMUL-002
+  name: Barrier correctness prevents data races
+  property: 'For all tile iterations t in 0..ceil(K/16): workgroupBarrier()
+    after tile load ensures all 256 threads have written shared memory before
+    any thread reads; workgroupBarrier() after accumulation ensures all
+    threads finish reading before the next tile overwrites shared memory.'
+  type: invariant
+  severity: P0
+  status: specified
+- id: PO-TILED-MATMUL-003
+  name: Boundary threads produce zero contribution
+  property: 'For all threads where row >= M or col >= N: the thread loads 0.0
+    into shared memory tiles and does not write to the output buffer,
+    ensuring zero-padding equivalence without corrupting results.'
+  type: invariant
+  severity: P0
+  status: specified
+kani_harnesses:
+- id: KH-TILED-MATMUL-001
+  name: verify_tiled_equals_naive
+  description: 'For symbolically bounded M, K, N in 1..=32, verify that
+    tiled_matmul output matches naive_matmul output element-wise within
+    1e-5 relative tolerance.'
+  obligation: PO-TILED-MATMUL-001
+  bound: 8
+  status: specified
+- id: KH-TILED-MATMUL-002
+  name: verify_boundary_zero_padding
+  description: 'For M, K, N not divisible by 16, verify that boundary threads
+    contribute exactly 0.0 to shared memory and that no out-of-bounds
+    write occurs in the output buffer.'
+  obligation: PO-TILED-MATMUL-003
+  bound: 8
+  status: specified
+falsification_tests:
+- id: FT-TILED-MATMUL-001
+  rule: Non-tile-aligned dimensions correctness
+  prediction: M=17,K=33,N=7 tiled matmul matches naive CPU within 1e-4
+  test: Run tiled matmul with non-aligned dims, compare against naive
+  if_fails: Boundary padding or tile indexing bug
+- id: FT-TILED-MATMUL-002
+  rule: Single element extreme boundary
+  prediction: M=1,K=1,N=1 result equals a[0]*b[0] exactly
+  test: Run tiled matmul with 1x1x1, verify exact equality
+  if_fails: Edge case handling in tile dispatch
+equations:
+  tiled_naive_equivalence:
+    formula: "|tiled_matmul(A, B) - naive_matmul(A, B)| < n * f32::EPSILON"
+    domain: Matrices A(M×K), B(K×N)
+    codomain: Matrix C(M×N)
+    invariants:
+    - Tiled result matches naive within f32 epsilon
+    - Boundary zero-padding is equivalent to explicit zero-fill
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    postconditions:
+    - result.iter().all(|v| v.is_finite())
+    tolerance: 1.0e-4
+    lean_theorem: Theorems.TiledNaiveEquivalence
+  barrier_correctness:
+    formula: "Two barriers per tile: load-barrier + compute-barrier prevent data races"
+    domain: Workgroup of 256 threads
+    codomain: Race-free shared memory access
+    preconditions:
+    - "TILE_SIZE == 16"
+    lean_theorem: Theorems.BarrierCorrectness
+qa_gate:
+  id: F-TMSV-001
+  name: tiled-matmul-shader-v1 Contract
+  description: Quality gate for 16×16 shared memory tiled matmul shader — reduces global mem
+  checks:
+  - validation
+  - falsification

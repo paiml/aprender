@@ -1,0 +1,194 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Quantization/dequantization roundtrip contract — verifies that
+    quant→dequant preserves weight values within quantization error
+    bounds for Q4_0, Q4K, Q6K, Q8_0, and NF4 formats.
+  references:
+  - 'Dettmers et al. (2023) QLoRA: NF4 quantization with double quantization'
+  - 'GGML quantization spec — block-based quantization with per-block scale'
+  - 'trueno/src/backends/q4k/ — Q4K quantization implementation'
+  depends_on:
+  - neon-dequant-v1
+
+equations:
+  q4_0_roundtrip:
+    formula: |
+      forall x in f32^32:
+        block = quantize_q4_0(x)
+        y = dequantize_q4_0(block)
+        MSE(x, y) < (scale/8)^2  (4-bit: 16 levels, error ≤ scale/16)
+    domain: 32-element f32 block
+    codomain: 32-element dequantized f32 block
+    invariants:
+    - Block size is always 32 elements
+    - Scale factor is max(|x|) / 7.5
+    - Quantized values are 4-bit unsigned (0-15)
+    - MSE bounded by quantization step size squared
+    preconditions:
+    - x.len() == 32
+    - x.iter().all(|v| v.is_finite())
+    postconditions:
+    - y.len() == 32
+    - MSE(x, y) < expected_error_bound
+    lean_theorem: Theorems.Q4_0Roundtrip
+
+  q4k_roundtrip:
+    formula: |
+      forall x in f32^256:
+        block = quantize_q4k(x)
+        y = dequantize_q4k(block)
+        MSE(x, y) < (d * 8)^2 / 256  (Q4K: scale + min per super-block)
+    domain: 256-element f32 super-block
+    codomain: 256-element dequantized f32 super-block
+    invariants:
+    - Super-block contains 8 sub-blocks of 32 elements
+    - Each sub-block has 6-bit scale and 6-bit min
+    - Per-element error bounded by sub-block scale
+    preconditions:
+    - x.len() == 256
+    - x.iter().all(|v| v.is_finite())
+    postconditions:
+    - y.len() == 256
+    - cosine_similarity(x, y) > 0.99
+    tolerance: 0.01
+    lean_theorem: Theorems.Q4kRoundtrip
+
+  q6k_roundtrip:
+    formula: |
+      forall x in f32^256:
+        block = quantize_q6k(x)
+        y = dequantize_q6k(block)
+        MSE(x, y) < (d * 2)^2 / 256  (Q6K: 64 levels, tighter than Q4K)
+    domain: 256-element f32 super-block
+    codomain: 256-element dequantized f32 super-block
+    invariants:
+    - 6-bit quantization gives 64 levels (vs 16 for Q4)
+    - Error bound ~4x tighter than Q4K
+    - 6-bit extraction must use correct masks (GH-646 root cause)
+    preconditions:
+    - x.len() == 256
+    - x.iter().all(|v| v.is_finite())
+    postconditions:
+    - cosine_similarity(x, y) > 0.999
+    tolerance: 0.001
+    lean_theorem: Theorems.Q6kRoundtrip
+
+  nf4_codebook_bijectivity:
+    formula: |
+      NF4_LUT: [f32; 16] is a sorted, distinct set of values
+      forall i in 0..16: quantize_nf4(NF4_LUT[i]) == i
+      forall i != j: NF4_LUT[i] != NF4_LUT[j]
+    domain: NF4 codebook (16 quantization centroids)
+    codomain: Index in [0, 15]
+    invariants:
+    - Codebook is sorted (binary search works)
+    - Codebook values are distinct (bijective mapping)
+    - Codebook is symmetric around 0 (normalized float distribution)
+    preconditions:
+    - codebook.len() == 16
+    postconditions:
+    - roundtrip(codebook[i]) == i for all i
+    lean_theorem: Theorems.Nf4CodebookBijectivity
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify input block size, finiteness
+  - name: execute
+    description: Quantize then dequantize
+  - name: verify_output
+    description: Check MSE, cosine similarity, bijectivity
+
+proof_obligations:
+- type: bound
+  property: Q4_0 roundtrip MSE bounded
+  formal: 'MSE(x, dequant(quant(x))) < (max(|x|)/7.5/8)^2'
+  tolerance: 0.01
+  applies_to: q4_0_roundtrip
+  lean:
+    theorem: Theorems.Q4_0Roundtrip
+    status: sorry
+- type: bound
+  property: Q4K cosine similarity > 0.99
+  formal: 'cos(x, dequant_q4k(quant_q4k(x))) > 0.99'
+  tolerance: 0.01
+  applies_to: q4k_roundtrip
+  lean:
+    theorem: Theorems.Q4kRoundtrip
+    status: sorry
+- type: bound
+  property: Q6K cosine similarity > 0.999
+  formal: 'cos(x, dequant_q6k(quant_q6k(x))) > 0.999'
+  tolerance: 0.001
+  applies_to: q6k_roundtrip
+  lean:
+    theorem: Theorems.Q6kRoundtrip
+    status: sorry
+- type: invariant
+  property: NF4 codebook is bijective
+  formal: 'forall i: quantize_nf4(NF4_LUT[i]) == i'
+  applies_to: nf4_codebook_bijectivity
+  lean:
+    theorem: Theorems.Nf4CodebookBijectivity
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-QROUND-001
+  rule: Q4_0 roundtrip bounded
+  prediction: Roundtrip MSE < error bound for random f32 block
+  test: Generate 100 random blocks, roundtrip, assert MSE bounded
+  if_fails: Q4_0 quantization loses too much precision
+- id: FALSIFY-QROUND-002
+  rule: Q4K cosine > 0.99
+  prediction: Q4K roundtrip preserves vector direction
+  test: Roundtrip random 256-element block, check cosine similarity
+  if_fails: Q4K scale/min computation corrupts values
+- id: FALSIFY-QROUND-003
+  rule: Q6K cosine > 0.999
+  prediction: Q6K has higher fidelity than Q4K
+  test: Roundtrip same block through Q4K and Q6K, Q6K must be tighter
+  if_fails: Q6K 6-bit extraction produces worse results than Q4K
+- id: FALSIFY-QROUND-004
+  rule: NF4 codebook bijective
+  prediction: quantize(NF4_LUT[i]) == i for all 16 entries
+  test: Roundtrip each codebook entry, assert exact index recovery
+  if_fails: NF4 codebook has non-monotonic or duplicate entries
+
+kani_harnesses:
+- id: KANI-QROUND-001
+  obligation: Q4_0 roundtrip MSE bounded
+  property: 'MSE < error_bound'
+  bound: 32
+  strategy: bounded_int
+  harness: verify_q4_0_roundtrip
+- id: KANI-QROUND-002
+  obligation: Q4K cosine similarity > 0.99
+  property: 'cos > 0.99'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_q4k_roundtrip
+- id: KANI-QROUND-003
+  obligation: Q6K cosine similarity > 0.999
+  property: 'cos > 0.999'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_q6k_roundtrip
+- id: KANI-QROUND-004
+  obligation: NF4 codebook is bijective
+  property: 'roundtrip(codebook[i]) == i'
+  bound: 16
+  strategy: exhaustive
+  harness: verify_nf4_bijective
+
+qa_gate:
+  id: F-QROUND-GATE
+  name: Quantization Roundtrip Contract
+  description: Quality gate for quant/dequant fidelity
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 4 falsification tests pass

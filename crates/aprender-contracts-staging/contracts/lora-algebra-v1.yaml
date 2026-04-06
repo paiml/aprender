@@ -1,0 +1,169 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: SVD LoRA extraction and merge strategy algebra
+  references:
+  - 'Hu et al. (2021) LoRA: Low-Rank Adaptation'
+  - Eckart-Young-Mirsky theorem (1936)
+  - Yadav et al. (2023) TIES-Merging
+  - 'Yu et al. (2023) DARE: Language Models are Super Mario'
+  - Qwen3.5 Fine-Tune Spec Phase 2
+equations:
+  task_vector:
+    formula: delta = W_fine - W_base
+    domain: W_fine, W_base ∈ ℝ^{m×n}
+    codomain: delta ∈ ℝ^{m×n}
+    invariants:
+    - 'Additive: W_base + delta == W_fine (roundtrip)'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Task_Vector
+  eckart_young:
+    formula: '||delta - delta_r||_F <= sigma_{r+1}'
+    domain: delta_r = U_r @ diag(sigma_1..r) @ V_r^T, rank-r truncated SVD
+    codomain: '||error||_F ∈ [0, sigma_{r+1}]'
+    invariants:
+    - Error bounded by (r+1)-th singular value
+    - Rank-r approximation is optimal in Frobenius norm
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Eckart_Young
+  lora_shape:
+    formula: A ∈ ℝ^{m×r}, B ∈ ℝ^{r×n}, A @ B ∈ ℝ^{m×n}
+    domain: r << min(m, n)
+    invariants:
+    - A @ B has same shape as original weight
+    - 'Storage: r*(m+n) << m*n for small r'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lora_Shape
+  dare_unbiased:
+    formula: E[DARE(delta, p)] = delta
+    domain: p ∈ (0, 1), dropout probability
+    codomain: Expected value preserves delta
+    invariants:
+    - After drop with probability p, rescale by 1/(1-p)
+    - Unbiased estimator of delta
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Dare_Unbiased
+  shape_preservation:
+    formula: shape(merged[t]) == shape(base[t]) for all tensors t
+    domain: Any merge strategy
+    invariants:
+    - Merge never changes tensor shapes
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Shape_Preservation
+proof_obligations:
+- type: invariant
+  property: Task vector roundtrip
+  formal: base + (fine - base) == fine within ULP
+  applies_to: all
+- type: bound
+  property: Eckart-Young bound
+  formal: '||M - M_r||_F <= sigma_{r+1}'
+  applies_to: all
+- type: invariant
+  property: LoRA shape compatibility
+  formal: A=[m,r], B=[r,n] => A@B=[m,n]
+  applies_to: all
+- type: invariant
+  property: DARE unbiasedness
+  formal: E[DARE(delta, p)] = delta
+  applies_to: all
+- type: invariant
+  property: Shape preservation
+  formal: merged shape == base shape
+  applies_to: all
+- type: equivalence
+  property: SIMD LoRA equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-LA-001
+  rule: Task vector roundtrip
+  prediction: base + delta == fine_tune for random matrices
+  test: proptest with random float matrices
+  if_fails: Floating-point non-associativity in large matrices
+- id: FALSIFY-LA-002
+  rule: Eckart-Young
+  prediction: Truncation error <= next singular value
+  test: proptest with small random matrices, compute SVD
+  if_fails: SVD implementation error
+- id: FALSIFY-LA-003
+  rule: Shape compatibility
+  prediction: LoRA decomposition preserves output shape
+  test: proptest with random dimensions
+  if_fails: Dimension mismatch in matmul
+- id: FALSIFY-LA-004
+  rule: DARE unbiased
+  prediction: Mean of 1000 DARE samples ≈ delta
+  test: proptest with statistical tolerance
+  if_fails: Rescaling factor wrong
+- id: FALSIFY-LA-005
+  rule: Shape preservation
+  prediction: W + BA has same shape as W
+  test: 'proptest: verify shape(W + B@A) == shape(W)'
+  if_fails: LoRA rank dimensions incompatible
+- id: FALSIFY-LA-006
+  rule: SIMD LoRA equivalence
+  prediction: SIMD LoRA application matches scalar
+  test: 'proptest: compare scalar vs SIMD LoRA forward'
+  if_fails: SIMD LoRA accumulation order differs
+kani_harnesses:
+- id: KANI-LA-001
+  obligation: LA-INV-001
+  property: Shape compatibility for bounded dimensions
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_lora_shape
+- id: KANI-LORA_A-002
+  obligation: Task vector roundtrip
+  property: Task vector roundtrip
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LORA_A-003
+  obligation: Eckart-Young bound
+  property: Eckart-Young bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-LORA_A-004
+  obligation: LoRA shape compatibility
+  property: LoRA shape compatibility
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LORA_A-005
+  obligation: DARE unbiasedness
+  property: DARE unbiasedness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LORA_A-006
+  obligation: Shape preservation
+  property: Shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LORA_A-007
+  obligation: SIMD LoRA equivalence
+  property: SIMD LoRA equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-LA-001
+  name: LoRA Algebra Contract
+  description: SVD extraction and merge strategy quality gate
+  checks:
+  - task_vector_roundtrip
+  - eckart_young_bound
+  - shape_compatibility
+  - dare_unbiased
+  - shape_preservation
+  pass_criteria: All 6 falsification tests pass
+  falsification: Use rank > min(m,n) to break SVD truncation

@@ -1,0 +1,147 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: ARIMA -- Autoregressive Integrated Moving Average time series forecasting
+  references:
+  - 'Box & Jenkins (1970) Time Series Analysis: Forecasting and Control'
+  - Hamilton (1994) Time Series Analysis, Ch. 3-5
+equations:
+  ar_forecast:
+    formula: y_hat_t = sum_{i=1}^{p} phi_i * y_{t-i}
+    domain: phi in R^p, y in R^T, t > p
+    codomain: y_hat_t in R
+    invariants:
+    - Forecast is a finite linear combination of past observations
+    - Deterministic given fixed parameters and history
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ar_Forecast
+  differencing:
+    formula: Delta^d y_t = sum_{k=0}^{d} C(d,k) * (-1)^k * y_{t-k}
+    domain: y in R^T, d in {0, 1, 2}
+    codomain: Delta^d y in R^{T-d}
+    invariants:
+    - d-th order differencing reduces series length by d
+    - d=0 is identity (no differencing)
+    - Output length = T - d
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Differencing
+  ma_filter:
+    formula: epsilon_weighted = sum_{j=1}^{q} theta_j * epsilon_{t-j}
+    domain: theta in R^q, epsilon in R^T (residuals)
+    codomain: epsilon_weighted in R
+    invariants:
+    - MA component is a finite weighted sum of past residuals
+    - Deterministic given fixed parameters and residuals
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ma_Filter
+  forecast_finite:
+    formula: y_hat_{T+h} in R for h = 1, ..., n_periods
+    domain: fitted ARIMA(p,d,q) model, n_periods >= 1
+    codomain: forecasts in R^{n_periods}, all finite
+    invariants:
+    - Forecast length exactly equals n_periods
+    - All forecast values are finite (no NaN, no Inf)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Forecast_Finite
+proof_obligations:
+- type: invariant
+  property: Forecast length equals n_periods
+  formal: '|forecast(model, n_periods)| = n_periods'
+  applies_to: all
+- type: bound
+  property: All forecasts finite
+  formal: 'forall h in 1..n_periods: |y_hat_{T+h}| < infinity'
+  applies_to: all
+- type: invariant
+  property: Differencing reduces order
+  formal: '|Delta^d y| = |y| - d'
+  applies_to: all
+- type: invariant
+  property: Forecast deterministic
+  formal: forecast(model, n) = forecast(model, n) for same model and data
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ARIMA-001
+  rule: Forecast length
+  prediction: forecast(model, n_periods) returns exactly n_periods values
+  test: 'proptest: fit ARIMA on random stationary series, forecast n_periods, check length'
+  if_fails: Forecast horizon not respected
+- id: FALSIFY-ARIMA-002
+  rule: Forecast finiteness
+  prediction: All forecast values are finite (not NaN, not Inf)
+  test: 'proptest: fit ARIMA on bounded series, forecast, check all values finite'
+  if_fails: Numerical instability in AR/MA recursion
+- id: FALSIFY-ARIMA-003
+  rule: Differencing length
+  prediction: d-th order differencing produces series of length T - d
+  test: 'proptest: generate series of length T, apply differencing d times, check length'
+  if_fails: Off-by-one in differencing implementation
+- id: FALSIFY-ARIMA-004
+  rule: Forecast deterministic
+  prediction: forecast(model, n) = forecast(model, n)
+  test: 'proptest: forecast twice with same model, compare element-wise'
+  if_fails: Non-deterministic state or random initialization leak
+enforcement:
+  forecast_length:
+    description: Forecast must return exactly n_periods values
+    check: contract_tests::FALSIFY-ARIMA-001
+    severity: ERROR
+  forecast_finite:
+    description: All forecast values must be finite
+    check: contract_tests::FALSIFY-ARIMA-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-ARIMA-001
+  obligation: ARIMA-INV-001
+  property: Forecast length equals requested n_periods
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_forecast_length
+- id: KANI-ARIMA-002
+  obligation: ARIMA-BND-001
+  property: All forecast values are finite
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_forecast_finite
+- id: KANI-ARIMA_-003
+  obligation: Forecast length equals n_periods
+  property: Forecast length equals n_periods
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARIMA_-004
+  obligation: All forecasts finite
+  property: All forecasts finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARIMA_-005
+  obligation: Differencing reduces order
+  property: Differencing reduces order
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARIMA_-006
+  obligation: Forecast deterministic
+  property: Forecast deterministic
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ARIMA-001
+  name: ARIMA Contract
+  description: ARIMA time series forecasting correctness quality gate
+  checks:
+  - forecast_length
+  - forecast_finiteness
+  - differencing_length
+  - forecast_deterministic
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: AR recursion diverges producing Inf/NaN forecasts

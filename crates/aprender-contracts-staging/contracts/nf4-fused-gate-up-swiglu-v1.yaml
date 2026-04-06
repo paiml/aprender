@@ -1,0 +1,147 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Fused RMSNorm + Gate + Up + SwiGLU for NF4 quantized weights — 4-way kernel fusion
+    that eliminates 3 kernel launches and 3 intermediate global memory roundtrips per FFN block.
+    Replicates FusedRmsNormGateUpSwigluQ4KKernel (QWEN-009) for NF4 data type.
+    FFN is 2/3 of transformer compute — this fusion has the highest throughput impact.
+  pmat: [PMAT-475]
+  references:
+  - "FusedRmsNormGateUpSwigluQ4KKernel (QWEN-009): proven Q4K 4-way fusion in trueno"
+  - "Shazeer (2020) GLU Variants Improve Transformer"
+  - "Dettmers et al. (2023) QLoRA: NF4 data type"
+  depends_on:
+  - nf4-fused-rmsnorm-gemv-v1.yaml
+  - swiglu-activation-v1.yaml
+
+equations:
+  separate_ffn:
+    formula: |
+      Standard (4 kernels, 3 global memory roundtrips):
+        normed = RMSNorm(x, gamma, epsilon)     # kernel 1
+        gate = NF4_GEMV(W_gate, normed)          # kernel 2, reads normed from DRAM
+        up = NF4_GEMV(W_up, normed)              # kernel 3, reads normed from DRAM AGAIN
+        out = SiLU(gate) * up                    # kernel 4 (SwiGLU activation)
+    domain: x ∈ ℝ^{hidden}, W_gate, W_up ∈ NF4^{intermediate × hidden}
+    codomain: out ∈ ℝ^{intermediate}
+    constants:
+      epsilon: 1.0e-5
+
+  fused_rmsnorm_gate_up_swiglu_nf4:
+    formula: |
+      Fused (1 kernel, zero intermediate roundtrips):
+        # Phase 1: RMSNorm in registers
+        rms = sqrt(reduce_sum(x^2) / hidden + epsilon)
+        normed = x / rms * gamma                  # in registers
+
+        # Phase 2: Dual NF4 GEMV (gate + up) with shared normed input
+        for each output row j:
+          gate_j = sum(nf4_dequant(W_gate[j]) * normed)
+          up_j = sum(nf4_dequant(W_up[j]) * normed)
+
+        # Phase 3: SwiGLU in registers (no write between gate and activation)
+        out_j = silu(gate_j) * up_j               # SiLU = x * sigmoid(x)
+    domain: x ∈ ℝ^{hidden}, W_gate, W_up ∈ NF4^{intermediate × hidden}
+    codomain: out ∈ ℝ^{intermediate}
+    constants:
+      epsilon: 1.0e-5
+    invariants:
+    - Input x loaded from DRAM exactly once (not 2x for gate and up)
+    - NF4 weights loaded from DRAM once each (gate and up are separate weight matrices)
+    - SiLU computed in FP32 registers (no precision loss from intermediate write)
+    - No intermediate global memory allocation for gate, up, or normed outputs
+    preconditions:
+    - hidden divisible by 64 (NF4 block alignment)
+    - intermediate divisible by warp_size
+    postconditions:
+    - out element-wise matches separate_ffn within tolerance
+
+  bandwidth_savings:
+    formula: |
+      separate_bw = hidden * 4 * 2     # normed write+read (RMSNorm→gate)
+                   + hidden * 4         # normed re-read (gate→up, if not cached)
+                   + intermediate * 4 * 2  # gate write+read (gate→SwiGLU)
+                   + intermediate * 4 * 2  # up write+read (up→SwiGLU)
+                   = hidden * 12 + intermediate * 16
+
+      fused_bw = hidden * 4             # x read once
+               + intermediate * 4       # out write once
+               = hidden * 4 + intermediate * 4
+
+      savings = separate_bw - fused_bw
+              = hidden * 8 + intermediate * 12
+
+      For Qwen 1.5B (hidden=1536, intermediate=8960):
+        savings = 1536*8 + 8960*12 = 12,288 + 107,520 = 119,808 bytes per FFN
+        Per layer = 119 KB saved
+        Per forward (28 layers) = 3.3 MB saved
+    domain: bytes
+    constants:
+      qwen_hidden: 1536
+      qwen_intermediate: 8960
+
+proof_obligations:
+- type: equivalence
+  property: Fused FFN matches separate RMSNorm + Gate + Up + SwiGLU
+  formal: '|fused(x) - separate(x)| < ε element-wise'
+  tolerance: 1.0e-4
+  applies_to: all
+- type: bound
+  property: Reduces kernel launches from 4 to 1 per FFN block
+  formal: kernel_count(fused) == 1 AND kernel_count(separate) == 4
+  applies_to: all
+- type: bound
+  property: Memory bandwidth savings >= 100 KB per FFN at Qwen 1.5B dimensions
+  formal: bw_saved >= 100 * 1024 bytes
+  applies_to: fused_rmsnorm_gate_up_swiglu_nf4
+
+falsification_tests:
+- id: F-NF4-FFN-001
+  rule: Fused FFN matches separate RMSNorm + Gate + Up + SwiGLU
+  prediction: Fused FFN output matches separate kernels within 1e-4 tolerance
+  test: Run both paths with Qwen 1.5B dims (hidden=1536, intermediate=8960), compare element-wise
+  if_fails: Check SiLU precision, NF4 scale order, warp reduction correctness
+
+- id: F-NF4-FFN-002
+  rule: Reduces kernel launches from 4 to 1 per FFN block
+  prediction: Fused FFN throughput improvement >= 15%
+  test: Run 100-step APR canary with fused vs separate FFN, compare tok/s
+  if_fails: Memory bandwidth is not the FFN bottleneck — profile for compute saturation
+
+- id: F-NF4-FFN-003
+  rule: Fused FFN matches separate RMSNorm + Gate + Up + SwiGLU
+  prediction: SwiGLU numerical stability in FP32 registers for gate in [-100, 100]
+  test: Verify SiLU(gate) * up matches reference including edge cases (gate=0, -88, 88)
+  if_fails: Use stable SiLU implementation (x * sigmoid(x) with clamped exp)
+
+- id: F-NF4-FFN-004
+  rule: Memory bandwidth savings >= 100 KB per FFN at Qwen 1.5B dimensions
+  prediction: Training backward works with fused forward producing finite non-zero gradients
+  test: Run 10 training steps with fused forward, verify gradients are finite and non-zero
+  if_fails: Fused kernel doesn't save intermediate activations needed for backward
+
+kani_harnesses:
+- id: KANI-NFGS-001
+  obligation: Fused FFN equivalence to separate kernels
+  property: Fused output matches separate within tolerance
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_fused_ffn_equivalence
+- id: KANI-NFGS-002
+  obligation: SwiGLU numerical stability
+  property: SiLU(gate) * up finite for bounded inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_swiglu_stability
+
+qa_gate:
+  id: F-NFGS-001
+  name: nf4-fused-gate-up-swiglu-v1 Contract
+  description: Quality gate for fused RMSNorm + NF4 Gate + Up + SwiGLU
+  checks:
+  - validation
+  - falsification

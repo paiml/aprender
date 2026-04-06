@@ -1,0 +1,157 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: Model Quality Score (MQS) — composite quality metric for ML model certification (QUAL+PERF+STAB+COMP+EDGE+REGR)
+  references:
+  - apr-model-qa-playbook — production model quality assurance pipeline
+  - 'Breck et al. (2017) ML Test Score: A Rubric for ML Production Readiness'
+  - Sculley et al. (2015) Hidden Technical Debt in Machine Learning Systems
+equations:
+  mqs_composite:
+    formula: "mqs: ModelEvidence -> MqsResult\n  MqsResult {\n    raw: f64,        -- sum of dimension scores (0-1050)\n \
+      \   normalized: f64, -- raw / 10.5 mapped to [0, 100]\n    grade: Grade,    -- A+/A/A-/B+/.../F\n    dimensions: DimensionBreakdown,\n\
+      \  }\n  raw = QUAL + PERF + STAB + COMP + EDGE + REGR\n  Where each dimension in [0, 175]:\n    QUAL = quality_checks_passed\
+      \ / quality_checks_total * 175\n    PERF = performance_within_budget ? latency_ratio * 175 : 0\n    STAB = stability_variance\
+      \ < threshold ? (1 - variance/threshold) * 175 : 0\n    COMP = compatibility_checks_passed / compatibility_checks_total\
+      \ * 175\n    EDGE = edge_cases_passed / edge_cases_total * 175\n    REGR = regression_tests_passed / regression_tests_total\
+      \ * 175\n"
+    domain: ModelEvidence with non-negative check counts, dimension totals > 0
+    codomain: MqsResult with raw in [0, 1050], normalized in [0, 100]
+    invariants:
+    - 0 <= raw <= 1050 (6 dimensions * 175 max each)
+    - 0 <= normalized <= 100
+    - raw = sum of all 6 dimension scores
+    - Each dimension score in [0, 175]
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mqs_Composite
+  mqs_deterministic:
+    formula: "deterministic: ModelEvidence -> bool\n  For all e: mqs(e).raw == mqs(e).raw (same evidence, same score)\n"
+    domain: Any valid ModelEvidence
+    codomain: bool = true
+    invariants:
+    - No randomness in scoring pipeline
+    - Floating point operations are deterministic (same platform)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mqs_Deterministic
+  mqs_grade:
+    formula: "grade: normalized -> Grade\n  A+ if normalized >= 97\n  A  if normalized >= 93\n  A- if normalized >= 90\n \
+      \ B+ if normalized >= 85\n  B  if normalized >= 80\n  C  if normalized >= 70\n  D  if normalized >= 60\n  F  otherwise\n"
+    domain: normalized in [0, 100]
+    codomain: Grade in {A+, A, A-, B+, B, C, D, F}
+    invariants:
+    - Grade monotonically non-decreasing with normalized score
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mqs_Grade
+  mqs_pass_rate:
+    formula: "mqs_pass_rate: Vec<MqsResult> -> f64\n  pass_rate = models_passing_all_gates / total_models_evaluated\n  Where\
+      \ passing = normalized >= pass_threshold (default: 70.0)\n"
+    domain: Vec<MqsResult> with len >= 1
+    codomain: pass_rate in [0.0, 1.0]
+    invariants:
+    - pass_rate = 1.0 iff all models pass
+    - pass_rate = 0.0 iff no models pass
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mqs_Pass_Rate
+proof_obligations:
+- type: bound
+  property: MQS raw bounded
+  formal: 0 <= mqs(e).raw <= 1050 for all valid ModelEvidence e
+  applies_to: all
+- type: bound
+  property: MQS normalized bounded
+  formal: 0 <= mqs(e).normalized <= 100 for all valid ModelEvidence e
+  applies_to: all
+- type: invariant
+  property: Deterministic scoring
+  formal: mqs(e1) == mqs(e2) when e1 == e2
+  applies_to: all
+- type: invariant
+  property: Dimension sum
+  formal: raw = QUAL + PERF + STAB + COMP + EDGE + REGR
+  applies_to: all
+- type: monotonicity
+  property: Grade monotonic
+  formal: normalized(a) > normalized(b) => grade(a) >= grade(b)
+  applies_to: all
+- type: postcondition
+  property: Pass rate bounded
+  formal: 0.0 <= mqs_pass_rate(results) <= 1.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MQS-001
+  rule: Raw score bounded
+  prediction: MQS raw score always in [0, 1050]
+  test: proptest with random dimension values in valid ranges
+  if_fails: Dimension weights or normalization incorrect
+- id: FALSIFY-MQS-002
+  rule: Normalized bounded
+  prediction: MQS normalized always in [0, 100]
+  test: proptest with boundary raw scores (0, 1050)
+  if_fails: Normalization divisor incorrect
+- id: FALSIFY-MQS-003
+  rule: Deterministic
+  prediction: Same ModelEvidence always produces same MqsResult
+  test: Replay test with fixed evidence, compare scores
+  if_fails: Non-deterministic state or randomness in scorer
+- id: FALSIFY-MQS-004
+  rule: All-pass yields max raw
+  prediction: Perfect scores in all 6 dimensions yields raw=1050
+  test: Unit test with all checks passing
+  if_fails: Dimension weight calculation error
+- id: FALSIFY-MQS-005
+  rule: Zero checks yields zero
+  prediction: Zero passed checks yields raw=0
+  test: Unit test with all checks failing
+  if_fails: Division by zero or default score not zero
+- id: FALSIFY-MQS-006
+  rule: Pass rate bounded
+  prediction: mqs_pass_rate always in [0.0, 1.0]
+  test: proptest with mixed pass/fail model results
+  if_fails: Pass rate calculation denominator error
+kani_harnesses:
+- id: KANI-MQS-001
+  obligation: MQS raw bounded
+  property: 0 <= raw <= 1050 for all valid inputs
+  bound: 16
+  strategy: exhaustive
+- id: KANI-MQS-002
+  obligation: MQS normalized bounded
+  property: 0 <= normalized <= 100
+  bound: 16
+  strategy: exhaustive
+- id: KANI-MQS-003
+  obligation: Dimension sum
+  property: raw equals sum of 6 dimension scores
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MQS_SC-004
+  obligation: Deterministic scoring
+  property: Deterministic scoring
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MQS_SC-005
+  obligation: Grade monotonic
+  property: Grade monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MQS_SC-006
+  obligation: Pass rate bounded
+  property: Pass rate bounded
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-MSV-001
+  name: mqs-scoring-v1 Contract
+  description: 'Quality gate for Model Quality Score (MQS) — composite quality metric for ML '
+  checks:
+  - validation
+  - falsification

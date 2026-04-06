@@ -1,0 +1,507 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Meta-contract for the pmat work system: Design by Contract for Design by Contract.
+    Encodes the 7 structural invariants that the pmat work DBC engine itself must satisfy:
+    contract immutability, monotonic ledger, falsification completeness, rescue bound,
+    subcontracting soundness, profile determinism, and baseline integrity.
+    Complements work-dbc-v1 (operational lifecycle) with foundational correctness properties.
+  references:
+  - Meyer (1997). Object-Oriented Software Construction. Prentice Hall, Ch. 11 (DbC), Ch. 16 (Inheritance and contracts)
+  - Popper (1959). The Logic of Scientific Discovery. Routledge
+  - Liskov & Wing (1994). A Behavioral Notion of Subtyping. ACM TOPLAS 16(6)
+  - pmat work DBC system v5.0 (Meyer triad, 25 falsification claims)
+  - PMAT-033 contract-first enforcement
+  depends_on:
+  - work-dbc-v1
+  - tdg-scoring-v1
+  - comply-check-v1
+
+equations:
+  contract_immutability:
+    formula: |
+      immutable: (Contract, Time) -> bool
+        Let c = create_contract(work_item, t0)
+        For all t > t0:
+          c.baseline_commit  = c_at_t0.baseline_commit
+          c.baseline_tdg     = c_at_t0.baseline_tdg
+          c.baseline_coverage = c_at_t0.baseline_coverage
+          c.file_manifest    = c_at_t0.file_manifest
+          c.created_at       = c_at_t0.created_at
+        Mutations to baseline fields after creation are REJECTED.
+        Only mutable fields: status, checkpoint_history, rescue_attempts, updated_at.
+    domain: WorkContract created at time t0 with baseline snapshot
+    codomain: bool (true iff baseline fields unchanged since creation)
+    invariants:
+    - Baseline commit SHA is write-once (set at creation, never modified)
+    - Baseline TDG score is write-once
+    - Baseline coverage percentage is write-once
+    - File manifest (set of tracked files) is write-once
+    - created_at timestamp is write-once
+    preconditions:
+    - Contract has been persisted to .pmat-work/{id}/contract.json
+    - Baseline fields are all non-null at creation time
+    postconditions:
+    - Any attempt to modify baseline fields returns ContractViolationError
+    - Checkpoint and complete operations read but never write baseline fields
+    lean_theorem: Theorems.ContractImmutability
+
+  monotonic_ledger:
+    formula: |
+      monotonic: Ledger -> bool
+        Let L = [e_0, e_1, ..., e_n] be the ledger entries
+        Append-only:
+          forall i in 0..n: L[i] at time t is identical to L[i] at time t' > t
+        Monotonic timestamps:
+          forall i < j: e_i.timestamp <= e_j.timestamp
+        No deletion:
+          len(L) at time t' >= len(L) at time t for t' > t
+        No mutation:
+          hash(L[0..n]) at time t = hash(L[0..n]) at time t' (for same prefix)
+        Storage: .pmat-work/{id}/ledger.jsonl (one JSON object per line)
+    domain: Append-only JSONL ledger file
+    codomain: bool (true iff ledger satisfies append-only and monotonic-timestamp properties)
+    invariants:
+    - Entries are never deleted from the ledger
+    - Entries are never modified after append
+    - Timestamps are monotonically non-decreasing
+    - Ledger length is monotonically non-decreasing
+    preconditions:
+    - Ledger file exists (created alongside contract)
+    - Each entry is valid JSON with timestamp, event_type, and payload fields
+    postconditions:
+    - New entry appended at end of file only
+    - Previous entries byte-identical after append
+    - New entry timestamp >= last entry timestamp
+    lean_theorem: Theorems.MonotonicLedger
+
+  falsification_completeness:
+    formula: |
+      complete: (ContractProfile, ClaimSet) -> bool
+        Let postconditions = profile.ensure_clauses ++ profile.invariant_clauses
+        Let claims = profile.falsification_claims
+        forall p in postconditions:
+          exists c in claims: c.tests(p) AND c.prediction is testable
+        Coverage: |{p : exists c testing p}| / |postconditions| = 1.0
+        No postcondition is unfalsifiable (Popper criterion).
+        25 default claims cover all postcondition categories (Pmat profile):
+          ManifestIntegrity, DifferentialCoverage, AbsoluteCoverage,
+          TdgRegression, ComplexityRegression, FileSizeRegression,
+          SpecQuality, RoadmapUpdate, GitHubSync, CoverageGaming,
+          SupplyChainIntegrity, MetaFalsification, ExamplesCompile,
+          BookValidation, SatdDetection, DeadCodeDetection,
+          PerFileCoverage, LintPass, VariantCoverage,
+          FixChainLimit, CrossCrateParity, RegressionGate
+    domain: ContractProfile with ensure and invariant clause lists
+    codomain: bool (true iff every postcondition has at least one falsification claim)
+    invariants:
+    - No postcondition exists without a corresponding falsification test
+    - Adding a new postcondition without a falsification test is rejected
+    - MetaFalsification claim verifies this property reflexively
+    preconditions:
+    - Profile has at least one ensure or invariant clause
+    - All claims have non-empty prediction strings
+    postconditions:
+    - Falsification coverage ratio = 1.0 (complete coverage)
+    - MetaFalsification claim itself is falsifiable (no infinite regress — bounded at one level)
+    lean_theorem: Theorems.FalsificationCompleteness
+
+  rescue_bound:
+    formula: |
+      bounded: (WorkItem, MaxRetries) -> bool
+        Let r = work_item.rescue_attempts
+        Let m = max_retries (default 3)
+        Invariant: 0 <= r <= m
+        On failure:
+          if r < m: r' = r + 1, strategy = Retry
+          if r = m: strategy in {Escalate, Abandon}
+        Termination: after at most m+1 attempts, work item reaches
+          terminal state (Completed, Cancelled) or Escalate.
+        Total cost bounded: wall_time <= (m+1) * single_attempt_budget
+    domain: WorkItem with rescue_attempts counter and max_retries bound
+    codomain: bool (true iff rescue_attempts never exceeds max_retries)
+    invariants:
+    - rescue_attempts is non-negative integer
+    - rescue_attempts <= max_retries at all times
+    - rescue_attempts is monotonically non-decreasing during a work session
+    - After max_retries reached, no further Retry strategy is selected
+    preconditions:
+    - max_retries >= 1 (at least one retry allowed)
+    - rescue_attempts initialized to 0 at contract creation
+    postconditions:
+    - Work item terminates within max_retries + 1 total attempts
+    - Final strategy is one of {Completed, Escalate, Abandon} (never infinite Retry)
+    lean_theorem: Theorems.RescueBound
+
+  subcontracting_soundness:
+    formula: |
+      sound: (ParentProfile, ChildProfile) -> bool
+        Liskov substitution for contract profiles:
+          child.preconditions  <= parent.preconditions   (may weaken, accept more)
+          child.postconditions >= parent.postconditions   (may strengthen, guarantee more)
+        Profile hierarchy:
+          universal <= rust <= pmat <= stack <= custom
+        Soundness:
+          claims(universal) subset claims(rust)
+          claims(rust) subset claims(pmat)
+          claims(pmat) subset claims(stack)
+        A child profile can ADD claims (strengthen postconditions)
+        but CANNOT REMOVE claims inherited from parent (weaken postconditions).
+        Contravariance of preconditions:
+          rust profile does NOT add stricter require clauses than universal
+          (it only adds ensure clauses — more guarantees, not more demands)
+    domain: Two contract profiles in parent-child relationship
+    codomain: bool (true iff child does not weaken parent postconditions)
+    invariants:
+    - Child postconditions are a superset of parent postconditions
+    - Child preconditions are a subset of (or equal to) parent preconditions
+    - Profile composition preserves the subset chain
+    preconditions:
+    - Both profiles are valid (non-empty claim sets)
+    - Parent-child relationship is defined by profile hierarchy
+    postconditions:
+    - No claim present in parent profile is absent in child profile
+    - Substituting child profile for parent never reduces quality guarantees
+    lean_theorem: Theorems.SubcontractingSoundness
+
+  profile_determinism:
+    formula: |
+      deterministic: (ProjectState, ProfileDetector) -> bool
+        Let state = (Cargo.toml, file_tree, .pmat-work/config)
+        Let detect(state) = ProfileName
+        Determinism:
+          detect(state) at time t1 = detect(state) at time t2
+          for all t1, t2 where state is unchanged
+        Detection rules (evaluated in order, first match wins):
+          1. Explicit override in .pmat-work/{id}/contract.json -> Custom
+          2. Cargo.toml with [package] name = "pmat" -> Pmat
+          3. Cargo.toml with workspace.members containing pmat crates -> Stack
+          4. Cargo.toml exists -> Rust
+          5. Otherwise -> Universal
+        No randomness, no environment-dependent branching, no time-dependent logic.
+    domain: Project filesystem state (deterministic snapshot)
+    codomain: bool (true iff same project state always yields same profile)
+    invariants:
+    - Profile detection is a pure function of project filesystem state
+    - No environment variables influence detection (PATH, HOME, etc.)
+    - No timestamp or random seed influences detection
+    - Detection order is fixed (explicit > pmat > stack > rust > universal)
+    preconditions:
+    - Project directory exists and is readable
+    - At least one detection rule matches (universal is the catch-all)
+    postconditions:
+    - Exactly one profile is selected (no ambiguity)
+    - Two calls with identical filesystem state return identical profile
+    lean_theorem: Theorems.ProfileDeterminism
+
+  baseline_integrity:
+    formula: |
+      integrity: (Contract, GitRepo) -> bool
+        Let c = contract created at time t0
+        Let sha = git_rev_parse("HEAD") at time t0
+        Integrity:
+          c.baseline_commit = sha
+          verify_commit_exists(c.baseline_commit, repo) = true
+          c.baseline_commit is a valid 40-char hex SHA-1
+        Cross-validation:
+          files_at(c.baseline_commit) superset c.file_manifest
+          tdg_at(c.baseline_commit) = c.baseline_tdg (within epsilon)
+          coverage_at(c.baseline_commit) = c.baseline_coverage (within epsilon)
+        Tamper detection:
+          if contract.json modified externally (mtime changed without ledger entry),
+          then checkpoint detects integrity violation
+    domain: WorkContract with baseline_commit field and git repository
+    codomain: bool (true iff baseline_commit matches actual git state at creation)
+    invariants:
+    - baseline_commit is a valid git commit SHA that exists in the repository
+    - baseline_commit matches HEAD at the moment of contract creation
+    - File manifest is consistent with files tracked at baseline_commit
+    - TDG and coverage baselines are reproducible from baseline_commit
+    preconditions:
+    - Git repository is initialized and has at least one commit
+    - HEAD is not detached (or if detached, SHA is still valid)
+    postconditions:
+    - contract.baseline_commit = git rev-parse HEAD (at creation time)
+    - git cat-file -t contract.baseline_commit = "commit"
+    - Subsequent checkpoints can verify baseline was not tampered with
+    lean_theorem: Theorems.BaselineIntegrity
+
+proof_obligations:
+- type: invariant
+  property: Contract immutability — baseline fields are write-once
+  formal: >
+    forall c : Contract, t t' : Time, t < t'.
+    c.baseline_commit(t) = c.baseline_commit(t') AND
+    c.baseline_tdg(t) = c.baseline_tdg(t') AND
+    c.baseline_coverage(t) = c.baseline_coverage(t') AND
+    c.file_manifest(t) = c.file_manifest(t')
+  applies_to: all
+
+- type: invariant
+  property: Monotonic ledger — append-only with non-decreasing timestamps
+  formal: >
+    forall L : Ledger, i j : Nat, i < j.
+    L[i].timestamp <= L[j].timestamp AND
+    len(L) is monotonically non-decreasing AND
+    forall k < len(L_old). L_new[k] = L_old[k]
+  applies_to: all
+
+- type: postcondition
+  property: Falsification completeness — every postcondition has a falsification test
+  formal: >
+    forall p : Postcondition in profile.ensure ++ profile.invariant.
+    exists c : Claim in profile.claims. c.covers(p) AND c.prediction != ""
+  applies_to: all
+  requires: profile has at least one ensure or invariant clause
+
+- type: termination
+  property: Rescue bound — at most max_retries retries before escalation
+  formal: >
+    forall w : WorkItem.
+    0 <= w.rescue_attempts <= w.max_retries AND
+    w.rescue_attempts = w.max_retries -> strategy(w) in {Escalate, Abandon}
+  applies_to: all
+
+- type: postcondition
+  property: Subcontracting soundness — child cannot weaken parent postconditions
+  formal: >
+    forall parent child : Profile, parent <= child in hierarchy.
+    claims(parent) subset claims(child) AND
+    forall claim in claims(parent). claim in claims(child)
+  applies_to: all
+
+- type: invariant
+  property: Profile determinism — same state yields same profile
+  formal: >
+    forall s : ProjectState, t1 t2 : Time.
+    state(t1) = state(t2) -> detect(state(t1)) = detect(state(t2))
+  applies_to: all
+
+- type: precondition
+  property: Baseline integrity — commit SHA matches git HEAD at creation
+  formal: >
+    forall c : Contract.
+    c.baseline_commit = git_rev_parse("HEAD", c.created_at) AND
+    git_object_exists(c.baseline_commit) = true
+  applies_to: all
+
+kani_harnesses:
+- id: KANI-PWLC-001
+  obligation: Contract immutability
+  property: Baseline fields unchanged after creation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_contract_immutability
+  description: >
+    Create contract, simulate checkpoint and complete operations,
+    assert all baseline fields are bitwise identical to creation values.
+
+- id: KANI-PWLC-002
+  obligation: Monotonic ledger
+  property: Append-only with non-decreasing timestamps
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ledger_monotonic
+  description: >
+    Symbolically generate sequence of ledger appends,
+    verify prefix preservation and timestamp monotonicity after each append.
+
+- id: KANI-PWLC-003
+  obligation: Rescue bound termination
+  property: rescue_attempts <= max_retries always holds
+  bound: 8
+  strategy: exhaustive
+  harness: verify_rescue_bound
+  description: >
+    Symbolically choose max_retries in [1..8], simulate failure loop,
+    verify rescue_attempts never exceeds bound and terminal strategy selected.
+
+- id: KANI-PWLC-004
+  obligation: Subcontracting soundness
+  property: Child profile claims superset of parent claims
+  bound: 8
+  strategy: exhaustive
+  harness: verify_subcontracting_soundness
+  description: >
+    For each adjacent pair in profile hierarchy (universal<=rust<=pmat<=stack),
+    verify claims(parent) is strict subset of claims(child).
+
+- id: KANI-PWLC-005
+  obligation: Profile determinism
+  property: Same inputs produce same profile selection
+  bound: 8
+  strategy: exhaustive
+  harness: verify_profile_determinism
+  description: >
+    Symbolically generate project state, call detect() twice,
+    assert results are identical.
+
+- id: KANI-PWLC-006
+  obligation: Baseline integrity
+  property: baseline_commit is valid 40-char hex SHA
+  bound: 8
+  strategy: exhaustive
+  harness: verify_baseline_integrity
+  description: >
+    Symbolically generate commit SHA, verify format validation
+    rejects invalid lengths and non-hex characters.
+
+- id: KANI-PWLC-007
+  obligation: Falsification completeness
+  property: No postcondition without falsification claim
+  bound: 8
+  strategy: exhaustive
+  harness: verify_falsification_completeness
+  description: >
+    Symbolically generate profile with N postconditions and M claims,
+    verify coverage ratio = 1.0 only when every postcondition is mapped.
+
+falsification_tests:
+- id: FALSIFY-PWLC-001
+  rule: Contract immutability
+  prediction: >
+    Modifying baseline_commit after contract creation returns ContractViolationError;
+    contract.json baseline fields are byte-identical before and after checkpoint.
+  test: >
+    Create contract with known baseline. Run pmat work checkpoint.
+    Read contract.json, verify baseline_commit, baseline_tdg, baseline_coverage,
+    file_manifest, and created_at are unchanged. Then attempt programmatic
+    mutation of baseline_commit — verify it is rejected or has no effect.
+  if_fails: >
+    Baseline fields are mutable after creation. Contract checkpoint or complete
+    is overwriting baseline snapshot, violating write-once semantics.
+
+- id: FALSIFY-PWLC-002
+  rule: Monotonic ledger
+  prediction: >
+    After N append operations, ledger has exactly N entries.
+    Entries 0..N-1 are byte-identical to their state after initial append.
+    Entry timestamps are monotonically non-decreasing.
+  test: >
+    Create work item. Run start, checkpoint, checkpoint, complete (4 events).
+    After each operation, snapshot ledger.jsonl. Verify each snapshot is a
+    prefix of the next. Verify no entry is modified between snapshots.
+    Verify timestamp ordering across all entries.
+  if_fails: >
+    Ledger is not truly append-only. Operations may be overwriting previous
+    entries or inserting out of order. Check for file truncation or rewrite.
+
+- id: FALSIFY-PWLC-003
+  rule: Falsification completeness
+  prediction: >
+    For the pmat profile, every ensure and invariant clause maps to at least
+    one of the 22 falsification claims. Coverage ratio = 1.0.
+  test: >
+    Load pmat profile definition. Enumerate all ensure and invariant clauses.
+    For each clause, verify at least one claim in the active claim set has
+    a falsification_method that exercises that clause. Report any unmapped
+    postconditions.
+  if_fails: >
+    A postcondition exists without falsification coverage. The contract has
+    an untestable guarantee, violating the Popperian falsifiability criterion.
+    Add a new claim to cover the gap.
+
+- id: FALSIFY-PWLC-004
+  rule: Rescue bound
+  prediction: >
+    With max_retries=3, after 3 failed rescue attempts, the 4th failure
+    triggers Escalate or Abandon — never a 4th Retry.
+  test: >
+    Create work item with max_retries=3. Simulate 4 consecutive failures
+    by injecting a claim that always returns Falsified. After each failure,
+    record rescue_attempts and strategy. Verify attempts sequence is
+    [1, 2, 3] with Retry, then 4th returns Escalate or Abandon.
+  if_fails: >
+    Rescue counter not incrementing, not checked, or Retry selected beyond
+    max_retries. Potential infinite retry loop in production.
+
+- id: FALSIFY-PWLC-005
+  rule: Subcontracting soundness
+  prediction: >
+    claims(universal) is a strict subset of claims(rust), which is a strict
+    subset of claims(pmat). No claim in a parent profile is absent in its child.
+  test: >
+    Instantiate universal, rust, and pmat profiles. Extract active claim sets.
+    Verify set inclusion: universal.claims subset rust.claims subset pmat.claims.
+    Attempt to create a custom child profile that removes a parent claim —
+    verify this is rejected.
+  if_fails: >
+    Profile inheritance violates Liskov substitution. A child profile silently
+    drops parent guarantees, meaning substituting child for parent weakens
+    quality enforcement. Fix profile composition logic.
+
+- id: FALSIFY-PWLC-006
+  rule: Profile determinism
+  prediction: >
+    Running profile detection 100 times on the same project directory
+    (without filesystem changes) produces the same ProfileName every time.
+  test: >
+    Fix a project directory with known Cargo.toml. Run detect_profile()
+    100 times in a loop. Collect all results into a HashSet. Verify
+    set cardinality = 1 (all identical). Repeat with each detection rule
+    tier (no Cargo.toml, pmat Cargo.toml, workspace Cargo.toml).
+  if_fails: >
+    Profile detection depends on non-deterministic input (environment variable,
+    timestamp, file enumeration order). Audit detect_profile() for any source
+    of randomness or external state dependency.
+
+- id: FALSIFY-PWLC-007
+  rule: Baseline integrity
+  prediction: >
+    contract.baseline_commit equals git rev-parse HEAD at the moment
+    pmat work start was invoked. The commit exists in the repository
+    and is a valid 40-character hexadecimal SHA-1.
+  test: >
+    Record HEAD=$(git rev-parse HEAD) immediately before pmat work start.
+    After start, read contract.json and extract baseline_commit.
+    Verify baseline_commit = HEAD. Verify git cat-file -t baseline_commit
+    returns "commit". Verify baseline_commit matches /^[0-9a-f]{40}$/.
+  if_fails: >
+    Baseline commit does not match actual HEAD. Possible causes: race condition
+    between SHA capture and contract write, or contract reading a stale/cached
+    value. Contract quality metrics would be measured against wrong baseline.
+
+- id: FALSIFY-PWLC-008
+  rule: Contract immutability (tamper detection)
+  prediction: >
+    If contract.json is externally modified (baseline_tdg changed by hand),
+    the next pmat work checkpoint detects the tampering and reports an
+    integrity violation.
+  test: >
+    Create contract. Record original baseline_tdg. Manually edit contract.json
+    to change baseline_tdg from 85.0 to 99.0. Run pmat work checkpoint.
+    Verify checkpoint returns integrity error or warning indicating baseline
+    mismatch.
+  if_fails: >
+    No tamper detection on contract.json. External modifications go unnoticed,
+    allowing baseline inflation. Add checksum or HMAC to contract file.
+
+- id: FALSIFY-PWLC-009
+  rule: Monotonic ledger (concurrent append safety)
+  prediction: >
+    Two concurrent ledger appends do not corrupt the file or interleave
+    JSON entries. Each entry is a complete, parseable JSON line.
+  test: >
+    Spawn two threads that each append 100 entries to the same ledger file
+    simultaneously. After both complete, read ledger.jsonl line by line.
+    Verify every line parses as valid JSON. Verify total entries = 200.
+    Verify no partial or garbled lines.
+  if_fails: >
+    Ledger appends are not atomic. File locking or buffered writes may
+    cause partial line interleaving. Add flock() or use atomic append mode.
+
+qa_gate:
+  id: F-PWLC-001
+  name: pmat-work-lifecycle-v1 Contract
+  description: >
+    Quality gate for pmat work lifecycle meta-contract.
+    Validates the 7 structural invariants that the DBC engine itself must satisfy:
+    contract immutability, monotonic ledger, falsification completeness, rescue bound,
+    subcontracting soundness, profile determinism, and baseline integrity.
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 9 falsification tests pass, all 7 kani harnesses verify
+  falsification: FALSIFY-PWLC-001 through FALSIFY-PWLC-009

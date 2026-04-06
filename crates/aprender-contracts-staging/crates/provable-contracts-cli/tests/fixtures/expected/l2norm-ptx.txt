@@ -1,0 +1,47 @@
+//
+// PTX kernel stub: l2norm-kernel-v1
+// L2 norm kernel — Euclidean vector length
+// Equation l2norm: ||x|| = sqrt(Σ x_i²)
+//
+
+.version 8.5
+.target sm_90
+.address_size 64
+
+.visible .entry l2norm(
+    .param .u64 input,
+    .param .u64 output,
+    .param .u32 n
+)
+{
+    .reg .u32 %tid, %n;
+    .reg .u64 %in_ptr, %out_ptr;
+    .reg .f32 %val, %acc;
+
+    ld.param.u64 %in_ptr, [input];
+    ld.param.u64 %out_ptr, [output];
+    ld.param.u32 %n, [n];
+
+    mov.u32 %tid, %ctaid.x;
+    mad.lo.u32 %tid, %tid, %ntid.x, %tid.x;
+
+    // Phase 1: square
+    // Compute x_i²
+    // Invariant: sq_i ≥ 0
+
+    // Phase 2: sum
+    // Accumulate Σ sq_i
+    // Invariant: total ≥ 0
+
+    // Phase 3: sqrt
+    // Compute sqrt(total)
+    // Invariant: result ≥ 0
+
+    // Proof obligations:
+    //   [bound] Non-negative
+    //   [invariant] Homogeneity
+    //   [invariant] Zero vector yields zero
+    //   [equivalence] SIMD matches scalar
+
+    ret;
+}

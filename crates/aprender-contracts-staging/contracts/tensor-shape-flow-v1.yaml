@@ -1,0 +1,213 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Pipeline shape flow — tensor shape transformations through transformer layers
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need — transformer architecture
+  - 'Ainslie et al. (2023) GQA: Training Generalized Multi-Query'
+  - Shazeer (2020) GLU Variants Improve Transformer — SwiGLU FFN
+equations:
+  qkv_projection:
+    formula: 'Q = x @ W_q^T, shape: [h] @ [n_h*d_k, h]^T → [n_h*d_k]'
+    domain: x ∈ ℝ^h, W_q ∈ ℝ^{n_h*d_k × h}
+    invariants:
+    - Q output dim = n_h * d_k
+    - K output dim = n_kv * d_k
+    - V output dim = n_kv * d_k
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Qkv_Projection
+    assumes:
+      constraints:
+      - "config.hidden_size % config.num_heads == 0"
+      from_contract: model-config-algebra-v1
+      from_equation: divisibility
+    guarantees:
+      shapes:
+        q_output: { dims: [batch, seq, "config.num_heads * config.head_dim"] }
+        k_output: { dims: [batch, seq, "config.num_kv_heads * config.head_dim"] }
+        v_output: { dims: [batch, seq, "config.num_kv_heads * config.head_dim"] }
+  gqa_grouping:
+    formula: group_size = n_h / n_kv (integer)
+    domain: n_h, n_kv ∈ ℤ⁺, n_h % n_kv == 0
+    invariants:
+    - n_h / n_kv is exact integer
+    - attention output dim = n_h * d_k
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Gqa_Grouping
+    assumes:
+      shapes:
+        q_output: { dims: [batch, seq, "config.num_heads * config.head_dim"] }
+        k_output: { dims: [batch, seq, "config.num_kv_heads * config.head_dim"] }
+        v_output: { dims: [batch, seq, "config.num_kv_heads * config.head_dim"] }
+      constraints:
+      - "config.num_heads % config.num_kv_heads == 0"
+      from_contract: tensor-shape-flow-v1
+      from_equation: qkv_projection
+    guarantees:
+      shapes:
+        attention_output: { dims: [batch, seq, config.hidden_size] }
+  swiglu_shape:
+    formula: gate[d_ff, h] × up[d_ff, h] → SiLU(gate·x) * (up·x) → down[h, d_ff] → [h]
+    domain: x ∈ ℝ^h, gate ∈ ℝ^{d_ff×h}, up ∈ ℝ^{d_ff×h}, down ∈ ℝ^{h×d_ff}
+    invariants:
+    - Gate and up project h → d_ff
+    - Down projects d_ff → h
+    - Output shape = input shape = [h]
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Swiglu_Shape
+    assumes:
+      shapes:
+        output: { dims: [batch, seq, config.hidden_size] }
+      constraints:
+      - "config.intermediate_size > config.hidden_size"
+      from_contract: tensor-shape-flow-v1
+      from_equation: residual
+    guarantees:
+      shapes:
+        output: { dims: [batch, seq, config.hidden_size] }
+  residual:
+    formula: y = x + sublayer(x)
+    domain: x, sublayer(x) ∈ ℝ^h
+    invariants:
+    - Residual connection preserves shape
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Residual
+    assumes:
+      shapes:
+        input: { dims: [batch, seq, config.hidden_size] }
+        sublayer_output: { dims: [batch, seq, config.hidden_size] }
+    guarantees:
+      shapes:
+        output: { dims: [batch, seq, config.hidden_size] }
+  lm_head:
+    formula: '[h] @ [V, h]^T → [V]'
+    domain: x ∈ ℝ^h, W_lm ∈ ℝ^{V×h}
+    invariants:
+    - Output dimension = vocab_size
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lm_Head
+    assumes:
+      shapes:
+        output: { dims: [batch, seq, config.hidden_size] }
+      from_contract: tensor-shape-flow-v1
+      from_equation: residual
+    guarantees:
+      shapes:
+        logits: { dims: [batch, seq, config.vocab_size] }
+proof_obligations:
+- type: invariant
+  property: QKV shape compatibility
+  formal: Q_dim = n_h * d_k, K_dim = n_kv * d_k, V_dim = n_kv * d_k
+  applies_to: all
+- type: invariant
+  property: GQA grouping exact
+  formal: n_h % n_kv == 0
+  applies_to: all
+- type: invariant
+  property: Residual shape preservation
+  formal: shape(x + sublayer(x)) == shape(x)
+  applies_to: all
+- type: invariant
+  property: SwiGLU intermediate shape
+  formal: 'gate/up: [h]→[d_ff], down: [d_ff]→[h]'
+  applies_to: all
+- type: invariant
+  property: LM head output shape
+  formal: output_dim == vocab_size
+  applies_to: all
+- type: equivalence
+  property: SIMD shape equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-TSF-001
+  rule: QKV shape
+  prediction: Q/K/V projection output dims match config
+  test: proptest with random valid configs, verify shape arithmetic
+  if_fails: Head dimension mismatch in projection weights
+- id: FALSIFY-TSF-002
+  rule: GQA grouping
+  prediction: n_h / n_kv is always integer for valid configs
+  test: proptest with constrained head counts
+  if_fails: GQA allows non-integer group sizes
+- id: FALSIFY-TSF-003
+  rule: Residual
+  prediction: Input and output shapes match at every residual point
+  test: proptest verifying shape arithmetic through pipeline
+  if_fails: Dimension mismatch at residual connection
+- id: FALSIFY-TSF-004
+  rule: SwiGLU shape
+  prediction: FFN gate/up expand, down contracts, preserving h
+  test: proptest with random d_ff > h
+  if_fails: FFN dimension chain broken
+- id: FALSIFY-TSF-005
+  rule: LM head
+  prediction: Final output dim == vocab_size
+  test: proptest with random vocab sizes
+  if_fails: LM head weight shape mismatch
+- id: FALSIFY-TSF-006
+  rule: SIMD shape equivalence
+  prediction: SIMD shape propagation matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD shape flow:SIMD path computes different shapes'
+kani_harnesses:
+- id: KANI-TSF-001
+  obligation: TSF-INV-001
+  property: Shape flow for small configs
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_shape_flow
+- id: KANI-TENSOR-002
+  obligation: QKV shape compatibility
+  property: QKV shape compatibility
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-003
+  obligation: GQA grouping exact
+  property: GQA grouping exact
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-004
+  obligation: Residual shape preservation
+  property: Residual shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-005
+  obligation: SwiGLU intermediate shape
+  property: SwiGLU intermediate shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-006
+  obligation: LM head output shape
+  property: LM head output shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-007
+  obligation: SIMD shape equivalence
+  property: SIMD shape equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TSF-001
+  name: Tensor Shape Flow Contract
+  description: Pipeline shape transformation quality gate
+  checks:
+  - qkv_shape
+  - gqa_grouping
+  - residual
+  - swiglu_shape
+  - lm_head
+  pass_criteria: All 6 falsification tests pass
+  falsification: Set num_kv_heads to prime not dividing num_heads

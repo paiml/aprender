@@ -1,0 +1,81 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-05'
+  author: PAIML Engineering
+  description: Learned absolute position embeddings (RoBERTa-style)
+  references:
+  - 'Liu et al. (2019) RoBERTa: A Robustly Optimized BERT Pretraining Approach'
+  depends_on:
+  - embedding-lookup-v1
+equations:
+  position_embedding:
+    formula: PE(pos) = E[pos] where E in R^{max_positions x d_model}
+    domain: pos in {0, 1, ..., max_positions - 1}
+    codomain: R^{d_model}
+    invariants:
+    - Lookup is O(1) (table index, not computation)
+    - pos < max_positions (bounds check)
+    - Output dimension equals d_model
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Position_Embedding
+proof_obligations:
+- type: bound
+  property: Position in range
+  formal: 0 <= pos < max_positions
+  applies_to: all
+- type: equivalence
+  property: Deterministic lookup
+  formal: PE(pos) = PE(pos) for same weights (idempotent)
+  tolerance: 0.0
+  applies_to: all
+- type: invariant
+  property: Output dimension
+  formal: PE(pos).len() == d_model for all valid pos
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-POS-001
+  rule: Out-of-bounds position
+  prediction: pos >= max_positions causes error, not silent truncation
+  test: kani proof with pos = max_positions
+  if_fails: Missing bounds check on position index
+- id: FALSIFY-POS-002
+  rule: Deterministic lookup
+  prediction: Same position always returns identical embedding
+  test: proptest calling PE(pos) twice with same weights
+  if_fails: Non-determinism in embedding lookup
+- id: FALSIFY-POS-003
+  rule: Output dimension
+  prediction: PE(pos).len() == d_model for all valid positions
+  test: proptest with random valid pos, assert output length equals d_model
+  if_fails: Embedding table has mismatched column dimension
+kani_harnesses:
+- id: KANI-POS-001
+  obligation: Position in range
+  property: 0 <= pos < max_positions for all inputs
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_position_bounds
+- id: KANI-POS-002
+  obligation: Deterministic lookup
+  property: PE(pos) = PE(pos) for same weights (idempotent)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_deterministic_lookup
+- id: KANI-POS-003
+  obligation: Output dimension
+  property: PE(pos).len() == d_model for all valid pos
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_output_dimension
+qa_gate:
+  id: F-LPEV-001
+  name: learned-position-embedding-v1 Contract
+  description: Quality gate for Learned absolute position embeddings (RoBERTa-style)
+  checks:
+  - validation
+  - falsification

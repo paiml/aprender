@@ -1,0 +1,165 @@
+---
+# Contract: VRAM Guard for CudaTrainer (GPU-SHARE-002)
+#
+# Prevents OOM by checking available VRAM against ledger before
+# allocating GPU memory. Tracks actual vs budgeted VRAM post-init.
+#
+# Five-Whys:
+#   Why 1: CudaTrainer::new() crashes with OOM when another job is running
+#   Why 2: No pre-allocation VRAM check exists
+#   Why 3: cuMemGetInfo alone has TOCTOU race (fixed by ledger)
+#   Why 4: Even with ledger, --vram is aspirational — actual usage unknown
+#   Why 5: Need post-init measurement to close the budget-vs-actual gap
+
+contract: vram-guard-v1
+version: "1.0.0"
+status: draft
+depends_on:
+  - "vram-ledger-v1.yaml"
+  - "gpu-weight-residency-v1.yaml"
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Pre-allocation VRAM guard with post-init actual tracking"
+  references:
+    - "GPU Sharing Spec v2 §1.2-1.3 — VRAM Guard + Actual Tracking"
+    - "cuMemGetInfo — CUDA Driver API"
+    - "Contract C-VRAM-001 from gpu-sharing-spec.md"
+
+equations:
+  budget_check:
+    formula: "can_allocate := ledger.total_reserved() + budget_mb <= total_mb × reserve_factor"
+    lean_theorem: Theorems.Budget_Check
+    domain: "budget_mb > 0, total_mb from cuMemGetInfo, ledger from VramLedger"
+    codomain: "bool"
+    invariants:
+      - "Checked under ledger flock — no TOCTOU"
+      - "budget_mb comes from --vram flag or auto-estimated from model size"
+      - "If can_allocate is false, CudaTrainer::new() returns GpuError::InsufficientMemory"
+
+  actual_measurement:
+    formula: "actual_mb = (total_before - free_after) where (free_after, total) = cuMemGetInfo()"
+    lean_theorem: Theorems.Actual_Measurement
+    domain: "Called after all GPU allocations complete (blocks uploaded, scratch allocated)"
+    codomain: "actual_mb ∈ [0, total_mb]"
+    invariants:
+      - "actual_mb includes: model weights + LoRA params + scratch buffers + cuBLAS workspace"
+      - "actual_mb may exceed budget_mb (scratch, JIT, driver overhead)"
+
+  budget_overshoot:
+    formula: "overshoot_pct = (actual_mb / budget_mb - 1.0) × 100"
+    lean_theorem: Theorems.Budget_Overshoot
+    domain: "actual_mb > budget_mb"
+    codomain: "overshoot_pct ∈ [0, ∞)"
+    invariants:
+      - "Warning emitted if overshoot_pct > 20%"
+      - "Ledger updated with actual_mb for accurate future reservations"
+
+  auto_budget_estimate:
+    formula: |
+      budget_mb = model_bytes / (1024 × 1024)
+                + scratch_per_layer × num_layers
+                + lora_params × sizeof(f16)
+                + cublas_workspace_mb
+    lean_theorem: Theorems.Auto_Budget_Estimate
+    domain: "model_bytes from .apr metadata, num_layers from config"
+    invariants:
+      - "Conservative: overestimates by ~15% to absorb driver overhead"
+      - "Used when --vram flag is not provided"
+
+proof_obligations:
+  - type: invariant
+    property: "C-VRAM-001: No allocation if over budget"
+    formal: "CudaTrainer::new() returns Err(InsufficientMemory) if ledger.total_reserved() + budget > total × reserve_factor"
+    applies_to: all
+
+  - type: invariant
+    property: "Post-init actual tracking"
+    formal: "After CudaTrainer::new() succeeds, ledger contains actual_mb measured via cuMemGetInfo"
+    applies_to: all
+
+  - type: bound
+    property: "Auto-budget within 30% of actual"
+    formal: "auto_budget_estimate / actual_mb ∈ [0.85, 1.30] for all supported model sizes"
+    applies_to: all
+
+  - type: invariant
+    property: "Guard is checked before first GPU allocation"
+    formal: "No cuMemAlloc call occurs before budget_check returns true"
+    applies_to: all
+
+  - type: invariant
+    property: "Overshoot warning emitted"
+    formal: "If actual_mb > budget_mb × 1.20, stderr contains 'WARNING: actual VRAM exceeds budget'"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-VG-001
+    rule: "C-VRAM-001"
+    prediction: "CudaTrainer::new() fails when ledger shows insufficient VRAM"
+    test: "Pre-populate ledger with reservation consuming 90% of total. Call CudaTrainer::new(budget=20%). Expect Err."
+    if_fails: "Guard not consulting ledger before allocation"
+
+  - id: FALSIFY-VG-002
+    rule: "Post-init actual tracking"
+    prediction: "Ledger shows actual_mb after successful CudaTrainer init"
+    test: "Create CudaTrainer, read ledger, verify reservation has actual_mb > 0"
+    if_fails: "record_actual_vram() not called or ledger not updated"
+
+  - id: FALSIFY-VG-003
+    rule: "Auto-budget accuracy"
+    prediction: "Auto-estimated budget is within 30% of measured actual for 1.5B and 7B models"
+    test: "Run auto_budget_estimate for Qwen2.5-1.5B and Qwen3-8B, compare to measured actual"
+    if_fails: "Model size formula missing scratch or cuBLAS overhead"
+
+  - id: FALSIFY-VG-004
+    rule: "Overshoot warning"
+    prediction: "stderr contains warning when actual exceeds budget by >20%"
+    test: "Set --vram 2 for a model that uses 7 GB. Capture stderr, check for WARNING."
+    if_fails: "overshoot_pct threshold check incorrect or warning suppressed"
+
+  - id: FALSIFY-VG-005
+    rule: "Guard before allocation"
+    prediction: "Injecting faux insufficient VRAM prevents any cuMemAlloc"
+    test: "Mock cuMemGetInfo to return 0 free. CudaTrainer::new() returns Err before any allocation."
+    if_fails: "Guard check happens after some allocations — partial cleanup needed"
+
+affected_files:
+  - path: "src/autograd/cuda_training.rs"
+    functions:
+      - "CudaTrainer::new — add budget_check before allocation"
+      - "CudaTrainer::record_actual_vram — post-init measurement"
+    change: "Integrate VRAM guard + actual tracking into trainer lifecycle"
+
+  - path: "src/gpu/guard.rs"
+    functions:
+      - "VramGuard: check, record_actual, auto_estimate_budget"
+    change: "New module: VRAM budget checking and actual tracking"
+
+qa_gate:
+  id: F-VG-001
+  name: "VRAM Guard Contract"
+  description: "Pre-allocation VRAM check with post-init actual measurement"
+  checks:
+    - "c_vram_001_no_alloc_over_budget"
+    - "post_init_actual_tracked"
+    - "auto_budget_within_30pct"
+    - "overshoot_warning_emitted"
+
+profiling:
+  brick_phases:
+    - name: "vram_qry"
+      description: "cuMemGetInfo call duration"
+    - name: "budget_chk"
+      description: "Ledger read + capacity arithmetic"
+    - name: "actual_meas"
+      description: "Post-init cuMemGetInfo + ledger update"
+
+tracing:
+  trace_steps:
+    - name: "VramQuery"
+      metadata: "free={free_mb}MB total={total_mb}MB"
+    - name: "VramGuardCheck"
+      metadata: "budget={budget_mb}MB reserved={reserved_mb}MB result={ok|insufficient}"

@@ -1,0 +1,214 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: GQA kernel — grouped query attention with KV head broadcasting
+  references:
+  - 'Ainslie et al. (2023) GQA: Training Generalized MQT Models'
+  - Vaswani et al. (2017) Attention Is All You Need
+  depends_on:
+  - softmax-kernel-v1
+  - matmul-kernel-v1
+  - attention-kernel-v1
+equations:
+  gqa:
+    formula: GQA(Q, K, V) = softmax(Q_g * K_h^T / sqrt(d_k)) * V_h
+    domain: Q in R^{n x d}, K in R^{s x d}, V in R^{s x d_v}, num_heads > 0, num_kv_heads > 0
+    codomain: GQA(Q, K, V) in R^{n x d}
+    invariants:
+    - Attention weights sum to 1 per query position (normalization)
+    - Output is convex combination of V rows per head
+    - GQA(kv_heads=num_heads) = standard MHA
+    - num_heads must be divisible by num_kv_heads
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Gqa
+proof_obligations:
+- type: subcontract
+  property: GQA refines standard MHA — accepts same Q/K/V shapes, produces compatible output
+  formal: pre(MHA) → pre(GQA) ∧ post(GQA) → post(MHA) when n_kv_heads = n_heads
+  parent_contract: attention-kernel-v1
+- type: invariant
+  property: Attention weight normalization
+  formal: '|sum(attn_weights[i, :]) - 1.0| < eps per query position i'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: equivalence
+  property: GQA degenerates to MHA
+  formal: GQA(kv_heads=num_heads) == MHA(Q, K, V) within tolerance
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: Output is convex combination of V
+  formal: min(V) <= output_i <= max(V) per head
+  applies_to: all
+- type: invariant
+  property: KV head broadcasting correctness
+  formal: Q heads [g*r..(g+1)*r] share K_g, V_g where r = num_heads/num_kv_heads
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: equivalence
+  property: GPU PTX matches CPU within cosine >= 0.98
+  formal: cosine(gqa_ptx(Q,K,V), gqa_cpu(Q,K,V)) >= 0.98
+  tolerance: 0.02
+  applies_to: cuda
+- type: invariant
+  property: GPU head mapping for non-power-of-2 ratios
+  formal: kv_head_idx(q) == q * num_kv_heads / num_heads for all q in [0..num_heads)
+  applies_to: cuda
+kernel_structure:
+  phases:
+  - name: kv_broadcast
+    description: Broadcast KV heads to match query head groups
+    invariant: Each KV head serves exactly num_heads/num_kv_heads query heads
+  - name: qk_matmul
+    description: Compute Q * K^T / sqrt(d_k) per head
+    invariant: Score matrix is n x s per head
+  - name: attention_softmax
+    description: Apply softmax to scores per query position
+    invariant: Weights sum to 1 per row
+  - name: weighted_sum
+    description: Compute weighted sum of V rows
+    invariant: Output is convex combination of V
+simd_dispatch:
+  gqa:
+    scalar: gqa_scalar
+    avx2: gqa_avx2
+    ptx: gqa_ptx
+enforcement:
+  weight_normalization:
+    description: Attention weights must sum to 1.0 per query
+    check: contract_tests::FALSIFY-GQ-001
+    severity: ERROR
+  mha_equivalence:
+    description: GQA with full KV heads must equal standard MHA
+    check: contract_tests::FALSIFY-GQ-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GQ-001
+  rule: Weight normalization
+  prediction: sum(attn_weights[i, :]) = 1.0 for all query positions i
+  test: proptest with random Q, K, V, dim 1..32, heads 1..8
+  if_fails: Softmax applied along wrong dimension or missing
+- id: FALSIFY-GQ-002
+  rule: MHA degeneration
+  prediction: '|GQA(kv=h) - MHA(Q,K,V)| < 1e-6 when kv_heads=num_heads'
+  test: proptest comparing GQA and MHA with equal head counts
+  if_fails: KV broadcasting logic incorrect when groups=1
+- id: FALSIFY-GQ-003
+  rule: Convex combination bound
+  prediction: min(V) <= output_i <= max(V) per head
+  test: proptest verifying output bounded by V range
+  if_fails: Attention weights not properly normalized
+- id: FALSIFY-GQ-004
+  rule: Head divisibility
+  prediction: num_heads % num_kv_heads == 0 enforced at construction
+  test: proptest with invalid head ratios, expect error
+  if_fails: Missing divisibility check
+- id: FALSIFY-GQ-005
+  rule: SIMD equivalence
+  prediction: '|gqa_avx2(Q,K,V) - gqa_scalar(Q,K,V)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD matmul accumulation order differs
+- id: FALSIFY-GQ-006
+  rule: Boundary - single KV head (MQA)
+  prediction: GQA(kv_heads=1) broadcasts single KV to all query heads
+  test: proptest with kv_heads=1 verifying all heads see same KV
+  if_fails: Multi-query degenerate case not handled
+- id: FALSIFY-GQ-007
+  rule: GPU parity - non-power-of-2 head ratio
+  prediction: cosine(gqa_gpu, gqa_cpu) >= 0.98 for heads=28, kv=4 (ratio=7)
+  test: Run CORRECTNESS-011 layer trace with Qwen2.5-7B dimensions
+  if_fails: GPU PTX kernel computes wrong function for this head configuration
+  dimensions:
+    hidden_dim: 3584
+    num_heads: 28
+    num_kv_heads: 4
+    head_dim: 128
+- id: FALSIFY-GQ-008
+  rule: GPU parity - power-of-2 head ratio
+  prediction: cosine(gqa_gpu, gqa_cpu) >= 0.98 for heads=32, kv=8 (ratio=4)
+  test: Run CORRECTNESS-011 layer trace with power-of-2 ratio dimensions
+  if_fails: GPU PTX kernel fails even for power-of-2 ratios
+- id: FALSIFY-GQ-009
+  rule: GPU head mapping correctness
+  prediction: kv_head_idx(q) == q * num_kv_heads / num_heads for all q
+  test: Extract PTX div.u32 output for each q_head_idx, verify mapping
+  if_fails: PTX integer division produces wrong kv_head_idx on target GPU
+kani_harnesses:
+- id: KANI-GQ-001
+  obligation: GQ-INV-001
+  property: Attention weights normalize to 1 for small inputs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gqa_weight_normalization
+- id: KANI-GQ-002
+  obligation: GQ-EQV-001
+  property: GQA equals MHA when kv_heads equals num_heads
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gqa_mha_equivalence
+- id: KANI-GQ-003
+  obligation: GQ-BND-001
+  property: Output bounded by V range
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gqa_convex_bound
+- id: KANI-GQA_KE-004
+  obligation: GQA refines standard MHA — accepts same Q/K/V shapes, produces compatible output
+  property: GQA refines standard MHA — accepts same Q/K/V shapes, produces compatible output
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-005
+  obligation: Attention weight normalization
+  property: Attention weight normalization
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-006
+  obligation: GQA degenerates to MHA
+  property: GQA degenerates to MHA
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-007
+  obligation: Output is convex combination of V
+  property: Output is convex combination of V
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-008
+  obligation: KV head broadcasting correctness
+  property: KV head broadcasting correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-009
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-010
+  obligation: GPU PTX matches CPU within cosine >= 0.98
+  property: GPU PTX matches CPU within cosine >= 0.98
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GQA_KE-011
+  obligation: GPU head mapping for non-power-of-2 ratios
+  property: GPU head mapping for non-power-of-2 ratios
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GQ-001
+  name: GQA Contract
+  description: Grouped query attention with KV broadcasting quality gate
+  checks:
+  - weight_normalization
+  - mha_equivalence
+  - convex_bound
+  - simd_equivalence
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
+  falsification: Skip KV head broadcasting, use wrong head index

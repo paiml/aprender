@@ -1,0 +1,152 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Gaussian Naive Bayes — probabilistic classifier assuming feature independence
+  references:
+  - 'Murphy (2012) Machine Learning: A Probabilistic Perspective, §3.5'
+  - Bishop (2006) Pattern Recognition and Machine Learning, §4.2.2
+equations:
+  class_prior:
+    formula: 'P(C_k) = |{i : y_i = k}| / n'
+    domain: labels ∈ {0..K-1}ⁿ, n ≥ 1, K ≥ 2
+    codomain: priors ∈ (0, 1)^K with Σ P(C_k) = 1
+    invariants:
+    - P(C_k) ∈ (0, 1) for each class k present in training
+    - Σ_k P(C_k) = 1 (valid probability distribution)
+    - P(C_k) > 0 for all observed classes
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Class_Prior
+  gaussian_likelihood:
+    formula: P(x_j | C_k) = (1/√(2πσ²_jk)) exp(-(x_j - μ_jk)²/(2σ²_jk))
+    domain: x_j ∈ ℝ, μ_jk ∈ ℝ, σ²_jk > 0
+    codomain: P(x_j | C_k) > 0
+    invariants:
+    - Likelihood > 0 (Gaussian PDF is strictly positive)
+    - Log-likelihood is finite for finite inputs and σ > 0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gaussian_Likelihood
+  log_posterior:
+    formula: log P(C_k | x) ∝ log P(C_k) + Σ_j log P(x_j | C_k)
+    domain: x ∈ ℝ^d, fitted model (priors, means, variances)
+    codomain: unnormalized log-posteriors ∈ ℝ^K
+    invariants:
+    - Predicted class = argmax_k log P(C_k | x)
+    - Posterior probabilities sum to 1 after normalization
+    - Prediction is deterministic for same input
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Log_Posterior
+proof_obligations:
+- type: invariant
+  property: Prior sums to 1
+  formal: Σ_k P(C_k) = 1 after fit
+  applies_to: all
+- type: bound
+  property: Prior bounded
+  formal: P(C_k) ∈ (0, 1) for all observed classes
+  applies_to: all
+- type: invariant
+  property: Posterior probability valid
+  formal: Normalized posteriors sum to 1 and each ∈ [0, 1]
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(x) = predict(x) for all x
+  applies_to: all
+- type: invariant
+  property: Fit-predict class range
+  formal: predict(x) ∈ training_classes for all x
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-NB-001
+  rule: Prior sums to 1
+  prediction: sum of class priors = 1.0 after fit
+  test: proptest with random class distributions
+  if_fails: Normalization not applied or integer truncation
+- id: FALSIFY-NB-002
+  rule: Prior bounded
+  prediction: each prior ∈ (0, 1)
+  test: proptest with varying class frequencies
+  if_fails: Empty class handling incorrect
+- id: FALSIFY-NB-003
+  rule: Prediction in training classes
+  prediction: all predictions ∈ {classes seen during fit}
+  test: 'proptest: fit with K classes, predict on random data'
+  if_fails: Argmax over log-posteriors returns invalid index
+- id: FALSIFY-NB-004
+  rule: Prediction deterministic
+  prediction: predict(x) = predict(x) for same input
+  test: 'proptest: predict twice on same data, compare'
+  if_fails: Non-deterministic floating point or random state leakage
+- id: FALSIFY-NB-005
+  rule: Separable data high accuracy
+  prediction: accuracy > 0.9 on well-separated Gaussian clusters
+  test: 'proptest: generate K well-separated clusters, fit and predict'
+  if_fails: Likelihood computation error or variance estimation bug
+enforcement:
+  valid_distribution:
+    description: Priors must form valid probability distribution
+    check: contract_tests::FALSIFY-NB-001, FALSIFY-NB-002
+    severity: ERROR
+  deterministic:
+    description: Predictions must be deterministic
+    check: contract_tests::FALSIFY-NB-004
+    severity: ERROR
+kani_harnesses:
+- id: KANI-NB-001
+  obligation: NB-INV-001
+  property: Class priors sum to 1 after fit
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_prior_sum_to_one
+- id: KANI-NB-002
+  obligation: NB-BND-001
+  property: Each class prior bounded in (0, 1)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_prior_bounded
+- id: KANI-NAIVE_-003
+  obligation: Prior sums to 1
+  property: Prior sums to 1
+  bound: 8
+  strategy: stub_float
+- id: KANI-NAIVE_-004
+  obligation: Prior bounded
+  property: Prior bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-NAIVE_-005
+  obligation: Posterior probability valid
+  property: Posterior probability valid
+  bound: 8
+  strategy: exhaustive
+- id: KANI-NAIVE_-006
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-NAIVE_-007
+  obligation: Fit-predict class range
+  property: Fit-predict class range
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-NB-001
+  name: Naive Bayes Contract
+  description: Gaussian Naive Bayes correctness quality gate
+  checks:
+  - prior_sum_to_one
+  - prior_bounded
+  - prediction_in_classes
+  - prediction_deterministic
+  - separable_high_accuracy
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
+  falsification: Use raw counts instead of normalized priors

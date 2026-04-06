@@ -1,0 +1,253 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: CLI lint dispatch boundary contract — bashrs CLI accepts shell scripts
+    and Makefiles, produces deterministic SARIF/JSON findings with structured exit
+    codes and severity-ordered diagnostics
+  references:
+  - POSIX.1-2017 Section 2.8.2 — Exit Status for Utilities
+  - OASIS SARIF v2.1.0 — Static Analysis Results Interchange Format
+  - ShellCheck exit code conventions (0=clean, 1=findings, 2=error)
+  - ISO/IEC 5055:2021 — Automated Source Code Quality Measures
+  depends_on:
+  - parser-soundness-v1
+  - safety-classifier-v1
+equations:
+  exit_code_dispatch:
+    formula: |
+      exit_code: (args, filesystem) -> u8
+        Given CLI invocation `bashrs lint <source> [--format json|sarif|text]`:
+          0 = no violations found, source is clean
+          1 = one or more violations found, diagnostics emitted
+          2 = parse error or invalid input (file not found, not valid shell/Makefile)
+        Exit code is a pure function of (args, filesystem state) — no randomness.
+    domain: 'args: Vec<String> validated by clap; filesystem: read-only view of source path'
+    codomain: u8 in {0, 1, 2}
+    invariants:
+    - Exit 0 implies zero diagnostics emitted
+    - Exit 1 implies at least one diagnostic emitted
+    - Exit 2 implies source file missing, unreadable, or unparseable
+    - No exit code outside {0, 1, 2} is ever produced
+    - Exit code is monotonic with findings — adding violations cannot reduce exit code from 1 to 0
+    preconditions:
+    - args.len() >= 2
+    - 'args[0] == "lint"'
+    lean_theorem: Theorems.Exit_Code_Dispatch
+  output_format_validity:
+    formula: |
+      output_format: (diagnostics, format) -> String
+        When format == "json":
+          serde_json::from_str::<Value>(output).is_ok() == true
+          Output is a JSON array of diagnostic objects
+        When format == "sarif":
+          Output conforms to SARIF v2.1.0 schema
+          Contains runs[0].results[] array with rule references
+        When format == "text":
+          Each line matches pattern: "<file>:<line>:<col> <severity> <rule_id>: <message>"
+    domain: 'diagnostics: Vec<Diagnostic>; format: OutputFormat in {json, sarif, text}'
+    codomain: String — valid serialized output in requested format
+    invariants:
+    - JSON output is always valid JSON (parseable by any compliant parser)
+    - SARIF output validates against SARIF v2.1.0 JSON schema
+    - Text output has one finding per line, no interleaved partial lines
+    - Empty diagnostic list produces valid empty output ([] for JSON, empty runs for SARIF)
+    preconditions:
+    - format in {json, sarif, text}
+    lean_theorem: Theorems.Output_Format_Validity
+  finding_determinism:
+    formula: |
+      determinism: forall source in ShellScripts, config in LintConfig:
+        bashrs_lint(source, config) = bashrs_lint(source, config)
+      Same shell script with same configuration produces identical findings:
+        - Same rule IDs in same order
+        - Same severity levels
+        - Same source spans (line:col)
+        - Same diagnostic messages
+    domain: 'source: String (shell script or Makefile); config: LintConfig'
+    codomain: Vec<Diagnostic> — identical across invocations
+    invariants:
+    - Finding set is invariant across runs on same platform
+    - Finding order is deterministic (sorted by file position, then rule ID)
+    - No findings depend on wall-clock time or process state
+    - Parallel lint of same file produces same findings as sequential
+    preconditions:
+    - '!source.is_empty()'
+    - '!config.is_empty()'
+    lean_theorem: Theorems.Finding_Determinism
+  severity_ordering:
+    formula: |
+      severity_order: Vec<Diagnostic> -> Vec<Diagnostic>
+        Output diagnostics are sorted by:
+          1. Severity descending: Error > Warning > Info > Hint
+          2. Within same severity: file position ascending (line, then column)
+          3. Within same position: rule ID lexicographic ascending
+        This total order is stable and deterministic.
+    domain: 'diagnostics: Vec<Diagnostic> from lint pass'
+    codomain: Vec<Diagnostic> satisfying total order
+    invariants:
+    - For all adjacent pairs (d_i, d_{i+1}) in output, severity(d_i) >= severity(d_{i+1})
+    - Within same severity band, line(d_i) <= line(d_{i+1})
+    - Within same severity and line, col(d_i) <= col(d_{i+1})
+    - Ordering is idempotent — sorting already-sorted output produces same sequence
+    preconditions:
+    - diagnostics.len() >= 0
+    lean_theorem: Theorems.Severity_Ordering
+proof_obligations:
+- type: postcondition
+  property: Exit 0 implies zero findings
+  formal: 'exit_code(args, fs) == 0 => diagnostics.is_empty()'
+  applies_to: all
+- type: postcondition
+  property: Exit 1 implies non-empty findings
+  formal: 'exit_code(args, fs) == 1 => !diagnostics.is_empty()'
+  applies_to: all
+- type: postcondition
+  property: Exit 2 implies parse failure
+  formal: 'exit_code(args, fs) == 2 => no lint rules executed'
+  applies_to: all
+- type: invariant
+  property: Exit code totality
+  formal: 'forall args, fs: exit_code(args, fs) in {0, 1, 2}'
+  applies_to: all
+- type: invariant
+  property: JSON output validity
+  formal: 'format == json => serde_json::from_str(output).is_ok()'
+  applies_to: all
+- type: invariant
+  property: Deterministic findings
+  formal: 'forall src, cfg: lint(src, cfg) == lint(src, cfg)'
+  applies_to: all
+- type: ordering
+  property: Severity-descending output order
+  formal: 'forall i < j: severity(diagnostics[i]) >= severity(diagnostics[j])'
+  applies_to: all
+enforcement:
+  exit_code_range:
+    description: CLI exit code must be in {0, 1, 2}
+    check: contract_tests::FALSIFY-BL-001
+    severity: ERROR
+  json_validity:
+    description: JSON/SARIF output must be valid and schema-conformant
+    check: contract_tests::FALSIFY-BL-002
+    severity: ERROR
+  determinism:
+    description: Same input must produce identical findings
+    check: contract_tests::FALSIFY-BL-003
+    severity: ERROR
+  severity_order:
+    description: Findings must be sorted by severity descending
+    check: contract_tests::FALSIFY-BL-004
+    severity: ERROR
+  exit_zero_empty:
+    description: Exit 0 must imply zero diagnostics
+    check: contract_tests::FALSIFY-BL-005
+    severity: ERROR
+  exit_one_nonempty:
+    description: Exit 1 must imply at least one diagnostic
+    check: contract_tests::FALSIFY-BL-006
+    severity: ERROR
+  exit_two_parse_failure:
+    description: Exit 2 must imply parse or I/O failure with no lint rules executed
+    check: contract_tests::FALSIFY-BL-007
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-BL-001
+  rule: Exit code totality and semantics
+  prediction: Exit 0 for clean files, exit 1 for files with violations, exit 2 for
+    unparseable input
+  test: 'Three-class test: (1) lint a known-clean script, assert exit 0; (2) lint
+    a script with eval $VAR, assert exit 1; (3) lint /nonexistent.sh, assert exit 2'
+  if_fails: Unhandled panic produces exit 101, or error classification maps parse error
+    to exit 1 instead of 2
+- id: FALSIFY-BL-002
+  rule: JSON output validity
+  prediction: All --format json output parses as valid JSON array of diagnostic objects
+  test: 'Corpus test: lint 30+ shell scripts with --format json; for each, parse output
+    with serde_json and validate each element has rule_id, severity, span, message
+    fields'
+  if_fails: Serialization emits unescaped control characters in message field, or partial
+    output on early termination
+- id: FALSIFY-BL-003
+  rule: Finding determinism
+  prediction: Linting the same file twice produces byte-identical JSON output
+  test: 'proptest: generate random shell scripts with known violation patterns; lint
+    each twice with --format json; assert output_1 == output_2 byte-for-byte'
+  if_fails: HashMap iteration order in rule registry, or non-deterministic thread scheduling
+    in parallel lint
+- id: FALSIFY-BL-004
+  rule: Severity ordering
+  prediction: In output diagnostics, every Error appears before every Warning, every
+    Warning before every Info
+  test: 'Corpus test: lint scripts containing mixed SEC (Error) and SC (Warning/Info)
+    violations; parse JSON output; assert severity monotonically non-increasing'
+  if_fails: Sort comparator missing severity as primary key, or appending diagnostics
+    without final sort pass
+- id: FALSIFY-BL-005
+  rule: Exit 0 implies zero findings
+  prediction: When bashrs lint exits with code 0, the diagnostics list is empty
+  test: 'Postcondition test: lint a known-clean script (no violations); capture exit
+    code and JSON output; assert exit code == 0 AND parsed diagnostics array is empty'
+  if_fails: Exit code 0 returned despite non-empty diagnostic list, indicating exit
+    code not derived from findings count
+- id: FALSIFY-BL-006
+  rule: Exit 1 implies non-empty findings
+  prediction: When bashrs lint exits with code 1, at least one diagnostic is emitted
+  test: 'Postcondition test: lint a script containing eval $VAR (SC2046); capture exit
+    code and JSON output; assert exit code == 1 AND parsed diagnostics array has length >= 1'
+  if_fails: Exit code 1 returned with zero diagnostics, indicating error path conflated
+    with findings path
+- id: FALSIFY-BL-007
+  rule: Exit 2 implies parse failure
+  prediction: When bashrs lint exits with code 2, no lint rules were executed and the
+    error message indicates a parse or I/O failure
+  test: 'Postcondition test: lint a truncated script with unclosed heredoc; capture exit
+    code and stderr; assert exit code == 2 AND no diagnostic rule IDs appear in output'
+  if_fails: Parse errors misclassified as lint findings (exit 1) instead of parse
+    failures (exit 2)
+kani_harnesses:
+- id: KANI-BL-001
+  obligation: Exit code totality
+  property: exit_code return value is always in {0, 1, 2}
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_exit_code_range
+- id: KANI-BL-002
+  obligation: Exit 0 implies zero findings
+  property: Exit code 0 is only returned when diagnostic vector is empty
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_exit_zero_empty_diagnostics
+- id: KANI-BL-003
+  obligation: Severity ordering
+  property: Output diagnostics satisfy total order (severity desc, position asc, rule_id
+    asc)
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_severity_ordering
+- id: KANI-BL-004
+  obligation: Deterministic findings
+  property: Two invocations with identical input produce identical diagnostic vectors
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_determinism
+qa_gate:
+  id: F-BL-001
+  name: CLI Lint Dispatch Contract
+  description: Bashrs CLI boundary contract ensuring structured exit codes, valid
+    JSON/SARIF output, deterministic findings, and severity-ordered diagnostics
+  checks:
+  - exit_code_range
+  - json_validity
+  - determinism
+  - severity_order
+  - exit_zero_empty
+  - exit_one_nonempty
+  - exit_two_parse_failure
+  pass_criteria: All 7 falsification tests pass + 4 Kani harnesses verify
+  falsification: Remove severity sort pass from output formatter to break ordering
+    invariant

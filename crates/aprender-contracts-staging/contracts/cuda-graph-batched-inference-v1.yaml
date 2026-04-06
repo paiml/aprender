@@ -1,0 +1,207 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: >
+    Per-batch-size CUDA graph capture for M>1 decode inference.
+    Eliminates ~400 cuLaunchKernel × 12µs = 5ms CPU dispatch overhead
+    per decode step at c>1. Pre-captures graphs at power-of-2 batch
+    sizes {1,2,4,8,16,32} using manual cuGraphAddKernelNode construction.
+    Pads incoming batch to next bucket. Industry-validated by vLLM (51 graphs),
+    TensorRT-LLM (+22% e2e), SGLang (piecewise).
+  pmat: [PMAT-453, Phase-18]
+  references:
+  - 'Yu et al. (2022). Orca: Iteration-level scheduling for continuous batching.'
+  - 'Kwon et al. (2023). vLLM: PagedAttention. vllm/compilation/cuda_graph.py'
+  - 'Ghosh et al. (2025). PyGraph: Parameter copy elimination. arXiv:2503.19779'
+  - 'NVIDIA CUDA Programming Guide §3.2.8: Graph Management'
+  - 'candle-vs-apr spec v15.2.0 Phase 17: Approach B recommended'
+  - 'qcd PMAT-286: 82.4% of step time in cuStreamSync at c>1'
+  depends_on:
+  - continuous-batching-v1
+  - gpu-decode-profiling-v1
+
+equations:
+  bucket_selection:
+    formula: graph_m = next_power_of_2(actual_m) where actual_m <= max_batch
+    domain: actual_m ∈ [1, max_batch], bucket_set = {1, 2, 4, 8, 16, 32}
+    invariants:
+    - graph_m >= actual_m (never undersize)
+    - graph_m <= 2 * actual_m (at most 2x waste for non-power-of-2)
+    - graph_m ∈ bucket_set (only pre-captured sizes)
+    - Requests beyond max_batch fall back to eager dispatch
+    preconditions:
+    - actual_m > 0
+    - max_batch > 0
+    lean_theorem: Theorems.Bucket_Selection
+
+  graph_correctness:
+    formula: |
+      output_graph(prompts, M_padded) ≈ output_eager(prompts, M_actual)
+      where M_padded = next_power_of_2(M_actual), padding slots produce
+      no side effects on active slots
+    domain: M_actual concurrent requests, M_padded >= M_actual
+    invariants:
+    - Active slot outputs identical to eager execution (within ε = 1e-5)
+    - Padding slots do not corrupt KV cache of active slots
+    - Padding slots do not contribute to attention scores of active slots
+    - Graph replay produces same output on consecutive calls with same input
+    preconditions:
+    - All KV cache slots pre-allocated for M_padded
+    - seq_lens buffer correctly zeroed for padding slots
+    lean_theorem: Theorems.Graph_Correctness
+
+  dispatch_overhead:
+    formula: |
+      eager_overhead = num_kernels × cuLaunchKernel_latency
+      graph_overhead = cuGraphLaunch_latency (single call)
+      speedup = eager_overhead / graph_overhead
+    domain: num_kernels ~= 647, cuLaunchKernel ~= 12µs, cuGraphLaunch ~= 3µs
+    invariants:
+    - Graph launch time independent of num_kernels (O(1) vs O(n))
+    - Expected speedup = 647 × 12µs / 3µs ≈ 2,588x dispatch reduction
+    - Net decode improvement bounded by Amdahl's law on dispatch fraction
+    preconditions:
+    - Graph pre-captured (no capture-time overhead at serving time)
+    lean_theorem: Theorems.Dispatch_Overhead
+
+  memory_overhead:
+    formula: |
+      graph_memory(M) = activation_buffers(M) + workspace(M)
+      total_graph_memory = sum(graph_memory(m) for m in bucket_set)
+    domain: bucket_set = {1, 2, 4, 8, 16, 32}
+    invariants:
+    - Weight memory shared (read-only, NOT duplicated per graph)
+    - KV cache memory shared (graphs swap pointers, not allocations)
+    - Only activation/workspace buffers are per-graph
+    - Total graph memory <= 2 GB on 24 GB RTX 4090
+    preconditions:
+    - VRAM >= model_weights + KV_cache + total_graph_memory
+    lean_theorem: Theorems.Memory_Overhead
+
+  throughput_scaling:
+    formula: |
+      post_graph_throughput(c) >= pre_graph_throughput(c) × (1 + dispatch_fraction(c))
+      where dispatch_fraction(c) = eager_dispatch_time / total_step_time
+    domain: c ∈ {1, 2, 4, 8, 16, 32}
+    invariants:
+    - c=1 unchanged (already graphed)
+    - c=4 improvement >= 20% (dispatch is ~38% of step at c=4)
+    - c=32 improvement >= 10% (dispatch amortized over more tokens)
+    - No throughput regression at any concurrency level
+    preconditions:
+    - Per-batch graphs captured at startup
+    lean_theorem: Theorems.Throughput_Scaling
+
+  efficiency_target:
+    formula: tok_per_s_per_gb(c) = aggregate_tok_s(c) / vram_usage_gb
+    domain: c ∈ {4, 8, 16, 32}
+    invariants:
+    - realizr tok/s/GB >= 1.5 × vLLM tok/s/GB at c=4
+    - VRAM usage includes all graph memory
+    preconditions:
+    - vLLM measured on same hardware with same model
+    lean_theorem: Theorems.Efficiency_Target
+
+proof_obligations:
+- type: equivalence
+  property: Graph output matches eager output
+  formal: '|output_graph(M_padded) - output_eager(M_actual)| < 1e-5 for active slots'
+  tolerance: 1.0e-5
+  applies_to: all
+- type: invariant
+  property: Padding slots isolated
+  formal: 'seq_lens[i] = 0 for padding slots i in [M_actual, M_padded)'
+  applies_to: all
+- type: bound
+  property: Memory overhead bounded
+  formal: total_graph_memory <= 2 GB for bucket_set = {1,2,4,8,16,32}
+  applies_to: all
+- type: bound
+  property: Throughput improvement at c=4
+  formal: post_graph_throughput(4) / pre_graph_throughput(4) >= 1.20
+  applies_to: all
+- type: bound
+  property: No regression at c=1
+  formal: post_graph_throughput(1) / pre_graph_throughput(1) >= 0.98
+  applies_to: all
+- type: bound
+  property: Resource efficiency target
+  formal: realizr_tok_per_s_per_gb(4) / vllm_tok_per_s_per_gb(4) >= 1.50
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-BGRAPH-001
+  rule: Graph output matches eager output
+  prediction: All active slots produce identical tokens (graph vs eager)
+  test: 'Run c=4 with GRAPH_BATCHED=1 and GRAPH_BATCHED=0, compare token-level output for each slot'
+  if_fails: Padding slot corruption or KV cache indexing bug in M>1 graph
+
+- id: FALSIFY-BGRAPH-002
+  rule: No regression at c=1
+  prediction: c=1 throughput within 2% of current (369.9 tok/s)
+  test: 'probador llm load c=1 30s N=5, compare bootstrap CI with pre-graph baseline'
+  if_fails: Graph selection overhead or M=1 graph modified during multi-graph capture
+
+- id: FALSIFY-BGRAPH-003
+  rule: Throughput improvement at c=4
+  prediction: c=4 aggregate tok/s improves >= 20% (634 → 760+)
+  test: 'probador llm load c=4 30s, compare with pre-graph c=4 baseline (634 tok/s)'
+  if_fails: CPU dispatch is NOT the c=4 bottleneck (contradicts qcd PMAT-286)
+
+- id: FALSIFY-BGRAPH-004
+  rule: Memory overhead bounded
+  prediction: Total VRAM usage with 6 graphs <= 7.5 GB (5.2 base + 2.0 graphs + 0.3 margin)
+  test: nvidia-smi memory measurement during graph capture and serving
+  if_fails: Activation buffers larger than estimated or weight duplication occurring
+
+- id: FALSIFY-BGRAPH-005
+  rule: Resource efficiency target
+  prediction: realizr tok/s/GB >= 1.5x vLLM tok/s/GB at c=4
+  test: 'Measure both on RTX 4090: probador c=4 + nvidia-smi VRAM for each'
+  if_fails: vLLM VRAM lower than estimated or realizr graph memory higher than estimated
+
+- id: FALSIFY-BGRAPH-006
+  rule: Padding slot isolation
+  prediction: Zero-length padding slots produce no attention contribution
+  test: 'Run c=3 (padded to 4), verify slot 4 KV cache untouched and slot 1-3 outputs match c=3 eager'
+  if_fails: Attention kernel reads padding KV entries (seq_lens masking bug)
+
+kani_harnesses:
+- id: KANI-BGRAPH-001
+  obligation: Bucket selection correctness
+  property: next_power_of_2(m) >= m AND next_power_of_2(m) in bucket_set
+  bound: 32
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_bucket_selection
+
+- id: KANI-BGRAPH-002
+  obligation: Padding slot isolation
+  property: seq_lens[i] = 0 implies no KV cache write for slot i
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_padding_isolation
+
+- id: KANI-BGRAPH-003
+  obligation: Memory overhead bound
+  property: sum(activation_size(m) for m in buckets) <= 2 GB
+  bound: 6
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_memory_bound
+
+qa_gate:
+  id: F-BGRAPH-001
+  name: Batched CUDA Graph Inference Contract
+  description: Per-batch graph capture correctness, performance, and resource efficiency
+  checks:
+  - graph_correctness
+  - padding_isolation
+  - memory_bound
+  - throughput_improvement
+  - no_regression
+  - efficiency_target
+  pass_criteria: All 6 falsification tests pass + 3 Kani harnesses verify
+  falsification: Force M=5 to use M=8 graph with 3 padding slots, verify active slot parity

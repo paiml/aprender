@@ -1,0 +1,21 @@
+% Equations for l2norm-kernel-v1
+\section{Equations: l2norm-kernel-v1}
+
+\subsection{l2norm}
+\label{eq:l2norm}
+
+\begin{equation}
+  ||x|| = \sqrt{\sum x_i²}
+\end{equation}
+
+\textbf{Domain:} $x \in \mathbb{R}^n$
+
+\textbf{Codomain:} $[0, ∞)$
+
+\textbf{Invariants:}
+\begin{itemize}
+  \item $||x|| \geq 0$
+  \item $||\alpha·x|| = |\alpha|·||x||$
+  \item $||0|| = 0$
+\end{itemize}
+

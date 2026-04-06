@@ -1,0 +1,80 @@
+---
+# Baseline: CUDA Transformer Trainer Profile — AFTER KAIZEN-048
+# Measured on RTX 4090, 2026-03-04
+#
+# Model: 350M-class (24L, 1024H, 16 heads, intermediate=4096, vocab=32000)
+# Sequence length: 128
+# Steps: 20 (steady-state, excludes first JIT step)
+# Build: release, --features cuda
+# Change: KAIZEN-048 — zero-copy embed_bwd scatter-add
+
+hardware:
+  gpu: "NVIDIA GeForce RTX 4090"
+  vram_gb: 25.2
+  pcie: "Gen4 x16"
+
+model:
+  hidden_size: 1024
+  intermediate_size: 4096
+  num_hidden_layers: 24
+  num_attention_heads: 16
+  vocab_size: 32000
+  max_seq_len: 128
+
+results:
+  steps: 20
+  avg_step_ms: 293.6
+  p50_step_ms: 288.2
+  p95_step_ms: 388.0
+
+  phases:
+    embed:     { pct: 0.0,  avg_ms: 0.03 }
+    h2d:       { pct: 0.1,  avg_ms: 0.36 }
+    forward:   { pct: 24.9, avg_ms: 73.22 }
+    norm_lm:   { pct: 8.3,  avg_ms: 24.24 }
+    loss:      { pct: 13.7, avg_ms: 40.34 }
+    grad_h2d:  { pct: 0.3,  avg_ms: 1.01 }
+    lm_bwd:    { pct: 30.7, avg_ms: 90.23 }
+    norm_bwd:  { pct: 0.4,  avg_ms: 1.17 }
+    blk_bwd:   { pct: 20.5, avg_ms: 60.28 }
+    embed_bwd: { pct: 0.2,  avg_ms: 0.55 }
+    opt:       { pct: 0.0,  avg_ms: 0.00 }
+    other:     { pct: 0.7,  avg_ms: 2.20 }
+
+kaizen_048_impact:
+  embed_bwd_before_ms: 145.99
+  embed_bwd_after_ms: 0.55
+  embed_bwd_speedup: "265x"
+  step_before_ms: 447.6
+  step_after_ms: 293.6
+  step_improvement_pct: 34.4
+
+analysis:
+  top_bottlenecks:
+    - phase: lm_bwd
+      pct: 30.7
+      root_cause: "LM head backward (2 GEMMs on V×H) + stream.synchronize() + 128MB D2H for CPU grad norm"
+      optimization: "GPU-side L2 norm reduction kernel — eliminate 128MB D2H + CPU iteration"
+      estimated_savings_pct: 5-10
+
+    - phase: forward
+      pct: 24.9
+      root_cause: "24-layer forward pass through transformer blocks (GPU-bound)"
+      optimization: "Expected GPU-bound — limited optimization potential at this scale"
+      estimated_savings_pct: 0-5
+
+    - phase: blk_bwd
+      pct: 20.5
+      root_cause: "24-layer backward pass with interleaved optimizer steps"
+      optimization: "Expected GPU-bound — optimizer steps are fused"
+      estimated_savings_pct: 0-5
+
+    - phase: loss
+      pct: 13.7
+      root_cause: "CPU softmax over 128×32000 = 4M elements"
+      optimization: "Move cross-entropy + softmax backward to GPU"
+      estimated_savings_pct: 10-13
+
+  resolved:
+    - "KAIZEN-048: embed_bwd 145.99ms → 0.55ms (eliminated 3×128MB gradient clones)"
+    - "KAIZEN-044/045: h2d confirmed <1% — pre-alloc was low ROI"

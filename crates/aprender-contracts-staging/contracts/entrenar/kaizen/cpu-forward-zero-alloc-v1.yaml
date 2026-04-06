@@ -1,0 +1,52 @@
+contract: cpu-forward-zero-alloc-v1
+version: 1.0.0
+status: implemented
+kaizen: '035'
+invariants:
+- id: C-FWD-CPU-001
+  description: CPU forward path passes token_ids by reference, no allocation
+  preconditions:
+  - has_gpu_training is false (CPU path)
+  - token_ids is a valid &[u32] slice
+  postconditions:
+  - forward_hidden_dispatch called with borrowed token_ids
+  - No Vec<u32> allocation on CPU forward path
+  - GPU path still allocates padded Vec (necessary for alignment)
+  verified_by:
+  - 31 classify_pipeline tests pass, 0 failures
+affected_files:
+- path: src/finetune/classify_pipeline.rs
+  functions:
+  - forward_backward_single (line ~2685)
+  - forward_only_tokenized (line ~2921)
+  change: '- Replaced (padded_tokens, seq_len) tuple with if/else forward call
+
+    - CPU path: forward_hidden_dispatch(token_ids) — borrow, no alloc
+
+    - GPU path: forward_hidden_dispatch(&padded) — padded Vec still needed
+
+    '
+performance_note: 'For 50-epoch SSC training (17,942 samples):
+
+
+  Before:
+
+  - 17,942 × 50 = 897,100 Vec<u32> allocations
+
+  - At ~64 tokens × 4 bytes = 256 bytes each: ~230 MB total allocation
+
+
+  After:
+
+  - Zero Vec<u32> allocations on CPU path
+
+  - GPU path unchanged (padding still required)
+
+  '
+qa_gate:
+  id: F-CFZA-001
+  name: cpu-forward-zero-alloc-v1 Contract
+  description: Quality gate for cpu-forward-zero-alloc-v1
+  checks:
+  - validation
+  - falsification

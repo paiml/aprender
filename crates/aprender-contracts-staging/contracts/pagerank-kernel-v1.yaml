@@ -1,0 +1,163 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: PageRank kernel — power iteration for stationary distribution
+  references:
+  - Brin & Page (1998) The Anatomy of a Large-Scale Hypertextual Web Search Engine
+equations:
+  pagerank:
+    formula: r = d * M * r + (1-d)/N * 1
+    domain: M in R^{N x N} (column-stochastic), d in (0,1), N >= 1
+    codomain: r in R^N, r_i >= 0, sum(r) = 1
+    invariants:
+    - r_i >= 0 for all i (non-negativity)
+    - sum(r) = 1 (probability distribution)
+    - r is left eigenvector of Google matrix G = d*M + (1-d)/N * 1*1^T
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Pagerank
+  power_iteration:
+    formula: r_{t+1} = G * r_t, converges when ||r_{t+1} - r_t|| < eps
+    domain: r_0 = 1/N * 1 (uniform), G column-stochastic
+    codomain: r_t -> r* (stationary distribution)
+    invariants:
+    - sum(r_t) = 1 at every iteration
+    - '||r_{t+1} - r*|| <= d * ||r_t - r*|| (linear convergence)'
+    - Convergence rate bounded by damping factor d
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Power_Iteration
+proof_obligations:
+- type: invariant
+  property: Probability distribution
+  formal: '|sum(r) - 1.0| < eps and r_i >= 0 for all i'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: monotonicity
+  property: Convergence
+  formal: '||r_{t+1} - r*|| <= ||r_t - r*|| (contraction)'
+  applies_to: all
+- type: bound
+  property: Scores non-negative
+  formal: r_i >= 0 for all i at every iteration
+  applies_to: all
+- type: invariant
+  property: Normalization preserved per iteration
+  formal: '|sum(r_t) - 1.0| < eps at every iteration t'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: build_transition
+    description: Normalize adjacency matrix to column-stochastic M
+    invariant: Each column sums to 1 (or handled as dangling)
+  - name: initialize
+    description: Set r_0 = uniform distribution
+    invariant: sum(r_0) = 1
+  - name: iterate
+    description: r_{t+1} = d * M * r_t + (1-d)/N
+    invariant: sum(r_{t+1}) = 1
+  - name: check_convergence
+    description: Check ||r_{t+1} - r_t||_1 < eps
+    invariant: L1 norm decreases monotonically
+simd_dispatch:
+  pagerank_iterate:
+    scalar: pagerank_iterate_scalar
+    avx2: pagerank_iterate_avx2
+    ptx: pagerank_ptx
+enforcement:
+  probability:
+    description: Output must be valid probability distribution
+    check: contract_tests::FALSIFY-PR-001
+    severity: ERROR
+  convergence:
+    description: Iteration must converge
+    check: contract_tests::FALSIFY-PR-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PR-001
+  rule: Probability distribution
+  prediction: sum(r) = 1 and r_i >= 0 after convergence
+  test: proptest with random graphs, N=2..64
+  if_fails: Normalization not maintained during iteration
+- id: FALSIFY-PR-002
+  rule: Convergence
+  prediction: '||r_{t+1} - r_t||_1 decreases each iteration'
+  test: proptest tracking L1 norm over 100 iterations
+  if_fails: Transition matrix not properly stochastic
+- id: FALSIFY-PR-003
+  rule: Non-negativity
+  prediction: r_i >= 0 at every iteration
+  test: proptest checking scores per iteration
+  if_fails: Negative values from floating-point error
+- id: FALSIFY-PR-004
+  rule: SIMD equivalence
+  prediction: '|iterate_avx2(r) - iterate_scalar(r)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD iteration
+  if_fails: SIMD matrix-vector product accumulation differs
+- id: FALSIFY-PR-005
+  rule: Boundary - single node
+  prediction: PageRank of single-node graph is [1.0]
+  test: proptest with N=1
+  if_fails: Edge case in graph construction
+- id: FALSIFY-PR-006
+  rule: Uniform graph symmetry
+  prediction: Complete graph gives uniform PageRank r_i = 1/N
+  test: proptest with complete graphs
+  if_fails: Damping factor or normalization incorrect
+kani_harnesses:
+- id: KANI-PR-001
+  obligation: PR-INV-001
+  property: PageRank sums to 1 for small graphs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_pagerank_distribution
+- id: KANI-PR-002
+  obligation: PR-BND-001
+  property: All scores non-negative
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_pagerank_nonneg
+- id: KANI-PAGERA-003
+  obligation: Probability distribution
+  property: Probability distribution
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGERA-004
+  obligation: Convergence
+  property: Convergence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGERA-005
+  obligation: Scores non-negative
+  property: Scores non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGERA-006
+  obligation: Normalization preserved per iteration
+  property: Normalization preserved per iteration
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGERA-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-PR-001
+  name: PageRank Contract
+  description: Power iteration PageRank quality gate
+  checks:
+  - probability_distribution
+  - convergence
+  - non_negativity
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Skip normalization after matrix-vector multiply

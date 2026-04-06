@@ -1,0 +1,165 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: Batched beam search — convert N sequential matvecs into one batched matmul for Whisper decoder projections
+  references:
+  - Freitag & Al-Onaizan (2017) Beam Search Strategies for Neural Machine Translation
+  - Graves (2012) Sequence Transduction with Recurrent Neural Networks §3.1 Beam Search
+  - Radford et al. (2023) Robust Speech Recognition via Large-Scale Weak Supervision (Whisper)
+  depends_on:
+  - matmul-kernel-v1.yaml
+  - online-softmax-v1.yaml
+  - linear-projection-v1.yaml
+equations:
+  sequential_beam_projection:
+    formula: "Sequential beam projection (N separate matvecs):\n  for b in 0..N:\n    output[b] = W @ input[b]\n  where W\
+      \ ∈ ℝ^{d_out × d_in}, input[b] ∈ ℝ^{d_in}, output[b] ∈ ℝ^{d_out}\nTotal work: N · d_in · d_out FLOPs across N kernel\
+      \ launches\n"
+    domain: W ∈ ℝ^{d_out × d_in}, input[b] ∈ ℝ^{d_in} for b ∈ {0..N-1}
+    codomain: output[b] ∈ ℝ^{d_out} for b ∈ {0..N-1}
+    invariants:
+    - Each output[b] is an independent linear projection
+    - N kernel launches required
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Sequential_Beam_Projection
+  batched_beam_projection:
+    formula: "Batched beam projection (single matmul):\n  X = stack(input[0], ..., input[N-1])    ∈ ℝ^{N × d_in}\n  Y = X\
+      \ @ W^T                              ∈ ℝ^{N × d_out}\n  output[b] = Y[b]                         ∈ ℝ^{d_out}\nTotal\
+      \ work: N · d_in · d_out FLOPs in 1 kernel launch\n"
+    domain: X ∈ ℝ^{N × d_in}, W ∈ ℝ^{d_out × d_in}
+    codomain: Y ∈ ℝ^{N × d_out}
+    invariants:
+    - Y[b] = W @ X[b] for all b
+    - Single kernel launch amortizes overhead
+    - GEMM utilization scales with N (better for N ≥ 4)
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Batched_Beam_Projection
+  beam_selection:
+    formula: "Beam selection via top-K from flattened logit matrix:\n  logits = Y_vocab ∈ ℝ^{N × V}     (batched vocab projection)\n\
+      \  log_probs[b, v] = log_softmax(logits[b]) [v]\n  scores[b, v] = beam_score[b] + log_probs[b, v]\n  candidates = flatten(scores)\
+      \ ∈ ℝ^{N·V}\n  top_K = argsort(candidates, descending=True)[:K]\n  For each selected index i:\n    parent_beam = i ÷\
+      \ V\n    token_id    = i mod V\n"
+    domain: logits ∈ ℝ^{N × V}, beam_score ∈ ℝ^{N}, K ≤ N
+    codomain: K (parent_beam, token_id, score) tuples
+    invariants:
+    - Selected K scores are the K largest across all N·V candidates
+    - Parent beam index correctly maps back via integer division
+    - Token ID correctly maps back via modular arithmetic
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Beam_Selection
+  termination:
+    formula: "Beam search terminates at step t when:\n  (a) all K active beams have emitted EOS token, OR\n  (b) t = max_len\n\
+      Final output: highest-scoring complete beam (ended with EOS)\nFallback: if no beam completed, return highest-scoring\
+      \ partial beam\n"
+    domain: active_beams ⊆ {0..K-1}, t ∈ ℕ
+    codomain: token_sequence ∈ V*, |token_sequence| ≤ max_len
+    invariants:
+    - Complete beams never re-enter the active set
+    - Step counter t is monotonically increasing
+    - At least one beam is returned (fallback guarantees this)
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Termination
+proof_obligations:
+- type: equivalence
+  property: Batched projection matches sequential projection
+  formal: '|batched_output[b] - sequential_output[b]| < ε element-wise for all b'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: equivalence
+  property: Beam selection consistency
+  formal: top_K(batched_scores) = top_K(sequential_scores) as sets of (parent, token) pairs
+  tolerance: 0
+  applies_to: all
+- type: invariant
+  property: Dimension correctness
+  formal: shape(Y) = [N_beams, d_out] for each linear projection
+  applies_to: all
+- type: monotonicity
+  property: Score ordering
+  formal: selected_scores[i] ≥ selected_scores[i+1] for i ∈ {0..K-2}
+  applies_to: all
+- type: termination
+  property: Beam search termination
+  formal: '∀ inputs: beam_search halts within max_len steps'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: batch_inputs
+    description: Stack N beam hidden states into [N, d_model] matrix
+    invariant: X[b] = hidden_state of beam b, shape [N, d_model]
+  - name: batched_projection
+    description: 'Single GEMM: Y = X @ W^T for each projection (Q, K, V, out, vocab)'
+    invariant: Y[b] = W @ X[b] for all b, verified by sequential fallback
+  - name: score_and_select
+    description: Log-softmax over vocab dim, add beam scores, top-K selection
+    invariant: Top-K indices correctly decompose into (parent_beam, token_id)
+  - name: beam_update
+    description: Gather parent states, append selected tokens, update scores
+    invariant: New beam[k] = old beam[parent[k]] ++ token[k], score updated
+  - name: termination_check
+    description: Check EOS tokens and step count, retire completed beams
+    invariant: Active beam count monotonically non-increasing once beams complete
+falsification_tests:
+- id: FALSIFY-BATCH-001
+  rule: Output equivalence with sequential beam search
+  prediction: '|batched_output[b] - sequential_output[b]| < 1e-5 for all b, all projections'
+  test: proptest with random f32 weights [d_out, d_in] and input [N, d_in], N in {1,2,4,8,16}, d_in/d_out in {64,256,512,768,1280}
+  if_fails: Matmul accumulation order differs between batched GEMM and sequential matvec — likely floating-point non-associativity
+- id: FALSIFY-BATCH-002
+  rule: Top-K beam selection matches sequential
+  prediction: Same set of (parent_beam, token_id) pairs selected by batched and sequential
+  test: proptest with random logit matrices [N, V], V in {51864, 51865}, N in {1..16}, K in {1..N}
+  if_fails: Flattened index decomposition (÷V, mod V) has off-by-one or tie-breaking differs
+- id: FALSIFY-BATCH-003
+  rule: Beam width 1 equals greedy decode
+  prediction: beam_search(input, K=1) produces identical token sequence to greedy_decode(input)
+  test: deterministic test with Whisper tiny/base/small model weights, 10 fixed audio inputs
+  if_fails: Beam bookkeeping overhead corrupts the K=1 degenerate case
+- id: FALSIFY-BATCH-004
+  rule: All beams terminate correctly
+  prediction: beam_search returns within max_len steps for all inputs; all returned beams have length ≤ max_len
+  test: 'proptest with adversarial inputs: all-zero logits, uniform logits, logits biased away from EOS, max_len in {1, 10,
+    100, 448}'
+  if_fails: Termination condition fails to count completed beams or step counter not incremented
+- id: FALSIFY-BATCH-005
+  rule: Beam search termination
+  prediction: Property holds under boundary conditions
+  test: Exercise boundary values for last obligation
+  if_fails: Edge case violation in Beam search termination
+kani_harnesses:
+- id: batched-beam-search-v1-kani-001
+  obligation: Batched projection matches sequential projection
+  bound: 8
+  strategy: bounded_int
+- id: KANI-BATCHE-002
+  obligation: Beam selection consistency
+  property: Beam selection consistency
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHE-003
+  obligation: Dimension correctness
+  property: Dimension correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHE-004
+  obligation: Score ordering
+  property: Score ordering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHE-005
+  obligation: Beam search termination
+  property: Beam search termination
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-BBSV-001
+  name: batched-beam-search-v1 Contract
+  description: 'Quality gate for Batched beam search — convert N sequential matvecs into one '
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,20 @@
+% Equations for relu-kernel-v1
+\section{Equations: relu-kernel-v1}
+
+\subsection{relu}
+\label{eq:relu}
+
+\begin{equation}
+  y_i = max(0, x_i)
+\end{equation}
+
+\textbf{Domain:} $x \in \mathbb{R}^n$
+
+\textbf{Codomain:} $y \in [0, ∞)^n$
+
+\textbf{Invariants:}
+\begin{itemize}
+  \item $y_i \geq 0 for all i$
+  \item $relu(relu(x)) = relu(x)$
+\end{itemize}
+

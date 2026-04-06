@@ -1,0 +1,134 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-01'
+  author: PAIML Engineering
+  description: >
+    JSON schema invariants for training canary result files. Every canary emits
+    a JSON file to results/. Falsification condition F-MET-01.
+  references:
+    - training-canary-spec.md Section 4 (Metrics Contract)
+    - F-MET-01 falsification condition
+  depends_on: []
+
+schema_invariants:
+  - id: F-SCHEMA-001
+    name: Canary identifier present
+    description: >
+      Every result JSON must have "canary" field with value in
+      {unsloth, pytorch, pytorch-compile, cublas, wgpu, apr}.
+    severity: P0
+    critical: true
+
+  - id: F-SCHEMA-005
+    name: Config block with required fields
+    description: >
+      Every result must have config with model, batch_size, seq_len, steps, lr, seed.
+    severity: P0
+    critical: true
+
+  - id: F-SCHEMA-010
+    name: GPU info required for CUDA backends
+    description: >
+      When backend=cuda, gpu block must have device, vram_total_mb, cuda_version.
+    severity: P0
+    critical: true
+
+  - id: F-SCHEMA-020
+    name: Standard metrics for non-cublas canaries
+    description: >
+      Non-cublas canaries must have metrics.tokens_per_sec and metrics.final_loss.
+    severity: P0
+    critical: true
+
+equations:
+  schema_completeness:
+    formula: valid = all(field in result for field in required_fields)
+    preconditions:
+      - result is valid JSON
+      - result file matches canary-*.json glob
+    lean_theorem: Theorems.Schema_Completeness
+  domain_throughput:
+    formula: tokens_per_sec > 0.0
+    preconditions:
+      - canary completed successfully
+    lean_theorem: Theorems.Domain_Throughput
+  domain_loss:
+    formula: 0.0 <= final_loss < 100.0
+    preconditions:
+      - canary completed successfully
+    lean_theorem: Theorems.Domain_Loss
+
+proof_obligations:
+  - type: invariant
+    property: All required top-level fields present
+    formal: canary in result AND backend in result AND host in result AND timestamp in result AND config in result AND metrics in result
+    applies_to: all
+  - type: invariant
+    property: Config has training parameters
+    formal: model in config AND batch_size in config AND seq_len in config AND steps in config AND lr in config AND seed in config
+    applies_to: all
+  - type: bound
+    property: Throughput is positive
+    formal: metrics.tokens_per_sec > 0.0
+    applies_to: standard_canaries
+  - type: bound
+    property: Loss is finite and non-negative
+    formal: 0.0 <= metrics.final_loss < 100.0
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-SCHEMA-001
+    rule: F-SCHEMA-001 (Canary identifier)
+    prediction: Validator rejects JSON missing "canary" field
+    test: |
+      def test_missing_canary_field():
+          result = {"backend": "cuda", "host": "test", "config": {}, "metrics": {}}
+          assert not validate_schema(result), "FALSIFIED: accepted JSON without canary field"
+    if_fails: Schema validation not checking required fields
+  - id: FALSIFY-SCHEMA-002
+    rule: F-SCHEMA-010 (GPU info for CUDA)
+    prediction: Validator rejects CUDA result missing gpu block
+    test: |
+      def test_cuda_missing_gpu():
+          result = {"canary": "unsloth", "backend": "cuda", "host": "test", "config": {}, "metrics": {}}
+          assert not validate_schema(result), "FALSIFIED: CUDA result accepted without gpu block"
+    if_fails: GPU block not required for CUDA backends
+  - id: FALSIFY-SCHEMA-003
+    rule: F-DOMAIN-001 (Throughput positive)
+    prediction: Validator rejects zero throughput
+    test: |
+      def test_zero_throughput():
+          result = {"canary": "unsloth", "metrics": {"tokens_per_sec": 0.0}}
+          assert not validate_domain(result), "FALSIFIED: accepted zero throughput"
+    if_fails: Domain validation not checking throughput positivity
+  - id: FALSIFY-SCHEMA-004
+    rule: F-DOMAIN-002 (Loss finite and non-negative)
+    prediction: Validator rejects loss >= 100
+    test: |
+      def test_loss_out_of_range():
+          result = {"canary": "unsloth", "metrics": {"final_loss": 150.0}}
+          assert not validate_domain(result), "FALSIFIED: accepted loss=150 (broken training)"
+    if_fails: Domain validation not checking loss upper bound
+
+kani_harnesses:
+  - id: KANI-SCHEMA-001
+    obligation: All required fields present
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+    description: Verify schema validation catches all missing required fields
+  - id: KANI-SCHEMA-002
+    obligation: Throughput is positive
+    strategy: bounded_int
+    solver: cadical
+    bound: 16
+    description: Verify domain check rejects non-positive throughput
+
+qa_gate:
+  id: F-MET-01
+  name: canary-metrics-schema-v1 Contract
+  description: Validate all canary result JSON files against schema invariants
+  checks:
+    - schema_invariants
+    - value_domains
+  pass_criteria: All schema invariants satisfied for all result files

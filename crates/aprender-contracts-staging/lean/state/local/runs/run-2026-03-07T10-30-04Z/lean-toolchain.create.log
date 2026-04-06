@@ -1,0 +1,14 @@
+--- FORJAR RESOURCE LOG ---
+resource: lean-toolchain
+action: create
+machine: local
+exit_code: 1
+duration: 0.018s
+
+--- STDOUT ---
+Required toolchain: leanprover/lean4:v4.15.0
+
+--- STDERR ---
+error: 'leanprover/lean4:v4.15.0' is already installed
+
+--- END ---

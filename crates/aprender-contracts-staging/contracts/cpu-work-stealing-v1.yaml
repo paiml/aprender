@@ -1,0 +1,121 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: CPU matmul parallelism must use lightweight work-stealing with L1 tiling
+  references:
+  - 'llama.cpp ggml-cpu.c: atomic work-stealing with 16×16 L1 tiling'
+  - 'realizar generic_matvec.rs: Rayon par_chunks_mut(64) — higher overhead'
+  - 'qwen-coder-deploy bench-results-v2: apr CPU 9.5 vs llama.cpp 74 tok/s'
+  - Goto & Van de Geijn (2008) Anatomy of high-performance matrix multiplication
+  depends_on:
+  - cpu-q4k-activation-quant-v1.yaml
+  - matmul-kernel-v1.yaml
+equations:
+  rayon_overhead:
+    formula: "Current Rayon dispatch cost per matmul:\n  overhead = rayon_spawn_cost × ceil(out_dim / MIDI_TILE_M)\n  rayon_spawn_cost\
+      \ ≈ 1-5 μs per task (crossbeam deque)\n  For hidden_dim=1536: ceil(1536/64) = 24 tasks\n  Per-matmul overhead: ~24-120\
+      \ μs\n\nPer-token overhead (7 matmuls × 28 layers):\n  total_overhead = 196 × 24-120 μs = 4.7-23.5 ms\n\nLightweight\
+      \ atomic work-stealing:\n  overhead = N_threads × atomic_fetch_add_cost\n  atomic_fetch_add ≈ 10-50 ns (relaxed ordering)\n\
+      \  For 8 threads, 24 chunks: 24 × 10-50 ns ≈ 0.24-1.2 μs per matmul\n  Per-token overhead: 196 × 0.24-1.2 μs = 47-235\
+      \ μs\n"
+    domain: Multi-core x86_64, 8+ threads
+    invariants:
+    - Work-stealing overhead < 1% of matmul compute time
+    - No thread contention on false-sharing boundaries
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Rayon_Overhead
+  l1_tiling:
+    formula: "L1 cache tiling for quantized matmul:\n  L1_size ≈ 32-48 KB (per core)\n  Q4K super-block: 144 bytes (256 values)\n\
+      \  Tile size: 16 output rows × 1 input vector\n  Tile footprint: 16 × ceil(in_dim/256) × 144 bytes\n  For in_dim=1536:\
+      \ 16 × 6 × 144 = 13,824 bytes (fits in L1)\n\nL2 cache tiling (Rayon current):\n  Tile size: 64 output rows (MIDI_TILE_M)\n\
+      \  Tile footprint: 64 × 6 × 144 = 55,296 bytes (exceeds L1, fits L2)\n"
+    domain: x86_64 with 32KB L1d, 256-512KB L2
+    invariants:
+    - L1 tile footprint ≤ L1_size
+    - Working set per thread fits in L1
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.L1_Tiling
+proof_obligations:
+- type: bound
+  property: Dispatch overhead under budget
+  formal: work_stealing_overhead < 0.01 × matmul_compute_time
+  applies_to: all
+- type: invariant
+  property: No false sharing
+  formal: All atomic counters aligned to 64-byte cache lines
+  applies_to: all
+- type: bound
+  property: L1 tile fits
+  formal: tile_footprint_bytes ≤ 32768 (32KB L1d)
+  applies_to: all
+- type: equivalence
+  property: Work-stealing output matches Rayon output
+  formal: matvec_worksteal(W, x) ≡ matvec_rayon(W, x)
+  tolerance: 1.0e-06
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-WS-001
+  rule: Dispatch overhead
+  prediction: Atomic work-stealing adds < 1ms per forward pass
+  test: Instrument dispatch overhead, run 100 forward passes
+  if_fails: Atomic contention or false sharing
+- id: FALSIFY-WS-002
+  rule: L1 tiling
+  prediction: L1 cache miss rate < 5% during inner loop (perf stat)
+  test: perf stat -e L1-dcache-load-misses apr serve --no-gpu, send 10 requests
+  if_fails: Tile size exceeds L1 — reduce tile dimension
+- id: FALSIFY-WS-003
+  rule: Output parity
+  prediction: Work-stealing matvec matches Rayon matvec within 1e-6
+  test: proptest with random weight matrices and activation vectors
+  if_fails: Race condition or accumulation order difference
+- id: FALSIFY-WS-004
+  rule: Scaling efficiency
+  prediction: 4-thread throughput ≥ 3.5× single-thread (87.5% efficiency)
+  test: Benchmark with --threads 1 vs --threads 4
+  if_fails: Lock contention or memory bandwidth saturation
+kani_harnesses:
+- id: KANI-WS-001
+  obligation: Dispatch overhead under budget
+  property: Work-stealing overhead is less than 1% of matmul compute time
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_dispatch_overhead_budget
+- id: KANI-WS-002
+  obligation: No false sharing
+  property: All atomic counters are 64-byte cache-line aligned
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_no_false_sharing
+- id: KANI-WS-003
+  obligation: L1 tile fits
+  property: Tile footprint in bytes does not exceed 32KB L1d
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_l1_tile_fits
+- id: KANI-WS-004
+  obligation: Work-stealing output matches Rayon output
+  property: matvec_worksteal and matvec_rayon produce identical results
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_worksteal_rayon_equivalence
+qa_gate:
+  id: F-WS-001
+  name: CPU Work-Stealing Parallelism Contract
+  description: Lightweight atomic work-stealing with L1-friendly tiling
+  checks:
+  - dispatch_overhead
+  - l1_tiling
+  - output_parity
+  - scaling_efficiency
+  pass_criteria: All 4 falsification tests pass
+  falsification: Replace work-stealing with single-threaded — measure overhead delta

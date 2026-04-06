@@ -1,0 +1,261 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >-
+    Duende daemon orchestration — lifecycle state machine, signal handling,
+    exponential backoff restart, RED method metrics, and health check monitoring
+    for cross-platform daemon management
+  references:
+  - Wilkins (2018) The RED Method — Rate, Errors, Duration metrics
+  - Toyota Production System — Jidoka (stop on error), Heijunka (load leveling)
+  - Iron Lotus Framework — Genchi Genbutsu, zero-panic error handling
+
+equations:
+  daemon_lifecycle:
+    formula: |
+      Daemon::init -> Daemon::run -> Daemon::shutdown
+        init(config) validates configuration, allocates resources
+        run(ctx) executes main loop, checks ctx.should_shutdown()
+        shutdown(timeout) releases resources within timeout
+      State transitions:
+        Created -> Starting -> Running <-> Paused -> Stopping -> Stopped
+        Starting|Running|Paused -> Failed(reason)
+    domain: DaemonConfig with valid name and binary path
+    codomain: Result<ExitReason, DaemonError>
+    invariants:
+    - 'Terminal states are absorbing: once Stopped or Failed, no further transitions'
+    - 'Active states are Running or Paused only'
+    - 'Signal-receivable states: Running, Paused, Stopping'
+    preconditions:
+    - config.name is non-empty
+    - config.binary_path is non-empty
+    lean_theorem: Theorems.Daemon_Lifecycle
+
+  signal_handling:
+    formula: |
+      DaemonContext::try_recv_signal: () -> Option<Signal>
+      DaemonContext::recv_signal: async () -> Option<Signal>
+        Term|Int|Quit signals auto-set shutdown flag
+        Hup|Usr1|Usr2|Stop|Cont do NOT set shutdown flag
+      Signal::as_i32: Signal -> i32  (bijective on valid signals)
+      Signal::from_i32: i32 -> Option<Signal>
+    domain: Signal enum with 9 variants mapping to Unix signal numbers
+    codomain: Option<Signal> for reception, i32 for numeric conversion
+    invariants:
+    - 'Roundtrip: Signal::from_i32(s.as_i32()) == Some(s) for all valid signals'
+    - 'Termination signals set shutdown: Term|Int|Quit => should_shutdown() == true'
+    - 'Non-termination signals preserve state: Hup|Usr1|Usr2 => should_shutdown() unchanged'
+    preconditions:
+    - DaemonContext channel is open (not dropped)
+    lean_theorem: Theorems.Signal_Handling
+
+  restart_policy:
+    formula: |
+      RestartPolicy::should_restart: (ExitReason, u32) -> bool
+        Never => false
+        Always => true
+        OnFailure => exit_reason is Error|ResourceExhausted
+        MaxRetries(n) => restart_count < n
+        WithBackoff(cfg) => restart_count < cfg.max_retries AND exit_reason is Error|ResourceExhausted
+      BackoffConfig::delay_for: u32 -> Duration
+        delay = min(initial_delay * multiplier^restart_count, max_delay)
+    domain: ExitReason variants and restart count (u32)
+    codomain: bool for should_restart, Duration for delay_for
+    invariants:
+    - 'Never policy always returns false regardless of inputs'
+    - 'Always policy always returns true regardless of inputs'
+    - 'Delay is bounded: delay_for(n) <= max_delay for all n'
+    - 'Delay is monotonically non-decreasing: delay_for(n) <= delay_for(n+1) until capped'
+    preconditions:
+    - BackoffConfig.multiplier >= 1.0
+    - BackoffConfig.initial_delay > Duration::ZERO
+    - BackoffConfig.max_delay >= BackoffConfig.initial_delay
+    lean_theorem: Theorems.Restart_Policy
+
+  red_metrics:
+    formula: |
+      DaemonMetrics::record_request: () -> ()  (atomic increment)
+      DaemonMetrics::record_error: () -> ()    (atomic increment)
+      DaemonMetrics::record_duration: Duration -> ()
+      DaemonMetrics::error_rate: () -> f64
+        error_rate = if requests > 0 then errors / requests else 0.0
+      DaemonMetrics::duration_avg: () -> Duration
+        duration_avg = if count > 0 then sum / count else Duration::ZERO
+      DaemonMetrics::snapshot: () -> MetricsSnapshot
+    domain: Atomic counters with relaxed ordering
+    codomain: f64 for rates in [0.0, 1.0], Duration for averages, MetricsSnapshot
+    invariants:
+    - 'Request count monotonic: requests_total only increases'
+    - 'Error count monotonic: errors_total only increases'
+    - 'Error rate bounded: 0.0 <= error_rate <= 1.0'
+    - 'Duration max is true maximum: duration_max >= duration_avg'
+    - 'Clone shares state: cloned metrics see same counters'
+    preconditions:
+    - DaemonMetrics initialized via new()
+    lean_theorem: Theorems.RED_Metrics
+
+  manager_registration:
+    formula: |
+      DaemonManager::register: (Daemon, Config, Policy) -> Result<DaemonId>
+        register(d, c, p) = Ok(id)  iff id not already registered
+        register(d, c, p) = Err(_)  iff id already exists
+      DaemonManager::unregister: DaemonId -> Result<()>
+        unregister(id) = Ok(())   iff daemon exists AND !status.is_active()
+        unregister(id) = Err(_)   iff not found OR status.is_active()
+      DaemonManager::count: () -> usize
+        count() = number of registered daemons
+    domain: Daemon trait objects with unique DaemonId
+    codomain: Result<DaemonId> for register, Result<()> for unregister
+    invariants:
+    - 'No duplicate IDs: register fails if ID exists'
+    - 'Active daemons cannot be unregistered'
+    - 'Count reflects actual registry size'
+    preconditions:
+    - DaemonManager initialized via new()
+    lean_theorem: Theorems.Manager_Registration
+
+  error_classification:
+    formula: |
+      DaemonError::is_recoverable: DaemonError -> bool
+        recoverable = HealthCheck | ResourceLimit | PolicyViolation
+      DaemonError::is_fatal: DaemonError -> bool
+        fatal = Init | Internal
+      Invariant: is_recoverable AND is_fatal are disjoint
+    domain: DaemonError enum with 13 variants
+    codomain: bool
+    invariants:
+    - 'Disjoint classification: no error is both recoverable and fatal'
+    - 'Recoverable set: {HealthCheck, ResourceLimit, PolicyViolation}'
+    - 'Fatal set: {Init, Internal}'
+    preconditions:
+    - DaemonError is well-formed
+    lean_theorem: Theorems.Error_Classification
+
+proof_obligations:
+- type: state_machine
+  property: Daemon lifecycle follows valid state transitions
+  formal: >-
+    forall d. d.status transitions only follow edges in
+    {Created->Starting, Starting->Running, Running->Paused, Paused->Running,
+    Running->Stopping, Paused->Stopping, Stopping->Stopped, *->Failed}
+  applies_to: daemon_lifecycle
+
+- type: equivalence
+  property: Signal numeric roundtrip
+  formal: forall s in Signal. Signal::from_i32(s.as_i32()) == Some(s)
+  applies_to: signal_handling
+
+- type: bound
+  property: Backoff delay bounded by max_delay
+  formal: forall n. BackoffConfig::delay_for(n) <= BackoffConfig.max_delay
+  applies_to: restart_policy
+
+- type: monotonicity
+  property: Backoff delay non-decreasing until capped
+  formal: forall n. delay_for(n) <= delay_for(n+1) OR delay_for(n) == max_delay
+  applies_to: restart_policy
+
+- type: invariant
+  property: Error rate bounded
+  formal: 0.0 <= DaemonMetrics::error_rate() <= 1.0 for all metric states
+  applies_to: red_metrics
+
+- type: determinism
+  property: Restart policy is deterministic
+  formal: should_restart(reason, count) returns same bool for same inputs
+  applies_to: restart_policy
+
+- type: precondition
+  property: Active daemons cannot be unregistered
+  formal: status.is_active() => unregister(id).is_err()
+  applies_to: manager_registration
+
+- type: postcondition
+  property: Registration increments count
+  formal: register(d).is_ok() => count_after == count_before + 1
+  applies_to: manager_registration
+
+falsification_tests:
+- id: FALSIFY-DUEN-001
+  rule: Signal roundtrip bijection
+  prediction: Signal::from_i32(s.as_i32()) == Some(s) for all 9 signal variants
+  test: exhaustive test over all Signal enum variants
+  if_fails: as_i32 or from_i32 mapping has incorrect constant
+
+- id: FALSIFY-DUEN-002
+  rule: Termination signals set shutdown flag
+  prediction: After receiving Term|Int|Quit, ctx.should_shutdown() == true
+  test: proptest sending each termination signal and checking shutdown flag
+  if_fails: Signal dispatch match arm missing or shutdown flag not set
+
+- id: FALSIFY-DUEN-003
+  rule: Backoff delay bounded by max_delay
+  prediction: delay_for(n) <= max_delay for n in 0..1000
+  test: proptest with random BackoffConfig and large restart counts
+  if_fails: Exponential calculation overflows f64 or clamping logic wrong
+
+- id: FALSIFY-DUEN-004
+  rule: Error rate in [0.0, 1.0]
+  prediction: error_rate() in [0.0, 1.0] after any sequence of record_request/record_error calls
+  test: proptest with random request/error sequences including zero-request edge case
+  if_fails: Division by zero or integer overflow in rate calculation
+
+- id: FALSIFY-DUEN-005
+  rule: Duplicate registration rejected
+  prediction: Registering two daemons with same DaemonId returns Err on second
+  test: register daemon, then register another with same ID
+  if_fails: HashMap insert does not check for existing key
+
+- id: FALSIFY-DUEN-006
+  rule: Error classification disjoint
+  prediction: No DaemonError variant returns true for both is_recoverable and is_fatal
+  test: exhaustive test over all DaemonError variants
+  if_fails: Match arms overlap between recoverable and fatal sets
+
+- id: FALSIFY-DUEN-007
+  rule: Registration increments daemon count
+  prediction: After successful register(), count() == previous_count + 1
+  test: register N daemons sequentially, verify count after each
+  if_fails: HashMap insert does not update or count reads stale value
+
+- id: FALSIFY-DUEN-008
+  rule: Restart policy deterministic
+  prediction: should_restart(reason, count) returns same result for identical inputs
+  test: proptest calling should_restart twice with same ExitReason and count
+  if_fails: Hidden mutable state or non-deterministic comparison in policy
+
+kani_harnesses:
+- id: KANI-DUEN-001
+  obligation: Signal roundtrip bijection
+  property: from_i32(as_i32(s)) == Some(s) for all Signal variants
+  bound: 16
+  strategy: exhaustive
+
+- id: KANI-DUEN-002
+  obligation: Backoff delay bounded
+  property: delay_for(n) <= max_delay for all n and valid BackoffConfig
+  bound: 12
+  strategy: stub_float
+
+- id: KANI-DUEN-003
+  obligation: Error rate bounded
+  property: 0.0 <= error_rate() <= 1.0 for all metric states
+  bound: 8
+  strategy: exhaustive
+
+- id: KANI-DUEN-004
+  obligation: Error classification disjoint
+  property: not (is_recoverable(e) and is_fatal(e)) for all DaemonError e
+  bound: 16
+  strategy: exhaustive
+
+qa_gate:
+  id: F-DUEN-001
+  name: agent-orchestration-v1 Contract
+  description: >-
+    Quality gate for duende daemon orchestration — lifecycle state machine,
+    signal handling, restart policy, RED metrics, and manager registration
+  checks:
+  - validation
+  - falsification

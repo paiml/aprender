@@ -1,0 +1,201 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Loss functions — differentiable objective functions for neural network training
+  references:
+  - Bishop (2006) Pattern Recognition and Machine Learning
+  - Goodfellow, Bengio & Courville (2016) Deep Learning
+equations:
+  bce:
+    formula: BCE = -(1/n) Σ[yᵢ·log(ŷᵢ) + (1-yᵢ)·log(1-ŷᵢ)]
+    domain: y ∈ {0,1}ⁿ, ŷ ∈ (0,1)ⁿ, n ≥ 1
+    codomain: BCE ∈ [0, ∞)
+    invariants:
+    - BCE ≥ 0 (non-negativity from -log on (0,1))
+    - BCE = 0 iff ŷᵢ = yᵢ for all i (perfect prediction)
+    - BCE → ∞ as ŷ → 0 for y=1, or ŷ → 1 for y=0
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Bce
+  nll:
+    formula: NLL = -(1/n) Σ log(p_{yᵢ}) where p = softmax(logits)
+    domain: logits ∈ ℝ^{n×C}, y ∈ {0..C-1}ⁿ
+    codomain: NLL ∈ [0, ∞)
+    invariants:
+    - NLL ≥ 0 (non-negativity from -log of probability)
+    - NLL = 0 iff predicted probability of true class = 1
+    - NLL ≥ -log(1/C) for uniform predictions
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Nll
+  huber:
+    formula: L_δ(a) = ½a² if |a| ≤ δ, else δ(|a| - ½δ)
+    domain: a = y - ŷ ∈ ℝ, δ > 0
+    codomain: L_δ ∈ [0, ∞)
+    invariants:
+    - L_δ ≥ 0 (non-negativity)
+    - L_δ = 0 iff a = 0
+    - L_δ is differentiable everywhere (C¹ smooth)
+    - L_δ → ½a² as δ → ∞ (approaches MSE)
+    - L_δ → δ|a| as δ → 0 (approaches MAE)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Huber
+  smooth_l1:
+    formula: SL1(a) = ½a²/β if |a| < β, else |a| - ½β
+    domain: a = y - ŷ ∈ ℝ, β > 0
+    codomain: SL1 ∈ [0, ∞)
+    invariants:
+    - SL1 ≥ 0
+    - SL1 = 0 iff a = 0
+    - SL1 is C¹ smooth
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Smooth_L1
+  l1_loss:
+    formula: L1 = (1/n) Σ|yᵢ - ŷᵢ|
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: L1 ∈ [0, ∞)
+    invariants:
+    - L1 ≥ 0
+    - L1 = 0 iff ŷ = y
+    - L1(y, ŷ) = L1(ŷ, y) (symmetry)
+    - L1 = MAE (identical function)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.L1_Loss
+  mse_loss:
+    formula: MSE = (1/n) Σ(yᵢ - ŷᵢ)²
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: MSE ∈ [0, ∞)
+    invariants:
+    - MSE ≥ 0
+    - MSE = 0 iff ŷ = y
+    - 'gradient: ∂MSE/∂ŷ = 2(ŷ-y)/n'
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Mse_Loss
+proof_obligations:
+- type: bound
+  property: All losses non-negative
+  formal: L(y, ŷ) ≥ 0 for all loss functions
+  applies_to: all
+- type: equivalence
+  property: Zero loss at perfect prediction
+  formal: L(y, y) = 0 for all y
+  applies_to: all
+- type: invariant
+  property: BCE monotonicity
+  formal: BCE increases as predictions diverge from targets
+  applies_to: bce
+- type: invariant
+  property: Huber smoothness
+  formal: Huber loss is C¹ at transition point |a| = δ
+  applies_to: huber
+- type: invariant
+  property: L1 symmetry
+  formal: L1(y, ŷ) = L1(ŷ, y)
+  applies_to: l1_loss
+- type: bound
+  property: NLL lower bound
+  formal: NLL ≥ 0
+  applies_to: nll
+falsification_tests:
+- id: FALSIFY-LF-001
+  rule: Non-negativity
+  prediction: All loss values ≥ 0 for random inputs
+  test: proptest with random predictions and targets
+  if_fails: Sign error in loss formula
+- id: FALSIFY-LF-002
+  rule: Zero at perfect prediction
+  prediction: L(y, y) = 0 for all loss functions
+  test: proptest with identical prediction and target
+  if_fails: Floating-point accumulation error
+- id: FALSIFY-LF-003
+  rule: BCE non-negativity
+  prediction: BCE ≥ 0 for y ∈ {0,1}, ŷ ∈ (0.001, 0.999)
+  test: proptest with clamped predictions
+  if_fails: Log of value outside (0,1)
+- id: FALSIFY-LF-004
+  rule: Huber transition continuity
+  prediction: '|L_δ(δ+ε) - L_δ(δ-ε)| < 2ε for small ε'
+  test: proptest testing both sides of transition
+  if_fails: Discontinuity at Huber transition point
+- id: FALSIFY-LF-005
+  rule: L1 symmetry
+  prediction: L1(y, ŷ) = L1(ŷ, y) for random inputs
+  test: proptest comparing both argument orders
+  if_fails: Argument-order dependence
+- id: FALSIFY-LF-006
+  rule: NLL lower bound
+  prediction: NLL ≥ 0 for random logits and valid class indices
+  test: proptest with random logits and uniform class labels
+  if_fails: Softmax normalization error or log of non-positive value
+kani_harnesses:
+- id: KANI-LF-001
+  obligation: '1'
+  bound: 4
+  strategy: stub_float
+- id: KANI-LF-002
+  obligation: '2'
+  bound: 4
+  strategy: stub_float
+- id: KANI-LOSS_F-003
+  obligation: All losses non-negative
+  property: All losses non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-004
+  obligation: Zero loss at perfect prediction
+  property: Zero loss at perfect prediction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-005
+  obligation: BCE monotonicity
+  property: BCE monotonicity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-006
+  obligation: Huber smoothness
+  property: Huber smoothness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-007
+  obligation: L1 symmetry
+  property: L1 symmetry
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LOSS_F-008
+  obligation: NLL lower bound
+  property: NLL lower bound
+  bound: 8
+  strategy: stub_float
+enforcement:
+  non_negativity:
+    description: All losses must be non-negative
+    check: contract_tests::FALSIFY-LF-001
+    severity: ERROR
+  zero_at_perfect:
+    description: Loss = 0 at perfect prediction
+    check: contract_tests::FALSIFY-LF-002
+    severity: ERROR
+qa_gate:
+  id: F-LF-001
+  name: Loss Functions Contract
+  description: Loss function correctness quality gate
+  checks:
+  - non_negativity
+  - zero_at_perfect
+  - bce_non_negativity
+  - huber_continuity
+  - l1_symmetry
+  - nll_lower_bound
+  pass_criteria: All 6 falsification tests pass
+  falsification: Remove log-sum-exp trick from BCE

@@ -1,0 +1,10 @@
+Equations for scale-kernel-v1
+=======================================================
+
+  scale
+    formula:  y_i = α · x_i + β
+    domain:   x ∈ ℝ^n, α ∈ ℝ, β ∈ ℝ
+    codomain: y ∈ ℝ^n
+    invariants:
+      - y finite when x finite
+

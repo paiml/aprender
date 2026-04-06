@@ -1,0 +1,119 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-24'
+  author: PAIML Engineering
+  description: BLAKE3 content-addressed state hashing — tripwire integrity foundation
+  references:
+  - 'O''Connor et al. (2019) BLAKE3: One function, fast everywhere'
+equations:
+  hash_string:
+    formula: H(s) = 'blake3:' || hex(BLAKE3(s.as_bytes()))
+    domain: s ∈ String
+    codomain: String matching /^blake3:[0-9a-f]{64}$/
+    invariants:
+    - Output always has prefix 'blake3:'
+    - Output length = 71 (7 prefix + 64 hex)
+    - 'Deterministic: H(s) = H(s) for all s'
+    preconditions:
+    - '!input.is_empty()'
+    - input.len() <= 1_073_741_824
+    lean_theorem: Theorems.Hash_String
+  hash_file:
+    formula: H(path) = 'blake3:' || hex(BLAKE3(read_all(path)))
+    domain: path ∈ Path where path.exists() ∧ path.is_file()
+    codomain: Result<String, String>
+    invariants:
+    - Output always has prefix 'blake3:' on success
+    - 'Deterministic: same file contents → same hash'
+    - Returns Err for non-existent paths
+    preconditions:
+    - '!path.is_empty()'
+    - file_size > 0
+    lean_theorem: Theorems.Hash_File
+  composite_hash:
+    formula: H(c₁, ..., cₙ) = 'blake3:' || hex(BLAKE3(c₁ || NUL || c₂ || NUL || ...
+      || cₙ || NUL))
+    domain: components ∈ [&str]
+    codomain: String matching /^blake3:[0-9a-f]{64}$/
+    invariants:
+    - Output always has prefix 'blake3:'
+    - 'Order-sensitive: H(a, b) ≠ H(b, a) in general'
+    - 'Deterministic: same inputs → same hash'
+    preconditions:
+    - parts.len() > 0
+    - '!parts.iter().any(|p| p.is_empty())'
+    lean_theorem: Theorems.Composite_Hash
+proof_obligations:
+- type: invariant
+  property: 'All hashes have blake3: prefix'
+  formal: '∀ input: output.starts_with(''blake3:'')'
+  applies_to: all
+- type: invariant
+  property: Deterministic hashing
+  formal: '∀ s: hash_string(s) = hash_string(s)'
+  applies_to: all
+- type: ordering
+  property: Composite hash is order-sensitive
+  formal: '∃ a, b: composite_hash([a, b]) ≠ composite_hash([b, a])'
+  applies_to: all
+enforcement:
+  prefix_format:
+    description: All hash outputs must start with 'blake3:'
+    check: contract_tests::FALSIFY-B3-001
+    severity: ERROR
+  determinism:
+    description: Same input must always produce same hash
+    check: contract_tests::FALSIFY-B3-002
+    severity: ERROR
+  order_sensitivity:
+    description: Composite hash must be order-sensitive
+    check: contract_tests::FALSIFY-B3-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-B3-001
+  rule: Prefix format
+  prediction: hash_string(s) starts with 'blake3:' and has length 71 for any s
+  test: proptest with 1000 random strings
+  if_fails: Format string bug in hash_string
+- id: FALSIFY-B3-002
+  rule: Determinism
+  prediction: hash_string(s) = hash_string(s) for any random s
+  test: proptest with random strings, call twice
+  if_fails: Non-deterministic state in hasher
+- id: FALSIFY-B3-003
+  rule: Order sensitivity
+  prediction: composite_hash([a, b]) ≠ composite_hash([b, a]) for distinct a, b
+  test: proptest with distinct string pairs
+  if_fails: Missing NUL separator or sorting in composite_hash
+kani_harnesses:
+- id: KANI-B3-001
+  obligation: Prefix format
+  property: hash_string output format
+  bound: 32
+  strategy: exhaustive
+  harness: verify_hash_string_prefix
+- id: KANI-BLAKE3-002
+  obligation: 'All hashes have blake3: prefix'
+  property: 'All hashes have blake3: prefix'
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BLAKE3-003
+  obligation: Deterministic hashing
+  property: Deterministic hashing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BLAKE3-004
+  obligation: Composite hash is order-sensitive
+  property: Composite hash is order-sensitive
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-B3-001
+  name: BLAKE3 State Contract
+  description: Content-addressed hashing quality gate
+  checks:
+  - prefix_format
+  - determinism
+  - order_sensitivity
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove 'blake3:' prefix from hash_string

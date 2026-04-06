@@ -1,0 +1,47 @@
+//
+// PTX kernel stub: clamp-kernel-v1
+// Clamp kernel — saturating bound
+// Equation clamp: y_i = min(max(x_i, lo), hi)
+//
+
+.version 8.5
+.target sm_90
+.address_size 64
+
+.visible .entry clamp(
+    .param .u64 input,
+    .param .u64 output,
+    .param .u32 n
+)
+{
+    .reg .u32 %tid, %n;
+    .reg .u64 %in_ptr, %out_ptr;
+    .reg .f32 %val, %acc;
+
+    ld.param.u64 %in_ptr, [input];
+    ld.param.u64 %out_ptr, [output];
+    ld.param.u32 %n, [n];
+
+    mov.u32 %tid, %ctaid.x;
+    mad.lo.u32 %tid, %tid, %ntid.x, %tid.x;
+
+    // Phase 1: compare_lo
+    // Clamp below by lo
+    // Invariant: tmp_i = max(x_i, lo)
+
+    // Phase 2: compare_hi
+    // Clamp above by hi
+    // Invariant: y_i = min(tmp_i, hi)
+
+    // Phase 3: store
+    // Write result
+    // Invariant: lo ≤ y_i ≤ hi
+
+    // Proof obligations:
+    //   [bound] Output in [lo, hi]
+    //   [monotonicity] Order preservation
+    //   [idempotency] Idempotent application
+    //   [equivalence] SIMD matches scalar
+
+    ret;
+}

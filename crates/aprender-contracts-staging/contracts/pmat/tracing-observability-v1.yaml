@@ -1,0 +1,104 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Tracing/observability contracts — span parentage, counter monotonicity, renacer backward compat
+  references:
+  - OpenTelemetry Specification (opentelemetry.io)
+  - pmat tracing boundary (pv-spec §32.7)
+equations:
+  span_parentage:
+    formula: |
+      span_tree: Vec<Span> -> bool
+        for-all span: span.parent_id = None or span.parent_id in active_spans
+        root_spans.count() >= 1
+    domain: Collection of tracing spans
+    codomain: bool (valid tree structure)
+    invariants:
+    - No orphan child spans
+    - No cycles in span hierarchy
+    - At least one root span
+    preconditions:
+    - spans collection is non-empty
+    postconditions:
+    - span tree is a valid forest
+    lean_theorem: Theorems.SpanParentage
+  metric_monotonicity:
+    formula: |
+      counter: (Metric, t1, t2) -> bool
+        t1 < t2 => counter(t1) <= counter(t2)
+    domain: Counter metrics over time
+    codomain: bool (monotonic invariant)
+    invariants:
+    - Counters never decrease
+    preconditions:
+    - metric is a counter type (not gauge)
+    postconditions:
+    - value at t2 >= value at t1
+    lean_theorem: Theorems.MetricMonotonicity
+  renacer_backward_compat:
+    formula: |
+      trace_compat: (Trace_old, Parser_new) -> bool
+        parse(serialize(trace)) = trace for matching major versions
+    domain: Renacer golden trace format
+    codomain: bool (backward compatibility)
+    invariants:
+    - Same major version traces are parseable
+    - New fields are optional (additive schema)
+    preconditions:
+    - major version matches
+    postconditions:
+    - parse succeeds and produces equivalent trace
+    lean_theorem: Theorems.RenacerBackwardCompat
+proof_obligations:
+- type: invariant
+  property: Span tree is valid
+  formal: No cycles, no orphan children in span hierarchy
+  applies_to: all
+- type: monotonicity
+  property: Counter monotonic
+  formal: counter(t1) <= counter(t2) when t1 < t2
+  applies_to: all
+- type: roundtrip
+  property: Trace format backward compatible
+  formal: parse(serialize(trace)) = trace across matching major versions
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TRACE-001
+  rule: Span hierarchy
+  prediction: Nested analysis creates proper span hierarchy
+  test: Run 3-level nested analysis, verify parent_id chain
+  if_fails: Span context not propagated to child operations
+- id: FALSIFY-TRACE-002
+  rule: Error span isolation
+  prediction: Error in child span does not corrupt parent span
+  test: Trigger error in child, verify parent span completes normally
+  if_fails: Error propagation corrupting span state
+- id: FALSIFY-TRACE-003
+  rule: Renacer version compat
+  prediction: Renacer trace from v1 parseable by v2 parser
+  test: Serialize trace with v1, parse with v2, compare
+  if_fails: Breaking schema change without major version bump
+kani_harnesses:
+- id: KANI-TRACE-001
+  obligation: Span tree valid
+  property: no cycles or orphans
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRACE-002
+  obligation: Counter monotonic
+  property: counter(t1) <= counter(t2)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRACE-003
+  obligation: Trace backward compatible
+  property: roundtrip across versions
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TRACE-001
+  name: tracing-observability-v1 Contract
+  description: Quality gate for tracing and observability
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,50 @@
+# PMAT Quality Gates Configuration
+# provable-contracts: Papers to Math to Contracts in Code
+# Mode: MEAN (Warnings = Errors)
+
+[gates]
+mode = "MEAN"
+fail_fast = true
+
+[coverage]
+minimum = 90.0
+fail_on_decrease = true
+exclude_patterns = [
+    "benches/*",
+    "examples/*",
+]
+
+[mutation]
+minimum_score = 80.0
+tool = "cargo-mutants"
+timeout_multiplier = 2.0
+exclude_files = ["tests/**", "benches/**", "examples/**"]
+
+[complexity]
+max_cyclomatic = 20
+max_cognitive = 25
+max_nesting = 5
+
+[documentation]
+minimum = 80.0
+public_items = 100.0
+deny_missing_docs = true
+
+[debt]
+satd_allowed = false
+patterns = ["TODO", "FIXME", "HACK", "XXX", "TEMP", "DEPRECATED"]
+
+[dependencies]
+allow_unmaintained = false
+deny_yanked = true
+max_advisories = 0
+
+[formatting]
+enforce = true
+tool = "rustfmt"
+
+[linting]
+clippy_warnings_as_errors = true
+extra_lints = [
+    "clippy::pedantic",
+]

@@ -1,0 +1,70 @@
+version: '1.0'
+name: provable-contracts-lean
+description: Reproducible Lean 4 + Mathlib toolchain install and proof verification
+
+machines:
+  local:
+    hostname: localhost
+    addr: 127.0.0.1
+    user: "${USER}"
+    arch: x86_64
+
+resources:
+  elan-install:
+    type: task
+    machine: local
+    depends_on: []
+    tags: [lean, toolchain]
+    command: |
+      if command -v elan >/dev/null 2>&1; then
+        echo "elan already installed: $(elan --version)"
+        exit 0
+      fi
+      INSTALLER="$(mktemp /tmp/elan-init.XXXXXX.sh)"
+      curl -sSfL -o "$INSTALLER" https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh
+      chmod +x "$INSTALLER"
+      "$INSTALLER" -y --default-toolchain none
+      rm -f "$INSTALLER"
+      echo "elan installed: $("$HOME/.elan/bin/elan" --version)"
+
+  lean-toolchain:
+    type: task
+    machine: local
+    depends_on: [elan-install]
+    tags: [lean, toolchain]
+    command: |
+      export PATH="$HOME/.elan/bin:$PATH"
+      WANT="$(tr -d '[:space:]' < lean-toolchain)"
+      echo "Required toolchain: $WANT"
+      if elan toolchain list | grep -q "$WANT"; then
+        echo "Toolchain $WANT already installed"
+      else
+        elan toolchain install "$WANT"
+      fi
+      elan default "$WANT"
+      lean --version
+
+  mathlib-cache:
+    type: task
+    machine: local
+    depends_on: [lean-toolchain]
+    tags: [lean, mathlib]
+    command: |
+      export PATH="$HOME/.elan/bin:$PATH"
+      lake update
+      lake exe cache get || echo "No cache available — will build from source"
+
+  lean-build:
+    type: task
+    machine: local
+    depends_on: [mathlib-cache]
+    tags: [lean, proofs]
+    command: |
+      export PATH="$HOME/.elan/bin:$PATH"
+      lake build
+      echo "All Lean proofs type-checked successfully"
+
+policy:
+  failure: stop_on_first
+  tripwire: false
+  lock_file: false

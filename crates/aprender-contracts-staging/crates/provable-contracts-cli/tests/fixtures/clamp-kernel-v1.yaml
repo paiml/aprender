@@ -1,0 +1,70 @@
+metadata:
+  version: "1.0.0"
+  description: "Clamp kernel — saturating bound"
+  references:
+    - "IEEE 754-2019"
+
+equations:
+  clamp:
+    formula: "y_i = min(max(x_i, lo), hi)"
+    domain: "x ∈ ℝ^n, lo ≤ hi"
+    codomain: "y ∈ [lo, hi]^n"
+    invariants:
+      - "lo ≤ y_i ≤ hi for all i"
+      - "clamp(clamp(x)) = clamp(x)"
+      - "x_i ≤ x_j → y_i ≤ y_j"
+
+proof_obligations:
+  - type: bound
+    property: "Output in [lo, hi]"
+    formal: "lo ≤ y_i ≤ hi for all i"
+    applies_to: all
+  - type: monotonicity
+    property: "Order preservation"
+    formal: "x_i ≤ x_j → y_i ≤ y_j"
+    applies_to: all
+  - type: idempotency
+    property: "Idempotent application"
+    formal: "clamp(clamp(x)) = clamp(x)"
+    applies_to: all
+  - type: equivalence
+    property: "SIMD matches scalar"
+    tolerance: 0.0
+    applies_to: simd
+
+kernel_structure:
+  phases:
+    - name: compare_lo
+      description: "Clamp below by lo"
+      invariant: "tmp_i = max(x_i, lo)"
+    - name: compare_hi
+      description: "Clamp above by hi"
+      invariant: "y_i = min(tmp_i, hi)"
+    - name: store
+      description: "Write result"
+      invariant: "lo ≤ y_i ≤ hi"
+
+simd_dispatch:
+  clamp:
+    scalar: clamp_scalar
+    avx2: clamp_avx2
+
+falsification_tests:
+  - id: FALSIFY-CL-001
+    rule: "Bound"
+    prediction: "lo <= clamp(x) <= hi for all x"
+    if_fails: "Comparison order wrong"
+
+kani_harnesses:
+  - id: KANI-CL-001
+    obligation: CL-BND-001
+    property: "Output within bounds"
+    bound: 16
+    strategy: exhaustive
+
+qa_gate:
+  id: F-CL-001
+  name: "Clamp Contract"
+  checks:
+    - "bound"
+  pass_criteria: "All 1 falsification tests pass"

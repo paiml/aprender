@@ -1,0 +1,102 @@
+contract: wgpu-training-quality-v1
+version: 1.0.0
+status: pending
+kaizen: 174
+description: >
+  Three training quality improvements: NEFTune embedding noise,
+  focal-inspired gradient weighting, and LoRA+ differential learning rates.
+  Applied to the v7 7-module LoRA (66M params, rank=32) pipeline.
+
+references:
+  - "Jain et al., NEFTune: Noisy Embeddings Improve Instruction Finetuning (arXiv:2310.05914, ICLR 2024)"
+  - "Hayou et al., LoRA+: Efficient Low Rank Adaptation (arXiv:2402.12354, 2024)"
+  - "Lin et al., Focal Loss for Dense Object Detection (ICCV 2017)"
+  - "albor/docs/specifications/components/training.md (beta2=0.95, wd=0.1)"
+
+invariants:
+
+# === NEFTune (Fix 8.4) ===
+
+- id: C-WGPU-NEFTUNE-001
+  description: >
+    NEFTune adds uniform noise to embeddings before first transformer layer.
+    noise = U(-1,1) * alpha / sqrt(seq_len * hidden_dim).
+    alpha=5 is the standard value (Jain et al. 2024).
+    Noise is ONLY applied during training, NOT during eval.
+  preconditions:
+  - Embedding tensor [seq_len, hidden_size] is finite
+  - Training mode (not eval)
+  postconditions:
+  - Modified embedding differs from original (noise applied)
+  - Noise magnitude proportional to 1/sqrt(seq_len * hidden)
+  - Eval path does NOT add noise
+  verified_by:
+  - PENDING — test_neftune_adds_noise
+  severity: medium
+
+# === Focal-inspired gradient weighting (Fix 8.5) ===
+
+- id: C-WGPU-FOCAL-001
+  description: >
+    Down-weight gradient of easy (high-confidence) tokens.
+    For each token position, scale gradient by (1-p_t) where p_t is the
+    softmax probability of the correct token. Easy tokens (p_t≈1) get
+    near-zero gradient. Hard tokens (p_t≈0) get full gradient.
+    This focuses learning on the difficult cases.
+  preconditions:
+  - Softmax probabilities computed for each position
+  - Target token index valid
+  postconditions:
+  - Gradient magnitude for high-confidence tokens is reduced
+  - Gradient magnitude for low-confidence tokens is preserved
+  - Loss value unchanged (only gradient affected)
+  verified_by:
+  - PENDING — test_focal_weighting_reduces_easy_gradients
+  severity: medium
+
+# === LoRA+ differential learning rates (Fix 8.6) ===
+
+- id: C-WGPU-LORAPLUS-001
+  description: >
+    Use higher learning rate for B matrix than A matrix.
+    lr_B = lambda * lr_A where lambda=16 (Hayou et al. 2024).
+    B starts at zero and needs faster updates to break symmetry.
+    Applied per-adapter in the CPU AdamW step.
+  preconditions:
+  - lambda > 1 (default 16)
+  - CPU AdamW called separately for A and B
+  postconditions:
+  - B matrix receives lr * lambda effective learning rate
+  - A matrix receives lr effective learning rate
+  - After N steps, ||B|| > ||A|| * (lambda/rank) approximately
+  verified_by:
+  - PENDING — test_loraplus_b_updates_faster
+  severity: medium
+
+# === albor hyperparameters (Fix 8.7) ===
+
+- id: C-WGPU-ALBOR-HP-001
+  description: >
+    Use albor's proven training recipe: beta2=0.95 (not 0.999),
+    weight_decay=0.1 (not 0.01). Sharper variance tracking and
+    stronger regularization improve generalization.
+  preconditions:
+  - AdamW beta2 set to 0.95
+  - AdamW weight_decay set to 0.1
+  postconditions:
+  - Training converges (loss decreases)
+  - Validation loss lower than with default HPs at same step count
+  verified_by:
+  - PENDING — compare v7 (default) vs v8 (albor HPs)
+  severity: low
+
+affected_files:
+- path: src/train/transformer_trainer/wgpu_trainer.rs
+  functions:
+  - 'full_train_step: NEFTune noise injection + focal gradient weighting'
+- path: src/train/transformer_trainer/wgpu_backward.rs
+  functions:
+  - 'cpu_adamw: LoRA+ differential lr for A vs B'
+- path: src/train/transformer_trainer/wgpu_runner.rs
+  functions:
+  - 'run_wgpu_training: albor HP config (beta2, wd)'

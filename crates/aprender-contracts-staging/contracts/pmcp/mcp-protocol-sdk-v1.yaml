@@ -1,0 +1,414 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >-
+    Provable contract for the pmcp crate (PAIML MCP Protocol SDK v2.1).
+    Covers JSON-RPC 2.0 protocol correctness, tool dispatch integrity,
+    session lifecycle state machine, transport abstraction safety,
+    version negotiation, payload limits, cancellation, and error mapping.
+  references:
+  - Model Context Protocol Specification (2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25)
+  - JSON-RPC 2.0 Specification (jsonrpc.org)
+  - pmcp crate docs (docs.rs/pmcp)
+  - 'pv-spec: MCP SDK boundary contracts'
+
+equations:
+  jsonrpc_framing:
+    formula: |
+      validate: JSONRPCRequest -> Result<(), Error>
+        req.jsonrpc == "2.0"
+        req.id is RequestId::String(_) | RequestId::Number(_)
+        req.method is non-empty string
+      response: JSONRPCResponse
+        resp.jsonrpc == "2.0"
+        resp.id == req.id
+        resp.payload is Result(_) xor Error(_)
+    domain: All JSON-RPC messages over any transport
+    codomain: Valid framed request/response pairs
+    invariants:
+    - Every response carries the same id as its request
+    - Response payload is exactly one of Result or Error, never both
+    - jsonrpc field is always the literal string "2.0"
+    preconditions:
+    - Input bytes are valid UTF-8 and parseable as JSON
+    postconditions:
+    - JSONRPCRequest::validate() returns Ok(()) for well-formed requests
+    - Malformed jsonrpc version returns Error::Validation
+    lean_theorem: Theorems.JsonRpcFraming
+
+  protocol_version_negotiation:
+    formula: |
+      negotiate: client_version -> negotiated_version
+        client_version in SUPPORTED_PROTOCOL_VERSIONS => client_version
+        client_version not in SUPPORTED_PROTOCOL_VERSIONS => LATEST_PROTOCOL_VERSION
+      |SUPPORTED_PROTOCOL_VERSIONS| == 4
+      SUPPORTED_PROTOCOL_VERSIONS = {"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"}
+    domain: Protocol version strings
+    codomain: A member of SUPPORTED_PROTOCOL_VERSIONS
+    invariants:
+    - negotiate_protocol_version always returns a supported version string
+    - Known versions are echoed back (identity for supported inputs)
+    - Unknown versions map to LATEST_PROTOCOL_VERSION
+    preconditions:
+    - client_version is a non-empty string
+    postconditions:
+    - Result is always in SUPPORTED_PROTOCOL_VERSIONS
+    lean_theorem: Theorems.ProtocolVersionNegotiation
+
+  session_lifecycle:
+    formula: |
+      state_machine: (ServerState, Request) -> (ServerState, Response)
+        Uninitialized x Initialize(_)   -> (Initialized, InitializeResult)
+        Uninitialized x ClientRequest(_) -> (Uninitialized, Error(-32002))
+        Initialized   x ListTools(_)     -> (Initialized, ListToolsResult)
+        Initialized   x CallTool(_)      -> (Initialized, CallToolResult)
+        Initialized   x ListPrompts(_)   -> (Initialized, ListPromptsResult)
+        Initialized   x ListResources(_) -> (Initialized, ListResourcesResult)
+      stateless_mode == true => skip initialization check
+    domain: ServerCore state machine (initialized field)
+    codomain: Next state + response
+    invariants:
+    - Initialize must precede any ClientRequest (unless stateless_mode)
+    - initialized flag transitions false -> true on successful Initialize
+    - Client capabilities stored on Initialize
+    preconditions:
+    - Request is a valid MCP protocol request
+    postconditions:
+    - Pre-initialize ClientRequest returns error code -32002
+    - Post-initialize ClientRequest dispatches to handler
+    lean_theorem: Theorems.SessionLifecycle
+
+  tool_dispatch_integrity:
+    formula: |
+      dispatch: (tool_name, args, auth_context) -> CallToolResult | Error
+        tools.get(tool_name) == None => Error("Tool 'name' not found")
+        tools.get(tool_name) == Some(handler) =>
+          authorize(auth_context, tool_name)?
+          middleware.process_request(tool_name, args, extra, ctx)?
+          handler.handle(args, extra).await?
+          middleware.process_response(tool_name, result, ctx)
+      for-all name in tool_infos.keys(): tools.contains_key(name)
+      for-all name in tools.keys(): tool_infos.contains_key(name)
+    domain: Registered tool name x tool arguments x auth context
+    codomain: CallToolResult or Error
+    invariants:
+    - Every tool in tool_infos has a corresponding handler in tools
+    - Unknown tool names produce an explicit error, never panic
+    - Middleware chain is invoked before and after handler execution
+    - Authorization check precedes handler invocation
+    preconditions:
+    - Server is initialized (or stateless_mode is true)
+    - tool_name is a non-empty string
+    postconditions:
+    - Successful dispatch returns CallToolResult with non-empty content
+    - Authorization failure returns Error::Authentication
+    lean_theorem: Theorems.ToolDispatchIntegrity
+
+  transport_abstraction:
+    formula: |
+      Transport: trait
+        send(message: TransportMessage) -> Result<()>
+        receive() -> Result<TransportMessage>
+        close() -> Result<()>
+        is_connected() -> bool
+      StdioTransport implements Transport
+        close() => closed.store(true, Release)
+        send() when closed => Err(ConnectionClosed)
+        receive() when closed => Err(ConnectionClosed)
+    domain: All Transport trait implementations (Stdio, HTTP, WebSocket, SSE)
+    codomain: TransportMessage or Error
+    invariants:
+    - Closed transport rejects send/receive with TransportError::ConnectionClosed
+    - is_connected() == !closed after close()
+    - Messages are newline-delimited JSON for stdio transport
+    preconditions:
+    - Transport is constructed (StdioTransport::new())
+    postconditions:
+    - After close(), all subsequent send/receive return ConnectionClosed
+    - Atomic ordering ensures visibility across threads (Release/Acquire)
+    lean_theorem: Theorems.TransportAbstraction
+
+  error_code_mapping:
+    formula: |
+      map_error: Error -> JSONRPCError
+        Error::Protocol { code, message, .. } -> JSONRPCError { code: code.0, message }
+        Error::Validation(_)        -> JSONRPCError { code: -32602, message }
+        Error::NotFound(_)          -> JSONRPCError { code: -32602, message }
+        Error::Authentication(_)    -> JSONRPCError { code: -32003, message }
+        Error::Timeout(_)           -> JSONRPCError { code: -32001, message }
+        Error::UnsupportedCapability(_) -> JSONRPCError { code: -32002, message }
+        Error::Internal(_)          -> JSONRPCError { code: -32603, message }
+        Error::Cancelled            -> JSONRPCError { code: -32800, message }
+      ErrorCode constants:
+        PARSE_ERROR = -32700, INVALID_REQUEST = -32600,
+        METHOD_NOT_FOUND = -32601, INVALID_PARAMS = -32602,
+        INTERNAL_ERROR = -32603, REQUEST_TIMEOUT = -32001
+    domain: All Error enum variants
+    codomain: JSONRPCError with standard codes
+    invariants:
+    - Every Error variant maps to a specific JSON-RPC error code
+    - Error message text is preserved (no lossy truncation)
+    - Standard JSON-RPC error codes (-327xx) used for protocol errors
+    - Application error codes (-320xx) used for MCP-specific errors
+    preconditions:
+    - Error is a valid variant of the Error enum
+    postconditions:
+    - JSONRPCError.code is a well-known error code
+    - JSONRPCError.message contains the original error text
+    lean_theorem: Theorems.ErrorCodeMapping
+
+  payload_limits:
+    formula: |
+      enforce_limits: (request_bytes, tool_args_bytes) -> Result<()>
+        len(request) > max_request_bytes => Err(PayloadTooLarge)
+        len(tool_args) > max_tool_args_bytes => Err(Validation("exceeds size limit"))
+      defaults:
+        max_request_bytes = 4 * 1024 * 1024  (4 MB)
+        max_tool_args_bytes = 1024 * 1024     (1 MB)
+      PayloadLimits::unlimited() => max = usize::MAX
+    domain: Incoming request payloads and tool argument sizes
+    codomain: Accept or reject
+    invariants:
+    - Default limits match AWS API Gateway (4 MB body)
+    - Tool argument check occurs post-middleware, pre-handler
+    - PayloadLimits::unlimited() sets both to usize::MAX
+    preconditions:
+    - PayloadLimits is configured on ServerCore
+    postconditions:
+    - Oversized payloads rejected before tool handler invocation
+    lean_theorem: Theorems.PayloadLimits
+
+  cancellation_safety:
+    formula: |
+      cancel: (request_id, reason) -> Result<()>
+        create_token(id) => CancellationToken stored in tokens[id]
+        cancel_request(id) => tokens.remove(id); token.cancel()
+        is_cancelled(id) => tokens[id].is_cancelled()
+        remove_token(id) => tokens.remove(id)
+      token lifecycle: create -> (cancel | remove)
+      after cancel: is_cancelled(id) == false (token removed)
+    domain: Active request identifiers
+    codomain: Cancellation status
+    invariants:
+    - Each request_id maps to at most one CancellationToken
+    - cancel_request removes the token from the map
+    - Cancellation notification sent to client when sender is configured
+    preconditions:
+    - request_id was created via create_token()
+    postconditions:
+    - After cancel_request, the token is dropped and cancelled
+    - After remove_token, the token is dropped (not cancelled)
+    lean_theorem: Theorems.CancellationSafety
+
+  batch_request_ordering:
+    formula: |
+      handle_batch: BatchRequest -> BatchResponse
+        Batch(requests) => responses where |responses| == |requests|
+          for-all i: responses[i].id == requests[i].id
+        Single(request) => [response] where response.id == request.id
+      parse_request failure => JSONRPCError { code: -32700 }
+    domain: BatchRequest (single or multiple JSON-RPC requests)
+    codomain: BatchResponse with same cardinality
+    invariants:
+    - Response count equals request count
+    - Response ordering matches request ordering
+    - Parse errors produce -32700 error responses (not panics)
+    preconditions:
+    - Each request in batch has a valid id
+    postconditions:
+    - Every request receives exactly one response
+    lean_theorem: Theorems.BatchRequestOrdering
+
+proof_obligations:
+- type: state_machine
+  property: Session lifecycle enforces initialization
+  formal: >-
+    for-all req in ClientRequest: !stateless_mode && !initialized =>
+    handle_request_internal returns error(-32002)
+  applies_to: session_lifecycle
+  lean:
+    theorem: Theorems.SessionLifecycle
+    status: sorry
+- type: completeness
+  property: Tool dispatch covers all registered tools
+  formal: >-
+    for-all name in tool_infos.keys(): tools.contains_key(name) &&
+    for-all name in tools.keys(): tool_infos.contains_key(name)
+  applies_to: tool_dispatch_integrity
+  lean:
+    theorem: Theorems.ToolDispatchIntegrity
+    status: sorry
+- type: determinism
+  property: Protocol version negotiation is deterministic
+  formal: >-
+    negotiate_protocol_version(v) always returns the same result for the same v
+  applies_to: protocol_version_negotiation
+  lean:
+    theorem: Theorems.ProtocolVersionNegotiation
+    status: sorry
+- type: invariant
+  property: Closed transport rejects operations
+  formal: >-
+    after close(): send() returns Err(ConnectionClosed) &&
+    receive() returns Err(ConnectionClosed)
+  applies_to: transport_abstraction
+  lean:
+    theorem: Theorems.TransportAbstraction
+    status: sorry
+- type: conservation
+  property: Error information preserved across mapping
+  formal: >-
+    for-all e in Error: JSONRPCError.message.contains(e.to_string())
+  applies_to: error_code_mapping
+  lean:
+    theorem: Theorems.ErrorCodeMapping
+    status: sorry
+- type: ordering
+  property: Batch response ordering matches request ordering
+  formal: >-
+    for-all i in 0..n: batch_responses[i].id == batch_requests[i].id
+  applies_to: batch_request_ordering
+  lean:
+    theorem: Theorems.BatchRequestOrdering
+    status: sorry
+- type: bound
+  property: Payload limits enforced before handler dispatch
+  formal: >-
+    len(tool_args) > max_tool_args_bytes => handler never invoked
+  applies_to: payload_limits
+  lean:
+    theorem: Theorems.PayloadLimits
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-PMCP-001
+  rule: Pre-initialize request rejection
+  prediction: >-
+    ClientRequest sent before Initialize returns error code -32002,
+    not a panic or successful result
+  test: >-
+    Create ServerCore with stateless_mode=false, send ListTools
+    request without Initialize, assert error code is -32002
+  if_fails: >-
+    ServerCore.initialized flag not checked in handle_request_internal
+    or stateless_mode incorrectly defaulting to true
+- id: FALSIFY-PMCP-002
+  rule: Unknown tool name produces error
+  prediction: >-
+    CallTool with nonexistent tool_name returns error containing
+    "not found", not panic or empty result
+  test: >-
+    Initialize server with no tools registered, call tools/call
+    with tool_name="nonexistent", assert error message contains "not found"
+  if_fails: >-
+    tools.get() unwrap without ok_or_else, or missing error path
+    in handle_call_tool
+- id: FALSIFY-PMCP-003
+  rule: Version negotiation for unknown version
+  prediction: >-
+    negotiate_protocol_version("1999-01-01") returns LATEST_PROTOCOL_VERSION
+    ("2025-11-25"), not an error or empty string
+  test: >-
+    Call negotiate_protocol_version with unsupported version string,
+    assert result equals "2025-11-25"
+  if_fails: >-
+    SUPPORTED_PROTOCOL_VERSIONS.contains() logic inverted or
+    fallback to LATEST missing
+- id: FALSIFY-PMCP-004
+  rule: Closed transport rejects send
+  prediction: >-
+    StdioTransport.send() after close() returns
+    Err(TransportError::ConnectionClosed), not a write to stdout
+  test: >-
+    Create StdioTransport, call close(), then call send() with
+    any TransportMessage, assert error is ConnectionClosed
+  if_fails: >-
+    closed AtomicBool not checked in send() or ordering is wrong
+    (Relaxed instead of Acquire)
+- id: FALSIFY-PMCP-005
+  rule: Tool argument size limit enforcement
+  prediction: >-
+    CallTool with arguments exceeding max_tool_args_bytes returns
+    validation error before handler is invoked
+  test: >-
+    Configure PayloadLimits with max_tool_args_bytes=100, register a
+    tool, call it with 1KB arguments, assert Validation error and
+    handler call count is zero
+  if_fails: >-
+    json_serialized_len() check missing or placed after handler.handle()
+    invocation in handle_call_tool
+- id: FALSIFY-PMCP-006
+  rule: Batch response cardinality equals request cardinality
+  prediction: >-
+    BatchRequest with N requests produces exactly N responses with
+    matching ids in order
+  test: >-
+    Submit BatchRequest::Batch with 5 requests (mix of valid and
+    invalid methods), assert response count is 5 and ids match
+  if_fails: >-
+    process_batch_request drops failed responses or reorders results
+- id: FALSIFY-PMCP-007
+  rule: Cancellation token lifecycle
+  prediction: >-
+    After cancel_request(id), is_cancelled(id) returns false because
+    the token is removed from the map (not because it is uncancelled)
+  test: >-
+    Create token for "req-1", cancel "req-1", assert is_cancelled("req-1")
+    is false (token removed), not true
+  if_fails: >-
+    cancel_request does not remove token from HashMap before cancelling,
+    or is_cancelled checks a stale reference
+
+kani_harnesses:
+- id: KANI-PMCP-001
+  obligation: Protocol version negotiation totality
+  property: >-
+    For all possible input strings, negotiate_protocol_version returns
+    a string that is a member of SUPPORTED_PROTOCOL_VERSIONS
+  bound: 32
+  strategy: exhaustive
+- id: KANI-PMCP-002
+  obligation: Session state machine no invalid transitions
+  property: >-
+    ServerCore.handle_request_internal never transitions initialized
+    from true to false; Initialize is the only path from false to true
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PMCP-003
+  obligation: Error code mapping completeness
+  property: >-
+    Every Error enum variant maps to a non-zero JSON-RPC error code;
+    no variant produces code 0 or positive error code
+  bound: 16
+  strategy: exhaustive
+- id: KANI-PMCP-004
+  obligation: RequestId roundtrip through serde
+  property: >-
+    For all RequestId values, serialize then deserialize produces
+    the original value (serde roundtrip identity)
+  bound: 16
+  strategy: exhaustive
+- id: KANI-PMCP-005
+  obligation: PayloadLimits default bounds
+  property: >-
+    PayloadLimits::default().max_request_bytes == 4194304 &&
+    PayloadLimits::default().max_tool_args_bytes == 1048576 &&
+    PayloadLimits::unlimited().max_request_bytes == usize::MAX
+  bound: 1
+  strategy: exhaustive
+
+qa_gate:
+  id: F-PMCP-001
+  name: mcp-protocol-sdk-v1 Contract
+  description: >-
+    Quality gate for pmcp MCP protocol SDK -- JSON-RPC framing, version
+    negotiation, session lifecycle, tool dispatch, transport safety,
+    error mapping, payload limits, cancellation, and batch handling
+  checks:
+  - validation
+  - falsification
+  - kani
+  pass_criteria: All 7 falsification tests pass and all 5 Kani harnesses verify
+  falsification: FALSIFY-PMCP-001 through FALSIFY-PMCP-007
+  kani: KANI-PMCP-001 through KANI-PMCP-005

@@ -1,0 +1,183 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Model config algebra — 5-level proof hierarchy for transformer config
+    constraints
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need — head_dim = hidden_dim / num_heads
+  - 'Ainslie et al. (2023) GQA: Training Generalized Multi-Query — num_heads % num_kv_heads
+    == 0'
+  - Su et al. (2021) RoFormer — RoPE requires even head_dim
+  - Shazeer (2020) GLU Variants Improve Transformer — FFN expansion
+equations:
+  divisibility:
+    formula: hidden_dim % num_heads == 0 ∧ num_heads % num_kv_heads == 0 ∧ head_dim
+      % 2 == 0
+    domain: hidden_dim, num_heads, num_kv_heads, head_dim ∈ ℤ⁺
+    invariants:
+    - head_dim = hidden_dim / num_heads (exact integer division)
+    - GQA group size = num_heads / num_kv_heads (exact integer division)
+    - RoPE pairing requires head_dim divisible by 2
+    preconditions:
+    - 'input.len() > 0'
+    - hidden_size > 0
+    lean_theorem: Theorems.Divisibility
+    guarantees:
+      constraints:
+      - "config.hidden_size % config.num_heads == 0"
+      - "config.num_heads % config.num_kv_heads == 0"
+      - "config.head_dim % 2 == 0"
+      - "config.head_dim == config.hidden_size / config.num_heads"
+  bounds:
+    formula: head_dim >= hidden_dim / num_heads ∧ d_ff > hidden_dim
+    domain: all config parameters ∈ ℤ⁺
+    invariants:
+    - Head dimension at least hidden/num_heads
+    - FFN intermediate dimension strictly larger than hidden
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Bounds
+  ordering:
+    formula: d_ff > hidden_dim ∧ num_kv_heads <= num_heads ∧ max_position > 0
+    domain: all config parameters ∈ ℤ⁺
+    invariants:
+    - FFN expansion ratio > 1
+    - KV heads cannot exceed query heads
+    preconditions:
+    - 'input.len() > 0'
+    - hidden_size > 0
+    lean_theorem: Theorems.Ordering
+  non_degeneracy:
+    formula: hidden_dim > 0 ∧ num_layers > 0 ∧ num_heads > 0 ∧ vocab_size > 0
+    domain: all config parameters ∈ ℤ⁺
+    invariants:
+    - All structural parameters are strictly positive
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Non_Degeneracy
+    guarantees:
+      constraints:
+      - "config.hidden_size > 0"
+      - "config.num_layers > 0"
+      - "config.num_heads > 0"
+      - "config.vocab_size > 0"
+  cross_constraint:
+    formula: rope_theta > 0 ∧ rope_theta.is_finite() ∧ rms_norm_eps > 0 ∧ rms_norm_eps
+      < 0.1
+    domain: rope_theta ∈ ℝ⁺, rms_norm_eps ∈ (0, 0.1)
+    invariants:
+    - RoPE base frequency finite and positive
+    - Normalization epsilon small but nonzero
+    preconditions:
+    - 'input.len() > 0'
+    - hidden_size > 0
+    lean_theorem: Theorems.Cross_Constraint
+proof_obligations:
+- type: invariant
+  property: Divisibility constraints
+  formal: h % n_h == 0 ∧ n_h % n_kv == 0 ∧ d_k % 2 == 0
+  applies_to: all
+- type: bound
+  property: Dimension bounds
+  formal: d_k >= h/n_h, d_k <= 2*(h/n_h)
+  applies_to: all
+- type: ordering
+  property: Parameter ordering
+  formal: d_ff > h, n_kv <= n_h, max_pos > 0
+  applies_to: all
+- type: invariant
+  property: Non-degeneracy
+  formal: h>0, L>0, n_h>0, V>0, n_kv>0, d_k>0
+  applies_to: all
+- type: invariant
+  property: Cross-parameter constraints
+  formal: rope_theta > 0 ∧ finite ∧ rms_norm_eps ∈ (0, 0.1)
+  applies_to: all
+- type: equivalence
+  property: SIMD config equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-MCA-001
+  rule: Divisibility
+  prediction: Random valid configs satisfy all divisibility constraints
+  test: proptest with constrained config generation
+  if_fails: Config validation allows invalid head grouping
+- id: FALSIFY-MCA-002
+  rule: Bounds
+  prediction: head_dim and FFN dimension satisfy expansion bounds
+  test: proptest verifying dimension relationships
+  if_fails: Config allows degenerate FFN or head dimensions
+- id: FALSIFY-MCA-003
+  rule: Ordering
+  prediction: d_ff > h, n_kv <= n_h for all valid configs
+  test: proptest with random valid configs
+  if_fails: Config allows inverted dimension ordering
+- id: FALSIFY-MCA-004
+  rule: Non-degeneracy
+  prediction: All structural parameters strictly positive
+  test: proptest with positive integer ranges
+  if_fails: Config allows zero-valued structural parameters
+- id: FALSIFY-MCA-005
+  rule: Cross-parameter
+  prediction: rope_theta finite positive, eps in (0, 0.1)
+  test: proptest with floating-point ranges
+  if_fails: Config allows degenerate float parameters
+- id: FALSIFY-MCA-006
+  rule: SIMD config equivalence
+  prediction: SIMD config algebra matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD config computation:SIMD config path diverges'
+kani_harnesses:
+- id: KANI-MCA-001
+  obligation: MCA-INV-001
+  property: Divisibility for small configs
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_config_divisibility
+- id: KANI-MODEL_-002
+  obligation: Divisibility constraints
+  property: Divisibility constraints
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MODEL_-003
+  obligation: Dimension bounds
+  property: Dimension bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-MODEL_-004
+  obligation: Parameter ordering
+  property: Parameter ordering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MODEL_-005
+  obligation: Non-degeneracy
+  property: Non-degeneracy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MODEL_-006
+  obligation: Cross-parameter constraints
+  property: Cross-parameter constraints
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MODEL_-007
+  obligation: SIMD config equivalence
+  property: SIMD config equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-MCA-001
+  name: Model Config Algebra Contract
+  description: Transformer configuration constraint quality gate
+  checks:
+  - divisibility
+  - bounds
+  - ordering
+  - non_degeneracy
+  - cross_constraint
+  pass_criteria: All 6 falsification tests pass
+  falsification: Generate config with num_heads not dividing hidden_dim

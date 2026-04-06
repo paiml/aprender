@@ -1,0 +1,100 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-05'
+  author: PAIML Engineering
+  description: Linear probe classifier -- frozen encoder + trained linear head
+  references:
+  - Alain & Bengio (2016) Understanding intermediate layers using linear classifier
+    probes
+  depends_on:
+  - encoder-forward-v1
+  - cross-entropy-kernel-v1
+equations:
+  linear_probe:
+    formula: logits = W @ embedding + b ; probs = softmax(logits)
+    domain: embedding in R^{d_model}, W in R^{K x d_model}, b in R^K
+    codomain: probs in R^K, sum(probs) = 1, probs_i > 0
+    invariants:
+    - Frozen encoder weights do not receive gradients
+    - Only W and b are updated during training
+    - probs sum to 1.0
+    preconditions:
+    - 'input.len() > 0'
+    - num_classes > 0
+    lean_theorem: Theorems.Linear_Probe
+proof_obligations:
+- type: invariant
+  property: Encoder frozen
+  formal: encoder_params_before == encoder_params_after for each training step
+  applies_to: all
+- type: invariant
+  property: Probability simplex
+  formal: '|sum(probs) - 1.0| < eps AND probs_i > 0 for all i'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: Embedding determinism
+  formal: embed(x) == embed(x) for same x and weights (bit-identical)
+  applies_to: all
+- type: bound
+  property: Trainable parameter count
+  formal: trainable_params == K * d_model + K (only head weights)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-PROBE-001
+  rule: Encoder truly frozen
+  prediction: Encoder weights unchanged after 100 training steps
+  test: Snapshot encoder params, train 100 steps, compare byte-for-byte
+  if_fails: Gradient leaking through frozen parameters
+- id: FALSIFY-PROBE-002
+  rule: Probability valid
+  prediction: Softmax output sums to 1.0 and all values > 0
+  test: proptest with random embeddings of varying dimensions
+  if_fails: Numerical underflow in softmax or missing normalization
+- id: FALSIFY-PROBE-003
+  rule: Trainable parameter count
+  prediction: 'For K=2, d=768: exactly 1538 trainable params'
+  test: Assert count after model construction
+  if_fails: Extra parameters added beyond linear head
+- id: FALSIFY-PROBE-004
+  rule: Embedding determinism
+  prediction: Same input produces bit-identical embeddings across calls
+  test: proptest with fixed weights, run embed(x) twice, assert bitwise eq
+  if_fails: Non-determinism from dropout or random state leak in eval mode
+kani_harnesses:
+- id: KANI-PROBE-001
+  obligation: Encoder frozen
+  property: Encoder parameters unchanged after a training step
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_encoder_frozen
+- id: KANI-PROBE-002
+  obligation: Probability simplex
+  property: Softmax output sums to 1.0 and all elements positive
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_probability_simplex
+- id: KANI-PROBE-003
+  obligation: Embedding determinism
+  property: embed(x) produces identical output for same input and weights
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_embedding_determinism
+- id: KANI-PROBE-004
+  obligation: Trainable parameter count
+  property: Trainable params == K * d_model + K for linear head only
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_trainable_param_count
+qa_gate:
+  id: F-LPCV-001
+  name: linear-probe-classifier-v1 Contract
+  description: Quality gate for Linear probe classifier -- frozen encoder + trained
+    linear h
+  checks:
+  - validation
+  - falsification

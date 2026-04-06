@@ -1,0 +1,206 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: End-to-end inference pipeline — prefill/decode composition for Qwen3.5 hybrid architecture
+  references:
+  - Dao et al. (2022) FlashAttention — prefill/decode phases
+  - Kwon et al. (2023) Efficient Memory Management for Large Language Model Serving with PagedAttention
+  - Qwen3.5 Technical Report — hybrid inference with attention and linear layers
+  depends_on:
+  - softmax-kernel-v1
+  - attention-kernel-v1
+  - gated-delta-net-v1
+  - embedding-algebra-v1
+  - rmsnorm-kernel-v1
+equations:
+  prefill_phase:
+    formula: H_L = layer_L(... layer_1(embed(tokens)))
+    domain: tokens ∈ [0,V)^{seq_len}, output H_L ∈ R^{seq_len × d_model}
+    invariants:
+    - 'Output shape: [seq_len, d_model]'
+    - All intermediate activations finite
+    - Final hidden states used for KV cache initialization
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Prefill_Phase
+  decode_step:
+    formula: h_t = layer_L(... layer_1(embed(token_t), kv_cache_{t-1}))
+    domain: Single new token, reading from and appending to KV cache
+    invariants:
+    - 'Output shape: [1, d_model]'
+    - KV cache grows by 1 position per step
+    - All intermediate activations finite
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Decode_Step
+  residual_stream:
+    formula: h_{l+1} = h_l + sublayer(norm(h_l))
+    domain: Pre-norm residual connection per layer
+    invariants:
+    - 'Residual preserves dimension: shape(h_{l+1}) = shape(h_l)'
+    - Skip connection is additive (no scaling)
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Residual_Stream
+  layer_composition:
+    formula: forward(x) = rmsnorm(attn(x) + x) → rmsnorm(ffn(.) + .)
+    domain: 'Single transformer layer: attention + FFN with pre-norm'
+    invariants:
+    - Two sub-layers per transformer layer
+    - Pre-norm applied before each sub-layer
+    - Residual added after each sub-layer
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Layer_Composition
+  hybrid_layer_schedule:
+    formula: layer_type(l) = attention if l in A else linear_attention
+    domain: A = set of attention layer indices, |A| + |L| = num_layers
+    invariants:
+    - Partition covers all layers
+    - No layer is both attention and linear
+    - At least one attention layer (layer 0 is typically attention)
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Hybrid_Layer_Schedule
+  kv_cache_growth:
+    formula: cache_size(t) = sum_{l in A} 2 * n_kv * d_k * t * bytes_per_element
+    domain: Only attention layers contribute to KV cache
+    invariants:
+    - Linear in t (sequence position)
+    - Zero for linear attention layers
+    - Monotonically increasing
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Kv_Cache_Growth
+proof_obligations:
+- type: invariant
+  property: Prefill output shape
+  formal: shape(H_L) = [seq_len, d_model]
+  applies_to: all
+- type: invariant
+  property: Decode step output shape
+  formal: shape(h_t) = [1, d_model]
+  applies_to: all
+- type: invariant
+  property: Residual dimension preservation
+  formal: '∀l: shape(h_{l+1}) = shape(h_l)'
+  applies_to: all
+- type: conservation
+  property: Residual is pure addition
+  formal: h_{l+1} - h_l = sublayer(norm(h_l))
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: Layer schedule partition
+  formal: '|A| + |L| = num_layers, A ∩ L = ∅'
+  applies_to: all
+- type: monotonicity
+  property: KV cache monotonically growing
+  formal: t1 < t2 → cache_size(t1) < cache_size(t2)
+  applies_to: all
+- type: bound
+  property: All activations finite
+  formal: '∀l,t: is_finite(h_l(t))'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-INF-001
+  rule: Prefill shape
+  prediction: Output matches [seq_len, d_model]
+  test: proptest with random seq_len and d_model
+  if_fails: Shape propagation error in layer stack
+- id: FALSIFY-INF-002
+  rule: Decode shape
+  prediction: Single-token output is [1, d_model]
+  test: 'proptest: decode one token after prefill'
+  if_fails: KV cache append corrupts shape
+- id: FALSIFY-INF-003
+  rule: Residual stream
+  prediction: h_{l+1} = h_l + sublayer(norm(h_l))
+  test: 'proptest: verify residual arithmetic'
+  if_fails: Missing or scaled residual connection
+- id: FALSIFY-INF-004
+  rule: Layer schedule exhaustiveness
+  prediction: Every layer has a type
+  test: 'proptest: |A| + |L| = num_layers'
+  if_fails: Missing layer in schedule
+- id: FALSIFY-INF-005
+  rule: KV cache growth
+  prediction: Cache grows by fixed amount per token
+  test: 'proptest: cache_size(t+1) - cache_size(t) = constant'
+  if_fails: Variable KV cache increment
+- id: FALSIFY-INF-006
+  rule: Residual dimension preservation
+  prediction: shape(h_{l+1}) = shape(h_l) for all layers
+  test: 'proptest: verify dimension after each layer'
+  if_fails: Layer l changes hidden dimension
+- id: FALSIFY-INF-007
+  rule: Activation finiteness
+  prediction: No NaN or Inf in hidden states
+  test: 'proptest: inject random inputs, check all finite'
+  if_fails: Numerical instability in layer composition
+kani_harnesses:
+- id: KANI-INF-001
+  obligation: INF-INV-001
+  property: Shape preservation through pipeline
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_pipeline_shapes
+- id: KANI-INF-002
+  obligation: INF-INV-002
+  property: Layer schedule partition
+  bound: 48
+  strategy: exhaustive
+  harness: verify_layer_schedule
+- id: KANI-INFERE-003
+  obligation: Prefill output shape
+  property: Prefill output shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-004
+  obligation: Decode step output shape
+  property: Decode step output shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-005
+  obligation: Residual dimension preservation
+  property: Residual dimension preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-006
+  obligation: Residual is pure addition
+  property: Residual is pure addition
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-007
+  obligation: Layer schedule partition
+  property: Layer schedule partition
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-008
+  obligation: KV cache monotonically growing
+  property: KV cache monotonically growing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INFERE-009
+  obligation: All activations finite
+  property: All activations finite
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-INF-001
+  name: Inference Pipeline Contract
+  description: End-to-end prefill/decode quality gate
+  checks:
+  - prefill_phase
+  - decode_step
+  - residual_stream
+  - layer_composition
+  - hybrid_layer_schedule
+  - kv_cache_growth
+  pass_criteria: All 7 falsification tests pass
+  falsification: Remove residual connection in layer 0 to break dimension

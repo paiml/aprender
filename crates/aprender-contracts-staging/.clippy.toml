@@ -1,0 +1,6 @@
+msrv = "1.85"
+
+disallowed-methods = [
+    { path = "std::env::set_var", reason = "not thread-safe" },
+    { path = "std::env::remove_var", reason = "not thread-safe" },
+]

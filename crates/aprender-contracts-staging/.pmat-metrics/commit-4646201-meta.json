@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-113",
+  "prompt": "Spec Section 28 v4 + implement: critical_path in binding.yaml + CD2",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-28T10:28:25.393261392Z"
+}

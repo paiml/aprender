@@ -1,0 +1,245 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: TUI widget lifecycle, render cycle correctness, event dispatch
+  registry: true
+  references:
+  - 'presentar-terminal/src/app.rs — TuiApp main loop'
+  - 'presentar-core/src/virtualization.rs — render_range, should_render'
+  - 'presentar-terminal/src/direct/diff_renderer.rs — diff-based rendering'
+  - 'presentar-terminal/src/direct/cell_buffer.rs — cell buffer management'
+  - 'PROBAR-SPEC-009 — Brick Architecture specification'
+  - 'Nielsen (1993). Usability Engineering — 100ms response time budget'
+  depends_on:
+  - tui-rendering-v1
+  - tui-panels-v1
+lifecycle_config:
+  states:
+  - Created
+  - Mounted
+  - Rendering
+  - Suspended
+  - Unmounted
+  frame_budget_ms: 16.67
+  event_types:
+  - Key
+  - Mouse
+  - Resize
+  - Tick
+  - Custom
+  render_strategy: diff
+equations:
+  widget_lifecycle:
+    formula: |
+      S0 = Created(config)
+      transition(S0, mount) = S1 (Mounted)
+      transition(S1, render) = S2 (Rendering) → S1 (back to Mounted)
+      transition(S1, suspend) = S3 (Suspended)
+      transition(S3, resume) = S1 (Mounted)
+      transition(S1, unmount) = S4 (Unmounted)
+      transition(S4, _) = Err(UseAfterUnmount)
+    domain: (state ∈ {S0, S1, S2, S3, S4}, event ∈ LifecycleEvent)
+    codomain: (new_state ∈ {S0, S1, S2, S3, S4}) | Error
+    invariants:
+    - render() only callable in Mounted state
+    - Unmounted is terminal — no transitions out
+    - suspend/resume is symmetric (resume restores pre-suspend state)
+    - Widget resources freed on unmount (no leaks)
+    - Mount initializes terminal raw mode; unmount restores cooked mode
+    preconditions:
+    - Terminal is available (not redirected to /dev/null for render)
+    lean_theorem: Theorems.Widget_Lifecycle
+  render_cycle_correctness:
+    formula: |
+      render(widget, buffer) = {
+        dirty_cells = widget.compute_dirty_region(),
+        for cell in dirty_cells:
+          buffer.set(cell.x, cell.y, cell.content),
+        diff = diff_renderer.compute_diff(buffer_prev, buffer_curr),
+        terminal.write(diff)
+      }
+      ∧ duration(render) < frame_budget
+    domain: (widget ∈ Widget, buffer ∈ CellBuffer)
+    codomain: RenderedFrame
+    invariants:
+    - Only dirty cells are written to terminal (diff rendering)
+    - Cell buffer coordinates are within terminal bounds
+    - Render duration stays within frame budget (16.67ms for 60fps)
+    - Empty dirty region produces zero terminal writes
+    - Double-width unicode characters occupy two cells
+    preconditions:
+    - buffer.width > 0 ∧ buffer.height > 0
+    - widget is in Mounted state
+    lean_theorem: Theorems.Render_Cycle_Correctness
+  event_dispatch:
+    formula: |
+      dispatch(event) = match event {
+        Key(k) → focused_widget.handle_key(k),
+        Mouse(m) → hit_test(m.x, m.y).handle_mouse(m),
+        Resize(w, h) → root.resize(w, h) ∧ root.render(),
+        Tick → root.tick() ∧ if_dirty(root.render()),
+      }
+      ∧ dispatch is non-blocking (returns within 1ms for input events)
+    domain: (event ∈ Event, widget_tree ∈ WidgetTree)
+    codomain: EventResult ∈ {Consumed, Propagated, Ignored}
+    invariants:
+    - Key events go to focused widget first, then bubble up
+    - Mouse events dispatched via hit-test (coordinate → widget mapping)
+    - Resize events trigger full re-layout then re-render
+    - Event dispatch is non-blocking (no I/O in event handlers)
+    - Unhandled events propagate to parent (bubbling)
+    preconditions:
+    - At least one widget is mounted
+    - Event queue is not empty
+    lean_theorem: Theorems.Event_Dispatch
+  terminal_restore:
+    formula: |
+      ∀ execution_path(app):
+        terminal_state_after(app) = terminal_state_before(app)
+      including:
+        - normal exit
+        - panic (via Drop impl or panic hook)
+        - SIGINT / SIGTERM (via signal handler)
+    domain: App execution (any termination path)
+    codomain: Terminal restored to cooked mode with cursor visible
+    invariants:
+    - Terminal raw mode disabled on exit
+    - Cursor visibility restored
+    - Alternate screen buffer exited (if entered)
+    - Mouse capture disabled
+    - Signal handlers registered before entering raw mode
+    preconditions:
+    - Terminal was in cooked mode before app start
+    lean_theorem: Theorems.Terminal_Restore
+proof_obligations:
+- type: invariant
+  property: Lifecycle state machine is acyclic (except Mounted ↔ Rendering loop)
+  formal: 'Unmounted is absorbing: ∀ e: transition(Unmounted, e) = Err'
+  applies_to: widget_lifecycle
+- type: invariant
+  property: Render stays within frame budget
+  formal: '∀ frame: duration(render(frame)) < 16.67ms'
+  applies_to: render_cycle_correctness
+- type: invariant
+  property: Event dispatch is non-blocking
+  formal: '∀ event: duration(dispatch(event)) < 1ms'
+  applies_to: event_dispatch
+- type: invariant
+  property: Terminal always restored
+  formal: '∀ path ∈ {exit, panic, signal}: terminal_restored(path)'
+  applies_to: terminal_restore
+falsification_tests:
+- id: FALSIFY-TUI-001
+  rule: widget_lifecycle
+  prediction: render() on unmounted widget returns error
+  test: |
+    #[test]
+    fn falsify_tui_001_render_after_unmount() {
+        let mut widget = TestWidget::new();
+        widget.mount(&mut term_backend());
+        widget.unmount();
+        let result = std::panic::catch_unwind(|| {
+            widget.render(&mut CellBuffer::new(80, 24));
+        });
+        assert!(result.is_err() || widget.render_result().is_err(),
+            "render() should fail after unmount");
+    }
+  if_fails: Use-after-unmount allowed — widget renders into freed buffer
+- id: FALSIFY-TUI-002
+  rule: render_cycle_correctness
+  prediction: Diff renderer produces zero writes for unchanged buffer
+  test: |
+    #[test]
+    fn falsify_tui_002_empty_diff_zero_writes() {
+        let mut buffer = CellBuffer::new(80, 24);
+        buffer.fill(' ');
+        let mut renderer = DiffRenderer::new(80, 24);
+        // First render fills the buffer
+        let writes1 = renderer.render_diff(&buffer);
+        // Second render with same content should produce zero writes
+        let writes2 = renderer.render_diff(&buffer);
+        assert_eq!(writes2.len(), 0,
+            "Unchanged buffer produced {} writes on second render", writes2.len());
+    }
+  if_fails: Diff algorithm marks clean cells as dirty — causes flicker
+- id: FALSIFY-TUI-003
+  rule: event_dispatch
+  prediction: Resize event triggers re-layout of all widgets
+  test: |
+    #[test]
+    fn falsify_tui_003_resize_triggers_relayout() {
+        let mut app = TestApp::new(80, 24);
+        app.mount();
+        let layout_before = app.root_layout();
+        app.dispatch(Event::Resize(120, 40));
+        let layout_after = app.root_layout();
+        assert_ne!(layout_before, layout_after,
+            "Resize did not trigger re-layout");
+        assert_eq!(layout_after.width, 120);
+        assert_eq!(layout_after.height, 40);
+    }
+  if_fails: Resize event not propagated to layout engine
+- id: FALSIFY-TUI-004
+  rule: terminal_restore
+  prediction: Terminal restored after panic in render
+  test: |
+    #[test]
+    fn falsify_tui_004_terminal_restored_on_panic() {
+        let was_raw_before = crossterm::terminal::is_raw_mode_enabled()
+            .unwrap_or(false);
+        let result = std::panic::catch_unwind(|| {
+            let mut app = TestApp::new(80, 24);
+            app.mount();
+            panic!("Simulated render panic");
+        });
+        assert!(result.is_err()); // Panic occurred
+        let is_raw_after = crossterm::terminal::is_raw_mode_enabled()
+            .unwrap_or(false);
+        assert_eq!(is_raw_after, was_raw_before,
+            "Terminal raw mode not restored after panic");
+    }
+  if_fails: Panic hook or Drop impl not restoring terminal state
+kani_harnesses:
+- id: KANI-TUI-001
+  obligation: Lifecycle state machine is acyclic
+  property: Unmounted is absorbing state
+  bound: 5
+  strategy: exhaustive
+  harness: verify_lifecycle_absorbing
+- id: KANI-TUI-002
+  obligation: Cell buffer bounds checking
+  property: No out-of-bounds write to cell buffer
+  bound: 16
+  strategy: exhaustive
+  harness: verify_cellbuffer_bounds
+qa_gate:
+  id: F-TUI-GATE
+  name: TUI Lifecycle Contract
+  description: TUI widget lifecycle and render cycle quality gate
+  checks:
+  - widget_lifecycle
+  - render_cycle_correctness
+  - event_dispatch
+  - terminal_restore
+  pass_criteria: All 4 falsification tests pass
+  falsification: Remove Drop impl from TuiApp to break terminal restore on panic
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the Brick trait enforces pre-render
+    assertions (Jidoka gate). If a widget's invariants are violated, rendering
+    halts with a visible error message instead of producing corrupt output.
+    Terminal restore runs regardless of exit path.
+  poka_yoke: >
+    "Mistake-proofing" — the lifecycle state machine is encoded in the type
+    system. render() takes &mut MountedWidget, not &mut Widget. Unmounted
+    widgets cannot call render() at compile time. Cell buffer bounds are
+    checked at every set() call.
+  genchi_genbutsu: >
+    "Go and see" — falsification tests use real CellBuffer and DiffRenderer
+    instances, not mocked terminal backends. Resize events are dispatched
+    through the actual event pipeline.
+  kaizen: >
+    "Continuous improvement" — frame budget enforcement via render_cycle
+    profiling. Widgets that exceed 16.67ms trigger automatic degradation
+    to simpler rendering (fewer colors, no unicode box drawing).

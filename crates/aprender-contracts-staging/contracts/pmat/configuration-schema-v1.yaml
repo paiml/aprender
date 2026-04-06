@@ -1,0 +1,83 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Configuration schema contracts — unknown key rejection, threshold invariants
+  references:
+  - pmat configuration boundary (pv-spec §32.10)
+equations:
+  unknown_key_rejection:
+    formula: |
+      parse_config: (Input, Schema) -> Result<Config, UnknownKeyError>
+        for-all key in input: key in schema.known_keys or Err(UnknownKeyError(key))
+    domain: YAML/TOML input with schema
+    codomain: Parsed config or error on unknown key
+    invariants:
+    - Unknown keys are rejected, never silently ignored
+    preconditions:
+    - input is valid YAML/TOML syntax
+    postconditions:
+    - all keys in result are in schema.known_keys
+    lean_theorem: Theorems.UnknownKeyRejection
+  threshold_invariants:
+    formula: |
+      validate: Config -> bool
+        min <= max (for all range pairs)
+        percentages in [0, 100]
+        timeouts > 0
+        RUST_MIN_STACK >= 8388608
+    domain: Parsed configuration
+    codomain: bool (constraint satisfaction)
+    invariants:
+    - Range pairs are well-ordered
+    - Percentages are bounded
+    - Timeouts are positive
+    - Stack size meets minimum
+    preconditions:
+    - config is parsed successfully
+    postconditions:
+    - all domain constraints satisfied
+    lean_theorem: Theorems.ThresholdInvariants
+proof_obligations:
+- type: soundness
+  property: No unknown keys accepted
+  formal: unknown key implies error
+  applies_to: all
+- type: precondition
+  property: Threshold domain invariants
+  formal: min <= max, pct in [0,100], timeout > 0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CFG-001
+  rule: Typo key rejected
+  prediction: YAML with typo key complxity (vs complexity) returns error
+  test: Parse YAML with misspelled key, assert UnknownKeyError
+  if_fails: Deserializer using deny_unknown_fields not enabled
+- id: FALSIFY-CFG-002
+  rule: Zero timeout rejected
+  prediction: --timeout 0 returns validation error, not division by zero
+  test: Create config with timeout=0, validate, assert error
+  if_fails: Timeout validation missing zero check
+- id: FALSIFY-CFG-003
+  rule: Stack size minimum
+  prediction: RUST_MIN_STACK=1024 in CI config triggers warning
+  test: Set RUST_MIN_STACK below threshold, validate
+  if_fails: Stack size check not wired to config validation
+kani_harnesses:
+- id: KANI-CFG-001
+  obligation: No unknown keys
+  property: unknown key implies error
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CFG-002
+  obligation: Threshold invariants
+  property: min <= max, pct in [0,100], timeout > 0
+  bound: 16
+  strategy: bounded_int
+qa_gate:
+  id: F-CFG-001
+  name: configuration-schema-v1 Contract
+  description: Quality gate for configuration schema
+  checks:
+  - validation
+  - falsification

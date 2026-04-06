@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-132",
+  "prompt": "Fix remaining gaps: ruchy opcode table + E0→E1 upgrades + spec falsify",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-29T08:40:19.357029122Z"
+}

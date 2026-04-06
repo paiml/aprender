@@ -1,0 +1,234 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  kind: pattern
+  description: >
+    Work contract lifecycle — Design by Contract for pmat work items.
+    Governs state transitions (Planned→InProgress→Completed), require/ensure
+    clause evaluation, falsification protocol, and rescue escalation.
+  references:
+  - 'Meyer (1988) Object-Oriented Software Construction (Eiffel DbC)'
+  - 'Popper (1934) The Logic of Scientific Discovery (falsificationism)'
+  - 'pmat work start/continue/complete/falsify commands'
+  - 'docs/specifications/sub/eiffel-dbc.md'
+
+equations:
+  lifecycle_state_machine:
+    formula: |
+      transition(item, action): (WorkItem, Action) -> Result<WorkItem, TransitionError>
+        States: Planned → InProgress → Completed
+        Terminal states: Completed, Cancelled
+        Invalid: Completed → InProgress (no restart)
+        Invalid: Planned → Completed (must start first)
+    domain: Work item with current state, requested action
+    codomain: Work item with new state or TransitionError
+    invariants:
+    - Only forward transitions allowed (no regression)
+    - Terminal states cannot be restarted
+    - Each transition records timestamp and actor
+    preconditions:
+    - item.state is a valid WorkState
+    - action is valid for current state
+    postconditions:
+    - new state is a valid successor of old state
+    lean_theorem: Theorems.LifecycleStateMachine
+
+  require_clause_evaluation:
+    formula: |
+      evaluate_requires(contract): WorkContract -> Result<(), RequireViolation>
+        For each require clause:
+          evaluate(clause) must return true
+        All requires must pass before work begins (InProgress)
+    domain: Work contract with require clauses
+    codomain: Result<(), RequireViolation>
+    invariants:
+    - All require clauses evaluated before state → InProgress
+    - Failed require blocks state transition
+    - Require evaluation is idempotent
+    preconditions:
+    - contract has at least 1 require clause
+    postconditions:
+    - all clauses pass or error with specific failing clause
+    lean_theorem: Theorems.RequireClauseEvaluation
+
+  ensure_clause_evaluation:
+    formula: |
+      evaluate_ensures(contract): WorkContract -> Result<(), EnsureViolation>
+        For each ensure clause:
+          evaluate(clause) must return true
+        All ensures must pass before work completes (Completed)
+    domain: Work contract with ensure clauses
+    codomain: Result<(), EnsureViolation>
+    invariants:
+    - All ensure clauses evaluated before state → Completed
+    - Failed ensure blocks completion (falsification)
+    - Ensure violations trigger rescue protocol
+    preconditions:
+    - work item is InProgress
+    - contract has at least 1 ensure clause
+    postconditions:
+    - all clauses pass or error with rescue advice
+    lean_theorem: Theorems.EnsureClauseEvaluation
+
+  falsification_protocol:
+    formula: |
+      falsify(item): WorkItem -> FalsificationResult
+        1. Evaluate invariant clauses (mid-work checks)
+        2. Evaluate ensure clauses (completion checks)
+        3. Report: passed count, failed count, warnings
+        4. If failed > 0: block completion, offer override with ticket
+    domain: Work item with contract
+    codomain: FalsificationResult with pass/fail counts
+    invariants:
+    - Falsification is non-destructive (read-only check)
+    - Override requires accountability ticket
+    - Rescue protocol limits retries (default 3)
+    preconditions:
+    - work item has a contract (contract.json exists)
+    postconditions:
+    - result categorizes each clause as pass/fail/warning
+    lean_theorem: Theorems.FalsificationProtocol
+
+  rescue_escalation:
+    formula: |
+      rescue(item, failure): (WorkItem, FalsificationFailure) -> RescueAction
+        1. Identify root cause from failure type
+        2. Suggest fix strategy (ManualIntervention, AutoFix, Override)
+        3. Record rescue attempt in rescue/ directory
+        4. After max_attempts: require manual resolution
+    domain: Failed work item with specific failure
+    codomain: RescueAction with suggested fix
+    invariants:
+    - Rescue attempts bounded (max 3 by default)
+    - Each attempt recorded with timestamp
+    - Override requires --ticket for accountability
+    preconditions:
+    - falsification failed
+    postconditions:
+    - rescue record saved
+    lean_theorem: Theorems.RescueEscalation
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Evaluate require clauses, verify state transition validity
+  - name: execute
+    description: Work execution with invariant checkpoints
+  - name: verify_output
+    description: Evaluate ensure clauses, falsification protocol, rescue if needed
+
+proof_obligations:
+- type: state_machine
+  property: Only forward lifecycle transitions
+  formal: 'Planned->InProgress->Completed, no backward'
+  applies_to: lifecycle_state_machine
+  lean:
+    theorem: Theorems.LifecycleStateMachine
+    status: sorry
+- type: invariant
+  property: Require clauses block InProgress transition
+  formal: 'any_require_fails => state remains Planned'
+  applies_to: require_clause_evaluation
+  lean:
+    theorem: Theorems.RequireClauseEvaluation
+    status: sorry
+- type: invariant
+  property: Ensure clauses block Completed transition
+  formal: 'any_ensure_fails => state remains InProgress'
+  applies_to: ensure_clause_evaluation
+  lean:
+    theorem: Theorems.EnsureClauseEvaluation
+    status: sorry
+- type: invariant
+  property: Falsification is non-destructive
+  formal: 'state_before(falsify(item)) == state_after(falsify(item))'
+  applies_to: falsification_protocol
+  lean:
+    theorem: Theorems.FalsificationProtocol
+    status: sorry
+- type: bound
+  property: Rescue attempts bounded
+  formal: 'rescue_count <= max_attempts'
+  applies_to: rescue_escalation
+  lean:
+    theorem: Theorems.RescueEscalation
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-DBC-001
+  rule: Only forward transitions
+  prediction: Completed → InProgress rejected with TransitionError
+  test: |
+    Create item in Completed state, attempt start.
+    Assert error contains "Invalid transition".
+  if_fails: Terminal state can be restarted (violates lifecycle)
+- id: FALSIFY-DBC-002
+  rule: Require blocks InProgress
+  prediction: Missing Cargo.toml fails require.compiles
+  test: |
+    Create work contract in directory without Cargo.toml.
+    Assert start fails with require violation.
+  if_fails: Require clauses not evaluated before state transition
+- id: FALSIFY-DBC-003
+  rule: Ensure blocks Completed
+  prediction: Uncommitted changes fail ensure.all_pushed
+  test: |
+    Create dirty git state, attempt complete.
+    Assert completion blocked with ensure violation.
+  if_fails: Ensure clauses not evaluated (work completes without verification)
+- id: FALSIFY-DBC-004
+  rule: Falsification is non-destructive
+  prediction: falsify does not change work item state
+  test: |
+    Run pmat work falsify on InProgress item.
+    Assert state is still InProgress after falsification.
+  if_fails: Falsification side-effects modify item state
+- id: FALSIFY-DBC-005
+  rule: Rescue attempts bounded
+  prediction: 4th rescue attempt returns "limit reached"
+  test: |
+    Fail falsification 3 times, attempt 4th.
+    Assert error contains "limit reached".
+  if_fails: Unbounded rescue retries
+
+kani_harnesses:
+- id: KANI-DBC-001
+  obligation: Only forward lifecycle transitions
+  property: no backward transition allowed
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lifecycle_forward_only
+- id: KANI-DBC-002
+  obligation: Require clauses block InProgress transition
+  property: 'failed require => state unchanged'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_require_blocks
+- id: KANI-DBC-003
+  obligation: Ensure clauses block Completed transition
+  property: 'failed ensure => state unchanged'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_ensure_blocks
+- id: KANI-DBC-004
+  obligation: Falsification is non-destructive
+  property: state unchanged after falsify
+  bound: 4
+  strategy: exhaustive
+  harness: verify_falsify_readonly
+- id: KANI-DBC-005
+  obligation: Rescue attempts bounded
+  property: 'count <= max'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_rescue_bounded
+
+qa_gate:
+  id: F-DBC-GATE
+  name: Work DbC Contract
+  description: Quality gate for pmat work lifecycle and falsification protocol
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass

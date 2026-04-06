@@ -1,0 +1,127 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Tied embeddings — reuse embedding weight matrix as language model head projection
+  references:
+  - Press & Wolf (2017) Using the Output Embedding to Improve Language Models
+equations:
+  tied_lm_head:
+    formula: logits = x @ W_embed^T
+    domain: x in R^{seq_len x d_model}, W_embed in R^{vocab_size x d_model}
+    codomain: logits in R^{seq_len x vocab_size}
+    invariants:
+    - logits.shape = (seq_len, vocab_size)
+    - logits = matmul(x, W_embed^T) — equivalent to explicit separate weight matmul
+    - No additional learnable parameters beyond W_embed
+    - All output elements are finite when inputs are finite
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Tied_Lm_Head
+proof_obligations:
+- type: bound
+  property: Output shape correctness
+  formal: logits.shape = (seq_len, vocab_size) for x.shape = (seq_len, d_model)
+  applies_to: all
+- type: equivalence
+  property: Equivalence to separate matmul
+  formal: tied_lm_head(x, W_embed) = matmul(x, W_separate^T) when W_separate = W_embed
+  applies_to: all
+- type: invariant
+  property: No extra parameters
+  formal: param_count(tied_lm_head) = 0 (reuses W_embed, adds no new weights)
+  applies_to: all
+- type: bound
+  property: Finite output
+  formal: x finite and W_embed finite implies logits finite
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: transpose_embed
+    description: Transpose embedding matrix W_embed to shape (d_model, vocab_size)
+    invariant: W_embed_T.shape = (d_model, vocab_size)
+  - name: matmul_logits
+    description: Compute logits = x @ W_embed^T via matrix multiplication
+    invariant: logits.shape = (seq_len, vocab_size)
+simd_dispatch:
+  tied_lm_head:
+    scalar: tied_lm_head_scalar
+    avx2: tied_lm_head_avx2
+    ptx: tied_lm_head_ptx
+enforcement:
+  output_shape:
+    description: Logits must have shape (seq_len, vocab_size)
+    check: contract_tests::FALSIFY-TE-001
+    severity: ERROR
+  matmul_equivalence:
+    description: Tied head must produce identical output to separate matmul with same weights
+    check: contract_tests::FALSIFY-TE-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TE-001
+  rule: Output shape correctness
+  prediction: logits.shape = (seq_len, vocab_size) for all valid seq_len and vocab_size
+  test: proptest with seq_len in [1, 128], d_model in {64, 128}, vocab_size in {256, 32000}
+  if_fails: Transpose or matmul dimension mismatch
+- id: FALSIFY-TE-002
+  rule: Equivalence to separate matmul
+  prediction: tied_lm_head(x, W) = matmul(x, W_copy^T) bit-for-bit when W_copy = W.clone()
+  test: clone W_embed into separate matrix, compare tied head vs explicit matmul
+  if_fails: Tied path uses different memory layout causing numerical divergence
+- id: FALSIFY-TE-003
+  rule: No extra parameters
+  prediction: tied_lm_head introduces zero additional learnable parameters
+  test: count parameters before and after attaching tied head, assert delta = 0
+  if_fails: Implementation allocates a separate projection weight
+- id: FALSIFY-TE-004
+  rule: Finite output
+  prediction: All logits elements are finite when x and W_embed are finite
+  test: proptest with finite x and W_embed, check logits.is_finite() element-wise
+  if_fails: Accumulation overflow in matmul for large d_model
+kani_harnesses:
+- id: KANI-TE-001
+  obligation: TE-SHP-001
+  property: Tied LM head output shape equals (seq_len, vocab_size)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_tied_output_shape
+- id: KANI-TE-002
+  obligation: TE-EQV-001
+  property: Tied head equivalent to separate matmul with identical weights
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_tied_matmul_equivalence
+- id: KANI-TIED_E-003
+  obligation: Output shape correctness
+  property: Output shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TIED_E-004
+  obligation: Equivalence to separate matmul
+  property: Equivalence to separate matmul
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TIED_E-005
+  obligation: No extra parameters
+  property: No extra parameters
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TIED_E-006
+  obligation: Finite output
+  property: Finite output
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TE-001
+  name: Tied Embeddings Contract
+  description: Weight-tied language model head projection quality gate
+  checks:
+  - output_shape
+  - matmul_equivalence
+  - no_extra_parameters
+  - finite_output
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Allocate separate W_head matrix instead of reusing W_embed

@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-075",
+  "prompt": "pre-commit hook missing cargo fmt gate — repeated CI format failures",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T15:08:19.681814355Z"
+}

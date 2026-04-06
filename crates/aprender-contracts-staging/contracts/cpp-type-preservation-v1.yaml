@@ -1,0 +1,157 @@
+metadata:
+  version: 1.0.0
+  description: C++ to Rust type preservation contract for Decy transpiler
+  references:
+  - 'CROWN: Ownership Guided C to Rust Translation [2303.10515] (CAV 2023)'
+  - 'Scylla: Compiling C to Safe Rust [2412.15042] (Fromherz 2024)'
+  - 'CRUST-Bench [2504.15254] (COLM 2025)'
+  enforcement_level: standard
+equations:
+  class_to_struct:
+    formula: 'forall c in C++ classes: transpile(c) = struct + impl + (Drop if destructor)'
+    lean_theorem: Theorems.Class_To_Struct
+    domain: C++ class declarations with fields, methods, constructors, destructors
+    codomain: Rust struct + impl block + optional Drop trait
+    invariants:
+    - Field count preserved (|fields(class)| = |fields(struct)|)
+    - Field types mapped correctly (int -> i32, float -> f32, etc.)
+    - Constructor maps to pub fn new() -> Self
+    - Destructor maps to impl Drop
+    - Const methods get &self, non-const get &mut self
+    preconditions:
+    - Class has a non-empty name
+    - Class is parseable by clang-sys
+    postconditions:
+    - Output contains pub struct with matching field count
+    - Output compiles with rustc --edition 2021
+  namespace_to_mod:
+    formula: 'forall ns in C++ namespaces: transpile(ns) = pub mod { contents }'
+    lean_theorem: Theorems.Namespace_To_Mod
+    domain: C++ namespace declarations
+    codomain: Rust pub mod blocks
+    invariants:
+    - Namespace name preserved as module name
+    - Nested namespaces become nested modules
+    - Functions, structs, classes within namespace appear inside mod
+    preconditions:
+    - Namespace has a non-empty name
+    postconditions:
+    - Output contains pub mod with correct name
+  operator_to_trait:
+    formula: 'forall op in overloaded operators: transpile(op) = impl std::ops::Trait'
+    lean_theorem: Theorems.Operator_To_Trait
+    domain: C++ operator overloading methods (operator+, operator==, etc.)
+    codomain: Rust std::ops trait implementations
+    invariants:
+    - operator+ maps to impl Add with Output type
+    - operator== maps to impl PartialEq
+    - operator+= maps to impl AddAssign
+    - Regular methods remain in impl block (not moved to traits)
+    preconditions:
+    - Operator method has valid operator name (operator+, operator==, etc.)
+    postconditions:
+    - Output contains impl std::ops::Trait for ClassName
+  inheritance_to_composition:
+    formula: 'forall derived : base: transpile(derived) = struct { base: Base, ...fields } + Deref'
+    lean_theorem: Theorems.Inheritance_To_Composition
+    domain: 'C++ single inheritance (class Derived : public Base)'
+    codomain: 'Rust composition with Deref/DerefMut'
+    invariants:
+    - Base class embedded as first field named 'base'
+    - impl Deref with Target = BaseClass
+    - impl DerefMut for mutable base access
+    preconditions:
+    - Single inheritance only (one base class)
+    postconditions:
+    - Derived struct has base field of base class type
+    - Deref impl exists with correct Target type
+proof_obligations:
+- type: invariant
+  property: Field count preservation (class fields = struct fields)
+- type: postcondition
+  property: Output compiles with rustc
+- type: invariant
+  property: Constructor parameter mapping (name match or positional fallback)
+- type: equivalence
+  property: Method bodies preserve semantic intent (implicit this -> self)
+falsification_tests:
+- id: FALSIFY-CPP-001
+  rule: Class with fields transpiles to struct
+  prediction: 'class Point { int x; int y; } -> struct Point { pub x: i32, pub y: i32 }'
+  test: E2E transpilation test
+  if_fails: Class extraction or struct codegen broken
+- id: FALSIFY-CPP-002
+  rule: Constructor maps to new()
+  prediction: 'Point(int a, int b) -> pub fn new(a: i32, b: i32) -> Self'
+  test: E2E transpilation test
+  if_fails: Constructor extraction or new() codegen broken
+- id: FALSIFY-CPP-003
+  rule: Destructor maps to Drop
+  prediction: '~Point() -> impl Drop for Point'
+  test: E2E transpilation test
+  if_fails: Destructor detection or Drop codegen broken
+- id: FALSIFY-CPP-004
+  rule: Namespace maps to mod
+  prediction: 'namespace math { int add(); } -> pub mod math { fn add() }'
+  test: E2E transpilation test
+  if_fails: Namespace extraction or mod codegen broken
+- id: FALSIFY-CPP-005
+  rule: operator+ maps to impl Add
+  prediction: 'operator+(T rhs) -> impl std::ops::Add<T> for Self'
+  test: E2E transpilation test
+  if_fails: Operator detection or trait impl codegen broken
+- id: FALSIFY-CPP-006
+  rule: Inheritance maps to composition + Deref
+  prediction: 'class Dog : public Animal -> struct Dog { base: Animal } + impl Deref'
+  test: E2E transpilation test
+  if_fails: Base specifier extraction or Deref codegen broken
+- id: FALSIFY-CPP-007
+  rule: Implicit this access maps to self
+  prediction: 'return x; (in method) -> return self.x;'
+  test: E2E transpilation test
+  if_fails: CXXThisExpr handling or field access fallback broken
+kani_harnesses:
+- id: KANI-CPP-001
+  obligation: Field count preservation
+  property: transpile(class with N fields) produces struct with N fields
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_field_count_preservation
+- id: KANI-CPP-002
+  obligation: Constructor maps to new()
+  property: Class constructor transpiles to associated new() function
+  bound: 4
+  strategy: bounded_int
+- id: KANI-CPP-003
+  obligation: Destructor maps to Drop
+  property: Destructor transpiles to impl Drop for T
+  bound: 4
+  strategy: bounded_int
+- id: KANI-CPP-004
+  obligation: Namespace maps to mod
+  property: C++ namespace wraps its members in a Rust mod
+  bound: 4
+  strategy: bounded_int
+- id: KANI-CPP-005
+  obligation: operator+ maps to impl Add
+  property: Operator overload transpiles to the corresponding std::ops trait
+  bound: 4
+  strategy: bounded_int
+- id: KANI-CPP-006
+  obligation: Inheritance maps to composition + Deref
+  property: Single inheritance transpiles to field + impl Deref
+  bound: 4
+  strategy: bounded_int
+- id: KANI-CPP-007
+  obligation: Const reference maps to shared borrow
+  property: 'const T& transpiles to &T'
+  bound: 8
+  strategy: bounded_int
+qa_gate:
+  id: F-CPP-001
+  name: cpp-type-preservation-v1 Contract
+  description: C++ type preservation quality gate for Decy transpiler
+  checks:
+  - validation
+  - falsification

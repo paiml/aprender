@@ -1,0 +1,423 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-23'
+  author: PAIML Engineering
+  description: Per-architecture inference constraints — source of truth
+  registry: true
+  references:
+  - 'GH-323: ArchConstraints codegen'
+  - 'realizar/src/gguf/config.rs: Consumer'
+  - 'aprender/contracts/model-families/*.yaml: Source data'
+equations:
+  arch_constraint_lookup:
+    formula: constraints(arch) = { norm_type, activation, pos_enc, mlp_type, weight_layout,
+      has_bias, tied_emb, has_qk_norm, eps }
+    domain: arch ∈ { llama, mistral, phi3, qwen2, qwen3, deepseek2, gemma, gemma2,
+      gpt2, bloom, stablelm, falcon, falcon_7b, falcon_40b, yi, internlm2, command-r,
+      mamba, smollm, olmo, granite, starcoder, t5, whisper }
+    codomain: ArchConstraints struct
+    invariants:
+    - Every GGUF general.architecture value maps to exactly one constraint set
+    - Enum fields are exhaustive over the defined enum variants
+    - DeepSeek eps = 1e-6 (not default 1e-5)
+    preconditions:
+    - 'input.len() > 0'
+    lean_theorem: Theorems.Arch_Constraint_Lookup
+enums:
+  NormType:
+    LayerNorm: Standard Layer Normalization with optional bias
+    RmsNorm: Root Mean Square Normalization without bias
+  Activation:
+    Gelu: Gaussian Error Linear Unit
+    Silu: Sigmoid Linear Unit
+  PositionalEncoding:
+    Absolute: Learned absolute position embeddings
+    Rope: Rotary Position Embedding
+    Alibi: Attention with Linear Biases
+    None: No positional encoding (SSM/recurrence)
+  MlpType:
+    GeluMlp: 'Standard GELU MLP: up → GELU → down'
+    SwiGlu: 'SwiGLU: gate ⊙ SiLU(up) → down'
+    GatedMlp: 'Gated MLP: gate ⊙ GELU(up) → down'
+  WeightLayout:
+    Linear: Standard [out_features, in_features] — no transpose
+    Conv1D: Conv1D [in_features, out_features] — requires transpose
+architectures:
+  gpt2:
+    aliases: []
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Absolute
+    mlp_type: GeluMlp
+    weight_layout: Conv1D
+    has_bias: true
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  llama:
+    aliases:
+    - llama3
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  qwen2:
+    aliases:
+    - qwen2.5
+    - qwen
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  qwen3:
+    aliases: []
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: true
+    default_eps: 1.0e-06
+  mistral:
+    aliases: []
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  phi2:
+    aliases: []
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Rope
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  phi:
+    aliases:
+    - phi3
+    - phi4
+    norm_type: LayerNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  gemma:
+    aliases:
+    - gemma2
+    - gemma3
+    norm_type: RmsNorm
+    activation: Gelu
+    positional_encoding: Rope
+    mlp_type: GatedMlp
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  deepseek:
+    aliases:
+    - deepseek2
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  bert:
+    aliases: []
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Absolute
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-12
+  t5:
+    aliases:
+    - encoder-decoder
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Relative
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  whisper:
+    aliases: []
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Absolute
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  mamba:
+    aliases: []
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: None
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  qwen3_5:
+    aliases:
+    - qwen3.5
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  falcon_h1:
+    aliases:
+    - falcon-h1
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  openelm:
+    aliases: []
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-06
+  moonshine:
+    aliases: []
+    norm_type: LayerNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: GatedMlp
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: true
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  rwkv7:
+    aliases:
+    - rwkv
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: None
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  falcon_7b:
+    aliases:
+    - falcon-7b
+    - falcon7b
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Rope
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  falcon_40b:
+    aliases:
+    - falcon-40b
+    - falcon40b
+    - falcon
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Alibi
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  stablelm:
+    aliases:
+    - stable-lm
+    - stable_lm
+    norm_type: LayerNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  yi:
+    aliases:
+    - yi-coder
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  internlm2:
+    aliases:
+    - internlm
+    - internlm2.5
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  smollm:
+    aliases:
+    - smollm2
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  olmo:
+    aliases:
+    - olmo2
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  granite:
+    aliases:
+    - granite-code
+    norm_type: RmsNorm
+    activation: Silu
+    positional_encoding: Rope
+    mlp_type: SwiGlu
+    weight_layout: Linear
+    has_bias: false
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+  starcoder:
+    aliases:
+    - starcoder1
+    norm_type: LayerNorm
+    activation: Gelu
+    positional_encoding: Absolute
+    mlp_type: GeluMlp
+    weight_layout: Linear
+    has_bias: true
+    tied_embeddings: false
+    has_qk_norm: false
+    default_eps: 1.0e-05
+default:
+  norm_type: RmsNorm
+  activation: Silu
+  positional_encoding: Rope
+  mlp_type: SwiGlu
+  weight_layout: Linear
+  has_bias: false
+  tied_embeddings: false
+  has_qk_norm: false
+  default_eps: 1.0e-05
+falsification_tests:
+- id: FALSIFY-ARCH-CONSTRAINTS-001
+  rule: Model-family consistency
+  prediction: Every model-family YAML's constraints section matches this contract
+  test: Cross-reference aprender/contracts/model-families/*.yaml constraints
+  if_fails: Contract drifted from model-family source YAMLs
+- id: FALSIFY-ARCH-CONSTRAINTS-002
+  rule: Enum exhaustiveness
+  prediction: No architecture has unknown enum values
+  test: build.rs parse validation — invalid enum value causes build error
+  if_fails: New architecture added without updating contract enums
+- id: FALSIFY-ARCH-CONSTRAINTS-003
+  rule: DeepSeek epsilon regression
+  prediction: DeepSeek eps is 1e-6, not 1e-5 (bug fix from hand-maintained code)
+  test: Regression test in realizar config tests
+  if_fails: DeepSeek eps reverted to incorrect default 1e-5
+qa_gate:
+  id: F-ACV-001
+  name: arch-constraints-v1 Contract
+  description: Quality gate for Per-architecture inference constraints — source of
+    truth
+  checks:
+  - validation
+  - falsification
+proof_obligations:
+- type: invariant
+  property: Every GGUF general.architecture value maps to exactly one constraint set
+  formal: Every GGUF general.architecture value maps to exactly one constraint set
+  applies_to: all
+- type: invariant
+  property: Enum fields are exhaustive over the defined enum variants
+  formal: Enum fields are exhaustive over the defined enum variants
+  applies_to: all
+kani_harnesses:
+- id: KANI-ARCH_C-001
+  obligation: Every GGUF general.architecture value maps to exactly one constraint
+    set
+  property: Every GGUF general.architecture value maps to exactly one constraint set
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCH_C-002
+  obligation: Enum fields are exhaustive over the defined enum variants
+  property: Enum fields are exhaustive over the defined enum variants
+  bound: 8
+  strategy: exhaustive

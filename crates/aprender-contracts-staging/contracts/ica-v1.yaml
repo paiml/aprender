@@ -1,0 +1,110 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Independent Component Analysis — FastICA blind source separation
+  references:
+  - 'Hyvarinen & Oja (2000) Independent Component Analysis: Algorithms and Applications'
+  - Hyvarinen (1999) Fast and Robust Fixed-Point Algorithms for ICA
+equations:
+  fastica:
+    formula: W = argmax_{W orthogonal} Σ_i |E[G(w_i^T z)]|² where z = whitened(X)
+    domain: X ∈ ℝ^{n×d}, n_components ≤ d
+    codomain: S = X W^T ∈ ℝ^{n×k} (independent components)
+    invariants:
+    - Output has n_components columns
+    - 'W is orthogonal: W W^T ≈ I'
+    - Components are maximally non-Gaussian
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Fastica
+  unmixing:
+    formula: S = X W^T where W is the unmixing matrix
+    domain: X ∈ ℝ^{n×d}, W ∈ ℝ^{k×d}
+    codomain: S ∈ ℝ^{n×k}
+    invariants:
+    - Unmixing is linear
+    - Output shape = (n_samples, n_components)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Unmixing
+  mixing:
+    formula: X̂ = S A where A = W^{-1} (mixing matrix)
+    domain: S ∈ ℝ^{n×k}, A ∈ ℝ^{k×d}
+    codomain: X̂ ∈ ℝ^{n×d}
+    invariants:
+    - 'Approximate reconstruction: X̂ ≈ X when k = d'
+    - A W ≈ I (mixing · unmixing = identity)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Mixing
+proof_obligations:
+- type: invariant
+  property: Output shape
+  formal: ICA(X, k).shape = (n, k)
+  applies_to: all
+- type: invariant
+  property: Deterministic output
+  formal: transform(X) = transform(X) for fixed model
+  applies_to: all
+- type: invariant
+  property: Component count
+  formal: Number of output components = n_components
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ICA-001
+  rule: Output shape
+  prediction: transformed shape = (n_samples, n_components)
+  test: 'proptest: fit ICA with k < d, check output shape'
+  if_fails: Component extraction or projection error
+- id: FALSIFY-ICA-002
+  rule: Transform deterministic
+  prediction: transform(X) = transform(X) for fitted model
+  test: 'proptest: transform twice, compare'
+  if_fails: Random state leaking between calls
+- id: FALSIFY-ICA-003
+  rule: Finite output
+  prediction: All output values are finite for finite input
+  test: 'proptest: transform random data, check all finite'
+  if_fails: Division by zero in whitening or convergence failure
+enforcement:
+  shape:
+    description: Output must have correct dimensions
+    check: contract_tests::FALSIFY-ICA-001
+    severity: ERROR
+kani_harnesses:
+- id: KANI-ICA-001
+  obligation: ICA-INV-001
+  property: ICA output shape matches (n_samples, n_components)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ica_output_shape
+- id: KANI-ICA_V1-002
+  obligation: Output shape
+  property: Output shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ICA_V1-003
+  obligation: Deterministic output
+  property: Deterministic output
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ICA_V1-004
+  obligation: Component count
+  property: Component count
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ICA-001
+  name: ICA Contract
+  description: ICA correctness quality gate
+  checks:
+  - output_shape
+  - deterministic
+  - finite_output
+  pass_criteria: All 3 falsification tests pass + Kani harnesses verify
+  falsification: Skip whitening step or use wrong convergence criterion

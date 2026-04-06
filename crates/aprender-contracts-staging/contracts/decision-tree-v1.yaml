@@ -1,0 +1,194 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Decision tree — CART algorithm with Gini impurity and MSE splitting
+  references:
+  - Breiman, Friedman, Olshen, Stone (1984) Classification and Regression Trees
+  - Hastie, Tibshirani, Friedman (2009) Elements of Statistical Learning, §9.2
+equations:
+  gini_impurity:
+    formula: G(S) = 1 - Σ_k p_k² where p_k = |S_k|/|S|
+    domain: S = multiset of class labels, |S| ≥ 1
+    codomain: G ∈ [0, 1 - 1/K] ⊂ [0, 1)
+    invariants:
+    - G ∈ [0, 1) (bounded by construction)
+    - G = 0 iff all elements have the same class (pure node)
+    - 'G is maximal when all classes equally represented: G = 1 - 1/K'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gini_Impurity
+  gini_split:
+    formula: G_split = (|S_L|/|S|)G(S_L) + (|S_R|/|S|)G(S_R)
+    domain: S partitioned into S_L, S_R with |S_L|, |S_R| ≥ 1
+    codomain: G_split ∈ [0, 1)
+    invariants:
+    - G_split ≤ G(S) (splitting never increases impurity)
+    - G_split ∈ [0, 1)
+    - G_split = 0 iff both children are pure
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gini_Split
+  mse_split:
+    formula: MSE(S) = (1/|S|) Σ(y_i - ȳ)² where ȳ = mean(S)
+    domain: S = set of real-valued targets, |S| ≥ 1
+    codomain: MSE ∈ [0, ∞)
+    invariants:
+    - MSE ≥ 0 (sum of squares)
+    - MSE = 0 iff all targets identical
+    - MSE = Var(S) (variance of the target set)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mse_Split
+  prediction:
+    formula: 'Classifier: majority_class(leaf), Regressor: mean(leaf_targets)'
+    domain: x ∈ ℝ^d (feature vector), fitted tree
+    codomain: ŷ ∈ classes (classifier) or ŷ ∈ ℝ (regressor)
+    invariants:
+    - Prediction is deterministic for same input
+    - Prediction depends only on features used in splits along root-to-leaf path
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Prediction
+proof_obligations:
+- type: bound
+  property: Gini bounded
+  formal: G(S) ∈ [0, 1) for all non-empty S
+  applies_to: all
+- type: invariant
+  property: Gini pure node
+  formal: G(S) = 0 iff |unique(S)| = 1
+  applies_to: all
+- type: invariant
+  property: Gini split reduction
+  formal: G_split(S_L, S_R) ≤ G(S) for any partition
+  applies_to: all
+- type: bound
+  property: MSE non-negative
+  formal: MSE(S) ≥ 0 for all S
+  applies_to: all
+- type: invariant
+  property: MSE zero for constant
+  formal: all targets identical ⟹ MSE = 0
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(x, tree) = predict(x, tree) for all x
+  applies_to: all
+- type: invariant
+  property: Fit-predict consistency
+  formal: Trained classifier predicts only observed classes
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-DT-001
+  rule: Gini bounded
+  prediction: gini_impurity ∈ [0, 1) for random label sets
+  test: proptest with random label vectors, K=2..6, n=1..50
+  if_fails: Division by zero for empty set or normalization error
+- id: FALSIFY-DT-002
+  rule: Gini pure node
+  prediction: gini_impurity = 0 when all labels identical
+  test: proptest with constant label vectors
+  if_fails: Off-by-one in class counting
+- id: FALSIFY-DT-003
+  rule: Gini split reduction
+  prediction: weighted child Gini ≤ parent Gini
+  test: proptest with random splits of label vectors
+  if_fails: Weight calculation error or incorrect split
+- id: FALSIFY-DT-004
+  rule: MSE non-negative
+  prediction: MSE ≥ 0 for random target sets
+  test: proptest with random f32 vectors
+  if_fails: Negative variance from catastrophic cancellation
+- id: FALSIFY-DT-005
+  rule: MSE zero for constant
+  prediction: MSE ≈ 0 when all targets identical
+  test: proptest with constant target vectors
+  if_fails: Float drift in mean computation
+- id: FALSIFY-DT-006
+  rule: Prediction deterministic
+  prediction: predict(x, tree) = predict(x, tree) for same input
+  test: 'proptest: fit tree, predict twice on same input, compare'
+  if_fails: Non-deterministic state in tree traversal
+- id: FALSIFY-DT-007
+  rule: Fit-predict class range
+  prediction: Classifier predictions ⊆ training classes
+  test: proptest with random training data, check prediction set
+  if_fails: Leaf prediction uses incorrect class label
+enforcement:
+  bounded:
+    description: Gini impurity must be in [0, 1)
+    check: contract_tests::FALSIFY-DT-001
+    severity: ERROR
+  non_negative:
+    description: MSE must be non-negative
+    check: contract_tests::FALSIFY-DT-004
+    severity: ERROR
+kani_harnesses:
+- id: KANI-DT-001
+  obligation: DT-BND-001
+  property: Gini impurity bounded in [0, 1) for all non-empty sets
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gini_bounded
+- id: KANI-DT-002
+  obligation: DT-BND-002
+  property: MSE non-negative for all target sets
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mse_non_negative
+- id: KANI-DECISI-003
+  obligation: Gini bounded
+  property: Gini bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-DECISI-004
+  obligation: Gini pure node
+  property: Gini pure node
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DECISI-005
+  obligation: Gini split reduction
+  property: Gini split reduction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DECISI-006
+  obligation: MSE non-negative
+  property: MSE non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DECISI-007
+  obligation: MSE zero for constant
+  property: MSE zero for constant
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DECISI-008
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DECISI-009
+  obligation: Fit-predict consistency
+  property: Fit-predict consistency
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DT-001
+  name: Decision Tree Contract
+  description: Decision tree correctness quality gate
+  checks:
+  - gini_bounded
+  - gini_pure_zero
+  - gini_split_reduction
+  - mse_non_negative
+  - mse_constant_zero
+  - prediction_deterministic
+  - fit_predict_class_range
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
+  falsification: Use entropy instead of Gini or omit class count normalization

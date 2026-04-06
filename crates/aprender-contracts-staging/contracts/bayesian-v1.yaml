@@ -1,0 +1,148 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Bayesian inference -- conjugate prior updates and Bayesian Linear Regression
+  references:
+  - Gelman et al. (2013) Bayesian Data Analysis, 3rd ed.
+  - 'Murphy (2012) Machine Learning: A Probabilistic Perspective, Ch. 3,7'
+equations:
+  conjugate_update:
+    formula: p(theta|data) proportional_to p(data|theta) * p(theta) = posterior proportional_to likelihood * prior
+    domain: prior parameters (alpha, beta) > 0, observed data
+    codomain: posterior parameters (alpha', beta') > 0
+    invariants:
+    - Posterior is in the same family as the prior (conjugacy)
+    - Posterior parameters are deterministic given prior and data
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Conjugate_Update
+  posterior_valid:
+    formula: alpha' = alpha + n_successes, beta' = beta + n_failures (Beta-Binomial)
+    domain: alpha, beta > 0, n_successes >= 0, n_failures >= 0
+    codomain: alpha' > 0, beta' > 0
+    invariants:
+    - alpha' > alpha (posterior concentration increases with successes)
+    - beta' > beta (posterior concentration increases with failures)
+    - alpha' > 0 and beta' > 0 always (positive parameters preserved)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Posterior_Valid
+  blr_predict:
+    formula: y_hat = X * mu_post
+    domain: X in R^{n x d}, mu_post in R^d (posterior mean of weights)
+    codomain: y_hat in R^n
+    invariants:
+    - Predictions are finite for bounded input
+    - Prediction length equals number of input samples
+    - Deterministic given same posterior and input
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Blr_Predict
+  posterior_predictive:
+    formula: p(y_new|X_new, data) = integral p(y_new|X_new, w) * p(w|data) dw
+    domain: X_new in R^{m x d}, fitted BLR model
+    codomain: predictive distribution over R^m
+    invariants:
+    - Predictive variance >= 0
+    - Predictive mean equals BLR point prediction
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Posterior_Predictive
+proof_obligations:
+- type: invariant
+  property: Posterior parameters positive
+  formal: alpha' > 0 and beta' > 0 after any conjugate update
+  applies_to: all
+- type: invariant
+  property: Predictions finite
+  formal: 'forall i: |y_hat_i| < infinity when ||X_i|| < infinity'
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(X) = predict(X) for same posterior
+  applies_to: all
+- type: invariant
+  property: Conjugacy preserved
+  formal: posterior family = prior family for conjugate models
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-BAYES-001
+  rule: Posterior positivity
+  prediction: alpha' > 0 and beta' > 0 after conjugate update
+  test: 'proptest: random valid prior (alpha, beta > 0), random data counts, check posterior params > 0'
+  if_fails: Conjugate update arithmetic error or underflow
+- id: FALSIFY-BAYES-002
+  rule: Prediction finiteness
+  prediction: All BLR predictions are finite
+  test: 'proptest: fit BLR on bounded random data, predict, check all finite'
+  if_fails: Posterior covariance inversion instability
+- id: FALSIFY-BAYES-003
+  rule: Prediction deterministic
+  prediction: predict(X) = predict(X) for same model
+  test: 'proptest: predict twice with same model and data, compare'
+  if_fails: Random state leaking into point predictions
+- id: FALSIFY-BAYES-004
+  rule: Posterior concentration
+  prediction: More data leads to tighter posterior (variance decreases)
+  test: 'proptest: fit BLR with n samples and 2n samples, compare posterior variances'
+  if_fails: Posterior update not accumulating evidence correctly
+enforcement:
+  posterior_positive:
+    description: Posterior parameters must remain positive
+    check: contract_tests::FALSIFY-BAYES-001
+    severity: ERROR
+  predictions_finite:
+    description: All predictions must be finite
+    check: contract_tests::FALSIFY-BAYES-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-BAYES-001
+  obligation: BAYES-INV-001
+  property: Posterior parameters remain positive after conjugate update
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_posterior_positive
+- id: KANI-BAYES-002
+  obligation: BAYES-INV-002
+  property: BLR predictions are finite for bounded input
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_blr_predictions_finite
+- id: KANI-BAYESI-003
+  obligation: Posterior parameters positive
+  property: Posterior parameters positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BAYESI-004
+  obligation: Predictions finite
+  property: Predictions finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BAYESI-005
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BAYESI-006
+  obligation: Conjugacy preserved
+  property: Conjugacy preserved
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-BAYES-001
+  name: Bayesian Inference Contract
+  description: Bayesian inference correctness quality gate
+  checks:
+  - posterior_positivity
+  - prediction_finiteness
+  - prediction_deterministic
+  - posterior_concentration
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Conjugate update produces zero or negative posterior parameters

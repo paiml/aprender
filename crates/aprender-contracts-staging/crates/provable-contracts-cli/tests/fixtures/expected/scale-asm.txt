@@ -1,0 +1,32 @@
+//
+// x86-64 AVX2 stub: scale-kernel-v1
+// Affine scale kernel — fused multiply-add
+// Equation scale: y_i = α · x_i + β
+//
+
+.intel_syntax noprefix
+.text
+.globl scale_avx2
+.p2align 4
+
+scale_avx2:
+    push rbp
+    mov rbp, rsp
+    // rdi = input ptr, rsi = output ptr, edx = n
+
+    // AVX2 registers: ymm x 16
+    vxorps ymm0, ymm0, ymm0
+    vxorps ymm1, ymm1, ymm1
+    vxorps ymm2, ymm2, ymm2
+    vxorps ymm3, ymm3, ymm3
+
+    // Phase 1: fma
+    // Fused multiply-add α·x + β
+    // Invariant: y_i = α·x_i + β
+
+    // Proof obligations:
+    //   [invariant] Finiteness
+    //   [equivalence] SIMD matches scalar
+
+    pop rbp
+    ret

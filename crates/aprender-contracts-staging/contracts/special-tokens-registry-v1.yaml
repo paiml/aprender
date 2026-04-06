@@ -1,0 +1,238 @@
+metadata:
+  version: 1.0.0
+  description: Canonical EOS/BOS/PAD token IDs per model family
+  registry: true
+  references:
+  - PROVABLE_CONTRACTS_ANALYSIS.md Gap 1
+  - realizar/src/gguf/config.rs default_eos_for_architecture()
+  - realizar/src/gguf/config.rs default_bos_for_architecture()
+  sources:
+  - HuggingFace config.json / tokenizer_config.json (2026-02-23)
+  - llama.cpp tokenizer implementation
+equations:
+  token_bounds:
+    formula: '∀ family F: eos_id(F) < vocab_size(F) ∧ (bos_id(F) = null ∨ bos_id(F) < vocab_size(F))'
+    domain: F ∈ { qwen2, qwen3, qwen3_moe, qwen3_5, llama, mistral, gemma, deepseek, phi2, phi3, gpt2 }
+    codomain: bool (all token IDs within vocab bounds)
+    invariants:
+    - eos_token_id < vocab_size for every family
+    - bos_token_id < vocab_size when not null
+    - pad_token_id < vocab_size when not null
+    - All additional_eos entries < vocab_size
+    - Every architecture key maps to a valid family
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Token_Bounds
+families:
+  qwen2:
+    display_name: Qwen2 / Qwen2.5
+    vocab_size: 151936
+    bos_token_id: 151643
+    eos_token_id: 151645
+    pad_token_id: 151643
+    additional_eos: []
+    im_start_id: 151644
+    im_end_id: 151645
+    bos_token: <|endoftext|>
+    eos_token: <|im_end|>
+    notes: bos_token is null in some Qwen2 tokenizer_config.json; 151643 is <|endoftext|>
+  qwen3:
+    display_name: Qwen3
+    vocab_size: 151936
+    bos_token_id: 151643
+    eos_token_id: 151645
+    pad_token_id: 151643
+    additional_eos: []
+    im_start_id: 151644
+    im_end_id: 151645
+    bos_token: <|endoftext|>
+    eos_token: <|im_end|>
+    notes: Same tokenizer as Qwen2. Supports thinking mode tokens.
+  qwen3_moe:
+    display_name: Qwen3-MoE
+    vocab_size: 151936
+    bos_token_id: 151643
+    eos_token_id: 151645
+    pad_token_id: 151643
+    additional_eos: []
+    im_start_id: 151644
+    im_end_id: 151645
+    bos_token: <|endoftext|>
+    eos_token: <|im_end|>
+    notes: MoE variant shares Qwen3 tokenizer.
+  qwen3_5:
+    display_name: Qwen3.5
+    vocab_size: 248320
+    bos_token_id: null
+    eos_token_id: 248044
+    pad_token_id: null
+    additional_eos: []
+    bos_token: null
+    eos_token: <|im_end|>
+    notes: 'New tokenizer with 248K vocab. No explicit BOS token in config.json. Applies to both dense (9B) and MoE (397B-A17B)
+      variants.
+
+      '
+  llama:
+    display_name: LLaMA 3.x
+    vocab_size: 128256
+    bos_token_id: 128000
+    eos_token_id: 128001
+    pad_token_id: 128001
+    additional_eos:
+    - 128008
+    - 128009
+    bos_token: <|begin_of_text|>
+    eos_token: <|end_of_text|>
+    notes: 'LLaMA 3.x uses multiple EOS tokens. Primary EOS is 128001 (<|end_of_text|>). 128008 and 128009 are used in instruct/chat
+      variants for turn boundaries.
+
+      '
+  mistral:
+    display_name: Mistral
+    vocab_size: 32000
+    bos_token_id: 1
+    eos_token_id: 2
+    pad_token_id: null
+    additional_eos: []
+    bos_token: <s>
+    eos_token: </s>
+    notes: SentencePiece tokenizer. Same token IDs as LLaMA 2.
+  gemma:
+    display_name: Gemma / Gemma 2
+    vocab_size: 256000
+    bos_token_id: 2
+    eos_token_id: 1
+    pad_token_id: 0
+    additional_eos: []
+    bos_token: <bos>
+    eos_token: <eos>
+    notes: Google's tokenizer. BOS=2, EOS=1 (note reversed vs Mistral).
+  deepseek:
+    display_name: DeepSeek V2/V3
+    vocab_size: 129280
+    bos_token_id: 0
+    eos_token_id: 1
+    pad_token_id: null
+    additional_eos: []
+    bos_token: <｜begin▁of▁sentence｜>
+    eos_token: <｜end▁of▁sentence｜>
+    notes: 'DeepSeek V3 uses vocab 129280 with BOS=0, EOS=1. Uses full-width Unicode markers in token strings.
+
+      '
+  phi3:
+    display_name: Phi-3 / Phi-3.5
+    vocab_size: 32064
+    bos_token_id: 1
+    eos_token_id: 32000
+    pad_token_id: 32000
+    additional_eos:
+    - 32007
+    bos_token: <s>
+    eos_token: <|endoftext|>
+    notes: 'Phi-3 uses SPM tokenizer. EOS=32000 (<|endoftext|>). Instruct variants may also stop at 32007 (<|end|>). Vocab
+      32064 is nearest multiple of 64 to 32010 (Ampere/Hopper optimization).
+
+      '
+  phi2:
+    display_name: Phi-2
+    vocab_size: 51200
+    bos_token_id: null
+    eos_token_id: 50256
+    pad_token_id: 50256
+    additional_eos: []
+    bos_token: null
+    eos_token: <|endoftext|>
+    notes: GPT-2 tokenizer. No explicit BOS. EOS=50256 = GPT-2 <|endoftext|>.
+  gpt2:
+    display_name: GPT-2
+    vocab_size: 50257
+    bos_token_id: null
+    eos_token_id: 50256
+    pad_token_id: 50256
+    additional_eos: []
+    bos_token: null
+    eos_token: <|endoftext|>
+    notes: Reference tokenizer. No BOS. EOS=50256.
+architecture_mapping:
+  qwen2: qwen2
+  qwen3: qwen3
+  qwen3moe: qwen3_moe
+  qwen3_5: qwen3_5
+  llama: llama
+  mistral: mistral
+  gemma: gemma
+  gemma2: gemma
+  deepseek: deepseek
+  deepseek2: deepseek
+  phi: phi2
+  phi2: phi2
+  phi3: phi3
+  gpt2: gpt2
+proof_obligations:
+- type: bound
+  property: EOS token ID within vocab for every family
+  formal: '∀ F: eos_token_id(F) < vocab_size(F)'
+- type: bound
+  property: BOS token ID within vocab when not null
+  formal: '∀ F: bos_token_id(F) = null ∨ bos_token_id(F) < vocab_size(F)'
+- type: bound
+  property: PAD token ID within vocab when not null
+  formal: '∀ F: pad_token_id(F) = null ∨ pad_token_id(F) < vocab_size(F)'
+- type: completeness
+  property: Architecture mapping covers all families
+  formal: '∀ key ∈ architecture_mapping: mapping(key) ∈ families'
+falsification_tests:
+- id: FALSIFY-STOK-001
+  rule: EOS bounds
+  prediction: All families have eos_token_id < vocab_size
+  if_fails: EOS ID exceeds vocab — will cause index-out-of-bounds in embedding lookup
+- id: FALSIFY-STOK-002
+  rule: Architecture coverage
+  prediction: Every architecture_mapping value resolves to a defined family
+  if_fails: Unknown family in mapping — will cause lookup miss at runtime
+token_proof_obligations:
+- name: eos_within_vocab
+  description: For every family, eos_token_id < vocab_size
+  check: family.eos_token_id < family.vocab_size
+- name: bos_within_vocab
+  description: For every family where bos_token_id is not null, bos_token_id < vocab_size
+  check: family.bos_token_id == null || family.bos_token_id < family.vocab_size
+- name: pad_within_vocab
+  description: For every family where pad_token_id is not null, pad_token_id < vocab_size
+  check: family.pad_token_id == null || family.pad_token_id < family.vocab_size
+- name: additional_eos_within_vocab
+  description: All additional_eos entries < vocab_size
+  check: all(id < family.vocab_size for id in family.additional_eos)
+- name: architecture_mapping_complete
+  description: Every architecture key maps to a valid family
+  check: all(family_key in families for family_key in architecture_mapping.values())
+kani_harnesses:
+- id: KANI-SPECIA-001
+  obligation: EOS token ID within vocab for every family
+  property: EOS token ID within vocab for every family
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SPECIA-002
+  obligation: BOS token ID within vocab when not null
+  property: BOS token ID within vocab when not null
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SPECIA-003
+  obligation: PAD token ID within vocab when not null
+  property: PAD token ID within vocab when not null
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SPECIA-004
+  obligation: Architecture mapping covers all families
+  property: Architecture mapping covers all families
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-STRV-001
+  name: special-tokens-registry-v1 Contract
+  description: Quality gate for Canonical EOS/BOS/PAD token IDs per model family
+  checks:
+  - validation
+  - falsification

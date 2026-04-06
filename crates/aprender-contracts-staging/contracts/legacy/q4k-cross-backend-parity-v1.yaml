@@ -1,0 +1,45 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-01'
+  author: PAIML Engineering
+  description: Q4K cross-backend parity — GPU/CPU dot product epsilon and factual match
+  references:
+  - Legacy contract migrated to v2 schema
+equations:
+  dot_product_epsilon:
+    description: Q4K dot within sqrt(K)*2^-23 across backends
+    formula: '|dot_gpu - dot_cpu| < sqrt(K) * 2^-23 * |dot_cpu|'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Dot_Product_Epsilon
+  factual_match:
+    description: Factual prompts must match across backends
+    formula: is_factual(prompt) -> tokens_gpu == tokens_cpu
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Factual_Match
+preconditions:
+- name: same_weights
+- name: greedy_decode
+postconditions:
+- name: factual_parity
+  severity: critical
+- name: canary_gate_pass
+  severity: critical
+findings:
+- pmat: 330
+  description: 1.5B GPU 'Go' vs CPU 'Rust'. 3B correct.
+- pmat: 346
+  description: WGPU parity achieved. '2+2=4' matches CPU. GEMV+SiLU bugs fixed.
+- pmat: 347
+  description: GPU LM head with transposed weights. Output verified identical to CPU.
+- pmat: 350
+  description: 'WGPU/CPU factual parity: 1/3 token-match, 3/3 factual-correct. Difference is tokenizer (BPE vs greedy), not
+    model quality.'
+qa_gate:
+  id: F-QKCB-001
+  name: q4k-cross-backend-parity-v1 Contract
+  description: Quality gate for q4k-cross-backend-parity-v1
+  checks:
+  - validation
+  - falsification

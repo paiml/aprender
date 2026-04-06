@@ -1,0 +1,768 @@
+metadata:
+  version: 2.0.0
+  created: '2026-02-04'
+  updated: '2026-02-05'
+  author: PAIML Engineering
+  description: Tensor layout and data quality contract with compile-time enforcement
+  registry: true
+  references:
+  - Internal contract
+  lessons_learned:
+  - 'GH-202: No canonical spec for shapes - wasted hours grepping'
+  - 'PMAT-234: SafeTensors 94.5% zeros passed all structural checks but produced garbage'
+  - 'PMAT-235: Runtime validation can be bypassed - need compile-time guarantees'
+type_enforcement:
+  principle: Poka-Yoke (mistake-proofing) via newtype pattern
+  validated_types:
+    ValidatedEmbedding:
+      inner: Vec<f32>
+      constructor: fn new(data, vocab_size, hidden_dim) -> Result<Self, ContractError>
+      invariants:
+      - data.len() == vocab_size * hidden_dim
+      - zero_pct < 50%
+      - no NaN or Inf
+      - L2 norm > 1e-6
+      consumers:
+      - AprTransformer.embedding
+      - GpuModel.embedding
+      note: Private inner field - ONLY way to get data is through validated constructor
+    ValidatedWeight:
+      inner: Vec<f32>
+      constructor: fn new(data, out_dim, in_dim, name) -> Result<Self, ContractError>
+      invariants:
+      - data.len() == out_dim * in_dim
+      - zero_pct < 80%
+      - no NaN or Inf
+      consumers:
+      - AprTransformerLayer.q_proj, k_proj, v_proj, etc.
+      - GpuModel layer weights
+    ValidatedVector:
+      inner: Vec<f32>
+      constructor: fn new(data, expected_len, name) -> Result<Self, ContractError>
+      invariants:
+      - data.len() == expected_len
+      - no NaN or Inf
+      consumers:
+      - Layer norm weights
+      - Bias vectors
+  enforcement_locations:
+    aprender:
+    - src/format/validated_tensors.rs
+    - src/format/converter/write.rs (uses ValidatedTensor)
+    realizar:
+    - src/validated_tensors.rs
+    - src/apr_transformer/mod.rs (requires ValidatedEmbedding)
+    - src/safetensors_infer.rs (produces ValidatedTensor)
+  compiler_guarantee: 'It is IMPOSSIBLE to construct AprTransformer with unvalidated data because:
+
+    1. AprTransformer fields are ValidatedEmbedding, not Vec<f32>
+
+    2. ValidatedEmbedding::new() is the ONLY constructor (no Default, no unsafe)
+
+    3. ValidatedEmbedding::new() runs ALL validation checks
+
+    4. Inner data field is private - cannot be accessed without validation
+
+
+    This is Poka-Yoke: the mistake (using unvalidated data) is physically impossible.
+
+    '
+formats:
+  gguf:
+    layout: column-major
+    shape_convention: '[ne0, ne1]'
+    note: GGML convention - ne[0] is contiguous (inner) dimension
+  apr:
+    layout: row-major
+    shape_convention: '[rows, cols]'
+    note: Standard ML convention - rows are contiguous
+  safetensors:
+    layout: row-major
+    shape_convention: '[rows, cols]'
+    note: 'HuggingFace native format - same layout as APR. CAUTION: layout parity
+
+      does NOT mean quantization is free. When converting SafeTensors F32→Q4K,
+
+      the quantizer MUST use matrix-aware packing (quantize_q4_k_matrix) to
+
+      align super-blocks to row boundaries. See F-LAYOUT-CONTRACT-006.
+
+      '
+kernel:
+  signature: fused_q*k_parallel_matvec(weights, activations, in_dim, out_dim)
+  weight_shape: '[out_dim, in_dim]'
+  computation: y[out] = dot(activations[in], weights[out, :])
+  byte_calculation: out_dim * ceil(in_dim / QK_K) * block_bytes
+  block_sizes:
+    Q4_K: 144
+    Q5_K: 176
+    Q6_K: 210
+  QK_K: 256
+  note: Kernel defines shape. Comments describe math. Trust the kernel.
+quant_dispatch:
+  principle: Each quantization format has ONE correct kernel. No defaults.
+  anti_pattern: '`_ => q4k_gemv_into(...)` — treats unknown formats as Q4K'
+  reference: ALG-006 vacuous catch-all, PMAT-232 7B GPU garbage
+  gpu_dispatch:
+    Q4_0:
+      kernel: q4_0_gemv_into
+      block_bytes: 18
+      elements_per_block: 32
+    Q4_1:
+      kernel: q4_1_gemv_into
+      block_bytes: 20
+      elements_per_block: 32
+    Q5_0:
+      kernel: q5_0_gemv_into
+      block_bytes: 22
+      elements_per_block: 32
+    Q4_K:
+      kernel: q4k_gemv_into
+      block_bytes: 144
+      elements_per_block: 256
+    Q5_K:
+      kernel: q5k_gemv_into
+      block_bytes: 176
+      elements_per_block: 256
+    Q6_K:
+      kernel: q6k_gemv_into
+      block_bytes: 210
+      elements_per_block: 256
+    Q8_0:
+      kernel: q8_0_gemv_into
+      block_bytes: 34
+      elements_per_block: 32
+  cpu_dispatch:
+    Q4_K:
+      kernel: fused_q4k_parallel_matvec
+    Q5_K:
+      kernel: fused_q5k_parallel_matvec
+    Q6_K:
+      kernel: fused_q6k_parallel_matvec
+    Q8_0:
+      kernel: fused_q8_0_parallel_matvec
+    Q4_0:
+      kernel: fused_q4_0_parallel_matvec
+  dispatch_sites:
+  - file: realizar/src/cuda/executor/layers/indexed.rs
+    function: transformer_layer_workspace_inner
+    dispatches:
+    - name: Q projection
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: K projection
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: V projection
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: Output projection
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: FFN gate
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: FFN up
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+    - name: FFN down
+      must_handle:
+      - Q4_0
+      - Q4_1
+      - Q5_0
+      - Q4_K
+      - Q5_K
+      - Q6_K
+      - Q8_0
+  - file: realizar/src/cuda/executor/layers/graphed.rs
+    function: forward_workspace_captured
+    dispatches:
+    - name: LM head
+      must_handle:
+      - Q4_K
+      - Q6_K
+tensors:
+  embedding:
+    gguf_name: token_embd.weight
+    apr_name: model.embed_tokens.weight
+    gguf_shape: '[hidden, vocab]'
+    apr_shape: '[vocab, hidden]'
+    transpose: 'true'
+    kernel: lookup (row = token embedding, not matmul)
+    validation: shape[0] == vocab_size AND shape[1] == hidden_dim
+  lm_head:
+    gguf_name: output.weight
+    apr_name: lm_head.weight
+    gguf_shape: '[hidden, vocab]'
+    apr_shape: '[vocab, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, vocab_size, hidden_dim)
+    kernel_out_dim: vocab_size
+    kernel_in_dim: hidden_dim
+    validation: shape[0] == vocab_size AND shape[1] == hidden_dim
+    critical: 'true'
+    note: GH-202 root cause - wrong shape caused [PAD] garbage output
+  q_proj:
+    gguf_name: blk.{n}.attn_q.weight
+    apr_name: model.layers.{n}.self_attn.q_proj.weight
+    gguf_shape: '[hidden, heads*head_dim]'
+    apr_shape: '[heads*head_dim, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, num_heads*head_dim, hidden_dim)
+    kernel_out_dim: num_heads * head_dim
+    kernel_in_dim: hidden_dim
+  k_proj:
+    gguf_name: blk.{n}.attn_k.weight
+    apr_name: model.layers.{n}.self_attn.k_proj.weight
+    gguf_shape: '[hidden, kv_heads*head_dim]'
+    apr_shape: '[kv_heads*head_dim, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)
+    kernel_out_dim: num_kv_heads * head_dim
+    kernel_in_dim: hidden_dim
+  v_proj:
+    gguf_name: blk.{n}.attn_v.weight
+    apr_name: model.layers.{n}.self_attn.v_proj.weight
+    gguf_shape: '[hidden, kv_heads*head_dim]'
+    apr_shape: '[kv_heads*head_dim, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)
+    kernel_out_dim: num_kv_heads * head_dim
+    kernel_in_dim: hidden_dim
+  o_proj:
+    gguf_name: blk.{n}.attn_output.weight
+    apr_name: model.layers.{n}.self_attn.o_proj.weight
+    gguf_shape: '[heads*head_dim, hidden]'
+    apr_shape: '[hidden, heads*head_dim]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, hidden_dim, num_heads*head_dim)
+    kernel_out_dim: hidden_dim
+    kernel_in_dim: num_heads * head_dim
+  gate_proj:
+    gguf_name: blk.{n}.ffn_gate.weight
+    apr_name: model.layers.{n}.mlp.gate_proj.weight
+    gguf_shape: '[hidden, intermediate]'
+    apr_shape: '[intermediate, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)
+    kernel_out_dim: intermediate_dim
+    kernel_in_dim: hidden_dim
+  up_proj:
+    gguf_name: blk.{n}.ffn_up.weight
+    apr_name: model.layers.{n}.mlp.up_proj.weight
+    gguf_shape: '[hidden, intermediate]'
+    apr_shape: '[intermediate, hidden]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)
+    kernel_out_dim: intermediate_dim
+    kernel_in_dim: hidden_dim
+  down_proj:
+    gguf_name: blk.{n}.ffn_down.weight
+    apr_name: model.layers.{n}.mlp.down_proj.weight
+    gguf_shape: '[intermediate, hidden]'
+    apr_shape: '[hidden, intermediate]'
+    transpose: 'true'
+    kernel: matmul_q*k_rowmajor(W, x, hidden_dim, intermediate_dim)
+    kernel_out_dim: hidden_dim
+    kernel_in_dim: intermediate_dim
+  input_layernorm:
+    gguf_name: blk.{n}.attn_norm.weight
+    apr_name: model.layers.{n}.input_layernorm.weight
+    gguf_shape: '[hidden]'
+    apr_shape: '[hidden]'
+    transpose: 'false'
+    kernel: element-wise multiply
+  post_attention_layernorm:
+    gguf_name: blk.{n}.ffn_norm.weight
+    apr_name: model.layers.{n}.post_attention_layernorm.weight
+    gguf_shape: '[hidden]'
+    apr_shape: '[hidden]'
+    transpose: 'false'
+    kernel: element-wise multiply
+  final_norm:
+    gguf_name: output_norm.weight
+    apr_name: model.norm.weight
+    gguf_shape: '[hidden]'
+    apr_shape: '[hidden]'
+    transpose: 'false'
+    kernel: element-wise multiply
+validation_rules:
+- id: F-LAYOUT-CONTRACT-001
+  name: All 2D weights are transposed
+  description: For tensors with transpose=true, apr_shape == swap(gguf_shape)
+  severity: P0
+- id: F-LAYOUT-CONTRACT-002
+  name: lm_head shape matches kernel expectation
+  description: lm_head.apr_shape[0] == vocab_size AND lm_head.apr_shape[1] == hidden_dim
+  severity: P0
+  critical: 'true'
+  reference: GH-202
+- id: F-LAYOUT-CONTRACT-003
+  name: 1D tensors unchanged
+  description: For tensors with transpose=false, apr_shape == gguf_shape
+  severity: P1
+- id: F-LAYOUT-CONTRACT-004
+  name: Byte size matches kernel expectation
+  description: tensor.bytes == out_dim * ceil(in_dim/QK_K) * block_bytes
+  severity: P0
+- id: F-LAYOUT-CONTRACT-005
+  name: No garbage output from lm_head
+  description: Inference does not produce [PAD] tokens repeatedly
+  severity: P0
+  critical: 'true'
+  reference: GH-202
+- id: F-LAYOUT-CONTRACT-006
+  name: Q4K quantization uses matrix-aware packing
+  description: 'All 2D tensor Q4K quantization MUST use quantize_q4_k_matrix(data, shape),
+
+    never flat quantize_q4_k(data). Flat quantization treats the tensor as a 1D
+
+    stream, creating super-blocks that span row boundaries when in_dim is not a
+
+    multiple of 256. The kernel reads row-by-row, so cross-row blocks produce
+
+    garbage output. Matrix-aware quantization pads each row to 256-element
+
+    boundaries before packing.
+
+    '
+  severity: P0
+  critical: 'true'
+  reference: LAYOUT-002, GH-370
+  enforcement:
+  - aprender/src/format/converter/write.rs:dispatch_quantize() — uses quantize_q4_k_matrix
+  - aprender/src/format/converter/infer_q4k_config.rs — uses quantize_q4_k_matrix
+  - aprender/src/format/converter/export_include_01.rs — uses quantize_q4_k_matrix
+  - aprender/src/format/converter/fusion.rs — uses quantize_q4_k_matrix
+  anti_pattern: quantize_q4_k(data) on 2D tensors — produces cross-row blocks
+- id: F-APR-SELF-CONTAINED-001
+  name: APR files embed tokenizer for standalone inference
+  description: 'APR files converted from GGUF MUST embed tokenizer metadata (vocabulary,
+
+    BPE merges, BOS/EOS token IDs, chat template) so that apr serve can
+
+    tokenize input without requiring sibling tokenizer.json files. Without
+
+    embedded tokenizer, APR serve falls back to character-level tokenizer
+
+    which produces garbage input to the model.
+
+    '
+  severity: P0
+  critical: 'true'
+  reference: GH-86, LAYOUT-002
+  enforcement:
+  - realizar/src/convert/q4k_converter_helpers.rs:embed_tokenizer_metadata()
+  - aprender/src/format/converter/write_model_config.rs:write_apr_file_raw() — insert_tokenizer_metadata()
+  - aprender/src/format/converter/write.rs:write_apr_file() — insert_f32_tokenizer_metadata()
+  anti_pattern: Writing APR metadata without tokenizer — produces structurally valid but inference-broken files
+  five_whys: '1. APR serve produces garbage → character-level fallback tokenizer
+
+    2. Fallback used → no vocab/merges in APR metadata
+
+    3. No tokenizer in metadata → Q4K converter never extracts it from GGUF
+
+    4. Q4K converter skips tokenizer → separate code path from standard import
+
+    5. No contract rule → tensor-layout contract only validates tensors, not metadata completeness
+
+    '
+- id: F-KERNEL-DISPATCH-001
+  name: APR GPU inference uses fused Q4K kernels (same as GGUF)
+  description: 'APR GPU inference MUST use OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV
+
+    kernels, 190+ tok/s) not AprV2ModelCuda (generic transformer, 0.5 tok/s).
+
+    The loading path is: MappedAprModel → OwnedQuantizedModel::from_apr() →
+
+    OwnedQuantizedModelCuda::new(). This ensures format-agnostic kernel
+
+    dispatch — the same fused kernels serve both GGUF and APR.
+
+    '
+  severity: P0
+  critical: 'true'
+  reference: GH-87, LAYOUT-002
+  enforcement:
+  - aprender/crates/apr-cli/src/commands/benchmark.rs:run_apr_cuda_benchmark() — OwnedQuantizedModelCuda
+  - aprender/crates/apr-cli/src/commands/serve/handlers_include_01.rs:start_apr_server_gpu() — OwnedQuantizedModelCuda
+  anti_pattern: AprV2ModelCuda for GPU inference — 380x slower than fused kernels
+  five_whys: '1. APR GPU is 380x slower than GGUF → uses generic transformer kernels
+
+    2. Generic kernels used → code creates AprV2ModelCuda directly
+
+    3. AprV2ModelCuda used → written before OwnedQuantizedModel::from_apr() existed
+
+    4. Never updated → no contract rule requiring format-agnostic kernel dispatch
+
+    5. No contract → original design assumed format determines kernel, not quantization type
+
+    '
+semantic_validation:
+  density:
+    embedding_max_zero_pct: 50.0
+    weight_max_zero_pct: 80.0
+    note: 'PMAT-234: SafeTensors had 94.5% zeros, passed structural checks'
+  numeric:
+    allow_nan: 'false'
+    allow_inf: 'false'
+    note: NaN/Inf in weights = training diverged or corrupt file
+  distribution:
+    min_l2_norm: 1.0e-06
+    require_variation: 'true'
+    note: Degenerate distributions indicate corrupt or placeholder data
+  spot_check:
+    enabled: 'true'
+    sample_percentiles:
+    - 10
+    - 50
+    - 90
+    min_token_l2: 1.0e-06
+    note: Catches offset bugs where data is shifted (e.g., first 94.5% zeros)
+validation_rules_semantic:
+- id: F-DATA-QUALITY-001
+  name: Embedding density check
+  description: Embedding tensor must have <50% zero values
+  severity: P0
+  critical: 'true'
+  reference: PMAT-234
+  enforcement:
+  - aprender/src/format/layout_contract.rs:enforce_semantic_validation()
+  - realizar/src/safetensors/validation.rs:validate_embedding()
+- id: F-DATA-QUALITY-002
+  name: No NaN or Inf values
+  description: All tensor values must be finite
+  severity: P0
+  critical: 'true'
+  enforcement:
+  - aprender/src/format/layout_contract.rs:enforce_semantic_validation()
+  - realizar/src/safetensors/validation.rs:validate_*()
+- id: F-DATA-QUALITY-003
+  name: Non-degenerate distribution
+  description: Tensor L2 norm must be >1e-6 and values must vary
+  severity: P0
+  enforcement:
+  - aprender/src/format/layout_contract.rs:enforce_semantic_validation()
+  - realizar/src/safetensors/validation.rs:validate_*()
+- id: F-DATA-QUALITY-004
+  name: Spot check token embeddings
+  description: Sampled tokens at 10%/50%/90% must have non-zero embeddings
+  severity: P0
+  critical: 'true'
+  reference: PMAT-234
+  note: Catches the 94.5% leading zeros bug
+  enforcement:
+  - realizar/src/safetensors/validation.rs:validate_embedding()
+falsification_tests:
+- id: FALSIFY-001
+  rule: F-DATA-QUALITY-001 (Embedding density)
+  prediction: It is impossible to construct ValidatedEmbedding with >50% zeros
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\n#[should_panic(expected = \"DENSITY FAILURE\")]\nfn falsify_001_embedding_density() {\n  \
+    \  let bad_data = vec![0.0f32; 151936 * 896];  // 100% zeros\n    ValidatedEmbedding::new(bad_data, 151936, 896).unwrap();\n\
+    }\n"
+  if_test_passes: Contract is BROKEN - density validation not enforced
+- id: FALSIFY-002
+  rule: Type enforcement (Poka-Yoke)
+  prediction: It is impossible to construct AprTransformer without ValidatedEmbedding
+  if_fails: Contract implementation is incorrect
+  falsification_test: "// This code should NOT compile\nfn falsify_002_type_enforcement() {\n    let raw_data: Vec<f32> =\
+    \ vec![0.1; 1000];\n    let transformer = AprTransformer {\n        embedding: raw_data,  // ERROR: expected ValidatedEmbedding\n\
+    \        ..\n    };\n}\n"
+  if_test_compiles: Contract is BROKEN - type enforcement bypassed
+- id: FALSIFY-003
+  rule: F-DATA-QUALITY-002 (NaN rejection)
+  prediction: It is impossible to construct ValidatedWeight containing NaN
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\n#[should_panic(expected = \"NaN\")]\nfn falsify_003_nan_rejection() {\n    let mut data =\
+    \ vec![0.1f32; 1000];\n    data[500] = f32::NAN;\n    ValidatedWeight::new(data, 100, 10, \"test\").unwrap();\n}\n"
+  if_test_passes: Contract is BROKEN - NaN validation not enforced
+- id: FALSIFY-004
+  rule: F-DATA-QUALITY-004 (Spot check)
+  prediction: It is impossible to load SafeTensors with 94.5% leading zeros
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_004_spot_check() {\n    // Simulate the PMAT-234 bug: 94.5% leading zeros\n   \
+    \ let vocab_size = 151936;\n    let hidden_dim = 896;\n    let mut data = vec![0.0f32; vocab_size * hidden_dim];\n   \
+    \ // Only last 5.5% non-zero (starting at token 143620)\n    for i in (143620 * hidden_dim)..(vocab_size * hidden_dim)\
+    \ {\n        data[i] = 0.1;\n    }\n    let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);\n    assert!(result.is_err(),\
+    \ \"Should reject 94.5% zeros\");\n    assert!(result.unwrap_err().to_string().contains(\"DENSITY\"));\n}\n"
+  if_test_passes: Contract is BROKEN - spot check not catching offset bugs
+- id: FALSIFY-005
+  rule: F-LAYOUT-CONTRACT-002 (lm_head shape)
+  prediction: It is impossible to construct AprTransformer with wrong lm_head shape
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\n#[should_panic(expected = \"CONTRACT VIOLATION\")]\nfn falsify_005_lm_head_shape() {\n   \
+    \ // Wrong shape: [hidden, vocab] instead of [vocab, hidden]\n    let data = vec![0.1f32; 896 * 151936];\n    ValidatedWeight::new(data,\
+    \ 896, 151936, \"lm_head.weight\").unwrap();\n    // Should fail because lm_head MUST be [vocab, hidden]\n}\n"
+  if_test_passes: Contract is BROKEN - lm_head shape not validated
+- id: FALSIFY-006
+  rule: Cross-crate enforcement
+  prediction: Both aprender AND realizar enforce identical validation
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_006_cross_crate_parity() {\n    let data = vec![0.0f32; 1000];  // All zeros\n\n\
+    \    // aprender validation\n    let apr_result = aprender::format::ValidatedEmbedding::new(\n        data.clone(), 10,\
+    \ 100\n    );\n\n    // realizar validation\n    let rlz_result = realizar::ValidatedEmbedding::new(\n        data.clone(),\
+    \ 10, 100\n    );\n\n    // Both must fail with same error type\n    assert!(apr_result.is_err());\n    assert!(rlz_result.is_err());\n\
+    \    assert_eq!(\n        apr_result.unwrap_err().to_string(),\n        rlz_result.unwrap_err().to_string()\n    );\n\
+    }\n"
+  if_test_passes: Contract is BROKEN - crates have divergent validation
+- id: FALSIFY-007
+  rule: Quant dispatch exhaustiveness (PMAT-232)
+  prediction: It is impossible to add a WeightQuantType variant without updating all dispatch sites
+  if_fails: Contract implementation is incorrect
+  falsification_test: "// WeightQuantType must NOT derive Default and MUST be #[non_exhaustive]\n// or have exhaustive matches\
+    \ at all dispatch sites.\n//\n// If this compiles, the contract is broken:\nfn falsify_007_no_catch_all() {\n    // grep\
+    \ -c '_ =>' in all dispatch sites listed in quant_dispatch.dispatch_sites\n    // Count MUST be 0. Any `_ =>` in a WeightQuantType\
+    \ match is a contract violation.\n    //\n    // Automated: `cargo clippy -- -W clippy::wildcard_enum_match_arm` on realizar\n\
+    \    // will flag every `_ =>` on WeightQuantType as a warning.\n}\n"
+  if_catch_all_exists: Contract is BROKEN - silent wrong-kernel dispatch possible
+  reference: PMAT-232, ALG-006
+- id: FALSIFY-008
+  rule: Quant type → kernel correctness
+  prediction: Q6K weights dispatched through q4k_gemv_into produce garbage output
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_008_wrong_kernel_detection() {\n    // Load a Q6K weight tensor, dispatch through\
+    \ Q4K kernel\n    // Assert output is NaN or magnitude > 1e6 (garbage)\n    // This MUST produce garbage - if it doesn't,\
+    \ our block formats are wrong\n}\n"
+  if_test_fails: Block format assumptions are wrong - Q4K and Q6K are more compatible than expected
+- id: FALSIFY-009
+  rule: F-LAYOUT-CONTRACT-006 (SafeTensors→APR→inference correctness)
+  prediction: 'SafeTensors imported to APR with Q4K quantization produces the same
+
+    inference output as direct SafeTensors F32 inference, when in_dim is
+
+    NOT a multiple of 256 (e.g., Qwen2.5-Coder-1.5B hidden_dim=1536).
+
+    '
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_009_safetensors_apr_roundtrip() {\n    // 1. Import tiny SafeTensors model to APR\
+    \ with --quantize q4k\n    //    (model must have hidden_dim not multiple of 256)\n    // 2. Load APR model via realizar\n\
+    \    // 3. Run inference on known prompt\n    // 4. Compare output to direct SafeTensors F32 inference\n    // 5. Assert\
+    \ output is coherent (not garbage like \"olumbia+lsi\")\n    //\n    // Key: use a model where hidden_dim % 256 != 0 to\
+    \ trigger\n    // the cross-row block boundary bug that flat quantize_q4_k causes.\n    //\n    // If flat quantize_q4_k\
+    \ is used instead of quantize_q4_k_matrix,\n    // this test MUST fail with garbage output.\n}\n"
+  if_test_fails: LAYOUT-002 regression - quantize_q4_k_matrix not used in SafeTensors→APR path
+  reference: LAYOUT-002, GH-370
+- id: FALSIFY-010
+  rule: F-APR-SELF-CONTAINED-001 (APR self-contained tokenizer)
+  prediction: 'APR file created from GGUF with --preserve-q4k loads its embedded BPE
+
+    tokenizer without requiring sibling tokenizer.json. Inference with the
+
+    embedded tokenizer produces the same output as GGUF direct inference.
+
+    '
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_010_apr_embedded_tokenizer() {\n    // 1. Convert GGUF to APR with --preserve-q4k\n\
+    \    // 2. Load APR in an isolated directory (no sibling tokenizer.json)\n    // 3. Call load_embedded_bpe_tokenizer()\n\
+    \    // 4. Assert returns Some(tokenizer) with vocab.len() > 0\n    // 5. Encode \"What is 2+2?\" and verify token count\
+    \ matches GGUF\n    // 6. Run inference and verify output is \"4\", not garbage\n    //\n    // If embed_tokenizer_metadata()\
+    \ is removed, this test MUST fail\n    // with None from load_embedded_bpe_tokenizer().\n}\n"
+  if_test_fails: GH-86 regression - Q4K converter not embedding tokenizer in APR metadata
+  reference: GH-86, LAYOUT-002
+- id: FALSIFY-011
+  rule: F-KERNEL-DISPATCH-001 (APR GPU uses fused Q4K kernels)
+  prediction: 'APR GPU benchmark achieves within 20% of GGUF GPU benchmark throughput
+
+    (both using same model, same hardware). The fused Q4K kernel path is
+
+    format-agnostic — APR and GGUF produce equivalent performance.
+
+    '
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_011_apr_gpu_fused_kernels() {\n    // 1. Benchmark GGUF model: apr bench model.gguf\
+    \ → record tok/s\n    // 2. Convert to APR: apr import model.gguf model.apr --preserve-q4k\n    // 3. Benchmark APR model:\
+    \ apr bench model.apr → record tok/s\n    // 4. Assert APR tok/s >= GGUF tok/s * 0.8 (within 20%)\n    //\n    // If AprV2ModelCuda\
+    \ is used instead of OwnedQuantizedModelCuda,\n    // APR will be ~380x slower and this test MUST fail.\n}\n"
+  if_test_fails: GH-87 regression - APR GPU not using fused Q4K kernel path
+  reference: GH-87, LAYOUT-002
+- id: FALSIFY-012
+  rule: F-KERNEL-DISPATCH-001 (SafeTensors GPU uses fused Q4K kernels)
+  prediction: 'SafeTensors GPU benchmark achieves within 20% of GGUF GPU benchmark
+
+    throughput (both using same model, same hardware). SafeTensors is
+
+    quantized to Q4K in-memory, then uses the same fused kernel path.
+
+    '
+  if_fails: Contract implementation is incorrect
+  falsification_test: "#[test]\nfn falsify_012_safetensors_gpu_fused_kernels() {\n    // 1. Benchmark GGUF model: apr bench\
+    \ model.gguf → record tok/s\n    // 2. Benchmark SafeTensors: apr bench model.safetensors → record tok/s\n    // 3. Assert\
+    \ SafeTensors tok/s >= GGUF tok/s * 0.8 (within 20%)\n    //\n    // If SafeTensorsCudaModel is used instead of OwnedQuantizedModelCuda,\n\
+    \    // SafeTensors will be ~13x slower and this test MUST fail.\n}\n"
+  if_test_fails: GH-88 regression - SafeTensors GPU not using fused Q4K kernel path
+  reference: GH-88, LAYOUT-002
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" - The validation stops the line immediately
+
+    when a defect is detected. No garbage data propagates to inference.
+
+    '
+  poka_yoke: '"Mistake-proofing" - The type system makes it physically impossible to
+
+    use unvalidated data. This is not a warning or a lint - it''s a compile error.
+
+    '
+  genchi_genbutsu: '"Go and see" - The falsification tests require actually running the code
+
+    with known-bad data. We don''t assume validation works - we prove it fails
+
+    on bad input.
+
+    '
+  kaizen: '"Continuous improvement" - When PMAT-234 revealed a new failure mode
+
+    (94.5% zeros), we added F-DATA-QUALITY-004 and FALSIFY-004. The contract
+
+    evolves to prevent every observed failure mode.
+
+    '
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Identity
+  validated_tensor_construction:
+    formula: |
+      validate: (RawData, Shape, Name) -> Result<ValidatedTensor, ContractError>
+        data.len() == shape.product() -> Ok(ValidatedTensor)
+        contains_nan(data) -> Err(NaN)
+        contains_inf(data) -> Err(Inf)
+        zero_pct(data) > threshold -> Err(DensityFailure)
+    domain: Raw f32 data with expected dimensions
+    codomain: Result<ValidatedTensor, ContractError>
+    invariants:
+    - Private inner field prevents bypass
+    - No NaN or Inf values pass validation
+    - Density thresholds enforced (50% for embeddings, 80% for weights)
+    preconditions:
+    - data.len() > 0
+    - shape dimensions are positive
+    lean_theorem: Theorems.ValidatedTensorConstruction
+  transpose_invariant:
+    formula: |
+      transpose: (GgufShape, Format) -> AprShape
+        For 2D tensors: apr_shape == swap(gguf_shape)
+        For 1D tensors: apr_shape == gguf_shape
+    domain: GGUF tensor shape with format metadata
+    codomain: APR tensor shape
+    invariants:
+    - 2D transpose swaps dimensions exactly
+    - 1D tensors are identity
+    - Byte size preserved across transpose
+    preconditions:
+    - gguf_shape has 1 or 2 dimensions
+    lean_theorem: Theorems.TransposeInvariant
+  quant_dispatch_exhaustiveness:
+    formula: |
+      dispatch: WeightQuantType -> Kernel
+        For every variant V of WeightQuantType:
+          exists exactly one kernel K in dispatch table
+        No wildcard/catch-all arm
+    domain: WeightQuantType enum
+    codomain: Specific kernel function
+    invariants:
+    - Exhaustive match — every variant handled
+    - No catch-all arm (no _ =>)
+    - Each variant maps to exactly one kernel
+    preconditions:
+    - WeightQuantType is non-empty enum
+    lean_theorem: Theorems.QuantDispatchExhaustiveness
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate tensor data length, check for NaN/Inf, enforce density thresholds
+  - name: execute
+    description: Transpose shapes, dispatch to correct quantization kernel
+  - name: verify_output
+    description: Verify output shape, density, and format-specific invariants
+
+proof_obligations:
+- type: invariant
+  property: Validated tensor rejects NaN and Inf
+  formal: for all v in ValidatedTensor, not contains_nan(v.data) and not contains_inf(v.data)
+  applies_to: all
+- type: invariant
+  property: Transpose shape correctness
+  formal: for all 2D tensors, apr_shape[0] == gguf_shape[1] and apr_shape[1] == gguf_shape[0]
+  applies_to: all
+- type: postcondition
+  property: Density enforcement
+  formal: for ValidatedEmbedding, zero_pct(data) < 50%; for ValidatedWeight, zero_pct(data) < 80%
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: Quant dispatch exhaustiveness — no catch-all
+  formal: WeightQuantType match has zero wildcard arms across all dispatch sites
+  applies_to: all
+kani_harnesses:
+- id: KANI-LAYOUT-001
+  obligation: Validated tensor rejects NaN and Inf
+  property: No NaN or Inf passes ValidatedTensor::new()
+  bound: 16
+  strategy: stub_float
+  harness: verify_nan_inf_rejection
+- id: KANI-LAYOUT-002
+  obligation: Transpose shape correctness
+  property: apr_shape == swap(gguf_shape) for 2D tensors
+  bound: 8
+  strategy: exhaustive
+  harness: verify_transpose_shape_swap
+- id: KANI-LAYOUT-003
+  obligation: Density enforcement
+  property: "zero_pct < threshold for ValidatedEmbedding and ValidatedWeight"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_density_enforcement
+- id: KANI-LAYOUT-004
+  obligation: "Quant dispatch exhaustiveness \u2014 no catch-all"
+  property: WeightQuantType match has zero wildcard arms
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quant_dispatch_exhaustive
+qa_gate:
+  id: F-TLV-001
+  name: tensor-layout-v1 Contract
+  description: Quality gate for Tensor layout and data quality contract with compile-time en
+  checks:
+  - validation
+  - falsification

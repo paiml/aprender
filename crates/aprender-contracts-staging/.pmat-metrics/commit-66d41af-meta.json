@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-108",
+  "prompt": "Fix pv score to recurse into contract subdirectories",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-28T09:36:20.880762926Z"
+}

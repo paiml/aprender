@@ -1,0 +1,247 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Type preservation — Python type semantics faithfully mapped to Rust
+    types
+  references:
+  - Milner (1978) A Theory of Type Polymorphism in Programming
+  - Pierce (2002) Types and Programming Languages, MIT Press
+  - arXiv:2312.00849 — Verified Lifting of Stencil Computations (type-preserving transpilation)
+  - Python typing PEP 484, PEP 526, PEP 604
+  depends_on: []
+equations:
+  type_map:
+    formula: T_rust = TypeMap(T_python) where TypeMap is a total function on supported
+      types
+    domain: T_python in {int, float, str, bool, None, List[T], Dict[K,V], Tuple[T...],
+      Set[T], Optional[T], Union[T...]}
+    codomain: T_rust in {i64, f64, String, bool, (), Vec<T>, HashMap<K,V>, (T...),
+      HashSet<T>, Option<T>, enum{T...}}
+    invariants:
+    - 'TypeMap is injective on base types: T_py != U_py => TypeMap(T_py) != TypeMap(U_py)'
+    - 'TypeMap preserves container nesting: TypeMap(List[T]) = Vec<TypeMap(T)>'
+    - 'TypeMap preserves optionality: TypeMap(Optional[T]) = Option<TypeMap(T)>'
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Type_Map
+  numeric_semantics:
+    formula: eval_rust(TypeMap(e)) = coerce(eval_python(e)) for numeric expressions
+      e
+    domain: e in {int literals, float literals, arithmetic ops (+,-,*,/,//,%,**)}
+    codomain: i64 | f64
+    invariants:
+    - Python int -> Rust i64 (bounded approximation of arbitrary precision)
+    - Python float -> Rust f64 (IEEE 754 double, identical semantics)
+    - Python // (floor div) -> Rust checked_div or explicit floor
+    - Python % (modulo) -> Rust rem_euclid for negative operands
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Numeric_Semantics
+  container_preservation:
+    formula: 'forall c in Container[T]: len(transpile(c)) = len(c) and forall i: elem_type(transpile(c)[i])
+      = TypeMap(elem_type(c[i]))'
+    domain: List[T], Dict[K,V], Set[T], Tuple[T1,...,Tn]
+    invariants:
+    - 'List[T] -> Vec<T_rust>: order preserved, indexing semantics preserved'
+    - 'Dict[K,V] -> HashMap<K_rust, V_rust>: key uniqueness preserved'
+    - 'Set[T] -> HashSet<T_rust>: uniqueness preserved'
+    - 'Tuple[T1,...,Tn] -> (T1_rust,...,Tn_rust): positional types preserved'
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Container_Preservation
+  type_inference:
+    formula: 'Gamma |- e : T_inferred => TypeMap(T_inferred) is the Rust annotation
+      for e'
+    domain: Hindley-Milner type inference context Gamma, expression e
+    invariants:
+    - Constraint-based inference produces principal types
+    - Unification variables resolve to concrete Rust types
+    - Type annotations in Python source are respected as ground truth
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Type_Inference
+  copy_semantics:
+    formula: 'is_copy(T_python) <=> T_rust : Copy'
+    domain: All Python types
+    invariants:
+    - Scalar types (int, float, bool, None) map to Rust Copy types
+    - Container types (str, list, dict, set) map to non-Copy Rust types
+    - Optional[Copy] maps to Option<Copy> which is Copy
+    - Tuple of all-Copy maps to tuple of Copy which is Copy
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Copy_Semantics
+proof_obligations:
+- type: precondition
+  property: Input is valid Python with resolvable types
+  formal: All variables in scope have a type binding in Gamma or are inferrable
+  applies_to: all
+- type: postcondition
+  property: Every Python type maps to exactly one Rust type
+  formal: 'forall T_py in TypeDomain: exists! T_rs: TypeMap(T_py) = T_rs'
+  applies_to: all
+- type: invariant
+  property: Type map is compositional
+  formal: TypeMap(Container[T]) = RustContainer[TypeMap(T)]
+  applies_to: all
+- type: invariant
+  property: Numeric precision bounds
+  formal: '|eval_rust(e) - eval_python(e)| < epsilon for float ops; exact for int
+    ops within i64 range'
+  tolerance: 1.0e-15
+  applies_to: all
+- type: invariant
+  property: Copy trait alignment
+  formal: is_copy(T_py) iff TypeMap(T_py) implements Copy in Rust
+  applies_to: all
+- type: invariant
+  property: Optional type preservation
+  formal: TypeMap(Optional[T]) = Option<TypeMap(T)> and TypeMap(None) = ()
+  applies_to: all
+- type: invariant
+  property: Union type preservation
+  formal: TypeMap(Union[T1,...,Tn]) = enum { V1(TypeMap(T1)), ..., Vn(TypeMap(Tn))
+    }
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: parse_type_annotations
+    description: Extract Python type hints from AST
+    invariant: All PEP 484/526 annotations captured
+  - name: constraint_collection
+    description: Hindley-Milner constraint generation over HIR
+    invariant: Constraint set is complete for all variable uses
+  - name: unification
+    description: Solve type constraints via Robinson unification
+    invariant: All unification variables resolved or reported as Unknown
+  - name: rust_type_emission
+    description: Map resolved Python types to Rust types via TypeMapper
+    invariant: TypeMap applied compositionally to all types
+falsification_tests:
+- id: FALSIFY-TP-001
+  rule: int maps to i64
+  prediction: Python int annotation produces Rust i64 type
+  test: 'proptest: generate random int-typed functions, verify Rust output uses i64'
+  if_fails: TypeMapper width_preference not set to I64 or type extraction failed
+- id: FALSIFY-TP-002
+  rule: float maps to f64
+  prediction: Python float annotation produces Rust f64 type
+  test: 'proptest: generate random float-typed functions, verify Rust output uses
+    f64'
+  if_fails: TypeMapper float mapping incorrect
+- id: FALSIFY-TP-003
+  rule: Container nesting preserved
+  prediction: List[Dict[str, int]] maps to Vec<HashMap<String, i64>>
+  test: 'proptest: generate nested container types up to depth 3, verify structural
+    match'
+  if_fails: Recursive TypeMap application broken for nested containers
+- id: FALSIFY-TP-004
+  rule: Optional preservation
+  prediction: Optional[T] always maps to Option<TypeMap(T)>
+  test: 'proptest: generate Optional[T] for all base T, verify Option wrapping'
+  if_fails: Optional handling in type_mapper.rs incorrect
+- id: FALSIFY-TP-005
+  rule: Copy semantics alignment
+  prediction: Scalar Python types map to Rust Copy types; containers do not
+  test: 'Unit test: verify is_copy() for all Type enum variants matches Rust semantics'
+  if_fails: Type::is_copy() implementation disagrees with Rust trait system
+- id: FALSIFY-TP-006
+  rule: Type inference completeness
+  prediction: All variables in well-typed Python have resolved types after inference
+  test: 'proptest: generate well-typed Python functions, verify no Type::Unknown in
+    output'
+  if_fails: Hindley-Milner solver incomplete or constraint collector missing cases
+- id: FALSIFY-TP-007
+  rule: Floor division semantics
+  prediction: Python // operator maps to Rust integer division with floor semantics
+  test: 'proptest: random (a, b) pairs including negatives, verify transpiled // matches
+    Python'
+  if_fails: FloorDiv mapped to Rust / which truncates toward zero, not toward negative
+    infinity
+- id: FALSIFY-TP-008
+  rule: Modulo semantics for negatives
+  prediction: Python % with negative operands matches Python semantics (sign of divisor)
+  test: 'proptest: random negative (a, b) pairs, compare transpiled % vs Python %'
+  if_fails: Rust % has sign-of-dividend semantics; need rem_euclid mapping
+kani_harnesses:
+- id: KANI-TP-001
+  obligation: Type map injectivity on base types
+  property: No two distinct Python base types map to the same Rust type
+  bound: 16
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_type_map_injective
+- id: KANI-TP-002
+  obligation: Container type composition
+  property: TypeMap(List[T]) = Vec<TypeMap(T)> for all supported T
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_container_composition
+- id: KANI-TP-003
+  obligation: Copy trait alignment
+  property: is_copy(T) matches whether TypeMap(T) implements Copy in Rust
+  bound: 16
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_copy_alignment
+- id: KANI-TP-004
+  obligation: Optional roundtrip
+  property: TypeMap(Optional[T]) = Option<TypeMap(T)> for all T
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_optional_roundtrip
+- id: KANI-TYPE_P-005
+  obligation: Input is valid Python with resolvable types
+  property: Input is valid Python with resolvable types
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TYPE_P-006
+  obligation: Every Python type maps to exactly one Rust type
+  property: Every Python type maps to exactly one Rust type
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TYPE_P-007
+  obligation: Type map is compositional
+  property: Type map is compositional
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TYPE_P-008
+  obligation: Numeric precision bounds
+  property: Numeric precision bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-TYPE_P-009
+  obligation: Optional type preservation
+  property: Optional type preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TYPE_P-010
+  obligation: Union type preservation
+  property: Union type preservation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TP-001
+  name: Type Preservation Contract
+  checks:
+  - type_map_injectivity
+  - container_nesting
+  - copy_semantics_alignment
+  - numeric_precision
+  - floor_div_semantics
+  - modulo_semantics
+  pass_criteria: All 8 falsification tests pass, all 4 Kani harnesses verify
+  falsification: Map Python int to Rust u32 instead of i64 to break signedness

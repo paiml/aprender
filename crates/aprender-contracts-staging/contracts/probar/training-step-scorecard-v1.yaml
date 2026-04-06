@@ -1,0 +1,330 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Training step scorecard contract for probar — extends probar's LLM module
+    with training-specific profiling analysis and grading.
+
+    Gap analysis (five-whys):
+    1. 43 upstream optimization fixes shipped but impact unmeasured
+    2. No automated way to score training efficiency from profiling data
+    3. entrenar's StepProfiler emits per-op JSON but nothing consumes it scientifically
+    4. Manual nsys analysis doesn't scale and isn't reproducible
+    5. ROOT CAUSE: probar has inference LLM testing but no training profiler consumer
+
+    This contract defines the TrainingStepScorecard module for probar that:
+    - Parses entrenar's StepProfiler JSON output
+    - Computes training efficiency metrics (forward/backward ratio, GEMM dominance)
+    - Classifies bottleneck (memory_bw, compute, launch, transfer)
+    - Grades efficiency (A-F) against hardware roofline
+    - Detects regressions across runs
+    - Produces JSON/Markdown scorecards for CI integration
+
+    Methodology: Hoefler & Belli SC'15 statistical rigor, Popperian falsification.
+  pmat: [PMAT-485]
+  references:
+    - "Hoefler & Belli (2015) Scientific Benchmarking of Parallel Computing Systems. SC'15"
+    - "per-operation-training-profiling-v1.yaml — per-op measurement contract (PMAT-483)"
+    - "training-step-profiling-v1.yaml — phase-level profiling contract (PMAT-480)"
+    - "probar LLM score module: src/llm/score.rs — 16+ inference scoring functions"
+  depends_on:
+    - "per-operation-training-profiling-v1.yaml"
+    - "training-step-profiling-v1.yaml"
+
+equations:
+  training_efficiency_grade:
+    formula: |
+      Inputs from entrenar StepProfiler JSON:
+        avg_step_ms: average training step wall time
+        phases: {embed, h2d, forward, loss, backward, optimizer, ...}
+        per_layer: [{fwd_ms, bwd_ms, ops: {qkv_gemm, attention, ...}}]
+
+      Efficiency score (0.0 to 1.0):
+        measured_throughput = tokens_per_step / avg_step_ms * 1000
+        peak_throughput = hardware_peak_bw / bytes_per_token  (memory-bound estimate)
+        efficiency = measured_throughput / peak_throughput
+
+      Grade mapping:
+        A: efficiency >= 0.60 (competitive with unsloth)
+        B: efficiency >= 0.40 (good, minor optimizations possible)
+        C: efficiency >= 0.20 (moderate, clear optimization targets)
+        D: efficiency >= 0.10 (poor, major bottlenecks)
+        F: efficiency < 0.10  (critical, fundamental architecture issue)
+    domain: StepProfiler JSON with per-op timing data
+    codomain: Grade in {A, B, C, D, F} with efficiency score
+    invariants:
+      - 'efficiency in [0.0, 1.0]'
+      - 'grade is monotonically non-decreasing with efficiency'
+      - 'grade boundary thresholds are configurable'
+
+  bottleneck_classification:
+    formula: |
+      From per-op timing data:
+        gemm_pct = sum(all GEMM ops) / step_time
+        transfer_pct = (h2d + d2h + grad_h2d) / step_time
+        launch_overhead = (step_time - sum(all_ops)) / step_time
+        compute_util = measured_flops / peak_flops
+
+      Classification rules (ordered by priority):
+        IF transfer_pct > 0.30: "transfer"      — host-device bottleneck
+        ELIF launch_overhead > 0.40: "launch"    — kernel launch overhead
+        ELIF compute_util > 0.50: "compute"      — GPU ALU bound (good!)
+        ELSE: "memory_bw"                        — memory bandwidth bound
+    domain: Per-op timing data from StepProfiler
+    codomain: One of {"transfer", "launch", "compute", "memory_bw"}
+    invariants:
+      - 'Exactly one classification per measurement'
+      - 'Classification thresholds are configurable'
+
+  forward_backward_ratio:
+    formula: |
+      For each layer i:
+        ratio[i] = bwd_ms[i] / fwd_ms[i]
+
+      Aggregate:
+        avg_ratio = mean(ratio[0..num_layers])
+        ratio_cv = std(ratio) / mean(ratio)
+
+      Expected bounds:
+        Healthy: ratio in [1.5, 3.0] (backward 1.5-3x forward)
+        Anomalous: ratio < 1.0 (backward faster = likely skipping ops)
+        Anomalous: ratio > 5.0 (backward too slow = possible NaN recomputation)
+    domain: Per-layer timing from StepProfiler
+    invariants:
+      - 'ratio >= 0.0'
+      - 'Layers with NaN backward skip should be flagged, not averaged'
+
+  regression_detection:
+    formula: |
+      Given baseline run B and current run C:
+        For each metric m in {throughput, step_time, gemm_pct, ...}:
+          delta[m] = (C[m] - B[m]) / B[m]
+          regressed = delta[m] > regression_threshold[m]
+
+      Default thresholds:
+        throughput: -0.10 (10% regression)
+        step_time: +0.10 (10% slower)
+        gemm_pct: -0.15 (15% less GEMM dominance = more overhead)
+        wall_coverage: -0.05 (5% less profiling coverage)
+
+      Output: list of regressed metrics with magnitude and diagnosis
+    domain: Two StepProfiler JSON runs (baseline + current)
+    invariants:
+      - 'Regression thresholds are configurable per metric'
+      - 'At least throughput and step_time must be checked'
+
+  scorecard_output:
+    formula: |
+      TrainingScorecard JSON = {
+        "grade": "A"|"B"|"C"|"D"|"F",
+        "efficiency": F,
+        "bottleneck": "memory_bw"|"compute"|"launch"|"transfer",
+        "throughput_tok_s": F,
+        "step_time_ms": F,
+        "forward_backward_ratio": F,
+        "wall_coverage": F,
+        "per_layer_summary": [{
+          "layer": I,
+          "fwd_ms": F, "bwd_ms": F, "ratio": F,
+          "top_op": "qkv_gemm"|"attention"|...,
+          "top_op_pct": F
+        }],
+        "hotspot_ops": [{"op": S, "total_ms": F, "pct": F}],
+        "regressions": [{"metric": S, "delta": F, "severity": S}],
+        "recommendations": [S]
+      }
+    domain: StepProfiler JSON input
+    codomain: Structured scorecard JSON
+    invariants:
+      - 'All numeric fields are finite and non-negative'
+      - 'per_layer_summary has exactly num_model_layers entries'
+      - 'hotspot_ops sorted by total_ms descending'
+      - 'recommendations non-empty when grade <= C'
+
+proof_obligations:
+  - type: invariant
+    property: Efficiency score bounded
+    formal: '0.0 <= efficiency <= 1.0'
+    applies_to: all scorecard computations
+
+  - type: monotonicity
+    property: Grade monotonically non-decreasing with efficiency
+    formal: 'efficiency_a > efficiency_b => grade(a) >= grade(b)'
+    applies_to: grade mapping
+
+  - type: invariant
+    property: Bottleneck classification is mutually exclusive
+    formal: 'exactly one of {transfer, launch, compute, memory_bw} per measurement'
+    applies_to: all classifications
+
+  - type: bound
+    property: Regression detection catches 10% throughput drop
+    formal: 'if throughput_delta < -0.10 then regressed("throughput") == true'
+    applies_to: regression comparison
+
+  - type: invariant
+    property: Scorecard JSON parseable and complete
+    formal: 'serde_json::from_str(scorecard).is_ok() AND all required fields present'
+    applies_to: all scorecard outputs
+
+  - type: invariant
+    property: Forward/backward ratio flags NaN layers
+    formal: 'layers with NaN backward are excluded from ratio average and flagged'
+    applies_to: ratio computation
+
+falsification_tests:
+  - id: F-TSC-001
+    rule: Grade accuracy
+    prediction: >
+      Known efficiency 0.12 (12.2% from yoga profile) should produce grade D.
+      Known efficiency 0.65 should produce grade A.
+    test: Feed synthetic StepProfiler JSON with known efficiency → verify grade
+    if_fails: Grade boundary thresholds miscalibrated
+
+  - id: F-TSC-002
+    rule: Bottleneck classification accuracy
+    prediction: >
+      Yoga APR profile (84.6% launch overhead) classifies as "launch".
+      Pure memory-bound profile (90% GEMM, 10% util) classifies as "memory_bw".
+    test: Feed real + synthetic profiles → verify classification
+    if_fails: Classification thresholds don't match real-world patterns
+
+  - id: F-TSC-003
+    rule: Regression detection sensitivity
+    prediction: >
+      Injecting 15% throughput regression into baseline comparison triggers alert.
+      Injecting 5% improvement does NOT trigger regression.
+    test: Create baseline + regressed pair → verify detection
+    if_fails: Threshold too loose or comparison direction inverted
+
+  - id: F-TSC-004
+    rule: NaN layer handling
+    prediction: >
+      Profile with 7 NaN backward skips (matches APR canary) should:
+      - Flag those layers in scorecard
+      - Exclude from forward/backward ratio average
+      - Include NaN count in scorecard metadata
+    test: Feed APR-like profile with NaN layers → verify handling
+    if_fails: NaN layers contaminating ratio calculation
+
+  - id: F-TSC-005
+    rule: JSON completeness
+    prediction: >
+      Scorecard output parses as valid JSON with all required fields:
+      grade, efficiency, bottleneck, throughput, per_layer_summary, hotspot_ops.
+    test: Parse scorecard output with strict schema validator
+    if_fails: Missing field or wrong type in output
+
+  - id: F-TSC-006
+    rule: Per-layer summary accuracy
+    prediction: >
+      Per-layer summary correctly identifies top operation per layer.
+      For memory-bound profile: QkvProjection or AttentionScore should be top.
+    test: Feed known per-op timing → verify top_op selection
+    if_fails: Operation sorting or naming mismatch
+
+  - id: F-TSC-007
+    rule: Recommendations quality
+    prediction: >
+      Grade D profile with "launch" bottleneck recommends kernel fusion.
+      Grade D profile with "memory_bw" bottleneck recommends tensor cores.
+      Grade A profile has empty or minor recommendations.
+    test: Feed profiles with known bottlenecks → check recommendation relevance
+    if_fails: Recommendation engine not keyed to bottleneck classification
+
+kani_harnesses:
+  - id: KANI-TSC-001
+    obligation: Efficiency score bounded
+    property: Efficiency always in [0.0, 1.0]
+    bound: 16
+    strategy: exhaustive
+    harness: verify_efficiency_bounded
+    solver: cadical
+
+  - id: KANI-TSC-002
+    obligation: Grade monotonically non-decreasing with efficiency
+    property: Higher efficiency never produces lower grade
+    bound: 16
+    strategy: exhaustive
+    harness: verify_grade_monotonicity
+    solver: cadical
+
+  - id: KANI-TSC-003
+    obligation: Bottleneck classification is mutually exclusive
+    property: Exactly one bottleneck per measurement
+    bound: 8
+    strategy: exhaustive
+    harness: verify_bottleneck_exclusive
+    solver: cadical
+
+  - id: KANI-TSC-004
+    obligation: Regression detection catches 10% throughput drop
+    property: 10% regression always detected
+    bound: 8
+    strategy: stub_float
+    harness: verify_regression_sensitivity
+    solver: cadical
+
+  - id: KANI-TSC-005
+    obligation: Scorecard JSON parseable and complete
+    property: Output always valid JSON with required fields
+    bound: 8
+    strategy: exhaustive
+    harness: verify_scorecard_schema
+    solver: cadical
+
+  - id: KANI-TSC-006
+    obligation: Forward/backward ratio flags NaN layers
+    property: NaN layers excluded from ratio average
+    bound: 8
+    strategy: stub_float
+    harness: verify_nan_layer_handling
+    solver: cadical
+
+implementation_requirements:
+  probar_changes:
+    - description: TrainingStepScorecard struct in probar/src/llm/training_scorecard.rs
+      detail: >
+        New module in probar's llm feature. Parses entrenar StepProfiler JSON,
+        computes efficiency metrics, produces TrainingScorecard struct.
+    - description: Grade computation
+      detail: >
+        Compute efficiency from throughput + hardware roofline.
+        Map to A-F grade with configurable thresholds.
+    - description: Bottleneck classifier
+      detail: >
+        Analyze per-op timing to classify: memory_bw, compute, launch, transfer.
+        Use threshold-based rules from bottleneck_classification equation.
+    - description: Regression detector
+      detail: >
+        Compare two scorecard runs, detect regressions above configurable thresholds.
+        Output severity-ranked list of regressed metrics.
+    - description: Recommendation engine
+      detail: >
+        Map (grade, bottleneck) → actionable recommendations.
+        E.g., "launch" → "Enable kernel fusion (NF4_FUSED_GEMM=1)".
+    - description: JSON + Markdown output
+      detail: >
+        Serialize scorecard to JSON for CI consumption.
+        Render Markdown table for human review (like existing score.rs).
+
+  canary_changes:
+    - description: Wire scorecard into canary pipeline
+      detail: >
+        canaries/apr/train.py passes profiling JSON to probar scorecard.
+        Include scorecard grade in canary result JSON.
+        score.py checks scorecard grade >= D (no F-grade regressions).
+
+qa_gate:
+  id: F-TSC-001
+  name: training-step-scorecard-v1 Contract
+  checks:
+    - grade_accuracy
+    - bottleneck_classification
+    - regression_detection
+    - nan_handling
+    - json_completeness
+    - per_layer_accuracy
+    - recommendation_quality
+  pass_criteria: All 7 falsification tests pass

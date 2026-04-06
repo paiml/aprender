@@ -1,0 +1,69 @@
+contract: C-SQSUM-002
+version: 1
+status: implemented
+kaizen: 049
+date: '2026-03-04'
+components:
+  kernel:
+    name: SquaredSumKernel
+    repo: trueno
+    file: trueno-gpu/src/kernels/optimizer/squared_sum.rs
+    description: Block-level parallel reduction computing sum(x[i]^2)
+  wrapper:
+    name: squared_sum_cuda
+    repo: entrenar
+    file: src/autograd/cuda_optim.rs
+    description: Launches kernel, downloads partial sums, returns L2 norm
+  integration:
+    name: compute_clip_scale_with_norm
+    repo: entrenar
+    file: src/train/transformer_trainer/cuda_trainer.rs
+    description: Uses GPU norm instead of full D2H transfer
+invariants:
+  C-SQSUM-001:
+    description: Kernel output correctness
+    formal: output[bid] = sum(input[i]^2) for elements assigned to block bid
+    enforcement: Unit tests + barrier safety validation
+  C-SQSUM-002:
+    description: Norm precision
+    formal: returned norm ≈ sqrt(sum(input[i]^2)) within O(n × eps_f32)
+    enforcement: f64 summation of f32 partial sums bounds accumulated error
+  C-CLIPNORM-GPU-001:
+    description: GPU norm replaces CPU norm with identical clip behavior
+    formal: scale = min(1, max_norm / gpu_norm) matches CPU baseline within 0.1%
+    enforcement: Fallback to CPU D2H on kernel error; profiler validation
+  C-SQSUM-TRANSFER:
+    description: Transfer reduction contract
+    formal: D2H bytes = num_blocks × 4 ≤ 1024 (vs n × 4 = 128MB for 32M elements)
+    enforcement: num_blocks capped at 256; profiler measurement
+kernel_spec:
+  block_size: 256
+  max_blocks: 256
+  shared_memory: 32
+  algorithm:
+  - Thread-level accumulation with grid-stride loop
+  - Warp shuffle reduction (offsets 16, 8, 4, 2, 1)
+  - Lane 0 writes warp partial to shared memory
+  - First warp reduces 8 partials via shuffle
+  - Thread 0 writes block result to output[bid]
+baseline:
+  before:
+    transfer_bytes: 134217728
+    method: cuMemcpyDtoH full gradient buffer
+    cpu_work: iterate 32M elements computing sq_sum in f64
+  after:
+    transfer_bytes: 1024
+    method: SquaredSumKernel → download 256 partials
+    cpu_work: sum 256 f64 values
+    reduction_factor: 131,072x fewer bytes transferred
+safety:
+  fallback: On squared_sum_cuda error, falls back to full D2H (original path)
+  barrier_safety: Validated via emit_ptx_validated() — no early-exit-before-barrier
+  stream_sync: stream.synchronize() before kernel launch ensures prior GEMM complete
+qa_gate:
+  id: F-GLNR-001
+  name: gpu-l2-norm-reduction-v1 Contract
+  description: Quality gate for gpu-l2-norm-reduction-v1
+  checks:
+  - validation
+  - falsification

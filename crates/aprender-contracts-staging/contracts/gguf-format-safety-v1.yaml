@@ -1,0 +1,235 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    GGUF binary format safety — magic number validation, version compatibility,
+    tensor metadata integrity, alignment enforcement, and buffer overflow prevention.
+    GGUF is the primary model format for local inference; parsing bugs here cause
+    silent model corruption, segfaults, or arbitrary code execution.
+  references:
+  - 'GGUF Specification v3 (ggerganov/ggml, docs/gguf.md)'
+  - 'CVE-2024-25664 — ggml GGUF heap buffer overflow in gguf_fread_str'
+  - 'CVE-2024-25631 — ggml GGUF OOB read in GGUFReader'
+  - 'aprender/src/gguf/ — GGUF parser implementation'
+  depends_on:
+  - tensor-shape-flow-v1
+  - validated-tensor-v1
+equations:
+  magic_validation:
+    formula: |
+      magic: &[u8; 4] -> Result<(), FormatError>
+        bytes[0..4] == [0x47, 0x47, 0x55, 0x46]  ("GGUF")
+        Any other value -> FormatError::InvalidMagic
+    domain: First 4 bytes of any file claimed to be GGUF
+    codomain: Result<(), FormatError>
+    invariants:
+    - Non-GGUF files always rejected (no false positives)
+    - Magic check runs before ANY allocation or metadata parsing
+    - Rejection is O(1) — no file scanning
+    preconditions:
+    - file is readable and len >= 4
+    postconditions:
+    - bytes[0..4] == "GGUF" literal
+    lean_theorem: Theorems.Magic_Validation
+  version_compatibility:
+    formula: |
+      check_version: u32 -> Result<GGUFVersion, FormatError>
+        version ∈ {2, 3} -> Ok(version)
+        version == 1 -> Err(DeprecatedVersion)
+        version == 0 or version > 3 -> Err(UnknownVersion)
+    domain: u32 read from header bytes 4..8
+    codomain: Result<GGUFVersion, FormatError>
+    invariants:
+    - Version 1 rejected with upgrade guidance
+    - Future versions (>3) rejected to prevent silent misparse
+    - Endianness detected from magic bytes, applied to version read
+    preconditions:
+    - magic validation passed
+    postconditions:
+    - version in {2, 3}
+    lean_theorem: Theorems.Version_Compatibility
+  tensor_metadata_integrity:
+    formula: |
+      parse_tensor_info: (Header, &[u8]) -> Result<Vec<TensorInfo>, ParseError>
+        For each of n_tensors in header:
+          name = read_string(buf)       -- length-prefixed, checked
+          n_dims = read_u32(buf)        -- must be 1..=4
+          shape[0..n_dims] = read_u64s  -- each > 0, product < MAX_TENSOR_SIZE
+          dtype = read_u32(buf)         -- must be valid GGMLType
+          offset = read_u64(buf)        -- must be within file bounds
+    domain: GGUF header + raw byte buffer
+    codomain: Result<Vec<TensorInfo>, ParseError> with n_tensors entries
+    invariants:
+    - n_dims in [1, 4] — no 0-dim or 5+-dim tensors
+    - shape product does not overflow u64
+    - shape product * dtype_size does not exceed file size
+    - offset + tensor_size <= file_size (no OOB read)
+    - tensor name is valid UTF-8 with length < 256
+    - dtype is a known GGMLType variant (0..=20)
+    preconditions:
+    - header.n_tensors > 0
+    - buffer length >= header.metadata_offset
+    postconditions:
+    - result.len() == header.n_tensors
+    - all tensor offsets are within file bounds
+    lean_theorem: Theorems.Tensor_Metadata_Integrity
+  alignment_enforcement:
+    formula: |
+      check_alignment: (offset, alignment) -> Result<u64, AlignmentError>
+        aligned_offset = (offset + alignment - 1) & !(alignment - 1)
+        actual data starts at aligned_offset
+        Default alignment = 32 bytes (GGUF v3)
+    domain: Raw offset and alignment value from header
+    codomain: Aligned offset
+    invariants:
+    - Alignment is always a power of 2 (1, 2, 4, 8, 16, 32, ...)
+    - Aligned offset >= original offset (never moves backward)
+    - Data region [aligned_offset, aligned_offset + size) within file
+    - Padding bytes between metadata and data are not interpreted
+    preconditions:
+    - alignment > 0 and is power of 2
+    - offset < file_size
+    postconditions:
+    - result % alignment == 0
+    lean_theorem: Theorems.Alignment_Enforcement
+  metadata_kv_safety:
+    formula: |
+      parse_kv: &[u8] -> Result<HashMap<String, MetadataValue>, ParseError>
+        For each of n_kv pairs:
+          key = read_string(buf)     -- UTF-8, length < 64KB
+          value_type = read_u32(buf) -- must be valid MetadataValueType
+          value = read_typed(buf, value_type)
+        No duplicate keys allowed.
+    domain: Raw byte buffer after header
+    codomain: Result<HashMap<String, MetadataValue>, ParseError>
+    invariants:
+    - String values length-checked before allocation (CVE-2024-25664 mitigation)
+    - Array values count-checked before allocation (no 2^64 element arrays)
+    - Nested arrays not allowed (flat values only in GGUF v3)
+    - Total metadata size bounded by header.metadata_offset
+    preconditions:
+    - buffer positioned after version/counts header
+    postconditions:
+    - result.len() == header.n_kv
+    - no duplicate keys
+    lean_theorem: Theorems.Metadata_KV_Safety
+proof_obligations:
+- type: precondition
+  property: Magic check before allocation
+  formal: No heap allocation occurs before magic bytes are validated
+  applies_to: magic_validation
+- type: bound
+  property: Tensor shape product bounded
+  formal: forall t in tensors, product(t.shape) * dtype_size(t.dtype) <= file_size
+  applies_to: tensor_metadata_integrity
+- type: invariant
+  property: No out-of-bounds tensor read
+  formal: forall t, t.offset + t.size <= file_size
+  applies_to: tensor_metadata_integrity
+- type: precondition
+  property: String length checked before allocation
+  formal: string_length < MAX_STRING_LEN checked before alloc(string_length)
+  applies_to: metadata_kv_safety
+- type: invariant
+  property: Alignment is power of two
+  formal: alignment & (alignment - 1) == 0 for all alignment values
+  applies_to: alignment_enforcement
+- type: roundtrip
+  property: Version roundtrip consistency
+  formal: write_version(parse_version(bytes)) == bytes for valid versions
+  applies_to: version_compatibility
+falsification_tests:
+- id: FALSIFY-GGUF-001
+  rule: Magic check before allocation
+  prediction: File starting with "GGML" (old format) is rejected immediately
+  test: Create 4-byte file with GGML magic, attempt parse, verify FormatError
+  if_fails: Magic check missing or runs after allocation
+- id: FALSIFY-GGUF-002
+  rule: Tensor shape product bounded
+  prediction: Tensor with shape [2^32, 2^32, 1, 1] rejected (overflow)
+  test: Craft GGUF with overflow shape, verify ParseError not OOM
+  if_fails: Shape product overflow not checked — potential heap spray
+- id: FALSIFY-GGUF-003
+  rule: No out-of-bounds tensor read
+  prediction: Tensor with offset beyond file end returns error
+  test: Craft GGUF with tensor offset = file_size + 1, verify bounds check
+  if_fails: OOB read — CVE-2024-25631 class vulnerability
+- id: FALSIFY-GGUF-004
+  rule: String length checked before allocation
+  prediction: Metadata string claiming 4GB length does not allocate 4GB
+  test: Craft GGUF with n_kv=1, key_len=0xFFFFFFFF, verify rejection before alloc
+  if_fails: Heap buffer overflow — CVE-2024-25664 class vulnerability
+- id: FALSIFY-GGUF-005
+  rule: Alignment is power of two
+  prediction: Alignment value of 7 (not power of 2) returns AlignmentError
+  test: Craft GGUF header with alignment=7, verify rejection
+  if_fails: Non-power-of-2 alignment causes misaligned reads
+- id: FALSIFY-GGUF-006
+  rule: Version roundtrip consistency
+  prediction: Version 4 (future) is rejected with UnknownVersion
+  test: Craft GGUF with version=4, verify FormatError::UnknownVersion
+  if_fails: Future version silently misparsed
+kani_harnesses:
+- id: KANI-GGUF-001
+  obligation: Magic check before allocation
+  property: No allocation before magic validation
+  bound: 4
+  strategy: exhaustive
+  harness: verify_magic_before_alloc
+- id: KANI-GGUF-002
+  obligation: Tensor shape product bounded
+  property: Shape product never overflows u64
+  bound: 16
+  strategy: bounded_int
+  harness: verify_shape_product_bounded
+- id: KANI-GGUF-003
+  obligation: No out-of-bounds tensor read
+  property: All tensor reads within file bounds
+  bound: 8
+  strategy: exhaustive
+  harness: verify_tensor_bounds
+- id: KANI-GGUF-004
+  obligation: String length checked before allocation
+  property: String alloc never exceeds MAX_STRING_LEN
+  bound: 8
+  strategy: bounded_int
+  harness: verify_string_alloc_bounded
+- id: KANI-GGUF-005
+  obligation: Alignment is power of two
+  property: alignment & (alignment - 1) == 0
+  bound: 32
+  strategy: exhaustive
+  harness: verify_alignment_power_of_two
+- id: KANI-GGUF-006
+  obligation: Version roundtrip consistency
+  property: write(parse(v)) == v for v in {2, 3}
+  bound: 4
+  strategy: exhaustive
+  harness: verify_version_roundtrip
+qa_gate:
+  id: F-GGUF-GATE
+  name: GGUF Format Safety Contract
+  description: Binary format parsing safety — prevents CVE-class vulnerabilities
+  checks:
+  - magic_validation
+  - tensor_metadata_integrity
+  - alignment_enforcement
+  - metadata_kv_safety
+  pass_criteria: All 6 falsification tests pass
+  falsification: Craft malicious GGUF to trigger each vulnerability class
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — magic byte validation halts processing
+    before any dynamic allocation. Every size field is bounds-checked against
+    file size before use. The parser stops at the first anomaly rather than
+    attempting recovery from corrupt data.
+  poka_yoke: >
+    "Mistake-proofing" — tensor offset and size are validated together against
+    file_size. It is impossible to create a TensorInfo with an out-of-bounds
+    offset because the constructor enforces the invariant. String allocation
+    is capped at MAX_STRING_LEN regardless of what the file claims.
+  genchi_genbutsu: >
+    "Go and see" — falsification tests use crafted binary GGUF files with
+    specific byte patterns designed to trigger each vulnerability class.
+    No mocked parsers — real binary parsing with adversarial inputs.

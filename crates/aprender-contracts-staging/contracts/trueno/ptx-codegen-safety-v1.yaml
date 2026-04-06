@@ -1,0 +1,150 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    PTX codegen safety contract — verifies that PTX assembly emitted by
+    the kernel generator is well-formed, targets the correct SM version,
+    stays within register limits, and uses no undefined instructions.
+  references:
+  - 'NVIDIA PTX ISA 8.4 — .target directive, register usage'
+  - 'trueno/src/backends/gpu/ — kernel PTX generation'
+  - 'realizar/src/cuda/kernel_generator.rs — emit_ptx_for_target()'
+  - 'paiml/aprender#613 — Jetson PTX CUDA_ERROR_INVALID_VALUE'
+  depends_on:
+  - ptx-target-parity-v1
+
+equations:
+  target_directive_present:
+    formula: |
+      forall ptx in emit_ptx_for_target(sm):
+        ptx.contains(".target sm_{sm}")
+        AND ptx.contains(".address_size 64")
+    domain: SM target version (70, 75, 80, 86, 87, 89, 90)
+    codomain: PTX string with correct .target directive
+    invariants:
+    - Every emitted PTX contains exactly one .target directive
+    - Target matches the device compute capability
+    - No hardcoded sm_70 in dynamic codegen paths
+    preconditions:
+    - sm in supported_targets
+    postconditions:
+    - ptx starts with .version and .target directives
+    lean_theorem: Theorems.TargetDirectivePresent
+
+  register_budget:
+    formula: |
+      forall kernel K:
+        reg_count(K) <= max_regs_per_thread(sm)
+        shared_mem(K) <= max_shared_per_block(sm)
+    domain: Compiled PTX kernel
+    codomain: Register and shared memory usage
+    invariants:
+    - "sm_70: max 255 regs/thread, 96KB shared"
+    - "sm_80+: max 255 regs/thread, 163KB shared"
+    - "Exceeding limits causes CUDA_ERROR_INVALID_VALUE (GH-613)"
+    preconditions:
+    - kernel compiled for target SM
+    postconditions:
+    - cuOccupancyMaxActiveBlocksPerMultiprocessor > 0
+    lean_theorem: Theorems.RegisterBudget
+
+  instruction_validity:
+    formula: |
+      forall instr in ptx_instructions(K):
+        instr.opcode in valid_opcodes(target_sm)
+      No sm_80-only instructions emitted for sm_70 target
+    domain: PTX instruction stream
+    codomain: bool (all instructions valid for target)
+    invariants:
+    - dp4a requires sm_61+ (not available on sm_50)
+    - wmma requires sm_70+
+    - cp.async requires sm_80+
+    - mma.sp (sparse) requires sm_80+
+    preconditions:
+    - ptx is syntactically valid
+    postconditions:
+    - cuModuleLoadDataEx returns CUDA_SUCCESS
+    lean_theorem: Theorems.InstructionValidity
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify SM target is in supported set
+  - name: execute
+    description: Emit PTX, parse directives, check instruction set
+  - name: verify_output
+    description: Verify target matches, register budget, instruction validity
+
+proof_obligations:
+- type: invariant
+  property: Target directive matches device
+  formal: 'ptx.contains(".target sm_{device_sm}")'
+  applies_to: target_directive_present
+  lean:
+    theorem: Theorems.TargetDirectivePresent
+    status: sorry
+- type: bound
+  property: Register budget within SM limits
+  formal: 'reg_count <= 255'
+  applies_to: register_budget
+  lean:
+    theorem: Theorems.RegisterBudget
+    status: sorry
+- type: invariant
+  property: No undefined instructions for target
+  formal: 'all opcodes valid for target SM'
+  applies_to: instruction_validity
+  lean:
+    theorem: Theorems.InstructionValidity
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-PTX-001
+  rule: Target directive present
+  prediction: PTX for sm_86 contains ".target sm_86"
+  test: |
+    Generate PTX for sm_86, grep for .target directive.
+  if_fails: PTX emitted without .target or with wrong SM
+- id: FALSIFY-PTX-002
+  rule: No hardcoded sm_70
+  prediction: No runtime PTX path uses emit_ptx() (hardcoded sm_70)
+  test: |
+    grep -r "emit_ptx()" in executor/, assert 0 matches.
+  if_fails: Hardcoded sm_70 path bypasses dynamic target
+- id: FALSIFY-PTX-003
+  rule: Register budget
+  prediction: GEMM kernel uses <= 128 registers (leaves room for occupancy)
+  test: |
+    Parse ptxas output for register count, assert <= 128.
+  if_fails: Register spilling causes performance cliff or INVALID_VALUE
+
+kani_harnesses:
+- id: KANI-PTX-001
+  obligation: Target directive matches device
+  property: '.target present and correct'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_target_directive
+- id: KANI-PTX-002
+  obligation: Register budget within SM limits
+  property: 'reg_count <= 255'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_register_budget
+- id: KANI-PTX-003
+  obligation: No undefined instructions for target
+  property: 'all opcodes valid'
+  bound: 8
+  strategy: exhaustive
+  harness: verify_instruction_validity
+
+qa_gate:
+  id: F-PTX-CODEGEN-GATE
+  name: PTX Codegen Safety Contract
+  description: Quality gate for PTX assembly generation correctness
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 3 falsification tests pass

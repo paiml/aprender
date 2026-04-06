@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: GPU-accelerated decode profiling — frame decode correctness and audio packet integrity
+  references:
+  - 'ITU-T H.264 (2003) Advanced Video Coding'
+  - 'ISO/IEC 13818-7 (2006) MPEG-2 Advanced Audio Coding'
+equations:
+  decode_video:
+    formula: D_v(packet) = frame where frame.pts >= 0 ∧ frame.format ∈ SupportedPixelFormats
+    domain: packet ∈ AVPacket where packet.stream_type = Video
+    codomain: Result<AVFrame, DecoderError>
+    invariants:
+    - Decoded frame has valid presentation timestamp (pts >= 0)
+    - Frame pixel format is in the set of supported output formats
+    - 'Deterministic: same packet always produces same frame'
+    preconditions:
+    - packet.data.len() > 0
+    - packet.stream_index is valid video stream
+    lean_theorem: Theorems.Decode_Video
+  decode_audio:
+    formula: D_a(packet) = samples where samples.len() = packet.nb_samples * channels
+    domain: packet ∈ AVPacket where packet.stream_type = Audio
+    codomain: Result<Vec<f32>, DecoderError>
+    invariants:
+    - Sample count matches expected frame size for codec
+    - All samples are finite (no NaN or Inf)
+    - Audio channel count is preserved from input
+    preconditions:
+    - packet.data.len() > 0
+    - packet.sample_rate > 0
+    lean_theorem: Theorems.Decode_Audio
+proof_obligations:
+- type: invariant
+  property: Decoded video frames have valid timestamps
+  formal: '∀ packet: decode_video(packet).is_ok() → decode_video(packet).unwrap().pts >= 0'
+  applies_to: decode_video
+- type: invariant
+  property: Decoded audio samples are finite
+  formal: '∀ packet: decode_audio(packet).is_ok() → decode_audio(packet).unwrap().iter().all(|s| s.is_finite())'
+  applies_to: decode_audio
+enforcement:
+  valid_timestamps:
+    description: Video frames must have non-negative presentation timestamps
+    check: contract_tests::FALSIFY-RMD-001
+    severity: ERROR
+  finite_samples:
+    description: Audio samples must not contain NaN or Inf
+    check: contract_tests::FALSIFY-RMD-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RMD-001
+  rule: Valid timestamps
+  prediction: decode_video_frame produces frame with pts >= 0 for valid packets
+  test: decode a known-good video stream and verify all frame timestamps
+  if_fails: PTS calculation overflow or uninitialized timestamp field
+- id: FALSIFY-RMD-002
+  rule: Finite audio samples
+  prediction: decode_audio_packet produces only finite f32 samples
+  test: decode known audio stream, assert all samples pass is_finite()
+  if_fails: Division by zero in audio normalization or codec produces denormals
+kani_harnesses:
+- id: KANI-RMD-001
+  obligation: Valid timestamps
+  property: Decoded frame pts >= 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_decode_video_pts
+- id: KANI-RMD-002
+  obligation: Finite audio samples
+  property: All decoded samples are finite
+  bound: 8
+  strategy: exhaustive
+  harness: verify_decode_audio_finite
+qa_gate:
+  id: F-RMD-001
+  name: GPU Decode Profiling Contract
+  description: Decode pipeline correctness quality gate
+  checks:
+  - valid_timestamps
+  - finite_samples
+  pass_criteria: All 2 falsification tests pass
+  falsification: Set frame pts to -1 to trigger FALSIFY-RMD-001

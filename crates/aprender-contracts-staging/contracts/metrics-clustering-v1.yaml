@@ -1,0 +1,145 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Clustering metrics — evaluation measures for unsupervised cluster quality
+  references:
+  - 'Rousseeuw (1987) Silhouettes: a graphical aid to interpretation of cluster analysis'
+  - Hubert & Arabie (1985) Comparing Partitions
+equations:
+  silhouette_score:
+    formula: s(i) = (b(i) - a(i)) / max(a(i), b(i))
+    domain: data ∈ ℝ^{n×d}, labels ∈ {0..K-1}ⁿ, K ≥ 2, n ≥ 2
+    codomain: s̄ ∈ [-1, 1]
+    invariants:
+    - s̄ ∈ [-1, 1] (bounded by construction)
+    - s̄ = 0 when single cluster (degenerate)
+    - s(i) > 0 means point i is well-clustered
+    - s(i) < 0 means point i is mis-clustered
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Silhouette_Score
+  inertia:
+    formula: J = Σᵢ ||xᵢ - μ_{cᵢ}||²
+    domain: x ∈ ℝ^{n×d}, centroids ∈ ℝ^{K×d}, labels ∈ {0..K-1}ⁿ
+    codomain: J ∈ [0, ∞)
+    invariants:
+    - J ≥ 0 (sum of squared distances)
+    - J = 0 iff all points equal their centroids
+    - J is non-increasing under k-means iteration
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Inertia
+  silhouette_coefficient:
+    formula: s(i) = (b(i) - a(i)) / max(a(i), b(i)) where a(i) = mean intra-cluster dist, b(i) = min mean inter-cluster dist
+    domain: a(i) ≥ 0, b(i) ≥ 0
+    codomain: s(i) ∈ [-1, 1]
+    invariants:
+    - s(i) ∈ [-1, 1]
+    - s(i) = 0 when a(i) = b(i)
+    - s(i) → 1 when a(i) → 0 and b(i) > 0
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Silhouette_Coefficient
+proof_obligations:
+- type: bound
+  property: Silhouette score bounded
+  formal: s̄ ∈ [-1, 1] for all valid clusterings
+  applies_to: all
+- type: bound
+  property: Inertia non-negative
+  formal: J ≥ 0 for all data and assignments
+  applies_to: all
+- type: invariant
+  property: Silhouette degenerate case
+  formal: s̄ = 0 when K < 2
+  applies_to: all
+- type: invariant
+  property: Inertia zero at centroids
+  formal: J = 0 when xᵢ = μ_{cᵢ} for all i
+  applies_to: all
+- type: bound
+  property: Per-point silhouette bounded
+  formal: s(i) ∈ [-1, 1] for each point
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CL-001
+  rule: Silhouette bounded
+  prediction: silhouette_score ∈ [-1, 1] for random clusterings
+  test: proptest with random data and labels, K=2..5, n=4..32
+  if_fails: Division by zero when max(a,b) = 0
+- id: FALSIFY-CL-002
+  rule: Inertia non-negative
+  prediction: inertia ≥ 0 for all data and centroids
+  test: proptest with random matrices
+  if_fails: Sign error in squared distance
+- id: FALSIFY-CL-003
+  rule: Silhouette degenerate
+  prediction: silhouette_score = 0 when all same label or single sample
+  test: proptest with degenerate inputs
+  if_fails: Degenerate case not handled
+- id: FALSIFY-CL-004
+  rule: Well-separated clusters
+  prediction: silhouette > 0.5 for well-separated clusters (gap >> cluster radius)
+  test: proptest with widely separated Gaussians
+  if_fails: Distance computation incorrect
+- id: FALSIFY-CL-005
+  rule: Inertia zero at centroids
+  prediction: inertia = 0 when each point equals its assigned centroid
+  test: proptest with points set exactly to their centroids, K=2..5, n=4..32
+  if_fails: Residual floating-point error or centroid assignment mismatch
+kani_harnesses:
+- id: KANI-CL-001
+  obligation: '1'
+  bound: 4
+  strategy: stub_float
+- id: KANI-CL-002
+  obligation: '2'
+  bound: 4
+  strategy: stub_float
+- id: KANI-METRIC-003
+  obligation: Silhouette score bounded
+  property: Silhouette score bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-004
+  obligation: Inertia non-negative
+  property: Inertia non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-005
+  obligation: Silhouette degenerate case
+  property: Silhouette degenerate case
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-006
+  obligation: Inertia zero at centroids
+  property: Inertia zero at centroids
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-007
+  obligation: Per-point silhouette bounded
+  property: Per-point silhouette bounded
+  bound: 8
+  strategy: stub_float
+enforcement:
+  bounded:
+    description: Silhouette must be in [-1, 1]
+    check: contract_tests::FALSIFY-CL-001
+    severity: ERROR
+  non_negative:
+    description: Inertia must be non-negative
+    check: contract_tests::FALSIFY-CL-002
+    severity: ERROR
+qa_gate:
+  id: F-CL-001
+  name: Clustering Metrics Contract
+  description: Clustering metric correctness quality gate
+  checks:
+  - silhouette_bounded
+  - inertia_non_negative
+  - silhouette_degenerate
+  - well_separated
+  - inertia_zero_at_centroids
+  pass_criteria: All 5 falsification tests pass
+  falsification: Omit max(a,b) denominator normalization

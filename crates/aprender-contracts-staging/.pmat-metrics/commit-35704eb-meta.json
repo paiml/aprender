@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-060",
+  "prompt": "Prove three softmax theorems in Lean 4 (CB-1050)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-07T16:33:36.015711964Z"
+}

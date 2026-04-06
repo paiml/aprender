@@ -1,0 +1,6 @@
+id: DEBT-001
+title: "PMAT-078 completion: override stale cache claims"
+type: debt
+priority: low
+status: accepted
+reason: "Receipt files become stale during multi-session work; override is expected"

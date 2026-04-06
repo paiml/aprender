@@ -1,0 +1,123 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Optimization -- Conjugate Gradient with Fletcher-Reeves and Wolfe line search
+  references:
+  - Nocedal & Wright (2006) Numerical Optimization, Ch. 5
+  - Fletcher & Reeves (1964) Function Minimization by Conjugate Gradients, Computer Journal
+equations:
+  cg_minimize:
+    formula: d_k = -g_k + beta_k * d_{k-1}, beta_k = ||g_k||^2 / ||g_{k-1}||^2 (Fletcher-Reeves)
+    domain: 'f: R^n -> R differentiable, x_0 in R^n initial point'
+    codomain: x* in R^n (approximate minimizer)
+    invariants:
+    - 'd_k is a descent direction: g_k^T d_k < 0 (when g_k != 0)'
+    - beta_k >= 0 (Fletcher-Reeves always non-negative)
+    - Reduces to steepest descent when beta_k = 0
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Cg_Minimize
+  line_search:
+    formula: alpha_k = argmin_{alpha > 0} f(x_k + alpha * d_k), subject to Wolfe conditions
+    domain: x_k in R^n, d_k descent direction, c1 in (0, 0.5), c2 in (c1, 1)
+    codomain: alpha_k > 0
+    invariants:
+    - 'Sufficient decrease (Armijo): f(x_k + alpha*d_k) <= f(x_k) + c1*alpha*g_k^T*d_k'
+    - 'Curvature condition: g(x_k + alpha*d_k)^T*d_k >= c2*g_k^T*d_k'
+    - alpha_k > 0 (positive step size)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Line_Search
+  convergence:
+    formula: '||g_k|| -> 0 as k -> infinity (for smooth convex f)'
+    domain: f smooth convex, bounded below
+    codomain: '||g_k|| monotonically decreasing toward 0'
+    invariants:
+    - f(x_{k+1}) <= f(x_k) (monotone decrease with exact Wolfe)
+    - 'Iterates remain finite: ||x_k|| < infinity'
+    - Gradient norm decreases on average
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Convergence
+proof_obligations:
+- type: invariant
+  property: Monotone function decrease
+  formal: f(x_{k+1}) <= f(x_k) for all k (with Wolfe line search)
+  applies_to: all
+- type: bound
+  property: Finite iterates
+  formal: '||x_k|| < infinity for all k'
+  applies_to: all
+- type: bound
+  property: Positive step size
+  formal: alpha_k > 0 for all k
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-OPT-001
+  rule: Monotone decrease
+  prediction: f(x_{k+1}) <= f(x_k) for each iteration
+  test: 'proptest: minimize quadratic f(x) = x^T A x + b^T x, record f per iteration, check non-increasing'
+  if_fails: Line search not satisfying Armijo condition
+- id: FALSIFY-OPT-002
+  rule: Finite iterates
+  prediction: All iterates x_k are finite (no NaN, no Inf)
+  test: 'proptest: minimize random convex quadratic, check all iterates finite'
+  if_fails: Step size too large or gradient explosion
+- id: FALSIFY-OPT-003
+  rule: Gradient norm convergence
+  prediction: '||g_final|| < ||g_initial|| after optimization on convex function'
+  test: 'proptest: minimize convex quadratic, compare initial and final gradient norms'
+  if_fails: Conjugate direction computation error or beta overflow
+enforcement:
+  monotone_decrease:
+    description: Function value must not increase between iterations
+    check: contract_tests::FALSIFY-OPT-001
+    severity: ERROR
+  finite_iterates:
+    description: All iterates must remain finite
+    check: contract_tests::FALSIFY-OPT-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-OPT-001
+  obligation: OPT-INV-001
+  property: Function value monotonically decreases with Wolfe line search
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_monotone_decrease
+- id: KANI-OPT-002
+  obligation: OPT-BND-001
+  property: All iterates remain finite
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_finite_iterates
+- id: KANI-OPTIMI-003
+  obligation: Monotone function decrease
+  property: Monotone function decrease
+  bound: 8
+  strategy: exhaustive
+- id: KANI-OPTIMI-004
+  obligation: Finite iterates
+  property: Finite iterates
+  bound: 8
+  strategy: exhaustive
+- id: KANI-OPTIMI-005
+  obligation: Positive step size
+  property: Positive step size
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-OPT-001
+  name: Optimization Contract
+  description: Conjugate Gradient optimization correctness quality gate
+  checks:
+  - monotone_decrease
+  - finite_iterates
+  - gradient_convergence
+  pass_criteria: All 3 falsification tests pass + Kani harnesses verify
+  falsification: Fletcher-Reeves beta overflows causing ascent direction instead of descent

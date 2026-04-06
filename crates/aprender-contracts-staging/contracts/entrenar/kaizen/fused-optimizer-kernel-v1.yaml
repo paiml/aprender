@@ -1,0 +1,59 @@
+contract: fused-optimizer-kernel-v1
+version: 1.0.0
+status: implemented
+kaizen: '026'
+invariants:
+- id: C-ADAMW-FUSED-001
+  description: Fused AdamW updates m, v, param in single pass with zero temporary allocations
+  preconditions:
+  - All input slices (grad, m, v, param) have equal length
+  - epsilon > 0
+  postconditions:
+  - m[i] = beta1 * m_old[i] + (1-beta1) * grad[i] for all i
+  - v[i] = beta2 * v_old[i] + (1-beta2) * grad[i]^2 for all i
+  - param[i] = (1 - lr*wd) * param_old[i] - lr_t * m[i] / (sqrt(v[i]) + epsilon) for all i
+  invariants:
+  - v[i] >= 0 for all i (squared gradient accumulation)
+  - All outputs finite for finite inputs
+  verified_by:
+  - optim::simd::tests::prop_simd_adamw_matches_scalar (500 cases)
+  - optim::adamw::tests::falsify_aw_002e_second_moment_non_negative
+  - optim::adamw::tests::falsify_aw_004e_update_finiteness
+  - optim::adamw::tests::falsify_aw_006e_zero_gradient_weight_decay_only
+- id: C-ADAM-FUSED-001
+  description: Fused Adam updates m, v, param in single pass with zero temporary allocations
+  preconditions:
+  - All input slices (grad, m, v, param) have equal length
+  - epsilon > 0
+  postconditions:
+  - m[i] = beta1 * m_old[i] + (1-beta1) * grad[i] for all i
+  - v[i] = beta2 * v_old[i] + (1-beta2) * grad[i]^2 for all i
+  - param[i] = param_old[i] - lr_t * m[i] / (sqrt(v[i]) + epsilon) for all i
+  invariants:
+  - v[i] >= 0 for all i
+  - All outputs finite for finite inputs
+  verified_by:
+  - optim::simd::tests::prop_simd_adam_matches_scalar (500 cases)
+performance:
+  before:
+    allocations_per_step: 14 × N elements (N = parameter size)
+    passes_over_data: 14
+    memory_overhead: ~330 MB for Qwen3-4B LoRA
+  after:
+    allocations_per_step: 0
+    passes_over_data: 1
+    memory_overhead: 0 bytes
+files_modified:
+- path: src/optim/simd/adamw.rs
+  change: Replace 14 Vector allocations with fused single-pass loop
+- path: src/optim/simd/adam.rs
+  change: Replace 13 Vector allocations with fused single-pass loop
+- path: src/optim/simd/axpy.rs
+  change: Replace 2 Vector allocations with fused single-pass loop
+qa_gate:
+  id: F-FOKV-001
+  name: fused-optimizer-kernel-v1 Contract
+  description: Quality gate for fused-optimizer-kernel-v1
+  checks:
+  - validation
+  - falsification

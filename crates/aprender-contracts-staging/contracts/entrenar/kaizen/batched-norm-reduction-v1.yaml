@@ -1,0 +1,85 @@
+contract: C-BNORM-001
+title: Batched GPU Norm Reduction — Single Sync Per Block
+kaizen: KAIZEN-055
+parent: C-WCLIP-001
+status: implemented
+date: 2026-03-04
+baseline:
+  syncs_per_block: 9
+  syncs_per_step_36_blocks: 324
+  gpu_allocs_per_block: 9
+target:
+  syncs_per_block: 1
+  syncs_per_step_36_blocks: 36
+  gpu_allocs_per_block: 9
+api:
+  squared_sum_launch_cuda: 'Launch kernel without synchronizing. Returns PendingSquaredSum handle.
+
+    Caller MUST sync before calling squared_sum_collect.
+
+    '
+  squared_sum_collect: 'D2H download of partial sums + f64 accumulation + sqrt.
+
+    Must be called after stream.synchronize().
+
+    '
+  squared_sum_cuda: 'Convenience wrapper: launch + sync + collect. Unchanged API.
+
+    Used by non-batched callers (LM head, final norm weight).
+
+    '
+  PendingSquaredSum: 'Holds GpuBuffer<f32> of partial sums and num_blocks.
+
+    Lightweight handle — output buffer freed on drop.
+
+    '
+safety:
+  sync_requirement: 'PendingSquaredSum holds the output GpuBuffer. The kernel writes to this
+
+    buffer asynchronously. Calling squared_sum_collect before sync would read
+
+    stale/partial data. The sync requirement is documented and enforced by
+
+    the batching pattern in compute_workspace_clip_scale_gpu.
+
+    '
+  buffer_lifetime: 'PendingSquaredSum owns the output GpuBuffer. It lives until squared_sum_collect
+
+    returns. The Vec<PendingSquaredSum> in compute_workspace_clip_scale_gpu ensures
+
+    all buffers survive until collection is complete.
+
+    '
+preconditions:
+- 'squared_sum_launch_cuda: same as squared_sum_cuda (n > 0, input has n elements)'
+- 'squared_sum_collect: stream.synchronize() must have been called after launch'
+postconditions:
+- squared_sum_collect returns same value as squared_sum_cuda for same input
+- compute_workspace_clip_scale_gpu calls stream.synchronize() exactly once
+invariants:
+- squared_sum_cuda unchanged — existing callers unaffected
+- PendingSquaredSum is not Clone/Copy — enforces single-use pattern
+files:
+- path: entrenar/src/autograd/cuda_optim.rs
+  change: '- Added PendingSquaredSum struct
+
+    - Added squared_sum_launch_cuda (kernel launch only)
+
+    - Added squared_sum_collect (D2H + reduce)
+
+    - Refactored squared_sum_cuda to call launch + sync + collect
+
+    '
+- path: entrenar/src/train/transformer_trainer/cuda_trainer.rs
+  change: '- compute_workspace_clip_scale_gpu: launch 9 kernels, sync once, collect 9
+
+    - Import squared_sum_launch_cuda, squared_sum_collect, PendingSquaredSum
+
+    '
+qa_gate:
+  id: F-BNRV-001
+  name: batched-norm-reduction-v1 Contract
+  description: Quality gate for batched-norm-reduction-v1
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,54 @@
+version: 1.0.0
+target_crate: apr-model-qa-playbook
+policy: WarnOnGaps
+bindings:
+- contract: mqs-scoring-v1.yaml
+  equation: mqs_composite
+  function: calculate_mqs
+  module_path: apr_model_qa_playbook::scoring::mqs
+  status: implemented
+- contract: mqs-scoring-v1.yaml
+  equation: mqs_deterministic
+  function: verify_deterministic
+  module_path: apr_model_qa_playbook::scoring::mqs
+  status: implemented
+- contract: mqs-scoring-v1.yaml
+  equation: mqs_grade
+  function: grade_from_score
+  module_path: apr_model_qa_playbook::scoring::mqs
+  status: implemented
+- contract: mqs-scoring-v1.yaml
+  equation: mqs_pass_rate
+  function: compute_pass_rate
+  module_path: apr_model_qa_playbook::scoring::mqs
+  status: implemented
+- contract: apr-format-invariants-v1.yaml
+  equation: serialize_roundtrip
+  function: serialize_model_evidence
+  module_path: apr_model_qa_playbook::format
+  status: implemented
+- contract: apr-format-invariants-v1.yaml
+  equation: validate_schema
+  function: validate_evidence_schema
+  module_path: apr_model_qa_playbook::format
+  status: implemented
+- contract: apr-format-invariants-v1.yaml
+  equation: parse_playbook
+  function: parse_qa_playbook
+  module_path: apr_model_qa_playbook::playbook
+  status: implemented
+- contract: apr-format-invariants-v1.yaml
+  equation: format_report
+  function: format_mqs_report
+  module_path: apr_model_qa_playbook::report
+  status: implemented
+- contract: apr-format-invariants-v1.yaml
+  equation: detect_regression
+  function: detect_regression
+  module_path: apr_model_qa_playbook::regression
+  status: implemented
+critical_path:
+- mqs
+- validate
+- score
+- report

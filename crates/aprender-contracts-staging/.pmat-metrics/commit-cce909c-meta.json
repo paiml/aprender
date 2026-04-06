@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-086",
+  "prompt": "Push contract scores from B to A: fix registries + Kani gaps + drift",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T16:02:44.739839699Z"
+}

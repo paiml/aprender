@@ -1,0 +1,168 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Tensor inventory algebra and parameter count decomposition
+  references:
+  - Qwen3 Performance Parity Spec — tensor counting
+  - Vaswani et al. (2017) Attention Is All You Need — parameter analysis
+equations:
+  tensor_count:
+    formula: total = base + L * per_layer
+    domain: base ∈ {2, 3} (embed + lm_head ± final_norm), per_layer = 7 + 2*norm + 2*qk_norm + 3*bias
+    codomain: total ∈ ℤ⁺
+    invariants:
+    - total > 0 for any valid config
+    - Linear in L (layer count)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Tensor_Count
+  architecture_delta:
+    formula: delta = L * (per_layer_B - per_layer_A)
+    domain: Two model configs A, B with same L
+    codomain: delta ∈ ℤ (signed)
+    invariants:
+    - delta = 0 when architectures identical
+    - delta proportional to L
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Architecture_Delta
+  parameter_decomposition:
+    formula: total_params = embed_params + sum(layer_params) + head_params
+    domain: All tensor element counts
+    codomain: total_params ∈ ℤ⁺
+    invariants:
+    - Sum of parts equals whole
+    - Each component non-negative
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Parameter_Decomposition
+  tied_embeddings:
+    formula: tied=true => tensor_count -= 1, but params unchanged (shared storage)
+    domain: Boolean flag
+    invariants:
+    - Tied reduces tensor count by exactly 1
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Tied_Embeddings
+  quantization_bytes:
+    formula: bytes = params * block_bytes / elements_per_block
+    domain: params ∈ ℤ⁺, block_bytes/elements_per_block from quantization scheme
+    codomain: bytes ∈ ℤ⁺
+    invariants:
+    - bytes proportional to params
+    - bytes decreases with more aggressive quantization
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Quantization_Bytes
+proof_obligations:
+- type: invariant
+  property: Tensor count formula
+  formal: total = base + L * per_layer for valid configs
+  applies_to: all
+- type: invariant
+  property: Architecture delta linear
+  formal: delta(A,B) = L * (per_layer_B - per_layer_A)
+  applies_to: all
+- type: invariant
+  property: Parameter decomposition exact
+  formal: sum of component params = total_params
+  applies_to: all
+- type: invariant
+  property: Tied embedding count
+  formal: tied => count(untied) - count(tied) = 1
+  applies_to: all
+- type: monotonicity
+  property: Quantization byte ordering
+  formal: Q4K < Q6K < Q8 < F16 < F32 bytes for same params
+  applies_to: all
+- type: equivalence
+  property: SIMD inventory equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-TI-001
+  rule: Tensor count formula
+  prediction: Formula matches hand-counted tensor inventory
+  test: proptest with random model configs
+  if_fails: Missing tensor in per_layer formula
+- id: FALSIFY-TI-002
+  rule: Architecture delta
+  prediction: Delta proportional to L
+  test: proptest comparing two random configs with same L
+  if_fails: Non-linear component in delta
+- id: FALSIFY-TI-003
+  rule: Quantization ordering
+  prediction: More aggressive quant => fewer bytes
+  test: proptest with same params, different quant schemes
+  if_fails: Quant block size formula wrong
+- id: FALSIFY-TI-004
+  rule: Parameter decomposition exact
+  prediction: Sum of per-layer params == total params
+  test: 'Deterministic: verify sum across all layers'
+  if_fails: Missing tensor in decomposition
+- id: FALSIFY-TI-005
+  rule: Tied embedding count
+  prediction: Tied weights counted exactly once
+  test: 'Deterministic: verify count(embed) == 1 when tied'
+  if_fails: Tied weights double-counted or missing
+- id: FALSIFY-TI-006
+  rule: SIMD inventory equivalence
+  prediction: SIMD tensor shapes match scalar
+  test: 'proptest: compare scalar vs SIMD tensor shapes'
+  if_fails: SIMD layout differs from scalar
+kani_harnesses:
+- id: KANI-TI-001
+  obligation: TI-INV-001
+  property: Tensor count positive for bounded configs
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_tensor_count_positive
+- id: KANI-TENSOR-002
+  obligation: Tensor count formula
+  property: Tensor count formula
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-003
+  obligation: Architecture delta linear
+  property: Architecture delta linear
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-004
+  obligation: Parameter decomposition exact
+  property: Parameter decomposition exact
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-005
+  obligation: Tied embedding count
+  property: Tied embedding count
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-006
+  obligation: Quantization byte ordering
+  property: Quantization byte ordering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-007
+  obligation: SIMD inventory equivalence
+  property: SIMD inventory equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TI-001
+  name: Tensor Inventory Contract
+  description: Tensor counting and parameter decomposition quality gate
+  checks:
+  - tensor_count_formula
+  - architecture_delta
+  - parameter_decomposition
+  - tied_embeddings
+  - quantization_ordering
+  pass_criteria: All 6 falsification tests pass
+  falsification: Omit a bias tensor to break count formula

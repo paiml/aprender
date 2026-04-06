@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-084",
+  "prompt": "Add lean_theorem pointers for existing Lean-proved equations",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T15:26:23.679026799Z"
+}

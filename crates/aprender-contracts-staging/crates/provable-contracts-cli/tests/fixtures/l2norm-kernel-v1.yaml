@@ -1,0 +1,70 @@
+metadata:
+  version: "1.0.0"
+  description: "L2 norm kernel — Euclidean vector length"
+  references:
+    - "Golub & Van Loan (2013) Matrix Computations"
+
+equations:
+  l2norm:
+    formula: "||x|| = sqrt(Σ x_i²)"
+    domain: "x ∈ ℝ^n"
+    codomain: "[0, ∞)"
+    invariants:
+      - "||x|| ≥ 0"
+      - "||α·x|| = |α|·||x||"
+      - "||0|| = 0"
+
+proof_obligations:
+  - type: bound
+    property: "Non-negative"
+    formal: "||x|| ≥ 0 for all x"
+    applies_to: all
+  - type: invariant
+    property: "Homogeneity"
+    formal: "||α·x|| = |α|·||x||"
+    applies_to: all
+  - type: invariant
+    property: "Zero vector yields zero"
+    formal: "||0|| = 0"
+    applies_to: all
+  - type: equivalence
+    property: "SIMD matches scalar"
+    tolerance: 2.0
+    applies_to: simd
+
+kernel_structure:
+  phases:
+    - name: square
+      description: "Compute x_i²"
+      invariant: "sq_i ≥ 0"
+    - name: sum
+      description: "Accumulate Σ sq_i"
+      invariant: "total ≥ 0"
+    - name: sqrt
+      description: "Compute sqrt(total)"
+      invariant: "result ≥ 0"
+
+simd_dispatch:
+  l2norm:
+    scalar: l2norm_scalar
+    avx2: l2norm_avx2
+
+falsification_tests:
+  - id: FALSIFY-L2-001
+    rule: "Non-negativity"
+    prediction: "l2norm(x) >= 0 for all x"
+    if_fails: "Negative intermediate from overflow"
+
+kani_harnesses:
+  - id: KANI-L2-001
+    obligation: L2-BND-001
+    property: "Non-negative for bounded inputs"
+    bound: 16
+    strategy: exhaustive
+
+qa_gate:
+  id: F-L2-001
+  name: "L2 Norm Contract"
+  checks:
+    - "non_negativity"
+  pass_criteria: "All 1 falsification tests pass"

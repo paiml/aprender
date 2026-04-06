@@ -1,0 +1,173 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: L-BFGS kernel — limited-memory BFGS quasi-Newton optimizer
+  references:
+  - Nocedal (1980) Updating Quasi-Newton Matrices with Limited Storage
+  - Liu & Nocedal (1989) On the Limited Memory BFGS Method for Large Scale Optimization
+equations:
+  two_loop_recursion:
+    formula: H_k * g_k via two-loop recursion using m stored (s, y) pairs
+    domain: g_k in R^d, s_i = x_{i+1} - x_i, y_i = g_{i+1} - g_i, m >= 1
+    codomain: direction in R^d
+    invariants:
+    - 'Direction is descent direction: g_k^T * direction < 0'
+    - 'Secant condition: y_i^T * s_i > 0 for all stored pairs'
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Two_Loop_Recursion
+  secant_condition:
+    formula: H_{k+1} * y_k = s_k (secant equation)
+    domain: s_k = x_{k+1} - x_k, y_k = g_{k+1} - g_k
+    codomain: —
+    invariants:
+    - y_k^T * s_k > 0 (curvature condition)
+    - Ensures positive definiteness of approximate Hessian
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Secant_Condition
+  line_search:
+    formula: alpha = argmin_a f(x_k + a * d_k) subject to Wolfe conditions
+    domain: 'x_k in R^d, d_k descent direction, f: R^d -> R'
+    codomain: alpha in R_>0
+    invariants:
+    - 'Sufficient decrease: f(x + alpha*d) <= f(x) + c1*alpha*g^T*d'
+    - 'Curvature condition: |g(x+alpha*d)^T*d| <= c2*|g^T*d|'
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Line_Search
+proof_obligations:
+- type: invariant
+  property: Descent direction
+  formal: g_k^T * H_k * g_k > 0 (direction has negative dot with gradient)
+  applies_to: all
+- type: invariant
+  property: Curvature condition
+  formal: y_k^T * s_k > 0 for all stored pairs
+  applies_to: all
+- type: bound
+  property: History buffer bounded
+  formal: Number of stored (s, y) pairs <= m
+  applies_to: all
+- type: monotonicity
+  property: Objective decrease
+  formal: f(x_{k+1}) < f(x_k) when Wolfe conditions satisfied
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: two_loop_backward
+    description: 'Backward pass: compute alpha_i = rho_i * s_i^T * q'
+    invariant: rho_i = 1 / (y_i^T * s_i) well-defined when curvature holds
+  - name: initial_scaling
+    description: Scale by H_0 = (y_k^T*s_k)/(y_k^T*y_k) * I
+    invariant: Scaling factor positive
+  - name: two_loop_forward
+    description: 'Forward pass: correct direction using stored betas'
+    invariant: Final direction is descent direction
+  - name: line_search
+    description: Backtracking or strong Wolfe line search
+    invariant: Step size satisfies Wolfe conditions
+simd_dispatch:
+  lbfgs_direction:
+    scalar: lbfgs_direction_scalar
+    avx2: lbfgs_direction_avx2
+    ptx: lbfgs_ptx
+enforcement:
+  descent:
+    description: Search direction must be a descent direction
+    check: contract_tests::FALSIFY-LB-001
+    severity: ERROR
+  curvature:
+    description: Curvature condition must hold for stored pairs
+    check: contract_tests::FALSIFY-LB-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-LB-001
+  rule: Descent direction
+  prediction: g^T * direction < 0 for non-zero gradient
+  test: proptest with random gradients and stored (s, y) pairs
+  if_fails: Two-loop recursion sign error or scaling incorrect
+- id: FALSIFY-LB-002
+  rule: Curvature condition
+  prediction: y^T * s > 0 for all accepted (s, y) pairs
+  test: proptest checking stored pairs after updates
+  if_fails: Pair accepted without curvature check
+- id: FALSIFY-LB-003
+  rule: History bound
+  prediction: len(history) <= m after any number of iterations
+  test: proptest running 1000 iterations with m=5
+  if_fails: Old pairs not evicted from buffer
+- id: FALSIFY-LB-004
+  rule: Objective decrease
+  prediction: f(x_{k+1}) < f(x_k) on Rosenbrock function
+  test: proptest with convex quadratic and Rosenbrock starting points
+  if_fails: Line search not satisfying Wolfe conditions
+- id: FALSIFY-LB-005
+  rule: SIMD equivalence
+  prediction: '|direction_avx2(g, history) - direction_scalar(g, history)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD two-loop recursion
+  if_fails: SIMD dot product accumulation differs
+- id: FALSIFY-LB-006
+  rule: Boundary - first iteration
+  prediction: With empty history, direction = -g (steepest descent)
+  test: proptest with empty history buffer
+  if_fails: Initial scaling or empty-buffer case not handled
+kani_harnesses:
+- id: KANI-LB-001
+  obligation: LB-INV-001
+  property: Two-loop recursion produces descent direction
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_lbfgs_descent
+- id: KANI-LB-002
+  obligation: LB-BND-001
+  property: History buffer respects size limit
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_lbfgs_history_bound
+- id: KANI-LBFGS_-003
+  obligation: Descent direction
+  property: Descent direction
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LBFGS_-004
+  obligation: Curvature condition
+  property: Curvature condition
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LBFGS_-005
+  obligation: History buffer bounded
+  property: History buffer bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-LBFGS_-006
+  obligation: Objective decrease
+  property: Objective decrease
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LBFGS_-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-LB-001
+  name: L-BFGS Contract
+  description: Limited-memory BFGS quasi-Newton optimizer quality gate
+  checks:
+  - descent_direction
+  - curvature_condition
+  - history_bound
+  - objective_decrease
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Reverse loop order in two-loop recursion

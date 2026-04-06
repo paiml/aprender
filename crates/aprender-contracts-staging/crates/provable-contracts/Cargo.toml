@@ -1,0 +1,40 @@
+[package]
+name = "provable-contracts"
+description = "Papers to Math to Contracts in Code — YAML contract parsing, validation, scaffold generation, and Kani harness codegen for provable Rust kernels"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["verification", "formal-methods", "kani", "contracts", "ml-kernels"]
+categories = ["development-tools::testing", "mathematics"]
+exclude = ["tests/", "benches/"]
+
+[features]
+default = []
+kani = []
+
+[dependencies]
+provable-contracts-macros = { workspace = true }
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[lints]
+workspace = true

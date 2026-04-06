@@ -1,0 +1,523 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Inference server contract — OpenAI-compatible HTTP server lifecycle,
+    health checks, graceful shutdown, request routing, and concurrent
+    inference safety. Covers `apr serve` and `apr serve plan`.
+  references:
+  - 'apr-cli/src/commands/serve.rs — run_server(), health_check()'
+  - 'apr-cli/src/commands/serve_plan.rs — generate_serve_plan()'
+  - 'aprender/src/http/ — Actix-web handler implementations'
+  - 'OpenAI API specification — /v1/completions, /v1/chat/completions'
+  depends_on:
+  - http-api-v1
+  - apr-cli-v1
+
+equations:
+  server_lifecycle:
+    formula: |
+      serve(config): ServeConfig -> Result<(), ServerError>
+        States: Init -> Binding -> Loading -> Ready -> Draining -> Stopped
+        Init: parse config, validate model path
+        Binding: bind TCP socket (fail-fast if port occupied)
+        Loading: load model into memory (GPU or CPU)
+        Ready: accept requests, health check returns 200
+        Draining: stop accepting new requests, finish in-flight
+        Stopped: all resources freed, process exits 0
+    domain: ServeConfig with valid model path, host, port
+    codomain: Result<(), ServerError>
+    invariants:
+    - Health endpoint returns 200 only in Ready state
+    - No requests processed before model fully loaded
+    - Graceful shutdown completes in-flight requests before exit
+    - SIGTERM triggers Draining → Stopped transition
+    preconditions:
+    - config.model_path.exists()
+    - config.port is available (not bound by another process)
+    postconditions:
+    - "Ready state /health returns 200"
+    - "Stopped state — TCP port released, GPU memory freed"
+    lean_theorem: Theorems.ServerLifecycle
+
+  request_routing:
+    formula: |
+      route(request): HttpRequest -> Result<HttpResponse, ApiError>
+        /v1/completions -> handle_completion()
+        /v1/chat/completions -> handle_chat_completion()
+        /v1/models -> handle_list_models()
+        /v1/embeddings -> handle_embeddings()
+        /health -> health_check()
+        (any other path) -> 404 Not Found
+    domain: HttpRequest with method, path, headers, body
+    codomain: Result<HttpResponse, ApiError>
+    invariants:
+    - Unknown paths return 404 (not 500)
+    - Method mismatch returns 405
+    - Routes are case-sensitive and exact-match
+    preconditions:
+    - server is in Ready state
+    postconditions:
+    - response has correct Content-Type header
+    - response status code semantically correct for the outcome
+    lean_theorem: Theorems.RequestRouting
+
+  concurrent_inference_isolation:
+    formula: |
+      handle_concurrent(reqs): Vec<Request> -> Vec<Response>
+        For each request_i:
+          result_i = inference(model, request_i.prompt)
+          result_i is independent of other concurrent requests
+        KV-cache is per-request (no cross-contamination)
+    domain: Multiple concurrent inference requests
+    codomain: Vec<Response> where order matches request order
+    invariants:
+    - Result of request A is identical whether B runs concurrently or not
+    - KV-cache allocated and freed per-request
+    - OOM on one request does not crash the server
+    preconditions:
+    - server in Ready state
+    - at least one request pending
+    postconditions:
+    - all responses returned (none dropped silently)
+    - server still in Ready state after all requests complete
+    lean_theorem: Theorems.ConcurrentInferenceIsolation
+
+  chat_template_dispatch:
+    formula: |
+      format_chat_messages(messages, model_hint) where
+        model_hint = state.model_architecture()
+        template = detect_format_from_name(model_hint)
+        prompt = template.format_conversation(messages)
+    domain: Chat completion request with messages array
+    codomain: Formatted prompt string with correct chat template
+    invariants:
+    - Qwen3 models ALWAYS use Qwen3NoThinkTemplate (PMAT-181, chat-template-v1)
+    - Architecture hint comes from GGUF metadata, NOT from request model name
+    - AppState.cached_architecture is populated at construction time
+    - Template includes correct special tokens for the model family
+    preconditions:
+    - state.model_architecture().is_some() (FALSIFY-CT-002)
+    - messages.len() > 0
+    postconditions:
+    - Prompt uses correct template format for the model architecture
+    - Qwen3 prompt ends with pre-filled empty thinking block
+    lean_theorem: Theorems.ChatTemplateDispatch
+    notes: |
+      PMAT-181/185 dogfood: AppState.cached_architecture was None for
+      GGUF models → wrong template → Qwen3 entered thinking mode →
+      </think> token loops. Fixed by caching architecture at construction.
+      Enforced by chat-template-v1.yaml FALSIFY-CT-002.
+
+  error_sanitization:
+    formula: |
+      handle_error(err): HandlerError -> HttpResponse
+        response.body = {"error": {"message": sanitize(err), "type": err.kind(), "code": status}}
+        sanitize(err) strips:
+          - Internal stack traces
+          - Framework internals (axum/serde deserialization details)
+          - File system paths
+        sanitize(err) preserves:
+          - User-actionable message
+          - Request field that caused the error
+    domain: Any HandlerError from request processing
+    codomain: HttpResponse with sanitized JSON error body
+    invariants:
+    - Never leaks axum/serde/tower internals to client (GH-649)
+    - Error messages are human-readable and actionable
+    - HTTP status codes match error semantics (400, 404, 405, 500)
+    preconditions:
+    - err is a well-formed HandlerError
+    postconditions:
+    - "response body is valid JSON with error envelope (message, type, code)"
+    - "message does not contain 'serde', 'axum', 'tower', or stack frame patterns"
+    lean_theorem: Theorems.ErrorSanitization
+
+  cors_preflight:
+    formula: |
+      handle_options(request): HttpRequest -> HttpResponse
+        if request.method == OPTIONS:
+          response.status = 204
+          response.headers["Access-Control-Allow-Origin"] = origin_or_wildcard
+          response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+          response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        if --no-cors flag: skip CORS headers entirely
+    domain: HTTP OPTIONS request to any endpoint
+    codomain: 204 No Content with CORS headers
+    invariants:
+    - OPTIONS never returns 405 Method Not Allowed (GH-671)
+    - CORS headers present on all responses when enabled
+    - --no-cors disables all CORS headers
+    preconditions:
+    - server is in Ready state
+    postconditions:
+    - OPTIONS → 204 (not 405)
+    - response includes Access-Control-Allow-Origin header
+    lean_theorem: Theorems.CorsPreflight
+
+  unknown_route_json_404:
+    formula: |
+      route(request): HttpRequest -> HttpResponse
+        if path ∉ known_endpoints:
+          response.status = 404
+          response.body = {"error": {"message": "Not found", "type": "not_found", "code": 404}}
+          response.content_type = "application/json"
+        Never returns empty body for unknown routes
+    domain: HTTP request to unregistered path
+    codomain: 404 HttpResponse with JSON error envelope
+    invariants:
+    - Unknown routes always return JSON body (never empty) (GH-672)
+    - Content-Type is application/json
+    - Status code is 404 (not 500)
+    preconditions:
+    - server in Ready state
+    - request path ∉ known_endpoints
+    postconditions:
+    - response.status == 404
+    - response.body.len() > 0
+    - response.body parses as valid JSON with error envelope
+    lean_theorem: Theorems.UnknownRouteJson404
+
+  max_tokens_bound:
+    formula: |
+      validate_max_tokens(request): CompletionRequest -> Result<u32, ApiError>
+        max_tokens = min(request.max_tokens, model.context_length)
+        if request.max_tokens > model.context_length:
+          clamp and warn (not hang)
+        Generation loop: token_count <= max_tokens (hard bound)
+    domain: Completion request with max_tokens field
+    codomain: Clamped max_tokens value
+    invariants:
+    - Generation never exceeds max_tokens (no infinite loop) (GH-665)
+    - Large max_tokens clamped to model context length
+    - Zero max_tokens returns empty completion (not hang)
+    preconditions:
+    - request parsed successfully
+    - model loaded
+    postconditions:
+    - response.usage.completion_tokens <= max_tokens
+    - request completes in bounded time
+    lean_theorem: Theorems.MaxTokensBound
+
+  gpu_token_integrity:
+    formula: |
+      decode_token(logits, sampler): (Vec<f32>, Sampler) -> TokenId
+        token_id = sampler.sample(logits)
+        token_id < vocab_size
+        token_id != 0 unless EOS or padding
+      For batched decode:
+        each sequence gets independent logits (no cross-contamination)
+    domain: Logits vector from model forward pass
+    codomain: Valid token ID
+    invariants:
+    - Batched decode produces diverse tokens (not all token_id=0) (GH-659)
+    - Single-token completions produce valid UTF-8 (no mojibake) (GH-670)
+    - GPU and CPU decode produce equivalent token sequences
+    preconditions:
+    - logits.len() == vocab_size
+    - logits are finite (no NaN/Inf)
+    postconditions:
+    - token_id < vocab_size
+    - decoded text is valid UTF-8
+    lean_theorem: Theorems.GpuTokenIntegrity
+
+  format_detection:
+    formula: |
+      detect_model_format(path) => GGUF | APR | SafeTensors
+      For GGUF: read magic bytes 0x47475546 ("GGUF")
+      For APR: read magic bytes + metadata header
+      Prefer APR over GGUF for same model (native format, row-major)
+    domain: Model file path
+    codomain: ModelFormat enum
+    invariants:
+    - Format detected from file content (magic bytes), not file extension
+    - Invalid magic bytes → clear error (not silent fallback)
+    - APR preferred over GGUF when both available (LAYOUT-002)
+    preconditions:
+    - File exists and is readable
+    postconditions:
+    - Correct format for valid model files
+    - Descriptive error for corrupt/unknown files
+    lean_theorem: Theorems.FormatDetection
+
+  graceful_shutdown:
+    formula: |
+      shutdown(signal): Signal -> Result<(), ShutdownError>
+        1. Stop accepting new TCP connections
+        2. Wait for in-flight requests (bounded timeout)
+        3. Free model memory (GPU + CPU)
+        4. Close log files
+        5. Exit with code 0
+    domain: SIGTERM or SIGINT signal
+    codomain: Result<(), ShutdownError>
+    invariants:
+    - In-flight requests get responses (not connection reset)
+    - Shutdown timeout bounded (default 30s)
+    - No resource leaks (GPU VRAM, file descriptors, TCP sockets)
+    preconditions:
+    - server is in Ready or Loading state
+    postconditions:
+    - process exit code 0
+    - GPU memory fully released
+    - TCP port available for rebinding
+    lean_theorem: Theorems.GracefulShutdown
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate config, check model path exists, verify port availability
+  - name: execute
+    description: Bind socket, load model, serve requests with concurrent isolation
+  - name: verify_output
+    description: Graceful shutdown, drain in-flight requests, release all resources
+
+proof_obligations:
+- type: state_machine
+  property: Server lifecycle valid transitions
+  formal: >
+    Init->Binding->Loading->Ready->Draining->Stopped, no skip.
+    Health returns 200 only in Ready state.
+  applies_to: server_lifecycle
+  lean:
+    theorem: Theorems.ServerLifecycle
+    status: sorry
+- type: invariant
+  property: No cross-request KV cache contamination
+  formal: result(req_a, concurrent=[]) == result(req_a, concurrent=[req_b])
+  tolerance: 1e-6
+  applies_to: concurrent_inference_isolation
+  lean:
+    theorem: Theorems.ConcurrentInferenceIsolation
+    status: sorry
+- type: postcondition
+  property: Graceful shutdown completes in-flight requests
+  formal: in_flight_count == 0 before process exit
+  applies_to: graceful_shutdown
+  lean:
+    theorem: Theorems.GracefulShutdown
+    status: sorry
+- type: completeness
+  property: All API routes handled
+  formal: no path returns 500 Internal Server Error for routing failures
+  applies_to: request_routing
+  lean:
+    theorem: Theorems.RequestRouting
+    status: sorry
+- type: invariant
+  property: Qwen3 uses NoThinkTemplate via architecture dispatch
+  formal: 'model_architecture() == "qwen3" → template.format() == Qwen3NoThink'
+  applies_to: chat_template_dispatch
+- type: invariant
+  property: AppState caches architecture from GGUF at construction
+  formal: 'with_quantized_model_and_vocab(m, v).model_architecture().is_some()'
+  applies_to: chat_template_dispatch
+- type: invariant
+  property: Format detection uses magic bytes not extension
+  formal: 'detect(gguf_bytes_with_apr_extension) == GGUF'
+  applies_to: format_detection
+- type: postcondition
+  property: Error responses never leak framework internals
+  formal: '!response.body.contains("serde") && !response.body.contains("axum")'
+  applies_to: error_sanitization
+  lean:
+    theorem: Theorems.ErrorSanitization
+    status: sorry
+- type: postcondition
+  property: OPTIONS returns 204 with CORS headers
+  formal: 'OPTIONS /any -> 204, Access-Control-Allow-Origin present'
+  applies_to: cors_preflight
+  lean:
+    theorem: Theorems.CorsPreflight
+    status: sorry
+- type: postcondition
+  property: Unknown routes return JSON 404 (not empty body)
+  formal: 'GET /nonexistent -> 404, body.len() > 0, body is JSON'
+  applies_to: unknown_route_json_404
+  lean:
+    theorem: Theorems.UnknownRouteJson404
+    status: sorry
+- type: bound
+  property: Generation bounded by max_tokens
+  formal: 'response.usage.completion_tokens <= max_tokens'
+  applies_to: max_tokens_bound
+  lean:
+    theorem: Theorems.MaxTokensBound
+    status: sorry
+- type: invariant
+  property: GPU batched decode produces non-zero tokens
+  formal: 'batch_decode(prompts).all(|seq| !seq.tokens.all_zeros())'
+  applies_to: gpu_token_integrity
+  lean:
+    theorem: Theorems.GpuTokenIntegrity
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-SRV-001
+  rule: Health returns 200 only when ready
+  prediction: /health returns 503 during model loading phase
+  test: Start server, immediately hit /health before model loads
+  if_fails: Health endpoint returns 200 before model is loaded
+- id: FALSIFY-SRV-002
+  rule: Graceful shutdown completes in-flight
+  prediction: Request started before SIGTERM gets a response
+  test: Send slow request, SIGTERM server, verify response received
+  if_fails: Connection reset during graceful shutdown
+- id: FALSIFY-SRV-003
+  rule: Unknown path returns 404
+  prediction: GET /nonexistent returns 404 with JSON error envelope
+  test: Curl unknown path, parse response
+  if_fails: Actix default error handler returns HTML 404
+- id: FALSIFY-SRV-004
+  rule: Concurrent inference isolation
+  prediction: Two concurrent requests produce same results as sequential
+  test: Run 10 identical requests concurrently, assert all outputs identical
+  if_fails: KV-cache shared between concurrent requests
+- id: FALSIFY-SRV-005
+  rule: Qwen3 architecture triggers NoThinkTemplate
+  prediction: Qwen3 GGUF model gets Qwen3NoThink template, not ChatML
+  test: |
+    #[test]
+    fn falsify_srv_005_qwen3_nothink_template() {
+        use realizar::chat_template::{detect_format_from_name, TemplateFormat};
+        // Architecture from GGUF metadata
+        assert_eq!(detect_format_from_name("qwen3"), TemplateFormat::Qwen3NoThink);
+        // Model filename patterns
+        assert_eq!(detect_format_from_name("Qwen3-1.7B-Q4_K_M"), TemplateFormat::Qwen3NoThink);
+        // Must NOT match Qwen2
+        assert_ne!(detect_format_from_name("qwen2"), TemplateFormat::Qwen3NoThink);
+    }
+  if_fails: Qwen3 gets ChatML template, enters thinking mode, loops on tokens
+- id: FALSIFY-SRV-006
+  rule: AppState caches GGUF architecture at construction
+  prediction: model_architecture() returns Some after with_quantized_model_and_vocab
+  test: See realizar/src/api/tests/chat_template_contract.rs FALSIFY-CT-002
+  if_fails: Architecture not cached, template detection falls back to wrong default
+- id: FALSIFY-SRV-007
+  rule: Chat template pre-fills empty thinking block for Qwen3
+  prediction: Qwen3NoThinkTemplate.format_conversation() output contains <think></think>
+  test: See realizar/src/chat_template_contract_tests.rs FALSIFY-CT-006
+  if_fails: Model enters thinking mode, wastes tokens on </think> loops
+- id: FALSIFY-SRV-008
+  rule: Error responses do not leak framework internals
+  prediction: Malformed JSON POST to /v1/completions returns sanitized error, not serde trace
+  test: |
+    curl -s -X POST http://localhost:8080/v1/completions \
+      -H "Content-Type: application/json" \
+      -d '{"invalid": true}' | jq .error.message
+    # Must NOT contain "serde", "axum", "Expected", "missing field"
+  if_fails: Axum serde deserialization error leaked verbatim to client (GH-649)
+- id: FALSIFY-SRV-009
+  rule: OPTIONS returns 204 (not 405)
+  prediction: OPTIONS /v1/completions returns 204 with CORS headers
+  test: |
+    status=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS http://localhost:8080/v1/completions)
+    test "$status" = "204"
+  if_fails: Actix returns 405 Method Not Allowed for OPTIONS (GH-671)
+- id: FALSIFY-SRV-010
+  rule: Unknown routes return JSON 404 (not empty body)
+  prediction: GET /nonexistent returns 404 with JSON error envelope
+  test: |
+    response=$(curl -s -w "\n%{http_code}" http://localhost:8080/nonexistent)
+    body=$(echo "$response" | head -1)
+    code=$(echo "$response" | tail -1)
+    test "$code" = "404" && echo "$body" | jq .error.message > /dev/null
+  if_fails: Empty body returned for unknown routes (GH-672)
+- id: FALSIFY-SRV-011
+  rule: Large max_tokens does not hang
+  prediction: max_tokens=10000 completes within timeout (clamped to context length)
+  test: |
+    timeout 30 curl -s -X POST http://localhost:8080/v1/completions \
+      -H "Content-Type: application/json" \
+      -d '{"prompt":"Hello","max_tokens":10000}'
+  if_fails: Server hangs on large max_tokens (GH-665)
+- id: FALSIFY-SRV-012
+  rule: Batched GPU decode produces non-zero tokens
+  prediction: 4-prompt batch on GPU produces diverse tokens per sequence
+  test: |
+    # Each sequence should have non-zero token IDs in output
+    # All-zero tokens indicate broken batched KV-cache
+  if_fails: Batched decode generates all token_id=0 (GH-659)
+
+kani_harnesses:
+- id: KANI-SRV-001
+  obligation: Server lifecycle valid transitions
+  property: Only defined state transitions allowed
+  bound: 8
+  strategy: exhaustive
+  harness: verify_server_state_machine
+- id: KANI-SRV-002
+  obligation: All API routes handled
+  property: No route returns 500 for routing failures
+  bound: 16
+  strategy: exhaustive
+  harness: verify_route_completeness
+- id: KANI-SRV-003
+  obligation: Graceful shutdown completes in-flight requests
+  property: in_flight == 0 before exit
+  bound: 4
+  strategy: exhaustive
+  harness: verify_graceful_shutdown
+- id: KANI-SRV-004
+  obligation: No cross-request KV cache contamination
+  property: result independence
+  bound: 4
+  strategy: exhaustive
+  harness: verify_kv_isolation
+- id: KANI-SRV-005
+  obligation: Error responses never leak framework internals
+  property: response body never contains serde/axum strings
+  bound: 8
+  strategy: bounded_int
+  harness: verify_error_sanitization
+- id: KANI-SRV-006
+  obligation: OPTIONS returns 204 with CORS headers
+  property: OPTIONS method never returns 405
+  bound: 4
+  strategy: exhaustive
+  harness: verify_cors_preflight
+- id: KANI-SRV-007
+  obligation: Unknown routes return JSON 404 (not empty body)
+  property: unknown path -> 404 with non-empty JSON body
+  bound: 8
+  strategy: bounded_int
+  harness: verify_unknown_route_404
+- id: KANI-SRV-008
+  obligation: Generation bounded by max_tokens
+  property: completion_tokens <= max_tokens
+  bound: 16
+  strategy: bounded_int
+  harness: verify_max_tokens_bound
+- id: KANI-SRV-009
+  obligation: GPU batched decode produces non-zero tokens
+  property: token_id < vocab_size and not all zeros
+  bound: 8
+  strategy: bounded_int
+  harness: verify_gpu_token_integrity
+- id: KANI-SRV-010
+  obligation: Qwen3 uses NoThinkTemplate via architecture dispatch
+  property: qwen3 architecture selects NoThinkTemplate
+  bound: 4
+  strategy: exhaustive
+  harness: verify_qwen3_nothink
+- id: KANI-SRV-011
+  obligation: AppState caches architecture from GGUF at construction
+  property: model_architecture().is_some() after construction
+  bound: 4
+  strategy: exhaustive
+  harness: verify_appstate_architecture_cache
+- id: KANI-SRV-012
+  obligation: Format detection uses magic bytes not extension
+  property: magic bytes determine format regardless of extension
+  bound: 8
+  strategy: exhaustive
+  harness: verify_format_detection_magic
+
+qa_gate:
+  id: F-SRV-GATE
+  name: Serve Contract
+  description: Quality gate for inference server lifecycle + chat template dispatch
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 12 falsification tests pass (4 lifecycle + 3 chat template + 5 error/CORS/routing)

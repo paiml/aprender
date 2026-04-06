@@ -1,0 +1,115 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Parser soundness contract — parse correctness, transpile roundtrip, AST fidelity
+  references:
+  - 'Parr (2013) The Definitive ANTLR 4 Reference'
+  - 'Appel (2004) Modern Compiler Implementation'
+equations:
+  parse_correctness:
+    formula: P(source) = AST where ∀ node ∈ AST, node.span ⊆ source
+    domain: source ∈ String, valid ruchy program
+    codomain: Result<Program>
+    invariants:
+    - 'Totality: P(s) = Ok(_) for all valid ruchy programs s'
+    - 'Span fidelity: every AST node span maps back to source text'
+    - 'Deterministic: P(s) = P(s) for all s'
+    preconditions:
+    - '!source.is_empty()'
+    - source is UTF-8 encoded
+    lean_theorem: Theorems.Parse_Correctness
+  transpile_roundtrip:
+    formula: '∀ valid source s: eval(transpile(parse(s))) ≡ eval(s)'
+    domain: source ∈ String, valid ruchy program
+    codomain: Result<String> where output is valid Rust
+    invariants:
+    - Lambda expressions transpile to closures
+    - Function calls preserve argument order and count
+    - Pipeline operator desugars to nested function calls
+    preconditions:
+    - source parses successfully
+    - all referenced functions are defined
+    lean_theorem: Theorems.Transpile_Roundtrip
+  block_scoping:
+    formula: scope(block) = parent_scope ∪ local_bindings(block)
+    domain: block ∈ AST Block node
+    codomain: Scope
+    invariants:
+    - Variables shadow outer scope correctly
+    - Block returns last expression value
+    - transpile_block preserves scope semantics
+    preconditions:
+    - block is well-formed AST node
+    lean_theorem: Theorems.Block_Scoping
+proof_obligations:
+- type: invariant
+  property: Parse determinism
+  formal: '∀ s: parse(s) = parse(s)'
+  applies_to: parse_correctness
+- type: invariant
+  property: Argument order preservation
+  formal: '∀ call(f, args): transpile_call(f, args).arg_order = args.order'
+  applies_to: transpile_roundtrip
+- type: invariant
+  property: Block return value
+  formal: '∀ block: transpile_block(block).last_expr = block.last_expr'
+  applies_to: block_scoping
+enforcement:
+  parse_determinism:
+    description: Parsing same source always produces identical AST
+    check: contract_tests::FALSIFY-RCH-001
+    severity: ERROR
+  argument_order:
+    description: Function call arguments maintain source order
+    check: contract_tests::FALSIFY-RCH-002
+    severity: ERROR
+  block_return:
+    description: Block transpilation preserves last-expression return
+    check: contract_tests::FALSIFY-RCH-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RCH-001
+  rule: Parse determinism
+  prediction: parse(s) called twice produces byte-identical AST
+  test: proptest with 500 random valid ruchy programs, parse twice, compare
+  if_fails: Parser has internal mutable state leaking between calls
+- id: FALSIFY-RCH-002
+  rule: Argument order preservation
+  prediction: transpile_call(f, [a, b, c]) produces f(a, b, c) not f(c, b, a)
+  test: construct calls with 1-10 args, verify order in output
+  if_fails: Argument list reversed or sorted during transpilation
+- id: FALSIFY-RCH-003
+  rule: Block return value
+  prediction: transpile_block with N statements returns Nth expression
+  test: create blocks with 1-5 statements, verify last expression is return value
+  if_fails: Block transpiler drops or reorders final expression
+kani_harnesses:
+- id: KANI-RCH-001
+  obligation: Parse determinism
+  property: parse is a pure function
+  bound: 16
+  strategy: exhaustive
+  harness: verify_parse_determinism
+- id: KANI-RCH-002
+  obligation: Argument order preservation
+  property: call arguments maintain order
+  bound: 8
+  strategy: exhaustive
+  harness: verify_argument_order
+- id: KANI-RCH-003
+  obligation: Block return value
+  property: block returns last expression
+  bound: 8
+  strategy: exhaustive
+  harness: verify_block_return_value
+qa_gate:
+  id: F-RCH-001
+  name: Parser Soundness Contract
+  description: Parse correctness, transpile roundtrip, and block scoping quality gate
+  checks:
+  - parse_determinism
+  - argument_order
+  - block_return
+  pass_criteria: All 3 falsification tests pass
+  falsification: Reverse argument list in transpile_call

@@ -1,0 +1,93 @@
+contract: C-D2HSTG-001
+title: Pre-allocated D2H Staging Buffer for Gradient Accumulation Downloads
+kaizen: KAIZEN-059
+parent: C-GPUTRAIN-002
+status: implemented
+date: 2026-03-04
+baseline:
+  workspace_downloads_per_microbatch: 36
+  workspace_alloc_per_call_bytes: 27262976
+  nonblock_alloc_per_call_bytes: 1555824640
+  total_heap_churn_per_step_bytes: 16106127360
+  allocations_per_step: 148
+target:
+  workspace_downloads_per_microbatch: 36
+  workspace_alloc_per_call_bytes: 0
+  nonblock_alloc_per_call_bytes: 0
+  total_heap_churn_per_step_bytes: 0
+  allocations_per_step: 0
+  staging_buffer_bytes: 1555824640
+api:
+  d2h_staging_field: 'New `d2h_staging: Vec<f32>` field on CudaTransformerTrainer.
+
+    Allocated once in constructor when accumulation_steps > 1.
+
+    Sized to max(hidden*intermediate, vocab*hidden) — covers all D2H needs.
+
+    Empty Vec when accumulation is disabled (zero cost).
+
+    '
+  download_workspace_to_accum: 'Added `host: &mut [f32]` parameter. Callers pass &mut self.d2h_staging.
+
+    No longer allocates vec![0.0; max_len] per call.
+
+    copy_to_host_at fully overwrites the slice — no zeroing needed.
+
+    '
+  download_nonblock_grads_to_accum: 'Added `host: &mut [f32]` parameter. Callers pass &mut self.d2h_staging.
+
+    No longer allocates vec![0.0; max_len] per call.
+
+    '
+safety:
+  buffer_size: 'd2h_staging is sized to max(h*intermediate, vocab*hidden) at construction.
+
+    This covers the largest possible D2H download (LM head gradient).
+
+    All workspace buffers are strictly smaller (h*i < vocab*h for any real model).
+
+    '
+  no_zeroing_needed: 'copy_to_host_at fully overwrites the destination slice.
+
+    The pre-existing buffer contents are irrelevant — they''re replaced before use.
+
+    The accumulate loop only reads from the freshly-written slice region.
+
+    '
+  split_borrows: 'd2h_staging is a separate struct field from grad_accum, cuda_grad_workspace,
+
+    lm_head_grad_gpu, and gpu_training. Rust split-borrow rules allow simultaneous
+
+    mutable access to different fields without &mut self conflicts.
+
+    '
+  conditional_allocation: 'When accumulation_steps == 1, d2h_staging is Vec::new() (0 bytes).
+
+    download_workspace_to_accum and download_nonblock_grads_to_accum are never
+
+    called in the non-accumulating path, so the empty buffer is safe.
+
+    '
+preconditions:
+- CudaTransformerTrainer initialized (d2h_staging allocated)
+- accumulation_steps > 1 (otherwise downloads never called)
+- stream.synchronize() called before D2H copy (ALB-065 / Rule 6)
+postconditions:
+- Gradient accumulation behavior identical — same values, same D2H copies
+- Zero per-call heap allocations in both download functions
+- One-time staging buffer allocation at construction only
+invariants:
+- d2h_staging.len() >= max workspace buffer length
+- d2h_staging.len() >= vocab_size * hidden_size
+- Non-accumulating path unchanged (d2h_staging never accessed)
+- Follows KAIZEN-056 pattern (h2d_staging for H2D, d2h_staging for D2H)
+files:
+- path: entrenar/src/train/transformer_trainer/cuda_trainer.rs
+  change: Added d2h_staging field, allocated in constructor, passed to both download functions
+qa_gate:
+  id: F-DHSB-001
+  name: d2h-staging-buffer-v1 Contract
+  description: Quality gate for d2h-staging-buffer-v1
+  checks:
+  - validation
+  - falsification

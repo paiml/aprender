@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-133",
+  "prompt": "Implement pv coverage --enforcement: penetration × quality × detection",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-29T09:24:55.585330263Z"
+}

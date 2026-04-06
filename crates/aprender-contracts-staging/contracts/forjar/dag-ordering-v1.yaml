@@ -1,0 +1,105 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-24'
+  author: PAIML Engineering
+  description: DAG topological ordering — Kahn's algorithm with deterministic tie-breaking
+  references:
+  - Kahn (1962) Topological sorting of large networks
+  - Cormen et al. (2009) Introduction to Algorithms, Chapter 22
+equations:
+  topological_sort:
+    formula: order = KahnSort(G) where G = (V, E) from resource depends_on edges
+    domain: G = DAG (directed acyclic graph) of resource dependencies
+    codomain: Vec<String> in topological order, or Err if cycle
+    invariants:
+    - '∀ edge (u, v) ∈ E: index(u) < index(v) in output'
+    - 'Cycle detection: returns Err if DAG has cycle'
+    - 'Deterministic: alphabetical tie-breaking for zero-indegree nodes'
+    - '|output| = |V| when no cycle'
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Topological_Sort
+  kahn_sort:
+    formula: BFS with priority queue (alphabetical) for zero-indegree nodes
+    domain: 'in_degree: HashMap<String, usize>, adjacency: HashMap<String, Vec<String>>'
+    codomain: Vec<String>
+    invariants:
+    - Output contains only nodes from input
+    - Tie-breaking is alphabetical (deterministic)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Kahn_Sort
+proof_obligations:
+- type: ordering
+  property: Topological ordering respected
+  formal: '∀ (u, v) ∈ E: position(u, order) < position(v, order)'
+  applies_to: all
+- type: soundness
+  property: Cycle detection is sound
+  formal: ∃ cycle ⟹ build_execution_order returns Err
+  applies_to: all
+- type: invariant
+  property: Deterministic output
+  formal: '∀ G: KahnSort(G) = KahnSort(G)'
+  applies_to: all
+enforcement:
+  ordering:
+    description: Dependencies must appear before dependents in output
+    check: contract_tests::FALSIFY-DAG-001
+    severity: ERROR
+  cycle_detection:
+    description: Cycles must be detected and reported
+    check: contract_tests::FALSIFY-DAG-002
+    severity: ERROR
+  determinism:
+    description: Same graph must always produce same order
+    check: contract_tests::FALSIFY-DAG-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-DAG-001
+  rule: Ordering
+  prediction: For any DAG, every dependency appears before its dependent in output
+  test: proptest with random DAGs, verify ordering invariant
+  if_fails: Bug in Kahn's algorithm or adjacency construction
+- id: FALSIFY-DAG-002
+  rule: Cycle detection
+  prediction: Any graph with a cycle returns Err containing 'cycle'
+  test: proptest with random cyclic graphs
+  if_fails: Cycle detection incomplete
+- id: FALSIFY-DAG-003
+  rule: Determinism
+  prediction: build_execution_order(G) = build_execution_order(G) for any G
+  test: proptest with random DAGs, call twice and compare
+  if_fails: Non-deterministic iteration order in HashMap
+kani_harnesses:
+- id: KANI-DAG-001
+  obligation: Topological ordering
+  property: All edges respect ordering
+  bound: 6
+  strategy: exhaustive
+  harness: verify_topological_ordering
+- id: KANI-DAG_OR-002
+  obligation: Topological ordering respected
+  property: Topological ordering respected
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DAG_OR-003
+  obligation: Cycle detection is sound
+  property: Cycle detection is sound
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DAG_OR-004
+  obligation: Deterministic output
+  property: Deterministic output
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DAG-001
+  name: DAG Ordering Contract
+  description: Topological sort correctness quality gate
+  checks:
+  - ordering
+  - cycle_detection
+  - determinism
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove alphabetical sort from zero-degree collection

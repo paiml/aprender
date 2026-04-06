@@ -1,0 +1,278 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Softmax kernel — numerically stable exponential normalization
+  references:
+  - Bridle (1990) Training Stochastic Model Recognition Algorithms as Networks
+  - Milakov & Gimelshein (2018) Online normalizer calculation for softmax
+equations:
+  softmax:
+    formula: σ(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))
+    domain: x ∈ ℝ^n, n ≥ 1
+    codomain: σ(x) ∈ (0,1)^n
+    invariants:
+    - Σ σ(x)_i = 1.0 (normalization)
+    - σ(x)_i > 0 for all i (strict positivity)
+    - argmax(σ(x)) = argmax(x) (order preservation)
+    preconditions:
+    - x.len() > 0
+    - x.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Softmax
+    float_tolerance: 1.0e-7
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| *v >= 0.0)
+    - (result.iter().sum::<f32>() - 1.0).abs() < 1e-5
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output.iter().all(|v| v > 0.0 && v < 1.0)"
+      - "output.iter().sum::<f32>() ≈ 1.0"
+proof_obligations:
+- type: precondition
+  property: Input vector is finite and non-empty
+  formal: '∀i: ¬isNaN(x_i) ∧ ¬isInf(x_i) ∧ len(x) > 0'
+  applies_to: all
+- type: postcondition
+  property: Output is a valid probability distribution
+  formal: 'len(σ(x)) = len(x) ∧ ∀i: 0 < σ(x)_i < 1 ∧ |Σ σ(x)_i - 1| < ε'
+  tolerance: 1.0e-06
+  requires: SM-PRE-001
+  applies_to: all
+- type: frame
+  property: Only output buffer is modified; input vector unchanged
+  formal: modifies(output) ∧ preserves(input)
+  applies_to: all
+- type: invariant
+  property: Output sums to 1
+  formal: '|Σ σ(x)_i - 1.0| < ε'
+  tolerance: 1.0e-06
+  applies_to: all
+  lean:
+    theorem: Softmax.partition_of_unity
+    module: ProvableContracts.Softmax
+    status: proved
+    depends_on:
+    - Real.exp_pos
+    - Finset.sum_div_distrib
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    - Mathlib.Algebra.BigOperators.Group.Finset
+    notes: Proof over reals; f32 gap addressed by error-bound lemma
+- type: invariant
+  property: All outputs strictly positive
+  formal: σ(x)_i > 0 for all i
+  applies_to: all
+  lean:
+    theorem: Softmax.softmax_pos
+    module: ProvableContracts.Softmax
+    status: proved
+    depends_on:
+    - Real.exp_pos
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: Follows from exp_pos and positivity of denominator
+- type: bound
+  property: Each output bounded in (0,1)
+  formal: 0 < σ(x)_i < 1 for all i
+  applies_to: all
+  lean:
+    theorem: Softmax.softmax_bounded
+    module: ProvableContracts.Softmax
+    status: proved
+    depends_on:
+    - Softmax.softmax_pos
+    - Softmax.partition_of_unity
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: Upper bound from partition-of-unity; lower bound from positivity
+- type: monotonicity
+  property: Order preservation
+  formal: x_i > x_j ⟹ σ(x)_i > σ(x)_j
+  applies_to: all
+  lean:
+    theorem: Softmax.monotone
+    module: ProvableContracts.Softmax
+    status: proved
+    depends_on:
+    - Real.exp_strictMono
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: Follows from strict monotonicity of exp
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: invariant
+  property: Translation invariance
+  formal: σ(x + c·1) = σ(x) for any scalar c
+  applies_to: all
+  lean:
+    theorem: Softmax.shift_invariance
+    module: ProvableContracts.Softmax
+    status: proved
+    depends_on: []
+    mathlib_imports:
+    - Mathlib.Analysis.SpecialFunctions.ExpDeriv
+    notes: Key for numerical stability; exp(x-c)/Σexp(x-c) = exp(x)/Σexp(x)
+verification_summary:
+  total_obligations: 9
+  l2_property_tested: 9
+  l3_kani_proved: 3
+  l4_lean_proved: 5
+  l4_sorry_count: 0
+  l4_not_applicable: 4
+kernel_structure:
+  phases:
+  - name: find_max
+    description: Compute max(x) for numerical stability
+    invariant: max >= x_i for all i
+  - name: exp_subtract
+    description: Compute exp(x_i - max) for each element
+    invariant: result_i ∈ (0, 1] for all i
+  - name: sum_exp
+    description: Compute Σ exp(x_i - max)
+    invariant: sum > 0
+  - name: normalize
+    description: Divide each exp by sum
+    invariant: output_i = exp_i / sum
+simd_dispatch:
+  softmax:
+    scalar: softmax_scalar
+    avx2: softmax_avx2
+    ptx: softmax_ptx
+enforcement:
+  normalization:
+    description: Output must sum to 1.0
+    check: contract_tests::FALSIFY-SM-001
+    severity: ERROR
+  positivity:
+    description: All outputs must be positive
+    check: contract_tests::FALSIFY-SM-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SM-001
+  rule: Normalization
+  prediction: sum(softmax(x)) ≈ 1.0 for random x ∈ [-1000, 1000]^n
+  test: proptest with 10000 random vectors, dim 1..128
+  if_fails: Missing or incorrect max-subtraction trick
+- id: FALSIFY-SM-002
+  rule: Positivity
+  prediction: softmax(x)_i > 0 for all i
+  test: proptest with extreme values near f32::MIN/MAX
+  if_fails: exp underflow not handled
+- id: FALSIFY-SM-003
+  rule: Order preservation
+  prediction: argmax(softmax(x)) = argmax(x)
+  test: proptest with distinct-element vectors
+  if_fails: Numerical instability in subtraction
+- id: FALSIFY-SM-004
+  rule: SIMD equivalence
+  prediction: '|softmax_avx2(x) - softmax_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD reduction order differs from scalar
+- id: FALSIFY-SM-005
+  rule: Boundary - single element
+  prediction: softmax([x]) = [1.0] for any x
+  test: proptest with single-element vectors
+  if_fails: Edge case in loop bounds
+- id: FALSIFY-SM-006
+  rule: Boundary - identical elements
+  prediction: softmax([c,c,...,c]) = [1/n, 1/n, ..., 1/n]
+  test: proptest with constant vectors
+  if_fails: Rounding error accumulation
+- id: FALSIFY-SM-007
+  rule: Precondition violation
+  prediction: softmax([]) panics or returns Err; softmax([NaN]) returns NaN
+  test: proptest with empty vectors and NaN/Inf inputs
+  if_fails: Missing input validation — kernel silently produces garbage
+- id: FALSIFY-SM-008
+  rule: Postcondition completeness
+  prediction: len(softmax(x)) = len(x) for all valid inputs
+  test: 'proptest: verify output length equals input length'
+  if_fails: Output buffer allocation mismatch
+- id: FALSIFY-SM-009
+  rule: Frame condition
+  prediction: Input vector byte-identical before and after softmax call
+  test: 'proptest: clone input, call softmax, assert clone == original'
+  if_fails: Kernel corrupts input buffer (in-place mutation bug)
+kani_harnesses:
+- id: KANI-SM-001
+  obligation: SM-INV-001
+  property: Softmax sums to 1.0 for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_softmax_normalization
+- id: KANI-SM-002
+  obligation: SM-INV-002
+  property: All outputs positive for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_softmax_positivity
+- id: KANI-SM-003
+  obligation: SM-BND-001
+  property: Outputs bounded in (0,1)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_softmax_bounded
+- id: KANI-SOFTMA-004
+  obligation: Input vector is finite and non-empty
+  property: Input vector is finite and non-empty
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-005
+  obligation: Output is a valid probability distribution
+  property: Output is a valid probability distribution
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-006
+  obligation: Only output buffer is modified; input vector unchanged
+  property: Only output buffer is modified; input vector unchanged
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-007
+  obligation: Output sums to 1
+  property: Output sums to 1
+  bound: 8
+  strategy: stub_float
+- id: KANI-SOFTMA-008
+  obligation: All outputs strictly positive
+  property: All outputs strictly positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-009
+  obligation: Each output bounded in (0,1)
+  property: Each output bounded in (0,1)
+  bound: 8
+  strategy: stub_float
+- id: KANI-SOFTMA-010
+  obligation: Order preservation
+  property: Order preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-011
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SOFTMA-012
+  obligation: Translation invariance
+  property: Translation invariance
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SM-001
+  name: Softmax Contract
+  description: Numerically stable softmax kernel quality gate
+  checks:
+  - normalization
+  - positivity
+  - order_preservation
+  - simd_equivalence
+  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
+  falsification: Introduce off-by-one in max reduction loop

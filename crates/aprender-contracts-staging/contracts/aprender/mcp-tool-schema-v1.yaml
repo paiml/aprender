@@ -1,0 +1,280 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: MCP tool registration, schema fidelity, session lifecycle, error mapping
+  registry: true
+  references:
+  - 'Model Context Protocol Specification v2024-11-05 (Anthropic)'
+  - 'JSON-RPC 2.0 Specification (ECMA-404)'
+  - 'pmcp crate — MCP protocol SDK (batuta stack)'
+  - 'apr-cli/src/tool_commands.rs — MCP tool surface'
+  depends_on:
+  - cli-dispatch-v1
+mcp_config:
+  protocol_version: '2024-11-05'
+  transport:
+  - stdio
+  - sse
+  session_lifecycle:
+  - initialize
+  - initialized
+  - tools/list
+  - tools/call
+  - shutdown
+  error_codes:
+    parse_error: -32700
+    invalid_request: -32600
+    method_not_found: -32601
+    invalid_params: -32602
+    internal_error: -32603
+equations:
+  tool_schema_fidelity:
+    formula: |
+      ∀ tool ∈ registered_tools():
+        schema(tool) = {
+          name: tool.name,
+          description: tool.description,
+          inputSchema: JSONSchema(tool.handler_params)
+        }
+        ∧ validate(request.params, schema(tool).inputSchema) = Ok(_)
+          → handler(tool, request.params) ≠ Err(InvalidParams)
+    domain: (tool ∈ RegisteredTools, request ∈ ToolCallRequest)
+    codomain: ToolCallResponse
+    invariants:
+    - inputSchema matches the actual parameter types of the handler function
+    - Required fields in schema are required in handler (no silent defaults for required params)
+    - Optional fields in schema are Option<T> in handler
+    - Schema type constraints (string, number, array) match Rust types
+    - tools/list returns identical schema on every call within a session
+    preconditions:
+    - Session is in initialized state
+    - tool.name is a non-empty string
+    lean_theorem: Theorems.Tool_Schema_Fidelity
+  session_state_machine:
+    formula: |
+      S0 = Uninitialized
+      transition(S0, initialize) = S1 (Initializing)
+      transition(S1, initialized) = S2 (Ready)
+      transition(S2, tools/list) = S2
+      transition(S2, tools/call) = S2
+      transition(S2, shutdown) = S3 (Terminated)
+      transition(S_any, invalid_for_state) = Err(InvalidRequest)
+    domain: (state ∈ {S0, S1, S2, S3}, method ∈ MCPMethods)
+    codomain: (new_state ∈ {S0, S1, S2, S3}) | Error
+    invariants:
+    - tools/call before initialize returns InvalidRequest (-32600)
+    - tools/list before initialized returns InvalidRequest (-32600)
+    - initialize after initialized is idempotent (returns same capabilities)
+    - shutdown is terminal — no methods accepted after
+    - Session state is monotonic (S0 → S1 → S2 → S3, never backwards)
+    preconditions:
+    - Transport connection is established
+    lean_theorem: Theorems.Session_State_Machine
+  error_mapping:
+    formula: |
+      mcp_error(e) = {
+        code: json_rpc_code(e),
+        message: e.display(),
+        data: optional_context(e)
+      }
+      where json_rpc_code: HandlerError → i32 ∈ {-32700..-32600} ∪ {-32099..-32000}
+    domain: HandlerError (any error from tool handler)
+    codomain: JSON-RPC Error object
+    invariants:
+    - All errors use standard JSON-RPC error codes (-327xx range)
+    - Application errors use server error range (-320xx)
+    - Error message preserves original context (no lossy downcast)
+    - Error data field is optional JSON (not required)
+    - Parse errors (-32700) only for malformed JSON-RPC envelope
+    preconditions:
+    - Error is a well-formed HandlerError
+    lean_theorem: Theorems.Error_Mapping
+  idempotency_classification:
+    formula: |
+      ∀ tool ∈ registered_tools():
+        tool.idempotent = true →
+          handler(tool, params) = handler(tool, params)  // same result
+        tool.idempotent = false →
+          handler(tool, params) may differ on repeat  // acknowledged side effect
+    domain: (tool ∈ RegisteredTools, params ∈ ValidParams)
+    codomain: ToolCallResponse (idempotent tools return identical results)
+    invariants:
+    - Read-only tools (list, inspect, query) are classified idempotent
+    - Mutation tools (run, generate, create) are classified non-idempotent
+    - Idempotent tools produce identical results for identical params within a session
+    - Classification is declared in tool metadata, not inferred
+    preconditions:
+    - Tool is registered
+    - Params are valid per inputSchema
+    lean_theorem: Theorems.Idempotency_Classification
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate JSON-RPC envelope, check session state, parse method
+  - name: execute
+    description: Dispatch to tool handler, validate params against schema
+  - name: verify_output
+    description: Map errors to JSON-RPC codes, verify response envelope
+
+proof_obligations:
+- type: invariant
+  property: Schema matches handler parameters
+  formal: '∀ tool, params: validate(params, tool.inputSchema).is_ok() → handler(tool, params) ≠ Err(InvalidParams)'
+  applies_to: tool_schema_fidelity
+- type: invariant
+  property: Session state machine is acyclic
+  formal: '∀ transitions: state_sequence is monotonically increasing (S0 ≤ S1 ≤ S2 ≤ S3)'
+  applies_to: session_state_machine
+- type: invariant
+  property: Error codes are valid JSON-RPC
+  formal: '∀ err: json_rpc_code(err) ∈ {-32700, -32601, -32602, -32603} ∪ [-32099..-32000]'
+  tolerance: 1e-6
+  applies_to: error_mapping
+- type: invariant
+  property: Idempotent tools are deterministic
+  formal: '∀ tool where tool.idempotent: handler(tool, p) = handler(tool, p)'
+  applies_to: idempotency_classification
+falsification_tests:
+- id: FALSIFY-MCP-001
+  rule: Schema matches handler parameters
+  prediction: tools/list schema matches actual handler parameter types
+  test: |
+    #[test]
+    fn falsify_mcp_001_schema_matches_handler() {
+        let tools = server.handle_tools_list();
+        for tool in &tools {
+            let schema = &tool.input_schema;
+            // Verify each required property has a matching handler param
+            if let Some(required) = schema.get("required") {
+                for param_name in required.as_array().unwrap() {
+                    let name = param_name.as_str().unwrap();
+                    assert!(schema["properties"].get(name).is_some(),
+                        "Required param '{}' in tool '{}' not in schema properties",
+                        name, tool.name);
+                }
+            }
+            // Verify valid params don't trigger InvalidParams
+            let test_params = generate_valid_params(&schema);
+            let result = server.handle_tools_call(&tool.name, test_params);
+            assert!(!matches!(result, Err(McpError::InvalidParams(_))),
+                "Valid params rejected by tool '{}'", tool.name);
+        }
+    }
+  if_fails: Schema drift — inputSchema does not match handler function signature
+- id: FALSIFY-MCP-002
+  rule: Session state machine is acyclic
+  prediction: tools/call before initialize returns error code -32600
+  test: |
+    #[test]
+    fn falsify_mcp_002_call_before_init() {
+        let mut session = McpSession::new();
+        // Do NOT call initialize
+        let result = session.handle_request(json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "some_tool", "arguments": {}}
+        }));
+        let err = result.unwrap();
+        assert_eq!(err["error"]["code"], -32600,
+            "tools/call before init should return InvalidRequest (-32600)");
+    }
+  if_fails: Session state not enforced — tools/call succeeds without initialization
+- id: FALSIFY-MCP-003
+  rule: Error codes are valid JSON-RPC
+  prediction: Handler errors map to valid JSON-RPC error codes
+  test: |
+    #[test]
+    fn falsify_mcp_003_error_codes_valid() {
+        let valid_codes: HashSet<i32> = [
+            -32700, -32600, -32601, -32602, -32603,
+        ].iter().copied().collect();
+        let server_range = -32099..=-32000;
+
+        // Trigger each known error type
+        let errors = vec![
+            trigger_parse_error(),
+            trigger_invalid_request(),
+            trigger_method_not_found(),
+            trigger_invalid_params(),
+            trigger_internal_error(),
+        ];
+        for (i, err) in errors.iter().enumerate() {
+            let code = err["error"]["code"].as_i64().unwrap() as i32;
+            assert!(valid_codes.contains(&code) || server_range.contains(&code),
+                "Error {} has invalid JSON-RPC code: {}", i, code);
+        }
+    }
+  if_fails: Custom error codes outside JSON-RPC specification range
+- id: FALSIFY-MCP-004
+  rule: Idempotent tools are deterministic
+  prediction: Read-only tools return identical results on repeated calls
+  test: |
+    #[test]
+    fn falsify_mcp_004_idempotent_tools_deterministic() {
+        let mut session = create_initialized_session();
+        let read_tools = vec!["list_models", "get_model_info", "health"];
+        for tool_name in &read_tools {
+            let params = json!({});
+            let result1 = session.call_tool(tool_name, params.clone());
+            let result2 = session.call_tool(tool_name, params.clone());
+            assert_eq!(result1, result2,
+                "Idempotent tool '{}' returned different results", tool_name);
+        }
+    }
+  if_fails: Read-only tool has hidden state mutation causing non-deterministic results
+kani_harnesses:
+- id: KANI-MCP-001
+  obligation: Session state machine is acyclic
+  property: State transitions are monotonically increasing
+  bound: 4
+  strategy: exhaustive
+  harness: verify_session_state_monotonic
+- id: KANI-MCP-002
+  obligation: Error codes are valid JSON-RPC
+  property: All error codes in specification range
+  bound: 8
+  strategy: exhaustive
+  harness: verify_error_code_range
+- id: KANI-MCP-003
+  obligation: Schema matches handler parameters
+  property: Tool schema required fields match handler params
+  bound: 16
+  strategy: exhaustive
+  harness: verify_schema_handler_parity
+- id: KANI-MCP-004
+  obligation: Idempotent tools are deterministic
+  property: Read-only tools produce same output for same input
+  bound: 4
+  strategy: exhaustive
+  harness: verify_idempotent_tools
+qa_gate:
+  id: F-MCP-GATE
+  name: MCP Tool Schema Contract
+  description: MCP protocol compliance and tool schema quality gate
+  checks:
+  - tool_schema_fidelity
+  - session_state_machine
+  - error_mapping
+  - idempotency_classification
+  pass_criteria: All 4 falsification tests pass
+  falsification: Add a handler param not reflected in inputSchema to break schema fidelity
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — JSON-RPC envelope validation runs before
+    method dispatch. Malformed requests are rejected with -32700 before any tool
+    handler code executes. Session state violations halt with -32600 immediately.
+  poka_yoke: >
+    "Mistake-proofing" — tool registration macro generates inputSchema from
+    handler function signature. Schema and handler cannot drift because they
+    share the same source of truth (the Rust type system).
+  genchi_genbutsu: >
+    "Go and see" — falsification tests create real MCP sessions over stdio
+    transport, sending actual JSON-RPC messages and verifying wire-format
+    responses. No mocked transport layers.
+  kaizen: >
+    "Continuous improvement" — new tools registered via macro automatically
+    appear in tools/list with correct schema. Adding a tool with incorrect
+    schema is a compile error (type mismatch between handler params and schema).

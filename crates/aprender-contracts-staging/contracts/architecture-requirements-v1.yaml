@@ -1,0 +1,651 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Per-architecture tensor weight requirements — source of truth for required/optional
+    roles
+  references:
+  - UCBD Spec v1.0.0 Section 7.3 — Architecture Requirements (GH-279)
+  - realizar/src/arch_requirements.rs — Rust implementation (generated from this contract)
+  - realizar/src/gguf/config.rs — ArchConstraints::from_architecture()
+  - Vaswani et al. (2017) Attention Is All You Need
+  - 'Touvron et al. (2023) Llama 2: Open Foundation and Fine-Tuned Chat Models'
+  - Yang et al. (2024) Qwen2 Technical Report
+  - Qwen Team (2025) Qwen3 Technical Report — QK norm
+  - Jiang et al. (2023) Mistral 7B
+  - Abdin et al. (2024) Phi-3 Technical Report
+  - 'Gemma Team (2024) Gemma: Open Models Based on Gemini Research'
+  - Radford et al. (2023) Robust Speech Recognition via Large-Scale Weak Supervision
+    (Whisper)
+weight_roles:
+  attn_norm:
+    description: Pre-attention layer normalization gamma
+    field_name: attn_norm
+    category: normalization
+  ffn_norm:
+    description: Pre-FFN layer normalization gamma
+    field_name: ffn_norm
+    category: normalization
+  attn_q_norm:
+    description: Per-head Q RMSNorm gamma (Qwen3)
+    field_name: attn_q_norm
+    category: qk_normalization
+  attn_k_norm:
+    description: Per-head K RMSNorm gamma (Qwen3)
+    field_name: attn_k_norm
+    category: qk_normalization
+  attn_q_bias:
+    description: Q projection bias (Qwen2, Phi)
+    field_name: attn_q_bias
+    category: attention_bias
+  attn_k_bias:
+    description: K projection bias (Qwen2, Phi)
+    field_name: attn_k_bias
+    category: attention_bias
+  attn_v_bias:
+    description: V projection bias (Qwen2, Phi)
+    field_name: attn_v_bias
+    category: attention_bias
+  q_proj:
+    description: Query projection weights
+    field_name: attn_q (q_proj)
+    category: attention_projection
+  k_proj:
+    description: Key projection weights
+    field_name: attn_k (k_proj)
+    category: attention_projection
+  v_proj:
+    description: Value projection weights
+    field_name: attn_v (v_proj)
+    category: attention_projection
+  o_proj:
+    description: Output projection weights
+    field_name: attn_output (o_proj)
+    category: attention_projection
+  gate_proj:
+    description: FFN gate projection (SwiGLU/GatedMLP)
+    field_name: ffn_gate
+    category: ffn_projection
+  up_proj:
+    description: FFN up projection
+    field_name: ffn_up
+    category: ffn_projection
+  down_proj:
+    description: FFN down projection
+    field_name: ffn_down
+    category: ffn_projection
+role_sets:
+  base:
+    description: Required by ALL transformer architectures (2 norms + 4 attn proj
+      + 3 ffn proj)
+    count: 9
+    roles:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  qk_norm:
+    description: Per-head QK normalization weights
+    count: 2
+    roles:
+    - attn_q_norm
+    - attn_k_norm
+  attention_bias:
+    description: Attention QKV bias terms
+    count: 3
+    roles:
+    - attn_q_bias
+    - attn_k_bias
+    - attn_v_bias
+constraint_matrix:
+  no_qk_norm_no_bias:
+    has_qk_norm: false
+    has_bias: false
+    required_sets:
+    - base
+    total_required: 9
+  qk_norm_no_bias:
+    has_qk_norm: true
+    has_bias: false
+    required_sets:
+    - base
+    - qk_norm
+    total_required: 11
+  no_qk_norm_bias:
+    has_qk_norm: false
+    has_bias: true
+    required_sets:
+    - base
+    - attention_bias
+    total_required: 12
+  qk_norm_and_bias:
+    has_qk_norm: true
+    has_bias: true
+    required_sets:
+    - base
+    - qk_norm
+    - attention_bias
+    total_required: 14
+architectures:
+  llama:
+    aliases:
+    - llama3
+    constraint_cell: no_qk_norm_no_bias
+    has_qk_norm: false
+    has_bias: false
+    tied_embeddings: false
+    norm_type: rmsnorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-05
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias: []
+    required_qk_norm: []
+    optional: []
+  qwen2:
+    aliases:
+    - qwen2.5
+    - qwen
+    constraint_cell: no_qk_norm_bias
+    has_qk_norm: false
+    has_bias: true
+    tied_embeddings: false
+    norm_type: rmsnorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-06
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias:
+    - attn_q_bias
+    - attn_k_bias
+    - attn_v_bias
+    required_qk_norm: []
+    optional: []
+  qwen3:
+    aliases: []
+    constraint_cell: qk_norm_no_bias
+    has_qk_norm: true
+    has_bias: false
+    tied_embeddings: false
+    norm_type: rmsnorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-06
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias: []
+    required_qk_norm:
+    - attn_q_norm
+    - attn_k_norm
+    optional: []
+  phi:
+    aliases:
+    - phi3
+    constraint_cell: no_qk_norm_bias
+    has_qk_norm: false
+    has_bias: true
+    tied_embeddings: false
+    norm_type: layernorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-05
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias:
+    - attn_q_bias
+    - attn_k_bias
+    - attn_v_bias
+    required_qk_norm: []
+    optional: []
+  mistral:
+    aliases: []
+    constraint_cell: no_qk_norm_no_bias
+    has_qk_norm: false
+    has_bias: false
+    tied_embeddings: false
+    norm_type: rmsnorm
+    activation: silu
+    positional_encoding: rope
+    mlp_type: swiglu
+    default_eps: 1.0e-05
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias: []
+    required_qk_norm: []
+    optional: []
+  gemma:
+    aliases:
+    - gemma2
+    constraint_cell: no_qk_norm_no_bias
+    has_qk_norm: false
+    has_bias: false
+    tied_embeddings: true
+    norm_type: rmsnorm
+    activation: gelu
+    positional_encoding: rope
+    mlp_type: gated_mlp
+    default_eps: 1.0e-06
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias: []
+    required_qk_norm: []
+    optional: []
+  whisper:
+    aliases: []
+    constraint_cell: no_qk_norm_bias
+    has_qk_norm: false
+    has_bias: true
+    tied_embeddings: false
+    norm_type: layernorm
+    activation: gelu
+    positional_encoding: absolute
+    mlp_type: gelu_mlp
+    default_eps: 1.0e-05
+    description: 'Whisper is an encoder-decoder architecture. Its per-layer weight
+      roles follow the standard bias pattern (has_bias=true). The encoder-decoder
+      split (encoder_attn, decoder_attn, cross_attn) is handled at the model-family
+      level (contracts/aprender/model-families/whisper.yaml), not at this contract
+      level. This contract governs the per-layer weight role completeness check.
+
+      '
+    required_weights:
+    - attn_norm
+    - ffn_norm
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+    required_bias:
+    - attn_q_bias
+    - attn_k_bias
+    - attn_v_bias
+    required_qk_norm: []
+    optional: []
+equations:
+  weight_completeness:
+    formula: 'required(arch) = base_roles ∪ (qk_norm_roles if has_qk_norm) ∪ (bias_roles
+      if has_bias); complete(model, arch) = ∀ role ∈ required(arch): role.ptr ≠ 0
+      ∧ role.len > 0
+
+      '
+    domain: arch ∈ {llama, qwen2, qwen3, phi, mistral, gemma, whisper, ...}
+    codomain: complete ∈ {true, false}
+    invariants:
+    - base_roles ⊆ required(arch) for all arch (base is always required)
+    - '|required(arch)| ∈ {9, 11, 12, 14} (only four possible cardinalities)'
+    - complete(model, arch) = true => model produces correct output
+    - complete(model, arch) = false => model MUST NOT run (Jidoka stop)
+    preconditions:
+    - 'input.len() > 0'
+    - expected_layers > 0
+    lean_theorem: Theorems.Weight_Completeness
+  role_mapping:
+    formula: 'map(role) = field_name in IndexedLayerWeights; ∀ role ∈ required(arch):
+      map(role).ptr ≠ 0 ∧ map(role).len > 0
+
+      '
+    domain: role ∈ WeightRole enum, arch ∈ supported architectures
+    codomain: '(ptr: usize, len: usize) — pointer and byte length in mapped model'
+    invariants:
+    - map is injective (no two roles share a field)
+    - map is total on WeightRole (every role has a field name)
+    - field_name matches IndexedLayerWeights struct field exactly
+    preconditions:
+    - 'input.len() > 0'
+    lean_theorem: Theorems.Role_Mapping
+  constraint_matrix_exhaustiveness:
+    formula: "∀ (qk: bool, bias: bool): ∃! cell ∈ constraint_matrix such that\n  cell.has_qk_norm\
+      \ = qk ∧ cell.has_bias = bias\n"
+    domain: (has_qk_norm, has_bias) ∈ {true, false}^2
+    codomain: Exactly one constraint cell
+    invariants:
+    - Four cells cover all four (bool, bool) combinations
+    - No two cells share the same (has_qk_norm, has_bias) pair
+    - Adding a new boolean axis requires 2^(n+1) cells
+    preconditions:
+    - 'input.len() > 0'
+    - constraints.len() > 0
+    lean_theorem: Theorems.Constraint_Matrix_Exhaustiveness
+proof_obligations:
+- type: invariant
+  property: Base roles always required
+  formal: '∀ arch: base_roles ⊆ required_roles(arch)'
+  applies_to: all
+- type: invariant
+  property: Constraint matrix exhaustive
+  formal: '∀ (qk, bias) ∈ {true,false}^2: ∃! cell matching (qk, bias)'
+  applies_to: all
+- type: invariant
+  property: Role count correctness
+  formal: '|base| = 9 ∧ |base ∪ qk| = 11 ∧ |base ∪ bias| = 12 ∧ |base ∪ qk ∪ bias|
+    = 14'
+  applies_to: all
+- type: completeness
+  property: Weight completeness implies correct forward pass
+  formal: complete(model, arch) = true => forward(model) produces non-garbage output
+  applies_to: all
+- type: soundness
+  property: Incomplete weights detected before forward pass
+  formal: '∃ role ∈ required(arch): role.len = 0 => error raised before any computation'
+  applies_to: all
+- type: equivalence
+  property: YAML matches Rust implementation
+  formal: '∀ arch: yaml.required(arch) = rust.required_roles(ArchConstraints::from_architecture(arch))'
+  applies_to: all
+- type: monotonicity
+  property: Adding features only adds roles
+  formal: required(arch_with_feature) ⊇ required(arch_without_feature)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ARCH-001
+  rule: YAML-Rust parity
+  prediction: 'For every architecture in this YAML, the set of required roles matches
+    the output of required_roles(ArchConstraints::from_architecture(name)) in realizar/src/arch_requirements.rs
+    exactly.
+
+    '
+  test: 'Deterministic: iterate all architectures, compare YAML required set against
+    Rust required_roles() output. Sets must be identical.
+
+    '
+  if_fails: 'YAML and Rust implementation have diverged. One was updated without the
+    other. Fix BOTH — this YAML is source of truth.
+
+    '
+- id: FALSIFY-ARCH-002
+  rule: Base roles always present
+  prediction: 'For every architecture (including unknown/default), required_roles()
+    contains all 9 base roles.
+
+    '
+  test: 'Proptest with random architecture name strings. Every result must be a superset
+    of base_roles.
+
+    '
+  if_fails: 'An architecture override accidentally removed a base role.
+
+    '
+- id: FALSIFY-ARCH-003
+  rule: Constraint matrix exhaustiveness
+  prediction: 'The four (has_qk_norm, has_bias) combinations {(F,F), (T,F), (F,T),
+    (T,T)} each produce a distinct, non-empty role set.
+
+    '
+  test: 'Deterministic: construct ArchConstraints for each of the 4 boolean pairs,
+    verify required_roles returns distinct sets with correct cardinalities (9, 11,
+    12, 14 respectively).
+
+    '
+  if_fails: 'Match arms in required_roles() overlap or a cell is missing.
+
+    '
+- id: FALSIFY-ARCH-004
+  rule: Role count invariants
+  prediction: '|base| = 9, |base + qk_norm| = 11, |base + bias| = 12, |base + qk_norm
+    + bias| = 14.
+
+    '
+  test: 'Deterministic: count roles for each of the four constraint cells.
+
+    '
+  if_fails: 'A role was added to or removed from a const slice without updating counts.
+
+    '
+- id: FALSIFY-ARCH-005
+  rule: Qwen3 requires QK norm, not bias
+  prediction: 'required_roles(qwen3) contains attn_q_norm and attn_k_norm, but NOT
+    attn_q_bias, attn_k_bias, attn_v_bias.
+
+    '
+  test: 'Deterministic: construct Qwen3 constraints, check role membership.
+
+    '
+  if_fails: 'Qwen3 constraint flags are wrong — this was the root cause of GH-279
+    (GPU garbage from missing QK norm weights).
+
+    '
+- id: FALSIFY-ARCH-006
+  rule: Qwen2 requires bias, not QK norm
+  prediction: 'required_roles(qwen2) contains attn_q_bias, attn_k_bias, attn_v_bias,
+    but NOT attn_q_norm, attn_k_norm.
+
+    '
+  test: 'Deterministic: construct Qwen2 constraints, check role membership.
+
+    '
+  if_fails: 'Qwen2/Qwen3 constraint flags swapped.
+
+    '
+- id: FALSIFY-ARCH-007
+  rule: LLaMA/Mistral require base only
+  prediction: 'required_roles(llama) and required_roles(mistral) each contain exactly
+    9 roles (base only). No bias, no QK norm.
+
+    '
+  test: 'Deterministic: verify role count = 9 and absence of extension roles.
+
+    '
+  if_fails: 'LLaMA or Mistral incorrectly flagged has_bias or has_qk_norm.
+
+    '
+- id: FALSIFY-ARCH-008
+  rule: Incomplete model rejected before forward pass
+  prediction: 'A model missing any single required role for its architecture triggers
+    an error BEFORE any matrix multiplication or attention computation.
+
+    '
+  test: 'For each architecture, for each required role, construct a model with that
+    role zeroed out. Verify the completeness check returns Err.
+
+    '
+  if_fails: 'The completeness gate has a gap — a missing weight silently becomes zero,
+    producing garbage output (the exact GH-279 failure mode).
+
+    '
+- id: FALSIFY-ARCH-009
+  rule: Optional roles do not trigger rejection
+  prediction: 'A model that has all required roles but is missing optional roles passes
+    the completeness check without error.
+
+    '
+  test: 'Construct minimal models with only required roles. Verify completeness check
+    returns Ok.
+
+    '
+  if_fails: 'Optional roles incorrectly classified as required.
+
+    '
+- id: FALSIFY-ARCH-010
+  rule: Unknown architecture falls back to base
+  prediction: 'An unrecognized architecture string (e.g., "future_arch_2027") produces
+    ArchConstraints with has_qk_norm=false, has_bias=false, and required_roles returns
+    exactly the 9 base roles.
+
+    '
+  test: 'Proptest with random non-matching strings. All must produce base roles.
+
+    '
+  if_fails: 'Default match arm in from_architecture or required_roles is wrong.
+
+    '
+- id: FALSIFY-ARCH-011
+  rule: Alias equivalence
+  prediction: 'Architecture aliases produce identical ArchConstraints and identical
+    required role sets. E.g., "llama" == "llama3", "qwen2" == "qwen2.5" == "qwen",
+    "phi" == "phi3", "gemma" == "gemma2".
+
+    '
+  test: 'Deterministic: for each architecture and each alias, verify from_architecture(name)
+    == from_architecture(alias).
+
+    '
+  if_fails: 'An alias was added to from_architecture() but maps to different constraints.
+
+    '
+- id: FALSIFY-ARCH-012
+  rule: Monotonicity — features only add roles
+  prediction: 'For any architecture A and any superset of its boolean features, required_roles(superset)
+    ⊇ required_roles(A).
+
+    '
+  test: 'For each architecture, enable additional feature flags one at a time. Verify
+    the resulting role set is a strict superset.
+
+    '
+  if_fails: 'A feature flag accidentally removes roles instead of adding them.
+
+    '
+kani_harnesses:
+- id: KANI-ARCH-001
+  obligation: ARCH-INV-001
+  property: Base roles always present for any (qk_norm, bias) combination
+  bound: 4
+  strategy: exhaustive
+  harness: verify_base_roles_always_present
+- id: KANI-ARCH-002
+  obligation: ARCH-INV-002
+  property: Constraint matrix covers all 4 boolean pairs
+  bound: 4
+  strategy: exhaustive
+  harness: verify_constraint_matrix_exhaustive
+- id: KANI-ARCH-003
+  obligation: ARCH-MONO-001
+  property: Adding features only adds roles (monotonicity)
+  bound: 4
+  strategy: exhaustive
+  harness: verify_role_monotonicity
+- id: KANI-ARCHIT-004
+  obligation: Base roles always required
+  property: Base roles always required
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-005
+  obligation: Constraint matrix exhaustive
+  property: Constraint matrix exhaustive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-006
+  obligation: Role count correctness
+  property: Role count correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-007
+  obligation: Weight completeness implies correct forward pass
+  property: Weight completeness implies correct forward pass
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-008
+  obligation: Incomplete weights detected before forward pass
+  property: Incomplete weights detected before forward pass
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-009
+  obligation: YAML matches Rust implementation
+  property: YAML matches Rust implementation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ARCHIT-010
+  obligation: Adding features only adds roles
+  property: Adding features only adds roles
+  bound: 8
+  strategy: exhaustive
+enforcement:
+  yaml_rust_parity:
+    description: YAML contract and Rust implementation must define identical role
+      sets
+    check: contract_tests::FALSIFY-ARCH-001
+    severity: CRITICAL
+  weight_completeness:
+    description: All required roles must be present (non-zero ptr and len) before
+      forward pass
+    check: contract_tests::FALSIFY-ARCH-008
+    severity: CRITICAL
+  base_roles_universal:
+    description: Every architecture includes the 9 base roles
+    check: contract_tests::FALSIFY-ARCH-002
+    severity: ERROR
+  constraint_matrix_coverage:
+    description: The (has_qk_norm, has_bias) matrix has no gaps
+    check: contract_tests::FALSIFY-ARCH-003
+    severity: ERROR
+  alias_consistency:
+    description: Architecture aliases produce identical constraints
+    check: contract_tests::FALSIFY-ARCH-011
+    severity: ERROR
+qa_gate:
+  id: F-ARCH-001
+  name: Architecture Requirements Contract
+  description: Per-architecture tensor weight role completeness quality gate
+  checks:
+  - yaml_rust_parity
+  - base_roles_universal
+  - constraint_matrix_coverage
+  - role_count_invariants
+  - weight_completeness
+  - alias_consistency
+  - monotonicity
+  pass_criteria: All 12 falsification tests pass + 3 Kani harnesses verify
+  falsification: Remove attn_q_norm from Qwen3 required set to reproduce GH-279 garbage
+    output

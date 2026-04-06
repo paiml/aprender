@@ -1,0 +1,120 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: Autograd-aware transpose preserves LoRA gradient flow on wgpu path
+  registry: true
+  references:
+  - 'KAIZEN-018: LoRA gradients lost in transpose — wgpu path trains only classifier
+    head'
+  - attention-head-extraction-v1.yaml (companion CPU-side optimization)
+gradient_flow:
+- id: C-LORA-GRAD-001
+  name: transpose_tracked preserves backward chain
+  description: "transpose_tracked(tensor, rows, cols) creates a new tensor with transposed\n\
+    data AND a TransposeBackward op that accumulates the inverse-transposed\ngradient\
+    \ on the original tensor. The backward chain:\n  result_grad → inverse transpose\
+    \ (cols×rows → rows×cols) → original.accumulate_grad\nThis ensures gradient flow\
+    \ from matmul outputs back to LoRA A/B parameters.\n"
+  severity: P0
+  critical: true
+  verification: test_transpose_tracked_backward_gradient_flow
+- id: C-LORA-GRAD-002
+  name: Full LoRA backward chain verified
+  description: 'The chain matmul(x, transpose_tracked(lora_a)) → matmul backward →
+
+    TransposeBackward → lora_a.grad accumulates non-zero gradients on the
+
+    original LoRA parameter. This was broken before KAIZEN-018: gradients
+
+    accumulated on ephemeral transposed copies that were discarded after
+
+    each forward call.
+
+    '
+  severity: P0
+  critical: true
+  verification: test_transpose_tracked_lora_gradient_chain
+- id: C-LORA-GRAD-003
+  name: All 4 LoRA transposes use transpose_tracked
+  description: 'In forward_with_lora(), all 4 transpose calls are replaced with
+
+    transpose_tracked:
+
+    1. lora_a_q: (rank, hidden_size) → (hidden_size, rank) for x @ A_q^T
+
+    2. lora_b_q: (q_dim, rank) → (rank, q_dim) for (x@A_q^T) @ B_q^T
+
+    3. lora_a_v: (rank, hidden_size) → (hidden_size, rank) for x @ A_v^T
+
+    4. lora_b_v: (kv_hidden_size, rank) → (rank, kv_hidden_size) for (x@A_v^T) @ B_v^T
+
+    No transpose in forward_with_lora uses the non-tracked variant.
+
+    '
+  severity: P0
+  critical: true
+impact:
+- id: C-LORA-IMPACT-001
+  name: Trainable parameter count restored
+  description: 'Before KAIZEN-018 (wgpu path, non-CUDA):
+
+    - Only classifier head trained: ~5,122 params (2 × hidden + bias)
+
+    - LoRA A/B received zero gradient → no weight updates
+
+
+    After KAIZEN-018:
+
+    - Full LoRA training: ~5.9M params (rank=16, 36 layers × Q + V)
+
+    - Classifier head: ~5,122 params
+
+    - Total: ~5.9M trainable params (1,150x more than before)
+
+    '
+  severity: P0
+  critical: true
+equations:
+  lora_forward:
+    formula: |
+      forward: (x, W, A, B, alpha, rank) -> y
+      y = W*x + (alpha/rank) * B * A * x
+    domain: x in R^d_in, W in R^{d_out x d_in}, A in R^{rank x d_in}, B in R^{d_out x rank}
+    codomain: y in R^d_out
+    preconditions:
+    - rank > 0
+    - alpha > 0.0
+    postconditions:
+    - dy/dA exists and flows correctly through transpose
+    - dy/dB exists and flows correctly through transpose
+    lean_theorem: Theorems.LoraForward
+proof_obligations:
+- type: invariant
+  property: Gradient flow preserved through transpose
+  formal: d(loss)/d(A) != 0 when loss depends on output of LoRA layer
+  applies_to: all
+- type: equivalence
+  property: Autograd transpose matches manual transpose
+  formal: autograd_backward(f(x)) == manual_backward(f(x)) for all x
+  tolerance: 1e-5
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-LGF-001
+  rule: Gradient flow through LoRA A matrix
+  prediction: d(loss)/d(lora_a) is non-zero after backward
+  test: Forward pass + loss.backward(), check grad_a.abs().sum() > 0
+  if_fails: Transpose breaks gradient chain for lora_a
+- id: FALSIFY-LGF-002
+  rule: Gradient flow through LoRA B matrix
+  prediction: d(loss)/d(lora_b) is non-zero after backward
+  test: Forward pass + loss.backward(), check grad_b.abs().sum() > 0
+  if_fails: Transpose breaks gradient chain for lora_b
+qa_gate:
+  id: F-LGFV-001
+  name: lora-gradient-flow-v1 Contract
+  description: Quality gate for Autograd-aware transpose preserves LoRA gradient flow
+    on wgp
+  checks:
+  - validation
+  - falsification

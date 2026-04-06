@@ -1,0 +1,175 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: FP8 e4m3/e5m2 format interchange for mixed-precision training — encode/decode between float32 and 8-bit floating-point
+    formats per OFP8 specification
+  references:
+  - Micikevicius et al. (2022) FP8 Formats for Deep Learning. arXiv:2209.05433
+  - Sun et al. (2019) Hybrid 8-bit Floating Point (HFP8) Training and Inference for Deep Neural Networks. NeurIPS.
+  - IEEE working group P3109 — Interim report on 8-bit binary floating-point
+  depends_on:
+  - f16-conversion-v1
+  - int8-symmetric-quant-v1
+equations:
+  e4m3_encode:
+    formula: "Encode float32 x to E4M3 (4-bit exponent, 3-bit mantissa, 1 sign bit):\n  sign = (x < 0) ? 1 : 0\n  Clamp |x|\
+      \ to [0, 448] (E4M3 max normal value)\n  exponent = clamp(floor(log2(|x|)) + bias, 0, 15)  where bias = 7\n  mantissa\
+      \ = round((|x| / 2^(exponent - bias) - 1) * 8)  (3 mantissa bits)\n  e4m3_bits = (sign << 7) | (exponent << 3) | mantissa\n\
+      Special values: no infinity, no NaN (all 8 exponent+mantissa combos are numeric)\nMax value: 448 = 1.875 * 2^8, Min\
+      \ subnormal: 2^-9 = 1/512\n"
+    domain: x ∈ ℝ (float32)
+    codomain: e4m3_bits ∈ {0, 1, ..., 255} — 8-bit encoding
+    invariants:
+    - 'Sign bit preserved: sign(encode(x)) == sign(x)'
+    - 'Saturation: encode(x) == encode(448) for |x| > 448'
+    - 'No NaN encoding: all 256 bit patterns represent numeric values'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.E4M3_Encode
+  e5m2_encode:
+    formula: "Encode float32 x to E5M2 (5-bit exponent, 2-bit mantissa, 1 sign bit):\n  sign = (x < 0) ? 1 : 0\n  Clamp |x|\
+      \ to [0, 57344] (E5M2 max normal value)\n  exponent = clamp(floor(log2(|x|)) + bias, 0, 31)  where bias = 15\n  mantissa\
+      \ = round((|x| / 2^(exponent - bias) - 1) * 4)  (2 mantissa bits)\n  e5m2_bits = (sign << 7) | (exponent << 2) | mantissa\n\
+      Special values: Inf at exponent=31 mantissa=0, NaN at exponent=31 mantissa!=0\nMax value: 57344 = 1.75 * 2^15, Min subnormal:\
+      \ 2^-16\n"
+    domain: x ∈ ℝ (float32)
+    codomain: e5m2_bits ∈ {0, 1, ..., 255} — 8-bit encoding
+    invariants:
+    - 'Sign bit preserved: sign(encode(x)) == sign(x)'
+    - Saturation to Inf for |x| > 57344
+    - E5M2 has wider range but lower precision than E4M3
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.E5M2_Encode
+  roundtrip:
+    formula: "Roundtrip property:\n  decode(encode(x)) ≈ x within format precision\nFor E4M3: |decode(encode(x)) - x| <= ULP_e4m3(x)\
+      \ / 2\nFor E5M2: |decode(encode(x)) - x| <= ULP_e5m2(x) / 2\nWhere ULP (unit in the last place) depends on the exponent:\n\
+      \  ULP_e4m3(x) = 2^(exponent - bias - 3)\n  ULP_e5m2(x) = 2^(exponent - bias - 2)\n"
+    domain: x ∈ representable range of the target format
+    codomain: error ∈ [0, ULP/2]
+    invariants:
+    - Roundtrip error bounded by half ULP (round-to-nearest-even)
+    - Exact roundtrip for values exactly representable in the format
+    - 'Zero roundtrips exactly: decode(encode(0)) == 0'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Roundtrip
+proof_obligations:
+- type: roundtrip
+  property: E4M3 encode-decode preserves value within ULP
+  formal: '|decode_e4m3(encode_e4m3(x)) - x| <= ULP_e4m3(x) / 2 for |x| <= 448'
+  applies_to: all
+- type: roundtrip
+  property: E5M2 encode-decode preserves value within ULP
+  formal: '|decode_e5m2(encode_e5m2(x)) - x| <= ULP_e5m2(x) / 2 for |x| <= 57344'
+  applies_to: all
+- type: bound
+  property: E4M3 range [-448, 448]
+  formal: '|decode_e4m3(bits)| <= 448 for all bits ∈ {0..255}'
+  applies_to: all
+- type: bound
+  property: E5M2 range [-57344, 57344]
+  formal: '|decode_e5m2(bits)| <= 57344 for all non-special bits'
+  applies_to: all
+- type: invariant
+  property: Sign preservation
+  formal: sign(decode(encode(x))) == sign(x) for x != 0
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: classify_input
+    description: Determine if input is zero, subnormal, normal, overflow, or NaN
+    invariant: Classification is exhaustive and mutually exclusive
+  - name: extract_fields
+    description: Extract sign, exponent, and mantissa from float32 bit pattern
+    invariant: Extracted fields reconstruct original float32 exactly
+  - name: requantize
+    description: Map float32 exponent+mantissa to target format with rounding
+    invariant: Round-to-nearest-even applied; saturation on overflow
+  - name: pack_bits
+    description: Pack sign, exponent, mantissa into 8-bit result
+    invariant: Bit layout matches OFP8 specification
+falsification_tests:
+- id: FALSIFY-FP8-001
+  rule: E4M3 roundtrip within ULP
+  prediction: '|decode(encode(x)) - x| <= ULP/2 for 10000 random values in [-448, 448]'
+  test: 'proptest: generate random f32 in [-448, 448]; encode to e4m3; decode back; verify error <= ULP/2'
+  if_fails: Rounding mode incorrect (truncation instead of round-to-nearest-even) or exponent bias wrong
+- id: FALSIFY-FP8-002
+  rule: E5M2 roundtrip within ULP
+  prediction: '|decode(encode(x)) - x| <= ULP/2 for 10000 random values in [-57344, 57344]'
+  test: 'proptest: generate random f32 in [-57344, 57344]; encode to e5m2; decode back; verify error <= ULP/2'
+  if_fails: Mantissa bit count wrong (2 bits for e5m2) or exponent bias (15) incorrect
+- id: FALSIFY-FP8-003
+  rule: E4M3 range saturation
+  prediction: encode_e4m3(x) == encode_e4m3(448) for all x > 448
+  test: 'proptest: generate f32 values in (448, f32::MAX); verify encoded value equals max representable'
+  if_fails: Missing saturation clamp; overflow wraps instead of saturating
+- id: FALSIFY-FP8-004
+  rule: E5M2 range saturation
+  prediction: encode_e5m2(x) produces Inf encoding for |x| > 57344
+  test: 'proptest: generate f32 values in (57344, f32::MAX); verify Inf bit pattern'
+  if_fails: E5M2 overflow handling incorrect; should map to Inf not max-normal
+- id: FALSIFY-FP8-005
+  rule: Zero roundtrip
+  prediction: decode(encode(0.0)) == 0.0 and decode(encode(-0.0)) == -0.0 for both formats
+  test: 'Direct test: encode and decode both +0 and -0 in e4m3 and e5m2'
+  if_fails: Zero encoding corrupted; sign of zero not preserved
+kani_harnesses:
+- id: KANI-FP8-001
+  obligation: E4M3 range bound
+  property: '|decode_e4m3(bits)| <= 448 for all 256 possible bit patterns'
+  bound: 256
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_e4m3_range_bound
+- id: KANI-FP8-002
+  obligation: E5M2 range bound
+  property: '|decode_e5m2(bits)| <= 57344 for all non-NaN bit patterns'
+  bound: 256
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_e5m2_range_bound
+- id: KANI-FP8-003
+  obligation: Sign preservation
+  property: sign bit of encode(x) matches sign of x for all non-zero representable x
+  bound: 256
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_sign_preservation
+- id: KANI-FP8_IN-004
+  obligation: E4M3 encode-decode preserves value within ULP
+  property: E4M3 encode-decode preserves value within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FP8_IN-005
+  obligation: E5M2 encode-decode preserves value within ULP
+  property: E5M2 encode-decode preserves value within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FP8_IN-006
+  obligation: E4M3 range [-448, 448]
+  property: E4M3 range [-448, 448]
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FP8_IN-007
+  obligation: E5M2 range [-57344, 57344]
+  property: E5M2 range [-57344, 57344]
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-FP8-001
+  name: FP8 Interchange Contract
+  description: FP8 e4m3/e5m2 encode-decode roundtrip and range correctness
+  checks:
+  - e4m3_roundtrip
+  - e5m2_roundtrip
+  - range_saturation
+  - sign_preservation
+  - zero_roundtrip
+  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  falsification: Use wrong exponent bias (e.g., 8 instead of 7 for e4m3) to break roundtrip

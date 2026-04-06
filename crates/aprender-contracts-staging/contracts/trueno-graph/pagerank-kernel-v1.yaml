@@ -1,0 +1,121 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Trueno-Graph PageRank and BFS — graph algorithm correctness invariants
+  references:
+  - 'Page et al. (1999) The PageRank Citation Ranking: Bringing Order to the Web'
+  - 'Cormen et al. (2009) Introduction to Algorithms, Ch. 22 BFS'
+equations:
+  pagerank:
+    formula: PR(v) = (1-d)/N + d * sum(PR(u)/out_degree(u) for u in in_neighbors(v))
+    domain: G = (V, E), damping d ∈ (0, 1), tolerance epsilon > 0
+    codomain: HashMap<NodeId, f64> where sum(PR) ≈ 1.0
+    invariants:
+    - 'Probability distribution: sum(PR(v) for v in V) ≈ 1.0 within epsilon'
+    - All PageRank values are non-negative
+    - Convergence within max_iterations
+    preconditions:
+    - G has at least 1 node
+    - 0 < d < 1 (typically d = 0.85)
+    - epsilon > 0
+    lean_theorem: Theorems.PageRank_Stochastic
+  bfs:
+    formula: BFS(G, source) = {(v, dist(source, v)) for v ∈ reachable(source)}
+    domain: G = (V, E), source ∈ V
+    codomain: HashMap<NodeId, usize>
+    invariants:
+    - Source node has distance 0
+    - 'Triangle inequality: dist(s, v) <= dist(s, u) + 1 for edge (u, v)'
+    - All reachable nodes are visited exactly once
+    preconditions:
+    - source ∈ V
+    lean_theorem: Theorems.BFS_Shortest_Path
+proof_obligations:
+- type: invariant
+  property: PageRank is a probability distribution
+  formal: '∀ G, d, eps: |sum(pagerank(G, d, eps).values()) - 1.0| < eps'
+  applies_to: pagerank
+- type: invariant
+  property: PageRank values are non-negative
+  formal: '∀ v ∈ V: pagerank(G, d, eps)[v] >= 0.0'
+  applies_to: pagerank
+- type: invariant
+  property: BFS source distance is zero
+  formal: '∀ G, s: bfs(G, s)[s] = 0'
+  applies_to: bfs
+- type: invariant
+  property: BFS triangle inequality
+  formal: '∀ edge (u, v): bfs(G, s)[v] <= bfs(G, s)[u] + 1'
+  applies_to: bfs
+enforcement:
+  probability_distribution:
+    description: PageRank values must sum to approximately 1.0
+    check: contract_tests::FALSIFY-TG-001
+    severity: ERROR
+  non_negative_rank:
+    description: All PageRank values must be non-negative
+    check: contract_tests::FALSIFY-TG-002
+    severity: ERROR
+  bfs_source_zero:
+    description: BFS distance from source to itself must be 0
+    check: contract_tests::FALSIFY-TG-003
+    severity: ERROR
+  bfs_triangle_inequality:
+    description: BFS distances must satisfy triangle inequality for all edges
+    check: contract_tests::FALSIFY-TG-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TG-001
+  rule: Probability distribution
+  prediction: sum(pagerank(G).values()) is within epsilon of 1.0
+  test: build random graphs (5-100 nodes), compute PageRank, assert sum ≈ 1.0
+  if_fails: Dangling node handling missing or normalization step omitted
+- id: FALSIFY-TG-002
+  rule: Non-negative rank
+  prediction: All PageRank values >= 0.0 for any graph
+  test: proptest with random graphs including disconnected components
+  if_fails: Negative initial values or subtraction overflow in iteration
+- id: FALSIFY-TG-003
+  rule: BFS source distance
+  prediction: bfs(G, source)[source] = 0 for any graph and source node
+  test: proptest with random graphs and random source nodes
+  if_fails: Source node not initialized to distance 0 before traversal
+- id: FALSIFY-TG-004
+  rule: BFS triangle inequality
+  prediction: For every edge (u, v) in the graph, bfs(G, s)[v] <= bfs(G, s)[u] + 1
+  test: 'proptest: generate random directed graphs (10-50 nodes); run BFS from random
+    source; for every edge (u, v) where both u and v are reachable, assert dist[v] <=
+    dist[u] + 1'
+  if_fails: BFS queue processes nodes out of order or skips relaxation step, producing
+    non-shortest paths that violate the triangle inequality
+kani_harnesses:
+- id: KANI-TG-001
+  obligation: Probability distribution
+  property: PageRank sum ≈ 1.0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pagerank_sum
+- id: KANI-TG-002
+  obligation: Non-negative rank
+  property: All PR values >= 0.0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pagerank_nonneg
+- id: KANI-TG-003
+  obligation: BFS source distance
+  property: Source distance = 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_bfs_source_zero
+qa_gate:
+  id: F-TG-001
+  name: Trueno-Graph Algorithm Contract
+  description: Graph algorithm correctness quality gate
+  checks:
+  - probability_distribution
+  - non_negative_rank
+  - bfs_source_zero
+  - bfs_triangle_inequality
+  pass_criteria: All 4 falsification tests pass
+  falsification: Remove dangling node normalization to trigger FALSIFY-TG-001

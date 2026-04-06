@@ -1,0 +1,177 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Speculative decoding — draft model generates candidate tokens, target model verifies in a single batched pass.
+    Acceptance criterion preserves exact output distribution.
+  references:
+  - Leviathan, Kalman & Matias (2023) Fast Inference from Transformers via Speculative Decoding. ICML.
+  - Chen, Borgeaud et al. (2023) Accelerating Large Language Model Decoding with Speculative Sampling
+  - Stern, Shazeer et al. (2018) Blockwise Parallel Decoding for Deep Autoregressive Models
+  depends_on:
+  - online-softmax-v1
+  - attention-kernel-v1
+  - sampling-algorithms-v1
+equations:
+  acceptance_probability:
+    formula: "Acceptance probability for token x at position t:\n  P(accept) = min(1, q(x) / p(x))\nwhere:\n  q(x) = target\
+      \ model probability for token x\n  p(x) = draft model probability for token x\nThis is the standard rejection-sampling\
+      \ acceptance criterion\nfrom Leviathan et al. (2023) Algorithm 1.\n"
+    domain: q(x) ∈ (0, 1], p(x) ∈ (0, 1] — both valid probabilities
+    codomain: P(accept) ∈ (0, 1]
+    invariants:
+    - P(accept) ∈ [0, 1] — valid probability
+    - P(accept) = 1 when q(x) >= p(x) — draft underestimates always accepted
+    - P(accept) = q(x)/p(x) when q(x) < p(x) — proportional rejection
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Acceptance_Probability
+  token_acceptance:
+    formula: "Token acceptance via uniform sampling:\n  Draw u ~ Uniform(0, 1)\n  Accept token x if u < P(accept) = min(1,\
+      \ q(x)/p(x))\n  On rejection at position t, resample from adjusted distribution:\n    r(x) = normalize(max(0, q(x) -\
+      \ p(x)))\n"
+    domain: u ∈ [0, 1], q(x) ∈ (0, 1], p(x) ∈ (0, 1]
+    codomain: accept ∈ {true, false}
+    invariants:
+    - Acceptance is a Bernoulli trial with parameter min(1, q/p)
+    - Adjusted distribution r(x) is a valid probability distribution (sums to 1)
+    - Rejection sampling preserves correctness — accepted tokens follow q(x)
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Token_Acceptance
+  output_equivalence:
+    formula: "Output distribution equivalence:\n  P_speculative(x_1, ..., x_n) = P_autoregressive(x_1, ..., x_n)\nFor each\
+      \ position, the marginal distribution of the accepted token\nequals the target model distribution q(x), regardless of\
+      \ draft quality.\nThis holds because rejection sampling with acceptance ratio min(1, q/p)\nand rejection resample from\
+      \ max(0, q-p) yields exact q distribution.\n"
+    domain: x_i ∈ V (vocabulary), sequence of any length
+    codomain: probability distribution over V^n
+    invariants:
+    - Speculative output distribution == autoregressive output distribution (exact)
+    - Property holds for any draft model quality (even random draft)
+    - Expected speedup increases with draft-target agreement but correctness is unconditional
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Output_Equivalence
+proof_obligations:
+- type: equivalence
+  property: Output distribution matches standard autoregressive
+  formal: P_spec(x_1..x_n) = P_auto(x_1..x_n) for all sequences and all draft models
+  tolerance: 0
+  applies_to: all
+- type: bound
+  property: Acceptance rate lower bound
+  formal: P(accept) >= 0 for all token probabilities q, p > 0
+  applies_to: all
+- type: bound
+  property: Acceptance rate upper bound
+  formal: P(accept) <= 1 for all token probabilities q, p > 0
+  applies_to: all
+- type: invariant
+  property: Adjusted distribution validity
+  formal: sum(max(0, q(x) - p(x))) > 0 when rejection occurs, and normalize(max(0, q-p)) sums to 1
+  applies_to: all
+- type: monotonicity
+  property: Acceptance rate increases with draft quality
+  formal: E[accepted_tokens] increases as KL(p || q) decreases
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: draft_generation
+    description: Draft model autoregressively generates K candidate tokens with probabilities p(x)
+    invariant: Each p(x_t) is a valid probability distribution over vocabulary V
+  - name: target_verification
+    description: Target model computes q(x) for all K positions in a single batched forward pass
+    invariant: Batched verification produces identical logits to sequential autoregressive decoding
+  - name: acceptance_sampling
+    description: For each position t=1..K, accept token if u_t < min(1, q(x_t)/p(x_t))
+    invariant: First rejection at position j means positions 1..j-1 accepted, position j resampled from max(0, q-p)
+  - name: token_emission
+    description: Emit accepted tokens plus one resampled or bonus token
+    invariant: At least 1 token emitted per step; at most K+1 tokens emitted
+falsification_tests:
+- id: FALSIFY-SD-001
+  rule: Output distribution equivalence
+  prediction: Over 10000 samples, KL divergence between speculative and autoregressive output < 0.01
+  test: Run both speculative and autoregressive decoding on same prompts; compare empirical token distributions via chi-squared
+    test
+  if_fails: Acceptance criterion does not correctly implement rejection sampling; adjusted distribution r(x) miscalculated
+- id: FALSIFY-SD-002
+  rule: Acceptance probability bounds
+  prediction: min(1, q(x)/p(x)) ∈ [0, 1] for all valid probability pairs
+  test: proptest with q, p sampled from (0, 1]; verify 0 <= acceptance_prob <= 1
+  if_fails: Division by zero when p(x) = 0 or numerical overflow for extreme q/p ratios
+- id: FALSIFY-SD-003
+  rule: Adjusted distribution validity
+  prediction: sum(max(0, q(x) - p(x))) > 0 whenever a rejection occurs, and normalized distribution sums to 1
+  test: 'proptest: generate random q, p distributions over V; simulate rejection; verify adjusted distribution is valid'
+  if_fails: q(x) <= p(x) for all x simultaneously (impossible when both are valid distributions), or normalization error
+- id: FALSIFY-SD-004
+  rule: At least one token per step
+  prediction: Speculative decoding emits >= 1 token per draft-verify cycle
+  test: Run 1000 decode steps with adversarial draft model (uniform random); verify each step emits at least 1 token
+  if_fails: Edge case where all K drafts rejected and bonus token not emitted
+- id: FALSIFY-SD-005
+  rule: Deterministic acceptance given fixed randomness
+  prediction: Given same u_t seeds, acceptance decisions are reproducible
+  test: Fix RNG seed; run speculative decode twice on same input; verify identical output
+  if_fails: Non-determinism from floating-point ordering or uninitialized state
+kani_harnesses:
+- id: KANI-SD-001
+  obligation: Acceptance rate bounds
+  property: 0 <= min(1, q/p) <= 1 for all q, p in (0, 1]
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_acceptance_probability_bounds
+- id: KANI-SD-002
+  obligation: Token emission lower bound
+  property: num_emitted >= 1 for all draft lengths K >= 1 and all acceptance outcomes
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_min_token_emission
+- id: KANI-SD-003
+  obligation: Adjusted distribution non-negative
+  property: max(0, q(x) - p(x)) >= 0 for all x, and sum > 0 when rejection occurs
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_adjusted_distribution_valid
+- id: KANI-SPECUL-004
+  obligation: Output distribution matches standard autoregressive
+  property: Output distribution matches standard autoregressive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SPECUL-005
+  obligation: Acceptance rate lower bound
+  property: Acceptance rate lower bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-SPECUL-006
+  obligation: Acceptance rate upper bound
+  property: Acceptance rate upper bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-SPECUL-007
+  obligation: Adjusted distribution validity
+  property: Adjusted distribution validity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SPECUL-008
+  obligation: Acceptance rate increases with draft quality
+  property: Acceptance rate increases with draft quality
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SD-001
+  name: Speculative Decoding Contract
+  description: Rejection-sampling speculative decoding preserves exact target distribution
+  checks:
+  - output_equivalence
+  - acceptance_bounds
+  - adjusted_distribution
+  - min_token_emission
+  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  falsification: Replace min(1, q/p) with q/p to break acceptance probability bounds

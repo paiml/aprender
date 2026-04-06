@@ -1,0 +1,151 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Conv1d kernel — 1-dimensional convolution
+  references:
+  - LeCun et al. (1998) Gradient-Based Learning Applied to Document Recognition
+  - Radford et al. (2023) Robust Speech Recognition via Large-Scale Weak Supervision (Whisper)
+equations:
+  conv1d:
+    formula: y[n] = sum_{k=0}^{K-1} w[k] * x[n*stride + k - pad] + bias
+    domain: x in R^{C_in x L}, w in R^{C_out x C_in x K}, bias in R^{C_out}
+    codomain: y in R^{C_out x L_out} where L_out = floor((L + 2*pad - K) / stride) + 1
+    invariants:
+    - Output length follows standard convolution formula
+    - 'Convolution is linear: conv(a*x + b*z) = a*conv(x) + b*conv(z)'
+    - Identity kernel [0,...,0,1,0,...,0] preserves input (when pad matches)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Conv1D
+proof_obligations:
+- type: invariant
+  property: Output shape correctness
+  formal: L_out = floor((L + 2*pad - K) / stride) + 1
+  applies_to: all
+- type: linearity
+  property: Convolution linearity
+  formal: '|conv(a*x + b*z) - (a*conv(x) + b*conv(z))| < eps'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: equivalence
+  property: Direct conv matches im2col+GEMM
+  formal: '|conv_direct(x) - conv_im2col(x)| < eps'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: Output bounded by input and kernel
+  formal: '|y[n]| <= C_in * K * max(|w|) * max(|x|) + |bias|'
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: im2col
+    description: Reshape input patches into column matrix
+    invariant: Column matrix has K*C_in rows and L_out columns
+  - name: gemm
+    description: 'Matrix multiply: weight @ im2col columns'
+    invariant: Output has C_out rows and L_out columns
+  - name: add_bias
+    description: Add bias per output channel
+    invariant: Bias broadcast across spatial dimension
+simd_dispatch:
+  conv1d:
+    scalar: conv1d_scalar
+    avx2: conv1d_avx2
+    ptx: conv1d_ptx
+enforcement:
+  output_shape:
+    description: Output dimensions must follow convolution formula
+    check: contract_tests::FALSIFY-CV-001
+    severity: ERROR
+  linearity:
+    description: Convolution must be a linear operation
+    check: contract_tests::FALSIFY-CV-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CV-001
+  rule: Output shape
+  prediction: Output length = floor((L + 2*pad - K) / stride) + 1
+  test: proptest with random L, K, stride, pad combinations
+  if_fails: Padding or stride calculation off by one
+- id: FALSIFY-CV-002
+  rule: Linearity
+  prediction: '|conv(a*x+b*z) - a*conv(x) - b*conv(z)| < 1e-5'
+  test: proptest with random inputs, scalars, kernel
+  if_fails: Non-linear operation in convolution path
+- id: FALSIFY-CV-003
+  rule: im2col-GEMM equivalence
+  prediction: '|conv_direct(x) - conv_im2col(x)| < 1e-6'
+  test: proptest comparing direct loop vs im2col implementations
+  if_fails: im2col indexing or GEMM accumulation differs
+- id: FALSIFY-CV-004
+  rule: SIMD equivalence
+  prediction: '|conv1d_avx2(x) - conv1d_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD accumulation order differs
+- id: FALSIFY-CV-005
+  rule: Boundary - kernel size 1
+  prediction: conv1d with K=1 is equivalent to pointwise linear transform
+  test: proptest comparing conv1d(K=1) vs linear projection
+  if_fails: Special case for K=1 not handled
+- id: FALSIFY-CV-006
+  rule: Identity kernel
+  prediction: Conv with delta kernel and appropriate padding preserves input
+  test: proptest with identity kernel centered
+  if_fails: Padding or kernel indexing incorrect
+kani_harnesses:
+- id: KANI-CV-001
+  obligation: CV-INV-001
+  property: Output shape matches formula for small inputs
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_conv1d_output_shape
+- id: KANI-CV-002
+  obligation: CV-LIN-001
+  property: Convolution is linear for small inputs
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_conv1d_linearity
+- id: KANI-CONV1D-003
+  obligation: Output shape correctness
+  property: Output shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONV1D-004
+  obligation: Convolution linearity
+  property: Convolution linearity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONV1D-005
+  obligation: Direct conv matches im2col+GEMM
+  property: Direct conv matches im2col+GEMM
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONV1D-006
+  obligation: Output bounded by input and kernel
+  property: Output bounded by input and kernel
+  bound: 8
+  strategy: stub_float
+- id: KANI-CONV1D-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CV-001
+  name: Conv1d Contract
+  description: 1-dimensional convolution quality gate
+  checks:
+  - output_shape
+  - linearity
+  - im2col_equivalence
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Off-by-one in output length calculation

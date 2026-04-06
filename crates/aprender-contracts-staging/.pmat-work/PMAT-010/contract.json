@@ -1,0 +1,403 @@
+{
+  "work_item_id": "PMAT-010",
+  "created_at": "2026-02-18T13:52:40.426442281Z",
+  "baseline_commit": "396b3a531aa6ca512898920a0f0dd56314c4b7eb",
+  "baseline_tdg": 0.0,
+  "baseline_coverage": 0.0,
+  "baseline_rust_score": 0.0,
+  "baseline_file_manifest": {
+    "files": {
+      "crates/provable-contracts-cli/src/commands/status.rs": {
+        "content_hash": "290698861a4a0d7a200fa6cb674e838f3146e14cfd175af7281328452b62d556",
+        "lines": 34,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/validate.rs": {
+        "content_hash": "3f7100a603962f725ee73478ed107e875617ad85132b9cc9fe936c566948757e",
+        "lines": 39,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/scaffold/mod.rs": {
+        "content_hash": "f966b0107f3962a5bf829f42f5973dee16b28c753db53e87fd4589456063c31f",
+        "lines": 157,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/validator.rs": {
+        "content_hash": "4466d73c07ec80bfe300d835684c175647063b2ef531d1cdced27c04ce772494",
+        "lines": 358,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/parser.rs": {
+        "content_hash": "01f08f39be94a6340843ea12e4dfd790fe78f910a8b88d92ef52dca655bf5b5e",
+        "lines": 228,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/types.rs": {
+        "content_hash": "f649af7faf77f3482a0f83bedf9224029a36d1209ee70a283a7d956ea8b07f4b",
+        "lines": 226,
+        "functions": 4,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/scaffold.rs": {
+        "content_hash": "56a226bfe86a8def98c14bd36633614b08c855541abff74f9f9b31ff3dd6f32e",
+        "lines": 17,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/error.rs": {
+        "content_hash": "f7010e5b4b7f6906a41134bab4604059347c74e8153f4a97ae3ecc8322b83387",
+        "lines": 48,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/kani.rs": {
+        "content_hash": "49b15a1ff295bb3e33e4765c8eff47b0d462cbe5a47408a2fe65186e1ea2d155",
+        "lines": 10,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/audit.rs": {
+        "content_hash": "f84022f60a4031575a5d41f4d122505f77159eeaa99e05a6d723e4e8fc5b55bc",
+        "lines": 39,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/mod.rs": {
+        "content_hash": "a4be3da35323ae0bc6178f7488101a9888406529fd6b029aa6d9440b78d04dad",
+        "lines": 7,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kani_gen/mod.rs": {
+        "content_hash": "970011d57a8148ac3e69b7845acfb6921461b5fb328cf71a0cdde7db1f1537dd",
+        "lines": 192,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/probar.rs": {
+        "content_hash": "7db20d621b8a14fdef1221dd07cfea68747e00a78111071c8c91dd5380d21eb2",
+        "lines": 10,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/main.rs": {
+        "content_hash": "b01e828a8503f554bfdc51a82bc157c93a1fc5d05a921dffcbdb9308b00e95bc",
+        "lines": 81,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/audit/mod.rs": {
+        "content_hash": "a347b2db9fdf6a7ae39af7b188f2c2517d53f8f218dba5daa21ead601c0ed8e5",
+        "lines": 191,
+        "functions": 4,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/mod.rs": {
+        "content_hash": "d63f9958cf6a1237881d0bd41c2f4fc164078e27e7b249f9feb496691c2bc4ab",
+        "lines": 6,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/lib.rs": {
+        "content_hash": "7fa8aac24e1de1636461caaef2b07d6cd0698842627b4816a69e4e7f88dd539c",
+        "lines": 22,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/probar_gen/mod.rs": {
+        "content_hash": "c66d911c4c136f99f14ff8a1cc484ed3af3273bea90abeea8e9ca30e6d8d5444",
+        "lines": 104,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      }
+    },
+    "coverage_required": [
+      "crates/provable-contracts-cli/src/commands/status.rs",
+      "crates/provable-contracts-cli/src/commands/kani.rs",
+      "crates/provable-contracts-cli/src/commands/audit.rs",
+      "crates/provable-contracts-cli/src/commands/mod.rs",
+      "crates/provable-contracts-cli/src/commands/validate.rs",
+      "crates/provable-contracts-cli/src/commands/scaffold.rs",
+      "crates/provable-contracts-cli/src/commands/probar.rs",
+      "crates/provable-contracts-cli/src/main.rs",
+      "crates/provable-contracts/src/scaffold/mod.rs",
+      "crates/provable-contracts/src/schema/validator.rs",
+      "crates/provable-contracts/src/schema/mod.rs",
+      "crates/provable-contracts/src/schema/parser.rs",
+      "crates/provable-contracts/src/schema/types.rs",
+      "crates/provable-contracts/src/kani_gen/mod.rs",
+      "crates/provable-contracts/src/audit/mod.rs",
+      "crates/provable-contracts/src/error.rs",
+      "crates/provable-contracts/src/lib.rs",
+      "crates/provable-contracts/src/probar_gen/mod.rs"
+    ],
+    "manifest_hash": "adc4b5560058afe6259bc54f7b2569e2a50a00036e5eed40d7048a18ec6051b8"
+  },
+  "thresholds": {
+    "min_coverage_pct": 95.0,
+    "min_per_file_coverage_pct": 95.0,
+    "max_tdg_regression": 0.0,
+    "max_function_complexity": 20,
+    "max_file_lines": 500,
+    "min_spec_score": 95,
+    "require_github_sync": true,
+    "require_spec_update": true,
+    "require_roadmap_update": true,
+    "block_on_new_satd": true,
+    "block_on_new_dead_code": true,
+    "require_lint_pass": true,
+    "max_fix_chain": 3,
+    "block_on_untested_variants": true,
+    "block_on_cross_crate_failure": false,
+    "block_on_regression": false
+  },
+  "claims": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "falsification_method": "ManifestIntegrity",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "falsification_method": "MetaFalsification",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "falsification_method": "DifferentialCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 100.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 20.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "falsification_method": "SupplyChainIntegrity",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 500.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "falsification_method": "SpecQuality",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "falsification_method": "GitHubSync",
+      "evidence_required": {
+        "GitState": {
+          "unpushed_commits": 0,
+          "dirty_files": 0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "falsification_method": "SatdDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "falsification_method": "LintPass",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "falsification_method": "VariantCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "falsification_method": "FixChainLimit",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 3.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "falsification_method": "RegressionGate",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    }
+  ]
+}

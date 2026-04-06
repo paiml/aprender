@@ -1,0 +1,120 @@
+version: 1.0.0
+target_crate: probar
+bindings:
+# === Assertion Evaluation ===
+- contract: property-testing-v1.yaml
+  equation: assertion_evaluation
+  function: equals
+  module_path: probar::assertion::Assertion
+  status: implemented
+  notes: Reflexive, symmetric equality check returning AssertionResult
+
+- contract: property-testing-v1.yaml
+  equation: assertion_evaluation
+  function: approx_eq
+  module_path: probar::assertion::Assertion
+  status: implemented
+  notes: Float approximate equality with configurable epsilon
+
+- contract: property-testing-v1.yaml
+  equation: assertion_evaluation
+  function: in_range
+  module_path: probar::assertion::Assertion
+  status: implemented
+  notes: Range-bounded value check
+
+# === Soft Assertion Collection ===
+- contract: property-testing-v1.yaml
+  equation: soft_assertion_collection
+  function: verify
+  module_path: probar::assertion::soft::SoftAssertions
+  status: implemented
+  notes: Collects multiple failures, returns summary or error
+
+- contract: property-testing-v1.yaml
+  equation: soft_assertion_collection
+  function: assert_eq
+  module_path: probar::assertion::soft::SoftAssertions
+  status: implemented
+  notes: Soft equality assertion that records failure without stopping
+
+# === Retry Assertion ===
+- contract: property-testing-v1.yaml
+  equation: retry_assertion
+  function: verify
+  module_path: probar::assertion::retry::RetryAssertion
+  status: implemented
+  notes: Polls check_fn until pass or timeout, bounded termination
+
+- contract: property-testing-v1.yaml
+  equation: retry_assertion
+  function: new
+  module_path: probar::assertion::retry::RetryConfig
+  status: implemented
+  notes: Creates retry config with timeout and poll interval
+
+# === Playbook State Machine ===
+- contract: property-testing-v1.yaml
+  equation: playbook_state_machine
+  function: validate
+  module_path: probar::playbook::state_machine::StateMachineValidator
+  status: implemented
+  notes: BFS reachability, orphan detection, determinism analysis
+
+- contract: property-testing-v1.yaml
+  equation: playbook_state_machine
+  function: compute_reachability
+  module_path: probar::playbook::state_machine::StateMachineValidator
+  status: implemented
+  notes: BFS from initial state computing reachable and orphan sets
+
+- contract: property-testing-v1.yaml
+  equation: playbook_state_machine
+  function: check_determinism
+  module_path: probar::playbook::state_machine::StateMachineValidator
+  status: implemented
+  notes: Verifies unique transition per (state, event) pair
+
+# === Test Result Reporting ===
+- contract: property-testing-v1.yaml
+  equation: test_result_reporting
+  function: pass
+  module_path: probar::harness::TestResult
+  status: implemented
+  notes: Creates passing TestResult with no error
+
+- contract: property-testing-v1.yaml
+  equation: test_result_reporting
+  function: fail
+  module_path: probar::harness::TestResult
+  status: implemented
+  notes: Creates failing TestResult with error message
+
+- contract: property-testing-v1.yaml
+  equation: test_result_reporting
+  function: test_count
+  module_path: probar::harness::TestSuite
+  status: implemented
+  notes: Returns number of tests in suite
+
+# === Coverage Collection ===
+- contract: property-testing-v1.yaml
+  equation: coverage_collection
+  function: record_hit
+  module_path: probar::coverage::collector::CoverageCollector
+  status: pending
+  notes: Increments hit count for block, monotonic invariant
+
+- contract: property-testing-v1.yaml
+  equation: coverage_collection
+  function: report
+  module_path: probar::coverage::collector::CoverageCollector
+  status: pending
+  notes: Generates CoverageReport with bounded percentage
+
+critical_path:
+- assertion_evaluation
+- soft_assertion_collection
+- retry_assertion
+- playbook_state_machine
+- test_result_reporting
