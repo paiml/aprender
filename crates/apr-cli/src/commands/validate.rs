@@ -157,6 +157,13 @@ fn run_rosetta_validation(
         )));
     }
 
+    // GH-658: A model with 0 tensors is invalid (truncated/corrupt).
+    if report.tensors.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "Model contains 0 tensors (truncated or corrupt file)".to_string(),
+        ));
+    }
+
     if report.is_valid {
         Ok(())
     } else {
