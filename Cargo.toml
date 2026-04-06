@@ -32,6 +32,16 @@ members = [
     "crates/aprender-contracts-cli",
     # --- APR-MONO Phase 2c: was realizar (inference server) ---
     "crates/aprender-serve",
+    # --- APR-MONO Phase 2d: was entrenar (training) ---
+    "crates/aprender-train",
+    "crates/aprender-train-common",
+    "crates/aprender-train-lora",
+    "crates/aprender-train-distill",
+    "crates/aprender-train-inspect",
+    "crates/aprender-train-shell",
+    "crates/aprender-train-bench",
+    "crates/aprender-train-wasm",
+    # "crates/aprender-train-canary",  # Excluded: sqlite3 link conflict with burn dep
 ]
 exclude = ["fuzz"]
 resolver = "2"

@@ -1,6 +1,6 @@
 [package]
-name = "burn-canary"
-version = "0.1.0"
+name = "aprender-train-canary"
+version.workspace = true
 edition = "2021"
 publish = false
 

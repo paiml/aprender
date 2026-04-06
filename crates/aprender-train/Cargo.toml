@@ -1,102 +1,8 @@
-[workspace]
-resolver = "2"
-members = [
-    ".",
-    "crates/entrenar-common",
-    "crates/entrenar-distill",
-    "crates/entrenar-shell",
-    "crates/entrenar-lora",
-    "crates/entrenar-inspect",
-    "crates/entrenar-bench",
-]
-exclude = ["crates/burn-canary"]
-
-[workspace.package]
-edition = "2021"
-
-[workspace.lints.rust]
-unsafe_code = "deny"
-unreachable_pub = "allow"
-missing_debug_implementations = "allow"
-rust_2018_idioms = { level = "warn", priority = -1 }
-trivial_casts = "warn"
-trivial_numeric_casts = "warn"
-unused_import_braces = "warn"
-unused_lifetimes = "warn"
-unused_qualifications = "allow"
-unused_parens = "allow"
-unused_comparisons = "allow"
-unused_assignments = "allow"
-
-[workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-checked_conversions = "warn"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-field_reassign_with_default = "allow"
-needless_range_loop = "allow"
-too_many_arguments = "allow"
-no_effect_underscore_binding = "allow"
-useless_vec = "allow"
-assertions_on_constants = "allow"
-absurd_extreme_comparisons = "allow"
-approx_constant = "allow"
-default_trait_access = "allow"
-clone_on_ref_ptr = "allow"
-missing_const_for_thread_local = "allow"
-redundant_field_names = "allow"
-let_underscore_untyped = "allow"
-ignored_unit_patterns = "allow"
-cloned_ref_to_slice_refs = "allow"
-type_complexity = "allow"
-redundant_closure = "allow"
-single_match_else = "allow"
-missing_safety_doc = "allow"
-let_with_type_underscore = "allow"
-ignore_without_reason = "allow"
-inefficient_to_string = "warn"
-explicit_iter_loop = "warn"
-manual_ok_or = "warn"
-explicit_deref_methods = "warn"
-implicit_clone = "allow"
-inconsistent_struct_constructor = "warn"
-redundant_closure_for_method_calls = "warn"
-unnested_or_patterns = "warn"
-many_single_char_names = "allow"
-cast_precision_loss = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
-similar_names = "allow"
-doc_markdown = "allow"
-missing_const_for_fn = "allow"
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-return_self_not_must_use = "allow"
-float_cmp = "allow"
-unreadable_literal = "allow"
-items_after_statements = "allow"
-large_stack_arrays = "allow"
-struct_excessive_bools = "allow"
-needless_pass_by_value = "allow"
-unused_self = "allow"
-trivially_copy_pass_by_ref = "allow"
-assigning_clones = "allow"
-match_same_arms = "allow"
-case_sensitive_file_extension_comparisons = "allow"
-used_underscore_binding = "allow"
-comparison_chain = "allow"
-format_push_string = "allow"
-too_many_lines = "allow"
-match_wildcard_for_single_variants = "allow"
-struct_field_names = "allow"
-manual_let_else = "allow"
-unnecessary_wraps = "allow"
+# NOTE: Old [workspace] section removed — member of root paiml/aprender workspace.
 
 [package]
-name = "entrenar"
-version = "0.7.13"
+name = "aprender-train"
+version.workspace = true
 edition = "2021"
 rust-version = "1.87"
 authors = ["PAIML <hello@paiml.com>"]
@@ -249,7 +155,7 @@ codegen-units = 1
 opt-level = 0
 
 [[bin]]
-name = "entrenar"
+name = "aprender-train"
 path = "src/main.rs"
 required-features = []
 
@@ -439,8 +345,4 @@ shared-version = true
 file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
-
-[workspace.dependencies]
-
-
 

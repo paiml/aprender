@@ -1,6 +1,6 @@
 [package]
-name = "entrenar-lora"
-version = "0.3.0"
+name = "aprender-train-lora"
+version.workspace = true
 edition = "2021"
 authors = ["PAIML <hello@paiml.com>"]
 description = "LoRA/QLoRA configuration optimizer and memory planner"
@@ -12,15 +12,15 @@ name = "entrenar_lora"
 path = "src/lib.rs"
 
 [[bin]]
-name = "entrenar-lora"
+name = "aprender-train-lora"
 path = "src/main.rs"
 
 [lints]
 workspace = true
 
 [dependencies]
-entrenar = { version = "0.7.2", path = "../.." }
-entrenar-common = { version = "0.2.0", path = "../entrenar-common" }
+aprender-train = { version = "0.29.0", path = "../aprender-train", package = "aprender-train" }
+aprender-train-common = { version = "0.29.0", path = "../aprender-train-common", package = "aprender-train-common" }
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

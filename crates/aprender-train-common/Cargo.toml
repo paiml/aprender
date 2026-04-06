@@ -1,6 +1,6 @@
 [package]
-name = "entrenar-common"
-version = "0.2.0"
+name = "aprender-train-common"
+version.workspace = true
 edition = "2021"
 authors = ["PAIML <hello@paiml.com>"]
 description = "Shared infrastructure for entrenar CLI tools"

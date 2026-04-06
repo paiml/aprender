@@ -1,11 +1,9 @@
 [package]
-name = "entrenar-wasm"
-version = "0.1.0"
+name = "aprender-train-wasm"
+version.workspace = true
 edition = "2021"
 description = "WASM bindings for Entrenar training monitor"
 license = "MIT"
-
-[workspace]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
