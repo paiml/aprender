@@ -3802,14 +3802,40 @@ macro_rules! contract_inv_warmup_lr {
 // ── Stub macros for PMAT-493/541 call-site annotations (contracts pending) ──
 // These will be replaced when the corresponding YAML contracts are created.
 
-macro_rules! contract_pre_dispatch_core_command { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_execute_command { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_with_stdin_support { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_resolve_model_path { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_merge_tensor_shape { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_validate_exit_code_consistency { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_dispatch_core_command {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_execute_command {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_with_stdin_support {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_resolve_model_path {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_merge_tensor_shape {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_validate_exit_code_consistency {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
 
-macro_rules! contract_pre_validate_exit_code_consistency { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_format_conversion_roundtrip { () => {{}}; ($($t:tt)*) => {{}}; }
-macro_rules! contract_pre_encryption_idempotency { () => {{}}; ($($t:tt)*) => {{}}; }
-
+macro_rules! contract_pre_validate_exit_code_consistency {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_format_conversion_roundtrip {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_encryption_idempotency {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
