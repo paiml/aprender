@@ -1,0 +1,21 @@
+[package]
+name = "renacer-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.renacer]
+path = ".."
+
+[[bin]]
+name = "filter_parser"
+path = "fuzz_targets/filter_parser.rs"
+test = false
+doc = false
+bench = false

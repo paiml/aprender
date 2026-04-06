@@ -1,0 +1,100 @@
+# Default Cluster Pack for Single-Shot Compile Workflows
+#
+# This file defines standard syscall clusters for transpilers/compilers.
+# Users can override by creating project-specific renacer-clusters.toml
+#
+# Scientific Foundation:
+# [3] Kuhn, A., Ducasse, S., & Gîrba, T. (2007). Semantic clustering:
+#     Identifying topics in source code. IST, 49(3).
+#
+# Toyota Way Principle: Poka-Yoke (Error Proofing)
+# - Configuration-driven: Add new syscalls without recompilation
+# - Future-proof: Supports mmap3, clone3, and kernel evolution
+# - Domain-extensible: Users can add GPU, ML, or custom clusters
+
+[[cluster]]
+name = "MemoryAllocation"
+description = "Heap management and AST allocation"
+syscalls = ["mmap", "munmap", "brk", "mmap2", "mmap3"]
+expected_for_transpiler = true
+anomaly_threshold = 0.50  # 50% increase acceptable (AST size varies)
+severity = "medium"
+
+[[cluster]]
+name = "FileIO"
+description = "Source file and output operations"
+syscalls = [
+    "open", "openat", "openat2",
+    "read", "write", "pread64", "pwrite64", "readv", "writev",
+    "close", "fsync", "fdatasync", "sync_file_range",
+    "lseek", "llseek"
+]
+expected_for_transpiler = true
+anomaly_threshold = 0.30  # 30% increase acceptable
+severity = "medium"
+
+[[cluster]]
+name = "ProcessControl"
+description = "Subprocess spawning (cargo, rustc, shellcheck, etc.)"
+syscalls = [
+    "fork", "vfork", "clone", "clone3",
+    "exec", "execve", "execveat",
+    "wait", "wait4", "waitid", "waitpid"
+]
+expected_for_transpiler = false  # Only for multi-phase pipelines
+anomaly_threshold = 0.20  # 20% increase = investigate
+severity = "high"
+
+[[cluster]]
+name = "Synchronization"
+description = "Thread coordination (should be minimal for single-threaded transpilers)"
+syscalls = [
+    "futex", "futex_waitv",
+    "pthread_mutex_lock", "pthread_mutex_unlock",
+    "pthread_cond_wait", "pthread_cond_signal",
+    "sem_wait", "sem_post"
+]
+expected_for_transpiler = false
+anomaly_threshold = 0.05  # 5% increase = RED FLAG
+severity = "critical"
+
+[[cluster]]
+name = "Randomness"
+description = "Random number generation (unexpected in deterministic compilation)"
+syscalls = ["getrandom", "random", "urandom"]
+expected_for_transpiler = false
+anomaly_threshold = 0.10  # 10% increase = investigate
+severity = "high"
+
+[[cluster]]
+name = "Networking"
+description = "HTTP/network calls (CRITICAL - telemetry leaks, supply chain attacks)"
+syscalls = [
+    "socket", "connect", "bind", "listen", "accept", "accept4",
+    "send", "recv", "sendto", "recvfrom", "sendmsg", "recvmsg",
+    "shutdown", "getsockname", "getpeername"
+]
+expected_for_transpiler = false
+anomaly_threshold = 0.0  # ANY networking = RED FLAG
+severity = "critical"
+
+# Domain-Specific Clusters (User-Extensible Examples)
+
+[[cluster]]
+name = "GPU"
+description = "CUDA/ROCm kernel launches (for ML transpilers like trueno)"
+syscalls = ["ioctl"]
+expected_for_transpiler = false
+anomaly_threshold = 0.0  # Only expected if explicitly using GPU
+severity = "medium"
+
+[cluster.args_filter]
+fd_path_pattern = "/dev/nvidia*"  # Match NVIDIA GPU devices
+
+[[cluster]]
+name = "DynamicLinking"
+description = "Dynamic library loading (JIT compilers, plugin systems)"
+syscalls = ["dlopen", "dlsym", "dlclose"]
+expected_for_transpiler = false
+anomaly_threshold = 0.20
+severity = "medium"

@@ -1,0 +1,21 @@
+[package]
+name = "renacer-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+license = "MIT"
+repository = "https://github.com/paiml/renacer"
+description = "Core tracing primitives for renacer — zero-dep span/event types for CPU-GPU pipelining instrumentation"
+rust-version = "1.75"
+
+[features]
+otlp = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+static_assertions = "1"

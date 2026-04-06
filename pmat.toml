@@ -1,0 +1,83 @@
+# PMAT Configuration for Renacer v2.0
+# Following Toyota Way and EXTREME TDD principles
+# Updated for PMAT 2.200.0 features
+
+[project]
+name = "renacer"
+description = "Pure Rust system call tracer with source correlation for Sovereign AI Stack"
+languages = ["rust"]
+version = "0.5.1"
+repository = "https://github.com/paiml/renacer"
+
+[quality]
+# EXTREME TDD requirements (Sprint 36: 93.76% coverage achieved)
+min_coverage = 93
+target_coverage = 95
+min_mutation_score = 80
+max_tdg_score = 25  # A+ grade minimum
+
+[testing]
+# Multi-tiered testing strategy
+test_command = "cargo test --all-features"
+coverage_command = "make coverage"  # Uses cargo-llvm-cov with GPU detection
+fast_test_command = "make test-fast"  # nextest parallel execution
+lib_test_command = "cargo test --lib"  # Quick lib-only tests
+
+[mutation]
+# Mutation testing configuration
+target_dirs = ["src/"]
+exclude_dirs = ["tests/", "benches/", "examples/"]
+timeout_multiplier = 2.0
+min_mutation_score = 75
+
+[tdg]
+# Technical Debt Grading
+include_comments = true
+language_specific_rules = true
+target_grade = "A+"
+
+[hooks]
+# Git hooks (installed via .git/hooks/pre-commit)
+pre_commit = [
+  "cargo fmt --check",
+  "cargo clippy -- -D warnings",
+  "cargo test --lib --quiet"
+]
+pre_commit_timeout = 30  # seconds
+
+[quality-gates]
+# Quality gate thresholds (PMAT 2.200.0)
+coverage = 93
+mutation_score = 75
+clippy_warnings = 0
+pre_commit_time = 30  # seconds
+
+[roadmap]
+# Roadmap management (PMAT 2.200.0)
+file = "ROADMAP.md"
+format = "github-issues"
+track_sprints = true
+
+[semantic-search]
+# Semantic code search (PMAT 2.200.0)
+enabled = true
+index_dirs = ["src/", "tests/", "docs/"]
+exclude_patterns = ["target/", "*.lock"]
+
+[maintain]
+# Project maintenance (PMAT 2.200.0)
+auto_update_deps = false  # Manual control for stability
+check_security = true
+audit_command = "cargo audit"
+
+[work]
+# Unified workflow (PMAT 2.200.0 Issue #75)
+issue_tracker = "github"
+org = "paiml"
+repo = "renacer"
+
+[specifications]
+# Specification tracking
+specs_dir = "docs/specifications"
+enforce_annotations = true  # Require peer-reviewed citations
+min_citations = 10

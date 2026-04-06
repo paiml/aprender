@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#ff6b6b"/>
+    </linearGradient>
+    <linearGradient id="code" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f3460"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Circuit decorations -->
+  <g stroke="#e94560" stroke-width="2" opacity="0.3">
+    <path d="M 100 300 L 200 300 L 240 260 L 350 260" fill="none"/>
+    <path d="M 100 340 L 180 340 L 220 380 L 320 380" fill="none"/>
+    <path d="M 930 260 L 1040 260 L 1080 300 L 1180 300" fill="none"/>
+    <path d="M 960 380 L 1060 380 L 1100 340 L 1180 340" fill="none"/>
+    <circle cx="100" cy="300" r="5" fill="#e94560"/>
+    <circle cx="100" cy="340" r="5" fill="#e94560"/>
+    <circle cx="1180" cy="300" r="5" fill="#e94560"/>
+    <circle cx="1180" cy="340" r="5" fill="#e94560"/>
+  </g>
+
+  <g transform="translate(640, 280)">
+    <!-- Terminal window -->
+    <g transform="translate(-180, -80)">
+      <rect x="0" y="0" width="160" height="100" rx="6" fill="url(#code)" stroke="#0f3460" stroke-width="2"/>
+      <rect x="0" y="0" width="160" height="20" rx="6" fill="#0f3460"/>
+      <rect x="0" y="14" width="160" height="6" fill="#0f3460"/>
+      <circle cx="12" cy="10" r="4" fill="#ff5f56"/>
+      <circle cx="28" cy="10" r="4" fill="#ffbd2e"/>
+      <circle cx="44" cy="10" r="4" fill="#27c93f"/>
+      <text x="10" y="40" font-family="monospace" font-size="10" fill="#27c93f">$ renacer ./app</text>
+      <text x="10" y="56" font-family="monospace" font-size="9" fill="#a0a0a0">read(3, buf) = 42</text>
+      <text x="10" y="72" font-family="monospace" font-size="9" fill="#e94560">[src/main.rs:15]</text>
+      <text x="10" y="88" font-family="monospace" font-size="9" fill="#27c93f">exit(0)</text>
+    </g>
+
+    <!-- Arrow -->
+    <path d="M -10 0 L 20 0 L 15 -8 M 20 0 L 15 8" stroke="#e94560" stroke-width="3" fill="none"/>
+
+    <!-- Trace visualization -->
+    <g transform="translate(40, -80)">
+      <rect x="0" y="0" width="140" height="100" rx="6" fill="url(#code)" stroke="#0f3460" stroke-width="2"/>
+      <text x="10" y="18" font-family="sans-serif" font-size="11" font-weight="bold" fill="#e94560">Trace</text>
+      <rect x="10" y="28" width="120" height="14" rx="2" fill="#0f3460" stroke="#e94560" stroke-width="1"/>
+      <text x="14" y="39" font-family="sans-serif" font-size="8" fill="#fff">process: ./app</text>
+      <rect x="20" y="46" width="100" height="12" rx="2" fill="#0f3460" stroke="#27c93f" stroke-width="1"/>
+      <text x="24" y="55" font-family="monospace" font-size="8" fill="#27c93f">read</text>
+      <rect x="20" y="62" width="60" height="12" rx="2" fill="#0f3460" stroke="#ffbd2e" stroke-width="1"/>
+      <text x="24" y="71" font-family="monospace" font-size="8" fill="#ffbd2e">write</text>
+      <rect x="20" y="78" width="40" height="12" rx="2" fill="#0f3460" stroke="#27c93f" stroke-width="1"/>
+      <text x="24" y="87" font-family="monospace" font-size="8" fill="#27c93f">exit</text>
+    </g>
+  </g>
+
+  <text x="640" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">renacer</text>
+  <text x="640" y="530" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">Pure Rust System Call Tracer</text>
+</svg>

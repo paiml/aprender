@@ -1,0 +1,522 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+roadmap:
+- id: GH-16
+  github_issue: 16
+  item_type: task
+  title: 'Issue #16'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T13:42:13.344240735+00:00
+  updated: 2025-11-21T21:51:26.526271152+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GOLDEN-001
+  github_issue: null
+  item_type: epic
+  title: Golden Thread OpenTelemetry Integration (Sprints 40-44)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T09:02:24.258396285+00:00
+  updated: 2025-11-23T20:00:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - 'Lock-free ring buffer with <1% overhead (Toyota Way: Heijunka)'
+  - 'Lamport logical clocks for causal ordering (Toyota Way: Poka-Yoke)'
+  - 'State-based semantic equivalence (Toyota Way: Genchi Genbutsu)'
+  - 'Run-length encoding 262,144× compression (Toyota Way: Muda)'
+  - 'Build-time trace assertions fail CI (Toyota Way: Andon)'
+  - Trueno-DB storage with SQL queries (<20ms p95)
+  - Trueno-Graph causal analysis with critical path
+  - 19 peer-reviewed citations documented
+  phases:
+  - name: 'Sprint 40: Golden Thread Core'
+    status: completed
+    estimated_effort: null
+    completion: 0
+  - name: 'Sprint 41: Causal Graph Analysis'
+    status: completed
+    estimated_effort: null
+    completion: 0
+  - name: 'Sprint 42: Batuta Integration'
+    status: completed
+    estimated_effort: null
+    completion: 0
+  - name: 'Sprint 43: Query Optimization'
+    status: completed
+    estimated_effort: null
+    completion: 0
+  - name: 'Sprint 44: Build-Time Assertions'
+    status: completed
+    estimated_effort: null
+    completion: 0
+  subtasks: []
+  estimated_effort: 5 sprints (10 weeks)
+  labels:
+  - toyota-way
+  - observability
+  - trueno-integration
+  - peer-reviewed
+  notes: |
+    Toyota Way Architecture Review:
+    - Heijunka (Flow): Ring buffer prevents observability from blocking app
+    - Poka-Yoke (Error-proofing): Lamport clocks guarantee causal correctness
+    - Genchi Genbutsu (Real data): State-based comparison validates optimization
+    - Muda (Waste): RLE eliminates storage bloat from loops
+    - Andon (Visual control): Build-time assertions catch regressions early
+
+    Key Innovations:
+    - Lock-free ring buffer (250-2500× latency reduction vs synchronous I/O)
+    - Logical clocks (eliminates false causality from clock skew)
+    - State-based equivalence (allows optimization without false positives)
+    - Run-length encoding (262,144× compression for tight loops)
+    - Build-time assertions (shift-left performance validation)
+- id: GOLDEN-040
+  github_issue: null
+  item_type: task
+  title: 'Sprint 40: Golden Thread Core - Trueno-DB + Ring Buffer + Lamport Clocks'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T09:05:00.000000000+00:00
+  updated: 2025-11-23T16:00:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - Lock-free ring buffer with crossbeam::queue::ArrayQueue
+  - 'Ring buffer capacity: 8192 spans, overflow: drop (never block)'
+  - 'Hot path latency: <1μs (enqueue only, no I/O)'
+  - Sidecar thread drains buffer to OTLP + trueno-db
+  - Lamport logical clock implementation (AtomicU64)
+  - Logical clock propagation via RENACER_LOGICAL_CLOCK env var
+  - Trueno-DB Parquet schema with SpanRecord struct
+  - 'SQL query interface: SELECT * FROM spans WHERE trace_id=?'
+  - 'Query performance: 1M spans <20ms (p95)'
+  - 'Test coverage: 85%+ for new modules'
+  phases: []
+  subtasks: []
+  estimated_effort: 2 weeks
+  labels:
+  - sprint-40
+  - toyota-way-heijunka
+  - toyota-way-poka-yoke
+  - performance
+  notes: |
+    Toyota Way Principles:
+    - Heijunka (Flow): Ring buffer isolates app from I/O latency
+    - Poka-Yoke (Error-proofing): Lamport clocks guarantee correct causality
+
+    Dependencies:
+    - crossbeam = "0.8" (lock-free data structures)
+    - trueno-db = "0.3" (Parquet storage)
+    - Add to Cargo.toml
+
+    Key Metrics:
+    - Hot path: <1μs (ring buffer enqueue)
+    - Cold path: 10ms batching (sidecar thread)
+    - Query: <20ms for 1M spans
+    - Overhead: <1% total (Google SLO)
+
+    Testing Strategy:
+    - Property tests: Ring buffer never blocks
+    - Stress tests: 10K spans/sec sustained
+    - Benchmark: Compare vs synchronous I/O
+    - Integration: Fork propagates logical clock
+- id: GOLDEN-041
+  github_issue: null
+  item_type: task
+  title: 'Sprint 41: Causal Graph Analysis - Trueno-Graph + RLE Compression'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T16:00:00.000000000+00:00
+  updated: 2025-11-23T17:30:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - Trueno-Graph CSR construction from spans
+  - Critical path algorithm (longest path DP)
+  - Anti-pattern detection (God Process, Tight Loop, PCIe bottleneck)
+  - Run-length encoding for tight loops
+  - Build graph from 1K spans (<100ms)
+  - RLE compression (262,144× for loops)
+  - Anti-pattern detection accuracy
+  phases: []
+  subtasks: []
+  estimated_effort: 2 weeks
+  labels:
+  - sprint-41
+  - toyota-way-genchi-genbutsu
+  - toyota-way-muda
+  - performance
+  notes: |
+    Toyota Way Principles:
+    - Genchi Genbutsu (Go and See): Real causal graph analysis from actual traces
+    - Muda (Waste): RLE eliminates storage bloat from tight loops
+
+    Dependencies:
+    - trueno-graph = "0.3" (CSR graph for causal analysis)
+    - Add to Cargo.toml
+
+    Key Metrics:
+    - Graph construction: <100ms for 1K spans
+    - RLE compression: 262,144× for tight loops
+    - Anti-pattern detection: >90% accuracy
+
+    Testing Strategy:
+    - Unit tests: CSR construction correctness
+    - Integration tests: End-to-end critical path
+    - Benchmarks: Graph construction performance
+    - Property tests: RLE compression ratio
+- id: GOLDEN-042
+  github_issue: null
+  item_type: task
+  title: 'Sprint 42: Batuta Integration - Trace Context + Semantic Equivalence'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T17:30:00.000000000+00:00
+  updated: 2025-11-23T18:00:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - W3C Trace Context propagation (TRACEPARENT header)
+  - RENACER_LOGICAL_CLOCK environment variable propagation
+  - State-based semantic equivalence (SHA-256 payload hashing)
+  - Python vs Rust comparison (100 test programs)
+  - 'End-to-end: Batuta pipeline → single trace ID'
+  - Semantic equivalence validates buffered I/O optimization
+  - 'Test coverage: 85%+ for new modules'
+  phases: []
+  subtasks: []
+  estimated_effort: 2 weeks
+  labels:
+  - sprint-42
+  - toyota-way-genchi-genbutsu
+  - batuta-integration
+  - observability
+  notes: |
+    Toyota Way Principles:
+    - Genchi Genbutsu (Real data): State-based comparison validates real optimizations
+
+    Dependencies:
+    - sha2 = "0.10" (SHA-256 hashing for state comparison)
+    - batuta CLI (for integration testing)
+    - Add to Cargo.toml
+
+    Key Metrics:
+    - Trace context propagation: 100% across fork/exec
+    - Semantic equivalence: <1μs per comparison
+    - Python vs Rust: 100 test programs validated
+
+    Testing Strategy:
+    - Unit tests: Trace context parsing/serialization
+    - Integration tests: Batuta transpilation + renacer tracing
+    - Property tests: State equivalence is symmetric and transitive
+    - Benchmark: State hashing performance
+- id: GOLDEN-043
+  github_issue: null
+  item_type: task
+  title: 'Sprint 43: Query Optimization - Trueno-DB Performance Tuning'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T18:00:00.000000000+00:00
+  updated: 2025-11-23T19:00:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - Composite indexes (trace_id, timestamp)
+  - Parquet row groups (10K rows/group)
+  - Predicate pushdown to Parquet layer
+  - '1M spans: <20ms p95 query latency'
+  - '10M spans: <200ms p95 query latency'
+  - Regression detection (<10% increase)
+  - 'Test coverage: 85%+ for new modules'
+  phases: []
+  subtasks: []
+  estimated_effort: 2 weeks
+  labels:
+  - sprint-43
+  - performance
+  - database
+  - query-optimization
+  notes: |
+    Query Optimization Techniques:
+    - Composite indexes: Leverage Parquet column statistics
+    - Row groups: Optimize for query patterns (time-series)
+    - Predicate pushdown: Filter at Parquet level (reduce I/O)
+
+    Target Performance:
+    - 1M spans: <20ms p95 (current baseline)
+    - 10M spans: <200ms p95 (10× data, 10× latency)
+    - 100M spans: <2s p95 (future target)
+
+    Testing Strategy:
+    - Benchmark: Generate synthetic traces at scale
+    - Property tests: Query results independent of optimization
+    - Regression tests: Alert on >10% latency increase
+- id: GOLDEN-044
+  github_issue: null
+  item_type: task
+  title: 'Sprint 44: Build-Time Assertions - renacer.toml DSL + CI Integration'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-23T19:00:00.000000000+00:00
+  updated: 2025-11-23T20:00:00.000000000+00:00
+  spec: docs/specifications/golden-thread-open-telemetry-spec.md
+  acceptance_criteria:
+  - renacer.toml DSL for trace assertions (declarative syntax)
+  - Assertion evaluation engine (parse + validate traces)
+  - Cargo test integration (fail tests on violation)
+  - Critical path assertion example (max latency)
+  - Anti-pattern assertion example (detect God Process)
+  - DSL parser handles all assertion types
+  - CI/CD fails on regression (assertion violations)
+  - 'Test coverage: 85%+ for new modules'
+  phases: []
+  subtasks: []
+  estimated_effort: 2 weeks
+  labels:
+  - sprint-44
+  - toyota-way-andon
+  - build-time-validation
+  - shift-left
+  notes: |
+    Toyota Way Principles:
+    - Andon (Visual control): Build-time assertions catch regressions early
+    - Jidoka (Automation with human touch): Fail fast, stop the line
+
+    DSL Example (renacer.toml):
+    ```toml
+    [[assertion]]
+    name = "critical_path_max_latency"
+    type = "critical_path"
+    max_duration_ms = 100
+    fail_on_violation = true
+
+    [[assertion]]
+    name = "no_god_process"
+    type = "anti_pattern"
+    pattern = "GodProcess"
+    threshold = 0.8
+    fail_on_violation = true
+    ```
+
+    Testing Strategy:
+    - Unit tests: DSL parser correctness
+    - Integration tests: End-to-end assertion evaluation
+    - Cargo test integration: Assert tests fail on violation
+    - CI/CD: GitHub Actions fail on regression
+- id: CLUSTER-001
+  github_issue: null
+  item_type: task
+  title: Implement TOML-Based Syscall Clustering (Section 6.1)
+  status: inprogress
+  priority: critical
+  assigned_to: claude
+  created: 2025-11-24T10:52:00.000000000+00:00
+  updated: 2025-11-24T10:52:00.000000000+00:00
+  spec: docs/specifications/single-shot-compile-tooling-spec.md
+  acceptance_criteria:
+  - ClusterRegistry reads from clusters.toml (user-extensible)
+  - Supports args_filter (fd_path_pattern, arg_contains) for context-aware classification
+  - Default cluster pack ships with transpiler patterns
+  - 'Poka-Yoke: warns on unmatched syscalls, suggests additions'
+  - 'Unit tests: classification, filtering, TOML parsing'
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - kaizen
+  - toyota-way
+  - poka-yoke
+  notes: 'Critical Kaizen improvement from Toyota Way review. Addresses Open-Closed Principle violation. References: [3] Kuhn et al. (2007) - Semantic clustering should be configuration-driven.'
+- id: TIME-WEIGHT-001
+  github_issue: null
+  item_type: task
+  title: 'New task: TIME-WEIGHT-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T12:19:50.192125887+00:00
+  updated: 2025-11-24T12:35:46.913425110+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: SEMANTIC-EQUIV-001
+  github_issue: null
+  item_type: task
+  title: 'New task: SEMANTIC-EQUIV-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T13:12:33.078180092+00:00
+  updated: 2025-11-24T13:23:10.501927688+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: INTEGRATION-001
+  github_issue: null
+  item_type: task
+  title: 'New task: INTEGRATION-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T13:19:35.174623811+00:00
+  updated: 2025-11-24T13:33:37.403118174+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: UNWRAP-AUDIT-001
+  github_issue: null
+  item_type: task
+  title: 'New task: UNWRAP-AUDIT-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T14:35:54.573297886+00:00
+  updated: 2025-11-24T14:35:54.573297886+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: UNWRAP-CRITICAL-001
+  github_issue: null
+  item_type: task
+  title: 'New task: UNWRAP-CRITICAL-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T15:04:13.094301878+00:00
+  updated: 2025-11-24T15:25:36.286330433+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: REN-001
+  github_issue: 20
+  item_type: task
+  title: Add experiment span type to Renacer
+  status: completed
+  priority: high
+  assigned_to: claude
+  created: 2025-11-30T12:00:00.000000000+00:00
+  updated: 2025-11-30T12:47:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - SpanType::Experiment variant added
+  - Experiment metadata fields supported (model_name, epoch, loss)
+  - Golden trace comparison API for behavioral equivalence
+  phases: []
+  subtasks: []
+  estimated_effort: small
+  labels:
+  - entrenar
+  - experiment-tracking
+  - phase-5
+  notes: |
+    Cross-project: ENT-EPIC-001 (entrenar experiment tracking spec v1.8.0 §5)
+
+    Implementation (2025-11-30):
+    - Added src/experiment_span.rs with:
+      - SpanType enum (Syscall, Gpu, Experiment)
+      - ExperimentMetadata struct (model_name, epoch, step, loss, metrics)
+      - ExperimentSpan::new_experiment() constructor
+      - EquivalenceScore struct (syscall_match, timing_variance, semantic_equiv)
+      - compare_traces() function using LCS algorithm for syscall matching
+    - 28 tests (10 unit + 18 integration) all passing
+    - cargo clippy -- -D warnings passes
+    - TDD workflow followed: RED → GREEN → REFACTOR
+- id: METRICS-001
+  github_issue: null
+  item_type: epic
+  title: Core Metrics, Alerting, and Visualization
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2025-01-07T00:00:00.000000000+00:00
+  updated: 2026-01-07T14:55:02.790127187+00:00
+  spec: docs/specifications/core-metrics-alerts-viz.md
+  acceptance_criteria:
+  - Counter.inc() <50ns (p99)
+  - Histogram.observe() <200ns with SIMD (trueno)
+  - Alert fires within 100ms of threshold breach
+  - TUI renders 50 metrics at 30fps
+  - 100/100 Popper falsification QA checklist items pass
+  - 95%+ test coverage
+  - 85%+ mutation score
+  phases:
+  - name: 'Sprint 56: Core Metrics + OTLP Export'
+    status: planned
+    estimated_effort: 1 week
+    completion: 0
+  - name: 'Sprint 57: Alerting + Visualization'
+    status: blocked
+    estimated_effort: 1 week
+    completion: 0
+  subtasks: []
+  estimated_effort: 2 weeks (2 sprints)
+  labels:
+  - observability
+  - metrics
+  - alerting
+  - toyota-way
+  - peer-reviewed
+  - prometheus-patterns
+  - linux-kernel-patterns
+  notes: |
+    Extends Renacer from tracing-only to full observability platform.
+
+    Core Features:
+    - Counter/Gauge/Histogram with SIMD-accelerated histograms (trueno)
+    - OTLP metrics export (extend existing trace exporter)
+    - Alert rule DSL in renacer.toml
+    - Real-time TUI metrics dashboard
+
+    Peer-Reviewed Citations:
+    - Dapper (Google 2010): Ring buffer pattern
+    - Prometheus (SoundCloud 2012): Counter/Gauge/Histogram types
+    - Linux perf_event (2008): Per-CPU ring buffers
+    - Borgmon (Google 2003): Alert rule evaluation
+    - Isolation Forest (Liu 2008): Anomaly detection
+
+    Linux Kernel Patterns:
+    - kernel/events/ring_buffer.c: Lock-free per-CPU buffers
+    - kernel/watchdog_perf.c: Threshold-based alerting
+
+    Prometheus Patterns:
+    - model/histogram: Exponential bucket boundaries
+    - Label cardinality control: Allowlist enforcement
+    - Recording rules: Pre-computed aggregations
+
+    Toyota Way Principles:
+    - Heijunka: Lock-free ring buffer prevents I/O blocking
+    - Jidoka: Automated alert evaluation, quality gates
+    - Genchi Genbutsu: Real production workload validation
+    - Muda: SIMD acceleration eliminates CPU waste
+
+    100-Point Popper Falsification QA Checklist included in spec.

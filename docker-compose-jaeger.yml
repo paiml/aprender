@@ -1,0 +1,35 @@
+# Docker Compose for Jaeger (Sprint 30: OpenTelemetry Integration)
+#
+# Jaeger All-in-One for testing OTLP trace export from Renacer
+#
+# Usage:
+#   docker-compose -f docker-compose-jaeger.yml up -d
+#   renacer --otlp-endpoint http://localhost:4317 --otlp-service-name my-app -- ./program
+#   open http://localhost:16686  # Jaeger UI
+
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger-renacer
+    ports:
+      # Jaeger UI
+      - "16686:16686"
+      # OTLP gRPC receiver
+      - "4317:4317"
+      # OTLP HTTP receiver
+      - "4318:4318"
+      # Jaeger gRPC
+      - "14250:14250"
+      # Jaeger HTTP
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+    networks:
+      - observability
+
+networks:
+  observability:
+    driver: bridge

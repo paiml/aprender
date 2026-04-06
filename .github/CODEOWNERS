@@ -1,0 +1,15 @@
+# Code Owners for renacer
+# These owners will be requested for review on PRs
+
+# Default owners
+* @paiml
+
+# Core tracer
+/src/tracer.rs @paiml
+/src/process_tracer.rs @paiml
+
+# Visualization
+/src/visualize/ @paiml
+
+# CI/CD
+/.github/ @paiml

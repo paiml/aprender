@@ -1,0 +1,163 @@
+#!/usr/bin/env ruchy
+# Performance Regression Detection (Sprint 29 - Red-Team Profile)
+#
+# Usage:
+#     ruchy scripts/check_regression.ruchy --generate-baseline
+#     ruchy scripts/check_regression.ruchy
+
+import os
+import json
+import time
+
+# Configuration
+let REGRESSION_THRESHOLD = 0.05  # 5%
+let BENCHMARK_RUNS = 5
+let BASELINE_FILE = "target/benchmark/baseline.json"
+
+# Run a single benchmark and return average time in ms
+fn run_benchmark(name: str, args: list[str]) -> float:
+    let binary = "target/release/renacer"
+
+    if not os.path.exists(binary):
+        print(f"ERROR: {binary} not found. Run 'cargo build --release' first.")
+        return -1.0
+
+    let times = []
+
+    for _ in range(BENCHMARK_RUNS):
+        let start = time.monotonic_ns()
+        let result = os.run([binary] + args, capture=true)
+        let elapsed_ms = (time.monotonic_ns() - start) / 1_000_000.0
+
+        if result.returncode == 0:
+            times.append(elapsed_ms)
+
+    if len(times) == 0:
+        print(f"  {name}... FAILED")
+        return -1.0
+
+    let avg = sum(times) / len(times)
+    print(f"  {name}... {avg:.2f}ms")
+    return avg
+
+# Run all benchmarks
+fn run_all_benchmarks() -> dict[str, float]:
+    print("Running benchmarks...\n")
+
+    let results = {}
+
+    # Benchmark 1: Simple trace
+    results["simple_trace"] = run_benchmark("simple_trace", ["--", "true"])
+
+    # Benchmark 2: Echo with arguments
+    results["echo_trace"] = run_benchmark("echo_trace", ["--", "echo", "hello", "world"])
+
+    # Benchmark 3: With filtering
+    results["filtered_trace"] = run_benchmark("filtered_trace", ["-e", "trace=open,read,write", "--", "ls", "-la"])
+
+    # Benchmark 4: Statistics mode
+    results["stats_mode"] = run_benchmark("stats_mode", ["-c", "--", "echo", "test"])
+
+    return results
+
+# Generate and save baseline
+fn generate_baseline():
+    print("============================================================")
+    print("Generating Performance Baseline")
+    print("============================================================\n")
+
+    let results = run_all_benchmarks()
+
+    let baseline = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "threshold": REGRESSION_THRESHOLD,
+        "results": results
+    }
+
+    # Ensure directory exists
+    os.makedirs("target/benchmark", exist_ok=true)
+
+    # Save baseline
+    let f = open(BASELINE_FILE, "w")
+    f.write(json.dumps(baseline, indent=2))
+    f.close()
+
+    print(f"\nBaseline saved to: {BASELINE_FILE}")
+    print("\nResults:")
+    for name, value in results.items():
+        print(f"  {name:<20} {value:.2f} ms")
+
+# Check for regressions
+fn check_regressions() -> bool:
+    print("============================================================")
+    print("Renacer Performance Regression Check")
+    print("============================================================\n")
+
+    if not os.path.exists(BASELINE_FILE):
+        print("WARNING: No baseline found.")
+        print("Run with --generate-baseline first.")
+        print(f"Expected baseline at: {BASELINE_FILE}")
+        return false
+
+    print(f"Loading baseline from: {BASELINE_FILE}\n")
+
+    # Load baseline
+    let f = open(BASELINE_FILE, "r")
+    let baseline = json.loads(f.read())
+    f.close()
+
+    # Run current benchmarks
+    let current = run_all_benchmarks()
+
+    print(f"\nChecking for regressions (threshold: {REGRESSION_THRESHOLD * 100:.0f}%)...\n")
+
+    print("Results:")
+    print("-" * 60)
+    print(f"{'Metric':<20} {'Baseline':>10} {'Current':>10} {'Change':>10} Status")
+    print("-" * 60)
+
+    let has_regressions = false
+    let regressions = []
+
+    for name, baseline_val in baseline["results"].items():
+        let current_val = current.get(name, 0.0)
+
+        let change = 0.0
+        if baseline_val > 0.0:
+            change = (current_val - baseline_val) / baseline_val
+
+        let status = ""
+        if change > REGRESSION_THRESHOLD:
+            has_regressions = true
+            regressions.append((name, baseline_val, current_val, change))
+            status = "\x1b[31mREGRESSION\x1b[0m"
+        elif change < -REGRESSION_THRESHOLD:
+            status = "\x1b[32mIMPROVED\x1b[0m"
+
+        print(f"{name:<20} {baseline_val:>8.2f}ms {current_val:>8.2f}ms {change * 100:>+9.1f}% {status}")
+
+    print("-" * 60)
+    print()
+
+    if has_regressions:
+        print("\x1b[31mREGRESSIONS DETECTED:\x1b[0m")
+        for name, base, curr, change in regressions:
+            print(f"  - {name}: {change * 100:+.1f}% ({base:.2f}ms -> {curr:.2f}ms)")
+        print(f"\nPerformance regressions exceed {REGRESSION_THRESHOLD * 100:.0f}% threshold!")
+        return true
+    else:
+        print("\x1b[32mNo regressions detected.\x1b[0m")
+        return false
+
+# Main
+fn main():
+    let args = os.args()
+
+    if "--generate-baseline" in args:
+        generate_baseline()
+    else:
+        let has_regressions = check_regressions()
+        if has_regressions:
+            os.exit(1)
+
+main()

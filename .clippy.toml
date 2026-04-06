@@ -1,0 +1,31 @@
+# Clippy configuration for renacer
+# Enforces project quality standards
+#
+# Note: disallowed-methods for unwrap() removed because serde_json::json! macro
+# internally uses unwrap() and we cannot control third-party macro internals.
+# All direct .unwrap() calls have been replaced with .expect() where appropriate.
+
+# Cognitive complexity threshold (lower = stricter)
+cognitive-complexity-threshold = 25
+
+# Maximum number of lines in a function body
+too-many-lines-threshold = 200
+
+# Maximum number of arguments for functions
+too-many-arguments-threshold = 8
+
+# Maximum number of bool parameters
+max-fn-params-bools = 4
+
+# Maximum struct bool fields
+max-struct-bools = 8
+
+# MSRV for lint suggestions
+msrv = "1.75"
+
+# Disallowed methods to enforce project-specific style
+# Note: unwrap() enforcement via disallowed-methods was removed because serde_json::json!
+# macro internally uses unwrap(). Use expect() with descriptive messages instead.
+disallowed-methods = [
+    { path = "std::thread::sleep_ms", reason = "Use std::thread::sleep with Duration instead" },
+]

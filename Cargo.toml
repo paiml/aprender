@@ -1,0 +1,349 @@
+[workspace]
+resolver = "2"
+members = [".", "crates/renacer-core"]
+
+[workspace.package]
+version = "0.10.2"
+edition = "2021"
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+license = "MIT"
+repository = "https://github.com/paiml/renacer"
+rust-version = "1.75"
+
+[workspace.dependencies]
+
+[package]
+name = "renacer"
+version = "0.10.2"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+description = "Pure Rust system call tracer with source-aware correlation for Rust binaries"
+license = "MIT"
+repository = "https://github.com/paiml/renacer"
+readme = "README.md"
+keywords = ["strace", "tracing", "syscall", "debugging", "profiling"]
+exclude = [
+    "book/",
+    "docs/",
+    "tests/",
+    ".pmat/",
+    ".pmat-metrics/",
+    ".pmat-work/",
+    ".github/",
+    "scripts/",
+    "*.md",
+    "!README.md",
+    "roadmap.yaml",
+    "tempo-config.yml",
+    "*.svg",
+    "**/*.profraw",
+    "**/*.profdata",
+    "**/*.proptest-regressions",
+]
+categories = ["development-tools::debugging", "development-tools::profiling"]
+
+[dependencies]
+# CLI and argument parsing
+clap = { version = "4.5", default-features = false, features = ["derive", "cargo", "std", "help", "usage", "error-context", "suggestions"] }
+
+# Ptrace and system calls
+nix = { version = "0.30", default-features = false, features = ["ptrace", "process", "signal", "uio", "resource", "user"] }
+libc = "0.2"
+
+# Error handling
+# PMAT-284: Core tracing primitives (extracted to break circular dep)
+renacer-core = { version = "0.1" }
+
+anyhow = "1.0"
+thiserror = "2.0"
+
+# JSON serialization
+serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+hex = { version = "0.4", default-features = false, features = ["std"] }
+
+# MessagePack for Sprint 27 decision trace (v2.0.0 spec)
+rmp-serde = "1.3"
+
+# FNV hash for u64 decision IDs (Sprint 27)
+fnv = "1.0"
+
+# DWARF debug info parsing
+addr2line = { version = "0.25", default-features = false, features = ["std"] }
+gimli = { version = "0.32", default-features = false, features = ["read", "std", "endian-reader"] }
+object = { version = "0.38", default-features = false, features = ["read", "elf", "std"] }
+memmap2 = "0.9"
+
+# Stack unwinding for function profiling
+backtrace = "0.3"
+
+# High-performance SIMD/GPU compute (sister project - published on crates.io)
+trueno = { version = "0.17" }
+
+# Machine learning for anomaly detection (Sprint 23)
+# GH-581: Use path dep to avoid trueno version skew with local workspace
+aprender = { path = "../aprender" }
+
+# Lock-free data structures for ring buffer (Sprint 40)
+crossbeam = { version = "0.8", default-features = false, features = ["crossbeam-channel", "crossbeam-queue", "std"] }
+
+# Concurrent hashmap for metrics registry (Sprint 56)
+dashmap = "6.1"
+
+# Parquet storage for golden thread traces (Sprint 40)
+trueno-db = { version = "0.3.16" }
+
+# Graph database for causal analysis (Sprint 41)
+trueno-graph = { version = "0.1.17" }
+
+# SHA-256 hashing for state-based semantic equivalence (Sprint 42)
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+
+# Compile-time trait assertions for Send+Sync bounds (Sprint 59)
+static_assertions = "1.1"
+
+# TOML parsing for build-time assertions (Sprint 44)
+toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
+
+# Regex filtering (Sprint 16)
+regex = { version = "1.10", default-features = false, features = ["std", "perf"] }
+
+# Random number generation for Isolation Forest (Sprint 22)
+rand = { version = "0.8", default-features = false, features = ["std", "std_rng"] }
+
+# Development tracing/debugging
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "ansi"] }
+
+# TUI visualization (Sprint 52-55)
+ratatui = "0.29"
+crossterm = "0.28"
+
+# SIMD-accelerated visualization primitives (sister project)
+trueno-viz = { version = "0.2", default-features = false, features = ["monitor"] }
+
+# OpenTelemetry for distributed tracing (Sprint 30)
+opentelemetry = { version = "0.31.0", optional = true }
+opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.31.0", features = ["grpc-tonic", "http-proto"], optional = true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"], optional = true }
+
+# GPU kernel tracing (Sprint 37)
+wgpu = { version = "23.0", optional = true }
+wgpu-profiler = { version = "0.18", optional = true }
+
+# CUDA kernel tracing (Sprint 38)
+cudarc = { version = "0.18", optional = true, features = ["f16", "cuda-version-from-build-system"] }
+
+[dev-dependencies]
+# Testing
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3.13"
+serial_test = "3.2"
+
+# Property-based testing
+proptest = "1.5"
+
+# Sprint 34: Integration testing with Jaeger
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde_json = "1.0"
+
+# Sprint 36: Performance benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "syscall_overhead"
+harness = false
+
+[[bench]]
+name = "otlp_export"
+harness = false
+
+[[bench]]
+name = "memory_pool"
+harness = false
+
+[[bench]]
+name = "ring_buffer_overhead"
+harness = false
+
+[[bench]]
+name = "visualization_simd"
+harness = false
+
+[[bench]]
+name = "metrics_throughput"
+harness = false
+
+[[bench]]
+name = "graph_construction"
+harness = false
+
+[[example]]
+name = "brick_trace_demo"
+path = "examples/brick_trace_demo.rs"
+
+[[example]]
+name = "buggy_server"
+path = "examples/buggy_server.rs"
+
+[[example]]
+name = "build_time_assertions"
+path = "examples/build_time_assertions.rs"
+
+[[example]]
+name = "validate_golden_trace"
+path = "examples/validate_golden_trace.rs"
+
+[[example]]
+name = "simd_visualization"
+path = "examples/simd_visualization.rs"
+
+[[example]]
+name = "process_tracer_demo"
+path = "examples/process_tracer_demo.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.dev]
+panic = "abort"
+opt-level = 0
+debug = true
+
+[profile.test]
+opt-level = 0
+debug = true
+
+# Chaos engineering features (Sprint 29 - Red-Team Profile)
+# Following aprender/trueno patterns for feature organization
+[features]
+default = ["otlp"]
+
+# Tier 1: Fast chaos (resource limits, signal injection)
+chaos-basic = []
+
+# Tier 2: Network/IO chaos (latency, packet loss simulation)
+chaos-network = ["chaos-basic"]
+
+# Tier 3: Byzantine fault injection (syscall return modification)
+chaos-byzantine = ["chaos-network"]
+
+# Full chaos engineering suite
+chaos-full = ["chaos-byzantine", "dep:loom", "dep:arbitrary"]
+
+# Fuzz testing support
+fuzz = ["dep:arbitrary"]
+
+# OpenTelemetry OTLP export (Sprint 30)
+otlp = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:tokio"]
+
+# GPU kernel-level tracing (Sprint 37)
+gpu-tracing = ["dep:wgpu", "dep:wgpu-profiler", "otlp"]
+
+# CUDA kernel-level tracing (Sprint 38)
+cuda-tracing = ["dep:cudarc", "otlp"]
+
+[dependencies.loom]
+version = "0.7"
+optional = true
+
+[dependencies.arbitrary]
+version = "1.3"
+optional = true
+features = ["derive"]
+
+# Lint configuration for consistent code quality
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+# Allow kani cfg for formal verification proofs
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+# High-value lints for code quality
+# Renamed from clippy::let_underscore_drop
+let_underscore_drop = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "allow"
+# High-value lints that catch real bugs
+checked_conversions = "warn"
+fallible_impl_from = "warn"
+enum_glob_use = "warn"
+needless_for_each = "warn"
+# Allow common pedantic lints that are too noisy
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+cast_possible_wrap = "allow"
+format_push_string = "allow"
+unused_self = "allow"
+return_self_not_must_use = "allow"
+ref_option = "allow"
+needless_pass_by_value = "allow"
+implicit_hasher = "allow"
+items_after_statements = "allow"
+struct_excessive_bools = "allow"
+unreadable_literal = "allow"
+unnecessary_wraps = "allow"
+doc_link_with_quotes = "allow"
+match_same_arms = "allow"
+redundant_else = "allow"
+inline_always = "allow"
+manual_let_else = "allow"
+float_cmp = "allow"
+fn_params_excessive_bools = "allow"
+used_underscore_binding = "allow"
+unnecessary_debug_formatting = "allow"
+single_match_else = "allow"
+redundant_pattern_matching = "allow"
+trivially_copy_pass_by_ref = "allow"
+format_collect = "allow"
+needless_continue = "allow"
+# Test code style lints
+ignore_without_reason = "allow"
+uninlined_format_args = "allow"
+explicit_iter_loop = "allow"
+cast_lossless = "allow"
+needless_raw_string_hashes = "allow"
+doc_markdown = "allow"
+single_char_pattern = "allow"
+useless_vec = "allow"
+manual_range_contains = "allow"
+match_wildcard_for_single_variants = "allow"
+let_underscore_untyped = "allow"
+manual_assert = "allow"
+default_trait_access = "allow"
+# Additional test code style lints (let_underscore_drop moved to [lints.rust])
+unnecessary_get_then_check = "allow"
+field_reassign_with_default = "allow"
+no_effect_underscore_binding = "allow"
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
