@@ -34,6 +34,16 @@ equations:
     preconditions:
     - input_path.exists()
     lean_theorem: Theorems.Encrypt_Idempotency
+  gpu_inference_path:
+    formula: backend = if gpu && cuda_available then cuda_q4k else wgpu_fallback
+    domain: model_path is Path, gpu is bool
+    codomain: backend in {cuda_q4k, wgpu_fallback, cpu}
+    invariants:
+    - gpu && cuda_available implies used_gpu == true (no silent fallback)
+    - tok_per_sec > 10 when cuda_q4k (not 1.5 tok/s)
+    preconditions:
+    - model_path.exists()
+    lean_theorem: Theorems.Gpu_Inference_Path_Correctness
 falsification_tests:
 - id: FALSIFY-CLI-001
   rule: validate exits non-zero on low score
@@ -52,8 +62,8 @@ falsification_tests:
   if_fails: Double encryption — unrecoverable data corruption
 kani_harnesses: []
 verification_summary:
-  total_obligations: 3
-  l2_property_tested: 3
+  total_obligations: 4
+  l2_property_tested: 4
   l3_kani_proved: 0
   l4_lean_proved: 0
   l4_sorry_count: 0

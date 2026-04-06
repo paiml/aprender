@@ -394,7 +394,9 @@ fn execute_training(
     if let Some(last) = result.epoch_metrics.last() {
         eprintln!(
             "[training] final_loss={:.4} val_loss={:.4} epochs={}",
-            last.train_loss, result.best_val_loss, result.epoch_metrics.len(),
+            last.train_loss,
+            result.best_val_loss,
+            result.epoch_metrics.len(),
         );
     }
 
