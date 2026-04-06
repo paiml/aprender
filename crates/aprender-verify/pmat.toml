@@ -1,0 +1,63 @@
+# PMAT Configuration for certeza
+# Pragmatic AI Labs Multi-Language Agent Toolkit configuration
+
+[project]
+name = "certeza"
+root = "."
+exclude = [
+    "target/",
+    ".git/",
+    "mutants.out/",
+    "docs/",
+    "examples/",
+    "benches/",
+    "tests/fixtures/",
+]
+
+[quality]
+# Complexity limits (aligned with EXTREME TDD)
+max_cyclomatic = 10
+max_cognitive = 10
+max_nesting = 5
+
+# SATD (Self-Admitted Technical Debt)
+max_satd = 0
+satd_patterns = ["TODO", "FIXME", "HACK", "XXX"]
+
+# Coverage requirements (EXTREME TDD: 85%+)
+min_coverage = 85.0
+require_docs = true
+
+# Mutation testing
+min_mutation_score = 85.0
+
+[rust]
+# Rust-specific quality settings
+clippy_strict = true
+rustfmt_check = true
+cargo_deny = true
+cargo_audit = true
+
+# Unsafe code restrictions
+max_unsafe_blocks = 0
+require_unsafe_docs = true
+
+[testing]
+# Testing framework configuration
+require_unit_tests = true
+require_integration_tests = true
+require_property_tests = true
+min_integration_tests = 10
+
+# Property-based testing
+proptest_iterations = 256
+
+[documentation]
+# Documentation requirements
+min_rustdoc_coverage = 90.0
+require_examples = true
+require_module_docs = true
+
+[output]
+format = "markdown"
+verbose = true

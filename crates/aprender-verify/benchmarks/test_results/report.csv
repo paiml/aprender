@@ -1,0 +1,4 @@
+Benchmark Name,Type,Opt Level,Warmup,Iterations,Mean (ms),Median (ms),Std Dev (ms),CV (%),Min (ms),Max (ms),CI95 Lower (ms),CI95 Upper (ms),Speedup,Cohen's d,P-value,Significant
+trueno_vec_push,microbenchmark,release,3,10,21.613,21.555,0.891,4.12,20.150,23.670,21.100,22.100,,,,
+trueno_vec_pop,microbenchmark,release,3,10,18.392,18.410,0.185,1.01,18.120,18.670,18.250,18.540,,,,
+trueno_vec_get,microbenchmark,release,3,10,12.398,12.395,0.095,0.77,12.230,12.560,12.320,12.480,,,,

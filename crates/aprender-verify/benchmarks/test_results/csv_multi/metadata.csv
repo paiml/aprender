@@ -1,0 +1,27 @@
+Property,Value
+Schema Version,1.0
+Benchmark Suite,certeza-test-suite
+Timestamp,2025-11-18T11:07:45.378Z
+Git Commit,abc123def
+Git Branch,main
+Operator,test-runner
+CPU Model,Intel Core i7-9750H
+CPU Cores (Physical),6
+CPU Cores (Logical),12
+CPU Base Frequency (MHz),2600
+Memory Total (MB),16384
+Memory Available (MB),8192
+OS Name,Linux
+OS Version,5.15.0
+Kernel Version,5.15.0-91-generic
+Rustc Version,rustc 1.82.0
+Cargo Version,cargo 1.82.0
+LLVM Version,19.1.3
+CPU Governor,performance
+Swap Enabled,false
+Total Benchmarks,3
+Successful,3
+Failed,0
+Total Runtime (seconds),45.20
+Significant Improvements,0
+Significant Regressions,0

@@ -1,0 +1,6 @@
+# Clippy configuration for certeza
+
+disallowed-methods = [
+    { path = "std::option::Option::unwrap", reason = "Use .expect() or ? operator" },
+    { path = "std::result::Result::unwrap", reason = "Use .expect() or ? operator" },
+]

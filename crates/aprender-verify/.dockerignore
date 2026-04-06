@@ -1,0 +1,48 @@
+# Docker build optimization
+# Exclude unnecessary files from build context
+
+# Build artifacts
+/target/
+**/target/
+
+# Generated files
+benchmarks/results/*.json
+benchmarks/baselines/*.json
+benchmarks/history/*.json
+benchmarks/test_results/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# CI/CD
+.gitlab-ci.yml
+
+# Documentation
+*.md
+!README.md
+docs/**/*.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kaizen artifacts
+.kaizen/
+/tmp/
+
+# Coverage
+coverage/
+*.profraw
+*.profdata
+
+# Logs
+*.log

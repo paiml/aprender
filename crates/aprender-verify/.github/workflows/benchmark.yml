@@ -1,0 +1,76 @@
+name: Benchmark Regression Detection
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'benches/**'
+      - 'Cargo.toml'
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_TARGET_DIR: target
+  RUSTFLAGS: "-C target-cpu=native"
+
+jobs:
+  benchmark:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install critcmp
+        run: cargo install critcmp
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Download baseline benchmarks
+        uses: actions/cache@v4
+        with:
+          path: target/criterion
+          key: benchmark-baseline-${{ github.base_ref || 'main' }}
+          restore-keys: |
+            benchmark-baseline-main
+
+      - name: Run benchmarks
+        run: cargo bench --bench vec_benchmarks -- --save-baseline current
+
+      - name: Compare against baseline
+        id: compare
+        run: |
+          if critcmp baseline current --threshold 15 2>/dev/null | grep -q "regressed"; then
+            echo "regression_detected=true" >> $GITHUB_OUTPUT
+            echo "## Performance Regression Detected" >> $GITHUB_STEP_SUMMARY
+            critcmp baseline current --threshold 15 >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "regression_detected=false" >> $GITHUB_OUTPUT
+            echo "## No Performance Regressions" >> $GITHUB_STEP_SUMMARY
+            echo "All benchmarks within 15% of baseline." >> $GITHUB_STEP_SUMMARY
+          fi
+        continue-on-error: true
+
+      - name: Save baseline (main branch only)
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v4
+        with:
+          path: target/criterion
+          key: benchmark-baseline-main
+
+      - name: Fail on regression
+        if: steps.compare.outputs.regression_detected == 'true'
+        run: |
+          echo "::error::Performance regression detected! See summary for details."
+          exit 1

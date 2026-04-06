@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "benchmark_suite": "certeza-benchmarks",
+    "timestamp": "2026-03-08T05:12:40+00:00",
+    "git_commit": "bb3de37",
+    "git_branch": "main",
+    "operator": "automated-ci",
+    "benchmarking_tool": "hyperfine",
+    "warmup_runs": 3,
+    "measured_runs": 10
+  },
+  "benchmarks": [],
+  "summary": {
+    "total_benchmarks": 0,
+    "successful": 0,
+    "failed": 0,
+    "total_runtime_seconds": 0.0,
+    "significant_improvements": 0,
+    "significant_regressions": 0
+  }
+}
