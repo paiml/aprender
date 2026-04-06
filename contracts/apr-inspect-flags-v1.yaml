@@ -16,6 +16,7 @@ metadata:
 equations:
   flag_materiality:
     formula: "∀ flag f ∈ {vocab, filters, weights}: ∀ file F (any format): output(inspect F) ≠ output(inspect F --f)"
+    lean_theorem: Theorems.FlagMateriality
     domain: "(flag, file format) ∈ {vocab, filters, weights} × {APR, GGUF, SafeTensors}"
     codomain: "stdout bytes"
     invariants:

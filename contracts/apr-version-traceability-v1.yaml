@@ -25,6 +25,7 @@ five_whys:
 equations:
   non_sentinel_version:
     formula: "apr --version output MUST NOT contain '(unknown)' when CARGO_PKG_VERSION is available"
+    lean_theorem: Theorems.NonSentinelVersion
     domain: "any apr binary built by cargo (path or crates.io)"
     codomain: "version string"
     invariants:

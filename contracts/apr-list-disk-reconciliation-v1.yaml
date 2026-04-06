@@ -26,6 +26,7 @@ five_whys:
 equations:
   disk_reconciliation:
     formula: "apr_list.models ⊇ {f ∈ pacha_cache_dir : ext(f) ∈ {.gguf, .apr, .safetensors, .ggml}}"
+    lean_theorem: Theorems.DiskReconciliation
     domain: "cached model files present on disk in pacha cache dir"
     codomain: "set of models shown by apr list"
     invariants:

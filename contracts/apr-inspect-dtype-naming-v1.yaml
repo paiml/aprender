@@ -18,6 +18,7 @@ metadata:
 equations:
   dtype_naming:
     formula: "∀ t ∈ InspectionReport.tensors: t.dtype ∈ GGML_NAMES"
+    lean_theorem: Theorems.DtypeNaming
     domain: "tensor entry in an InspectionReport populated from a GGUF, SafeTensors, or APR v2 file"
     codomain: "human-readable dtype string"
     invariants:

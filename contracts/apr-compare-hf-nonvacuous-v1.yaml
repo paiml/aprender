@@ -25,6 +25,7 @@ five_whys:
 equations:
   non_vacuous_verdict:
     formula: "compare_hf_passes(M, HF) ⟹ tensors_compared(M, HF) > 0"
+    lean_theorem: Theorems.NonVacuousVerdict
     domain: "(local model M, HF reference HF) → compare-hf invocation"
     codomain: "boolean verdict + exit code"
     invariants:
