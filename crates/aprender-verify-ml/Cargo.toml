@@ -1,0 +1,179 @@
+[workspace]
+members = ["."]
+
+[workspace.lints.rust]
+# Safety
+unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "warn"
+
+# Code Quality
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+
+# Best Practices
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+# Base level
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Correctness (critical)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+
+# Performance
+perf = { level = "warn", priority = -1 }
+inefficient_to_string = "warn"
+explicit_iter_loop = "warn"
+
+# Known Defects (v2.200.0 - Cloudflare outage 2025-11-18)
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+unreachable = "warn"
+
+# Code quality
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+
+# Allow pedantic lints that conflict with code generation patterns
+similar_names = "allow"
+doc_markdown = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+trivially_copy_pass_by_ref = "allow"
+unused_self = "allow"
+unnecessary_wraps = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+needless_pass_by_value = "allow"
+derivable_impls = "allow"
+match_same_arms = "allow"
+
+[package]
+name = "verificar"
+version = "0.5.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+description = "Synthetic Data Factory for Domain-Specific Code Intelligence"
+repository = "https://github.com/paiml/verificar"
+documentation = "https://docs.rs/verificar"
+readme = "README.md"
+keywords = ["testing", "code-generation", "transpiler", "verification", "synthetic-data"]
+categories = ["development-tools::testing", "compilers"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Parquet data output
+parquet = { version = "57.0", optional = true }
+arrow = { version = "57.0", optional = true }
+
+# Random number generation for sampling
+rand = "0.9"
+rand_distr = "0.5"
+
+# Parallelization for generation
+rayon = "1.10"
+
+# Progress tracking
+indicatif = "0.18"
+
+# UUID for test case IDs
+uuid = { version = "1.11", features = ["v4", "serde"] }
+
+# Core compute primitives - SIMD-accelerated tensor operations
+trueno = "0.7.3"
+
+# Machine learning for bug prediction (optional)
+aprender = { version = "0.14", optional = true }
+
+# LLM fine-tuning integration (optional)
+entrenar = { version = "0.2", optional = true }
+
+# Tree-sitter for grammar parsing (optional)
+tree-sitter = { version = "0.25", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+tree-sitter-c = { version = "0.24", optional = true }
+tree-sitter-typescript = { version = "0.23", optional = true }
+
+# Pest for PEG grammars (optional)
+pest = { version = "2.7", optional = true }
+pest_derive = { version = "2.7", optional = true }
+
+[dev-dependencies]
+proptest = "1.6"
+criterion = "0.6"
+renacer = "0.7"
+tempfile = "3.14"
+
+[features]
+default = []
+parquet = ["dep:parquet", "dep:arrow"]
+tree-sitter = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:tree-sitter-c", "dep:tree-sitter-typescript"]
+pest = ["dep:pest", "dep:pest_derive"]
+ml = ["dep:aprender"]
+llm = ["dep:entrenar"]
+full = ["parquet", "tree-sitter", "pest", "ml", "llm"]
+# Chaos engineering features (from renacer)
+chaos-basic = []
+chaos-network = ["chaos-basic"]
+chaos-byzantine = ["chaos-basic"]
+chaos-full = ["chaos-network", "chaos-byzantine"]
+
+[[test]]
+name = "book"
+path = "tests/book/mod.rs"
+
+[[bench]]
+name = "generator"
+harness = false
+
+[[bench]]
+name = "mutator"
+harness = false
+
+[[bench]]
+name = "oracle"
+harness = false
+
+[[example]]
+name = "grammar_validation"
+required-features = ["tree-sitter"]
+
+[[example]]
+name = "generator_basic"
+
+[[example]]
+name = "backend_selector"
+required-features = ["ml"]
+
+[[example]]
+name = "experiment_tracking"
+required-features = ["ml"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = true  # Enable debug symbols for profiling (flamegraph, perf)

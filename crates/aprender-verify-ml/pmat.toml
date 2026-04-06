@@ -1,0 +1,47 @@
+# PMAT Configuration for Verificar
+# Technical Debt Gradient and Quality Gate Settings
+
+[quality]
+# Complexity thresholds (Toyota Way standard from spec)
+max_cyclomatic_complexity = 15
+max_cognitive_complexity = 12
+
+# Test coverage target (95% minimum per CLAUDE.md)
+min_test_coverage = 95
+
+# SATD (Self-Admitted Technical Debt) - zero tolerance
+max_satd_comments = 0
+
+# TDG Score target
+min_tdg_score = 95
+
+# Mutation testing score
+min_mutation_score = 85
+
+[hooks]
+# Pre-commit hook settings
+enabled = true
+fail_on_complexity = true
+fail_on_satd = true
+warn_on_missing_docs = true
+
+[analysis]
+# Include patterns
+include = ["src/**/*.rs"]
+
+# Exclude patterns
+exclude = ["target/**", "benches/**"]
+
+[certeza]
+# Tiered workflow (from spec Section 6.2)
+enabled = true
+tiered_workflow = true
+
+[certeza.tier1]  # ON-SAVE (<5s)
+targets = ["check", "clippy-fast", "test-unit"]
+
+[certeza.tier2]  # ON-COMMIT (<5min)
+targets = ["fmt", "clippy-full", "test-all", "coverage", "tdg"]
+
+[certeza.tier3]  # NIGHTLY (<2hr)
+targets = ["mutation", "fuzz", "bench", "security-audit"]

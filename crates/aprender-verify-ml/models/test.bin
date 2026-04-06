@@ -1,0 +1,12 @@
+{
+  "features": [
+    "ast_depth",
+    "node_count",
+    "cyclomatic_complexity"
+  ],
+  "model_type": "RandomForestClassifier",
+  "note": "Full training requires aprender ml feature",
+  "status": "placeholder",
+  "train_split": 0.8,
+  "version": "0.1.0"
+}
