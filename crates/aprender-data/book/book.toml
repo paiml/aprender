@@ -1,0 +1,26 @@
+[book]
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Alimentar - Data Loading, Distribution and Tooling in Pure Rust"
+description = "Sovereign-first data loading library for the paiml AI stack. HuggingFace-compatible with local storage default and no mandatory cloud dependency."
+
+[build]
+build-dir = "book"
+create-missing = true
+use-default-preprocessors = true
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/paiml/alimentar"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/paiml/alimentar/edit/main/book/{path}"
+site-url = "/alimentar/"
+
+[output.html.playground]
+editable = true
+copyable = true
+copy-js = true
+runnable = false

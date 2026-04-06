@@ -1,0 +1,1 @@
+{"content_hash":"be623719c92bc7be","findings":[{"rule_id":"PV-VER-001","severity":"error","message":"Unfalsifiable: test `test_batch_covers_all_data` referenced but not found in src/","file":"contracts/batch-loading-v1.yaml","line":null,"contract_stem":"batch-loading-v1","suppressed":false}]}

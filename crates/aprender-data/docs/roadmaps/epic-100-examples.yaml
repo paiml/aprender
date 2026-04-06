@@ -1,0 +1,335 @@
+# Epic: 100 Cargo Run Examples Implementation
+# Toyota Way: Standardized Work & Extreme TDD
+# Date: 2025-11-30
+
+epic:
+  id: ALI-100-EXAMPLES
+  title: "Implement 100 Executable QA Examples"
+  owner: QA Team
+  methodology: Extreme TDD (Red-Green-Refactor)
+  quality_gates:
+    coverage: 92%  # maintain current
+    mutation_score: 85%
+    clippy: zero_warnings
+    fmt: enforced
+
+phases:
+  - id: phase-1
+    name: "Basic Loading (1-10)"
+    priority: P0
+    status: in_progress
+    tickets:
+      - id: ALI-001
+        title: "CSV/JSON/Parquet loading with format flag"
+        examples: [1, 2, 3]
+        tdd_tests: ["test_csv_loading", "test_json_loading", "test_parquet_loading"]
+
+      - id: ALI-002
+        title: "Schema inference and explicit schema"
+        examples: [4, 5]
+        tdd_tests: ["test_schema_inference", "test_explicit_schema"]
+
+      - id: ALI-003
+        title: "Multi-file glob and mmap loading"
+        examples: [6, 7]
+        tdd_tests: ["test_glob_loading", "test_mmap_loading"]
+
+      - id: ALI-004
+        title: "Compressed input (ZSTD/LZ4)"
+        examples: [8, 9]
+        tdd_tests: ["test_zstd_loading", "test_lz4_loading"]
+
+      - id: ALI-005
+        title: "Large file handling (>1GB)"
+        examples: [10]
+        tdd_tests: ["test_large_file_memory_bound"]
+
+  - id: phase-2
+    name: "DataLoader & Batching (11-20)"
+    priority: P0
+    status: pending
+    tickets:
+      - id: ALI-006
+        title: "Basic batching and shuffle"
+        examples: [11, 12, 13]
+        tdd_tests: ["test_batch_size", "test_shuffle_determinism", "test_drop_last"]
+
+      - id: ALI-007
+        title: "Parallel and prefetch"
+        examples: [14, 15]
+        tdd_tests: ["test_parallel_workers", "test_prefetch_buffer"]
+
+      - id: ALI-008
+        title: "Weighted and stratified sampling"
+        examples: [16, 17]
+        tdd_tests: ["test_weighted_sampling", "test_stratified_batching"]
+
+      - id: ALI-009
+        title: "Infinite iterator and collate"
+        examples: [18, 19]
+        tdd_tests: ["test_infinite_iterator", "test_custom_collate"]
+
+      - id: ALI-010
+        title: "Batch size benchmark"
+        examples: [20]
+        tdd_tests: ["bench_batch_throughput"]
+
+  - id: phase-3
+    name: "Streaming & Memory (21-30)"
+    priority: P0
+    status: pending
+    tickets:
+      - id: ALI-011
+        title: "Basic streaming and chained sources"
+        examples: [21, 22, 23]
+        tdd_tests: ["test_streaming_constant_memory", "test_chained_sources", "test_memory_source"]
+
+      - id: ALI-012
+        title: "Parquet streaming and buffer tuning"
+        examples: [24, 25]
+        tdd_tests: ["test_parquet_row_group_streaming", "test_buffer_size_config"]
+
+      - id: ALI-013
+        title: "Async prefetch and backpressure"
+        examples: [26, 27]
+        tdd_tests: ["test_async_prefetch", "test_backpressure_bounded"]
+
+      - id: ALI-014
+        title: "Iterator reset and memory profile"
+        examples: [28, 29]
+        tdd_tests: ["test_iterator_reset_determinism", "test_no_memory_leaks"]
+
+      - id: ALI-015
+        title: "10GB dataset test"
+        examples: [30]
+        tdd_tests: ["test_large_streaming_memory_bound"]
+
+  - id: phase-4
+    name: "Transforms Pipeline (31-45)"
+    priority: P1
+    status: pending
+    tickets:
+      - id: ALI-016
+        title: "Column select/drop/rename"
+        examples: [31, 32, 33]
+        tdd_tests: ["test_select_columns", "test_drop_columns", "test_rename_columns"]
+
+      - id: ALI-017
+        title: "Row filtering (numeric/string)"
+        examples: [34, 35]
+        tdd_tests: ["test_numeric_filter", "test_string_filter"]
+
+      - id: ALI-018
+        title: "Null fill strategies"
+        examples: [36, 37]
+        tdd_tests: ["test_fill_null_mean", "test_fill_null_constant"]
+
+      - id: ALI-019
+        title: "Normalization (MinMax/ZScore)"
+        examples: [38, 39]
+        tdd_tests: ["test_normalize_minmax", "test_normalize_zscore"]
+
+      - id: ALI-020
+        title: "Sort ascending/descending"
+        examples: [40, 41]
+        tdd_tests: ["test_sort_asc", "test_sort_desc"]
+
+      - id: ALI-021
+        title: "Take/Skip/Unique"
+        examples: [42, 43, 44]
+        tdd_tests: ["test_take_limit", "test_skip_offset", "test_unique_dedup"]
+
+      - id: ALI-022
+        title: "Transform chain composition"
+        examples: [45]
+        tdd_tests: ["test_transform_chain_composition"]
+
+  - id: phase-5
+    name: "Quality & Validation (46-55)"
+    priority: P1
+    status: pending
+    tickets:
+      - id: ALI-023
+        title: "Basic quality check and missing values"
+        examples: [46, 47]
+        tdd_tests: ["test_quality_report", "test_missing_value_detection"]
+
+      - id: ALI-024
+        title: "Duplicate and type validation"
+        examples: [48, 49]
+        tdd_tests: ["test_duplicate_detection", "test_type_validation"]
+
+      - id: ALI-025
+        title: "Range and cardinality checks"
+        examples: [50, 51]
+        tdd_tests: ["test_range_check", "test_cardinality_check"]
+
+      - id: ALI-026
+        title: "Constant detection and scoring"
+        examples: [52, 53]
+        tdd_tests: ["test_constant_column_detection", "test_quality_score"]
+
+      - id: ALI-027
+        title: "Quality profiles and export"
+        examples: [54, 55]
+        tdd_tests: ["test_strict_profile", "test_export_json"]
+
+  - id: phase-6
+    name: "Drift Detection (56-65)"
+    priority: P1
+    status: pending
+    tickets:
+      - id: ALI-028
+        title: "Basic drift and KS test"
+        examples: [56, 57]
+        tdd_tests: ["test_drift_report", "test_ks_statistic"]
+
+      - id: ALI-029
+        title: "Chi-square and PSI"
+        examples: [58, 59]
+        tdd_tests: ["test_chi2_categorical", "test_psi_buckets"]
+
+      - id: ALI-030
+        title: "Severity and column-level drift"
+        examples: [60, 61]
+        tdd_tests: ["test_drift_severity", "test_column_drift"]
+
+      - id: ALI-031
+        title: "Threshold alerts and sketches"
+        examples: [62, 63, 64]
+        tdd_tests: ["test_drift_threshold", "test_hll_sketch", "test_countmin_sketch"]
+
+      - id: ALI-032
+        title: "Drift report export"
+        examples: [65]
+        tdd_tests: ["test_drift_export_json"]
+
+  - id: phase-7
+    name: "Federated & Splitting (66-75)"
+    priority: P2
+    status: pending
+    tickets:
+      - id: ALI-033
+        title: "Train/test and stratified split"
+        examples: [66, 67]
+        tdd_tests: ["test_train_test_ratio", "test_stratified_split"]
+
+      - id: ALI-034
+        title: "K-fold and leave-one-out"
+        examples: [68, 69]
+        tdd_tests: ["test_kfold_cv", "test_leave_one_out"]
+
+      - id: ALI-035
+        title: "Node manifest and coordinator"
+        examples: [70, 71]
+        tdd_tests: ["test_node_manifest", "test_federated_coordinator"]
+
+      - id: ALI-036
+        title: "IID/Non-IID/Dirichlet strategies"
+        examples: [72, 73, 74]
+        tdd_tests: ["test_iid_strategy", "test_non_iid_strategy", "test_dirichlet_partition"]
+
+      - id: ALI-037
+        title: "Multi-node simulation"
+        examples: [75]
+        tdd_tests: ["test_multi_node_distribution"]
+
+  - id: phase-8
+    name: "HuggingFace Hub (76-85)"
+    priority: P2
+    status: pending
+    tickets:
+      - id: ALI-038
+        title: "Dataset download and card validation"
+        examples: [76, 77]
+        tdd_tests: ["test_hf_download", "test_card_validation"]
+
+      - id: ALI-039
+        title: "Quality score and README generation"
+        examples: [78, 79]
+        tdd_tests: ["test_hub_quality_score", "test_readme_generation"]
+
+      - id: ALI-040
+        title: "Native upload and revision support"
+        examples: [80, 81]
+        tdd_tests: ["test_hub_upload_dry_run", "test_revision_branch"]
+
+      - id: ALI-041
+        title: "Private upload and cache management"
+        examples: [82, 83]
+        tdd_tests: ["test_private_visibility", "test_cache_management"]
+
+      - id: ALI-042
+        title: "Offline mode and token auth"
+        examples: [84, 85]
+        tdd_tests: ["test_offline_mode", "test_token_auth"]
+
+  - id: phase-9
+    name: "CLI & REPL (86-95)"
+    priority: P2
+    status: pending
+    tickets:
+      - id: ALI-043
+        title: "CLI help and info commands"
+        examples: [86, 87]
+        tdd_tests: ["test_cli_help", "test_cli_info"]
+
+      - id: ALI-044
+        title: "CLI head and convert"
+        examples: [88, 89]
+        tdd_tests: ["test_cli_head", "test_cli_convert"]
+
+      - id: ALI-045
+        title: "CLI quality command"
+        examples: [90]
+        tdd_tests: ["test_cli_quality"]
+
+      - id: ALI-046
+        title: "REPL session and completion"
+        examples: [91, 92]
+        tdd_tests: ["test_repl_session", "test_repl_completion"]
+
+      - id: ALI-047
+        title: "REPL commands and history"
+        examples: [93, 94]
+        tdd_tests: ["test_repl_commands", "test_repl_history"]
+
+      - id: ALI-048
+        title: "CLI batch script"
+        examples: [95]
+        tdd_tests: ["test_cli_batch_execution"]
+
+  - id: phase-10
+    name: "Edge Cases & WASM (96-100)"
+    priority: P0
+    status: pending
+    tickets:
+      - id: ALI-049
+        title: "WASM build verification"
+        examples: [96]
+        tdd_tests: ["test_wasm_build"]
+
+      - id: ALI-050
+        title: "Empty and corrupt dataset handling (Jidoka)"
+        examples: [97, 98]
+        tdd_tests: ["test_empty_dataset", "test_corrupt_dataset_jidoka"]
+
+      - id: ALI-051
+        title: "S3 backend integration"
+        examples: [99]
+        tdd_tests: ["test_s3_backend"]
+
+      - id: ALI-052
+        title: "Golden run (all features)"
+        examples: [100]
+        tdd_tests: ["test_golden_run_all_checks"]
+
+metrics:
+  baseline:
+    tests: 1111
+    coverage: 92.10%
+    examples: 17
+  target:
+    tests: 1500+
+    coverage: 92%+
+    examples: 100

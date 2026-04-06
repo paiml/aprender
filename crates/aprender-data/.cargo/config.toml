@@ -1,0 +1,27 @@
+# Cargo configuration for alimentar
+
+[build]
+# Use all available cores
+jobs = -1
+
+[target.'cfg(all())']
+rustflags = [
+    # Enable all warnings
+    "-Wclippy::all",
+    "-Wclippy::pedantic",
+    # Deny unwrap/expect in library code
+    "-Dclippy::unwrap_used",
+    "-Dclippy::expect_used",
+    # Allow some pedantic lints that are too noisy
+    "-Aclippy::module_name_repetitions",
+    "-Aclippy::must_use_candidate",
+    "-Aclippy::missing_errors_doc",
+    "-Aclippy::missing_panics_doc",
+]
+
+[alias]
+# Useful aliases
+t = "test"
+b = "build"
+c = "check"
+r = "run"

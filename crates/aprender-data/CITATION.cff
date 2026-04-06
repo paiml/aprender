@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "alimentar: Data Loading, Distribution and Tooling in Pure Rust"
+version: 0.1.0
+date-released: 2025-11-26
+url: "https://github.com/paiml/alimentar"
+repository-code: "https://github.com/paiml/alimentar"
+license: MIT
+authors:
+  - name: "paiml"
+keywords:
+  - data-loading
+  - arrow
+  - parquet
+  - rust
+  - machine-learning
+  - datasets
+  - streaming
+  - zero-copy
+abstract: >-
+  A sovereignty-first data loading library for the paiml AI stack.
+  Provides HuggingFace-compatible functionality with local-first design,
+  zero-copy Arrow RecordBatches, streaming for large datasets, and
+  comprehensive data quality and drift detection capabilities.

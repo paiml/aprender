@@ -1,0 +1,4 @@
+comply:
+  suppressions:
+    - check_id: "cb-950"
+      reason: "docker-compose.yml uses MinIO default dev credentials (minioadmin) — not production secrets"

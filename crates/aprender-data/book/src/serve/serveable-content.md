@@ -1,0 +1,1 @@
+# ServeableContent Trait

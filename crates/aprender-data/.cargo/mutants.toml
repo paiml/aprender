@@ -1,0 +1,39 @@
+# Mutation testing configuration for alimentar
+# Uses cargo-mutants for mutation coverage
+#
+# Run with: cargo mutants --package alimentar
+
+# Timeout for each mutant test run
+timeout_multiplier = 2.0
+build_timeout_multiplier = 2.0
+
+# Files to mutate (focus on REPL module)
+[examine_names]
+include = [
+    "repl::*",
+    "CommandParser*",
+    "ReplCommand*",
+    "ReplSession*",
+    "SchemaAwareCompleter*",
+    "HealthStatus*",
+    "DisplayConfig*",
+    "AndonPrompt*",
+]
+
+# Skip test code itself
+[examine_names]
+exclude = [
+    "*test*",
+    "*tests*",
+    "*mock*",
+]
+
+# Skip functions that are hard to test via mutation
+[skip_functions]
+# I/O operations that would cause test hangs
+patterns = [
+    "run_interactive",
+    "create_editor",
+    "update_completer",
+    "dirs_home",
+]

@@ -1,0 +1,52 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+roadmap:
+- id: GH-3
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-3'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-28T12:53:28.546680399+00:00
+  updated: 2025-11-28T12:59:53.265132963+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-4
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-4'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-28T12:55:18.925669357+00:00
+  updated: 2025-11-28T12:59:53.795756322+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-12
+  github_issue: 12
+  item_type: task
+  title: 'Issue #12'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-30T12:38:36.259391550+00:00
+  updated: 2025-11-30T12:42:21.455209560+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
