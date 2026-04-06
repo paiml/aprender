@@ -239,7 +239,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "apr-cli"
-version = "0.4.16"
+version = "0.4.17"
 dependencies = [
  "alimentar",
  "aprender 0.27.8",
@@ -2350,7 +2350,7 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 
 [[package]]
 name = "entrenar"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "alimentar",
  "aprender 0.27.8",
