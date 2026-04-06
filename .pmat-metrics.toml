@@ -1,0 +1,56 @@
+# PMAT Quality Metrics Configuration
+# trueno-zram: SIMD-accelerated memory compression library
+
+[thresholds]
+# Coverage thresholds (per CLAUDE.md: 95% minimum)
+line_coverage = 95.0
+function_coverage = 95.0
+branch_coverage = 80.0
+
+# Complexity thresholds
+# Note: SIMD compression algorithms inherently have high complexity
+# due to tight loops, branch prediction optimization, and vectorized code paths
+max_cyclomatic_complexity = 35
+max_cognitive_complexity = 140
+max_function_lines = 150
+
+# Code quality
+max_dead_code_percent = 5.0
+max_duplicate_lines = 50
+
+# Technical debt
+max_satd_items = 10
+satd_severity_threshold = "medium"
+
+[project]
+name = "trueno-zram"
+type = "library"
+language = "rust"
+
+[exclude]
+# Paths to exclude from analysis
+paths = [
+    "target/",
+    "*.generated.rs",
+]
+
+# Files requiring root/special permissions or special hardware (can't be unit tested)
+untestable = [
+    "crates/trueno-zram-cli/",
+    "crates/trueno-zram-core/src/zram/device.rs",
+    "crates/trueno-zram-core/src/zram/ops.rs",
+    # GPU module requires CUDA hardware for full coverage
+    "crates/trueno-zram-core/src/gpu/mod.rs",
+]
+
+[acceptable_deviations]
+# Compression algorithms inherently have high cyclomatic complexity
+# due to tight loops, branch prediction optimization, and SIMD vectorization
+complexity = [
+    "lz4/avx512.rs:decompress_avx512_impl",  # cyclomatic: 33
+    "lz4/neon.rs:decompress_neon_impl",       # cyclomatic: 32
+    "lz4/decompress.rs:decompress_fast",      # cyclomatic: 31
+    "zstd/decompress.rs:decompress",          # cyclomatic: 16
+    "lz4/compress.rs:compress_fast",          # cyclomatic: 16
+]
+reason = "SIMD compression implementations require complex control flow for performance"

@@ -1,0 +1,106 @@
+# Dockerfile.ublk-test
+# Disposable container for trueno-ublk integration testing
+# Per testing-debugging-troubleshooting.md Section 4
+#
+# Usage:
+#   docker build -t trueno-ublk-test -f docker/Dockerfile.ublk-test .
+#   docker run --privileged -v /lib/modules:/lib/modules:ro trueno-ublk-test
+
+FROM ubuntu:24.04
+
+LABEL maintainer="trueno-zram maintainers"
+LABEL description="Disposable test environment for trueno-ublk block device testing"
+LABEL version="1.0.0"
+
+# Avoid interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=debug
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # SSL certificates (required for curl/rustup)
+    ca-certificates \
+    # Build essentials
+    build-essential \
+    pkg-config \
+    cmake \
+    # Kernel headers for ublk
+    linux-headers-generic \
+    kmod \
+    # Filesystem tools for integration tests
+    btrfs-progs \
+    e2fsprogs \
+    xfsprogs \
+    f2fs-tools \
+    dosfstools \
+    # Benchmarking and stress testing
+    fio \
+    stress-ng \
+    ioping \
+    # Debugging and tracing
+    strace \
+    ltrace \
+    linux-tools-generic \
+    bpftrace \
+    # Utilities
+    curl \
+    git \
+    jq \
+    bc \
+    util-linux \
+    procps \
+    coreutils \
+    # Memory debugging
+    valgrind \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    --default-toolchain stable \
+    --profile default
+
+# Add components separately (rustup-init syntax changed)
+RUN . "$HOME/.cargo/env" && rustup component add rustfmt clippy
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install cargo tools for testing
+RUN cargo install cargo-nextest cargo-llvm-cov --locked
+
+# ============================================================================
+# Batuta Stack Installation (per Section 3.5 of testing-debugging-troubleshooting.md)
+# ============================================================================
+
+# Install pmat for quality gates and QA tracking
+RUN cargo install pmat --locked || echo "pmat install optional"
+
+# Install bashrs for shell/Makefile/Dockerfile validation
+RUN cargo install bashrs --locked || echo "bashrs install optional"
+
+# Install probador for test orchestration
+RUN cargo install probador --locked || echo "probador install optional"
+
+# Install renacer for structured tracing
+RUN cargo install renacer --locked || echo "renacer install optional"
+
+# Renacer environment configuration
+ENV RENACER_TRACE=1
+ENV RENACER_LEVEL=info
+ENV RENACER_FORMAT=json
+
+# Create working directory
+WORKDIR /workspace
+
+# Copy test scripts
+COPY scripts/docker-test-harness.sh /usr/local/bin/
+COPY scripts/falsification-runner.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/*.sh
+
+# Health check - verify ublk support
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD modprobe --dry-run ublk_drv 2>/dev/null || exit 1
+
+# Default: run test harness
+ENTRYPOINT ["/usr/local/bin/docker-test-harness.sh"]
+CMD ["unit"]

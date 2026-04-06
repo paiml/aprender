@@ -1,0 +1,28 @@
+[book]
+title = "trueno-zram"
+description = "SIMD and GPU-accelerated memory compression for Linux"
+authors = ["PAIML"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "../docs"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/paiml/trueno-zram"
+edit-url-template = "https://github.com/paiml/trueno-zram/edit/main/book/{path}"
+site-url = "/trueno-zram/"
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.playground]
+editable = true
+copy-js = true
+
+[output.html.search]
+enable = true
+limit-results = 30

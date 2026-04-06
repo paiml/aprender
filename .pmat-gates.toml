@@ -1,0 +1,17 @@
+# PMAT Quality Gates Configuration for trueno-zram
+# SIMD-accelerated memory compression library
+
+[quality]
+coverage_threshold = 95.0
+max_complexity = 35  # LZ4 decompression loops are intentionally complex
+max_binary_size_mb = 50
+
+[compute-brick]
+enabled = true
+require_safety_comments = true
+require_target_feature = true
+cv_threshold_percent = 15.0
+efficiency_threshold_percent = 25.0
+
+[hooks]
+pre_commit = ["pmat comply check --failures-only"]

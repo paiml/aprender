@@ -1,0 +1,49 @@
+# Dockerfile.swap-deadlock
+#
+# DT-006/DT-007: Dockerfile for swap deadlock testing
+#
+# This builds trueno-ublk inside the container and runs the deadlock test.
+# Memory limits are set via docker-compose.swap-deadlock.yml
+
+FROM ubuntu:24.04
+
+LABEL maintainer="trueno-zram maintainers"
+LABEL description="Swap deadlock testing environment for trueno-ublk"
+LABEL version="1.0.0"
+
+ARG ENABLE_MLOCK=0
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+ENV ENABLE_MLOCK=${ENABLE_MLOCK}
+
+# Install minimal dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    curl \
+    git \
+    kmod \
+    util-linux \
+    procps \
+    python3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Copy pre-built binary from host (avoids trueno-gpu dependency issue)
+# Build on host with: cargo build --release -p trueno-ublk
+COPY target/release/trueno-ublk /usr/local/bin/trueno-ublk
+RUN chmod +x /usr/local/bin/trueno-ublk
+
+# Copy test script
+COPY scripts/test-swap-deadlock.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/test-swap-deadlock.sh
+
+# Set daemon path
+ENV DAEMON_BIN=/usr/local/bin/trueno-ublk
+
+ENTRYPOINT ["/usr/local/bin/test-swap-deadlock.sh"]
+CMD ["--timeout", "120", "--memory-gb", "3"]

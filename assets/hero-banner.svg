@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f97316"/>
+      <stop offset="100%" style="stop-color:#fb923c"/>
+    </linearGradient>
+    <linearGradient id="speed" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22c55e"/>
+      <stop offset="100%" style="stop-color:#4ade80"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" fill="url(#bg)"/>
+
+  <!-- Speed lines (motion effect) -->
+  <g opacity="0.4">
+    <rect x="0" y="35" width="120" height="2" fill="url(#speed)" rx="1"/>
+    <rect x="0" y="50" width="180" height="1.5" fill="url(#speed)" rx="1"/>
+    <rect x="0" y="145" width="150" height="1.5" fill="url(#speed)" rx="1"/>
+    <rect x="0" y="160" width="100" height="2" fill="url(#speed)" rx="1"/>
+  </g>
+
+  <!-- Memory/compression icon -->
+  <g transform="translate(50, 55)">
+    <rect x="0" y="0" width="85" height="85" rx="10" fill="#1e3a5f" stroke="url(#accent)" stroke-width="2"/>
+    <rect x="12" y="12" width="61" height="61" rx="6" fill="#0f172a"/>
+    <!-- Compression arrows -->
+    <path d="M30 25 L30 42 L22 35 M30 42 L38 35" stroke="url(#speed)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M55 60 L55 43 L47 50 M55 43 L63 50" stroke="url(#speed)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <text x="42" y="55" font-family="monospace" font-size="14" font-weight="bold" fill="url(#accent)" text-anchor="middle">ZRAM</text>
+    <!-- Chip pins -->
+    <rect x="-6" y="18" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="-6" y="32" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="-6" y="46" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="-6" y="60" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="85" y="18" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="85" y="32" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="85" y="46" width="6" height="5" rx="1" fill="#4ade80"/>
+    <rect x="85" y="60" width="6" height="5" rx="1" fill="#4ade80"/>
+  </g>
+
+  <!-- Title -->
+  <text x="170" y="88" font-family="system-ui, -apple-system, sans-serif" font-size="46" font-weight="bold" fill="white" filter="url(#glow)">trueno-zram</text>
+
+  <!-- Subtitle -->
+  <text x="170" y="118" font-family="system-ui, sans-serif" font-size="16" fill="#94a3b8">SIMD-Accelerated Memory Compression for Linux</text>
+
+  <!-- Performance badges -->
+  <g transform="translate(170, 135)">
+    <rect width="85" height="26" rx="4" fill="#0f3460"/>
+    <text x="42" y="17" font-family="monospace" font-size="12" font-weight="bold" fill="url(#speed)" text-anchor="middle">25 GB/s</text>
+  </g>
+  <g transform="translate(265, 135)">
+    <rect width="95" height="26" rx="4" fill="#0f3460"/>
+    <text x="47" y="17" font-family="monospace" font-size="12" font-weight="bold" fill="url(#accent)" text-anchor="middle">19x faster</text>
+  </g>
+  <g transform="translate(370, 135)">
+    <rect width="75" height="26" rx="4" fill="#0f3460"/>
+    <text x="37" y="17" font-family="monospace" font-size="12" font-weight="bold" fill="#60a5fa" text-anchor="middle">AVX-512</text>
+  </g>
+
+  <!-- Stats panel -->
+  <g transform="translate(530, 40)">
+    <rect width="250" height="120" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+
+    <text x="125" y="22" font-family="system-ui, sans-serif" font-size="11" fill="#64748b" text-anchor="middle">vs Kernel ZRAM (same workload)</text>
+
+    <!-- ZSTD bar -->
+    <text x="15" y="48" font-family="monospace" font-size="11" fill="#94a3b8">ZSTD</text>
+    <rect x="55" y="38" width="140" height="14" rx="3" fill="#1e3a5f"/>
+    <rect x="55" y="38" width="140" height="14" rx="3" fill="url(#speed)"/>
+    <text x="230" y="49" font-family="monospace" font-size="11" font-weight="bold" fill="#4ade80" text-anchor="end">25 GB/s</text>
+
+    <!-- Kernel bar -->
+    <text x="15" y="72" font-family="monospace" font-size="11" fill="#64748b">kernel</text>
+    <rect x="55" y="62" width="140" height="14" rx="3" fill="#1e3a5f"/>
+    <rect x="55" y="62" width="7" height="14" rx="3" fill="#64748b"/>
+    <text x="230" y="73" font-family="monospace" font-size="11" fill="#64748b" text-anchor="end">1.3 GB/s</text>
+
+    <!-- Speedup callout -->
+    <rect x="70" y="85" width="110" height="24" rx="4" fill="url(#accent)"/>
+    <text x="125" y="101" font-family="system-ui, sans-serif" font-size="12" font-weight="bold" fill="white" text-anchor="middle">19x FASTER</text>
+  </g>
+
+  <!-- Bottom accent -->
+  <rect x="0" y="195" width="800" height="5" fill="url(#accent)"/>
+</svg>

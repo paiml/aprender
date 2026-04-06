@@ -1,0 +1,86 @@
+# docker-compose.swap-deadlock.yml
+#
+# DT-006/DT-007: Docker configuration for swap deadlock testing
+#
+# This creates a memory-constrained environment to force swap usage
+# and reproduce the swap deadlock condition.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.swap-deadlock.yml up --build
+#
+# Memory configuration:
+#   - Container limit: 2GB RAM
+#   - Swap limit: 4GB (2GB RAM + 2GB swap)
+#   - Test allocates 3GB to force ~1GB into swap
+#
+# Expected results:
+#   WITHOUT mlock() fix: Test fails with deadlock detection
+#   WITH mlock() fix:    Test passes, no deadlock
+
+services:
+  swap-deadlock-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.swap-deadlock
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_RAWIO
+      - MKNOD
+    # Memory limits to force swap usage
+    mem_limit: 2g
+    memswap_limit: 4g  # 2GB RAM + 2GB swap
+    mem_swappiness: 100  # Aggressive swapping
+    # Device access
+    devices:
+      - /dev/ublk-control:/dev/ublk-control
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ../:/workspace:ro
+      - swap-test-results:/results
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+      - RENACER_TRACE=1
+      - MEMORY_PRESSURE_GB=3
+      - TIMEOUT_SECONDS=120
+    # Ensure we can create block devices
+    security_opt:
+      - apparmor:unconfined
+    command: ["--timeout", "120", "--memory-gb", "3"]
+
+  # Alternative: Prove mlock() fix works
+  swap-deadlock-test-fixed:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.swap-deadlock
+      args:
+        - ENABLE_MLOCK=1
+    privileged: true
+    cap_add:
+      - SYS_ADMIN
+      - SYS_RAWIO
+      - MKNOD
+      - IPC_LOCK  # Required for mlock()
+    mem_limit: 2g
+    memswap_limit: 4g
+    mem_swappiness: 100
+    devices:
+      - /dev/ublk-control:/dev/ublk-control
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ../:/workspace:ro
+      - swap-test-results:/results
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+      - RENACER_TRACE=1
+      - MEMORY_PRESSURE_GB=3
+      - TIMEOUT_SECONDS=120
+      - TRUENO_MLOCK=1
+    security_opt:
+      - apparmor:unconfined
+    command: ["--timeout", "120", "--memory-gb", "3"]
+
+volumes:
+  swap-test-results:
