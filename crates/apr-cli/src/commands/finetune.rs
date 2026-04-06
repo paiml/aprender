@@ -389,6 +389,15 @@ fn execute_training(
 
     let result = trainer.train();
 
+    // PMAT-512: Print training result to both stdout (human) and stderr (canary parser).
+    // Canary parser reads stderr for loss extraction.
+    if let Some(last) = result.epoch_metrics.last() {
+        eprintln!(
+            "[training] final_loss={:.4} val_loss={:.4} epochs={}",
+            last.train_loss, result.best_val_loss, result.epoch_metrics.len(),
+        );
+    }
+
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Done);
         println!();
