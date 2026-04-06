@@ -227,6 +227,7 @@ pub enum RosettaCommands {
 
 /// Run the rosetta inspect subcommand
 pub fn run_inspect(file: &Path, hexdump: bool, json: bool) -> Result<()> {
+    contract_pre_magic_byte_validation!();
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }

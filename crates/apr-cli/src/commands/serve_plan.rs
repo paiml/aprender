@@ -172,6 +172,7 @@ pub fn run_serve_plan(
     format: &str,
     quant_override: Option<&str>,
 ) -> Result<(), CliError> {
+    contract_pre_server_lifecycle!();
     match parse_model_source(model) {
         ServePlanSource::Local(path) => {
             run_serve_plan_local(&path, gpu, batch_size, seq_len, format)
