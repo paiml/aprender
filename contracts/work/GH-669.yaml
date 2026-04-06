@@ -1,0 +1,9 @@
+# Auto-generated from .pmat-work/GH-669/contract.json
+name: "GH-669"
+surface: work-contract
+verification_summary:
+  target_level: L1
+  current_level: L1
+preconditions:
+  - "apr tensors --filter 'blk.0.*' returns empty (glob not supported) — must not occur after fix"
+  - "No regression in existing apr test suite"

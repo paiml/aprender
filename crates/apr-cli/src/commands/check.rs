@@ -480,7 +480,10 @@ fn check_gguf_data_quality(path: &Path) -> StageResult {
                     name: "Data Quality",
                     eli5: "No corrupt tensors",
                     passed: true,
-                    details: Some(format!("{} tensors checked, 0 violations", report.tensors.len())),
+                    details: Some(format!(
+                        "{} tensors checked, 0 violations",
+                        report.tensors.len()
+                    )),
                 }
             } else {
                 StageResult {

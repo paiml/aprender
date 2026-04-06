@@ -1,0 +1,6 @@
+# Auto-generated from .pmat-work/GH-339/contract.json
+name: "GH-339"
+surface: work-contract
+verification_summary:
+  target_level: L3
+  current_level: L3

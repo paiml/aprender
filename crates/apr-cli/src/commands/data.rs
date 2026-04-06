@@ -445,8 +445,21 @@ pub(crate) fn run_audit(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    let dataset = ArrowDataset::from_json(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
+    let dataset = ArrowDataset::from_json(path).map_err(|e| {
+        // GH-644: Wrap Arrow error internals in a user-friendly message.
+        // Arrow errors can contain deeply nested type/schema details that
+        // are not actionable for end users.
+        let raw = e.to_string();
+        let msg = if raw.contains("Json error") || raw.contains("ArrowError") {
+            format!(
+                "Failed to parse JSONL file '{}'. Ensure every line is valid JSON with consistent schema.",
+                path.display()
+            )
+        } else {
+            format!("Failed to load JSONL: {raw}")
+        };
+        CliError::ValidationFailed(msg)
+    })?;
 
     let total = dataset.len();
     if total == 0 {
@@ -543,8 +556,18 @@ pub(crate) fn run_split(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    let dataset = ArrowDataset::from_json(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
+    let dataset = ArrowDataset::from_json(path).map_err(|e| {
+        let raw = e.to_string();
+        let msg = if raw.contains("Json error") || raw.contains("ArrowError") {
+            format!(
+                "Failed to parse JSONL file '{}'. Ensure every line is valid JSON with consistent schema.",
+                path.display()
+            )
+        } else {
+            format!("Failed to load JSONL: {raw}")
+        };
+        CliError::ValidationFailed(msg)
+    })?;
 
     let total = dataset.len();
 
@@ -652,8 +675,18 @@ pub(crate) fn run_balance(
         return Err(CliError::FileNotFound(path.to_path_buf()));
     }
 
-    let dataset = ArrowDataset::from_json(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load JSONL: {e}")))?;
+    let dataset = ArrowDataset::from_json(path).map_err(|e| {
+        let raw = e.to_string();
+        let msg = if raw.contains("Json error") || raw.contains("ArrowError") {
+            format!(
+                "Failed to parse JSONL file '{}'. Ensure every line is valid JSON with consistent schema.",
+                path.display()
+            )
+        } else {
+            format!("Failed to load JSONL: {raw}")
+        };
+        CliError::ValidationFailed(msg)
+    })?;
 
     let original_len = dataset.len();
 

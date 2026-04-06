@@ -227,17 +227,11 @@ fn execute_pruning(
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read model: {e}")))?
         .len();
 
-    let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let report = rosetta
-        .inspect(file)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model: {e}")))?;
-
-    let mut tensors = std::collections::BTreeMap::new();
-    for ti in &report.tensors {
-        if let Ok(data) = rosetta.load_tensor_f32(file, &ti.name) {
-            tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
-        }
-    }
+    // GH-608: Load all tensors in a single pass. Previously called load_tensor_f32
+    // per tensor, each re-reading the entire file — O(N * filesize) I/O for N tensors.
+    // For a 1.1GB GGUF with 339 tensors this was ~370GB of disk reads (~2 hours).
+    let tensors = aprender::format::converter::load_model_tensors(file)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load model: {e}")))?;
 
     let original_count = tensors.len();
     let original_params: usize = tensors

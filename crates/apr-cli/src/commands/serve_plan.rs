@@ -288,7 +288,13 @@ fn assemble_and_output(
     let stats = build_statistical_analysis(size_config, constraints);
     let kernels = build_kernel_compatibility(size_config, constraints, &stats);
 
-    let hw = if gpu { Some(detect_hardware()?) } else { None };
+    // GH-633: Auto-detect GPU if --gpu not explicitly passed
+    let hw = if gpu {
+        Some(detect_hardware()?)
+    } else {
+        // Try detection anyway — report GPU if available
+        detect_hardware().ok()
+    };
 
     let memory_budget =
         compute_memory_budget(&stats, size_config, hw.as_ref(), batch_size, seq_len);

@@ -50,7 +50,7 @@ fn detect_format(path: &Path) -> Result<crate::format::rosetta::FormatType> {
 /// Supports: SafeTensors, APR, GGUF (GH-164 fix)
 /// GGUF tensors are dequantized to F32 during loading.
 /// PMAT-271: Uses magic byte detection first, extension fallback for extensionless HF cache blobs.
-pub(crate) fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+pub fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     use crate::format::rosetta::FormatType;
     let format = detect_format(path)?;
 

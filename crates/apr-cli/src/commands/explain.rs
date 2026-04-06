@@ -576,10 +576,7 @@ const TENSOR_ROLES: &[(&[&str], &str)] = &[
         &["ffn_down"],
         "Feed-forward down projection (GGUF convention)",
     ),
-    (
-        &["ffn_gate"],
-        "Feed-forward gate projection (GGUF SwiGLU)",
-    ),
+    (&["ffn_gate"], "Feed-forward gate projection (GGUF SwiGLU)"),
     (&["attn_norm"], "Attention normalization (GGUF convention)"),
     (
         &["ffn_norm"],

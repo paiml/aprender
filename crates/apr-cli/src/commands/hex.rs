@@ -221,16 +221,30 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
 }
 
 /// Print hex dump for each APR tensor
+///
+/// GH-654: Decode tensor bytes as f32 values (not just raw hex) when the tensor
+/// can be decoded to f32. Falls back to raw hex for non-decodable dtypes.
 fn print_apr_hex_dump(reader: &AprV2Reader, names: &[&str], limit: usize, show_stats: bool) {
     for name in names {
         if let Some(entry) = reader.get_tensor(name) {
             print_tensor_header_v2(entry);
         }
-        if let Some(raw_data) = reader.get_tensor_data(name) {
+        // Prefer decoded f32 view (shows hex bytes + f32 values side by side)
+        if let Some(f32_data) = reader.get_tensor_as_f32(name) {
             if show_stats {
-                if let Some(f32_data) = reader.get_tensor_as_f32(name) {
-                    print_tensor_stats(&f32_data);
-                }
+                print_tensor_stats(&f32_data);
+            }
+            let element_limit = if limit == 0 {
+                f32_data.len()
+            } else {
+                // limit is in bytes; convert to element count (4 bytes per f32)
+                (limit / 4).max(1).min(f32_data.len())
+            };
+            print_hex_dump(&f32_data, element_limit);
+        } else if let Some(raw_data) = reader.get_tensor_data(name) {
+            // Fallback: raw hex for dtypes that cannot be decoded to f32
+            if show_stats {
+                println!("  (stats unavailable — dtype not decodable to f32)");
             }
             let byte_limit = if limit == 0 {
                 raw_data.len()

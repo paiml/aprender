@@ -239,15 +239,15 @@ fn run_local_mode(
     // Collect tensor names for family detection
     let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();
 
-    // Detect family — try tensor names first (SafeTensors), then GGUF architecture metadata
-    let detected_family = registry.detect_family(&tensor_names).or_else(|| {
-        // GGUF uses different tensor naming (blk.0.attn_q vs model.layers.0.self_attn.q_proj).
-        // Fall back to GGUF architecture metadata (e.g., "qwen2" → Qwen2 family).
-        report
-            .architecture
-            .as_deref()
-            .and_then(|arch| registry.detect_from_model_type(arch))
-    });
+    // GH-652: Detect family — check architecture metadata FIRST, then tensor names.
+    // APR files carry the architecture field from the original GGUF import, which is
+    // the most reliable signal. Tensor name matching can misidentify families when
+    // names overlap (e.g., Qwen2 vs Phi share similar SafeTensors naming patterns).
+    let detected_family = report
+        .architecture
+        .as_deref()
+        .and_then(|arch| registry.detect_from_model_type(arch))
+        .or_else(|| registry.detect_family(&tensor_names));
 
     // Build format info
     let format_info = FormatInfo {

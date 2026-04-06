@@ -20,6 +20,7 @@ pub(crate) fn run(
     strict: bool,
     min_score: Option<u8>,
     json: bool,
+    skip_contract: bool,
 ) -> Result<(), CliError> {
     // BUG-VALIDATE-001 FIX: Validate min_score is in valid range [0, 100]
     if let Some(score) = min_score {
@@ -42,9 +43,11 @@ pub(crate) fn run(
         .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
 
     match format {
-        FormatType::Apr => run_apr_validation(path, quality, strict, min_score, json),
+        FormatType::Apr => {
+            run_apr_validation(path, quality, strict, min_score, json, skip_contract)
+        }
         FormatType::Gguf | FormatType::SafeTensors => {
-            run_rosetta_validation(path, format, quality, strict, json)
+            run_rosetta_validation(path, format, quality, strict, json, skip_contract)
         }
     }
 }
@@ -56,6 +59,7 @@ fn run_apr_validation(
     strict: bool,
     min_score: Option<u8>,
     json: bool,
+    skip_contract: bool,
 ) -> Result<(), CliError> {
     let data = fs::read(path)?;
     let mut validator = AprValidator::new();
@@ -82,7 +86,8 @@ fn run_apr_validation(
     }
 
     // GH-647: Exit non-zero when validation shows contract violations
-    if report.total_score < 50 {
+    // GH-642: --skip-contract bypasses the contract score threshold gate
+    if !skip_contract && report.total_score < 50 {
         return Err(CliError::ValidationFailed(format!(
             "Score {}/100 (below 50% threshold)",
             report.total_score
@@ -99,6 +104,7 @@ fn run_rosetta_validation(
     quality: bool,
     strict: bool,
     json: bool,
+    skip_contract: bool,
 ) -> Result<(), CliError> {
     let rosetta = RosettaStone::new();
     let report = rosetta
@@ -141,7 +147,9 @@ fn run_rosetta_validation(
     }
 
     // GH-507: --strict fails on warnings (NaN, Inf, all-zero tensors)
+    // GH-642: --skip-contract bypasses strict contract checks
     if strict
+        && !skip_contract
         && (report.total_nan_count > 0
             || report.total_inf_count > 0
             || !report.all_zero_tensors.is_empty())
@@ -172,7 +180,8 @@ fn run_rosetta_validation(
         ));
     }
 
-    if report.is_valid {
+    // GH-642: --skip-contract bypasses tensor validation failure gate
+    if skip_contract || report.is_valid {
         Ok(())
     } else {
         Err(CliError::ValidationFailed(format!(

@@ -178,8 +178,8 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             strict,
             min_score,
         } => {
-            let (q, s, ms, j) = (*quality, *strict, *min_score, cli.json);
-            crate::pipe::with_stdin_support(file, |p| validate::run(p, q, s, ms, j))
+            let (q, s, ms, j, sc) = (*quality, *strict, *min_score, cli.json, cli.skip_contract);
+            crate::pipe::with_stdin_support(file, |p| validate::run(p, q, s, ms, j, sc))
         }
 
         Commands::Lint { file } => {

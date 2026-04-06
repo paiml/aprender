@@ -1,0 +1,87 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: "apr inspect flag wiring contract — --vocab, --filters, --weights must materially affect output on every format (APR, GGUF, SafeTensors)"
+  references:
+    - "paiml/aprender#604 (--vocab no-op on GGUF)"
+    - "paiml/aprender#609 (--weights no-op)"
+  registry: true
+  tags:
+    - cli
+    - inspect
+    - flag-wiring
+    - silent-flag
+
+equations:
+  flag_materiality:
+    formula: "∀ flag f ∈ {vocab, filters, weights}: ∀ file F (any format): output(inspect F) ≠ output(inspect F --f)"
+    domain: "(flag, file format) ∈ {vocab, filters, weights} × {APR, GGUF, SafeTensors}"
+    codomain: "stdout bytes"
+    invariants:
+      - "Every accepted inspect flag MUST materially alter output on every supported format"
+      - "If a flag is unsupported for a specific format, emit a clear warning (not silent ignore)"
+      - "Dispatch to format-specific path MUST pass all flags through"
+
+  dispatcher_completeness:
+    formula: "∀ format path p ∈ {apr_v2, rosetta_gguf, rosetta_safetensors}: p.signature = (path, show_vocab, show_filters, show_weights, json)"
+    domain: "format handler function"
+    codomain: "function signature"
+    invariants:
+      - "All format handlers accept the full inspect flag set"
+      - "No handler accepts a truncated signature (dropping flags)"
+
+proof_obligations:
+  - type: invariant
+    property: "Flag materiality on APR v2"
+    formal: "output(inspect APR) ≠ output(inspect APR --vocab) ≠ output(inspect APR --weights)"
+    applies_to: flag_materiality
+  - type: invariant
+    property: "Flag materiality on GGUF"
+    formal: "output(inspect GGUF) ≠ output(inspect GGUF --vocab) ≠ output(inspect GGUF --weights)"
+    applies_to: flag_materiality
+  - type: invariant
+    property: "Flag materiality on SafeTensors"
+    formal: "output(inspect ST) ≠ output(inspect ST --vocab) ≠ output(inspect ST --weights)"
+    applies_to: flag_materiality
+  - type: precondition
+    property: "Dispatcher passes flags"
+    formal: "run(path, v, f, w, j) → handler(path, v, f, w, j)"
+    applies_to: dispatcher_completeness
+
+falsification_tests:
+  - id: FALSIFY-INSPECT-FLAGS-001
+    rule: "--vocab materiality (GGUF)"
+    prediction: "apr inspect --vocab on GGUF produces different output than apr inspect"
+    test: "diff <(apr inspect $M) <(apr inspect --vocab $M); assert non-empty"
+    if_fails: "Flag silently dropped in dispatcher — matches #604"
+  - id: FALSIFY-INSPECT-FLAGS-002
+    rule: "--weights materiality (GGUF)"
+    prediction: "apr inspect --weights on GGUF produces different output than apr inspect"
+    test: "diff <(apr inspect $M) <(apr inspect --weights $M); assert non-empty"
+    if_fails: "Flag silently dropped in dispatcher — matches #609"
+  - id: FALSIFY-INSPECT-FLAGS-003
+    rule: "--filters materiality (GGUF)"
+    prediction: "apr inspect --filters <pattern> on GGUF produces different output than apr inspect"
+    test: "diff <(apr inspect $M) <(apr inspect --filters blk.0 $M); assert non-empty"
+    if_fails: "Flag silently dropped in dispatcher"
+  - id: FALSIFY-INSPECT-FLAGS-004
+    rule: "Dispatcher signature"
+    prediction: "run_rosetta_inspect accepts (path, show_vocab, show_filters, show_weights, json_output)"
+    test: "grep -nE 'fn run_rosetta_inspect' inspect.rs; assert 5-arg signature"
+    if_fails: "Dispatcher still has truncated signature"
+
+kani_harnesses:
+  - id: KANI-INSPECT-FLAGS-001
+    obligation: "Flag materiality on GGUF"
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-INSPECT-FLAGS-001
+  name: "Inspect flag wiring contract"
+  description: "All inspect flags materially affect output on all supported formats"
+  checks:
+    - "flag_materiality"
+    - "dispatcher_completeness"
+  pass_criteria: "FALSIFY-INSPECT-FLAGS-{001,002,003,004} all PASS on GGUF, SafeTensors, and APR v2 inputs"

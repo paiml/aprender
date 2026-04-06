@@ -24696,3 +24696,8 @@ macro_rules! contract_work_lifecycle {
 }
 
 // Total: 646 preconditions, 15 postconditions, 0 invariants from 278 contracts
+
+// Stub: contract_pre_execute_command (GH-611 build fix)
+macro_rules! contract_pre_execute_command {
+    () => {{}};
+}

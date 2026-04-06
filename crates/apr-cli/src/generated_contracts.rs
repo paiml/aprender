@@ -303,8 +303,10 @@ macro_rules! contract_pre_kv_cache_management {
     () => {{}};
     ($input:expr) => {{
         let _pv_new_tokens = &$input;
-        debug_assert!(_pv_new_tokens.len() > 0,
-            "Contract kv_cache_management: precondition violated — new_tokens.len() > 0");
+        debug_assert!(
+            _pv_new_tokens.len() > 0,
+            "Contract kv_cache_management: precondition violated — new_tokens.len() > 0"
+        );
     }};
 }
 
@@ -416,8 +418,10 @@ macro_rules! contract_pre_concurrent_model_access {
     () => {{}};
     ($input:expr) => {{
         let _pv_requests = &$input;
-        debug_assert!(_pv_requests.len() > 0,
-            "Contract concurrent_model_access: precondition violated — requests.len() > 0");
+        debug_assert!(
+            _pv_requests.len() > 0,
+            "Contract concurrent_model_access: precondition violated — requests.len() > 0"
+        );
     }};
 }
 
@@ -856,8 +860,10 @@ macro_rules! contract_pre_data_split_determinism {
     () => {{}};
     ($input:expr) => {{
         let _pv_ratios = &$input;
-        debug_assert!(_pv_ratios.sum() == 1.0,
-            "Contract data_split_determinism: precondition violated — ratios.sum() == 1.0");
+        debug_assert!(
+            _pv_ratios.sum() == 1.0,
+            "Contract data_split_determinism: precondition violated — ratios.sum() == 1.0"
+        );
     }};
 }
 
@@ -966,8 +972,10 @@ macro_rules! contract_pre_streaming_data_loader {
     () => {{}};
     ($input:expr) => {{
         let _pv_dataset = &$input;
-        debug_assert!(_pv_dataset.len() > 0,
-            "Contract streaming_data_loader: precondition violated — dataset.len() > 0");
+        debug_assert!(
+            _pv_dataset.len() > 0,
+            "Contract streaming_data_loader: precondition violated — dataset.len() > 0"
+        );
     }};
 }
 
@@ -1883,8 +1891,10 @@ macro_rules! contract_pre_merge_weight_conservation {
     () => {{}};
     ($input:expr) => {{
         let _pv_models = &$input;
-        debug_assert!(_pv_models.len() >= 2,
-            "Contract merge_weight_conservation: precondition violated — models.len() >= 2");
+        debug_assert!(
+            _pv_models.len() >= 2,
+            "Contract merge_weight_conservation: precondition violated — models.len() >= 2"
+        );
     }};
 }
 
@@ -2289,8 +2299,10 @@ macro_rules! contract_pre_probar_property_tests {
     () => {{}};
     ($input:expr) => {{
         let _pv_properties = &$input;
-        debug_assert!(_pv_properties.len() > 0,
-            "Contract probar_property_tests: precondition violated — properties.len() > 0");
+        debug_assert!(
+            _pv_properties.len() > 0,
+            "Contract probar_property_tests: precondition violated — properties.len() > 0"
+        );
     }};
 }
 
@@ -2660,8 +2672,10 @@ macro_rules! contract_pre_batch_loss {
     () => {{}};
     ($input:expr) => {{
         let _pv_predicted = &$input;
-        debug_assert!(_pv_predicted.len() > 0,
-            "Contract batch_loss: precondition violated — predicted.len() > 0");
+        debug_assert!(
+            _pv_predicted.len() > 0,
+            "Contract batch_loss: precondition violated — predicted.len() > 0"
+        );
     }};
 }
 
@@ -2680,8 +2694,10 @@ macro_rules! contract_pre_gradient_accumulation {
     () => {{}};
     ($input:expr) => {{
         let _pv_params = &$input;
-        debug_assert!(_pv_params.len() > 0,
-            "Contract gradient_accumulation: precondition violated — params.len() > 0");
+        debug_assert!(
+            _pv_params.len() > 0,
+            "Contract gradient_accumulation: precondition violated — params.len() > 0"
+        );
     }};
 }
 
@@ -2700,8 +2716,10 @@ macro_rules! contract_pre_gradient_clipping {
     () => {{}};
     ($input:expr) => {{
         let _pv_params = &$input;
-        debug_assert!(_pv_params.len() > 0,
-            "Contract gradient_clipping: precondition violated — params.len() > 0");
+        debug_assert!(
+            _pv_params.len() > 0,
+            "Contract gradient_clipping: precondition violated — params.len() > 0"
+        );
     }};
 }
 
@@ -2981,8 +2999,10 @@ macro_rules! contract_pre_identity {
     () => {{}};
     ($input:expr) => {{
         let _pv_q = &$input;
-        debug_assert!(_pv_q.len() > 0,
-            "Contract identity: precondition violated — q.len() > 0");
+        debug_assert!(
+            _pv_q.len() > 0,
+            "Contract identity: precondition violated — q.len() > 0"
+        );
     }};
 }
 
@@ -2995,8 +3015,10 @@ macro_rules! contract_pre_cosine_parity_gate {
     () => {{}};
     ($input:expr) => {{
         let _pv_cpu_logits = &$input;
-        debug_assert!(_pv_cpu_logits.len() > 0,
-            "Contract cosine_parity_gate: precondition violated — cpu_logits.len() > 0");
+        debug_assert!(
+            _pv_cpu_logits.len() > 0,
+            "Contract cosine_parity_gate: precondition violated — cpu_logits.len() > 0"
+        );
     }};
 }
 
@@ -3264,8 +3286,10 @@ macro_rules! contract_pre_merge_weight_algebra {
     () => {{}};
     ($input:expr) => {{
         let _pv_models = &$input;
-        debug_assert!(_pv_models.len() >= 2,
-            "Contract merge_weight_algebra: precondition violated — models.len() >= 2");
+        debug_assert!(
+            _pv_models.len() >= 2,
+            "Contract merge_weight_algebra: precondition violated — models.len() >= 2"
+        );
     }};
 }
 
@@ -3398,8 +3422,10 @@ macro_rules! contract_pre_identity {
     () => {{}};
     ($input:expr) => {{
         let _pv_input = &$input;
-        debug_assert!(_pv_input.len() > 0,
-            "Contract identity: precondition violated — input.len() > 0");
+        debug_assert!(
+            _pv_input.len() > 0,
+            "Contract identity: precondition violated — input.len() > 0"
+        );
     }};
 }
 
@@ -3508,8 +3534,10 @@ macro_rules! contract_pre_identity {
     () => {{}};
     ($input:expr) => {{
         let _pv_a = &$input;
-        debug_assert!(_pv_a.len() > 0,
-            "Contract identity: precondition violated — a.len() > 0");
+        debug_assert!(
+            _pv_a.len() > 0,
+            "Contract identity: precondition violated — a.len() > 0"
+        );
     }};
 }
 
@@ -3555,8 +3583,10 @@ macro_rules! contract_pre_validated_tensor_construction {
     () => {{}};
     ($input:expr) => {{
         let _pv_data = &$input;
-        debug_assert!(_pv_data.len() > 0,
-            "Contract validated_tensor_construction: precondition violated — data.len() > 0");
+        debug_assert!(
+            _pv_data.len() > 0,
+            "Contract validated_tensor_construction: precondition violated — data.len() > 0"
+        );
     }};
 }
 
@@ -3596,8 +3626,10 @@ macro_rules! contract_pre_identity {
     () => {{}};
     ($input:expr) => {{
         let _contract_input = &$input;
-        debug_assert!(!_contract_input.is_empty(),
-            "Contract identity: precondition violated — !input.is_empty()");
+        debug_assert!(
+            !_contract_input.is_empty(),
+            "Contract identity: precondition violated — !input.is_empty()"
+        );
     }};
 }
 
@@ -3640,8 +3672,10 @@ macro_rules! contract_pre_ema_loss {
     () => {{}};
     ($input:expr) => {{
         let _pv_predicted = &$input;
-        debug_assert!(_pv_predicted.len() > 0,
-            "Contract ema_loss: precondition violated — predicted.len() > 0");
+        debug_assert!(
+            _pv_predicted.len() > 0,
+            "Contract ema_loss: precondition violated — predicted.len() > 0"
+        );
     }};
 }
 
@@ -3660,10 +3694,14 @@ macro_rules! contract_pre_val_split {
     () => {{}};
     ($input:expr) => {{
         let _pv_input = &$input;
-        debug_assert!(_pv_input.len() > 0,
-            "Contract val_split: precondition violated — input.len() > 0");
-        debug_assert!(_pv_input.iter().all(|v| v.is_finite()),
-            "Contract val_split: precondition violated — input.iter().all(|v| v.is_finite())");
+        debug_assert!(
+            _pv_input.len() > 0,
+            "Contract val_split: precondition violated — input.len() > 0"
+        );
+        debug_assert!(
+            _pv_input.iter().all(|v| v.is_finite()),
+            "Contract val_split: precondition violated — input.iter().all(|v| v.is_finite())"
+        );
     }};
 }
 
@@ -3682,8 +3720,10 @@ macro_rules! contract_pre_warmup_lr {
     () => {{}};
     ($input:expr) => {{
         let _pv_params = &$input;
-        debug_assert!(_pv_params.len() > 0,
-            "Contract warmup_lr: precondition violated — params.len() > 0");
+        debug_assert!(
+            _pv_params.len() > 0,
+            "Contract warmup_lr: precondition violated — params.len() > 0"
+        );
     }};
 }
 
@@ -3700,6 +3740,17 @@ macro_rules! contract_inv_warmup_lr {
 
 // Stub macros for CLI functions not yet in contract YAML
 // GH-674: These should be generated from binding.yaml once contract coverage improves
-macro_rules! contract_pre_dispatch_core_command { () => {{}}; }
-macro_rules! contract_pre_with_stdin_support { () => {{}}; }
-macro_rules! contract_pre_resolve_model_path { () => {{}}; }
+macro_rules! contract_pre_dispatch_core_command {
+    () => {{}};
+}
+macro_rules! contract_pre_with_stdin_support {
+    () => {{}};
+}
+macro_rules! contract_pre_resolve_model_path {
+    () => {{}};
+}
+
+// Stub: contract_pre_execute_command (GH-611 build fix)
+macro_rules! contract_pre_execute_command {
+    () => {{}};
+}
