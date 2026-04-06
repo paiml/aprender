@@ -14,6 +14,7 @@ use std::fs;
 use std::path::Path;
 
 /// Run the validate command
+#[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "validate_exit_code")]
 pub(crate) fn run(
     path: &Path,
     quality: bool,

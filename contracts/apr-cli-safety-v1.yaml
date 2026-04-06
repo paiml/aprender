@@ -1,0 +1,59 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: apr-cli safety contracts — exit codes, flag semantics, input guards
+  references:
+  - Five Whys analysis in commit-level-contract-enforcement.md
+  - 56 apr-cli bugs (63% catchable by contracts)
+equations:
+  validate_exit_code:
+    formula: exit_code = if score < 50 then 5 else 0
+    domain: path is Path, path.exists()
+    codomain: exit_code in {0, 5}
+    invariants:
+    - score < 50 implies exit_code != 0 (no silent failure)
+    preconditions:
+    - path.exists()
+    lean_theorem: Theorems.Validate_Exit_Monotonic
+  offline_guard:
+    formula: network_access = if offline then reject else allow
+    domain: offline is bool, source is String
+    codomain: network_access in {reject, allow}
+    invariants:
+    - offline && source.starts_with("hf://") implies reject
+    preconditions:
+    - source.len() > 0
+    lean_theorem: Theorems.Offline_Network_Guard
+  encrypt_guard:
+    formula: encrypted = if input.ends_with(".enc") then reject else encrypt
+    domain: input_path is Path
+    codomain: encrypted in {reject, encrypt}
+    invariants:
+    - input already encrypted implies reject (no double encryption)
+    preconditions:
+    - input_path.exists()
+    lean_theorem: Theorems.Encrypt_Idempotency
+falsification_tests:
+- id: FALSIFY-CLI-001
+  rule: validate exits non-zero on low score
+  prediction: apr validate on 3/100 model exits 5
+  test: apr validate model.apr ; echo $? # should be 5
+  if_fails: Silent failure — user thinks invalid model is valid
+- id: FALSIFY-CLI-002
+  rule: offline blocks network
+  prediction: apr import --offline hf://x errors immediately
+  test: timeout 5 apr import --offline hf://test/x
+  if_fails: Privacy violation — contacts HuggingFace in offline mode
+- id: FALSIFY-CLI-003
+  rule: encrypt rejects .enc
+  prediction: apr encrypt model.enc errors
+  test: apr encrypt model.enc -o out.enc
+  if_fails: Double encryption — unrecoverable data corruption
+kani_harnesses: []
+verification_summary:
+  total_obligations: 3
+  l2_property_tested: 3
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0

@@ -11,6 +11,7 @@ use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 /// Run the import command
+#[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "offline_guard")]
 pub(crate) fn run(
     source: &str,
     output: Option<&Path>,

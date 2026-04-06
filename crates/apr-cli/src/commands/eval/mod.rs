@@ -1241,6 +1241,7 @@ fn interpret_correlation(r: f64) -> String {
 /// Key derivation: BLAKE3 derive_key(context="albor model encryption 2026", passphrase)
 /// Keystream: BLAKE3 keyed_hash(key, counter || nonce) for each 64-byte block
 /// MAC: BLAKE3 keyed_hash(key, nonce || encrypted_data)
+#[provable_contracts_macros::contract("apr-cli-safety-v1", equation = "encrypt_guard")]
 pub(crate) fn run_encrypt(
     input_path: &Path,
     output_path: &Path,
