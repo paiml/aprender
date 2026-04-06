@@ -1,0 +1,47 @@
+[package]
+name = "trueno-rag-cli"
+version = "0.1.5"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+description = "CLI for Trueno-RAG pipeline"
+license = "MIT"
+repository = "https://github.com/paiml/trueno-rag"
+readme = "../../README.md"
+
+[[bin]]
+name = "trueno-rag"
+path = "src/main.rs"
+
+[dependencies]
+trueno-rag = { version = "0.2.0", path = "../.." }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1.49", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+rayon = "1.11"
+globset = "0.4"
+blake3 = "1.5"
+
+[features]
+default = []
+# Enable production semantic embeddings via fastembed (GH-1)
+embeddings = ["trueno-rag/embeddings"]
+# Enable NVIDIA Embed Nemotron 8B support (GH-3)
+nemotron = ["trueno-rag/nemotron"]
+# Enable GPU-accelerated transcription via aprender (GH-2)
+transcription = ["trueno-rag/transcription"]
+# LLM-as-judge evaluation via Anthropic API (PMAT-015)
+eval = ["trueno-rag/eval"]
+# SQLite+FTS5 index export (PMAT-017)
+sqlite = ["trueno-rag/sqlite"]
+# Image OCR via tesseract CLI (PMAT-023)
+ocr = ["trueno-rag/ocr"]
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+tempfile = "3"
+
+[lints]
+workspace = true

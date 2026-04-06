@@ -1,0 +1,84 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Tokenization contract for document chunking and BM25 term extraction"
+  crate: "trueno-rag"
+  references:
+    - "Robertson & Zaragoza (2009) The Probabilistic Relevance Framework: BM25 and Beyond"
+    - "Manning, Raghavan & Schuetze (2008) Introduction to Information Retrieval, Ch. 2"
+
+equations:
+  tokenize_invariant:
+    formula: "tokenize(doc) = [t_1, ..., t_n] where t_i = lowercase(strip_punct(split_whitespace(doc)[i]))"
+    domain: "doc in String, doc.len() > 0"
+    invariants:
+      - "Output tokens are non-empty strings"
+      - "Token count <= word count of input"
+      - "All tokens are lowercase"
+  token_frequency:
+    formula: "tf(t, d) = count(t in tokenize(d)) / |tokenize(d)|"
+    domain: "t in String, d in String, |tokenize(d)| > 0"
+    invariants:
+      - "0 < tf(t, d) <= 1.0 for t in tokenize(d)"
+      - "Sum of tf over unique tokens <= 1.0 per token (each tf individually bounded)"
+  idf_weight:
+    formula: "idf(t) = log((N - df(t) + 0.5) / (df(t) + 0.5) + 1)"
+    domain: "N >= 1, 0 <= df(t) <= N"
+    invariants:
+      - "idf(t) >= 0 for all terms t"
+      - "Rare terms have higher idf than common terms"
+
+proof_obligations:
+  - type: invariant
+    property: "Non-empty tokens"
+    formal: "forall t in tokenize(doc): t.len() > 0"
+    applies_to: all
+  - type: bound
+    property: "Token count bounded by input length"
+    formal: "|tokenize(doc)| <= doc.split_whitespace().count()"
+    applies_to: all
+  - type: monotonicity
+    property: "IDF monotonically decreasing with document frequency"
+    formal: "df1 < df2 implies idf(df1, N) > idf(df2, N)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TOK-001
+    rule: "Non-empty output tokens"
+    test: "test_bm25_tokenize"
+    prediction: "verified"
+    if_fails: "Tokenizer produces empty strings from consecutive delimiters"
+  - id: FALSIFY-TOK-002
+    rule: "Lowercase normalization"
+    test: "test_bm25_tokenize_lowercase"
+    prediction: "verified"
+    if_fails: "Case normalization not applied"
+  - id: FALSIFY-TOK-003
+    rule: "IDF monotonicity"
+    test: "test_bm25_idf_calculation"
+    prediction: "verified"
+    if_fails: "BM25 IDF formula incorrect"
+
+kani_harnesses:
+  - id: KANI-TOK-001
+    obligation: PO-TOK-001
+    property: "Non-empty tokens invariant"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_tokenize_non_empty
+  - id: KANI-TOK-002
+    obligation: PO-TOK-002
+    property: "Token count bounded"
+    bound: 16
+    strategy: bounded_int
+    harness: verify_token_count_bound
+
+qa_gate:
+  id: QA-TOKENIZE
+  name: "tokenize contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_bm25_tokenize
+    - test_bm25_tokenize_lowercase
+    - test_bm25_idf_calculation

@@ -1,0 +1,191 @@
+[workspace]
+resolver = "2"
+members = [".", "crates/trueno-rag-cli"]
+
+[workspace.package]
+edition = "2021"
+
+[workspace.lints.rust]
+# Safety
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+
+# Code Quality
+unreachable_pub = "warn"
+missing_debug_implementations = "allow"  # Many generic types don't need Debug
+
+# Best Practices
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+# Base level
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Correctness
+checked_conversions = "warn"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Performance
+inefficient_to_string = "warn"
+explicit_iter_loop = "warn"
+
+# Style & Clarity
+explicit_deref_methods = "warn"
+implicit_clone = "warn"
+redundant_closure_for_method_calls = "warn"
+
+# Allow pedantic lints that conflict with RAG patterns
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+doc_markdown = "allow"
+multiple_crate_versions = "allow"
+uninlined_format_args = "allow"
+manual_div_ceil = "allow"
+manual_range_contains = "allow"
+needless_raw_string_hashes = "allow"
+
+[package]
+name = "trueno-rag"
+version = "0.2.5"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+description = "Pure-Rust Retrieval-Augmented Generation pipeline built on Trueno"
+license = "MIT"
+repository = "https://github.com/paiml/trueno-rag"
+keywords = ["rag", "retrieval", "embeddings", "nlp", "vector-search"]
+categories = ["text-processing", "science"]
+readme = "README.md"
+rust-version = "1.75"
+exclude = [
+    "target/",
+    "book/",
+    "docs/",
+    "examples/",
+    "tests/",
+    ".pmat/",
+    ".pmat-work/",
+    ".pmat-tickets/",
+    ".github/",
+    ".vscode/",
+    ".idea/",
+    "*.profraw",
+    "*.profdata",
+    "proptest-regressions/",
+]
+
+[dependencies]
+# Core compute
+trueno = "0.17"
+trueno-db = "0.3.17"
+
+# Async runtime
+tokio = { version = "1.49", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "2.0"
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "serde"] }
+async-trait = "0.1"
+
+# Compression for index storage (GH-2) - via batuta-common shared module
+batuta-common = "0.1"
+lz4_flex = { version = "0.11", optional = true }
+zstd = { version = "0.13", optional = true }
+bincode = { version = "1.3", optional = true }  # Binary serialization for indices
+
+# SQLite+FTS5 persistent index (sqlite-rag-integration spec)
+# FTS5 is included in bundled SQLite by default (SQLITE_ENABLE_FTS5)
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+# Real embeddings via fastembed (GH-1) - optional, adds ONNX Runtime dependency
+fastembed = { version = "5", optional = true }
+
+# NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
+# Large model (~4-32GB depending on quantization), requires GGUF file
+realizar = { version = "0.7", optional = true, default-features = false }
+
+# Speech-to-text via whisper-apr (Whisper ASR, .apr model format)
+# Sovereign stack: whisper-apr + aprender + trueno for pure-Rust transcription
+whisper-apr = { version = "0.2", optional = true, default-features = false, features = ["std", "symphonia"] }
+
+# Eval: LLM-as-judge via Anthropic API (PMAT-015)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+sha2 = { version = "0.10", optional = true }
+rand = { version = "0.8", optional = true }
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+tokio-test = "0.4"
+proptest = "1.9"
+criterion = { version = "0.6", features = ["html_reports"] }
+
+[[bench]]
+name = "retrieval"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[features]
+default = ["sqlite"]
+# SQLite+FTS5 persistent BM25 index (sqlite-rag-integration spec)
+sqlite = ["dep:rusqlite"]
+# Compressed index serialization (GH-2)
+compression = ["dep:lz4_flex", "dep:zstd", "dep:bincode"]
+# Real semantic embeddings via fastembed (GH-1)
+# Adds ONNX Runtime dependency for production-quality embeddings
+embeddings = ["dep:fastembed"]
+# NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
+# Llama 3.1 8B-based embedding model with 4096-dim output
+nemotron = ["dep:realizar"]
+# ColBERT-style multi-vector retrieval with WARP algorithm (PMAT-003)
+# Enables token-level late interaction scoring with residual quantization
+multivector = []
+# Speech-to-text via whisper-apr (Whisper ASR engine)
+# Sovereign stack: whisper-apr + aprender + trueno for pure-Rust transcription
+transcription = ["dep:whisper-apr"]
+# LLM-as-judge evaluation via Anthropic API (PMAT-015)
+eval = ["dep:reqwest", "dep:sha2", "dep:rand"]
+# Image OCR via tesseract CLI (PMAT-023)
+# Requires tesseract-ocr system package installed on $PATH
+ocr = []
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[workspace.dependencies]
+
+[profile.dev]
+panic = "abort"

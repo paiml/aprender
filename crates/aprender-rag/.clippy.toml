@@ -1,0 +1,37 @@
+# Clippy configuration for trueno-rag
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
+
+# Maximum number of lines in a function
+too-many-lines-threshold = 150
+
+# Maximum number of arguments
+too-many-arguments-threshold = 7
+
+# Type complexity threshold
+type-complexity-threshold = 300
+
+# Allowed names for single-character variables
+allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "c", "d", "q", "v", "w"]
+
+# Minimum identifier length
+min-ident-chars-threshold = 1
+
+# Disallow dangerous methods that can cause panics
+# Cloudflare outage 2025-11-18: unwrap() panic caused 3+ hour network outage
+[[disallowed-methods]]
+path = "core::option::Option::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
+
+[[disallowed-methods]]
+path = "core::result::Result::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
+
+[[disallowed-methods]]
+path = "std::env::set_var"
+reason = "Use typed config instead"
+
+[[disallowed-methods]]
+path = "std::thread::sleep"
+reason = "Use tokio::time::sleep in async code"
