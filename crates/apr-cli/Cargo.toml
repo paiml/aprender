@@ -66,6 +66,7 @@ path = "src/main.rs"
 default = ["hf-hub", "safetensors-compare", "inference", "cuda", "cuda-batch", "visualization", "zram", "training", "training-gpu", "code"]
 hf-hub = ["aprender/hf-hub-integration"]
 code = ["dep:batuta"]
+dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "realizar/gpu"]

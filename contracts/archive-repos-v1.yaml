@@ -1,0 +1,128 @@
+# APR-MONO: Repository Archive Provable Contract
+#
+# Defines invariants for archiving the 20 old repositories after
+# monorepo consolidation is complete.
+
+kind: ArchiveContract
+name: archive-repos
+version: "1.0.0"
+scope: "20 old repositories to archive after monorepo migration"
+
+description: |
+  Contract for archiving old PAIML repositories after the monorepo
+  consolidation. Archived repos become read-only with redirect READMEs.
+
+preconditions:
+  - "All crates published to crates.io from the monorepo (Phase 5 complete)"
+  - "Shim crates published (trueno 0.19, entrenar 0.8, etc.)"
+  - "`cargo install aprender` verified working on clean machine"
+  - "All CI pipelines migrated to monorepo workflow"
+
+postconditions:
+  - "All 20 repos archived (read-only via GitHub API)"
+  - "Each repo's README redirects to paiml/aprender"
+  - "No push access to archived repos"
+  - "Issues, PRs, stars, forks preserved (read-only)"
+  - "crates.io ownership still lists PAIML team"
+
+repos_to_archive:
+  # Core (5)
+  - repo: paiml/trueno
+    new_location: crates/aprender-compute/
+    new_crate: aprender-compute
+    shim: "trueno 0.19"
+
+  - repo: paiml/entrenar
+    new_location: crates/aprender-train/
+    new_crate: aprender-train
+    shim: "entrenar 0.8"
+
+  - repo: paiml/realizar
+    new_location: crates/aprender-serve/
+    new_crate: aprender-serve
+    shim: "realizar 0.9"
+
+  - repo: paiml/Batuta
+    new_location: crates/aprender-orchestrate/
+    new_crate: aprender-orchestrate
+    shim: "batuta 0.8"
+
+  - repo: paiml/provable-contracts
+    new_location: crates/aprender-contracts/
+    new_crate: aprender-contracts
+    shim: "provable-contracts 0.4"
+
+  # Satellites (15)
+  - repo: paiml/presentar
+    new_location: crates/aprender-present-*/
+    new_crate: aprender-present-core
+
+  - repo: paiml/renacer
+    new_location: crates/aprender-profile/
+    new_crate: aprender-profile
+    shim: "renacer 0.11"
+
+  - repo: paiml/certeza
+    new_location: crates/aprender-verify/
+    new_crate: aprender-verify
+
+  - repo: paiml/trueno-db
+    new_location: crates/aprender-db/
+    new_crate: aprender-db
+
+  - repo: paiml/trueno-graph
+    new_location: crates/aprender-graph/
+    new_crate: aprender-graph
+
+  - repo: paiml/trueno-rag
+    new_location: crates/aprender-rag/
+    new_crate: aprender-rag
+
+  - repo: paiml/trueno-viz
+    new_location: crates/aprender-viz/
+    new_crate: aprender-viz
+
+  - repo: paiml/trueno-zram
+    new_location: crates/aprender-zram/
+    new_crate: aprender-zram
+
+  - repo: paiml/alimentar
+    new_location: crates/aprender-data/
+    new_crate: aprender-data
+
+  - repo: paiml/simular
+    new_location: crates/aprender-simulate/
+    new_crate: aprender-simulate
+
+  - repo: paiml/verificar
+    new_location: crates/aprender-verify-ml/
+    new_crate: aprender-verify-ml
+
+  - repo: paiml/repartir
+    new_location: crates/aprender-distribute/
+    new_crate: aprender-distribute
+
+  - repo: paiml/probar
+    new_location: crates/aprender-test-*/
+    new_crate: aprender-test-lib
+
+  - repo: paiml/pacha
+    new_location: crates/aprender-registry/
+    new_crate: aprender-registry
+
+  - repo: paiml/batuta-common
+    new_location: "(folded into aprender-orchestrate)"
+    new_crate: aprender-orchestrate
+
+falsification:
+  - name: FALSIFY-ARCH-001
+    description: "Archived repo still accepts pushes"
+    check: "git push to archived repo returns 403/readonly error"
+
+  - name: FALSIFY-ARCH-002
+    description: "Archived repo README missing redirect"
+    check: "README.md contains 'This repository has moved' and paiml/aprender link"
+
+  - name: FALSIFY-ARCH-003
+    description: "crates.io ownership lost after archive"
+    check: "`cargo owner --list <crate>` still shows PAIML team"

@@ -157,8 +157,8 @@ Every successful large Rust project uses this pattern:
 | Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
 | Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
-| Phase 5: Publish + shims | TODO | |
-| Phase 6: Archive old repos | TODO | |
+| Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
+| Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 
 **Current count**: 68 active workspace members, 0 with old names.
 **Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).

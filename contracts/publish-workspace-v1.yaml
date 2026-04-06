@@ -1,0 +1,63 @@
+# APR-MONO: Workspace Publish Provable Contract
+#
+# Defines the invariants for publishing workspace crates to crates.io.
+# Enforced by: scripts/publish-workspace.sh + manual verification
+
+kind: PublishContract
+name: publish-workspace
+version: "1.0.0"
+scope: "crates.io publishing of 69 workspace crates + 45 shim crates"
+
+description: |
+  Contract for publishing the monorepo workspace to crates.io in correct
+  topological order. Violations cause broken `cargo install aprender`.
+
+preconditions:
+  - "cargo login has been run with PAIML crates.io token"
+  - "All workspace crates pass `cargo check --workspace`"
+  - "All integration tests pass (monorepo_invariants + cli_commands)"
+  - "`cargo package -p <crate>` succeeds for each crate (no missing files)"
+  - "Version field matches [workspace.package] version = 0.29.0"
+
+postconditions:
+  - "`cargo install aprender` produces working `apr` binary"
+  - "`cargo install aprender --version 0.29.0` succeeds on clean machine"
+  - "All shim crates resolve: `trueno = 0.19` → `aprender-compute = 0.29`"
+  - "No crate has [patch.crates-io] in its published Cargo.toml"
+
+equations:
+  topological_order:
+    formula: |
+      publish(C) requires: forall D in deps(C): published(D)
+
+      Tier ordering:
+        T0: leaf crates (no workspace deps)
+        T1: aprender-compute + sub-crates
+        T2: contracts + shared libs
+        T3: data + storage
+        T4-T6: visualization, test, zram
+        T7: aprender-core (ML library)
+        T8: training
+        T9: serving + orchestration
+        T10: apr-cli, then aprender (root facade)
+    invariants:
+      - "A crate is NEVER published before its workspace dependencies"
+      - "aprender (root) is ALWAYS published LAST"
+      - "Each publish waits ≥15s for crates.io index propagation"
+
+falsification:
+  - name: FALSIFY-PUB-001
+    description: "Crate published before its dependency"
+    check: "cargo install aprender fails with 'version not found' for a dep"
+
+  - name: FALSIFY-PUB-002
+    description: "Shim crate fails to re-export"
+    check: "`trueno = '0.19'` in a Cargo.toml causes type mismatch"
+
+  - name: FALSIFY-PUB-003
+    description: "`cargo install aprender` fails on clean machine"
+    check: "Post-publish smoke test in clean Docker container"
+
+  - name: FALSIFY-PUB-004
+    description: "Published crate contains [patch.crates-io]"
+    check: "cargo download + inspect Cargo.toml for patch section"

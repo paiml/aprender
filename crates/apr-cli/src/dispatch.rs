@@ -26,10 +26,21 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     }
 
     // Try model management commands (merge, finetune, prune, distill, pull, list, rm, tui)
-    let result = dispatch_model_commands(cli);
+    if let Some(result) = dispatch_model_commands(cli) {
+        contract_post_side_effect_classification!(&());
+        contract_post_output_format_fidelity!(&());
+        return Some(result);
+    }
+
+    // Monorepo management (publish, shims, audit, archive) — dev-only
+    #[cfg(feature = "dev")]
+    if let Commands::Mono(command) = cli.command.as_ref() {
+        return Some(crate::commands::mono::run(command.clone()));
+    }
+
     contract_post_side_effect_classification!(&());
     contract_post_output_format_fidelity!(&());
-    result
+    None
 }
 
 /// Dispatch runtime commands: check, run, serve.

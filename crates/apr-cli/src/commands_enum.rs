@@ -516,4 +516,9 @@ pub enum Commands {
     /// Extended analysis, profiling, QA, and visualization commands
     #[command(flatten)]
     Extended(ExtendedCommands),
+
+    /// Monorepo management (publish, shims, audit, archive) [dev-only]
+    #[cfg(feature = "dev")]
+    #[command(subcommand)]
+    Mono(crate::commands::mono::MonoCommands),
 }
