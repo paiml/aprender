@@ -260,13 +260,13 @@ fn dispatch_smoke_gate(
         "validate" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                validate::run(&p, false, false, None, false)
+                validate::run(&p, false, false, None, false, false)
             })
         }
         "validate_quality" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                validate::run(&p, true, false, None, false)
+                validate::run(&p, true, false, None, false, false)
             })
         }
         "tensors" => {
