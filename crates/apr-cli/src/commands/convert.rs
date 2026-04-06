@@ -48,6 +48,7 @@ pub(crate) fn run(
     force: bool,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_format_conversion_roundtrip!();
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }

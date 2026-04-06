@@ -23,6 +23,7 @@ pub(crate) fn run(
     json: bool,
     skip_contract: bool,
 ) -> Result<(), CliError> {
+    contract_pre_validate_exit_code_consistency!();
     // BUG-VALIDATE-001 FIX: Validate min_score is in valid range [0, 100]
     if let Some(score) = min_score {
         if score > 100 {
