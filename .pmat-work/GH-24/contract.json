@@ -1,0 +1,2852 @@
+{
+  "version": "5.0",
+  "work_item_id": "GH-24",
+  "created_at": "2026-03-03T15:17:36.348487680Z",
+  "baseline_commit": "10122822632428f052535b4d2dc3699bfc188775",
+  "baseline_tdg": 0.0,
+  "baseline_coverage": 0.0,
+  "baseline_rust_score": 0.0,
+  "baseline_file_manifest": {
+    "files": {
+      "crates/probar-cli/src/handlers/mod.rs": {
+        "content_hash": "bd2972073261c71b9bbaf87e5f7e986b710e7710ab29a12def6b9318fbe50c82",
+        "lines": 38,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/element_assertions.rs": {
+        "content_hash": "19eae07cb9d4fec13e97ebf84c0d3bc1384fbd70904847028d433ee7a5648be9",
+        "lines": 404,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/browser.rs": {
+        "content_hash": "eac60890588c24bb8986ef28843a674fdf0784c9faf33c6953739a1a34ecac99",
+        "lines": 316,
+        "functions": 28,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/mod.rs": {
+        "content_hash": "18f91d6080d9f95742013b8d80adfe487ce528aa60e33ee5658cddcd2661840b",
+        "lines": 32,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/harness.rs": {
+        "content_hash": "30283ea290130ef3dea81e9d2b08a86bdd1ec8105320ae46559a9054c1ef9a28",
+        "lines": 195,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/visual_regression.rs": {
+        "content_hash": "61e76a374b8d0e3855074a077a81ad5fe3328d3314e939a04c57605f19527a50",
+        "lines": 1406,
+        "functions": 96,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/thread_local.rs": {
+        "content_hash": "bc6b7fa14f7ea3958cd1a16d259b45c430e715acc4356e29004c71952ac1647f",
+        "lines": 128,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/docker_demo.rs": {
+        "content_hash": "9ec4e7f29e6551e2fab12144cac504e3401793485e3eb4fd4ec6425e021de05a",
+        "lines": 336,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/coverage_demo.rs": {
+        "content_hash": "253423239b2347a224de78260de0b82b6b32cc4b70fa4cb6a7a39f1a1e910e68",
+        "lines": 547,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/client.rs": {
+        "content_hash": "e7c22cdacb0e1b41202195a7de3928bec4f3fbb29e62a4571b1caff087475fdb",
+        "lines": 447,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/event.rs": {
+        "content_hash": "c33491c1821c503c0618fc11c618e324d749c31f57e9fd7b55e16a6033410937",
+        "lines": 1112,
+        "functions": 72,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/commands.rs": {
+        "content_hash": "43a2011e51f4194fafd2d58025fbdefadc98c031712a1b365b4bc9e73c4b37ea",
+        "lines": 2350,
+        "functions": 91,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/har.rs": {
+        "content_hash": "813aa0a7963986944ea76f388b25f12f53bde37e9ab1c432be168dde83a0952e",
+        "lines": 1884,
+        "functions": 150,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/strict.rs": {
+        "content_hash": "51c328e5e53b19105a0c56377893047ee2449c9d7d8632e93cfbb489d469ca3e",
+        "lines": 1603,
+        "functions": 131,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/stress.rs": {
+        "content_hash": "3223220c70dfe060b21b1e634133fd877c766d210c6ddec0abf2a7973a85c867",
+        "lines": 1032,
+        "functions": 55,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/emulation/audio.rs": {
+        "content_hash": "78e374b28a8c1eb9554c49174faf744b53d80c055a6166093e753017ae2790af",
+        "lines": 1222,
+        "functions": 74,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/validators.rs": {
+        "content_hash": "cc4559cb60bdf3e72b7f23d2e211fe4ad5dc5f462dbbc38c03edacc6712db2de",
+        "lines": 4233,
+        "functions": 262,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/distributed_worker_demo.rs": {
+        "content_hash": "ce75aa371ab8e333586b1b5189a1a851210224f0ca324425437a6b85fa81c3f2",
+        "lines": 383,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/video_quality/probe.rs": {
+        "content_hash": "db5266758806e0cf6bdfdd5353a9e3c21eef5cd565d00b1790088aa423b14055",
+        "lines": 337,
+        "functions": 18,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/comply/tarantula.rs": {
+        "content_hash": "ee436b0ddfc997b2f8a37bfc6af555583b8a87e897d9d48c44b31e21daddd0ca",
+        "lines": 600,
+        "functions": 30,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/context.rs": {
+        "content_hash": "687cd6ddc0e8e6e9f2d3153eb72afe59e415681ff1f618f101d69595e2b0ac86",
+        "lines": 1855,
+        "functions": 185,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/compute_block.rs": {
+        "content_hash": "fcbe5181e81408f93f3376e2da109bd34e2371a3583867cd51162f4cd9f9ee7f",
+        "lines": 587,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/web_sys_gen.rs": {
+        "content_hash": "f5476ee01bc2ffe5d1b5eb73a3ddde1c194681494d807765eede0b5fb7e824de",
+        "lines": 983,
+        "functions": 80,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/media/video_recorder.rs": {
+        "content_hash": "4997ed420fcfd50f5ad122c50c59160bd94fa68db8b6f825c0e606021506c27f",
+        "lines": 2523,
+        "functions": 163,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/animation/easing.rs": {
+        "content_hash": "4f4b5fdcd67d2e8aee17a11536966e21fd5f0d0fe96ca428f37d890b2459ac38",
+        "lines": 221,
+        "functions": 12,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/wasm_pixel_gui_demo.rs": {
+        "content_hash": "80a537f1918d644813696a4c48717b4d99a85959deb3f639b1ce6ca446644974",
+        "lines": 419,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/lint/state_sync.rs": {
+        "content_hash": "fbb4b584b2bd2485390f2e5187177fe7cbe7457f3417650fc9dc312659b628af",
+        "lines": 1553,
+        "functions": 109,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/perf/mod.rs": {
+        "content_hash": "b726438e779d5e1f9dbc9fc0b0f432d408d853188039d92f10778b3bfba4dc8d",
+        "lines": 149,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/tests/smoke_tests.rs": {
+        "content_hash": "1a382998d0889460a91eafa9aa42c35982ffd0e467f38b39b934cd99f227d843",
+        "lines": 414,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/playbook/runner.rs": {
+        "content_hash": "6fc811c848e26e583a4df4cacb1f25096384fe735ff50e2ec7b67c9fa548621b",
+        "lines": 2107,
+        "functions": 70,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/media/mod.rs": {
+        "content_hash": "61dab6c32b6e2a9b5c3123142809948286e2542a8425ae518ccdc431a4413152",
+        "lines": 19,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/playbook_testing.rs": {
+        "content_hash": "bc584a929fbdc972f07c06fa5f5c2267a588b6cc8f090c742a0493c5b2ed93cf",
+        "lines": 357,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/assertion/retry.rs": {
+        "content_hash": "16049a8c8ee105b81b32f17606bba81057f3aa94976bcf3a2960b0240cd841e6",
+        "lines": 663,
+        "functions": 54,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/wasm_capabilities.rs": {
+        "content_hash": "780e5c7960bf8180ef07552403df8ef2e9bc736db43cef6c0c01806d8bf0b2ad",
+        "lines": 202,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/examples/gui_coverage_report.rs": {
+        "content_hash": "89e5351be40311afd34fa79964032cd6a53de3e2802882402a1f0917f96298ae",
+        "lines": 421,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/lib.rs": {
+        "content_hash": "04b1e84ee7af6116c7c2e22f1510da8ff5ce4d9db4a315c191f2a0ab3bbce276",
+        "lines": 1521,
+        "functions": 74,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/brick_tui_demo.rs": {
+        "content_hash": "59e56d29c3a6fb9adde1353213bed817d9ae0c538c5ccdebb2aa7586bb6c49db",
+        "lines": 342,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/animation/types.rs": {
+        "content_hash": "20881da594cc8f083b55200e8a020ab9b59f7de096d5da1d23967e0a590ba23b",
+        "lines": 400,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/load_testing.rs": {
+        "content_hash": "3fc79ec1c7ada867c8b19b716a45819cc116d534fce843230a8ee005017ceb72",
+        "lines": 1292,
+        "functions": 91,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/simulation.rs": {
+        "content_hash": "595f95be49c7a9ddefdb3140564e359dfa54b9436926ba52f6e03902f3ded2ed",
+        "lines": 1153,
+        "functions": 63,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/runner/mod.rs": {
+        "content_hash": "6c3846315af1dcef2701a0b823621641f5c2e88e9d23894d7e1a60c97da6c517",
+        "lines": 136,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/watch_mode.rs": {
+        "content_hash": "ae182d66bc5f451a0616257abc49e92fcc8f9bc412502b7c2b7f17968bc8c26c",
+        "lines": 98,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/prompts.rs": {
+        "content_hash": "d293964167c5636e0b29fc56dfd9407a313fae2d462129de8830fb1eea1556d8",
+        "lines": 308,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/video_quality/mod.rs": {
+        "content_hash": "b796c868f39dada56a3963579fb6576fe772fb81b229435dfd96bd59d1bc3312",
+        "lines": 24,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/mouse_actions.rs": {
+        "content_hash": "0e7e76436ac329613ab268c87361b60b1ff67dfe05cb7f21cd00b1c2223e1628",
+        "lines": 273,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/gui_coverage.rs": {
+        "content_hash": "30bf8a4a17104b9ed3bff31145aef668b2758823e815f779f84453227c89f4a1",
+        "lines": 422,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/semantic_locators.rs": {
+        "content_hash": "555258a7a3319e4e66f9eca3cb8a61671d94e8b170a45b837b53c9bebbe662c0",
+        "lines": 184,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/executor.rs": {
+        "content_hash": "84684aa6aef2cf45e7e97e2c977d7a496d727f64ed175251881afe177b2a730d",
+        "lines": 107,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/config.rs": {
+        "content_hash": "cd5f25531c6fe245a174e3c03efff553604b9fcd2067a8b771c97d0bc1d4c557",
+        "lines": 210,
+        "functions": 25,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/examples/calculator_tui.rs": {
+        "content_hash": "879e65f80da390ca9bb4864ca38a5b0141bb7d2e979b6598efac58be0167d8ea",
+        "lines": 85,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/media/png_exporter.rs": {
+        "content_hash": "203fdf2d5276e1c55d2137975efa470782408b32201e0098e9025a72f5d2ece0",
+        "lines": 905,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/jidoka.rs": {
+        "content_hash": "0ffaedf543bf91bb302cba80df06b572f868af618f4cf541f234e6f584cc5a31",
+        "lines": 194,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/multi_context.rs": {
+        "content_hash": "bc818448d294ee6e9b48fcd96f2237cc4c099051ae992949b35ee34858d3c3d0",
+        "lines": 139,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/distributed.rs": {
+        "content_hash": "e6ffd1da77629335b7276c01343447f8898725cf8e5ef1eda367ec4842bc13cf",
+        "lines": 2227,
+        "functions": 174,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/event.rs": {
+        "content_hash": "7a4f3acd3e4a2c63c946f17c16a399dd5079e8f5bdc311a0ace9661748713097",
+        "lines": 158,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/score.rs": {
+        "content_hash": "e9057934e75c2ff31e1192a0fa5c6d37bf3fbb54fb7081a31391192527084eae",
+        "lines": 1709,
+        "functions": 50,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/searcher.js": {
+        "content_hash": "9289822a2feee1c578b4593e918333147ad9f68dc3ffa75edc38b68d04e57807",
+        "lines": 483,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/src/assertion/mod.rs": {
+        "content_hash": "7d03f835e77eb4de6d595b2d958ded5c87796919d2d545d444f7ec723bffee6e",
+        "lines": 174,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/media/svg_exporter.rs": {
+        "content_hash": "0648aec4db5644bc5382780ac3c07561a94a9c7046ad32dd99f818c4a2d7ed6f",
+        "lines": 2406,
+        "functions": 124,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/benches/image_ops.rs": {
+        "content_hash": "1a8343d41067427f6ad8279dd205c7e7da644114e4820854a52cc650cdbf518d",
+        "lines": 208,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/core/parser.rs": {
+        "content_hash": "1c0b28bef134268a22e725e5878aa3bb5bf9fd1d3abd1207863eed075236fe6a",
+        "lines": 832,
+        "functions": 70,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/driver.rs": {
+        "content_hash": "321a9f2dbb0a244f63e99a11f4d41ce5b9f1f4b1a66193d863d9ce5563e11382",
+        "lines": 534,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/lint.rs": {
+        "content_hash": "2c27905d50a6841e0bb10c3d8f48b222085c2f514a894d18a713679edc61080a",
+        "lines": 1222,
+        "functions": 68,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/runner/builder.rs": {
+        "content_hash": "afa26444d61bfa6c4a6bf58da962084e999016067982a168f72b982ef748aaa2",
+        "lines": 661,
+        "functions": 51,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/playbook/executor.rs": {
+        "content_hash": "453ff21709ff1c055bf45f0f939cafb97d3b2f807b2a5d11681f855c14f5bce2",
+        "lines": 1117,
+        "functions": 50,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/llm.rs": {
+        "content_hash": "34b9beb6ee3fe5ca3c69d9ef9a233b509bd7c24251153f5410d1fa9f5a20a828",
+        "lines": 637,
+        "functions": 23,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/comply/wasm_threading.rs": {
+        "content_hash": "4c992aa996d75782c19cba37c982936601ccdfcb41e1956022b484fc06d8e77f",
+        "lines": 1660,
+        "functions": 99,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/watch.rs": {
+        "content_hash": "a7627e313960d0bf4ad29041ab5ff7450ed731fc74cec5f364c2be86a69b267e",
+        "lines": 1849,
+        "functions": 170,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/pong_simulation.rs": {
+        "content_hash": "22e45b1c0589ac1923ba6426893e19fd28a1cfbe735dc4d98083b69e8708cf66",
+        "lines": 508,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/web_builders_demo.rs": {
+        "content_hash": "f7b386f1f5b4c9ed12e1aa99dc431ba2475e1515bc07dc3f8c38c0b6b2be0034",
+        "lines": 277,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/tui/app.rs": {
+        "content_hash": "74eaf512750408a04e950230c2c12245c523ba17c25709801f3ed24180241deb",
+        "lines": 586,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/perf/trace.rs": {
+        "content_hash": "e7adfb9abf95ed4cf120ea682ee3e52574bd3c0a771b03f53e9a3be681bc0d64",
+        "lines": 606,
+        "functions": 45,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/gpu_pixels/regression.rs": {
+        "content_hash": "30f01c146d395f1eef9fd8e35f9d34c1c14cfb16559905637189ac8d0c1f957e",
+        "lines": 304,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/src/lib.rs": {
+        "content_hash": "82b66867941f4f9d3742b98eaa175414772ee0b90ebd16eba56bd3b806e78ec7",
+        "lines": 337,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/equation_verify.rs": {
+        "content_hash": "a48d249636fd8361b035f16ad52730675b1c4ad7e95b73a44bec23273af1d3ec",
+        "lines": 156,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/lib.rs": {
+        "content_hash": "305f879a8da904eed85a8ef3b78e5c8e8aa61f80e135997bd5c852fd78963d7f",
+        "lines": 180,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/mock/falsification_tests.rs": {
+        "content_hash": "d47076b837ba961d66bd8c46bca26b37873cfe0189ef08c29b258702c7f94c40",
+        "lines": 2195,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/fuzzer.rs": {
+        "content_hash": "915c7ef24e98cd12b3944509546f1f043464475f2832bdbcc511a300f89a02ae",
+        "lines": 620,
+        "functions": 50,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/examples/calculator_wasm_demo.rs": {
+        "content_hash": "0c02e298bf5e83b22d6797ed8859ef7a88536b3d820eca9b11860ab06e79dfac",
+        "lines": 133,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/av_sync.rs": {
+        "content_hash": "a836ae31829cf080b87840b339ad8ddd4f1c320e3fcb47d8ad1a3e3782e6c521",
+        "lines": 465,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/av_sync/detection.rs": {
+        "content_hash": "efdc0144c9043d16ec545deadde6fee1738394b0a4e1e92afcc81abf59252df3",
+        "lines": 370,
+        "functions": 31,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/mock/mod.rs": {
+        "content_hash": "9f49e2031887cd648a52aea5cade1705d5f4638bfb836b64e473d024ebe2a726",
+        "lines": 40,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/formatters/mod.rs": {
+        "content_hash": "ca5d38cbd8df9daaf8dedb331f819748410b8526b11b3c05f913ed7dfade70d7",
+        "lines": 13,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/web_sys_gen_demo.rs": {
+        "content_hash": "de7c4e913107422f9baa856e5000f156b7343620783c9b1bfa2d754e49d68770",
+        "lines": 180,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/dom.rs": {
+        "content_hash": "6d9875888c743319caed66bfcabf44d7b87cf474dffe356e7f681b2d622e508c",
+        "lines": 751,
+        "functions": 76,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/perf/export.rs": {
+        "content_hash": "a8914a0c4e66a96b2c8781009bc2128c9420e35363beaa9c59eba008bae56da9",
+        "lines": 412,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/memory.rs": {
+        "content_hash": "b29a49d36d390449768dcc34e5cc800bd3c3e1ea0da222e107356ea6b051eec4",
+        "lines": 117,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/hypotheses.rs": {
+        "content_hash": "fc6cd079e40dcda910c883490dbbfbd1ff2a79de00bbb12e21d6498b7945a123",
+        "lines": 270,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/media/gif_recorder.rs": {
+        "content_hash": "4c53a552149cf2472e5abbcca2cbdaef6bb482b3ebb45cd3149270d3edd716b7",
+        "lines": 721,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/file_ops.rs": {
+        "content_hash": "30834d105d730461fc587b8099675d23da251a679abd285fdf728081f52d93f2",
+        "lines": 1186,
+        "functions": 130,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/runner/server.rs": {
+        "content_hash": "a17518fa823ffc0a3857b6e70f39bd9d29c1c5bcb335c38c29d7a2c67fedc9d3",
+        "lines": 903,
+        "functions": 73,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/coverage.rs": {
+        "content_hash": "7a5c1505488d7acab86d4af26fe966a573752d1563e75859d7639759ee3c9c37",
+        "lines": 368,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/audio_quality/types.rs": {
+        "content_hash": "c90f110efeb3e6852ce2e12ae9c1552d7e69a9270e468c55e0357d858bc94d75",
+        "lines": 279,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/mock/wasm_runtime.rs": {
+        "content_hash": "24403e50b77d606f430b3238921715533de23011d27e90de043bffd59e443583",
+        "lines": 856,
+        "functions": 60,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/tests.rs": {
+        "content_hash": "3e8b30109e0f468104a17e418848fcc7f6bca06fa24fd9142ace3f69f0529d93",
+        "lines": 2100,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/examples/locator_operations.rs": {
+        "content_hash": "804d152ec531d721ec44e841850b0834f52caeb91be0caceaf7a975d96a3144e",
+        "lines": 207,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/worker_harness_demo.rs": {
+        "content_hash": "36815cde121696c06d1380321c526ddefd4d9f97a63549a8ffcb89b774c88227",
+        "lines": 373,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/animation/timing.rs": {
+        "content_hash": "17c3f0a425eb3edcdb1bf14f0bda4d237ab339e0c8740cdd51f0142341a27960",
+        "lines": 273,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/tui/input.rs": {
+        "content_hash": "d04a054dbc7a665e897cbfc7c989513295c4c19ece0cc06a6aabfead56374942",
+        "lines": 398,
+        "functions": 36,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/examples/calculator_tui_demo.rs": {
+        "content_hash": "4900158345149e9e573a79ef318587459b75fa3377e35bb02e8052f5612edf66",
+        "lines": 128,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/mod.rs": {
+        "content_hash": "0bb5b3470d5fee0d328ea6e29ce9575711df17e88a5dbb6b9c0bc3295a556a9e",
+        "lines": 73,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/wait.rs": {
+        "content_hash": "802e51a53739c0d7bc8320123f839a0668a38f0ca21532f8b6b7978131b9dabc",
+        "lines": 1494,
+        "functions": 145,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/dev_server.rs": {
+        "content_hash": "b0ef2380b17c01bc9b4bcae77abb1c701a95784f48ddd6378644e960d0a16a2a",
+        "lines": 1973,
+        "functions": 101,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/config.rs": {
+        "content_hash": "34a2eb41d8e2a39a68aab2ed7c317297b64d55ca1f0661671e35ea60e881a9fe",
+        "lines": 392,
+        "functions": 28,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/renacer_integration.rs": {
+        "content_hash": "e448d6ac6ce4a83a1aeb0c4d14a0d3625651d1d350bda088d267b1ddc495b62c",
+        "lines": 825,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/perf/span.rs": {
+        "content_hash": "669ab82d72f2c3af126025302eddf76bf7bc9a2755a16b8012101083f0c84bd1",
+        "lines": 625,
+        "functions": 53,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/lint/ast_visitor.rs": {
+        "content_hash": "6a07a7564f92cfe60ffc3b055db61f084ae958dfc66078c0b8ca67da7f2b438c",
+        "lines": 1797,
+        "functions": 136,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/core/operations.rs": {
+        "content_hash": "11e6210b3a94f0ca09c4ae2cf064387602f3e555b0a529df40c06007cf1e5235",
+        "lines": 535,
+        "functions": 72,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/presentar/mod.rs": {
+        "content_hash": "5e97ba95050c0a1797e5c126900517dffdcfdafc8e04a322fa654746db8ef9b8",
+        "lines": 58,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/performance_profile.rs": {
+        "content_hash": "78d1b259a6f7c4ece41ee69182742765c8c6de9efbb85dfadee9039676e85d64",
+        "lines": 115,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/pipeline.rs": {
+        "content_hash": "32910e1ad4765a07c0013c097b8d1b12fdd7a1cb4d950a43f93ff32a5a9d3cde",
+        "lines": 3161,
+        "functions": 235,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/lib.rs": {
+        "content_hash": "e19866248e338442f0392138a30669e1cd22459e5e5c36b5a96013ca9b0e55d1",
+        "lines": 105,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/presentar/terminal.rs": {
+        "content_hash": "f5808d027f25ee86139e471ca887ae73607a6dc3ccc040e5cf60d34444fdfbd8",
+        "lines": 520,
+        "functions": 45,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/output.rs": {
+        "content_hash": "aada493143e3df9209bc80ece939a6a232f3f3fe248b374d5f4dca3180928d62",
+        "lines": 384,
+        "functions": 34,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/build.rs": {
+        "content_hash": "447595a4dd5dbd4e7b4d68c0a6103eec6b4212715c4d5217f58b33108a852b7a",
+        "lines": 249,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "BuildScript"
+      },
+      "crates/probar/src/presentar/falsification.rs": {
+        "content_hash": "8c68f0766ccd804026f60fcbb149f7b9403c864accc0e5c78dc8dbd1fed69943",
+        "lines": 1012,
+        "functions": 30,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/tracker.rs": {
+        "content_hash": "6880b3170dfd3ea4db14b898782437fb76f7b62c7d0cc18d345b86ebbdf29736",
+        "lines": 814,
+        "functions": 59,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/reporter.rs": {
+        "content_hash": "b210ae19553fefe1ce5853e43c5b59155e7216c7d7c95fe8f8501b4100276798",
+        "lines": 1007,
+        "functions": 73,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/gpu_pixels/ptx_analysis.rs": {
+        "content_hash": "30c9793ada00dc622a52bd7e32cd1b9030f8845f7254a5028f58bd931ecb7aad",
+        "lines": 487,
+        "functions": 28,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/worker_harness.rs": {
+        "content_hash": "985843ec09574c21f2c2f07cc83749ff2ed75f04da51b2f211b6f4d79c55f0ab",
+        "lines": 1354,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/assertion/equation.rs": {
+        "content_hash": "51a67f1fb5c5f28266210b8c93a30c24d01a58705701bde08051bfe3f98dc695",
+        "lines": 1631,
+        "functions": 158,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/snapshot.rs": {
+        "content_hash": "2ecec5d0cd870ff621668334cfb0c52e7abe379a1c4436d2308fdf2c7a65a77d",
+        "lines": 728,
+        "functions": 59,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/video_quality/validation.rs": {
+        "content_hash": "f5d45cd2234a12dc1f74e5bb5bed04d8e79ab0916f68c1467e15896f33b17709",
+        "lines": 241,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/report.rs": {
+        "content_hash": "8c6fa463dcef751ac83c5890adea944f1564d9427fbaeefdae48bfce9bb44e98",
+        "lines": 308,
+        "functions": 18,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/perf/metrics.rs": {
+        "content_hash": "34d24c421bf2e8f037c75b0348d4b94918a5153dae044199eefdde59ddacc775",
+        "lines": 699,
+        "functions": 56,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/emulation/mod.rs": {
+        "content_hash": "afb261b78a524b48e47b6e400290e59334970cf25f9b56378482a4416a398fc8",
+        "lines": 17,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/tracing.rs": {
+        "content_hash": "ea3a78b3e7bd22c498294ff086ae348614a4b565b6a04a5f1ac97c5f140673ab",
+        "lines": 1065,
+        "functions": 66,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/shard.rs": {
+        "content_hash": "6df07eb1717b59d8aba871d95a7bb8821dbf5328977269cbd2d50451e2fa63b8",
+        "lines": 969,
+        "functions": 82,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/init.rs": {
+        "content_hash": "e0a4e82f38b32729163a505de87fef7cae8c57333c2b0b73562bd6ab9b3bc340",
+        "lines": 197,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/benches/locator_ops.rs": {
+        "content_hash": "f84d91d89e4395d4143475ee88b040bed126ee5276f0b0154667d9e3d68b09a3",
+        "lines": 227,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/soft_assertions.rs": {
+        "content_hash": "862c8d993f3c4d731d56cca25d4930eb38cc80148725043834a694857faab943",
+        "lines": 66,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/tests/gui_coverage_tests.rs": {
+        "content_hash": "8e039cb2509017689e9e9b7038f65570e9f4e48927171981246af2cb328483df",
+        "lines": 213,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar-cli/src/handlers/comply.rs": {
+        "content_hash": "db5842ba7096be6785ae1b16b57a8ce140a6db4292af2e12ad5c960c5fb05b6c",
+        "lines": 969,
+        "functions": 68,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/superblock.rs": {
+        "content_hash": "f842c5f335dfcb8bcfefc5c96a21d42cd555c87bf11fbfd55f621312c8f79161",
+        "lines": 218,
+        "functions": 19,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/web/js_builder.rs": {
+        "content_hash": "c6d6662f8fea23e4b502566c14313e465bbfb0995af51e23c7761d823f2dc1e4",
+        "lines": 426,
+        "functions": 27,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/worker_brick_demo.rs": {
+        "content_hash": "5a2c3388dd87a25815ed55953f53137bac4c103366a5f31d2f2d39840c25f8a0",
+        "lines": 291,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/generate.rs": {
+        "content_hash": "b748769c28b489131042e8126329258a6dbf487b707dba5ff23031ab75ebeb73",
+        "lines": 698,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/docker.rs": {
+        "content_hash": "4f4435e1696fa0c607a7dd3f19972332a0adf0afcd0adad8425a45b68796fabb",
+        "lines": 2083,
+        "functions": 153,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/zero_js.rs": {
+        "content_hash": "702de66b325c38127ecf6ead1fe65a7fe8c99b87c91230bc9abb75484f82dc6b",
+        "lines": 1746,
+        "functions": 95,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/deterministic.rs": {
+        "content_hash": "7883a8e1d7d4a17a81cd6aa5f63f4288ea5e9da0461818264bc92f5c703a92a1",
+        "lines": 3642,
+        "functions": 313,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/config.rs": {
+        "content_hash": "ec6a7f5cfea232d9d220e85fb549d42385ddc7c3d9a3097b8911a220190e32e1",
+        "lines": 413,
+        "functions": 47,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/wasm_testing.rs": {
+        "content_hash": "f9a22903c70e12224fb214c590fb1fa88aa89297ddd1d9e749868f2b8f2971f2",
+        "lines": 1141,
+        "functions": 62,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/wasm_demo.rs": {
+        "content_hash": "4a601478593caa46e17adbbb8e72eb16d97a67050106a4bdf18d14fcbef4b02f",
+        "lines": 1879,
+        "functions": 129,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/presentar/validator.rs": {
+        "content_hash": "5deb7c2fb772ffe6a854f087f5ca8b00e715a4d34dc4758e8adb5a036e0be081",
+        "lines": 397,
+        "functions": 26,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/web/css_builder.rs": {
+        "content_hash": "28be78bf6baf5994c06bd58d46cb1b1bb921796a1df61aefcacf0531d2a2fe49",
+        "lines": 399,
+        "functions": 29,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/simulation.rs": {
+        "content_hash": "9a567683885796347cc90ee5b70a8cc3945545cf01cc9f115776d9616d4cc98b",
+        "lines": 910,
+        "functions": 52,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/audio.rs": {
+        "content_hash": "d551b33db40f56c66ff351398c6dac78273fd1afd963d9ab87fbf7dbb4c42de2",
+        "lines": 1136,
+        "functions": 81,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/bridge.rs": {
+        "content_hash": "9992a49eb75aaa23dc545161f401a329283e5fad821450e90e653637283323ce",
+        "lines": 840,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/mark.min.js": {
+        "content_hash": "09e88c2cfaf23ea8a37b5681433eafea97033af632ecc948c8c1ee9944647743",
+        "lines": 7,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/examples/locator_demo.rs": {
+        "content_hash": "15864056d25d5b25b6bc076869a812c5d5e9f9b1337ee4f5ce4af2c6c4f81481",
+        "lines": 237,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/websocket.rs": {
+        "content_hash": "264d9326ca8e6f4cc673bfd18a395da618e06da871d1f485c012e53ab3120100",
+        "lines": 1512,
+        "functions": 141,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/audio.rs": {
+        "content_hash": "86c96bcb2b27da18f1621786ed02d3947b7241a925a12b308386358402b63ca6",
+        "lines": 173,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/mock/test_harness.rs": {
+        "content_hash": "4220e368d3fedf53e47f9f803a79d9c6871ec556b2891cc8a4a028fe19b0a1dc",
+        "lines": 739,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/formatters/html.rs": {
+        "content_hash": "2e836b14fc72548a1755f52c1ac862d6f03223f1d659fc1791a45b4a9d07dd0c",
+        "lines": 497,
+        "functions": 31,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/zero_js_demo.rs": {
+        "content_hash": "31054fd89aae6b7fccdbb2dcb411555d81b10d810ff62b7e1852905d51a0ec7d",
+        "lines": 249,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/presentar_demo.rs": {
+        "content_hash": "c7dfe453eca7ae6682686f73d8c043ea459b36045e30c517ac5fccc44c4f034d",
+        "lines": 173,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/accessibility.rs": {
+        "content_hash": "9b10b578685fc1fcaab7053d47fcaf74eab62fdf588835085dceaad82bff5c3a",
+        "lines": 1403,
+        "functions": 130,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/mod.rs": {
+        "content_hash": "2de226dfefa5e17be8769486583817a66e7990ffd6fc8f9b0cb51b7e1e21f980",
+        "lines": 20,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/metrics.rs": {
+        "content_hash": "1c7fe44761246e0cc7e5a30082822460ccd22dce07b957e57f334e14c2de42ae",
+        "lines": 1608,
+        "functions": 101,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/comply/mod.rs": {
+        "content_hash": "ede20de1dce8d9ff2e68eeeada0f2db7c0f275ff52874b10964d4139253d8623",
+        "lines": 27,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/block.rs": {
+        "content_hash": "b3fdd4a21a7a1358c419affdf68094ccd4e9642620f08d613ea584c6913c486d",
+        "lines": 152,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/comply/pmat_bridge.rs": {
+        "content_hash": "446b1ad1e6f3d69c3b7584800f4ae1e206cff473aaff7391a2b1ce43bb607d7c",
+        "lines": 504,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/accessibility_demo.rs": {
+        "content_hash": "798d409563682f2bbb472455fe765161e18f54893dfc1da3d60819530e7b2b37",
+        "lines": 266,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/src/codegen.rs": {
+        "content_hash": "c366a9436acc58bf17d0ce428fe6ab6c93f7b37c8c23424265f62595bed87d74",
+        "lines": 624,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/pmat_bridge_demo.rs": {
+        "content_hash": "44f907175696e37da84fc0f4b9d48f65f7d855600760f2321716e20904926a1e",
+        "lines": 273,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/panic_paths_demo.rs": {
+        "content_hash": "1af09fe1a79c8a8c4babf8c78e31ba0ebbba45748c224ace87c67c4efe7a5181",
+        "lines": 266,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/av_sync/mod.rs": {
+        "content_hash": "75bdab2def73de4d14539116c0f7f8497f15c12302864e4dbab45c7c68342daa",
+        "lines": 29,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/parallel.rs": {
+        "content_hash": "1315e35f7dc31549a7ead03584042df2043d434bc90ad84b9d8d2f236203134c",
+        "lines": 532,
+        "functions": 40,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/elasticlunr.min.js": {
+        "content_hash": "ef4e11c157b1e2e89782d30bd726f2d5ff7834ea5e26ad02474325f8b1f126c9",
+        "lines": 10,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/showcase-calculator/src/probar_tests.rs": {
+        "content_hash": "aeb772082333c828c5444e296d20426221ddd63f76953cbe8741b40e79c917d4",
+        "lines": 1371,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/examples/audio_emulation.rs": {
+        "content_hash": "9c07c6d7d30a5030119c7ca64cc4bdc92c8cd9e7e5d6104fe5af271bd6b2bf2f",
+        "lines": 181,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/playbook/mutation.rs": {
+        "content_hash": "73cb4593c5144442f6f2be727173861bb38a5407b0c324d3e70e757fb5f235be",
+        "lines": 488,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/tests/keypad_proptests.rs": {
+        "content_hash": "c116ac4c43a15a45bb9ba0a66d03fb897fa25faccce4577af70f908b48d16e0f",
+        "lines": 265,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/emulation/device.rs": {
+        "content_hash": "12e8dea08d3d057445d30b6efcc5ad5e5120e2aefa834cd03129beb32263097c",
+        "lines": 1060,
+        "functions": 109,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/mock/strategies.rs": {
+        "content_hash": "f38ea8b76a80bd437ae663e2be00043c77fb8e4e31b0efc079cc80a3de078ce6",
+        "lines": 297,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/network.rs": {
+        "content_hash": "a4ce579414fa702e5f7f9532452dec9bc85f09d94f2817a4c3ea51bc24e452a9",
+        "lines": 1837,
+        "functions": 164,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/keypad.rs": {
+        "content_hash": "741937f805a931e90aa1df228eec798029c3297b86f9b09b7ab602f5e11203de",
+        "lines": 872,
+        "functions": 72,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/tests/property_tests.rs": {
+        "content_hash": "08d90a203486e8fa0a32916f9b016c64d8499b826335c644e6bb8323890cb02b",
+        "lines": 305,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/browser.rs": {
+        "content_hash": "7d6002e0b9898d2e3a4116461ef06a6f210612613a8a573f64ae3876175d1db6",
+        "lines": 5099,
+        "functions": 355,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/heatmap.rs": {
+        "content_hash": "bc7d799f4e6013b28c767af85d69f067674513df4d1d6b15183a585efc044baa",
+        "lines": 2655,
+        "functions": 132,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/src/hir.rs": {
+        "content_hash": "a63faa7f86a08469a7355a9d02b12852422a1a88817217599c5129d6250ec499",
+        "lines": 571,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/tui/keypad.rs": {
+        "content_hash": "d37e4f58473a03fc27f29e81ddcae7169a8c319c9d290c6535053f84592b6e0b",
+        "lines": 823,
+        "functions": 72,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/lint/panic_paths.rs": {
+        "content_hash": "71da6b75b5368d52c88676a7b09932d6c5507354dfba6fc6c0a4c92ab3625dde",
+        "lines": 570,
+        "functions": 41,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/statistics.rs": {
+        "content_hash": "44da19eb91802d14cb380588c885e63f726f116207187dcc4c10ada673d51c93",
+        "lines": 980,
+        "functions": 65,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/audio_quality/silence.rs": {
+        "content_hash": "536654a44bc633c6c5440f8ef7e011b2fa1ac70812d9fc56bc7b593970e64a2b",
+        "lines": 196,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/playbook/state_machine.rs": {
+        "content_hash": "f9d7ec46bef55c6d6e61889f31019678874c9c502c0f8327dc99f640ea00cfc9",
+        "lines": 474,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/fixture.rs": {
+        "content_hash": "d38a6bdca4e855207caaca8066739759a75d3af28c6fb78baf9f5e9f6c8ceda5",
+        "lines": 1699,
+        "functions": 147,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/benches/coverage_ops.rs": {
+        "content_hash": "59a9117d3b8f467a1ecad18737496e3d23ef31ff7c0185055fdd54d2e1016143",
+        "lines": 251,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/execution_trace.rs": {
+        "content_hash": "7c76a8240ab4a0a874b005331ea63b694ec14d792bf0273400f27cd0b06c4c6c",
+        "lines": 119,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/highlight.js": {
+        "content_hash": "abc7f01d0ce8c64e4ba9e131d651e48ae1a567b2a1254fea8aab03502288de58",
+        "lines": 54,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/examples/web_validation_demo.rs": {
+        "content_hash": "55c2922c0edc8dfbb133eb7a794b62eb8a522d9f48e6d6721d80bf2487ef13c6",
+        "lines": 267,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/visualization.rs": {
+        "content_hash": "11cb4193c42f1a3ae7a81a3d98b421a662f7bf6b4474f51a00d3d3bf5196810e",
+        "lines": 1027,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/assertion.rs": {
+        "content_hash": "ccd079e5ddb672c37a16593c44399338f8fb15ba60e52ac5e636079caca1bf46",
+        "lines": 585,
+        "functions": 46,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/assertion/soft.rs": {
+        "content_hash": "1401b364be7e60100cf7e89a7cdc949add8a91cf3a9a3312f8438383a739721e",
+        "lines": 736,
+        "functions": 72,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/animation/mod.rs": {
+        "content_hash": "f83bef50a5f43b0920285423c49f71a92fd335ed1d72a041950ff0401d80dcf0",
+        "lines": 32,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/audio_quality/clipping.rs": {
+        "content_hash": "33a0780d69d8b89e2ab8362161e1e803171f1cb20772cbc69b4effc37f5d3064",
+        "lines": 106,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/animation.rs": {
+        "content_hash": "a203956701ec0bb90b330add08735e9553434e6967a2a06702a40eb684c6f4e6",
+        "lines": 190,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/formatters/lcov.rs": {
+        "content_hash": "28cb35aff8c051d9e7921c37c69bea54ae0fdbb04760eb6b7679aaf4b6946ca2",
+        "lines": 330,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/basic_test.rs": {
+        "content_hash": "dfad8699242cd5a8cf48eefadd58561afc8360e540d87387e6e5eae6a058ad05",
+        "lines": 93,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/playbook/mod.rs": {
+        "content_hash": "d46f00446da536e09a72139076d60b694f076090d22b3e898204e931930a5a8b",
+        "lines": 66,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/av_sync/extraction.rs": {
+        "content_hash": "ec1134ff4a4e4f45a2cdaae43c1ab9e08977dfe04a831eba70b0a2a1cd892b0e",
+        "lines": 169,
+        "functions": 12,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/error.rs": {
+        "content_hash": "d0680b7fb70275993ee66e1d2f639c05a83443f1c7fdf60c4634fae2980a673b",
+        "lines": 143,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/terminal.rs": {
+        "content_hash": "805e9aa7ffaef07e2c30805b77591bb764650dd15378b068b2d58056c2161404",
+        "lines": 1962,
+        "functions": 102,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/clock.rs": {
+        "content_hash": "f93cf99b82f54be0884437e9aab87dc21a2faa9b0f5b28bf8a019be34305c595",
+        "lines": 1141,
+        "functions": 102,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/wasm/calculator.rs": {
+        "content_hash": "61ba2775115739095a327c976df4cc6cfe9805340e05adf06b01b3af1bc0d4cf",
+        "lines": 582,
+        "functions": 60,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/runner.rs": {
+        "content_hash": "f65a36de7cf7995f542daa31506cb6a64dfed75a85ade6bf3f3e869ae4810a80",
+        "lines": 456,
+        "functions": 35,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/audio_quality/levels.rs": {
+        "content_hash": "e2047ddc99beea82f7b075923a4afb8a443476bec432e0144f5715d857bfdbb7",
+        "lines": 199,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/core/evaluator.rs": {
+        "content_hash": "347cc4727536f983103add48d96785189cca89ba64bcecad7ccdc03a2baaccfc",
+        "lines": 401,
+        "functions": 39,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/web/mod.rs": {
+        "content_hash": "ed1b9f42ba321b7ae4a56bf44e7264ea7b2044567fda33bbfd5d1a972dfdd4fb",
+        "lines": 942,
+        "functions": 42,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/pixel_coverage_heatmap.rs": {
+        "content_hash": "8efd3e0b294d14e3b727cc92a9cb0902cc85bb1500401b660c2105d60379421d",
+        "lines": 343,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/playbook/schema.rs": {
+        "content_hash": "ef93a542cffdf23d240849d1c83014bb24231d120eabe0a45fe6a31a623f5c50",
+        "lines": 1702,
+        "functions": 53,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/worker.rs": {
+        "content_hash": "517c4147c259e1a6df8481491b640ddaa04c68a8174f0e03d005d3f73f70e4fa",
+        "lines": 1205,
+        "functions": 79,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/backend.rs": {
+        "content_hash": "94fa31a7089dba3d318dac8275188b113820ad5fee3d3917a47e43468b0e63d5",
+        "lines": 508,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/assertions.rs": {
+        "content_hash": "7b432407211d4672fdb62df5fbe58ae3e6cb608a7cbf457c29dd431a6d35efe4",
+        "lines": 1323,
+        "functions": 114,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/tui/ui.rs": {
+        "content_hash": "5a42e7ad2f8391ffb615be7d25f57a8ac59a9f5ecb9861ef1aed2e6f1e3f4014",
+        "lines": 765,
+        "functions": 44,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/brick_demo.rs": {
+        "content_hash": "b4b3aa18f96ff02863b4fe7d60281ed4969ee36a887c3f640229965f484cce35",
+        "lines": 333,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/runner/config.rs": {
+        "content_hash": "e0f96e1c557c4a3116bbb0a906c5764bb9d51409adbd2550e4c8c751086c805e",
+        "lines": 530,
+        "functions": 44,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/mod.rs": {
+        "content_hash": "0e381e27cc436a169b04f8e77148f88e6d4c8375e95dae9552fbcfa2af255c0d",
+        "lines": 50,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/wait_mechanisms.rs": {
+        "content_hash": "0f4011091f648a323134739b4216f411ad6c6081776fa47700503e6616fc8e0b",
+        "lines": 400,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/handlers/video.rs": {
+        "content_hash": "c952302cf75b08a6f8bb28b63c0c68df2a489da565a583a459f81645987fd98c",
+        "lines": 198,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/main.rs": {
+        "content_hash": "4b063ab589f21ed0aaed2f9fad392b4a57e43643ab88b77d10a45c6be4808c76",
+        "lines": 2710,
+        "functions": 113,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/falsification.rs": {
+        "content_hash": "16f068c107a412f2af373ac75ecebd08f432f2cf73fd37f48c8a132cfc0efd26",
+        "lines": 708,
+        "functions": 54,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tracing_support.rs": {
+        "content_hash": "de1e3d93abfc8412875a3cf17f528aa4e3470d68fc7c751863c2ac1164cb8f0c",
+        "lines": 1463,
+        "functions": 132,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/websocket_monitor.rs": {
+        "content_hash": "50029ba213e1def55db869628096819eb3f9c4baac30bf6a2d075d92eec21d39",
+        "lines": 134,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/av_sync/types.rs": {
+        "content_hash": "b3030fe1366806c64f1dca984260614f7d1bc3863bc3c012a4647d56667fcf92",
+        "lines": 356,
+        "functions": 19,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/gpu_pixels/mod.rs": {
+        "content_hash": "6aa5fb275b898babfb81e6f45f00312fd84105c17f4c99dfc6ced1fd1bbf69a4",
+        "lines": 1238,
+        "functions": 84,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/tty.rs": {
+        "content_hash": "6b218106bd18a385fd99c19c7049ca1f564e8c9a82fbcb88e2aa09a63c24d5a9",
+        "lines": 908,
+        "functions": 81,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-derive/src/lib.rs": {
+        "content_hash": "f6353bfb613acce7d8ab152326a11ee0220da8399662ff8696a33bb5aff15fab",
+        "lines": 1044,
+        "functions": 86,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/web/validator.rs": {
+        "content_hash": "1ef4cf698cf30b1e2f9e66573df11bead0ec46942027b0e1b46ce3cae87642c2",
+        "lines": 974,
+        "functions": 46,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/report.rs": {
+        "content_hash": "0b673d727313cbd4677e822e9283e2361713dc86bace21bac583a7262d3b5a14",
+        "lines": 892,
+        "functions": 68,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/benches/playbook_ops.rs": {
+        "content_hash": "a133cb3d4c6657e5f13e3772a34ee086b8a98ff043d55bce2a6528f89eb32b9e",
+        "lines": 307,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/book.js": {
+        "content_hash": "f0cc07d85c8323c5fd3192aa303947ce5c1ed532049fa33d207d314f32956048",
+        "lines": 690,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/src/emulation/geolocation.rs": {
+        "content_hash": "35fbc9d96599ced8e6ad83a16df497de7681dd2d2175c344dae3ef1e5a090a69",
+        "lines": 1057,
+        "functions": 121,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/streaming_ux_demo.rs": {
+        "content_hash": "4ee6f61cad52470167e2dd7d6848b5c3751bccd9a2d95941058c65cc383fabe7",
+        "lines": 276,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/web/html_builder.rs": {
+        "content_hash": "e6a5a99a8c3948ae8f2eeb9ccd3e27cd91aa59d54a4f61591b88df577683eccf",
+        "lines": 475,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui/brick.rs": {
+        "content_hash": "41be06074127a2a6cf18ed57431fff34fa07d78751e50f0e5c7f5fc9302f27e3",
+        "lines": 759,
+        "functions": 60,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/examples/stress_testing.rs": {
+        "content_hash": "54d9974d494ce2c174f863a9c003c770d35b49f6aa3483635e4f5a77af8a8bf1",
+        "lines": 103,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/compute.rs": {
+        "content_hash": "934d0c6a3d480c5063c89d191deb1cd8a8d16466b26d62e930a88b57b21cb4e8",
+        "lines": 1420,
+        "functions": 90,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/page_object.rs": {
+        "content_hash": "3a24a3036695a8b8ec0a31b931e3e2b62f367e2c648ecf947129826f77ba8112",
+        "lines": 117,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/core/mod.rs": {
+        "content_hash": "a065b40ad0140b8a189973fdfa8e352a1dee7452c3daf6e0afde3c2b2c6e0e8e",
+        "lines": 352,
+        "functions": 34,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/widget.rs": {
+        "content_hash": "b3a831a7a0baf9a038d26cd428add02241977711e8d168a7ace8a339f7725dd4",
+        "lines": 2123,
+        "functions": 167,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/tests/comprehensive_tests.rs": {
+        "content_hash": "71bebbf5ac480e9f59570855444c33b0e107b9df658d33b212bf0e4be5493e73",
+        "lines": 1355,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/probar/src/tui/buffer.rs": {
+        "content_hash": "212eee39632cd344c7c0f9cd2cf4989e94d032c62a00c723d68ab71b26821d4a",
+        "lines": 317,
+        "functions": 32,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/page_object.rs": {
+        "content_hash": "a9667d65822572f390497ef287d312cb346dffdf0081ac5bcc9895e6e53bb809",
+        "lines": 536,
+        "functions": 55,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/snapshot.rs": {
+        "content_hash": "9d3ba5ee3a22e58f84a5e2e7fa80229e0c5e6fec03d7c538f13ade69e01100ea",
+        "lines": 546,
+        "functions": 60,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/debug.rs": {
+        "content_hash": "1e8c17e0c2563c342b4da84d6e0b2425eed18e75b644b367cc80f01195cc35e2",
+        "lines": 724,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "qa_test_env/script.js": {
+        "content_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "lines": 0,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/src/replay.rs": {
+        "content_hash": "f983bee5f96d464395c18739efadf07d3a5261f39b80e5c1fe2fb852cefb2ca4",
+        "lines": 1423,
+        "functions": 112,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/comply_demo.rs": {
+        "content_hash": "f85f1b4376d8ca66eb4dca176c53d634d96b49ab0954473910839d56fd0a897c",
+        "lines": 234,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/tui.rs": {
+        "content_hash": "ac011766665052a7f3e4c69d76388ed54572adfe1b352a00335cc41fd1b2af0f",
+        "lines": 1309,
+        "functions": 111,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/benchmark.rs": {
+        "content_hash": "359435eb81c579c653ca7d2b470c12bf0f38dfb087864549f1a15e360db38277",
+        "lines": 428,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/playbook/complexity.rs": {
+        "content_hash": "49a3cce872ef5ca7dbfa4be5173e9571c74c6063df1b746b80cb83d121e36624",
+        "lines": 334,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/dialog.rs": {
+        "content_hash": "e2d86f8c9413913e1246b4283b6c3cb016d70f85394cb5371d7a04db06493872",
+        "lines": 719,
+        "functions": 66,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/clipboard.min.js": {
+        "content_hash": "1626706afc88d95ebe1173b553ec732c6dc82a576989315fdf5e7779af738a44",
+        "lines": 7,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar-js-gen/src/builder.rs": {
+        "content_hash": "4bcdfe21b8dcb041742c47990e6ad8890cd4e97f3c9e40ea265f1f4eed63d91c",
+        "lines": 1142,
+        "functions": 117,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/searchindex.js": {
+        "content_hash": "f33487e02c5d2ff158e06dda5977e5d3b9e09b09ac25820b3f60d6c78196a78d",
+        "lines": 1,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar/src/gpu_pixels/kernel_pixels.rs": {
+        "content_hash": "5f39ffd2d2a5a765ab5ce3bd943d590bac89764a4d5da13602bbe8112d99a2c3",
+        "lines": 381,
+        "functions": 25,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/locator.rs": {
+        "content_hash": "146ec3d60687904a834c9b77064b2468a2382e4033d6691fbe9c870b157ee089",
+        "lines": 3700,
+        "functions": 311,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/pixel_coverage/mod.rs": {
+        "content_hash": "760503c199cd30a0e53328942ef13f08bb329f43db39698bb81ec5bc5ccf628b",
+        "lines": 232,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/lint/mod.rs": {
+        "content_hash": "d0cc478fd3a1a1a56349acd380394a78e4b46aecbd635a45eb88fbf8a90ffe8a",
+        "lines": 48,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/visual_regression_demo.rs": {
+        "content_hash": "60a27d743484c41780db92bf0c617103a023891a99a4bd895646fca49d553fd1",
+        "lines": 263,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/driver.rs": {
+        "content_hash": "5b919032c3c8acb447672d19a48ad4bb98519c006170f4f96d86688e13c23b6a",
+        "lines": 426,
+        "functions": 46,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick_house.rs": {
+        "content_hash": "d57b8ef02cc589df0b56683baec04ffb68cef5f43144f8bb35a26d4db8b4cc6f",
+        "lines": 925,
+        "functions": 68,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-cli/src/tree.rs": {
+        "content_hash": "b53661cd0cc5f4aceb0ad4dd0d03d9e0f661255e7a51118473e7415b83cfe6f3",
+        "lines": 744,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/src/error.rs": {
+        "content_hash": "cbf19c3821abd9b5ae85aa59319fe5e3b48dbb2cdff1c938d2ed91d68c2278a1",
+        "lines": 120,
+        "functions": 4,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/tui_load.rs": {
+        "content_hash": "d9fd7d8a9f06ead73a3836d98d0ff5846c2bcecedc458fe769bb395cbfd4044e",
+        "lines": 1168,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/driver.rs": {
+        "content_hash": "50508cab8c09292ed90b66b773998b313f10d2c11977b9d8b86763bda4d0ecfe",
+        "lines": 1323,
+        "functions": 133,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/runtime.rs": {
+        "content_hash": "3dcc5d6f11fb472af3694156a081b156c6cbd5cbb762bf8aa2d7c4dc6e1d932d",
+        "lines": 1264,
+        "functions": 94,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/audio_quality/mod.rs": {
+        "content_hash": "9fcc6079138caf1558a500d8f3c4536d775ee45e5cc36a930458b13710f10a73",
+        "lines": 191,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/presentar/schema.rs": {
+        "content_hash": "933301e4cb6c75f3e6696172cc7a21d268b628fe49ceffe54886c86d0995ba75",
+        "lines": 711,
+        "functions": 51,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/performance.rs": {
+        "content_hash": "171b56ea6564254dc0cf59ce45f272834fcc1bd6f1f832e78160c1fc2f8c5466",
+        "lines": 1693,
+        "functions": 153,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/formatters/cobertura.rs": {
+        "content_hash": "d8ddb50697aa6741fd4fdc5eede863aea0c8d773ed5456f22bdf20c47ef7bf67",
+        "lines": 418,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/cdp_coverage.rs": {
+        "content_hash": "e8c28b547600a5f20dea6bd4627e99da2695bc2536441afc3ad17fb2d8e0d6b4",
+        "lines": 1219,
+        "functions": 79,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/result.rs": {
+        "content_hash": "cd4b347bf38ac1f834ea28ad9415797bdb444393d022bd32e9fb6de5ec4b6939",
+        "lines": 224,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/video_quality/types.rs": {
+        "content_hash": "6a625f39cbfedb58a2e1a293803d8d6849419f0c8994d0ce308a5a7c709c66a1",
+        "lines": 285,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/core/history.rs": {
+        "content_hash": "a3db07f4e14c546b3fe8a184ec2ce05ae0abceb9fb05fba2deaa4e9291ac23e5",
+        "lines": 453,
+        "functions": 48,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/capabilities.rs": {
+        "content_hash": "8d43bda0257d7fd6b2f869e1293399652d56d41b3c58c62b97cd43f219a8c45b",
+        "lines": 2106,
+        "functions": 142,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/report.rs": {
+        "content_hash": "09039390266ba42ccad181fca1bf62b3a3cec06dca3c2572c52ff3adf4f8767b",
+        "lines": 452,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar-js-gen/src/manifest.rs": {
+        "content_hash": "045bbf174a8b1d09ec17765e59c702bb2c032e1d1419aa4a12ec87a3d6927b8f",
+        "lines": 268,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/ux_coverage.rs": {
+        "content_hash": "fe39547fb1abee21e1de3b2737f2ab392043a3bab822b16a9358b41a8d66108e",
+        "lines": 1474,
+        "functions": 111,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/showcase-calculator/src/tui/mod.rs": {
+        "content_hash": "b5a7397c8f15adbaae8acb7eec0b0551726de52e924facc5d375d073bc5ad54a",
+        "lines": 13,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/av_sync/comparison.rs": {
+        "content_hash": "f39ae34e0afee43e9e1bd7287cfba6cb911efb7c660ebddd3a1c68967960fec1",
+        "lines": 394,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/retry_assertions.rs": {
+        "content_hash": "f1306d0ff7b67bac9dfc285f39024275d043ae88c08788469ea8d1591794132d",
+        "lines": 112,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/book/toc.js": {
+        "content_hash": "277e0df23ac8c2ac7e3c8f87cdb9c6f558002bdcf0b8fc628085547c627df6a9",
+        "lines": 70,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/probar-cli/src/handlers/serve.rs": {
+        "content_hash": "b5c2cb443406b57add38db190af86f84d26621dcd9439592acaac61c3bc0295d",
+        "lines": 114,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/examples/network_intercept.rs": {
+        "content_hash": "fe6f3fde9165c5a5176f5e9506648b45ee0efe634d64b8ad232a321c61ed5c5b",
+        "lines": 235,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/llm/loadtest.rs": {
+        "content_hash": "964088b0c2682041d4b15e85920ba6c5093467a09e82bc8783c2c2e5f593efe6",
+        "lines": 739,
+        "functions": 27,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/brick/mod.rs": {
+        "content_hash": "ede60ed2088e05b27c1330ac63727a2b6aff95537714a8bc2d0ed0b1acfb3712",
+        "lines": 1100,
+        "functions": 85,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/probar/src/coverage/collector.rs": {
+        "content_hash": "a5afd9fd0f34192e96dd1022a1509e3b1112e157663b4dc4c16d6103f878464f",
+        "lines": 241,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "RustSource"
+      }
+    },
+    "coverage_required": [
+      "crates/probar-cli/src/dev_server.rs",
+      "crates/probar-cli/src/score.rs",
+      "crates/probar-cli/src/tracing.rs",
+      "crates/probar-cli/src/generate.rs",
+      "crates/probar-cli/src/tree.rs",
+      "crates/probar-cli/src/debug.rs",
+      "crates/probar-cli/src/statistics.rs",
+      "crates/probar-cli/src/main.rs",
+      "crates/probar-cli/src/wasm_testing.rs",
+      "crates/probar-cli/src/config.rs",
+      "crates/probar-cli/src/error.rs",
+      "crates/probar-cli/src/output.rs",
+      "crates/probar-cli/src/lib.rs",
+      "crates/probar-cli/src/lint.rs",
+      "crates/probar-cli/src/commands.rs",
+      "crates/probar-cli/src/runner.rs",
+      "crates/probar-cli/src/simulation.rs",
+      "crates/probar-cli/src/load_testing.rs",
+      "crates/probar-cli/src/visualization.rs",
+      "crates/probar-cli/src/stress.rs",
+      "crates/probar-cli/src/handlers/mod.rs",
+      "crates/probar-cli/src/handlers/video.rs",
+      "crates/probar-cli/src/handlers/serve.rs",
+      "crates/probar-cli/src/handlers/init.rs",
+      "crates/probar-cli/src/handlers/audio.rs",
+      "crates/probar-cli/src/handlers/report.rs",
+      "crates/probar-cli/src/handlers/coverage.rs",
+      "crates/probar-cli/src/handlers/av_sync.rs",
+      "crates/probar-cli/src/handlers/config.rs",
+      "crates/probar-cli/src/handlers/llm.rs",
+      "crates/probar-cli/src/handlers/animation.rs",
+      "crates/probar-cli/src/handlers/comply.rs",
+      "crates/probar-cli/examples/stress_testing.rs",
+      "crates/probar-js-gen/src/codegen.rs",
+      "crates/probar-js-gen/src/builder.rs",
+      "crates/probar-js-gen/src/error.rs",
+      "crates/probar-js-gen/src/lib.rs",
+      "crates/probar-js-gen/src/manifest.rs",
+      "crates/probar-js-gen/src/hir.rs",
+      "crates/probar/src/bridge.rs",
+      "crates/probar/src/llm/benchmark.rs",
+      "crates/probar/src/llm/prompts.rs",
+      "crates/probar/src/llm/mod.rs",
+      "crates/probar/src/llm/client.rs",
+      "crates/probar/src/llm/assertion.rs",
+      "crates/probar/src/llm/report.rs",
+      "crates/probar/src/llm/loadtest.rs",
+      "crates/probar/src/snapshot.rs",
+      "crates/probar/src/reporter.rs",
+      "crates/probar/src/page_object.rs",
+      "crates/probar/src/tui_load.rs",
+      "crates/probar/src/av_sync/mod.rs",
+      "crates/probar/src/av_sync/detection.rs",
+      "crates/probar/src/av_sync/types.rs",
+      "crates/probar/src/av_sync/comparison.rs",
+      "crates/probar/src/av_sync/extraction.rs",
+      "crates/probar/src/context.rs",
+      "crates/probar/src/dialog.rs",
+      "crates/probar/src/tui/backend.rs",
+      "crates/probar/src/tui/snapshot.rs",
+      "crates/probar/src/tui/compute_block.rs",
+      "crates/probar/src/tui/mod.rs",
+      "crates/probar/src/tui/assertions.rs",
+      "crates/probar/src/tui/tty.rs",
+      "crates/probar/src/tui/buffer.rs",
+      "crates/probar/src/tui/brick.rs",
+      "crates/probar/src/cdp_coverage.rs",
+      "crates/probar/src/capabilities.rs",
+      "crates/probar/src/harness.rs",
+      "crates/probar/src/brick_house.rs",
+      "crates/probar/src/replay.rs",
+      "crates/probar/src/zero_js.rs",
+      "crates/probar/src/websocket.rs",
+      "crates/probar/src/wait.rs",
+      "crates/probar/src/worker_harness.rs",
+      "crates/probar/src/driver.rs",
+      "crates/probar/src/perf/trace.rs",
+      "crates/probar/src/perf/mod.rs",
+      "crates/probar/src/perf/span.rs",
+      "crates/probar/src/perf/metrics.rs",
+      "crates/probar/src/perf/export.rs",
+      "crates/probar/src/emulation/mod.rs",
+      "crates/probar/src/emulation/device.rs",
+      "crates/probar/src/emulation/audio.rs",
+      "crates/probar/src/emulation/geolocation.rs",
+      "crates/probar/src/fuzzer.rs",
+      "crates/probar/src/assertion/mod.rs",
+      "crates/probar/src/assertion/soft.rs",
+      "crates/probar/src/assertion/equation.rs",
+      "crates/probar/src/assertion/retry.rs",
+      "crates/probar/src/gpu_pixels/kernel_pixels.rs",
+      "crates/probar/src/gpu_pixels/mod.rs",
+      "crates/probar/src/gpu_pixels/regression.rs",
+      "crates/probar/src/gpu_pixels/ptx_analysis.rs",
+      "crates/probar/src/playbook/mod.rs",
+      "crates/probar/src/playbook/complexity.rs",
+      "crates/probar/src/playbook/mutation.rs",
+      "crates/probar/src/playbook/executor.rs",
+      "crates/probar/src/playbook/schema.rs",
+      "crates/probar/src/playbook/state_machine.rs",
+      "crates/probar/src/playbook/runner.rs",
+      "crates/probar/src/result.rs",
+      "crates/probar/src/docker.rs",
+      "crates/probar/src/browser.rs",
+      "crates/probar/src/web/validator.rs",
+      "crates/probar/src/web/mod.rs",
+      "crates/probar/src/web/js_builder.rs",
+      "crates/probar/src/web/css_builder.rs",
+      "crates/probar/src/web/html_builder.rs",
+      "crates/probar/src/locator.rs",
+      "crates/probar/src/visual_regression.rs",
+      "crates/probar/src/pixel_coverage/heatmap.rs",
+      "crates/probar/src/pixel_coverage/mod.rs",
+      "crates/probar/src/pixel_coverage/wasm_demo.rs",
+      "crates/probar/src/pixel_coverage/terminal.rs",
+      "crates/probar/src/pixel_coverage/parallel.rs",
+      "crates/probar/src/pixel_coverage/metrics.rs",
+      "crates/probar/src/pixel_coverage/config.rs",
+      "crates/probar/src/pixel_coverage/falsification.rs",
+      "crates/probar/src/pixel_coverage/tracker.rs",
+      "crates/probar/src/renacer_integration.rs",
+      "crates/probar/src/brick/distributed.rs",
+      "crates/probar/src/brick/compute.rs",
+      "crates/probar/src/brick/mod.rs",
+      "crates/probar/src/brick/pipeline.rs",
+      "crates/probar/src/brick/audio.rs",
+      "crates/probar/src/brick/web_sys_gen.rs",
+      "crates/probar/src/brick/worker.rs",
+      "crates/probar/src/brick/event.rs",
+      "crates/probar/src/brick/deterministic.rs",
+      "crates/probar/src/brick/tui.rs",
+      "crates/probar/src/brick/widget.rs",
+      "crates/probar/src/watch.rs",
+      "crates/probar/src/har.rs",
+      "crates/probar/src/file_ops.rs",
+      "crates/probar/src/performance.rs",
+      "crates/probar/src/media/mod.rs",
+      "crates/probar/src/media/svg_exporter.rs",
+      "crates/probar/src/media/gif_recorder.rs",
+      "crates/probar/src/media/png_exporter.rs",
+      "crates/probar/src/media/video_recorder.rs",
+      "crates/probar/src/mock/strategies.rs",
+      "crates/probar/src/mock/mod.rs",
+      "crates/probar/src/mock/test_harness.rs",
+      "crates/probar/src/mock/wasm_runtime.rs",
+      "crates/probar/src/fixture.rs",
+      "crates/probar/src/network.rs",
+      "crates/probar/src/animation/mod.rs",
+      "crates/probar/src/animation/timing.rs",
+      "crates/probar/src/animation/types.rs",
+      "crates/probar/src/animation/easing.rs",
+      "crates/probar/src/accessibility.rs",
+      "crates/probar/src/runtime.rs",
+      "crates/probar/src/validators.rs",
+      "crates/probar/src/audio_quality/silence.rs",
+      "crates/probar/src/audio_quality/mod.rs",
+      "crates/probar/src/audio_quality/clipping.rs",
+      "crates/probar/src/audio_quality/levels.rs",
+      "crates/probar/src/audio_quality/types.rs",
+      "crates/probar/src/ux_coverage.rs",
+      "crates/probar/src/strict.rs",
+      "crates/probar/src/coverage/mod.rs",
+      "crates/probar/src/coverage/hypotheses.rs",
+      "crates/probar/src/coverage/jidoka.rs",
+      "crates/probar/src/coverage/executor.rs",
+      "crates/probar/src/coverage/thread_local.rs",
+      "crates/probar/src/coverage/block.rs",
+      "crates/probar/src/coverage/report.rs",
+      "crates/probar/src/coverage/superblock.rs",
+      "crates/probar/src/coverage/memory.rs",
+      "crates/probar/src/coverage/formatters/html.rs",
+      "crates/probar/src/coverage/formatters/mod.rs",
+      "crates/probar/src/coverage/formatters/lcov.rs",
+      "crates/probar/src/coverage/formatters/cobertura.rs",
+      "crates/probar/src/coverage/collector.rs",
+      "crates/probar/src/lib.rs",
+      "crates/probar/src/runner/mod.rs",
+      "crates/probar/src/runner/builder.rs",
+      "crates/probar/src/runner/config.rs",
+      "crates/probar/src/runner/server.rs",
+      "crates/probar/src/event.rs",
+      "crates/probar/src/lint/state_sync.rs",
+      "crates/probar/src/lint/mod.rs",
+      "crates/probar/src/lint/panic_paths.rs",
+      "crates/probar/src/lint/ast_visitor.rs",
+      "crates/probar/src/clock.rs",
+      "crates/probar/src/simulation.rs",
+      "crates/probar/src/shard.rs",
+      "crates/probar/src/tracing_support.rs",
+      "crates/probar/src/video_quality/mod.rs",
+      "crates/probar/src/video_quality/validation.rs",
+      "crates/probar/src/video_quality/types.rs",
+      "crates/probar/src/video_quality/probe.rs",
+      "crates/probar/src/comply/wasm_threading.rs",
+      "crates/probar/src/comply/mod.rs",
+      "crates/probar/src/comply/tarantula.rs",
+      "crates/probar/src/comply/pmat_bridge.rs",
+      "crates/probar/src/presentar/validator.rs",
+      "crates/probar/src/presentar/mod.rs",
+      "crates/probar/src/presentar/terminal.rs",
+      "crates/probar/src/presentar/schema.rs",
+      "crates/probar/src/presentar/falsification.rs",
+      "crates/probar/benches/coverage_ops.rs",
+      "crates/probar/benches/image_ops.rs",
+      "crates/probar/benches/locator_ops.rs",
+      "crates/probar/benches/playbook_ops.rs",
+      "crates/probar/examples/pong_simulation.rs",
+      "crates/probar/examples/page_object.rs",
+      "crates/probar/examples/accessibility_demo.rs",
+      "crates/probar/examples/zero_js_demo.rs",
+      "crates/probar/examples/wait_mechanisms.rs",
+      "crates/probar/examples/network_intercept.rs",
+      "crates/probar/examples/websocket_monitor.rs",
+      "crates/probar/examples/watch_mode.rs",
+      "crates/probar/examples/visual_regression_demo.rs",
+      "crates/probar/examples/coverage_demo.rs",
+      "crates/probar/examples/web_sys_gen_demo.rs",
+      "crates/probar/examples/equation_verify.rs",
+      "crates/probar/examples/brick_demo.rs",
+      "crates/probar/examples/pixel_coverage_heatmap.rs",
+      "crates/probar/examples/execution_trace.rs",
+      "crates/probar/examples/web_builders_demo.rs",
+      "crates/probar/examples/distributed_worker_demo.rs",
+      "crates/probar/examples/audio_emulation.rs",
+      "crates/probar/examples/web_validation_demo.rs",
+      "crates/probar/examples/pmat_bridge_demo.rs",
+      "crates/probar/examples/comply_demo.rs",
+      "crates/probar/examples/worker_harness_demo.rs",
+      "crates/probar/examples/locator_operations.rs",
+      "crates/probar/examples/semantic_locators.rs",
+      "crates/probar/examples/gui_coverage.rs",
+      "crates/probar/examples/worker_brick_demo.rs",
+      "crates/probar/examples/mouse_actions.rs",
+      "crates/probar/examples/playbook_testing.rs",
+      "crates/probar/examples/element_assertions.rs",
+      "crates/probar/examples/streaming_ux_demo.rs",
+      "crates/probar/examples/brick_tui_demo.rs",
+      "crates/probar/examples/wasm_pixel_gui_demo.rs",
+      "crates/probar/examples/locator_demo.rs",
+      "crates/probar/examples/soft_assertions.rs",
+      "crates/probar/examples/panic_paths_demo.rs",
+      "crates/probar/examples/presentar_demo.rs",
+      "crates/probar/examples/wasm_capabilities.rs",
+      "crates/probar/examples/retry_assertions.rs",
+      "crates/probar/examples/docker_demo.rs",
+      "crates/probar/examples/performance_profile.rs",
+      "crates/probar/examples/multi_context.rs",
+      "crates/showcase-calculator/src/tui/mod.rs",
+      "crates/showcase-calculator/src/tui/keypad.rs",
+      "crates/showcase-calculator/src/tui/ui.rs",
+      "crates/showcase-calculator/src/tui/input.rs",
+      "crates/showcase-calculator/src/tui/app.rs",
+      "crates/showcase-calculator/src/core/mod.rs",
+      "crates/showcase-calculator/src/core/history.rs",
+      "crates/showcase-calculator/src/core/evaluator.rs",
+      "crates/showcase-calculator/src/core/parser.rs",
+      "crates/showcase-calculator/src/core/operations.rs",
+      "crates/showcase-calculator/src/driver.rs",
+      "crates/showcase-calculator/src/wasm/calculator.rs",
+      "crates/showcase-calculator/src/wasm/mod.rs",
+      "crates/showcase-calculator/src/wasm/driver.rs",
+      "crates/showcase-calculator/src/wasm/keypad.rs",
+      "crates/showcase-calculator/src/wasm/dom.rs",
+      "crates/showcase-calculator/src/wasm/browser.rs",
+      "crates/showcase-calculator/src/lib.rs",
+      "crates/showcase-calculator/examples/calculator_wasm_demo.rs",
+      "crates/showcase-calculator/examples/calculator_tui.rs",
+      "crates/showcase-calculator/examples/gui_coverage_report.rs",
+      "crates/showcase-calculator/examples/calculator_tui_demo.rs",
+      "crates/probar-derive/src/lib.rs"
+    ],
+    "manifest_hash": "3672282d718fb1fa26c7173b540499a337c68fcd8de5d3f6dd44a919b41bfe3d"
+  },
+  "thresholds": {
+    "min_coverage_pct": 95.0,
+    "min_per_file_coverage_pct": 95.0,
+    "max_tdg_regression": 0.0,
+    "max_function_complexity": 20,
+    "max_file_lines": 500,
+    "min_spec_score": 95,
+    "require_github_sync": true,
+    "require_spec_update": true,
+    "require_roadmap_update": true,
+    "block_on_new_satd": true,
+    "block_on_new_dead_code": true,
+    "require_lint_pass": true,
+    "max_fix_chain": 3,
+    "block_on_untested_variants": true,
+    "block_on_cross_crate_failure": false,
+    "block_on_regression": false,
+    "require_proof_verification": false,
+    "max_sorry_count": 0,
+    "min_theorem_coverage": 0.0,
+    "block_on_file_size": true
+  },
+  "claims": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "falsification_method": "ManifestIntegrity",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "falsification_method": "MetaFalsification",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "falsification_method": "DifferentialCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 100.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 20.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "falsification_method": "SupplyChainIntegrity",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 500.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "falsification_method": "SpecQuality",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "falsification_method": "GitHubSync",
+      "evidence_required": {
+        "GitState": {
+          "unpushed_commits": 0,
+          "dirty_files": 0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "falsification_method": "SatdDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "falsification_method": "LintPass",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "falsification_method": "VariantCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "falsification_method": "FixChainLimit",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 3.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "falsification_method": "RegressionGate",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No incomplete proofs (sorry) introduced",
+      "falsification_method": "FormalProofVerification",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    }
+  ],
+  "profile": "Pmat",
+  "require": [
+    {
+      "id": "require.compiles",
+      "kind": "Require",
+      "description": "Project builds successfully",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.tests_exist",
+      "kind": "Require",
+      "description": "At least one test exists",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.manifest_integrity",
+      "kind": "Require",
+      "description": "FileManifest anti-gaming check",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "require.meta_falsification",
+      "kind": "Require",
+      "description": "Falsifier self-check active",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    }
+  ],
+  "ensure": [
+    {
+      "id": "ensure.tests_pass",
+      "kind": "Ensure",
+      "description": "All tests pass",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.git_sync",
+      "kind": "Ensure",
+      "description": "All changes pushed to remote",
+      "falsification_method": "GitHubSync",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.no_regression",
+      "kind": "Ensure",
+      "description": "No previously-passing test now fails",
+      "falsification_method": "MetaFalsification",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.coverage",
+      "kind": "Ensure",
+      "description": "Coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "threshold": {
+        "Numeric": {
+          "metric": "coverage_pct",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.differential_coverage",
+      "kind": "Ensure",
+      "description": "Changed lines must be covered",
+      "falsification_method": "DifferentialCoverage",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.supply_chain",
+      "kind": "Ensure",
+      "description": "No vulnerable dependencies",
+      "falsification_method": "SupplyChainIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.examples_compile",
+      "kind": "Ensure",
+      "description": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.tdg_regression",
+      "kind": "Ensure",
+      "description": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "threshold": {
+        "Delta": {
+          "metric": "tdg_score",
+          "op": "Gte",
+          "value": 0.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.coverage_gaming",
+      "kind": "Ensure",
+      "description": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.spec_quality",
+      "kind": "Ensure",
+      "description": "Spec score meets threshold",
+      "falsification_method": "SpecQuality",
+      "threshold": {
+        "Numeric": {
+          "metric": "spec_score",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.book_validation",
+      "kind": "Ensure",
+      "description": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.per_file_coverage",
+      "kind": "Ensure",
+      "description": "All files >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "threshold": {
+        "Numeric": {
+          "metric": "per_file_coverage_pct",
+          "op": "Gte",
+          "value": 95.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.variant_coverage",
+      "kind": "Ensure",
+      "description": "All match arm variants tested",
+      "falsification_method": "VariantCoverage",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "ensure.cross_crate_parity",
+      "kind": "Ensure",
+      "description": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "threshold": null,
+      "blocking": false,
+      "source": "Default"
+    }
+  ],
+  "invariant": [
+    {
+      "id": "invariant.compiles",
+      "kind": "Invariant",
+      "description": "Project compiles at every checkpoint",
+      "falsification_method": "ManifestIntegrity",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.file_size",
+      "kind": "Invariant",
+      "description": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "threshold": {
+        "Numeric": {
+          "metric": "max_file_lines",
+          "op": "Lte",
+          "value": 500.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.lint",
+      "kind": "Invariant",
+      "description": "cargo clippy passes",
+      "falsification_method": "LintPass",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.complexity",
+      "kind": "Invariant",
+      "description": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "threshold": {
+        "Numeric": {
+          "metric": "max_complexity",
+          "op": "Lte",
+          "value": 20.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.satd",
+      "kind": "Invariant",
+      "description": "No new SATD markers",
+      "falsification_method": "SatdDetection",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.dead_code",
+      "kind": "Invariant",
+      "description": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "threshold": null,
+      "blocking": true,
+      "source": "Default"
+    },
+    {
+      "id": "invariant.fix_chain",
+      "kind": "Invariant",
+      "description": "Fix-after-fix chains within limit",
+      "falsification_method": "FixChainLimit",
+      "threshold": {
+        "Numeric": {
+          "metric": "fix_chain_count",
+          "op": "Lte",
+          "value": 3.0
+        }
+      },
+      "blocking": true,
+      "source": "Default"
+    }
+  ],
+  "excluded_claims": [],
+  "iteration": 1,
+  "inherited_postconditions": [],
+  "contract_quality": {
+    "active_claims": 25,
+    "applicable_claims": 25,
+    "score": 1.0,
+    "rating": "Full"
+  }
+}

@@ -1,0 +1,144 @@
+version: "1.0"
+name: "Calculator State Machine"
+description: "Verify calculator UI state transitions and computation correctness"
+machine:
+  id: "calculator_flow"
+  initial: "idle"
+  states:
+    idle:
+      id: "idle"
+      invariants:
+        - description: "Display shows 0"
+          condition: "display.text == '0'"
+        - description: "All buttons enabled"
+          condition: "all_buttons_enabled()"
+    entering_first:
+      id: "entering_first"
+      invariants:
+        - description: "Display shows entered digits"
+          condition: "display.text.len() > 0"
+    operator_selected:
+      id: "operator_selected"
+      invariants:
+        - description: "Operator indicator visible"
+          condition: "has_pending_operator()"
+    entering_second:
+      id: "entering_second"
+      invariants:
+        - description: "Second operand being entered"
+          condition: "display.text.len() > 0"
+    showing_result:
+      id: "showing_result"
+      final_state: true
+      invariants:
+        - description: "Result displayed"
+          condition: "has_result()"
+        - description: "History updated"
+          condition: "history.len() > 0"
+    error:
+      id: "error"
+      invariants:
+        - description: "Error message visible"
+          condition: "display.text.contains('Error')"
+  transitions:
+    - id: "digit_from_idle"
+      from: "idle"
+      to: "entering_first"
+      event: "digit_press"
+      actions:
+        - type: click
+          selector: "[data-digit]"
+    - id: "digit_continue"
+      from: "entering_first"
+      to: "entering_first"
+      event: "digit_press"
+    - id: "select_operator"
+      from: "entering_first"
+      to: "operator_selected"
+      event: "operator_press"
+      actions:
+        - type: click
+          selector: "[data-op]"
+    - id: "digit_second"
+      from: "operator_selected"
+      to: "entering_second"
+      event: "digit_press"
+    - id: "digit_second_continue"
+      from: "entering_second"
+      to: "entering_second"
+      event: "digit_press"
+    - id: "chain_operator"
+      from: "entering_second"
+      to: "operator_selected"
+      event: "operator_press"
+    - id: "compute_result"
+      from: "entering_second"
+      to: "showing_result"
+      event: "equals_press"
+      actions:
+        - type: click
+          selector: "[data-action='equals']"
+    - id: "division_by_zero"
+      from: "entering_second"
+      to: "error"
+      event: "equals_press"
+      guard: "second_operand == 0 && operator == '/'"
+    - id: "clear_from_result"
+      from: "showing_result"
+      to: "idle"
+      event: "clear_press"
+    - id: "clear_from_error"
+      from: "error"
+      to: "idle"
+      event: "clear_press"
+    - id: "continue_from_result"
+      from: "showing_result"
+      to: "operator_selected"
+      event: "operator_press"
+  forbidden:
+    - from: "idle"
+      to: "showing_result"
+      reason: "Cannot show result without computation"
+    - from: "idle"
+      to: "error"
+      reason: "Cannot error from idle state"
+    - from: "operator_selected"
+      to: "showing_result"
+      reason: "Need second operand before result"
+playbook:
+  setup:
+    - type: navigate
+      url: "/calculator"
+    - type: wait
+      condition: "element_visible('#display')"
+  steps:
+    - name: "Enter first number"
+      transitions: ["digit_from_idle", "digit_continue"]
+      capture:
+        - var: "first_operand"
+          from: "#display"
+    - name: "Select operator"
+      transitions: ["select_operator"]
+    - name: "Enter second number"
+      transitions: ["digit_second", "digit_second_continue"]
+      capture:
+        - var: "second_operand"
+          from: "#display"
+    - name: "Calculate result"
+      transitions: ["compute_result"]
+      capture:
+        - var: "result"
+          from: "#display"
+  teardown:
+    - type: screenshot
+      path: "./snapshots/calculator_final.png"
+assertions:
+  path:
+    must_visit: ["idle", "entering_first", "operator_selected", "entering_second", "showing_result"]
+    must_not_visit: ["error"]
+  output:
+    - var: "result"
+      not_empty: true
+performance:
+  max_duration_ms: 1000
+  max_memory_mb: 50

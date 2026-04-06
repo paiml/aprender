@@ -1,0 +1,110 @@
+# Mutation Testing Configuration for probar-js-gen
+# NASA/DO-178B Grade: 85% minimum mutation score
+#
+# References:
+# - DeMillo, R.A. et al. (1978) "Hints on Test Data Selection"
+# - Jia, Y. & Harman, M. (2011) "An Analysis and Survey of Mutation Testing"
+
+[settings]
+# Timeout multiplier for mutation tests (mutants may hang)
+timeout_multiplier = 5
+
+# Minimum mutation score required (85% = DO-178C DAL C)
+minimum_mutation_score = 85
+
+[exclude]
+# Don't mutate these patterns - they're infrastructure not logic
+patterns = [
+    # Debug/Display impls
+    "impl.*fmt::Display",
+    "impl.*fmt::Debug",
+    # Serde derive
+    "#\\[derive.*Serialize.*\\]",
+    "#\\[derive.*Deserialize.*\\]",
+    # Test code
+    "#\\[cfg\\(test\\)\\]",
+    "#\\[test\\]",
+]
+
+# Files to skip
+files = [
+    # Test files are not mutation targets
+    "tests/*",
+    # Proptest regression files
+    "proptest-regressions/*",
+]
+
+[risk_levels]
+# Risk-based testing allocation (Toyota Way)
+# Concentrate 40% effort on 5-10% highest-risk code
+
+[risk_levels.critical]
+# Core safety: identifier validation, hash integrity
+paths = ["src/hir.rs", "src/manifest.rs"]
+minimum_score = 90
+effort_percentage = 40
+
+[risk_levels.high]
+# Code generation: must produce valid JS
+paths = ["src/codegen.rs", "src/builder.rs"]
+minimum_score = 85
+effort_percentage = 30
+
+[risk_levels.medium]
+# Error handling: must not panic
+paths = ["src/error.rs"]
+minimum_score = 80
+effort_percentage = 20
+
+[risk_levels.low]
+# Lib exports: mostly re-exports
+paths = ["src/lib.rs"]
+minimum_score = 75
+effort_percentage = 10
+
+[operators]
+# Mutation operators to apply
+# See: https://mutants.rs/operators.html
+
+# Arithmetic mutations
+replace_add_with_sub = true
+replace_sub_with_add = true
+replace_mul_with_div = true
+replace_div_with_mul = true
+
+# Comparison mutations (critical for validation)
+replace_eq_with_ne = true
+replace_ne_with_eq = true
+replace_lt_with_le = true
+replace_le_with_lt = true
+replace_gt_with_ge = true
+replace_ge_with_gt = true
+
+# Boolean mutations
+replace_true_with_false = true
+replace_false_with_true = true
+replace_and_with_or = true
+replace_or_with_and = true
+negate_conditions = true
+
+# Control flow mutations
+remove_break = true
+remove_continue = true
+remove_return = true
+
+# Value mutations
+replace_with_default = true
+replace_string_with_empty = true
+
+[reports]
+# Generate detailed mutation report
+html = true
+json = true
+
+# Include source context in report
+source_context_lines = 5
+
+# Track mutation categories
+by_category = true
+by_file = true
+by_function = true

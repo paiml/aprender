@@ -1,0 +1,196 @@
+{
+  "id": "019cb446-4d94-7300-bdc1-60394304cb6f",
+  "git_sha": "10122822632428f052535b4d2dc3699bfc188775",
+  "timestamp": "2026-03-03T15:17:12.212018835+00:00",
+  "trigger": "WorkComplete",
+  "work_item_id": "GH-23",
+  "verdicts": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "method": "ManifestIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All 289 files present",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "method": "MetaFalsification",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Detected dummy gaming pattern correctly",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "method": "CoverageGaming",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No gaming patterns found in 289 files",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "method": "DifferentialCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No Rust files changed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "method": "AbsoluteCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No coverage data (run 'make coverage' to establish baseline), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "method": "TdgRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No TDG data (baseline: 0.0)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "method": "ComplexityRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Complexity check passed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "method": "SupplyChainIntegrity",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "No deny cache. Run 'cargo deny check' first (O(1) requirement)",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "method": "FileSizeRegression",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "134 file(s) exceed 500 lines: crates/probar-cli/src/dev_server.rs (1973 lines), crates/probar-cli/src/score.rs (1709 lines), crates/probar-cli/src/tracing.rs (1065 lines), crates/probar-cli/src/generate.rs (698 lines), crates/probar-cli/src/tree.rs (744 lines), crates/probar-cli/src/debug.rs (724 lines), crates/probar-cli/src/statistics.rs (980 lines), crates/probar-cli/src/main.rs (2710 lines), crates/probar-cli/src/wasm_testing.rs (1141 lines), crates/probar-cli/src/lint.rs (1222 lines), crates/probar-cli/src/commands.rs (2350 lines), crates/probar-cli/src/simulation.rs (1153 lines), crates/probar-cli/src/load_testing.rs (1292 lines), crates/probar-cli/src/visualization.rs (1027 lines), crates/probar-cli/src/stress.rs (1032 lines), crates/probar-cli/src/handlers/llm.rs (637 lines), crates/probar-cli/src/handlers/comply.rs (969 lines), crates/probar-js-gen/src/codegen.rs (624 lines), crates/probar-js-gen/src/builder.rs (1142 lines), crates/probar-js-gen/src/hir.rs (571 lines), crates/probar-js-gen/tests/comprehensive_tests.rs (1355 lines), crates/probar/src/bridge.rs (840 lines), crates/probar/src/llm/assertion.rs (585 lines), crates/probar/src/llm/loadtest.rs (739 lines), crates/probar/src/snapshot.rs (546 lines), crates/probar/src/reporter.rs (1007 lines), crates/probar/src/page_object.rs (536 lines), crates/probar/src/tui_load.rs (1168 lines), crates/probar/src/context.rs (1855 lines), crates/probar/src/dialog.rs (719 lines), crates/probar/src/tui/backend.rs (508 lines), crates/probar/src/tui/snapshot.rs (728 lines), crates/probar/src/tui/compute_block.rs (587 lines), crates/probar/src/tui/assertions.rs (1323 lines), crates/probar/src/tui/tty.rs (908 lines), crates/probar/src/tui/brick.rs (759 lines), crates/probar/src/cdp_coverage.rs (1219 lines), crates/probar/src/capabilities.rs (2106 lines), crates/probar/src/brick_house.rs (925 lines), crates/probar/src/replay.rs (1423 lines), crates/probar/src/zero_js.rs (1746 lines), crates/probar/src/websocket.rs (1512 lines), crates/probar/src/wait.rs (1494 lines), crates/probar/src/worker_harness.rs (1354 lines), crates/probar/src/driver.rs (1323 lines), crates/probar/src/perf/trace.rs (606 lines), crates/probar/src/perf/span.rs (625 lines), crates/probar/src/perf/metrics.rs (699 lines), crates/probar/src/emulation/device.rs (1060 lines), crates/probar/src/emulation/audio.rs (1222 lines), crates/probar/src/emulation/geolocation.rs (1057 lines), crates/probar/src/fuzzer.rs (620 lines), crates/probar/src/assertion/soft.rs (736 lines), crates/probar/src/assertion/equation.rs (1631 lines), crates/probar/src/assertion/retry.rs (663 lines), crates/probar/src/gpu_pixels/mod.rs (1238 lines), crates/probar/src/playbook/executor.rs (1117 lines), crates/probar/src/playbook/schema.rs (1702 lines), crates/probar/src/playbook/runner.rs (2107 lines), crates/probar/src/docker.rs (2083 lines), crates/probar/src/browser.rs (5099 lines), crates/probar/src/web/validator.rs (974 lines), crates/probar/src/web/mod.rs (942 lines), crates/probar/src/locator.rs (3700 lines), crates/probar/src/visual_regression.rs (1406 lines), crates/probar/src/pixel_coverage/heatmap.rs (2655 lines), crates/probar/src/pixel_coverage/wasm_demo.rs (1879 lines), crates/probar/src/pixel_coverage/terminal.rs (1962 lines), crates/probar/src/pixel_coverage/parallel.rs (532 lines), crates/probar/src/pixel_coverage/metrics.rs (1608 lines), crates/probar/src/pixel_coverage/falsification.rs (708 lines), crates/probar/src/pixel_coverage/tracker.rs (814 lines), crates/probar/src/renacer_integration.rs (825 lines), crates/probar/src/brick/distributed.rs (2227 lines), crates/probar/src/brick/compute.rs (1420 lines), crates/probar/src/brick/mod.rs (1100 lines), crates/probar/src/brick/pipeline.rs (3161 lines), crates/probar/src/brick/audio.rs (1136 lines), crates/probar/src/brick/web_sys_gen.rs (983 lines), crates/probar/src/brick/worker.rs (1205 lines), crates/probar/src/brick/event.rs (1112 lines), crates/probar/src/brick/deterministic.rs (3642 lines), crates/probar/src/brick/tui.rs (1309 lines), crates/probar/src/brick/widget.rs (2123 lines), crates/probar/src/watch.rs (1849 lines), crates/probar/src/har.rs (1884 lines), crates/probar/src/file_ops.rs (1186 lines), crates/probar/src/performance.rs (1693 lines), crates/probar/src/media/svg_exporter.rs (2406 lines), crates/probar/src/media/gif_recorder.rs (721 lines), crates/probar/src/media/png_exporter.rs (905 lines), crates/probar/src/media/video_recorder.rs (2523 lines), crates/probar/src/mock/falsification_tests.rs (2195 lines), crates/probar/src/mock/test_harness.rs (739 lines), crates/probar/src/mock/wasm_runtime.rs (856 lines), crates/probar/src/fixture.rs (1699 lines), crates/probar/src/network.rs (1837 lines), crates/probar/src/accessibility.rs (1403 lines), crates/probar/src/runtime.rs (1264 lines), crates/probar/src/validators.rs (4233 lines), crates/probar/src/ux_coverage.rs (1474 lines), crates/probar/src/strict.rs (1603 lines), crates/probar/src/coverage/tests.rs (2100 lines), crates/probar/src/coverage/report.rs (892 lines), crates/probar/src/lib.rs (1521 lines), crates/probar/src/runner/builder.rs (661 lines), crates/probar/src/runner/config.rs (530 lines), crates/probar/src/runner/server.rs (903 lines), crates/probar/src/lint/state_sync.rs (1553 lines), crates/probar/src/lint/panic_paths.rs (570 lines), crates/probar/src/lint/ast_visitor.rs (1797 lines), crates/probar/src/clock.rs (1141 lines), crates/probar/src/simulation.rs (910 lines), crates/probar/src/shard.rs (969 lines), crates/probar/src/tracing_support.rs (1463 lines), crates/probar/src/comply/wasm_threading.rs (1660 lines), crates/probar/src/comply/tarantula.rs (600 lines), crates/probar/src/comply/pmat_bridge.rs (504 lines), crates/probar/src/presentar/terminal.rs (520 lines), crates/probar/src/presentar/schema.rs (711 lines), crates/probar/src/presentar/falsification.rs (1012 lines), crates/probar/examples/pong_simulation.rs (508 lines), crates/probar/examples/coverage_demo.rs (547 lines), crates/showcase-calculator/src/tui/keypad.rs (823 lines), crates/showcase-calculator/src/tui/ui.rs (765 lines), crates/showcase-calculator/src/tui/app.rs (586 lines), crates/showcase-calculator/src/core/parser.rs (832 lines), crates/showcase-calculator/src/core/operations.rs (535 lines), crates/showcase-calculator/src/wasm/calculator.rs (582 lines), crates/showcase-calculator/src/wasm/driver.rs (534 lines), crates/showcase-calculator/src/wasm/keypad.rs (872 lines), crates/showcase-calculator/src/wasm/dom.rs (751 lines), crates/showcase-calculator/src/probar_tests.rs (1371 lines), crates/probar-derive/src/lib.rs (1044 lines)",
+      "evidence_summary": "FileList([\"crates/probar-cli/src/dev_server.rs\", \"crates/probar-cli/src/score.rs\", \"crates/probar-cli/src/tracing.rs\", \"crates/probar-cli/src/generate.rs\", \"crates/probar-cli/src/tree.rs\", \"crates/probar-cli/src/debug.rs\", \"crates/probar-cli/src/statistics.rs\", \"crates/probar-cli/src/main.rs\", \"crates/probar-cli/src/wasm_testing.rs\", \"crates/probar-cli/src/lint.rs\", \"crates/probar-cli/src/commands.rs\", \"crates/probar-cli/src/simulation.rs\", \"crates/probar-cli/src/load_testing.rs\", \"crates/probar-cli/src/visualization.rs\", \"crates/probar-cli/src/stress.rs\", \"crates/probar-cli/src/handlers/llm.rs\", \"crates/probar-cli/src/handlers/comply.rs\", \"crates/probar-js-gen/src/codegen.rs\", \"crates/probar-js-gen/src/builder.rs\", \"crates/probar-js-gen/src/hir.rs\", \"crates/probar-js-gen/tests/comprehensive_tests.rs\", \"crates/probar/src/bridge.rs\", \"crates/probar/src/llm/assertion.rs\", \"crates/probar/src/llm/loadtest.rs\", \"crates/probar/src/snapshot.rs\", \"crates/probar/src/reporter.rs\", \"crates/probar/src/page_object.rs\", \"crates/probar/src/tui_load.rs\", \"crates/probar/src/context.rs\", \"crates/probar/src/dialog.rs\", \"crates/probar/src/tui/backend.rs\", \"crates/probar/src/tui/snapshot.rs\", \"crates/probar/src/tui/compute_block.rs\", \"crates/probar/src/tui/assertions.rs\", \"crates/probar/src/tui/tty.rs\", \"crates/probar/src/tui/brick.rs\", \"crates/probar/src/cdp_coverage.rs\", \"crates/probar/src/capabilities.rs\", \"crates/probar/src/brick_house.rs\", \"crates/probar/src/replay.rs\", \"crates/probar/src/zero_js.rs\", \"crates/probar/src/websocket.rs\", \"crates/probar/src/wait.rs\", \"crates/probar/src/worker_harness.rs\", \"crates/probar/src/driver.rs\", \"crates/probar/src/perf/trace.rs\", \"crates/probar/src/perf/span.rs\", \"crates/probar/src/perf/metrics.rs\", \"crates/probar/src/emulation/device.rs\", \"crates/probar/src/emulation/audio.rs\", \"crates/probar/src/emulation/geolocation.rs\", \"crates/probar/src/fuzzer.rs\", \"crates/probar/src/assertion/soft.rs\", \"crates/probar/src/assertion/equation.rs\", \"crates/probar/src/assertion/retry.rs\", \"crates/probar/src/gpu_pixels/mod.rs\", \"crates/probar/src/playbook/executor.rs\", \"crates/probar/src/playbook/schema.rs\", \"crates/probar/src/playbook/runner.rs\", \"crates/probar/src/docker.rs\", \"crates/probar/src/browser.rs\", \"crates/probar/src/web/validator.rs\", \"crates/probar/src/web/mod.rs\", \"crates/probar/src/locator.rs\", \"crates/probar/src/visual_regression.rs\", \"crates/probar/src/pixel_coverage/heatmap.rs\", \"crates/probar/src/pixel_coverage/wasm_demo.rs\", \"crates/probar/src/pixel_coverage/terminal.rs\", \"crates/probar/src/pixel_coverage/parallel.rs\", \"crates/probar/src/pixel_coverage/metrics.rs\", \"crates/probar/src/pixel_coverage/falsification.rs\", \"crates/probar/src/pixel_coverage/tracker.rs\", \"crates/probar/src/renacer_integration.rs\", \"crates/probar/src/brick/distributed.rs\", \"crates/probar/src/brick/compute.rs\", \"crates/probar/src/brick/mod.rs\", \"crates/probar/src/brick/pipeline.rs\", \"crates/probar/src/brick/audio.rs\", \"crates/probar/src/brick/web_sys_gen.rs\", \"crates/probar/src/brick/worker.rs\", \"crates/probar/src/brick/event.rs\", \"crates/probar/src/brick/deterministic.rs\", \"crates/probar/src/brick/tui.rs\", \"crates/probar/src/brick/widget.rs\", \"crates/probar/src/watch.rs\", \"crates/probar/src/har.rs\", \"crates/probar/src/file_ops.rs\", \"crates/probar/src/performance.rs\", \"crates/probar/src/media/svg_exporter.rs\", \"crates/probar/src/media/gif_recorder.rs\", \"crates/probar/src/media/png_exporter.rs\", \"crates/probar/src/media/video_recorder.rs\", \"crates/probar/src/mock/falsification_tests.rs\", \"crates/probar/src/mock/test_harness.rs\", \"crates/probar/src/mock/wasm_runtime.rs\", \"crates/probar/src/fixture.rs\", \"crates/probar/src/network.rs\", \"crates/probar/src/accessibility.rs\", \"crates/probar/src/runtime.rs\", \"crates/probar/src/validators.rs\", \"crates/probar/src/ux_coverage.rs\", \"crates/probar/src/strict.rs\", \"crates/probar/src/coverage/tests.rs\", \"crates/probar/src/coverage/report.rs\", \"crates/probar/src/lib.rs\", \"crates/probar/src/runner/builder.rs\", \"crates/probar/src/runner/config.rs\", \"crates/probar/src/runner/server.rs\", \"crates/probar/src/lint/state_sync.rs\", \"crates/probar/src/lint/panic_paths.rs\", \"crates/probar/src/lint/ast_visitor.rs\", \"crates/probar/src/clock.rs\", \"crates/probar/src/simulation.rs\", \"crates/probar/src/shard.rs\", \"crates/probar/src/tracing_support.rs\", \"crates/probar/src/comply/wasm_threading.rs\", \"crates/probar/src/comply/tarantula.rs\", \"crates/probar/src/comply/pmat_bridge.rs\", \"crates/probar/src/presentar/terminal.rs\", \"crates/probar/src/presentar/schema.rs\", \"crates/probar/src/presentar/falsification.rs\", \"crates/probar/examples/pong_simulation.rs\", \"crates/probar/examples/coverage_demo.rs\", \"crates/showcase-calculator/src/tui/keypad.rs\", \"crates/showcase-calculator/src/tui/ui.rs\", \"crates/showcase-calculator/src/tui/app.rs\", \"crates/showcase-calculator/src/core/parser.rs\", \"crates/showcase-calculator/src/core/operations.rs\", \"crates/showcase-calculator/src/wasm/calculator.rs\", \"crates/showcase-calculator/src/wasm/driver.rs\", \"crates/showcase-calculator/src/wasm/keypad.rs\", \"crates/showcase-calculator/src/wasm/dom.rs\", \"crates/showcase-calculator/src/probar_tests.rs\", \"crates/probar-derive/src/lib.rs\"])"
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "method": "SpecQuality",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No spec file found (optional)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "method": "GitHubSync",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "3 uncommitted file(s)",
+      "evidence_summary": "GitState { unpushed_commits: 0, dirty_files: 3 }"
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "method": "ExamplesCompile",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No examples directory found (skipping)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "method": "BookValidation",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "pmat-book not found (skipping validation)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "method": "SatdDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No new SATD markers (0 existing)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "method": "DeadCodeDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No dead code detected",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "method": "PerFileCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No per-file coverage data (run 'make coverage'), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "method": "LintPass",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "No lint cache. Run 'make lint' first (O(1) requirement)",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "method": "VariantCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No Rust files changed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "method": "FixChainLimit",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No fix chains > 3 consecutive commits",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "method": "CrossCrateParity",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No cross-crate config (create .pmat-work/cross-crate.json to enable)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "method": "RegressionGate",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No benchmark cache (run benchmarks to populate .pmat-metrics/benchmark-status.json)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No incomplete proofs (sorry) introduced",
+      "method": "FormalProofVerification",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No .lean files with sorry found",
+      "evidence_summary": null
+    }
+  ],
+  "overrides": [],
+  "summary": {
+    "total": 22,
+    "passed": 18,
+    "failed": 4,
+    "warnings": 0,
+    "overridden": 0,
+    "allows_completion": false,
+    "health_score": 0.8181818181818182
+  },
+  "content_hash": "74463e5371576d9cfb284da6179cd7eea216bb879669bed1b910c6a428d4af41"
+}

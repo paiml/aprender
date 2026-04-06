@@ -1,0 +1,2995 @@
+warning: unused import: `Duration`
+  --> crates/probar/src/performance.rs:16:17
+   |
+16 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: trait `AsAny` is never used
+   --> crates/probar/src/fixture.rs:367:7
+    |
+367 | trait AsAny {
+    |       ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `expect_frame` is never used
+   --> crates/probar/src/tui/assertions.rs:218:8
+    |
+218 | pub fn expect_frame(frame: &TuiFrame) -> FrameAssertion<'_> {
+    |        ^^^^^^^^^^^^
+
+warning: struct `MultiValueTracker` is never constructed
+   --> crates/probar/src/tui/assertions.rs:399:12
+    |
+399 | pub struct MultiValueTracker {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `record`, `get`, `names`, and `assert_bounds` are never used
+   --> crates/probar/src/tui/assertions.rs:406:12
+    |
+403 | impl MultiValueTracker {
+    | ---------------------- associated items in this implementation
+...
+406 |     pub fn new() -> Self {
+    |            ^^^
+...
+413 |     pub fn record(&mut self, name: &str, timestamp_ms: u64, value: f64) {
+    |            ^^^^^^
+...
+423 |     pub fn get(&self, name: &str) -> Option<&ValueTracker<f64>> {
+    |            ^^^
+...
+429 |     pub fn names(&self) -> Vec<&str> {
+    |            ^^^^^
+...
+434 |     pub fn assert_bounds(&self, bounds: &HashMap<String, (f64, f64)>) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `SnapshotManager` is never constructed
+   --> crates/probar/src/tui/snapshot.rs:148:12
+    |
+148 | pub struct SnapshotManager {
+    |            ^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates/probar/src/tui/snapshot.rs:158:12
+    |
+155 | impl SnapshotManager {
+    | -------------------- associated items in this implementation
+...
+158 |     pub fn new(snapshot_dir: &Path) -> Self {
+    |            ^^^
+...
+167 |     pub fn with_update_mode(mut self, update: bool) -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+174 |     pub fn snapshot_dir(&self) -> &Path {
+    |            ^^^^^^^^^^^^
+...
+180 |     pub fn snapshot_path(&self, name: &str) -> PathBuf {
+    |            ^^^^^^^^^^^^^
+...
+186 |     pub fn exists(&self, name: &str) -> bool {
+    |            ^^^^^^
+...
+191 |     pub fn save(&self, snapshot: &TuiSnapshot) -> ProbarResult<()> {
+    |            ^^^^
+...
+197 |     pub fn load(&self, name: &str) -> ProbarResult<TuiSnapshot> {
+    |            ^^^^
+...
+203 |     pub fn assert_snapshot(&self, name: &str, frame: &TuiFrame) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^^^
+...
+226 |     pub fn list(&self) -> ProbarResult<Vec<String>> {
+    |            ^^^^
+...
+248 |     pub fn delete(&self, name: &str) -> ProbarResult<()> {
+    |            ^^^^^^
+
+warning: unused result of type `std::option::Option<f64>`
+  --> crates/probar/src/assertion/equation.rs:76:9
+   |
+76 |         self.variables.insert(name.to_string(), value);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut EquationContext`
+   --> crates/probar/src/assertion/equation.rs:103:13
+    |
+103 |             ctx.set(&var.name, var.value);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:409:9
+    |
+409 |         self.verifier.verify_eq("v = v0 + at", expected, v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:423:9
+    |
+423 |         self.verifier.verify_eq("x = x0 + v0*t + 0.5*a*t²", expected, x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:437:9
+    |
+437 |         self.verifier.verify_eq("v² = v0² + 2a(x-x0)", expected, v * v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:489:9
+    |
+489 |         self.verifier.verify_eq("KE = 0.5*m*v²", expected, ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:502:9
+    |
+502 |         self.verifier.verify_eq("PE = m*g*h", expected, pe);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:516:9
+    |
+516 |         self.verifier.verify_eq("E_total conserved", total_initial, total_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:528:9
+    |
+528 |         self.verifier.verify_eq("W = ΔKE", work, delta_ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:580:9
+    |
+580 |         self.verifier.verify_eq("p = m*v", expected, p);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:593:9
+    |
+593 |         self.verifier.verify_eq("p_total conserved", p_initial, p_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:605:9
+    |
+605 |         self.verify_conservation(m1, v1_initial, m2, v2_initial, v1_final, v2_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:610:9
+    |
+610 |         self.verifier.verify_eq("KE conserved (elastic)", ke_initial, ke_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:656:9
+    |
+656 |         self.verifier.verify_non_negative("score >= 0", score);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:662:9
+    |
+662 |         self.verifier.verify_in_range("health", health, 0.0, max_health);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:673:9
+    |
+673 |         self.verifier.verify_in_range("x position", x, min_x, max_x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:674:9
+    |
+674 |         self.verifier.verify_in_range("y position", y, min_y, max_y);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:681:9
+    |
+681 |         self.verifier.verify_in_range("speed", speed, 0.0, max_speed);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:687:9
+    |
+687 |         self.verifier.verify_eq("entity count", expected as f64, count as f64);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:693:9
+    |
+693 |         self.verifier.verify_eq(name, expected, actual);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+  --> crates/probar/src/bridge.rs:95:9
+   |
+95 |         self.positions.insert(entity_id, (x, y));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+   --> crates/probar/src/bridge.rs:100:9
+    |
+100 |         self.velocities.insert(entity_id, (vx, vy));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<i32>`
+   --> crates/probar/src/bridge.rs:105:9
+    |
+105 |         self.scores.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<bool>`
+   --> crates/probar/src/bridge.rs:110:9
+    |
+110 |         self.flags.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/bridge.rs:230:9
+    |
+230 |         self.components.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:346:17
+    |
+346 |                 self.cache.remove(&oldest);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `u64`
+   --> crates/probar/src/bridge.rs:347:17
+    |
+347 |                 self.access_order.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:353:9
+    |
+353 |         self.cache.insert(frame, snapshot);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/runtime.rs:684:1
+    |
+684 | / pub struct WasmRuntime {
+685 | |     _phantom: std::marker::PhantomData<()>,
+686 | | }
+    | |_^
+    |
+    = note: requested on the command line with `-W missing-debug-implementations`
+
+warning: unused result of type `&mut ratatui::buffer::Cell`
+   --> crates/probar/src/tui/backend.rs:306:21
+    |
+306 |                     cell.set_char(ch);
+    |                     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/probar/src/tui/snapshot.rs:29:5
+   |
+29 |     pub height: u16,
+   |     ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/probar/src/lib.rs:20:9
+   |
+20 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/tui/snapshot.rs:75:9
+   |
+75 |         self.metadata.insert(key.to_string(), value.to_string());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/replay.rs:166:9
+    |
+166 |         self.metadata.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:177:9
+    |
+177 |         self.expected_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:182:9
+    |
+182 |         self.tested_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<ElementCoverage>`
+   --> crates/probar/src/ux_coverage.rs:257:9
+    |
+257 |         self.elements.insert(key, coverage);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:283:9
+    |
+283 |         self.expected_states.insert(state);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:327:9
+    |
+327 |         self.visited_states.insert(state.clone());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:197:9
+    |
+197 |         presets.insert("new_york".to_string(), GeolocationPosition::new_york());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:198:9
+    |
+198 |         presets.insert("tokyo".to_string(), GeolocationPosition::tokyo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:199:9
+    |
+199 |         presets.insert("london".to_string(), GeolocationPosition::london());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:200:9
+    |
+200 |         presets.insert("paris".to_string(), GeolocationPosition::paris());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:201:9
+    |
+201 |         presets.insert("sydney".to_string(), GeolocationPosition::sydney());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:202:9
+    |
+202 | /         presets.insert(
+203 | |             "san_francisco".to_string(),
+204 | |             GeolocationPosition::san_francisco(),
+205 | |         );
+    | |__________^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:206:9
+    |
+206 |         presets.insert("berlin".to_string(), GeolocationPosition::berlin());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:207:9
+    |
+207 |         presets.insert("singapore".to_string(), GeolocationPosition::singapore());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:208:9
+    |
+208 |         presets.insert("dubai".to_string(), GeolocationPosition::dubai());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:209:9
+    |
+209 |         presets.insert("sao_paulo".to_string(), GeolocationPosition::sao_paulo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:581:9
+    |
+581 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:582:9
+    |
+582 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:583:9
+    |
+583 |         width: f64,
+    |         ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:584:9
+    |
+584 |         height: f64,
+    |         ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:585:9
+    |
+585 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:586:9
+    |
+586 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:587:9
+    |
+587 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:588:9
+    |
+588 |         rx: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:589:9
+    |
+589 |         ry: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:593:9
+    |
+593 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:594:9
+    |
+594 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:595:9
+    |
+595 |         r: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:596:9
+    |
+596 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:597:9
+    |
+597 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:598:9
+    |
+598 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:602:9
+    |
+602 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:603:9
+    |
+603 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:604:9
+    |
+604 |         rx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:605:9
+    |
+605 |         ry: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:606:9
+    |
+606 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:607:9
+    |
+607 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:608:9
+    |
+608 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:612:9
+    |
+612 |         x1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:613:9
+    |
+613 |         y1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:614:9
+    |
+614 |         x2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:615:9
+    |
+615 |         y2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:616:9
+    |
+616 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:617:9
+    |
+617 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:621:9
+    |
+621 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:622:9
+    |
+622 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:623:9
+    |
+623 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:624:9
+    |
+624 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:628:9
+    |
+628 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:629:9
+    |
+629 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:630:9
+    |
+630 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:631:9
+    |
+631 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:635:9
+    |
+635 |         d: String,
+    |         ^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:636:9
+    |
+636 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:637:9
+    |
+637 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:638:9
+    |
+638 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:642:9
+    |
+642 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:643:9
+    |
+643 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:644:9
+    |
+644 |         content: String,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:645:9
+    |
+645 |         font_size: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:646:9
+    |
+646 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:647:9
+    |
+647 |         font_family: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:651:9
+    |
+651 |         id: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:652:9
+    |
+652 |         children: Vec<SvgShape>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/watch.rs:261:1
+    |
+261 | / pub struct FnWatchHandler<F>
+262 | | where
+263 | |     F: Fn(&[FileChange]) -> ProbarResult<()> + Send + Sync,
+...   |
+266 | | }
+    | |_^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/tracing_support.rs:132:9
+    |
+132 |         self.attributes.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/tracing_support.rs:217:9
+    |
+217 |         self.attributes.insert(key.to_string(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/network.rs:173:9
+    |
+173 |         self.headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/performance.rs:108:9
+    |
+108 |         self.tags.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<MetricStats>`
+   --> crates/probar/src/performance.rs:381:17
+    |
+381 |                 metrics.insert(name, stats);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<Instant>`
+   --> crates/probar/src/performance.rs:488:9
+    |
+488 |         self.timers.insert(name.to_string(), Instant::now());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:600:17
+    |
+600 |                 self.frame_times.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:615:13
+    |
+615 |             self.frame_times.remove(0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:64:9
+   |
+64 | /         self.local_storage
+65 | |             .entry(origin.to_string())
+66 | |             .or_default()
+67 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:74:9
+   |
+74 | /         self.session_storage
+75 | |             .entry(origin.to_string())
+76 | |             .or_default()
+77 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/context.rs:318:9
+    |
+318 |         self.extra_headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:574:9
+    |
+574 |         contexts.insert(id.clone(), context);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:659:9
+    |
+659 |         contexts.remove(context_id);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (lib) generated 117 warnings (run `cargo fix --lib -p probar` to apply 1 suggestion)
+warning: method `with_priority` is never used
+   --> crates/probar/src/fixture.rs:590:12
+    |
+581 |     impl TestFixture {
+    |     ---------------- method in this implementation
+...
+590 |         fn with_priority(mut self, priority: i32) -> Self {
+    |            ^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationContext`
+   --> crates/probar/src/assertion/equation.rs:103:13
+    |
+103 |             ctx.set(&var.name, var.value);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:409:9
+    |
+409 |         self.verifier.verify_eq("v = v0 + at", expected, v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:423:9
+    |
+423 |         self.verifier.verify_eq("x = x0 + v0*t + 0.5*a*t²", expected, x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:437:9
+    |
+437 |         self.verifier.verify_eq("v² = v0² + 2a(x-x0)", expected, v * v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:489:9
+    |
+489 |         self.verifier.verify_eq("KE = 0.5*m*v²", expected, ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:502:9
+    |
+502 |         self.verifier.verify_eq("PE = m*g*h", expected, pe);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:516:9
+    |
+516 |         self.verifier.verify_eq("E_total conserved", total_initial, total_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:528:9
+    |
+528 |         self.verifier.verify_eq("W = ΔKE", work, delta_ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:580:9
+    |
+580 |         self.verifier.verify_eq("p = m*v", expected, p);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:593:9
+    |
+593 |         self.verifier.verify_eq("p_total conserved", p_initial, p_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:605:9
+    |
+605 |         self.verify_conservation(m1, v1_initial, m2, v2_initial, v1_final, v2_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:610:9
+    |
+610 |         self.verifier.verify_eq("KE conserved (elastic)", ke_initial, ke_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:656:9
+    |
+656 |         self.verifier.verify_non_negative("score >= 0", score);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:662:9
+    |
+662 |         self.verifier.verify_in_range("health", health, 0.0, max_health);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:673:9
+    |
+673 |         self.verifier.verify_in_range("x position", x, min_x, max_x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:674:9
+    |
+674 |         self.verifier.verify_in_range("y position", y, min_y, max_y);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:681:9
+    |
+681 |         self.verifier.verify_in_range("speed", speed, 0.0, max_speed);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:687:9
+    |
+687 |         self.verifier.verify_eq("entity count", expected as f64, count as f64);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:693:9
+    |
+693 |         self.verifier.verify_eq(name, expected, actual);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationContext`
+   --> crates/probar/src/assertion/equation.rs:752:13
+    |
+752 |             ctx.set("x", 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:785:13
+    |
+785 |             verifier.verify_eq("1 + 1 = 2", 2.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:794:13
+    |
+794 |             verifier.verify_eq("1 + 1 = 3", 3.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:803:13
+    |
+803 |             verifier.verify_eq_with_tolerance("approx", 1.0, 1.001, 0.01);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:811:13
+    |
+811 |             verifier.verify_in_range("value", 5.0, 0.0, 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:819:13
+    |
+819 |             verifier.verify_in_range("value", 15.0, 0.0, 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:827:13
+    |
+827 |             verifier.verify_non_negative("positive", 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:828:13
+    |
+828 |             verifier.verify_non_negative("zero", 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:836:13
+    |
+836 |             verifier.verify_non_negative("negative", -5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:844:13
+    |
+844 |             verifier.verify_positive("positive", 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:852:13
+    |
+852 |             verifier.verify_positive("zero", 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:860:13
+    |
+860 |             verifier.verify_eq("test", 1.0, 1.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:868:13
+    |
+868 |             verifier.verify_eq("test", 1.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:876:13
+    |
+876 |             verifier.verify_eq("test", 1.0, 1.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:890:13
+    |
+890 |             verifier.verify_velocity(20.0, 10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:899:13
+    |
+899 |             verifier.verify_position(75.0, 0.0, 10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:910:13
+    |
+910 |             verifier.verify_velocity_squared(v, 10.0, 2.0, 50.0, 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:925:13
+    |
+925 |             verifier.verify_velocity(v, 0.0, g, t);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:926:13
+    |
+926 |             verifier.verify_position(y, 0.0, 0.0, g, t);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:939:13
+    |
+939 |             verifier.verify_kinetic_energy(9.0, 2.0, 3.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:948:13
+    |
+948 |             verifier.verify_potential_energy(50.0, 1.0, 10.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:959:13
+    |
+959 |             verifier.verify_conservation(50.0, 100.0, 100.0, 50.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:979:13
+    |
+979 |             verifier.verify_conservation(ke_top, pe_top, ke_bottom, pe_bottom);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:992:13
+    |
+992 |             verifier.verify_momentum(10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+    --> crates/probar/src/assertion/equation.rs:1002:13
+     |
+1002 |             verifier.verify_conservation(1.0, 10.0, 1.0, 0.0, 0.0, 10.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+    --> crates/probar/src/assertion/equation.rs:1011:13
+     |
+1011 |             verifier.verify_elastic_collision(1.0, 10.0, 1.0, 0.0, 0.0, 10.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+    --> crates/probar/src/assertion/equation.rs:1031:13
+     |
+1031 |             verifier.verifier.verify_eq("KE conserved", ke_initial, ke_final);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1042:13
+     |
+1042 |             verifier.verify_score_non_negative(100.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1050:13
+     |
+1050 |             verifier.verify_health(50.0, 100.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1058:13
+     |
+1058 |             verifier.verify_position_bounds(400.0, 300.0, 0.0, 800.0, 0.0, 600.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1066:13
+     |
+1066 |             verifier.verify_speed_limit(3.0, 4.0, 10.0); // speed = 5, limit = 10
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1074:13
+     |
+1074 |             verifier.verify_entity_count(10, 10);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1091:13
+     |
+1091 | /             verifier
+1092 | |                 .verify_score_non_negative(score)
+1093 | |                 .verify_position_bounds(ball_x, ball_y, 0.0, 800.0, 0.0, 600.0)
+1094 | |                 .verify_speed_limit(ball_vx, ball_vy, max_speed);
+     | |_________________________________________________________________^
+
+warning: unused result of type `std::option::Option<bridge::GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:346:17
+    |
+346 |                 self.cache.remove(&oldest);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<bridge::GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:353:9
+    |
+353 |         self.cache.insert(frame, snapshot);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:732:13
+    |
+732 |             set.insert(EntityId::new(1));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:733:13
+    |
+733 |             set.insert(EntityId::new(2));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:734:13
+    |
+734 |             set.insert(EntityId::new(1));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1046:21
+     |
+1046 |                     visited.insert(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1047:21
+     |
+1047 |                     rec_stack.insert(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1059:21
+     |
+1059 |                     rec_stack.remove(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `usize`
+    --> crates/probar/src/runtime.rs:1090:25
+     |
+1090 |                         c.fetch_add(1, Ordering::SeqCst);
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::vec::Vec<u8>`
+    --> crates/probar/src/runtime.rs:1136:21
+     |
+1136 |                     allocations.remove(0);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f64, f64)>`
+   --> crates/probar/src/tui/assertions.rs:790:13
+    |
+790 |             bounds.insert("health".to_string(), (0.0, 100.0));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f64, f64)>`
+   --> crates/probar/src/tui/assertions.rs:801:13
+    |
+801 |             bounds.insert("health".to_string(), (0.0, 100.0));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/replay.rs:616:13
+    |
+616 |             data.insert("score".to_string(), serde_json::json!(100));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:828:17
+    |
+828 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: requested on the command line with `-W unused-must-use`
+help: use `let _ = ...` to ignore the resulting value
+    |
+828 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:871:17
+    |
+871 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+871 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:885:17
+    |
+885 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+885 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:899:17
+    |
+899 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+899 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused result of type `std::option::Option<ux_coverage::ElementCoverage>`
+   --> crates/probar/src/ux_coverage.rs:257:9
+    |
+257 |         self.elements.insert(key, coverage);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:197:9
+    |
+197 |         presets.insert("new_york".to_string(), GeolocationPosition::new_york());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:198:9
+    |
+198 |         presets.insert("tokyo".to_string(), GeolocationPosition::tokyo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:199:9
+    |
+199 |         presets.insert("london".to_string(), GeolocationPosition::london());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:200:9
+    |
+200 |         presets.insert("paris".to_string(), GeolocationPosition::paris());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:201:9
+    |
+201 |         presets.insert("sydney".to_string(), GeolocationPosition::sydney());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:202:9
+    |
+202 | /         presets.insert(
+203 | |             "san_francisco".to_string(),
+204 | |             GeolocationPosition::san_francisco(),
+205 | |         );
+    | |__________^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:206:9
+    |
+206 |         presets.insert("berlin".to_string(), GeolocationPosition::berlin());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:207:9
+    |
+207 |         presets.insert("singapore".to_string(), GeolocationPosition::singapore());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:208:9
+    |
+208 |         presets.insert("dubai".to_string(), GeolocationPosition::dubai());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:209:9
+    |
+209 |         presets.insert("sao_paulo".to_string(), GeolocationPosition::sao_paulo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:345:9
+    |
+345 |         GeolocationPosition::new(91.0, 0.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+345 |         let _ = GeolocationPosition::new(91.0, 0.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:351:9
+    |
+351 |         GeolocationPosition::new(-91.0, 0.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+351 |         let _ = GeolocationPosition::new(-91.0, 0.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:357:9
+    |
+357 |         GeolocationPosition::new(0.0, 181.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+357 |         let _ = GeolocationPosition::new(0.0, 181.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:363:9
+    |
+363 |         GeolocationPosition::new(0.0, -181.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+363 |         let _ = GeolocationPosition::new(0.0, -181.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:369:9
+    |
+369 |         GeolocationPosition::new(0.0, 0.0, -1.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+369 |         let _ = GeolocationPosition::new(0.0, 0.0, -1.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::with_heading` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:388:9
+    |
+388 |         GeolocationPosition::new(0.0, 0.0, 10.0).with_heading(361.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+388 |         let _ = GeolocationPosition::new(0.0, 0.0, 10.0).with_heading(361.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::with_speed` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:400:9
+    |
+400 |         GeolocationPosition::new(0.0, 0.0, 10.0).with_speed(-1.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+400 |         let _ = GeolocationPosition::new(0.0, 0.0, 10.0).with_speed(-1.0);
+    |         +++++++
+
+warning: unused result of type `std::vec::Vec<u8>`
+   --> crates/probar/src/media/gif_recorder.rs:616:13
+    |
+616 |             recorder.stop().unwrap();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> crates/probar/src/media/png_exporter.rs:894:30
+    |
+894 |                 prop_assert!(result <= 255);
+    |                              ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_comparisons)]` on by default
+
+warning: unused result of type `u32`
+   --> crates/probar/src/watch.rs:776:17
+    |
+776 |                 counter_clone.fetch_add(1, Ordering::SeqCst);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+   --> crates/probar/src/network.rs:981:13
+    |
+981 | /             interception.handle_request(
+982 | |                 "https://api.example.com/api/users",
+983 | |                 HttpMethod::Get,
+984 | |                 HashMap::new(),
+985 | |                 None,
+986 | |             );
+    | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:998:13
+     |
+ 998 | /             interception.handle_request(
+ 999 | |                 "https://api.example.com/api/users",
+1000 | |                 HttpMethod::Get,
+1001 | |                 HashMap::new(),
+1002 | |                 None,
+1003 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1004:13
+     |
+1004 | /             interception.handle_request(
+1005 | |                 "https://api.example.com/api/posts",
+1006 | |                 HttpMethod::Get,
+1007 | |                 HashMap::new(),
+1008 | |                 None,
+1009 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1020:13
+     |
+1020 |             interception.handle_request("url1", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1021:13
+     |
+1021 |             interception.handle_request("url2", HttpMethod::Post, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1032:13
+     |
+1032 | /             interception.handle_request(
+1033 | |                 "https://api.example.com/api/users",
+1034 | |                 HttpMethod::Get,
+1035 | |                 HashMap::new(),
+1036 | |                 None,
+1037 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1053:13
+     |
+1053 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1054:13
+     |
+1054 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1079:13
+     |
+1079 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<performance::MetricStats>`
+   --> crates/probar/src/performance.rs:381:17
+    |
+381 |                 metrics.insert(name, stats);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::time::Instant>`
+   --> crates/probar/src/performance.rs:488:9
+    |
+488 |         self.timers.insert(name.to_string(), Instant::now());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `performance::PerformanceProfile`
+    --> crates/probar/src/performance.rs:1017:13
+     |
+1017 |             profiler.stop();
+     |             ^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<context::BrowserContext>`
+   --> crates/probar/src/context.rs:574:9
+    |
+574 |         contexts.insert(id.clone(), context);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<context::BrowserContext>`
+   --> crates/probar/src/context.rs:659:9
+    |
+659 |         contexts.remove(context_id);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1058:13
+     |
+1058 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1059:13
+     |
+1059 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1090:13
+     |
+1090 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1091:13
+     |
+1091 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1100:13
+     |
+1100 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1156:13
+     |
+1156 |             manager.get_context("test_1").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1157:13
+     |
+1157 |             manager.get_context("test_2").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1168:13
+     |
+1168 |             manager.get_context("test_1").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1169:13
+     |
+1169 |             manager.get_context("test_2").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `dashboard_page`
+  --> crates/probar/examples/page_object.rs:47:9
+   |
+47 |     let dashboard_page = PageObjectBuilder::new()
+   |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dashboard_page`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `probar` (lib test) generated 190 warnings (76 duplicates)
+warning: `probar` (example "page_object") generated 1 warning
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:18:5
+   |
+18 |     ctx.set("velocity", 10.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:19:5
+   |
+19 |     ctx.set("time", 2.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:20:5
+   |
+20 |     ctx.set("acceleration", 5.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:44:5
+   |
+44 |     verifier.verify_eq("v = v0 + at", expected_v, v);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:52:5
+   |
+52 |     verifier.verify_eq("x = v0*t + 0.5*a*t²", expected_x, x);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:61:5
+   |
+61 |     verifier.verify_in_range("health", health, 0.0, max_health);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:65:5
+   |
+65 |     verifier.verify_non_negative("score", score);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:84:5
+   |
+84 |     verifier.verify_eq("KE = 0.5*m*v²", 25.0, ke);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:98:5
+   |
+98 |     verifier.verify_eq("p = m*v", 10.0, p1);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+   --> crates/probar/examples/equation_verify.rs:132:5
+    |
+132 |     verifier.verify_eq("floating point", b_val, a_val);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (example "equation_verify") generated 10 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/probar-f1579ecd0ce7e076)
+
+running 1227 tests
+test accessibility::tests::accessibility_issue_tests::test_issue_with_fix ... ok
+test accessibility::tests::accessibility_issue_tests::test_issue_creation ... ok
+test accessibility::tests::audit_tests::test_audit_with_critical_issue ... ok
+test accessibility::tests::accessibility_issue_tests::test_issue_with_context ... ok
+test accessibility::tests::audit_tests::test_audit_with_multiple_issues ... ok
+test accessibility::tests::color_tests::test_color_from_hex ... ok
+test accessibility::tests::audit_tests::test_new_audit_passes ... ok
+test accessibility::tests::color_tests::test_contrast_ratio_same_color ... ok
+test accessibility::tests::color_tests::test_contrast_ratio_black_white ... ok
+test accessibility::tests::color_tests::test_relative_luminance_white ... ok
+test accessibility::tests::color_tests::test_relative_luminance_black ... ok
+test accessibility::tests::color_tests::test_wcag_aa_black_white ... ok
+test accessibility::tests::color_tests::test_wcag_aa_low_contrast ... ok
+test accessibility::tests::config_tests::test_focus_config_default ... ok
+test accessibility::tests::config_tests::test_accessibility_config_default ... ok
+test accessibility::tests::contrast_analysis_tests::test_add_failing_pair ... ok
+test accessibility::tests::contrast_analysis_tests::test_add_passing_pair ... ok
+test accessibility::tests::contrast_analysis_tests::test_empty_analysis ... ok
+test accessibility::tests::contrast_analysis_tests::test_min_max_ratio ... ok
+test accessibility::tests::flash_detector_tests::test_analyze_high_flash_rate ... ok
+test accessibility::tests::flash_detector_tests::test_analyze_high_red_intensity ... ok
+test accessibility::tests::flash_detector_tests::test_analyze_safe_flash ... ok
+test accessibility::tests::flash_detector_tests::test_analyze_large_flash_area ... ok
+test accessibility::tests::flash_detector_tests::test_flash_detector_default ... ok
+test accessibility::tests::validator_tests::test_analyze_contrast ... ok
+test accessibility::tests::validator_tests::test_check_reduced_motion ... ok
+test accessibility::tests::validator_tests::test_full_audit_fail_contrast ... ok
+test accessibility::tests::validator_tests::test_full_audit_fail_focus ... ok
+test accessibility::tests::validator_tests::test_full_audit_pass ... ok
+test accessibility::tests::validator_tests::test_validate_focus_fail ... ok
+test accessibility::tests::validator_tests::test_validate_focus_pass ... ok
+test accessibility::tests::validator_tests::test_validator_new ... ok
+test assertion::equation::tests::energy_verifier_tests::test_verify_conservation ... ok
+test assertion::equation::tests::energy_verifier_tests::test_pendulum_energy ... ok
+test assertion::equation::tests::energy_verifier_tests::test_verify_kinetic_energy ... ok
+test assertion::equation::tests::energy_verifier_tests::test_verify_potential_energy ... ok
+test assertion::equation::tests::equation_context_tests::test_new ... ok
+test assertion::equation::tests::equation_context_tests::test_from_variables ... ok
+test assertion::equation::tests::equation_context_tests::test_set_and_get ... ok
+test assertion::equation::tests::equation_verifier_tests::test_assert_all_pass ... ok
+test assertion::equation::tests::equation_verifier_tests::test_assert_all_fail ... ok
+test assertion::equation::tests::equation_verifier_tests::test_clear ... ok
+test assertion::equation::tests::equation_verifier_tests::test_new ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_eq_fail ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_eq_pass ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_eq_with_tolerance ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_in_range_fail ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_in_range_pass ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_non_negative_fail ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_non_negative_pass ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_positive_fail ... ok
+test assertion::equation::tests::equation_verifier_tests::test_verify_positive_pass ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_game_frame_invariants ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_verify_entity_count ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_verify_health ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_verify_position_bounds ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_verify_score_non_negative ... ok
+test assertion::equation::tests::invariant_verifier_tests::test_verify_speed_limit ... ok
+test assertion::equation::tests::kinematic_verifier_tests::test_free_fall ... ok
+test assertion::equation::tests::kinematic_verifier_tests::test_verify_position ... ok
+test assertion::equation::tests::kinematic_verifier_tests::test_verify_velocity ... ok
+test assertion::equation::tests::kinematic_verifier_tests::test_verify_velocity_squared ... ok
+test assertion::equation::tests::momentum_verifier_tests::test_pong_collision ... ok
+test assertion::equation::tests::momentum_verifier_tests::test_verify_conservation ... ok
+test assertion::equation::tests::momentum_verifier_tests::test_verify_elastic_collision ... ok
+test assertion::equation::tests::momentum_verifier_tests::test_verify_momentum ... ok
+test assertion::equation::tests::variable_tests::test_display ... ok
+test assertion::equation::tests::variable_tests::test_new ... ok
+test assertion::equation::tests::variable_tests::test_with_unit ... ok
+test assertion::retry::tests::assertion_check_result::test_fail ... ok
+test assertion::retry::tests::assertion_check_result::test_pass ... ok
+test assertion::retry::tests::helper_functions::test_retry_contains_fail ... ok
+test assertion::retry::tests::helper_functions::test_retry_contains_pass ... ok
+test assertion::retry::tests::helper_functions::test_retry_eq_fail ... ok
+test assertion::retry::tests::helper_functions::test_retry_eq_pass ... ok
+test assertion::retry::tests::helper_functions::test_retry_none_fail ... ok
+test assertion::retry::tests::helper_functions::test_retry_none_pass ... ok
+test assertion::retry::tests::helper_functions::test_retry_some_fail ... ok
+test assertion::retry::tests::helper_functions::test_retry_some_pass ... ok
+test assertion::retry::tests::helper_functions::test_retry_true_fail ... ok
+test assertion::retry::tests::helper_functions::test_retry_true_pass ... ok
+test assertion::retry::tests::retry_assertion::test_debug ... ok
+test assertion::retry::tests::retry_assertion::test_immediate_pass ... ok
+test assertion::retry::tests::retry_assertion::test_verify_once_fail ... ok
+test assertion::retry::tests::retry_assertion::test_verify_once_pass ... ok
+test assertion::retry::tests::retry_assertion::test_with_config ... ok
+test assertion::retry::tests::retry_assertion::test_with_description ... ok
+test assertion::retry::tests::retry_config::test_default ... ok
+test assertion::retry::tests::retry_config::test_fast ... ok
+test assertion::retry::tests::retry_config::test_new ... ok
+test assertion::retry::tests::retry_config::test_slow ... ok
+test assertion::retry::tests::retry_config::test_with_max_retries ... ok
+test assertion::retry::tests::retry_config::test_with_poll_interval ... ok
+test assertion::retry::tests::retry_error::test_display_with_description ... ok
+test assertion::retry::tests::retry_error::test_display_without_description ... ok
+test assertion::retry::tests::retry_result::test_result_fields ... ok
+test assertion::soft::tests::assertion_failure::test_assertion_failure_new ... ok
+test assertion::soft::tests::assertion_failure::test_assertion_failure_with_location ... ok
+test assertion::soft::tests::boolean_assertions::test_assert_false_fail ... ok
+test assertion::soft::tests::boolean_assertions::test_assert_false_pass ... ok
+test assertion::soft::tests::boolean_assertions::test_assert_true_fail ... ok
+test assertion::soft::tests::boolean_assertions::test_assert_true_pass ... ok
+test assertion::soft::tests::clear::test_clear ... ok
+test assertion::soft::tests::collection_assertions::test_assert_empty_fail ... ok
+test assertion::soft::tests::collection_assertions::test_assert_len_fail ... ok
+test assertion::soft::tests::collection_assertions::test_assert_empty_pass ... ok
+test assertion::soft::tests::collection_assertions::test_assert_len_pass ... ok
+test assertion::soft::tests::collection_assertions::test_assert_not_empty_fail ... ok
+test assertion::soft::tests::collection_assertions::test_assert_not_empty_pass ... ok
+test assertion::soft::tests::custom_failure::test_fail_method ... ok
+test assertion::soft::tests::equality_assertions::test_assert_eq_fail ... ok
+test assertion::soft::tests::equality_assertions::test_assert_eq_pass ... ok
+test assertion::soft::tests::equality_assertions::test_assert_ne_fail ... ok
+test assertion::soft::tests::equality_assertions::test_assert_ne_pass ... ok
+test assertion::soft::tests::multiple_failures::test_collects_multiple_failures ... ok
+test assertion::soft::tests::multiple_failures::test_mixed_pass_and_fail ... ok
+test assertion::soft::tests::numeric_assertions::test_assert_approx_eq_fail ... ok
+test assertion::soft::tests::numeric_assertions::test_assert_approx_eq_pass ... ok
+test assertion::soft::tests::numeric_assertions::test_assert_in_range_boundaries ... ok
+test assertion::soft::tests::numeric_assertions::test_assert_in_range_fail ... ok
+test assertion::soft::tests::numeric_assertions::test_assert_in_range_pass ... ok
+test assertion::soft::tests::option_assertions::test_assert_none_fail ... ok
+test assertion::soft::tests::option_assertions::test_assert_none_pass ... ok
+test assertion::soft::tests::option_assertions::test_assert_some_fail ... ok
+test assertion::soft::tests::option_assertions::test_assert_some_pass ... ok
+test assertion::soft::tests::result_assertions::test_assert_err_fail ... ok
+test assertion::soft::tests::result_assertions::test_assert_err_pass ... ok
+test assertion::soft::tests::result_assertions::test_assert_ok_fail ... ok
+test assertion::soft::tests::result_assertions::test_assert_ok_pass ... ok
+test assertion::soft::tests::soft_assertions_basic::test_mode_builder ... ok
+test assertion::soft::tests::soft_assertions_basic::test_new_creates_empty ... ok
+test assertion::soft::tests::soft_assertions_basic::test_with_mode ... ok
+test assertion::soft::tests::string_assertions::test_assert_contains_fail ... ok
+test assertion::soft::tests::string_assertions::test_assert_contains_pass ... ok
+test assertion::soft::tests::summary::test_summary ... ok
+test assertion::soft::tests::verify::test_error_display ... ok
+test assertion::soft::tests::verify::test_verify_fail ... ok
+test assertion::soft::tests::verify::test_verify_pass ... ok
+test bridge::tests::entity_snapshot_tests::test_new_entity_snapshot ... ok
+test bridge::tests::entity_snapshot_tests::test_add_component ... ok
+test bridge::tests::entity_snapshot_tests::test_with_position ... ok
+test bridge::tests::entity_snapshot_tests::test_with_velocity ... ok
+test bridge::tests::game_state_data_tests::test_add_position ... ok
+test bridge::tests::game_state_data_tests::test_add_velocity ... ok
+test bridge::tests::game_state_data_tests::test_compute_hash_deterministic ... ok
+test bridge::tests::game_state_data_tests::test_compute_hash_different ... ok
+test bridge::tests::game_state_data_tests::test_new_state_data ... ok
+test bridge::tests::game_state_data_tests::test_set_flag ... ok
+test bridge::tests::game_state_data_tests::test_set_score ... ok
+test bridge::tests::game_state_snapshot_tests::test_new_snapshot ... ok
+test bridge::tests::game_state_snapshot_tests::test_with_phash ... ok
+test bridge::tests::snapshot_cache_tests::test_insert_and_get ... ok
+test bridge::tests::snapshot_cache_tests::test_clear ... ok
+test bridge::tests::snapshot_cache_tests::test_lru_eviction ... ok
+test bridge::tests::snapshot_cache_tests::test_new_cache ... ok
+test bridge::tests::state_bridge_tests::test_clear_deltas ... ok
+test bridge::tests::state_bridge_tests::test_direct_bridge ... ok
+test bridge::tests::state_bridge_tests::test_compute_phash ... ok
+test bridge::tests::state_bridge_tests::test_query_entity ... ok
+test bridge::tests::state_bridge_tests::test_record_delta ... ok
+test bridge::tests::state_bridge_tests::test_rpc_bridge ... ok
+test bridge::tests::state_bridge_tests::test_snapshot_caching ... ok
+test bridge::tests::state_bridge_tests::test_visual_compare ... ok
+test bridge::tests::visual_diff_tests::test_is_identical ... ok
+test bridge::tests::visual_diff_tests::test_matches_threshold ... ok
+test bridge::tests::state_bridge_tests::test_visual_compare_different ... ok
+test context::tests::browser_context_tests::test_error_state ... ok
+test bridge::tests::visual_diff_tests::test_new_visual_diff ... ok
+test context::tests::browser_context_tests::test_new ... ok
+test context::tests::browser_context_tests::test_state_transitions ... ok
+test context::tests::context_config_tests::test_mobile ... ok
+test context::tests::browser_context_tests::test_pages ... ok
+test context::tests::browser_context_tests::test_storage ... ok
+test context::tests::context_config_tests::test_new ... ok
+test context::tests::context_config_tests::test_with_viewport ... ok
+test context::tests::context_config_tests::test_with_geolocation ... ok
+test context::tests::context_manager_tests::test_cleanup ... ok
+test context::tests::context_manager_tests::test_create_isolated_context ... ok
+test context::tests::context_config_tests::test_offline ... ok
+test context::tests::context_manager_tests::test_release_context ... ok
+test context::tests::context_manager_tests::test_stats ... ok
+test context::tests::context_manager_tests::test_get_context ... ok
+test context::tests::context_pool_tests::test_clear ... ok
+test context::tests::context_pool_tests::test_close ... ok
+test context::tests::context_pool_tests::test_close_all ... ok
+test context::tests::context_pool_tests::test_new ... ok
+test context::tests::context_pool_tests::test_max_contexts ... ok
+test context::tests::cookie_tests::test_secure_http_only ... ok
+test context::tests::cookie_tests::test_new ... ok
+test context::tests::cookie_tests::test_with_path ... ok
+test context::tests::context_manager_tests::test_new ... ok
+test context::tests::context_config_tests::test_with_header ... ok
+test context::tests::context_pool_tests::test_acquire_release ... ok
+test context::tests::context_pool_tests::test_create ... ok
+test context::tests::storage_state_tests::test_new ... ok
+test context::tests::storage_state_tests::test_with_cookie ... ok
+test context::tests::cookie_tests::test_same_site ... ok
+test context::tests::storage_state_tests::test_with_local_storage ... ok
+test coverage::formatters::cobertura::tests::test_calculate_file_coverage ... ok
+test coverage::formatters::cobertura::tests::test_cobertura_formatter_new ... ok
+test coverage::formatters::cobertura::tests::test_cobertura_formatter_with_version ... ok
+test context::tests::storage_state_tests::test_clear ... ok
+test coverage::formatters::cobertura::tests::test_extract_class_name ... ok
+test coverage::formatters::cobertura::tests::test_generate_doctype ... ok
+test coverage::formatters::cobertura::tests::test_generate_xml_declaration ... ok
+test coverage::formatters::cobertura::tests::test_generate_coverage_element ... ok
+test coverage::formatters::cobertura::tests::test_generate_lines ... ok
+test coverage::formatters::cobertura::tests::test_generate_classes ... ok
+test coverage::formatters::cobertura::tests::test_generate_packages ... ok
+test coverage::formatters::cobertura::tests::test_line_rate_calculation ... ok
+test coverage::formatters::cobertura::tests::test_package_grouping ... ok
+test coverage::formatters::html::tests::config_tests::test_config_chained_builders ... ok
+test coverage::formatters::html::tests::config_tests::test_default_config ... ok
+test coverage::formatters::html::tests::config_tests::test_config_with_title ... ok
+test coverage::formatters::html::tests::formatter_tests::test_generate_contains_files ... ok
+test coverage::formatters::html::tests::formatter_tests::test_generate_contains_html_structure ... ok
+test coverage::formatters::html::tests::formatter_tests::test_html_formatter_new ... ok
+test coverage::formatters::html::tests::formatter_tests::test_html_formatter_with_config ... ok
+test coverage::formatters::cobertura::tests::test_save_creates_file ... ok
+test coverage::formatters::html::tests::config_tests::test_config_with_theme ... ok
+test coverage::formatters::html::tests::formatter_tests::test_generate_contains_summary ... ok
+test coverage::formatters::html::tests::formatter_tests::test_theme_class ... ok
+test coverage::formatters::html::tests::theme_tests::test_theme_default ... ok
+test coverage::formatters::html::tests::formatter_tests::test_generate_contains_title ... ok
+test coverage::formatters::html::tests::theme_tests::test_theme_variants ... ok
+test coverage::formatters::lcov::tests::test_custom_test_name_overrides_session ... ok
+test coverage::formatters::lcov::tests::test_generate_empty_report ... ok
+test coverage::formatters::lcov::tests::test_generate_contains_source_files ... ok
+test coverage::formatters::lcov::tests::test_generate_line_hit_counts ... ok
+test coverage::formatters::lcov::tests::test_generate_with_test_name ... ok
+test coverage::formatters::lcov::tests::test_group_by_file ... ok
+test coverage::formatters::lcov::tests::test_generate_contains_end_of_record ... ok
+test coverage::formatters::lcov::tests::test_lcov_formatter_new ... ok
+test coverage::formatters::lcov::tests::test_lcov_formatter_with_test_name ... ok
+test coverage::tests::additional_block_tests::test_block_id_debug ... ok
+test coverage::formatters::lcov::tests::test_generate_contains_functions ... ok
+test coverage::tests::additional_block_tests::test_edge_id_ordering ... ok
+test coverage::tests::additional_block_tests::test_function_id_copy ... ok
+test coverage::formatters::html::tests::formatter_tests::test_save_creates_directory_and_file ... ok
+test coverage::tests::additional_block_tests::test_function_id_debug ... ok
+test coverage::tests::additional_block_tests::test_function_id_ordering ... ok
+test coverage::formatters::lcov::tests::test_generate_contains_line_data ... ok
+test coverage::tests::additional_collector_tests::test_coverage_config_debug ... ok
+test coverage::formatters::lcov::tests::test_save_creates_file ... ok
+test coverage::tests::additional_collector_tests::test_granularity_debug ... ok
+test coverage::tests::additional_block_tests::test_edge_id_debug ... ok
+test coverage::tests::additional_block_tests::test_edge_id_as_u64 ... ok
+test coverage::tests::additional_hypothesis_tests::test_hypothesis_empty_observations ... ok
+test coverage::tests::additional_hypothesis_tests::test_hypothesis_mutation_correlation ... ok
+test coverage::tests::additional_hypothesis_tests::test_nullification_config_custom ... ok
+test coverage::tests::additional_hypothesis_tests::test_coverage_hypothesis_debug ... ok
+test coverage::tests::additional_hypothesis_tests::test_nullification_config_default ... ok
+test coverage::tests::additional_collector_tests::test_granularity_variants ... ok
+test coverage::tests::additional_hypothesis_tests::test_nullification_result_is_significant ... ok
+test coverage::tests::additional_hypothesis_tests::test_nullification_result_report ... ok
+test coverage::tests::additional_jidoka_tests::test_coverage_violation_clone ... ok
+test coverage::tests::additional_jidoka_tests::test_coverage_violation_debug ... ok
+test coverage::tests::additional_jidoka_tests::test_jidoka_action_debug ... ok
+test coverage::tests::additional_jidoka_tests::test_jidoka_action_equality ... ok
+test coverage::tests::additional_jidoka_tests::test_tainted_blocks_new_empty ... ok
+test coverage::tests::additional_memory_tests::test_memory_view_debug ... ok
+test coverage::tests::additional_memory_tests::test_memory_view_empty ... ok
+test coverage::tests::additional_report_tests::test_block_coverage_default ... ok
+test coverage::tests::additional_report_tests::test_coverage_report_covered_blocks ... ok
+test coverage::tests::additional_report_tests::test_coverage_report_debug ... ok
+test coverage::tests::additional_report_tests::test_coverage_report_merge ... ok
+test coverage::tests::additional_report_tests::test_coverage_summary_debug ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_debug ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_builder_default ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_function_accessor ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_id_accessor ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_id_hashable ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_id_ordering ... ok
+test coverage::tests::additional_superblock_tests::test_superblock_iter ... ok
+test coverage::tests::additional_thread_local_tests::test_thread_local_debug ... ok
+test coverage::tests::additional_thread_local_tests::test_thread_local_increment_out_of_bounds ... ok
+test coverage::tests::additional_thread_local_tests::test_thread_local_out_of_bounds ... ok
+test coverage::tests::block_id_tests::test_block_id_copy_and_eq ... ok
+test coverage::tests::block_id_tests::test_block_id_hashable ... ok
+test coverage::tests::block_id_tests::test_block_id_inner_value ... ok
+test coverage::tests::block_id_tests::test_block_id_ordering ... ok
+test coverage::tests::collector_tests::test_coverage_config_builder ... ok
+test coverage::tests::collector_tests::test_coverage_config_defaults ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_checkpoint_interval ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_edge_granularity ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_max_blocks_zero ... ok
+test coverage::tests::comprehensive_collector_tests::test_granularity_clone ... ok
+test coverage::tests::comprehensive_collector_tests::test_granularity_path ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_config_accessor ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_affected_block_impossible_edge ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_affected_block_overflow ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_affected_block_regression ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_affected_block_uninstrumented ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_all_violations_accessor ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_description_overflow ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_defaults ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_description_regression ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_description_uninstrumented ... ok
+test coverage::tests::additional_collector_tests::test_collector_end_without_begin ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_covered_count ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_description_impossible_edge ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_read_counter_memory_overflow ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_read_counter_out_of_bounds ... ok
+test coverage::tests::comprehensive_report_tests::test_report_add_test ... ok
+test coverage::tests::comprehensive_memory_tests::test_memory_view_multiple_counters ... ok
+test coverage::tests::comprehensive_report_tests::test_report_block_coverages ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_record_violation_with_block ... ok
+test coverage::tests::comprehensive_report_tests::test_report_coverage_percent_direct ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_record_violation_without_block ... ok
+test coverage::tests::comprehensive_report_tests::test_report_default ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_tainted_blocks_accessor ... ok
+test coverage::tests::comprehensive_report_tests::test_report_is_covered ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_clone ... ok
+test coverage::tests::comprehensive_report_tests::test_report_is_tainted ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_tainted_blocks_clear ... ok
+test coverage::tests::comprehensive_report_tests::test_report_merge_source_locations ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_coverage_percent ... ok
+test coverage::tests::comprehensive_collector_tests::test_coverage_config_max_blocks ... ok
+test coverage::tests::comprehensive_report_tests::test_report_total_blocks ... ok
+test coverage::tests::comprehensive_report_tests::test_report_violations_accessor ... ok
+test coverage::tests::comprehensive_report_tests::test_report_merge_tests ... ok
+test coverage::tests::comprehensive_superblock_tests::test_superblock_blocks_accessor ... ok
+test coverage::tests::comprehensive_superblock_tests::test_superblock_builder_from_function_blocks ... ok
+test coverage::tests::comprehensive_report_tests::test_report_record_hits ... ok
+test coverage::tests::comprehensive_superblock_tests::test_superblock_builder_next_id ... ok
+test coverage::tests::comprehensive_report_tests::test_report_record_violation ... ok
+test coverage::tests::comprehensive_superblock_tests::test_superblock_clone ... ok
+test coverage::tests::comprehensive_report_tests::test_report_set_function_name ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_memory_size ... ok
+test coverage::tests::comprehensive_superblock_tests::test_superblock_set_cost_estimate ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_is_covered ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_auto_flush_at_threshold ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_has_pending ... ok
+test coverage::tests::comprehensive_memory_tests::test_memory_view_large_offset ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_with_flush_threshold ... ok
+test coverage::tests::edge_id_tests::test_edge_id_encoding ... ok
+test coverage::tests::edge_id_tests::test_edge_id_hashable ... ok
+test coverage::tests::comprehensive_report_tests::test_report_set_source_location ... ok
+test coverage::tests::edge_id_tests::test_edge_id_max_values ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_counter_base ... ok
+test coverage::tests::comprehensive_jidoka_tests::test_violations_for_block ... ok
+test coverage::tests::edge_id_tests::test_edge_id_uniqueness ... ok
+test coverage::tests::executor_tests::test_executor_empty ... ok
+test coverage::tests::executor_tests::test_executor_execute ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_is_test_active ... ok
+test coverage::tests::comprehensive_memory_coverage_tests::test_memory_view_coverage_percent_empty ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_jidoka_disabled ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_flush_resets ... ok
+test coverage::tests::executor_tests::test_executor_with_work_stealing ... ok
+test coverage::tests::executor_tests::test_executor_with_workers ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_default ... ok
+test coverage::tests::executor_tests::test_superblock_result_with_error ... ok
+test coverage::tests::comprehensive_report_tests::test_report_set_session_name ... ok
+test coverage::tests::function_id_tests::test_function_id_hashable ... ok
+test coverage::tests::function_id_tests::test_function_id_type_safety ... ok
+test coverage::tests::executor_tests::test_executor_execute_with_failure ... ok
+test coverage::tests::comprehensive_thread_local_coverage_tests::test_thread_local_block_count ... ok
+test coverage::tests::executor_tests::test_executor_new ... ok
+test coverage::tests::executor_tests::test_superblock_result ... ok
+test coverage::tests::jidoka_tests::test_counter_overflow_is_soft_stop ... ok
+test coverage::tests::jidoka_tests::test_coverage_regression_is_soft_stop ... ok
+test coverage::tests::hypothesis_tests::test_hypothesis_completeness ... ok
+test coverage::tests::jidoka_tests::test_impossible_edge_is_hard_stop ... ok
+test coverage::tests::hypothesis_tests::test_hypothesis_determinism ... ok
+test coverage::tests::jidoka_tests::test_tainted_blocks_no_duplicates ... ok
+test coverage::tests::jidoka_tests::test_tainted_blocks_tracking ... ok
+test coverage::tests::additional_collector_tests::test_collector_end_test_without_begin ... ok
+test coverage::tests::memory_view_tests::test_memory_view_read_all ... ok
+test coverage::tests::hypothesis_tests::test_nullification_config ... ok
+test coverage::tests::hypothesis_tests::test_nullification_result ... ok
+test coverage::tests::report_tests::test_report_coverage_percentage ... ok
+test coverage::tests::jidoka_tests::test_uninstrumented_execution_is_hard_stop ... ok
+test coverage::tests::report_tests::test_report_hit_counts ... ok
+test coverage::tests::memory_view_tests::test_memory_view_block_count ... ok
+test coverage::tests::report_tests::test_report_uncovered_blocks ... ok
+test coverage::tests::hypothesis_tests::test_hypothesis_no_regression ... ok
+test coverage::tests::memory_view_tests::test_memory_view_with_offset ... ok
+test coverage::tests::superblock_tests::test_superblock_builder_empty ... ok
+test coverage::tests::report_tests::test_block_coverage_source_location ... ok
+test coverage::tests::superblock_tests::test_superblock_builder_max_size ... ok
+test coverage::tests::memory_view_tests::test_memory_view_read_counter ... ok
+test coverage::tests::superblock_tests::test_superblock_builder_target_size ... ok
+test coverage::tests::superblock_tests::test_superblock_id_type ... ok
+test coverage::tests::thread_local_tests::test_thread_local_flush_all_blocks ... ok
+test coverage::tests::report_tests::test_report_zero_blocks ... ok
+test coverage::tests::superblock_tests::test_superblock_contains_blocks ... ok
+test coverage::tests::thread_local_tests::test_thread_local_flush_threshold ... ok
+test coverage::tests::thread_local_tests::test_thread_local_increment ... ok
+test coverage::tests::thread_local_tests::test_thread_local_manual_flush ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_record_stop_violation ... ok
+test coverage::tests::thread_local_tests::test_thread_local_init_zero ... ok
+test coverage::tests::superblock_tests::test_superblock_cost_estimate ... ok
+test driver::tests::element_handle_tests::test_element_handle_creation ... ok
+test driver::tests::element_handle_tests::test_element_handle_visibility ... ok
+test driver::tests::device_descriptor_tests::test_desktop_1080p ... ok
+test driver::tests::device_descriptor_tests::test_device_to_config ... ok
+test driver::tests::mock_driver_tests::test_mock_driver_add_element ... ok
+test driver::tests::mock_driver_tests::test_mock_driver_creation ... ok
+test driver::tests::device_descriptor_tests::test_iphone_14_pro ... ok
+test driver::tests::mock_driver_tests::test_mock_driver_history ... ok
+test driver::tests::driver_config_tests::test_config_builder ... ok
+test driver::tests::mock_driver_tests::test_mock_driver_was_called ... ok
+test driver::tests::driver_config_tests::test_config_default ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_is_session_active ... ok
+test driver::tests::screenshot_tests::test_screenshot_creation ... ok
+test driver::tests::screenshot_tests::test_screenshot_size_bytes ... ok
+test emulation::device::tests::device_descriptor_tests::test_builder_pattern ... ok
+test driver::tests::network_response_tests::test_not_found_response ... ok
+test emulation::device::tests::device_descriptor_tests::test_new ... ok
+test driver::tests::network_response_tests::test_json_response ... ok
+test emulation::device::tests::device_descriptor_tests::test_with_viewport ... ok
+test coverage::tests::comprehensive_collector_tests::test_collector_current_test ... ok
+test emulation::device::tests::device_emulator_tests::test_get_preset ... ok
+test driver::tests::page_metrics_tests::test_metrics_default ... ok
+test emulation::device::tests::device_emulator_tests::test_new_has_presets ... ok
+test emulation::device::tests::device_emulator_tests::test_register_custom_preset ... ok
+test driver::tests::screenshot_tests::test_screenshot_is_valid ... ok
+test emulation::device::tests::preset_tests::test_desktop_1080p ... ok
+test driver::tests::driver_config_tests::test_config_with_tracing ... ok
+test emulation::device::tests::preset_tests::test_ipad_mini ... ok
+test emulation::device::tests::device_emulator_tests::test_custom_device ... ok
+test emulation::device::tests::device_emulator_tests::test_get_nonexistent_preset ... ok
+test emulation::device::tests::preset_tests::test_samsung_galaxy_s23 ... ok
+test emulation::device::tests::touch_mode_tests::test_default ... ok
+test emulation::device::tests::preset_names::test_all_presets_available ... ok
+test emulation::device::tests::touch_mode_tests::test_is_enabled ... ok
+test coverage::tests::collector_tests::test_collector_session_state ... ok
+test emulation::geolocation::tests::test_error_priority ... ok
+test emulation::device::tests::preset_tests::test_desktop_4k ... ok
+test emulation::geolocation::tests::test_mock_add_custom_preset ... ok
+test emulation::geolocation::tests::test_mock_clear_error ... ok
+test emulation::geolocation::tests::test_mock_default ... ok
+test emulation::device::tests::preset_tests::test_ipad_pro ... ok
+test emulation::geolocation::tests::test_mock_disabled ... ok
+test emulation::device::tests::preset_tests::test_iphone_14 ... ok
+test emulation::geolocation::tests::test_mock_get_preset ... ok
+test emulation::geolocation::tests::test_mock_list_presets ... ok
+test emulation::geolocation::tests::test_mock_new ... ok
+test emulation::device::tests::preset_tests::test_iphone_14_pro ... ok
+test emulation::device::tests::preset_tests::test_iphone_14_pro_max ... ok
+test emulation::geolocation::tests::test_mock_permission_denied ... ok
+test emulation::geolocation::tests::test_mock_reset ... ok
+test emulation::device::tests::preset_tests::test_pixel_7 ... ok
+test emulation::geolocation::tests::test_mock_set_position ... ok
+test emulation::geolocation::tests::test_mock_set_preset ... ok
+test emulation::device::tests::preset_tests::test_pixel_7_pro ... ok
+test emulation::geolocation::tests::test_mock_set_preset_unknown ... ok
+test emulation::geolocation::tests::test_mock_simulate_error ... ok
+test emulation::device::tests::viewport_tests::test_default ... ok
+test emulation::geolocation::tests::test_position_builder_chain ... ok
+test emulation::device::tests::viewport_tests::test_is_landscape ... ok
+test emulation::device::tests::viewport_tests::test_is_portrait ... ok
+test emulation::device::tests::viewport_tests::test_landscape ... ok
+test emulation::device::tests::viewport_tests::test_new ... ok
+test emulation::device::tests::viewport_tests::test_portrait ... ok
+test emulation::geolocation::tests::test_error_equality ... ok
+test emulation::device::tests::preset_tests::test_desktop_1440p ... ok
+test emulation::geolocation::tests::test_mock_clear_position ... ok
+test coverage::tests::integration_tests::test_jidoka_integration ... ok
+test coverage::tests::collector_tests::test_collector_records_hits ... ok
+test emulation::geolocation::tests::test_position_equality ... ok
+test emulation::geolocation::tests::test_position_invalid_speed - should panic ... ok
+test emulation::geolocation::tests::test_mock_clone ... ok
+test emulation::geolocation::tests::test_position_invalid_latitude_high - should panic ... ok
+test emulation::geolocation::tests::test_position_invalid_longitude_low - should panic ... ok
+test emulation::geolocation::tests::test_position_invalid_latitude_low - should panic ... ok
+test coverage::tests::collector_tests::test_collector_test_state ... ok
+test emulation::geolocation::tests::test_position_with_heading ... ok
+test emulation::geolocation::tests::test_position_clone ... ok
+test emulation::geolocation::tests::test_position_invalid_accuracy - should panic ... ok
+test emulation::geolocation::tests::test_position_invalid_heading - should panic ... ok
+test emulation::geolocation::tests::test_position_with_speed ... ok
+test emulation::geolocation::tests::test_preset_berlin ... ok
+test emulation::geolocation::tests::test_preset_dubai ... ok
+test emulation::geolocation::tests::test_position_new ... ok
+test emulation::geolocation::tests::test_preset_london ... ok
+test emulation::geolocation::tests::test_preset_new_york ... ok
+test emulation::geolocation::tests::test_preset_san_francisco ... ok
+test emulation::geolocation::tests::test_preset_sao_paulo ... ok
+test emulation::geolocation::tests::test_preset_singapore ... ok
+test emulation::geolocation::tests::test_position_invalid_longitude_high - should panic ... ok
+test emulation::geolocation::tests::test_preset_sydney ... ok
+test emulation::geolocation::tests::test_preset_tokyo ... ok
+test emulation::geolocation::tests::test_preset_paris ... ok
+test emulation::geolocation::tests::test_position_with_altitude ... ok
+test fixture::tests::fixture_builder_tests::test_builder_with_fixture ... ok
+test fixture::tests::fixture_builder_tests::test_builder_and_setup ... ok
+test fixture::tests::fixture_manager_tests::test_clear ... ok
+test fixture::tests::fixture_manager_tests::test_failing_teardown ... ok
+test fixture::tests::fixture_builder_tests::test_builder_new ... ok
+test fixture::tests::fixture_manager_tests::test_failing_setup ... ok
+test fixture::tests::fixture_manager_tests::test_get_fixture ... ok
+test fixture::tests::fixture_manager_tests::test_get_unregistered_fixture ... ok
+test fixture::tests::fixture_manager_tests::test_list ... ok
+test fixture::tests::fixture_manager_tests::test_register_fixture ... ok
+test fixture::tests::fixture_manager_tests::test_new_manager ... ok
+test fixture::tests::fixture_manager_tests::test_reset ... ok
+test fixture::tests::fixture_manager_tests::test_setup_all ... ok
+test fixture::tests::fixture_manager_tests::test_setup_single_fixture ... ok
+test fixture::tests::fixture_manager_tests::test_state_before_setup ... ok
+test fixture::tests::fixture_manager_tests::test_teardown_all ... ok
+test fixture::tests::fixture_manager_tests::test_teardown_single_fixture ... ok
+test fixture::tests::fixture_manager_tests::test_unregister ... ok
+test fixture::tests::fixture_scope_tests::test_scope_auto_teardown ... ok
+test fixture::tests::fixture_scope_tests::test_scope_get_fixture ... ok
+test fixture::tests::fixture_state_tests::test_state_equality ... ok
+test fixture::tests::priority_tests::test_priority_order ... ok
+test fixture::tests::simple_fixture_tests::test_simple_fixture_creation ... ok
+test fixture::tests::simple_fixture_tests::test_simple_fixture_setup ... ok
+test fixture::tests::simple_fixture_tests::test_simple_fixture_teardown ... ok
+test fixture::tests::simple_fixture_tests::test_simple_fixture_with_priority ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_deterministic ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_generates_inputs ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_reset ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_tracks_count ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_generates_all_input_types ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_with_config ... ok
+test fuzzer::tests::invariant_tests::test_add_check ... ok
+test fuzzer::tests::invariant_tests::test_clear_violations ... ok
+test fuzzer::tests::fuzzer_tests::test_fuzzer_touch_within_viewport ... ok
+test fuzzer::tests::invariant_tests::test_invariant_checker_new ... ok
+test fuzzer::tests::invariant_tests::test_record_violation ... ok
+test fuzzer::tests::invariant_tests::test_standard_invariants ... ok
+test fuzzer::tests::seed_tests::test_seed_default ... ok
+test fuzzer::tests::seed_tests::test_seed_from_u64 ... ok
+test fuzzer::tests::xorshift_tests::test_xorshift_deterministic ... ok
+test fuzzer::tests::xorshift_tests::test_xorshift_different_seeds ... ok
+test fuzzer::tests::xorshift_tests::test_xorshift_f32_range ... ok
+test fuzzer::tests::xorshift_tests::test_xorshift_range ... ok
+test locator::tests::action_tests::test_click_action ... ok
+test coverage::tests::integration_tests::test_full_coverage_workflow ... ok
+test locator::tests::action_tests::test_drag_builder ... ok
+test locator::tests::action_tests::test_fill_action ... ok
+test locator::tests::additional_bounding_box_tests::test_bounding_box_contains_edge_cases ... ok
+test locator::tests::additional_bounding_box_tests::test_bounding_box_creation_and_fields ... ok
+test locator::tests::additional_drag_tests::test_drag_operation_custom_duration ... ok
+test locator::tests::additional_drag_tests::test_drag_operation_custom_steps ... ok
+test locator::tests::additional_drag_tests::test_drag_operation_defaults ... ok
+test locator::tests::additional_locator_tests::test_locator_action_locator_accessor ... ok
+test locator::tests::additional_locator_tests::test_locator_bounding_box ... ok
+test locator::tests::additional_locator_tests::test_locator_double_click ... ok
+test locator::tests::additional_locator_tests::test_locator_from_selector ... ok
+test locator::tests::additional_locator_tests::test_locator_query_locator_accessor ... ok
+test locator::tests::additional_locator_tests::test_locator_wait_for_hidden ... ok
+test locator::tests::additional_locator_tests::test_locator_wait_for_visible ... ok
+test locator::tests::additional_locator_tests::test_locator_with_text_non_css ... ok
+test locator::tests::additional_locator_tests::test_locator_with_visible ... ok
+test locator::tests::additional_locator_tests::test_selector_to_count_query_all_variants ... ok
+test locator::tests::additional_selector_tests::test_canvas_entity_count_query ... ok
+test locator::tests::additional_selector_tests::test_canvas_entity_selector ... ok
+test locator::tests::additional_selector_tests::test_css_with_text_count_query ... ok
+test locator::tests::additional_selector_tests::test_css_with_text_selector ... ok
+test locator::tests::additional_selector_tests::test_entity_count_query ... ok
+test locator::tests::additional_selector_tests::test_text_selector_count_query ... ok
+test locator::tests::additional_selector_tests::test_xpath_selector_count_query ... ok
+test locator::tests::additional_selector_tests::test_xpath_selector_query ... ok
+test locator::tests::bounding_box_tests::test_bounding_box_center ... ok
+test locator::tests::bounding_box_tests::test_bounding_box_contains ... ok
+test locator::tests::default_tests::test_default_poll_interval ... ok
+test fuzzer::tests::monte_carlo_simulation_tests::test_10k_steps_no_panic ... ok
+test locator::tests::default_tests::test_default_timeout ... ok
+test locator::tests::default_tests::test_locator_options_default ... ok
+test locator::tests::expect_tests::test_expect_to_be_visible ... ok
+test locator::tests::expect_tests::test_expect_to_have_count ... ok
+test locator::tests::expect_tests::test_expect_to_have_text ... ok
+test locator::tests::expect_tests::test_validate_contains_text_pass ... ok
+test locator::tests::expect_tests::test_validate_count_fail ... ok
+test locator::tests::expect_tests::test_validate_count_pass ... ok
+test locator::tests::expect_tests::test_validate_has_text_fail ... ok
+test locator::tests::expect_tests::test_validate_has_text_pass ... ok
+test locator::tests::locator_tests::test_locator_entity ... ok
+test locator::tests::locator_tests::test_locator_new ... ok
+test locator::tests::locator_tests::test_locator_strict_mode ... ok
+test locator::tests::locator_tests::test_locator_timeout ... ok
+test locator::tests::locator_tests::test_locator_with_text ... ok
+test locator::tests::point_tests::test_point_new ... ok
+test locator::tests::qa_checklist_locator_tests::test_empty_selector_rejection ... ok
+test locator::tests::qa_checklist_locator_tests::test_iframe_context_switching ... ok
+test locator::tests::qa_checklist_locator_tests::test_long_selector_limit ... ok
+test locator::tests::qa_checklist_locator_tests::test_shadow_dom_selector_support ... ok
+test locator::tests::qa_checklist_locator_tests::test_special_char_selector_escaping ... ok
+test locator::tests::query_tests::test_count_query ... ok
+test locator::tests::query_tests::test_is_visible_query ... ok
+test locator::tests::query_tests::test_text_content_query ... ok
+test locator::tests::selector_tests::test_count_query ... ok
+test locator::tests::selector_tests::test_css_selector ... ok
+test locator::tests::selector_tests::test_entity_selector ... ok
+test locator::tests::selector_tests::test_test_id_selector ... ok
+test locator::tests::selector_tests::test_text_selector ... ok
+test media::gif_recorder::tests::gif_config_tests::test_default_config ... ok
+test media::gif_recorder::tests::gif_config_tests::test_fps_clamping ... ok
+test media::gif_recorder::tests::gif_config_tests::test_frame_delay_calculation ... ok
+test media::gif_recorder::tests::gif_config_tests::test_new_config ... ok
+test media::gif_recorder::tests::gif_config_tests::test_quality_clamping ... ok
+test media::gif_recorder::tests::gif_config_tests::test_with_fps ... ok
+test media::gif_recorder::tests::gif_config_tests::test_with_loop_count ... ok
+test media::gif_recorder::tests::gif_config_tests::test_with_quality ... ok
+test media::gif_recorder::tests::gif_frame_tests::test_new_frame ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_add_frame ... ok
+test media::gif_recorder::tests::gif_frame_tests::test_frame_from_screenshot ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_new_recorder ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_start_recording ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_start_recording_twice_fails ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_stop_without_frames_fails ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_save_without_encoding_fails ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_stop_without_start_fails ... ok
+test media::png_exporter::tests::annotation_tests::test_highlight_annotation ... ok
+test media::png_exporter::tests::annotation_tests::test_rectangle_annotation ... ok
+test media::png_exporter::tests::annotation_tests::test_with_color ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_stop_recording ... ok
+test media::png_exporter::tests::annotation_tests::test_with_label ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_multiple_frames ... ok
+test media::png_exporter::tests::blend_tests::test_blend_full_alpha ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_save_gif ... ok
+test media::png_exporter::tests::blend_tests::test_blend_zero_alpha ... ok
+test media::png_exporter::tests::compression_level_tests::test_compression_levels ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_all_compression_to_png_conversion ... ok
+test media::png_exporter::tests::compression_level_tests::test_default_compression ... ok
+test media::png_exporter::tests::blend_tests::test_blend_half_alpha ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_exporter_default ... ok
+test media::png_exporter::tests::png_exporter_tests::test_new_exporter ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_metadata_with_timestamp ... ok
+test media::png_exporter::tests::png_exporter_tests::test_with_compression ... ok
+test media::png_exporter::tests::png_exporter_tests::test_with_metadata ... ok
+test media::png_exporter::tests::png_metadata_tests::test_chained_builders ... ok
+test media::png_exporter::tests::png_metadata_tests::test_default_metadata ... ok
+test media::png_exporter::tests::png_metadata_tests::test_with_description ... ok
+test media::png_exporter::tests::png_metadata_tests::test_with_test_name ... ok
+test media::png_exporter::tests::png_metadata_tests::test_with_title ... ok
+test media::svg_exporter::tests::svg_shape_tests::test_shape_builders ... ok
+test media::svg_exporter::tests::helper_tests::test_base64_encode ... ok
+test media::svg_exporter::tests::annotation_tests::test_all_annotation_types ... ok
+test media::svg_exporter::tests::helper_tests::test_escape_xml ... ok
+test media::svg_exporter::tests::svg_config_tests::test_builder_chain ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_compression_none ... ok
+test media::svg_exporter::tests::svg_config_tests::test_new_with_dimensions ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_exporter_with_config ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_minified_output ... ok
+test media::video_recorder::tests::encoded_frame_tests::test_encoded_frame_creation ... ok
+test media::svg_exporter::tests::annotation_tests::test_annotation_with_label ... ok
+test media::svg_exporter::tests::helper_tests::test_base64_encode_binary ... ok
+test media::video_recorder::tests::recording_state_tests::test_state_equality ... ok
+test media::svg_exporter::tests::helper_tests::test_color_to_svg ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_default_exporter ... ok
+test media::video_recorder::tests::video_codec_tests::test_codec_equality ... ok
+test media::video_recorder::tests::video_codec_tests::test_default_codec ... ok
+test media::svg_exporter::tests::svg_config_tests::test_default_config ... ok
+test media::video_recorder::tests::video_config_tests::test_config_builder ... ok
+test media::svg_exporter::tests::svg_shape_tests::test_from_shapes ... ok
+test media::video_recorder::tests::video_config_tests::test_config_new ... ok
+test media::svg_exporter::tests::property_tests::prop_viewbox_matches_config ... ok
+test media::video_recorder::tests::video_config_tests::test_default_config ... ok
+test media::video_recorder::tests::mp4_generation_tests::test_mp4_has_correct_structure ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_from_screenshot ... ok
+test media::svg_exporter::tests::property_tests::prop_svg_always_valid_xml ... ok
+test media::video_recorder::tests::video_config_tests::test_fps_clamping ... ok
+test media::video_recorder::tests::video_config_tests::test_frame_duration ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_from_screenshot_with_annotations ... ok
+test media::video_recorder::tests::video_config_tests::test_timescale ... ok
+test media::video_recorder::tests::video_recorder_tests::test_new_recorder ... ok
+test media::video_recorder::tests::video_recorder_tests::test_start_recording ... ok
+test media::svg_exporter::tests::svg_shape_tests::test_group_shapes ... ok
+test media::svg_exporter::tests::svg_exporter_tests::test_with_title_and_description ... ok
+test media::video_recorder::tests::video_recorder_tests::test_stop_without_frames_error ... ok
+test media::video_recorder::tests::video_recorder_tests::test_stop_without_start_error ... ok
+test media::video_recorder::tests::video_recorder_tests::test_config_accessor ... ok
+test media::video_recorder::tests::video_config_tests::test_jpeg_quality_clamping ... ok
+test network::tests::captured_request_tests::test_body_json ... ok
+test media::video_recorder::tests::video_recorder_tests::test_capture_raw_frame ... ok
+test media::png_exporter::tests::png_exporter_tests::test_save ... ok
+test network::tests::http_method_tests::test_from_str ... ok
+test network::tests::http_method_tests::test_matches ... ok
+test media::video_recorder::tests::video_recorder_tests::test_double_start_error ... ok
+test network::tests::mock_response_tests::test_default ... ok
+test network::tests::captured_request_tests::test_body_string ... ok
+test network::tests::mock_response_tests::test_with_header ... ok
+test network::tests::mock_response_tests::test_with_status ... ok
+test network::tests::network_interception_builder_tests::test_builder ... ok
+test network::tests::network_interception_builder_tests::test_builder_with_route ... ok
+test network::tests::http_method_tests::test_as_str ... ok
+test network::tests::captured_request_tests::test_new ... ok
+test network::tests::network_interception_tests::test_add_routes ... ok
+test network::tests::network_interception_tests::test_assert_requested_times ... ok
+test network::tests::mock_response_tests::test_json ... ok
+test network::tests::network_interception_tests::test_block_unmatched ... ok
+test network::tests::network_interception_tests::test_capture_requests ... ok
+test network::tests::network_interception_tests::test_clear_captured ... ok
+test network::tests::mock_response_tests::test_error ... ok
+test network::tests::mock_response_tests::test_text ... ok
+test network::tests::network_interception_tests::test_clear_routes ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_capture_frame_without_start_fails ... ok
+test network::tests::mock_response_tests::test_with_delay ... ok
+test network::tests::network_interception_tests::test_assert_not_requested ... ok
+test network::tests::route_tests::test_times ... ok
+test network::tests::url_pattern_tests::test_any ... ok
+test network::tests::url_pattern_tests::test_contains ... ok
+test network::tests::network_interception_tests::test_handle_request ... ok
+test network::tests::url_pattern_tests::test_exact ... ok
+test page_object::tests::page_object_builder_tests::test_default_builder ... ok
+test network::tests::network_interception_tests::test_new ... ok
+test network::tests::network_interception_tests::test_requests_by_method ... ok
+test network::tests::network_interception_tests::test_requests_matching ... ok
+test network::tests::network_interception_tests::test_start_stop ... ok
+test network::tests::route_tests::test_exhausted_route_no_longer_matches ... ok
+test network::tests::route_tests::test_is_exhausted ... ok
+test network::tests::route_tests::test_matches ... ok
+test network::tests::route_tests::test_new ... ok
+test network::tests::route_tests::test_record_match ... ok
+test network::tests::network_interception_tests::test_assert_requested ... ok
+test page_object::tests::page_object_trait_tests::test_custom_page_object ... ok
+test network::tests::network_interception_tests::test_handle_request_no_match ... ok
+test page_object::tests::page_object_trait_tests::test_page_name ... ok
+test network::tests::url_pattern_tests::test_prefix ... ok
+test network::tests::url_pattern_tests::test_glob ... ok
+test page_object::tests::page_object_builder_tests::test_builder_basic ... ok
+test media::video_recorder::tests::video_recorder_tests::test_capture_without_start_error ... ok
+test media::gif_recorder::tests::property_tests::prop_fps_always_valid ... ok
+test page_object::tests::page_object_builder_tests::test_builder_with_locators ... ok
+test media::gif_recorder::tests::property_tests::prop_frame_delay_always_positive ... ok
+test page_object::tests::page_registry_tests::test_list_pages ... ok
+test page_object::tests::page_registry_tests::test_new_registry ... ok
+test media::gif_recorder::tests::property_tests::prop_config_dimensions_preserved ... ok
+test page_object::tests::page_registry_tests::test_register_and_get ... ok
+test page_object::tests::simple_page_object_tests::test_add_locator ... ok
+test page_object::tests::simple_page_object_tests::test_is_loaded_default ... ok
+test page_object::tests::simple_page_object_tests::test_new ... ok
+test media::gif_recorder::tests::property_tests::prop_quality_always_valid ... ok
+test page_object::tests::url_matcher_tests::test_complex_pattern ... ok
+test page_object::tests::url_matcher_tests::test_extract_params ... ok
+test page_object::tests::url_matcher_tests::test_literal_match ... ok
+test page_object::tests::url_matcher_tests::test_parameter_match ... ok
+test page_object::tests::url_matcher_tests::test_pattern_getter ... ok
+test page_object::tests::url_matcher_tests::test_wildcard_match ... ok
+test performance::tests::measurement_tests::test_frame_time ... ok
+test performance::tests::measurement_tests::test_memory ... ok
+test performance::tests::measurement_tests::test_new ... ok
+test performance::tests::measurement_tests::test_timing ... ok
+test performance::tests::measurement_tests::test_with_tag ... ok
+test performance::tests::measurement_tests::test_with_timestamp ... ok
+test performance::tests::metric_stats_tests::test_empty ... ok
+test performance::tests::metric_stats_tests::test_multiple_values ... ok
+test performance::tests::metric_stats_tests::test_percentiles ... ok
+test performance::tests::metric_stats_tests::test_single_value ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_capture_frame ... ok
+test performance::tests::metric_stats_tests::test_std_dev ... ok
+test performance::tests::performance_monitor_tests::test_assert_performance ... ok
+test performance::tests::performance_monitor_tests::test_current_fps ... ok
+test performance::tests::performance_monitor_tests::test_frame_drops ... ok
+test performance::tests::performance_monitor_tests::test_is_not_within_target ... ok
+test performance::tests::performance_monitor_tests::test_is_within_target ... ok
+test performance::tests::performance_monitor_tests::test_new ... ok
+test performance::tests::performance_monitor_tests::test_record_frame_time ... ok
+test performance::tests::performance_monitor_tests::test_reset ... ok
+test performance::tests::performance_monitor_tests::test_with_target_fps ... ok
+test performance::tests::performance_profile_tests::test_add ... ok
+test performance::tests::performance_profile_tests::test_check_thresholds ... ok
+test performance::tests::performance_profile_tests::test_metric_names ... ok
+test performance::tests::performance_profile_tests::test_new ... ok
+test performance::tests::performance_profile_tests::test_stats ... ok
+test performance::tests::performance_profile_tests::test_summary ... ok
+test performance::tests::performance_profiler_builder_tests::test_builder ... ok
+test performance::tests::performance_profiler_tests::test_add_threshold ... ok
+test performance::tests::performance_profiler_tests::test_new ... ok
+test performance::tests::performance_profiler_tests::test_record ... ok
+test performance::tests::performance_profiler_tests::test_record_when_inactive ... ok
+test performance::tests::performance_profiler_tests::test_start_stop ... ok
+test performance::tests::performance_threshold_tests::test_check_max_fails ... ok
+test performance::tests::performance_threshold_tests::test_check_mean_fails ... ok
+test performance::tests::performance_threshold_tests::test_check_p95_fails ... ok
+test performance::tests::performance_threshold_tests::test_check_passes ... ok
+test performance::tests::performance_threshold_tests::test_new ... ok
+test performance::tests::performance_threshold_tests::test_with_max ... ok
+test replay::tests::replay_header_tests::test_new ... ok
+test replay::tests::replay_header_tests::test_with_fps ... ok
+test replay::tests::replay_player_tests::test_get_frame_inputs ... ok
+test replay::tests::replay_player_tests::test_new ... ok
+test replay::tests::replay_player_tests::test_pause_resume ... ok
+test replay::tests::replay_player_tests::test_playback_completion ... ok
+test replay::tests::replay_player_tests::test_progress ... ok
+test replay::tests::replay_player_tests::test_seek ... ok
+test replay::tests::file_io_tests::test_save_and_load_json ... ok
+test replay::tests::replay_player_tests::test_verify_state_fail ... ok
+test replay::tests::replay_player_tests::test_verify_state_pass ... ok
+test replay::tests::replay_recorder_tests::test_checkpoint ... ok
+test replay::tests::replay_recorder_tests::test_new ... ok
+test replay::tests::replay_recorder_tests::test_stop_recording ... ok
+test replay::tests::replay_recorder_tests::test_record_input ... ok
+test replay::tests::replay_tests::test_add_checkpoint ... ok
+test replay::tests::replay_tests::test_add_input ... ok
+test replay::tests::replay_tests::test_checkpoint_at_or_before ... ok
+test replay::tests::file_io_tests::test_save_and_load_yaml ... ok
+test media::png_exporter::tests::property_tests::prop_annotation_bounds_respected ... ok
+test replay::tests::replay_tests::test_compute_checksum ... ok
+test replay::tests::replay_tests::test_inputs_at_frame ... ok
+test replay::tests::replay_tests::test_finalize_and_verify ... ok
+test replay::tests::replay_tests::test_metadata ... ok
+test replay::tests::replay_tests::test_new ... ok
+test replay::tests::state_checkpoint_tests::test_new ... ok
+test replay::tests::state_checkpoint_tests::test_with_data ... ok
+test media::png_exporter::tests::property_tests::prop_blend_channel_in_range ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_annotation_at_image_boundary ... ok
+test network::tests::url_pattern_tests::test_regex ... ok
+test media::png_exporter::tests::annotation_kind_tests::test_arrow_annotation ... ok
+test replay::tests::timed_input_tests::test_new ... ok
+test reporter::tests::additional_coverage_tests::test_render_html_with_visual_diffs ... ok
+test reporter::tests::additional_coverage_tests::test_reporter_add_screenshot ... ok
+test assertion::retry::tests::retry_assertion::test_eventual_pass ... ok
+test reporter::tests::additional_coverage_tests::test_reporter_add_trace ... ok
+test reporter::tests::additional_coverage_tests::test_reporter_start ... ok
+test reporter::tests::additional_coverage_tests::test_reporter_add_visual_diff ... ok
+test reporter::tests::additional_coverage_tests::test_generate_junit_to_file ... ok
+test reporter::tests::additional_coverage_tests::test_with_screenshot ... ok
+test reporter::tests::additional_coverage_tests::test_reporter_results_accessor ... ok
+test reporter::tests::escape_xml_tests::test_escape_special_chars ... ok
+test reporter::tests::additional_coverage_tests::test_generate_html_to_file ... ok
+test reporter::tests::escape_xml_tests::test_no_escape_needed ... ok
+test reporter::tests::failure_mode_tests::test_default_failure_mode ... ok
+test reporter::tests::reporter_tests::test_andon_cord_pulled ... ok
+test reporter::tests::reporter_tests::test_andon_reporter ... ok
+test media::png_exporter::tests::png_exporter_tests::test_save_with_annotations ... ok
+test reporter::tests::reporter_tests::test_collect_all_continues ... ok
+test reporter::tests::reporter_tests::test_collect_all_reporter ... ok
+test reporter::tests::reporter_tests::test_failures ... ok
+test reporter::tests::reporter_tests::test_new_reporter ... ok
+test reporter::tests::reporter_tests::test_pass_rate ... ok
+test reporter::tests::reporter_tests::test_pass_rate_empty ... ok
+test media::gif_recorder::tests::gif_recorder_tests::test_frame_resizing ... ok
+test reporter::tests::reporter_tests::test_record_passing ... ok
+test reporter::tests::reporter_tests::test_summary ... ok
+test reporter::tests::reporter_tests::test_render_junit ... ok
+test reporter::tests::reporter_tests::test_total_duration ... ok
+test reporter::tests::reporter_tests::test_render_html ... ok
+test media::png_exporter::tests::annotation_kind_tests::test_circle_annotation ... ok
+test reporter::tests::test_result_entry_tests::test_passed_result ... ok
+test media::png_exporter::tests::png_exporter_tests::test_export ... ok
+test reporter::tests::reporter_tests::test_with_name ... ok
+test reporter::tests::trace_data_tests::test_add_step ... ok
+test reporter::tests::test_result_entry_tests::test_skipped_result ... ok
+test reporter::tests::trace_data_tests::test_average_fps ... ok
+test reporter::tests::test_result_entry_tests::test_with_stack_trace ... ok
+test reporter::tests::trace_data_tests::test_average_fps_empty ... ok
+test reporter::tests::test_status_tests::test_status_is_failed ... ok
+test reporter::tests::trace_data_tests::test_new_trace ... ok
+test reporter::tests::test_result_entry_tests::test_failed_result ... ok
+test reporter::tests::test_status_tests::test_status_is_passed ... ok
+test runtime::tests::component_id_tests::test_component_id_of_type ... ok
+test runtime::tests::component_id_tests::test_component_id_raw ... ok
+test media::png_exporter::tests::png_exporter_tests::test_export_with_annotations ... ok
+test runtime::tests::entity_id_tests::test_entity_id_creation ... ok
+test reporter::tests::trace_data_tests::test_peak_memory ... ok
+test runtime::tests::execution_sandboxing_tests::test_timing_attack_mitigation ... ok
+test runtime::tests::entity_id_tests::test_entity_id_hash ... ok
+test runtime::tests::entity_id_tests::test_entity_id_equality ... ok
+test runtime::tests::frame_result_tests::test_frame_result_creation ... ok
+test runtime::tests::game_host_state_tests::test_host_state_default ... ok
+test runtime::tests::execution_sandboxing_tests::test_wasm_fs_isolation ... ok
+test runtime::tests::game_host_state_tests::test_host_state_multiple_snapshots ... ok
+test runtime::tests::execution_sandboxing_tests::test_wasm_net_isolation ... ok
+test runtime::tests::game_host_state_tests::test_host_state_pop_input ... ok
+test runtime::tests::game_host_state_tests::test_host_state_record_snapshot ... ok
+test runtime::tests::host_function_safety_tests::test_buffer_overflow_prevention ... ok
+test runtime::tests::execution_sandboxing_tests::test_wasm_proc_isolation ... ok
+test runtime::tests::host_function_safety_tests::test_null_deref_handling ... ok
+test runtime::tests::host_function_safety_tests::test_invalid_ptr_rejection ... ok
+test runtime::tests::host_function_safety_tests::test_type_confusion_prevention ... ok
+test runtime::tests::host_function_safety_tests::test_reentrancy_prevention ... ok
+test runtime::tests::memory_safety_tests::test_memory_leak_detection ... ok
+test runtime::tests::memory_safety_tests::test_no_double_free ... ok
+test runtime::tests::memory_view_tests::test_memory_view_creation ... ok
+test runtime::tests::memory_safety_tests::test_stack_overflow_protection ... ok
+test runtime::tests::memory_view_tests::test_memory_view_read_at ... ok
+test runtime::tests::memory_view_tests::test_memory_view_read_at_out_of_bounds ... ok
+test runtime::tests::memory_view_tests::test_memory_view_read_slice ... ok
+test runtime::tests::memory_view_tests::test_memory_view_read_slice_out_of_bounds ... ok
+test runtime::tests::memory_view_tests::test_memory_view_with_component_arrays ... ok
+test runtime::tests::memory_view_tests::test_memory_view_with_entity_table ... ok
+test media::png_exporter::tests::annotation_kind_tests::test_filled_rectangle_annotation ... ok
+test runtime::tests::runtime_config_tests::test_config_default ... ok
+test runtime::tests::runtime_config_tests::test_config_with_fuel_limit ... ok
+test runtime::tests::runtime_config_tests::test_config_with_threads ... ok
+test runtime::tests::state_delta_tests::test_delta_apply ... ok
+test runtime::tests::state_delta_tests::test_delta_compute_extension ... ok
+test runtime::tests::state_delta_tests::test_delta_compute_identical ... ok
+test runtime::tests::state_delta_tests::test_delta_compute_multiple_changes ... ok
+test runtime::tests::state_delta_tests::test_delta_compute_single_change ... ok
+test runtime::tests::state_delta_tests::test_delta_verify_checksum ... ok
+test runtime::tests::state_delta_tests::test_delta_verify_checksum_fails ... ok
+test runtime::tests::state_delta_tests::test_empty_delta ... ok
+test runtime::tests::wasm_module_loading_tests::test_wasm_circular_import_detection ... ok
+test runtime::tests::wasm_module_loading_tests::test_wasm_invalid_corrupted_binary ... ok
+test runtime::tests::wasm_module_loading_tests::test_wasm_missing_exports_detection ... ok
+test runtime::tests::wasm_module_loading_tests::test_wasm_oversized_module_limit ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_clamp_bounds ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_mouse_click_input ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_touch_input ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_movement_keys ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_unknown_key ... ok
+test simulation::tests::additional_coverage_tests::test_game_state_touch_close_no_move ... ok
+test simulation::tests::additional_coverage_tests::test_recording_mark_completed ... ok
+test simulation::tests::additional_coverage_tests::test_recording_mark_failed ... ok
+test simulation::tests::additional_coverage_tests::test_replay_result_diverged ... ok
+test simulation::tests::agent_tests::test_random_walk_agent_deterministic ... ok
+test simulation::tests::config_tests::test_config_as_seed ... ok
+test simulation::tests::config_tests::test_config_builder ... ok
+test simulation::tests::config_tests::test_config_default ... ok
+test runtime::tests::wasm_module_loading_tests::test_wasm_concurrent_load_safety ... ok
+test simulation::tests::game_state_tests::test_game_state_deterministic ... ok
+test simulation::tests::game_state_tests::test_game_state_hash_changes ... ok
+test simulation::tests::game_state_tests::test_game_state_initial ... ok
+test simulation::tests::game_state_tests::test_game_state_movement ... ok
+test simulation::tests::recording_tests::test_recording_add_frame ... ok
+test simulation::tests::recording_tests::test_recording_duration ... ok
+test simulation::tests::recording_tests::test_recording_new ... ok
+test simulation::tests::simulation_tests::test_run_simulation_completes ... ok
+test simulation::tests::replay_tests::test_replay_verifies_determinism ... ok
+test tests::assertion_tests::test_assertion_approx_eq_fail ... ok
+test tests::assertion_tests::test_assertion_approx_eq_pass ... ok
+test tests::assertion_tests::test_assertion_contains_fail ... ok
+test simulation::tests::simulation_tests::test_simulation_deterministic ... ok
+test tests::assertion_tests::test_assertion_contains_pass ... ok
+test simulation::tests::simulation_tests::test_simulation_different_seeds ... ok
+test tests::assertion_tests::test_assertion_equals_fail ... ok
+test tests::assertion_tests::test_assertion_has_length_empty ... ok
+test tests::assertion_tests::test_assertion_equals_pass ... ok
+test tests::assertion_tests::test_assertion_has_length_fail ... ok
+test tests::assertion_tests::test_assertion_has_length_pass ... ok
+test tests::assertion_tests::test_assertion_is_err_pass ... ok
+test tests::assertion_tests::test_assertion_is_false_fail ... ok
+test simulation::tests::agent_tests::test_random_walk_simulation ... ok
+test tests::assertion_tests::test_assertion_is_false_pass ... ok
+test tests::assertion_tests::test_assertion_in_range_at_boundaries ... ok
+test tests::assertion_tests::test_assertion_is_none_fail ... ok
+test tests::assertion_tests::test_assertion_is_none_pass ... ok
+test tests::assertion_tests::test_assertion_is_ok_fail ... ok
+test tests::assertion_tests::test_assertion_in_range_pass ... ok
+test tests::assertion_tests::test_assertion_is_ok_pass ... ok
+test tests::assertion_tests::test_assertion_in_range_fail ... ok
+test tests::assertion_tests::test_assertion_is_some_fail ... ok
+test tests::assertion_tests::test_assertion_is_err_fail ... ok
+test tests::assertion_tests::test_assertion_is_some_pass ... ok
+test tests::assertion_tests::test_assertion_is_true_pass ... ok
+test tests::assertion_tests::test_assertion_result_fail ... ok
+test tests::assertion_tests::test_assertion_result_pass ... ok
+test tests::assertion_tests::test_assertion_is_true_fail ... ok
+test tests::browser_tests::test_browser_config_builder ... ok
+test tests::browser_tests::test_browser_config_defaults ... ok
+test tests::error_tests::test_probar_error_display ... ok
+test tests::error_tests::test_probar_error_timeout ... ok
+test tests::harness_tests::test_harness_default ... ok
+test tests::harness_tests::test_harness_run_empty_suite ... ok
+test tests::harness_tests::test_harness_with_fail_fast ... ok
+test tests::harness_tests::test_harness_with_parallel ... ok
+test tests::harness_tests::test_suite_results_all_passed ... ok
+test tests::harness_tests::test_suite_results_counts ... ok
+test tests::harness_tests::test_suite_results_failures ... ok
+test tests::harness_tests::test_suite_results_not_all_passed ... ok
+test tests::harness_tests::test_test_case_creation ... ok
+test tests::harness_tests::test_test_case_with_timeout ... ok
+test tests::harness_tests::test_test_result_fail ... ok
+test tests::harness_tests::test_test_result_pass ... ok
+test tests::harness_tests::test_test_result_with_duration ... ok
+test tests::harness_tests::test_test_suite_add_test ... ok
+test tests::harness_tests::test_test_suite_creation ... ok
+test tests::input_event_tests::test_input_event_equality ... ok
+test tests::input_event_tests::test_input_event_gamepad_button_pressed ... ok
+test tests::input_event_tests::test_input_event_gamepad_button_released ... ok
+test tests::input_event_tests::test_input_event_key_press ... ok
+test tests::input_event_tests::test_input_event_key_release ... ok
+test tests::input_event_tests::test_input_event_mouse_click ... ok
+test tests::input_event_tests::test_input_event_mouse_move ... ok
+test tests::input_event_tests::test_input_event_touch ... ok
+test tests::input_event_tests::test_touch_action_equality ... ok
+test tests::input_event_tests::test_touch_equality ... ok
+test tests::input_event_tests::test_touch_hold_full_properties ... ok
+test tests::input_event_tests::test_touch_swipe_full_properties ... ok
+test tests::input_event_tests::test_touch_tap_coordinates ... ok
+test tests::snapshot_tests::test_snapshot_config_chained_builders ... ok
+test tests::snapshot_tests::test_snapshot_config_default ... ok
+test tests::snapshot_tests::test_snapshot_config_with_dir ... ok
+test tests::snapshot_tests::test_snapshot_config_with_threshold ... ok
+test tests::snapshot_tests::test_snapshot_config_with_update ... ok
+test tests::snapshot_tests::test_snapshot_creation ... ok
+test tests::snapshot_tests::test_snapshot_diff_different ... ok
+test tests::snapshot_tests::test_snapshot_diff_different_lengths ... ok
+test tests::snapshot_tests::test_snapshot_diff_empty ... ok
+test tests::snapshot_tests::test_snapshot_diff_identical ... ok
+test tests::snapshot_tests::test_snapshot_diff_within_threshold ... ok
+test tests::snapshot_tests::test_snapshot_size ... ok
+test performance::tests::performance_profiler_tests::test_measure ... ok
+test tests::snapshot_tests::test_snapshot_with_dimensions ... ok
+test tests::touch_tests::test_touch_hold ... ok
+test tests::touch_tests::test_touch_swipe ... ok
+test tests::touch_tests::test_touch_tap ... ok
+test tracing_support::tests::execution_tracer_tests::test_info_warn_error ... ok
+test tracing_support::tests::execution_tracer_tests::test_max_events_limit ... ok
+test tracing_support::tests::execution_tracer_tests::test_nested_spans ... ok
+test tracing_support::tests::execution_tracer_tests::test_new ... ok
+test tracing_support::tests::execution_tracer_tests::test_record_console ... ok
+test tracing_support::tests::execution_tracer_tests::test_record_network ... ok
+test tracing_support::tests::execution_tracer_tests::test_start_and_end_span ... ok
+test tracing_support::tests::execution_tracer_tests::test_start_stop ... ok
+test tracing_support::tests::network_event_tests::test_complete ... ok
+test tracing_support::tests::network_event_tests::test_fail ... ok
+test tracing_support::tests::network_event_tests::test_new ... ok
+test tracing_support::tests::trace_archive_tests::test_error_spans ... ok
+test tracing_support::tests::trace_archive_tests::test_events_by_category ... ok
+test tracing_support::tests::trace_archive_tests::test_failed_requests ... ok
+test tracing_support::tests::trace_archive_tests::test_new ... ok
+test tracing_support::tests::trace_archive_tests::test_spans_by_name ... ok
+test tracing_support::tests::traced_event_tests::test_add_attribute ... ok
+test tracing_support::tests::traced_event_tests::test_new ... ok
+test tracing_support::tests::traced_event_tests::test_with_level ... ok
+test tracing_support::tests::traced_event_tests::test_with_message ... ok
+test tracing_support::tests::traced_span_tests::test_add_attribute ... ok
+test tracing_support::tests::traced_span_tests::test_end ... ok
+test tracing_support::tests::traced_span_tests::test_mark_error ... ok
+test tracing_support::tests::trace_archive_tests::test_save_and_load ... ok
+test tracing_support::tests::traced_span_tests::test_new ... ok
+test tracing_support::tests::traced_span_tests::test_with_parent ... ok
+test tracing_support::tests::tracing_config_tests::test_capture_all ... ok
+test tracing_support::tests::tracing_config_tests::test_capture_none ... ok
+test tracing_support::tests::tracing_config_tests::test_default ... ok
+test tracing_support::tests::tracing_config_tests::test_with_max_events ... ok
+test tui::assertions::tests::frame_assertion_tests::test_line_to_contain_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_line_to_contain_invalid_line ... ok
+test simulation::tests::replay_tests::test_replay_full_session ... ok
+test tui::assertions::tests::frame_assertion_tests::test_line_to_contain_pass ... ok
+test tui::assertions::tests::frame_assertion_tests::test_line_to_equal_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_line_to_equal_pass ... ok
+test tui::assertions::tests::frame_assertion_tests::test_not_to_contain_text_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_not_to_contain_text_pass ... ok
+test tui::assertions::tests::frame_assertion_tests::test_soft_assertions_collect_errors ... ok
+test tui::assertions::tests::frame_assertion_tests::test_soft_assertions_no_errors ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_be_identical_to_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_be_identical_to_pass ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_contain_text_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_contain_text_pass ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_have_size_fail ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_have_size_pass ... ok
+test tui::assertions::tests::multi_value_tracker_tests::test_assert_bounds_fail ... ok
+test tui::assertions::tests::multi_value_tracker_tests::test_assert_bounds_pass ... ok
+test tui::assertions::tests::multi_value_tracker_tests::test_names ... ok
+test tui::assertions::tests::multi_value_tracker_tests::test_record_and_get ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_empty_stats ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_is_decreasing ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_is_increasing ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_is_not_increasing ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_min_max_average ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_rate_of_change ... ok
+test tui::assertions::tests::value_tracker_f64_tests::test_rate_of_change_no_time ... ok
+test tui::assertions::tests::frame_assertion_tests::test_chained_assertions ... ok
+test tui::assertions::tests::value_tracker_tests::test_at ... ok
+test tui::assertions::tests::value_tracker_tests::test_change_count ... ok
+test tui::assertions::tests::value_tracker_tests::test_clear ... ok
+test tui::assertions::tests::value_tracker_tests::test_has_changed ... ok
+test tui::assertions::tests::value_tracker_tests::test_new ... ok
+test tui::assertions::tests::value_tracker_tests::test_record_and_latest ... ok
+test tui::backend::tests::tui_frame_tests::test_as_text ... ok
+test tui::backend::tests::tui_frame_tests::test_contains ... ok
+test tui::backend::tests::tui_frame_tests::test_diff ... ok
+test tui::backend::tests::tui_frame_tests::test_diff_identical ... ok
+test tui::backend::tests::tui_frame_tests::test_from_lines ... ok
+test tui::backend::tests::tui_frame_tests::test_is_identical ... ok
+test tui::backend::tests::tui_frame_tests::test_line_access ... ok
+test tui::backend::tests::tui_test_backend_tests::test_capture_frame ... ok
+test tui::backend::tests::tui_test_backend_tests::test_clear ... ok
+test tui::backend::tests::tui_test_backend_tests::test_default ... ok
+test tui::backend::tests::tui_test_backend_tests::test_frames ... ok
+test tui::backend::tests::tui_test_backend_tests::test_new ... ok
+test tui::backend::tests::tui_test_backend_tests::test_reset ... ok
+test tui::backend::tests::tui_test_backend_tests::test_resize ... ok
+test tui::backend::tests::tui_test_backend_tests::test_write_text ... ok
+test tui::backend::tests::tui_test_backend_tests::test_write_lines ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_match_fail ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_add_frame ... ok
+test tui::assertions::tests::frame_assertion_tests::test_to_match_pass ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_diff_frames ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_frame_at ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_first_and_last ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_matches ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_matches_different ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_new ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_matches_different_length ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_snapshot_path ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_assert_matches_pass ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_assert_matches_fail ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_from_frame ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_from_lines ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_hash_consistency ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_hash_different ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_matches ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_new ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_to_frame ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_with_metadata ... ok
+test ux_coverage::tests::element_coverage_tests::test_coverage_ratio ... ok
+test ux_coverage::tests::element_coverage_tests::test_is_fully_covered ... ok
+test ux_coverage::tests::element_coverage_tests::test_new ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_assert_snapshot_create ... ok
+test ux_coverage::tests::element_coverage_tests::test_uncovered ... ok
+test tui::snapshot::tests::frame_sequence_tests::test_save_and_load ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_delete ... ok
+test ux_coverage::tests::element_id_tests::test_display ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_assert_snapshot_match ... ok
+test ux_coverage::tests::element_id_tests::test_new ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_assert_snapshot_mismatch ... ok
+test ux_coverage::tests::element_id_tests::test_full_path ... ok
+test ux_coverage::tests::element_id_tests::test_with_parent ... ok
+test ux_coverage::tests::interaction_type_tests::test_display ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_save_and_load ... ok
+test ux_coverage::tests::pong_game_coverage_tests::test_pong_full_coverage ... ok
+test ux_coverage::tests::ux_coverage_builder_tests::test_custom_element ... ok
+test ux_coverage::tests::ux_coverage_builder_tests::test_builder ... ok
+test ux_coverage::tests::ux_coverage_report_tests::test_complete_report ... ok
+test ux_coverage::tests::ux_coverage_report_tests::test_generate_report ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_list ... ok
+test tui::snapshot::tests::snapshot_manager_tests::test_assert_snapshot_update_mode ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_assert_coverage_fail ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_journeys ... ok
+test tui::snapshot::tests::tui_snapshot_tests::test_save_and_load ... ok
+test ux_coverage::tests::pong_game_coverage_tests::test_pong_partial_coverage ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_record_interaction ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_record_state ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_assert_coverage_pass ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_register_button ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_new ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_register_state ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_uncovered_elements ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_unvisited_states ... ok
+test visual_regression::tests::test_color_depth_normalization ... ok
+test ux_coverage::tests::ux_coverage_tracker_tests::test_overall_coverage ... ok
+test visual_regression::tests::test_compare_against_baseline_missing ... ok
+test visual_regression::tests::test_config_builder ... ok
+test visual_regression::tests::test_config_defaults ... ok
+test visual_regression::tests::test_config_with_baseline_dir ... ok
+test visual_regression::tests::test_config_with_update_baselines ... ok
+test visual_regression::tests::test_avg_color_diff ... ok
+test visual_regression::tests::test_hdr_content_handling ... ok
+test visual_regression::tests::test_image_diff_result_is_identical ... ok
+test visual_regression::tests::test_compare_against_baseline_with_update ... ok
+test visual_regression::tests::test_invalid_image_decode ... ok
+test visual_regression::tests::test_dimension_mismatch ... ok
+test visual_regression::tests::test_perceptual_diff ... ok
+test visual_regression::tests::test_different_images ... ok
+test visual_regression::tests::test_diff_image_generation ... ok
+test visual_regression::tests::test_compare_against_baseline_mismatch_saves_diff ... ok
+test visual_regression::tests::test_identical_images ... ok
+test visual_regression::tests::test_tester_config_accessor ... ok
+test visual_regression::tests::test_tester_default ... ok
+test visual_regression::tests::test_pixel_diff ... ok
+test visual_regression::tests::test_within_threshold ... ok
+test watch::tests::file_change_tests::test_file_change_kind_from_event ... ok
+test watch::tests::file_watcher_tests::test_is_running_before_start ... ok
+test watch::tests::file_watcher_tests::test_check_changes_before_start ... ok
+test watch::tests::file_watcher_tests::test_new ... ok
+test watch::tests::fn_watch_handler_tests::test_on_change ... ok
+test watch::tests::glob_matching_tests::test_double_star ... ok
+test watch::tests::glob_matching_tests::test_exact_match ... ok
+test watch::tests::glob_matching_tests::test_prefix_pattern ... ok
+test tui::backend::tests::tui_frame_tests::test_matches_regex ... ok
+test watch::tests::glob_matching_tests::test_question_wildcard ... ok
+test watch::tests::glob_matching_tests::test_star_wildcard ... ok
+test watch::tests::watch_builder_tests::test_chained_builder ... ok
+test watch::tests::watch_builder_tests::test_debounce ... ok
+test tui::backend::tests::tui_frame_tests::test_find_matches ... ok
+test watch::tests::watch_builder_tests::test_ignore_target ... ok
+test watch::tests::watch_builder_tests::test_new ... ok
+test visual_regression::tests::test_small_difference_within_threshold ... ok
+test watch::tests::watch_builder_tests::test_rust_files ... ok
+test watch::tests::watch_builder_tests::test_test_files ... ok
+test watch::tests::watch_builder_tests::test_toml_files ... ok
+test watch::tests::watch_config_tests::test_default ... ok
+test watch::tests::watch_config_tests::test_ignores_git ... ok
+test watch::tests::watch_config_tests::test_ignores_target ... ok
+test watch::tests::watch_config_tests::test_matches_pattern_rust_file ... ok
+test watch::tests::watch_config_tests::test_matches_pattern_toml_file ... ok
+test watch::tests::watch_config_tests::test_with_debounce ... ok
+test watch::tests::watch_config_tests::test_with_ignore ... ok
+test watch::tests::watch_config_tests::test_with_pattern ... ok
+test watch::tests::watch_stats_tests::test_multiple_triggers ... ok
+test watch::tests::watch_stats_tests::test_new ... ok
+test watch::tests::watch_stats_tests::test_record_trigger ... ok
+test websocket::tests::mock_websocket_response_tests::test_new ... ok
+test websocket::tests::mock_websocket_response_tests::test_with_delay ... ok
+test websocket::tests::mock_websocket_response_tests::test_with_text ... ok
+test websocket::tests::websocket_connection_tests::test_close ... ok
+test websocket::tests::websocket_connection_tests::test_message_count ... ok
+test websocket::tests::websocket_connection_tests::test_new ... ok
+test websocket::tests::websocket_connection_tests::test_open ... ok
+test websocket::tests::websocket_connection_tests::test_receive_text ... ok
+test websocket::tests::websocket_connection_tests::test_send_text ... ok
+test websocket::tests::websocket_connection_tests::test_sent_received_messages ... ok
+test websocket::tests::websocket_message_tests::test_binary_message ... ok
+test websocket::tests::websocket_message_tests::test_close_message ... ok
+test websocket::tests::websocket_message_tests::test_contains ... ok
+test websocket::tests::websocket_message_tests::test_json ... ok
+test websocket::tests::websocket_message_tests::test_ping_pong ... ok
+test websocket::tests::websocket_message_tests::test_text_message ... ok
+test websocket::tests::websocket_message_tests::test_with_connection ... ok
+test websocket::tests::websocket_mock_tests::test_matches_message ... ok
+test websocket::tests::websocket_mock_tests::test_matches_url ... ok
+test websocket::tests::websocket_mock_tests::test_new ... ok
+test websocket::tests::websocket_mock_tests::test_once ... ok
+test websocket::tests::websocket_monitor_builder_tests::test_builder ... ok
+test websocket::tests::websocket_monitor_tests::test_all_messages ... ok
+test websocket::tests::websocket_monitor_tests::test_assert_connected ... ok
+test websocket::tests::websocket_monitor_tests::test_assert_received ... ok
+test websocket::tests::websocket_monitor_tests::test_assert_sent ... ok
+test websocket::tests::websocket_monitor_tests::test_clear ... ok
+test websocket::tests::websocket_monitor_tests::test_connect ... ok
+test websocket::tests::websocket_monitor_tests::test_disconnect ... ok
+test websocket::tests::websocket_monitor_tests::test_mock_on_message ... ok
+test websocket::tests::websocket_monitor_tests::test_mock_on_open ... ok
+test websocket::tests::websocket_monitor_tests::test_new ... ok
+test websocket::tests::websocket_monitor_tests::test_receive ... ok
+test websocket::tests::websocket_monitor_tests::test_send ... ok
+test websocket::tests::websocket_monitor_tests::test_start_stop ... ok
+test performance::tests::performance_profiler_tests::test_timer ... ok
+test simulation::tests::prop_tests::prop_game_state_always_valid ... ok
+test media::png_exporter::tests::exporter_edge_cases::test_multiple_annotation_types ... ok
+test simulation::tests::prop_tests::prop_replay_verifies ... ok
+test simulation::tests::prop_tests::prop_simulation_always_completes ... ok
+test simulation::tests::prop_tests::prop_simulation_deterministic ... ok
+test media::png_exporter::tests::png_exporter_tests::test_compression_levels_produce_different_sizes ... ok
+test assertion::retry::tests::retry_assertion::test_immediate_fail_with_timeout ... ok
+test assertion::retry::tests::retry_assertion::test_max_retries ... ok
+test media::png_exporter::tests::property_tests::prop_export_produces_valid_png ... ok
+test media::video_recorder::tests::video_recorder_tests::test_full_recording_cycle ... ok
+
+test result: ok. 1227 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.32s
+
+     Running unittests src/lib.rs (target/debug/deps/probar_cli-d7cedc1d99d8663d)
+
+running 65 tests
+FAIL Test failed
+
+=== Test Header ===
+test commands::tests::cli_tests::test_global_quiet_flag ... ok
+INFO Test info
+test commands::tests::cli_tests::test_global_color_flag ... ok
+test commands::tests::cli_tests::test_parse_init_command ... ok
+FAIL shown
+test commands::tests::cli_tests::test_global_verbose_flag ... ok
+test commands::tests::cli_tests::test_parse_record_command ... ok
+PASS Test passed
+test commands::tests::cli_tests::test_parse_config_command ... ok
+test commands::tests::cli_tests::test_parse_record_with_format ... 
+ok
+FAILED 10 tests in 3.00s (8 passed, 2 failed, 0 skipped)
+
+PASSED 12 tests in 5.00s (10 passed, 0 failed, 2 skipped)
+test commands::tests::cli_tests::test_parse_report_command ... ok
+WARN Test warning
+test commands::tests::cli_tests::test_parse_test_with_coverage ... ok
+test commands::tests::cli_tests::test_parse_test_command ... ok
+test commands::tests::format_tests::test_color_arg_conversion ... ok
+test commands::tests::format_tests::test_record_format_default ... ok
+test commands::tests::cli_tests::test_parse_report_with_format ... ok
+test commands::tests::format_tests::test_report_format_default ... ok
+test commands::tests::cli_tests::test_parse_test_with_fail_fast ... ok
+test config::tests::cli_config_tests::test_chained_builders ... ok
+test commands::tests::cli_tests::test_parse_test_with_parallel ... ok
+WARN No tests found
+test config::tests::cli_config_tests::test_default_config ... ok
+test config::tests::cli_config_tests::test_effective_jobs_specified ... ok
+test commands::tests::cli_tests::test_parse_test_with_filter ... ok
+test config::tests::cli_config_tests::test_effective_jobs_auto ... WARN No tests found
+ok
+test config::tests::cli_config_tests::test_with_color ... ok
+test config::tests::cli_config_tests::test_with_fail_fast ... ok
+test config::tests::cli_config_tests::test_with_coverage ... ok
+test config::tests::cli_config_tests::test_with_output_dir ... ok
+test config::tests::cli_config_tests::test_with_parallel_jobs ... ok
+test config::tests::cli_config_tests::test_with_verbosity ... ok
+test config::tests::cli_config_tests::test_with_watch ... ok
+test config::tests::color_choice_tests::test_default_color ... ok
+test config::tests::color_choice_tests::test_should_color_always ... ok
+test config::tests::color_choice_tests::test_should_color_never ... ok
+test config::tests::verbosity_tests::test_default_verbosity ... ok
+test config::tests::verbosity_tests::test_is_debug ... ok
+test config::tests::verbosity_tests::test_is_quiet ... ok
+test config::tests::verbosity_tests::test_is_verbose ... ok
+test error::tests::test_config_error ... ok
+test error::tests::test_invalid_argument_error ... ok
+test error::tests::test_io_error_from ... ok
+test error::tests::test_recording_error ... ok
+test error::tests::test_report_generation_error ... ok
+test output::tests::output_format_tests::test_default_format ... ok
+test output::tests::output_format_tests::test_format_variants ... ok
+test error::tests::test_test_execution_error ... ok
+test output::tests::progress_reporter_tests::test_default_reporter ... ok
+test output::tests::progress_reporter_tests::test_failure_message ... ok
+test output::tests::progress_reporter_tests::test_header ... ok
+test output::tests::progress_reporter_tests::test_info_message ... ok
+test output::tests::progress_reporter_tests::test_new_reporter ... ok
+test output::tests::progress_reporter_tests::test_quiet_mode_suppresses_output ... ok
+test output::tests::progress_reporter_tests::test_quiet_reporter ... ok
+test output::tests::progress_reporter_tests::test_success_message ... ok
+test output::tests::progress_reporter_tests::test_progress_bar ... ok
+test output::tests::progress_reporter_tests::test_summary_failed ... ok
+test output::tests::progress_reporter_tests::test_summary_passed ... ok
+test output::tests::progress_reporter_tests::test_warning_message ... ok
+test runner::tests::test_result_tests::test_fail_result ... ok
+test runner::tests::test_result_tests::test_pass_result ... ok
+test runner::tests::test_result_tests::test_with_output ... ok
+test runner::tests::test_results_tests::test_add_results ... ok
+test runner::tests::test_results_tests::test_all_passed ... ok
+test runner::tests::test_results_tests::test_failures ... ok
+test runner::tests::test_results_tests::test_new_results ... ok
+test runner::tests::test_runner_tests::test_new_runner ... ok
+test runner::tests::test_runner_tests::test_run_no_tests ... ok
+test runner::tests::test_runner_tests::test_run_with_filter ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/probar-788a61bb22499aba)
+
+running 4 tests
+test tests::test_build_config_quiet ... ok
+test tests::test_build_config_default ... ok
+test tests::test_build_config_verbose ... ok
+test tests::test_build_config_debug ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/probar_derive-8665180af2e28a9d)
+
+running 3 tests
+test tests::test_generate_type_id ... ok
+test tests::test_generate_type_id_deterministic ... ok
+test tests::test_to_snake_case ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests probar
+
+running 12 tests
+test crates/probar/src/assertion/retry.rs - assertion::retry::RetryAssertion (line 109) ... ignored
+test crates/probar/src/assertion/soft.rs - assertion::soft::SoftAssertions (line 65) ... ignored
+test crates/probar/src/fixture.rs - fixture::Fixture (line 25) ... ignored
+test crates/probar/src/fixture.rs - fixture::FixtureManager (line 94) ... ignored
+test crates/probar/src/fuzzer.rs - fuzzer (line 7) ... ignored
+test crates/probar/src/media/gif_recorder.rs - media::gif_recorder::GifRecorder (line 138) ... ignored
+test crates/probar/src/media/png_exporter.rs - media::png_exporter::PngExporter (line 223) ... ignored
+test crates/probar/src/media/video_recorder.rs - media::video_recorder::VideoRecorder (line 157) ... ignored
+test crates/probar/src/page_object.rs - page_object::PageObject (line 22) ... ignored
+test crates/probar/src/reporter.rs - reporter::Reporter (line 233) ... ignored
+test crates/probar/src/runtime.rs - runtime::ProbarEntity (line 85) ... ignored
+test crates/probar/src/simulation.rs - simulation (line 7) ... ignored
+
+test result: ok. 0 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests probar_cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests probar_derive
+
+running 7 tests
+test crates/probar-derive/src/lib.rs - (line 10) ... ignored
+test crates/probar-derive/src/lib.rs - (line 16) ... ignored
+test crates/probar-derive/src/lib.rs - (line 32) ... ignored
+test crates/probar-derive/src/lib.rs - derive_probar_component (line 157) ... ignored
+test crates/probar-derive/src/lib.rs - derive_probar_entity (line 93) ... ignored
+test crates/probar-derive/src/lib.rs - derive_probar_selector (line 245) ... ignored
+test crates/probar-derive/src/lib.rs - probar_test (line 355) ... ignored
+
+test result: ok. 0 passed; 0 failed; 7 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

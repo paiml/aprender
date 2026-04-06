@@ -1,0 +1,72 @@
+version: "1.0"
+name: "Calculator Error Handling"
+description: "Verify calculator handles error states correctly"
+machine:
+  id: "error_handling"
+  initial: "idle"
+  states:
+    idle:
+      id: "idle"
+      invariants:
+        - description: "Display ready"
+          condition: "display.text == '0'"
+    computing:
+      id: "computing"
+      invariants:
+        - description: "Has pending computation"
+          condition: "has_pending_operator()"
+    error:
+      id: "error"
+      invariants:
+        - description: "Error displayed"
+          condition: "display.text.contains('Error') || display.text.contains('Infinity')"
+    recovered:
+      id: "recovered"
+      final_state: true
+      invariants:
+        - description: "Back to normal operation"
+          condition: "display.text == '0'"
+  transitions:
+    - id: "setup_division"
+      from: "idle"
+      to: "computing"
+      event: "enter_division_by_zero"
+    - id: "trigger_error"
+      from: "computing"
+      to: "error"
+      event: "equals_press"
+    - id: "recover"
+      from: "error"
+      to: "recovered"
+      event: "clear_press"
+  forbidden:
+    - from: "error"
+      to: "computing"
+      reason: "Must clear before continuing"
+playbook:
+  steps:
+    - name: "Setup division by zero"
+      transitions: ["setup_division"]
+      actions:
+        - type: click
+          selector: "[data-digit='1']"
+        - type: click
+          selector: "[data-op='divide']"
+        - type: click
+          selector: "[data-digit='0']"
+    - name: "Trigger error"
+      transitions: ["trigger_error"]
+      actions:
+        - type: click
+          selector: "[data-action='equals']"
+    - name: "Recover from error"
+      transitions: ["recover"]
+      actions:
+        - type: click
+          selector: "[data-action='clear']"
+assertions:
+  path:
+    must_visit: ["idle", "computing", "error", "recovered"]
+performance:
+  max_duration_ms: 500
+  max_memory_mb: 50

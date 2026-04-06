@@ -1,0 +1,69 @@
+name: "Calculator Accessibility Configuration"
+wcag_level: "AA"
+description: "WCAG 2.1 AA compliance configuration for calculator"
+
+color_contrast:
+  minimum_ratio: 4.5
+  large_text_ratio: 3.0
+  themes:
+    light:
+      background: "#FFFFFF"
+      display_text: "#212121"
+      button_text: "#212121"
+      verified_ratio: 15.9
+    dark:
+      background: "#212121"
+      display_text: "#FFFFFF"
+      button_text: "#FFFFFF"
+      verified_ratio: 15.9
+    high_contrast:
+      background: "#000000"
+      display_text: "#FFFF00"
+      button_text: "#FFFFFF"
+      verified_ratio: 21.0
+
+aria_labels:
+  display:
+    role: "status"
+    aria_live: "polite"
+    aria_label: "Calculator display"
+  buttons:
+    digit_pattern: "Digit {n}"
+    operator_pattern: "{op} operator"
+    equals: "Calculate result"
+    clear: "Clear all"
+    clear_entry: "Clear entry"
+
+keyboard_navigation:
+  tab_order:
+    - display
+    - digit_buttons
+    - operator_buttons
+    - action_buttons
+  shortcuts:
+    - key: "Enter"
+      action: "equals"
+    - key: "Escape"
+      action: "clear"
+    - key: "Backspace"
+      action: "clear_entry"
+    - keys: "0-9"
+      action: "digit_input"
+    - keys: "+-*/"
+      action: "operator_input"
+
+focus_indicators:
+  style: "outline"
+  color: "#2196F3"
+  width: "3px"
+  offset: "2px"
+
+screen_reader:
+  announcements:
+    on_result: "Result is {value}"
+    on_error: "Error: {message}"
+    on_clear: "Calculator cleared"
+  flow:
+    - "Calculator application"
+    - "Display shows {current_value}"
+    - "Keypad with {button_count} buttons"

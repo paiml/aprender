@@ -1,0 +1,12 @@
+{
+  "state": "idle",
+  "display": "0",
+  "pending_operator": null,
+  "history": [],
+  "timestamp": "2024-12-14T00:00:00Z",
+  "viewport": {
+    "width": 800,
+    "height": 600
+  },
+  "theme": "light"
+}

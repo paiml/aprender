@@ -1,0 +1,208 @@
+{
+  "tree_hash": "8e0426fa0c1c2abe2e5dfc9cf9635c8f6b795a25",
+  "pmat_version": "3.6.1",
+  "timestamp": "2026-03-03T15:17:12.187290633Z",
+  "report": {
+    "files_with_dead_code": [
+      {
+        "file_path": "crates/probar/src/gpu_pixels/regression.rs",
+        "dead_items": [
+          {
+            "name": "PtxPatterns",
+            "kind": "Suppressed",
+            "line": 188,
+            "column": 1,
+            "message": "struct `PtxPatterns` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.3157894736842104
+      },
+      {
+        "file_path": "crates/probar/src/pixel_coverage/parallel.rs",
+        "dead_items": [
+          {
+            "name": "parallel_reduce",
+            "kind": "Suppressed",
+            "line": 78,
+            "column": 1,
+            "message": "fn `parallel_reduce` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "parallel_sum",
+            "kind": "Suppressed",
+            "line": 91,
+            "column": 1,
+            "message": "fn `parallel_sum` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.5037593984962405
+      },
+      {
+        "file_path": "crates/probar/src/fixture.rs",
+        "dead_items": [
+          {
+            "name": "HighPriorityFailingSetupFixture",
+            "kind": "Suppressed",
+            "line": 1179,
+            "column": 1,
+            "message": "struct `HighPriorityFailingSetupFixture` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.23543260741612712
+      },
+      {
+        "file_path": "crates/probar/src/runner/builder.rs",
+        "dead_items": [
+          {
+            "name": "format_size",
+            "kind": "Suppressed",
+            "line": 247,
+            "column": 1,
+            "message": "fn `format_size` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.6051437216338881
+      },
+      {
+        "file_path": "crates/probar/src/web/js_builder.rs",
+        "dead_items": [
+          {
+            "name": "ExtendedJsBuilder",
+            "kind": "Suppressed",
+            "line": 132,
+            "column": 1,
+            "message": "struct `ExtendedJsBuilder` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.9389671361502347
+      },
+      {
+        "file_path": "crates/probar/src/lint/ast_visitor.rs",
+        "dead_items": [
+          {
+            "name": "is_rc_alias",
+            "kind": "Suppressed",
+            "line": 101,
+            "column": 1,
+            "message": "fn `is_rc_alias` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "extract_type_name",
+            "kind": "Suppressed",
+            "line": 111,
+            "column": 1,
+            "message": "fn `extract_type_name` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.4451864218141347
+      },
+      {
+        "file_path": "crates/probar/src/web/css_builder.rs",
+        "dead_items": [
+          {
+            "name": "presets",
+            "kind": "Suppressed",
+            "line": 186,
+            "column": 1,
+            "message": "mod `presets` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.0025062656641603
+      },
+      {
+        "file_path": "crates/probar/examples/brick_tui_demo.rs",
+        "dead_items": [
+          {
+            "name": "BG_YELLOW",
+            "kind": "Suppressed",
+            "line": 24,
+            "column": 1,
+            "message": "const `BG_YELLOW` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.1695906432748537
+      },
+      {
+        "file_path": "crates/probar/src/pixel_coverage/wasm_demo.rs",
+        "dead_items": [
+          {
+            "name": "is_available",
+            "kind": "Suppressed",
+            "line": 304,
+            "column": 1,
+            "message": "fn `is_available` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.21287919105907396
+      },
+      {
+        "file_path": "crates/showcase-calculator/src/probar_tests.rs",
+        "dead_items": [
+          {
+            "name": "CalculatorTheme",
+            "kind": "Suppressed",
+            "line": 176,
+            "column": 1,
+            "message": "struct `CalculatorTheme` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "DisplayShowsValue",
+            "kind": "Suppressed",
+            "line": 493,
+            "column": 1,
+            "message": "struct `DisplayShowsValue` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "expected",
+            "kind": "Suppressed",
+            "line": 509,
+            "column": 1,
+            "message": "fn `expected` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "HistoryUpdated",
+            "kind": "Suppressed",
+            "line": 541,
+            "column": 1,
+            "message": "struct `HistoryUpdated` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "expected_count",
+            "kind": "Suppressed",
+            "line": 557,
+            "column": 1,
+            "message": "fn `expected_count` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.4587892049598834
+      },
+      {
+        "file_path": "crates/probar/src/pixel_coverage/heatmap.rs",
+        "dead_items": [
+          {
+            "name": "SvgHeatmap",
+            "kind": "Suppressed",
+            "line": 1018,
+            "column": 1,
+            "message": "struct `SvgHeatmap` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ReferenceChecksum",
+            "kind": "Suppressed",
+            "line": 1096,
+            "column": 1,
+            "message": "struct `ReferenceChecksum` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.3013182674199623
+      }
+    ],
+    "total_dead_items": 18,
+    "dead_code_percentage": 0.01740761873446612,
+    "total_lines": 206806,
+    "dead_lines": 36,
+    "dead_by_type": {
+      "suppressed": 18
+    }
+  }
+}

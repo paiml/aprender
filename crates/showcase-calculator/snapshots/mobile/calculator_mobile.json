@@ -1,0 +1,8 @@
+{
+  "device": "mobile",
+  "viewport": {"width": 375, "height": 667},
+  "scale_factor": 2.0,
+  "layout": "vertical",
+  "button_size": "touch-friendly",
+  "font_size": "18px"
+}

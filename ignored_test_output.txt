@@ -1,0 +1,2400 @@
+warning: unused import: `Duration`
+  --> crates/probar/src/performance.rs:16:17
+   |
+16 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: trait `AsAny` is never used
+   --> crates/probar/src/fixture.rs:367:7
+    |
+367 | trait AsAny {
+    |       ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `expect_frame` is never used
+   --> crates/probar/src/tui/assertions.rs:218:8
+    |
+218 | pub fn expect_frame(frame: &TuiFrame) -> FrameAssertion<'_> {
+    |        ^^^^^^^^^^^^
+
+warning: struct `MultiValueTracker` is never constructed
+   --> crates/probar/src/tui/assertions.rs:399:12
+    |
+399 | pub struct MultiValueTracker {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `record`, `get`, `names`, and `assert_bounds` are never used
+   --> crates/probar/src/tui/assertions.rs:406:12
+    |
+403 | impl MultiValueTracker {
+    | ---------------------- associated items in this implementation
+...
+406 |     pub fn new() -> Self {
+    |            ^^^
+...
+413 |     pub fn record(&mut self, name: &str, timestamp_ms: u64, value: f64) {
+    |            ^^^^^^
+...
+423 |     pub fn get(&self, name: &str) -> Option<&ValueTracker<f64>> {
+    |            ^^^
+...
+429 |     pub fn names(&self) -> Vec<&str> {
+    |            ^^^^^
+...
+434 |     pub fn assert_bounds(&self, bounds: &HashMap<String, (f64, f64)>) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `SnapshotManager` is never constructed
+   --> crates/probar/src/tui/snapshot.rs:148:12
+    |
+148 | pub struct SnapshotManager {
+    |            ^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates/probar/src/tui/snapshot.rs:158:12
+    |
+155 | impl SnapshotManager {
+    | -------------------- associated items in this implementation
+...
+158 |     pub fn new(snapshot_dir: &Path) -> Self {
+    |            ^^^
+...
+167 |     pub fn with_update_mode(mut self, update: bool) -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+174 |     pub fn snapshot_dir(&self) -> &Path {
+    |            ^^^^^^^^^^^^
+...
+180 |     pub fn snapshot_path(&self, name: &str) -> PathBuf {
+    |            ^^^^^^^^^^^^^
+...
+186 |     pub fn exists(&self, name: &str) -> bool {
+    |            ^^^^^^
+...
+191 |     pub fn save(&self, snapshot: &TuiSnapshot) -> ProbarResult<()> {
+    |            ^^^^
+...
+197 |     pub fn load(&self, name: &str) -> ProbarResult<TuiSnapshot> {
+    |            ^^^^
+...
+203 |     pub fn assert_snapshot(&self, name: &str, frame: &TuiFrame) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^^^
+...
+226 |     pub fn list(&self) -> ProbarResult<Vec<String>> {
+    |            ^^^^
+...
+248 |     pub fn delete(&self, name: &str) -> ProbarResult<()> {
+    |            ^^^^^^
+
+warning: unused result of type `std::option::Option<f64>`
+  --> crates/probar/src/assertion/equation.rs:76:9
+   |
+76 |         self.variables.insert(name.to_string(), value);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut EquationContext`
+   --> crates/probar/src/assertion/equation.rs:103:13
+    |
+103 |             ctx.set(&var.name, var.value);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:409:9
+    |
+409 |         self.verifier.verify_eq("v = v0 + at", expected, v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:423:9
+    |
+423 |         self.verifier.verify_eq("x = x0 + v0*t + 0.5*a*t²", expected, x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:437:9
+    |
+437 |         self.verifier.verify_eq("v² = v0² + 2a(x-x0)", expected, v * v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:489:9
+    |
+489 |         self.verifier.verify_eq("KE = 0.5*m*v²", expected, ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:502:9
+    |
+502 |         self.verifier.verify_eq("PE = m*g*h", expected, pe);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:516:9
+    |
+516 |         self.verifier.verify_eq("E_total conserved", total_initial, total_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:528:9
+    |
+528 |         self.verifier.verify_eq("W = ΔKE", work, delta_ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:580:9
+    |
+580 |         self.verifier.verify_eq("p = m*v", expected, p);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:593:9
+    |
+593 |         self.verifier.verify_eq("p_total conserved", p_initial, p_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:605:9
+    |
+605 |         self.verify_conservation(m1, v1_initial, m2, v2_initial, v1_final, v2_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:610:9
+    |
+610 |         self.verifier.verify_eq("KE conserved (elastic)", ke_initial, ke_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:656:9
+    |
+656 |         self.verifier.verify_non_negative("score >= 0", score);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:662:9
+    |
+662 |         self.verifier.verify_in_range("health", health, 0.0, max_health);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:673:9
+    |
+673 |         self.verifier.verify_in_range("x position", x, min_x, max_x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:674:9
+    |
+674 |         self.verifier.verify_in_range("y position", y, min_y, max_y);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:681:9
+    |
+681 |         self.verifier.verify_in_range("speed", speed, 0.0, max_speed);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:687:9
+    |
+687 |         self.verifier.verify_eq("entity count", expected as f64, count as f64);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:693:9
+    |
+693 |         self.verifier.verify_eq(name, expected, actual);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+  --> crates/probar/src/bridge.rs:95:9
+   |
+95 |         self.positions.insert(entity_id, (x, y));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+   --> crates/probar/src/bridge.rs:100:9
+    |
+100 |         self.velocities.insert(entity_id, (vx, vy));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<i32>`
+   --> crates/probar/src/bridge.rs:105:9
+    |
+105 |         self.scores.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<bool>`
+   --> crates/probar/src/bridge.rs:110:9
+    |
+110 |         self.flags.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/bridge.rs:230:9
+    |
+230 |         self.components.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:346:17
+    |
+346 |                 self.cache.remove(&oldest);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `u64`
+   --> crates/probar/src/bridge.rs:347:17
+    |
+347 |                 self.access_order.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:353:9
+    |
+353 |         self.cache.insert(frame, snapshot);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/runtime.rs:684:1
+    |
+684 | / pub struct WasmRuntime {
+685 | |     _phantom: std::marker::PhantomData<()>,
+686 | | }
+    | |_^
+    |
+    = note: requested on the command line with `-W missing-debug-implementations`
+
+warning: unused result of type `&mut ratatui::buffer::Cell`
+   --> crates/probar/src/tui/backend.rs:306:21
+    |
+306 |                     cell.set_char(ch);
+    |                     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/probar/src/tui/snapshot.rs:29:5
+   |
+29 |     pub height: u16,
+   |     ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/probar/src/lib.rs:20:9
+   |
+20 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/tui/snapshot.rs:75:9
+   |
+75 |         self.metadata.insert(key.to_string(), value.to_string());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/replay.rs:166:9
+    |
+166 |         self.metadata.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:177:9
+    |
+177 |         self.expected_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:182:9
+    |
+182 |         self.tested_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<ElementCoverage>`
+   --> crates/probar/src/ux_coverage.rs:257:9
+    |
+257 |         self.elements.insert(key, coverage);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:283:9
+    |
+283 |         self.expected_states.insert(state);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:327:9
+    |
+327 |         self.visited_states.insert(state.clone());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:197:9
+    |
+197 |         presets.insert("new_york".to_string(), GeolocationPosition::new_york());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:198:9
+    |
+198 |         presets.insert("tokyo".to_string(), GeolocationPosition::tokyo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:199:9
+    |
+199 |         presets.insert("london".to_string(), GeolocationPosition::london());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:200:9
+    |
+200 |         presets.insert("paris".to_string(), GeolocationPosition::paris());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:201:9
+    |
+201 |         presets.insert("sydney".to_string(), GeolocationPosition::sydney());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:202:9
+    |
+202 | /         presets.insert(
+203 | |             "san_francisco".to_string(),
+204 | |             GeolocationPosition::san_francisco(),
+205 | |         );
+    | |__________^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:206:9
+    |
+206 |         presets.insert("berlin".to_string(), GeolocationPosition::berlin());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:207:9
+    |
+207 |         presets.insert("singapore".to_string(), GeolocationPosition::singapore());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:208:9
+    |
+208 |         presets.insert("dubai".to_string(), GeolocationPosition::dubai());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:209:9
+    |
+209 |         presets.insert("sao_paulo".to_string(), GeolocationPosition::sao_paulo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:581:9
+    |
+581 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:582:9
+    |
+582 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:583:9
+    |
+583 |         width: f64,
+    |         ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:584:9
+    |
+584 |         height: f64,
+    |         ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:585:9
+    |
+585 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:586:9
+    |
+586 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:587:9
+    |
+587 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:588:9
+    |
+588 |         rx: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:589:9
+    |
+589 |         ry: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:593:9
+    |
+593 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:594:9
+    |
+594 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:595:9
+    |
+595 |         r: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:596:9
+    |
+596 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:597:9
+    |
+597 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:598:9
+    |
+598 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:602:9
+    |
+602 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:603:9
+    |
+603 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:604:9
+    |
+604 |         rx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:605:9
+    |
+605 |         ry: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:606:9
+    |
+606 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:607:9
+    |
+607 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:608:9
+    |
+608 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:612:9
+    |
+612 |         x1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:613:9
+    |
+613 |         y1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:614:9
+    |
+614 |         x2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:615:9
+    |
+615 |         y2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:616:9
+    |
+616 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:617:9
+    |
+617 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:621:9
+    |
+621 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:622:9
+    |
+622 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:623:9
+    |
+623 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:624:9
+    |
+624 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:628:9
+    |
+628 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:629:9
+    |
+629 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:630:9
+    |
+630 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:631:9
+    |
+631 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:635:9
+    |
+635 |         d: String,
+    |         ^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:636:9
+    |
+636 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:637:9
+    |
+637 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:638:9
+    |
+638 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:642:9
+    |
+642 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:643:9
+    |
+643 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:644:9
+    |
+644 |         content: String,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:645:9
+    |
+645 |         font_size: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:646:9
+    |
+646 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:647:9
+    |
+647 |         font_family: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:651:9
+    |
+651 |         id: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:652:9
+    |
+652 |         children: Vec<SvgShape>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/watch.rs:261:1
+    |
+261 | / pub struct FnWatchHandler<F>
+262 | | where
+263 | |     F: Fn(&[FileChange]) -> ProbarResult<()> + Send + Sync,
+...   |
+266 | | }
+    | |_^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/tracing_support.rs:132:9
+    |
+132 |         self.attributes.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/tracing_support.rs:217:9
+    |
+217 |         self.attributes.insert(key.to_string(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/network.rs:173:9
+    |
+173 |         self.headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/performance.rs:108:9
+    |
+108 |         self.tags.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<MetricStats>`
+   --> crates/probar/src/performance.rs:381:17
+    |
+381 |                 metrics.insert(name, stats);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<Instant>`
+   --> crates/probar/src/performance.rs:488:9
+    |
+488 |         self.timers.insert(name.to_string(), Instant::now());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:600:17
+    |
+600 |                 self.frame_times.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:615:13
+    |
+615 |             self.frame_times.remove(0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:64:9
+   |
+64 | /         self.local_storage
+65 | |             .entry(origin.to_string())
+66 | |             .or_default()
+67 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:74:9
+   |
+74 | /         self.session_storage
+75 | |             .entry(origin.to_string())
+76 | |             .or_default()
+77 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/context.rs:318:9
+    |
+318 |         self.extra_headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:574:9
+    |
+574 |         contexts.insert(id.clone(), context);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:659:9
+    |
+659 |         contexts.remove(context_id);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (lib) generated 117 warnings (run `cargo fix --lib -p probar` to apply 1 suggestion)
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:18:5
+   |
+18 |     ctx.set("velocity", 10.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:19:5
+   |
+19 |     ctx.set("time", 2.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:20:5
+   |
+20 |     ctx.set("acceleration", 5.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:44:5
+   |
+44 |     verifier.verify_eq("v = v0 + at", expected_v, v);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:52:5
+   |
+52 |     verifier.verify_eq("x = v0*t + 0.5*a*t²", expected_x, x);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:61:5
+   |
+61 |     verifier.verify_in_range("health", health, 0.0, max_health);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:65:5
+   |
+65 |     verifier.verify_non_negative("score", score);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:84:5
+   |
+84 |     verifier.verify_eq("KE = 0.5*m*v²", 25.0, ke);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:98:5
+   |
+98 |     verifier.verify_eq("p = m*v", 10.0, p1);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+   --> crates/probar/examples/equation_verify.rs:132:5
+    |
+132 |     verifier.verify_eq("floating point", b_val, a_val);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `with_priority` is never used
+   --> crates/probar/src/fixture.rs:590:12
+    |
+581 |     impl TestFixture {
+    |     ---------------- method in this implementation
+...
+590 |         fn with_priority(mut self, priority: i32) -> Self {
+    |            ^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationContext`
+   --> crates/probar/src/assertion/equation.rs:103:13
+    |
+103 |             ctx.set(&var.name, var.value);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:409:9
+    |
+409 |         self.verifier.verify_eq("v = v0 + at", expected, v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:423:9
+    |
+423 |         self.verifier.verify_eq("x = x0 + v0*t + 0.5*a*t²", expected, x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:437:9
+    |
+437 |         self.verifier.verify_eq("v² = v0² + 2a(x-x0)", expected, v * v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:489:9
+    |
+489 |         self.verifier.verify_eq("KE = 0.5*m*v²", expected, ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:502:9
+    |
+502 |         self.verifier.verify_eq("PE = m*g*h", expected, pe);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:516:9
+    |
+516 |         self.verifier.verify_eq("E_total conserved", total_initial, total_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:528:9
+    |
+528 |         self.verifier.verify_eq("W = ΔKE", work, delta_ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:580:9
+    |
+580 |         self.verifier.verify_eq("p = m*v", expected, p);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:593:9
+    |
+593 |         self.verifier.verify_eq("p_total conserved", p_initial, p_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:605:9
+    |
+605 |         self.verify_conservation(m1, v1_initial, m2, v2_initial, v1_final, v2_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:610:9
+    |
+610 |         self.verifier.verify_eq("KE conserved (elastic)", ke_initial, ke_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:656:9
+    |
+656 |         self.verifier.verify_non_negative("score >= 0", score);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:662:9
+    |
+662 |         self.verifier.verify_in_range("health", health, 0.0, max_health);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:673:9
+    |
+673 |         self.verifier.verify_in_range("x position", x, min_x, max_x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:674:9
+    |
+674 |         self.verifier.verify_in_range("y position", y, min_y, max_y);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:681:9
+    |
+681 |         self.verifier.verify_in_range("speed", speed, 0.0, max_speed);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:687:9
+    |
+687 |         self.verifier.verify_eq("entity count", expected as f64, count as f64);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:693:9
+    |
+693 |         self.verifier.verify_eq(name, expected, actual);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationContext`
+   --> crates/probar/src/assertion/equation.rs:752:13
+    |
+752 |             ctx.set("x", 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:785:13
+    |
+785 |             verifier.verify_eq("1 + 1 = 2", 2.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:794:13
+    |
+794 |             verifier.verify_eq("1 + 1 = 3", 3.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:803:13
+    |
+803 |             verifier.verify_eq_with_tolerance("approx", 1.0, 1.001, 0.01);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:811:13
+    |
+811 |             verifier.verify_in_range("value", 5.0, 0.0, 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:819:13
+    |
+819 |             verifier.verify_in_range("value", 15.0, 0.0, 10.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:827:13
+    |
+827 |             verifier.verify_non_negative("positive", 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:828:13
+    |
+828 |             verifier.verify_non_negative("zero", 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:836:13
+    |
+836 |             verifier.verify_non_negative("negative", -5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:844:13
+    |
+844 |             verifier.verify_positive("positive", 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:852:13
+    |
+852 |             verifier.verify_positive("zero", 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:860:13
+    |
+860 |             verifier.verify_eq("test", 1.0, 1.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:868:13
+    |
+868 |             verifier.verify_eq("test", 1.0, 2.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:876:13
+    |
+876 |             verifier.verify_eq("test", 1.0, 1.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:890:13
+    |
+890 |             verifier.verify_velocity(20.0, 10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:899:13
+    |
+899 |             verifier.verify_position(75.0, 0.0, 10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:910:13
+    |
+910 |             verifier.verify_velocity_squared(v, 10.0, 2.0, 50.0, 0.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:925:13
+    |
+925 |             verifier.verify_velocity(v, 0.0, g, t);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::KinematicVerifier`
+   --> crates/probar/src/assertion/equation.rs:926:13
+    |
+926 |             verifier.verify_position(y, 0.0, 0.0, g, t);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:939:13
+    |
+939 |             verifier.verify_kinetic_energy(9.0, 2.0, 3.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:948:13
+    |
+948 |             verifier.verify_potential_energy(50.0, 1.0, 10.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:959:13
+    |
+959 |             verifier.verify_conservation(50.0, 100.0, 100.0, 50.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EnergyVerifier`
+   --> crates/probar/src/assertion/equation.rs:979:13
+    |
+979 |             verifier.verify_conservation(ke_top, pe_top, ke_bottom, pe_bottom);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:992:13
+    |
+992 |             verifier.verify_momentum(10.0, 2.0, 5.0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+    --> crates/probar/src/assertion/equation.rs:1002:13
+     |
+1002 |             verifier.verify_conservation(1.0, 10.0, 1.0, 0.0, 0.0, 10.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::MomentumVerifier`
+    --> crates/probar/src/assertion/equation.rs:1011:13
+     |
+1011 |             verifier.verify_elastic_collision(1.0, 10.0, 1.0, 0.0, 0.0, 10.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::EquationVerifier`
+    --> crates/probar/src/assertion/equation.rs:1031:13
+     |
+1031 |             verifier.verifier.verify_eq("KE conserved", ke_initial, ke_final);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1042:13
+     |
+1042 |             verifier.verify_score_non_negative(100.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1050:13
+     |
+1050 |             verifier.verify_health(50.0, 100.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1058:13
+     |
+1058 |             verifier.verify_position_bounds(400.0, 300.0, 0.0, 800.0, 0.0, 600.0);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1066:13
+     |
+1066 |             verifier.verify_speed_limit(3.0, 4.0, 10.0); // speed = 5, limit = 10
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1074:13
+     |
+1074 |             verifier.verify_entity_count(10, 10);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut equation::InvariantVerifier`
+    --> crates/probar/src/assertion/equation.rs:1091:13
+     |
+1091 | /             verifier
+1092 | |                 .verify_score_non_negative(score)
+1093 | |                 .verify_position_bounds(ball_x, ball_y, 0.0, 800.0, 0.0, 600.0)
+1094 | |                 .verify_speed_limit(ball_vx, ball_vy, max_speed);
+     | |_________________________________________________________________^
+
+warning: unused result of type `std::option::Option<bridge::GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:346:17
+    |
+346 |                 self.cache.remove(&oldest);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<bridge::GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:353:9
+    |
+353 |         self.cache.insert(frame, snapshot);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:732:13
+    |
+732 |             set.insert(EntityId::new(1));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:733:13
+    |
+733 |             set.insert(EntityId::new(2));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/runtime.rs:734:13
+    |
+734 |             set.insert(EntityId::new(1));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1046:21
+     |
+1046 |                     visited.insert(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1047:21
+     |
+1047 |                     rec_stack.insert(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+    --> crates/probar/src/runtime.rs:1059:21
+     |
+1059 |                     rec_stack.remove(node);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `usize`
+    --> crates/probar/src/runtime.rs:1090:25
+     |
+1090 |                         c.fetch_add(1, Ordering::SeqCst);
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::vec::Vec<u8>`
+    --> crates/probar/src/runtime.rs:1136:21
+     |
+1136 |                     allocations.remove(0);
+     |                     ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f64, f64)>`
+   --> crates/probar/src/tui/assertions.rs:790:13
+    |
+790 |             bounds.insert("health".to_string(), (0.0, 100.0));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f64, f64)>`
+   --> crates/probar/src/tui/assertions.rs:801:13
+    |
+801 |             bounds.insert("health".to_string(), (0.0, 100.0));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/replay.rs:616:13
+    |
+616 |             data.insert("score".to_string(), serde_json::json!(100));
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:828:17
+    |
+828 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: requested on the command line with `-W unused-must-use`
+help: use `let _ = ...` to ignore the resulting value
+    |
+828 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:871:17
+    |
+871 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+871 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:885:17
+    |
+885 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+885 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused return value of `replay::ReplayPlayer::get_frame_inputs` that must be used
+   --> crates/probar/src/replay.rs:899:17
+    |
+899 |                 player.get_frame_inputs();
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+899 |                 let _ = player.get_frame_inputs();
+    |                 +++++++
+
+warning: unused result of type `std::option::Option<ux_coverage::ElementCoverage>`
+   --> crates/probar/src/ux_coverage.rs:257:9
+    |
+257 |         self.elements.insert(key, coverage);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:197:9
+    |
+197 |         presets.insert("new_york".to_string(), GeolocationPosition::new_york());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:198:9
+    |
+198 |         presets.insert("tokyo".to_string(), GeolocationPosition::tokyo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:199:9
+    |
+199 |         presets.insert("london".to_string(), GeolocationPosition::london());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:200:9
+    |
+200 |         presets.insert("paris".to_string(), GeolocationPosition::paris());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:201:9
+    |
+201 |         presets.insert("sydney".to_string(), GeolocationPosition::sydney());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:202:9
+    |
+202 | /         presets.insert(
+203 | |             "san_francisco".to_string(),
+204 | |             GeolocationPosition::san_francisco(),
+205 | |         );
+    | |__________^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:206:9
+    |
+206 |         presets.insert("berlin".to_string(), GeolocationPosition::berlin());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:207:9
+    |
+207 |         presets.insert("singapore".to_string(), GeolocationPosition::singapore());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:208:9
+    |
+208 |         presets.insert("dubai".to_string(), GeolocationPosition::dubai());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<geolocation::GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:209:9
+    |
+209 |         presets.insert("sao_paulo".to_string(), GeolocationPosition::sao_paulo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:345:9
+    |
+345 |         GeolocationPosition::new(91.0, 0.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+345 |         let _ = GeolocationPosition::new(91.0, 0.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:351:9
+    |
+351 |         GeolocationPosition::new(-91.0, 0.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+351 |         let _ = GeolocationPosition::new(-91.0, 0.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:357:9
+    |
+357 |         GeolocationPosition::new(0.0, 181.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+357 |         let _ = GeolocationPosition::new(0.0, 181.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:363:9
+    |
+363 |         GeolocationPosition::new(0.0, -181.0, 10.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+363 |         let _ = GeolocationPosition::new(0.0, -181.0, 10.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::new` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:369:9
+    |
+369 |         GeolocationPosition::new(0.0, 0.0, -1.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+369 |         let _ = GeolocationPosition::new(0.0, 0.0, -1.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::with_heading` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:388:9
+    |
+388 |         GeolocationPosition::new(0.0, 0.0, 10.0).with_heading(361.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+388 |         let _ = GeolocationPosition::new(0.0, 0.0, 10.0).with_heading(361.0);
+    |         +++++++
+
+warning: unused return value of `geolocation::GeolocationPosition::with_speed` that must be used
+   --> crates/probar/src/emulation/geolocation.rs:400:9
+    |
+400 |         GeolocationPosition::new(0.0, 0.0, 10.0).with_speed(-1.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: use `let _ = ...` to ignore the resulting value
+    |
+400 |         let _ = GeolocationPosition::new(0.0, 0.0, 10.0).with_speed(-1.0);
+    |         +++++++
+
+warning: unused result of type `std::vec::Vec<u8>`
+   --> crates/probar/src/media/gif_recorder.rs:616:13
+    |
+616 |             recorder.stop().unwrap();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: comparison is useless due to type limits
+   --> crates/probar/src/media/png_exporter.rs:894:30
+    |
+894 |                 prop_assert!(result <= 255);
+    |                              ^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_comparisons)]` on by default
+
+warning: unused result of type `u32`
+   --> crates/probar/src/watch.rs:776:17
+    |
+776 |                 counter_clone.fetch_add(1, Ordering::SeqCst);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+   --> crates/probar/src/network.rs:981:13
+    |
+981 | /             interception.handle_request(
+982 | |                 "https://api.example.com/api/users",
+983 | |                 HttpMethod::Get,
+984 | |                 HashMap::new(),
+985 | |                 None,
+986 | |             );
+    | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:998:13
+     |
+ 998 | /             interception.handle_request(
+ 999 | |                 "https://api.example.com/api/users",
+1000 | |                 HttpMethod::Get,
+1001 | |                 HashMap::new(),
+1002 | |                 None,
+1003 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1004:13
+     |
+1004 | /             interception.handle_request(
+1005 | |                 "https://api.example.com/api/posts",
+1006 | |                 HttpMethod::Get,
+1007 | |                 HashMap::new(),
+1008 | |                 None,
+1009 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1020:13
+     |
+1020 |             interception.handle_request("url1", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1021:13
+     |
+1021 |             interception.handle_request("url2", HttpMethod::Post, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1032:13
+     |
+1032 | /             interception.handle_request(
+1033 | |                 "https://api.example.com/api/users",
+1034 | |                 HttpMethod::Get,
+1035 | |                 HashMap::new(),
+1036 | |                 None,
+1037 | |             );
+     | |______________^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1053:13
+     |
+1053 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1054:13
+     |
+1054 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<network::MockResponse>`
+    --> crates/probar/src/network.rs:1079:13
+     |
+1079 |             interception.handle_request("url", HttpMethod::Get, HashMap::new(), None);
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<performance::MetricStats>`
+   --> crates/probar/src/performance.rs:381:17
+    |
+381 |                 metrics.insert(name, stats);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::time::Instant>`
+   --> crates/probar/src/performance.rs:488:9
+    |
+488 |         self.timers.insert(name.to_string(), Instant::now());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `performance::PerformanceProfile`
+    --> crates/probar/src/performance.rs:1017:13
+     |
+1017 |             profiler.stop();
+     |             ^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<context::BrowserContext>`
+   --> crates/probar/src/context.rs:574:9
+    |
+574 |         contexts.insert(id.clone(), context);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<context::BrowserContext>`
+   --> crates/probar/src/context.rs:659:9
+    |
+659 |         contexts.remove(context_id);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1058:13
+     |
+1058 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1059:13
+     |
+1059 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1090:13
+     |
+1090 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1091:13
+     |
+1091 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1100:13
+     |
+1100 |             pool.create(None).unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1156:13
+     |
+1156 |             manager.get_context("test_1").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1157:13
+     |
+1157 |             manager.get_context("test_2").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1168:13
+     |
+1168 |             manager.get_context("test_1").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::string::String`
+    --> crates/probar/src/context.rs:1169:13
+     |
+1169 |             manager.get_context("test_2").unwrap();
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (example "equation_verify") generated 10 warnings
+warning: `probar` (lib test) generated 190 warnings (76 duplicates)
+warning: unused variable: `dashboard_page`
+  --> crates/probar/examples/page_object.rs:47:9
+   |
+47 |     let dashboard_page = PageObjectBuilder::new()
+   |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dashboard_page`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `probar` (example "page_object") generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (target/debug/deps/probar-f1579ecd0ce7e076)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1227 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/probar_cli-d7cedc1d99d8663d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 65 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/probar-788a61bb22499aba)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/probar_derive-8665180af2e28a9d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+   Doc-tests probar
+
+running 12 tests
+test crates/probar/src/assertion/soft.rs - assertion::soft::SoftAssertions (line 65) ... FAILED
+test crates/probar/src/reporter.rs - reporter::Reporter (line 233) ... FAILED
+test crates/probar/src/simulation.rs - simulation (line 7) ... FAILED
+test crates/probar/src/assertion/retry.rs - assertion::retry::RetryAssertion (line 109) ... FAILED
+test crates/probar/src/media/gif_recorder.rs - media::gif_recorder::GifRecorder (line 138) ... FAILED
+test crates/probar/src/fixture.rs - fixture::Fixture (line 25) ... FAILED
+test crates/probar/src/fixture.rs - fixture::FixtureManager (line 94) ... FAILED
+test crates/probar/src/page_object.rs - page_object::PageObject (line 22) ... FAILED
+test crates/probar/src/fuzzer.rs - fuzzer (line 7) ... FAILED
+test crates/probar/src/media/video_recorder.rs - media::video_recorder::VideoRecorder (line 157) ... FAILED
+test crates/probar/src/media/png_exporter.rs - media::png_exporter::PngExporter (line 223) ... FAILED
+test crates/probar/src/runtime.rs - runtime::ProbarEntity (line 85) ... FAILED
+
+failures:
+
+---- crates/probar/src/assertion/soft.rs - assertion::soft::SoftAssertions (line 65) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `SoftAssertions`
+ --> crates/probar/src/assertion/soft.rs:66:16
+  |
+3 | let mut soft = SoftAssertions::new();
+  |                ^^^^^^^^^^^^^^ use of undeclared type `SoftAssertions`
+  |
+help: consider importing this struct
+  |
+2 + use probar::SoftAssertions;
+  |
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0433`.
+Couldn't compile the test.
+---- crates/probar/src/reporter.rs - reporter::Reporter (line 233) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `Reporter`
+ --> crates/probar/src/reporter.rs:234:20
+  |
+3 | let mut reporter = Reporter::andon(); // Fail-fast mode
+  |                    ^^^^^^^^ use of undeclared type `Reporter`
+  |
+help: consider importing this struct
+  |
+2 + use probar::Reporter;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `TestResultEntry`
+ --> crates/probar/src/reporter.rs:236:17
+  |
+5 | reporter.record(TestResultEntry::passed("test_1", Duration::from_millis(100)))?;
+  |                 ^^^^^^^^^^^^^^^ use of undeclared type `TestResultEntry`
+  |
+help: consider importing this struct
+  |
+2 + use probar::TestResultEntry;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Duration`
+ --> crates/probar/src/reporter.rs:236:51
+  |
+5 | reporter.record(TestResultEntry::passed("test_1", Duration::from_millis(100)))?;
+  |                                                   ^^^^^^^^ use of undeclared type `Duration`
+  |
+help: consider importing one of these structs
+  |
+2 + use std::time::Duration;
+  |
+2 + use tokio::time::Duration;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `TestResultEntry`
+ --> crates/probar/src/reporter.rs:237:17
+  |
+6 | reporter.record(TestResultEntry::failed("test_2", Duration::from_millis(50), "assertion failed"))?;
+  |                 ^^^^^^^^^^^^^^^ use of undeclared type `TestResultEntry`
+  |
+help: consider importing this struct
+  |
+2 + use probar::TestResultEntry;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Duration`
+ --> crates/probar/src/reporter.rs:237:51
+  |
+6 | reporter.record(TestResultEntry::failed("test_2", Duration::from_millis(50), "assertion failed"))?;
+  |                                                   ^^^^^^^^ use of undeclared type `Duration`
+  |
+help: consider importing one of these structs
+  |
+2 + use std::time::Duration;
+  |
+2 + use tokio::time::Duration;
+  |
+
+error: aborting due to 5 previous errors
+
+For more information about this error, try `rustc --explain E0433`.
+Couldn't compile the test.
+---- crates/probar/src/simulation.rs - simulation (line 7) stdout ----
+error[E0425]: cannot find function `run_simulation` in this scope
+ --> crates/probar/src/simulation.rs:8:17
+  |
+3 | let recording = run_simulation(SimulationConfig {
+  |                 ^^^^^^^^^^^^^^ not found in this scope
+  |
+help: consider importing this function
+  |
+2 + use probar::run_simulation;
+  |
+
+error[E0422]: cannot find struct, variant or union type `SimulationConfig` in this scope
+ --> crates/probar/src/simulation.rs:8:32
+  |
+3 | let recording = run_simulation(SimulationConfig {
+  |                                ^^^^^^^^^^^^^^^^ not found in this scope
+  |
+help: consider importing this struct
+  |
+2 + use probar::SimulationConfig;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `RandomWalkAgent`
+ --> crates/probar/src/simulation.rs:11:23
+  |
+6 |     actions: Box::new(RandomWalkAgent::new()),
+  |                       ^^^^^^^^^^^^^^^ use of undeclared type `RandomWalkAgent`
+  |
+help: consider importing this struct
+  |
+2 + use probar::RandomWalkAgent;
+  |
+
+error[E0425]: cannot find function `run_replay` in this scope
+ --> crates/probar/src/simulation.rs:14:21
+  |
+9 | let replay_result = run_replay(&recording);
+  |                     ^^^^^^^^^^ not found in this scope
+  |
+help: consider importing this function
+  |
+2 + use probar::run_replay;
+  |
+
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0422, E0425, E0433.
+For more information about an error, try `rustc --explain E0422`.
+Couldn't compile the test.
+---- crates/probar/src/assertion/retry.rs - assertion::retry::RetryAssertion (line 109) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `RetryAssertion`
+ --> crates/probar/src/assertion/retry.rs:110:17
+  |
+3 | let assertion = RetryAssertion::new(|| {
+  |                 ^^^^^^^^^^^^^^ use of undeclared type `RetryAssertion`
+  |
+help: consider importing this struct
+  |
+2 + use probar::RetryAssertion;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `AssertionCheckResult`
+ --> crates/probar/src/assertion/retry.rs:112:9
+  |
+5 |         AssertionCheckResult::Pass
+  |         ^^^^^^^^^^^^^^^^^^^^ use of undeclared type `AssertionCheckResult`
+  |
+help: consider importing this enum
+  |
+2 + use probar::AssertionCheckResult;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `AssertionCheckResult`
+ --> crates/probar/src/assertion/retry.rs:114:9
+  |
+7 |         AssertionCheckResult::Fail("condition not met".into())
+  |         ^^^^^^^^^^^^^^^^^^^^ use of undeclared type `AssertionCheckResult`
+  |
+help: consider importing this enum
+  |
+2 + use probar::AssertionCheckResult;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Duration`
+  --> crates/probar/src/assertion/retry.rs:118:24
+   |
+11 | assertion.with_timeout(Duration::from_secs(5))
+   |                        ^^^^^^^^ use of undeclared type `Duration`
+   |
+help: consider importing one of these structs
+   |
+ 2 + use std::time::Duration;
+   |
+ 2 + use tokio::time::Duration;
+   |
+
+error[E0425]: cannot find function `some_condition` in this scope
+ --> crates/probar/src/assertion/retry.rs:111:8
+  |
+4 |     if some_condition() {
+  |        ^^^^^^^^^^^^^^ not found in this scope
+
+error: aborting due to 5 previous errors
+
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+Couldn't compile the test.
+---- crates/probar/src/media/gif_recorder.rs - media::gif_recorder::GifRecorder (line 138) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `GifRecorder`
+ --> crates/probar/src/media/gif_recorder.rs:139:20
+  |
+3 | let mut recorder = GifRecorder::new(GifConfig::new(800, 600));
+  |                    ^^^^^^^^^^^ use of undeclared type `GifRecorder`
+  |
+help: consider importing this struct
+  |
+2 + use probar::media::GifRecorder;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `GifConfig`
+ --> crates/probar/src/media/gif_recorder.rs:139:37
+  |
+3 | let mut recorder = GifRecorder::new(GifConfig::new(800, 600));
+  |                                     ^^^^^^^^^ use of undeclared type `GifConfig`
+  |
+help: consider importing this struct
+  |
+2 + use probar::media::GifConfig;
+  |
+
+error[E0425]: cannot find value `screenshots` in this scope
+ --> crates/probar/src/media/gif_recorder.rs:143:19
+  |
+7 | for screenshot in screenshots {
+  |                   ^^^^^^^^^^^ not found in this scope
+
+error[E0433]: failed to resolve: use of undeclared type `Path`
+  --> crates/probar/src/media/gif_recorder.rs:148:15
+   |
+12 | recorder.save(Path::new("test_recording.gif"))?;
+   |               ^^^^ use of undeclared type `Path`
+   |
+help: consider importing this struct
+   |
+ 2 + use std::path::Path;
+   |
+
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+Couldn't compile the test.
+---- crates/probar/src/fixture.rs - fixture::Fixture (line 25) stdout ----
+error[E0412]: cannot find type `DbConnection` in this scope
+ --> crates/probar/src/fixture.rs:27:24
+  |
+4 |     connection: Option<DbConnection>,
+  |                        ^^^^^^^^^^^^ not found in this scope
+  |
+help: you might be missing a type parameter
+  |
+3 | struct DatabaseFixture<DbConnection> {
+  |                       ++++++++++++++
+
+error[E0405]: cannot find trait `Fixture` in this scope
+ --> crates/probar/src/fixture.rs:30:6
+  |
+7 | impl Fixture for DatabaseFixture {
+  |      ^^^^^^^ not found in this scope
+  |
+help: consider importing this trait
+  |
+2 + use probar::Fixture;
+  |
+
+error[E0412]: cannot find type `ProbarResult` in this scope
+ --> crates/probar/src/fixture.rs:31:28
+  |
+8 |     fn setup(&mut self) -> ProbarResult<()> {
+  |                            ^^^^^^^^^^^^ not found in this scope
+  |
+help: consider importing this type alias
+  |
+2 + use probar::ProbarResult;
+  |
+
+error[E0412]: cannot find type `ProbarResult` in this scope
+  --> crates/probar/src/fixture.rs:36:31
+   |
+13 |     fn teardown(&mut self) -> ProbarResult<()> {
+   |                               ^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this type alias
+   |
+ 2 + use probar::ProbarResult;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `DbConnection`
+ --> crates/probar/src/fixture.rs:32:32
+  |
+9 |         self.connection = Some(DbConnection::connect("test_db")?);
+  |                                ^^^^^^^^^^^^ use of undeclared type `DbConnection`
+
+error: aborting due to 5 previous errors
+
+Some errors have detailed explanations: E0405, E0412, E0433.
+For more information about an error, try `rustc --explain E0405`.
+Couldn't compile the test.
+---- crates/probar/src/fixture.rs - fixture::FixtureManager (line 94) stdout ----
+error[E0603]: module `fixture` is private
+   --> crates/probar/src/fixture.rs:96:13
+    |
+  5 | use probar::fixture::{FixtureManager, Fixture};
+    |             ^^^^^^^ private module
+    |
+note: the module `fixture` is defined here
+   --> /home/noah/src/probar/crates/probar/src/lib.rs:108:1
+    |
+108 | mod fixture;
+    | ^^^^^^^^^^^
+
+error[E0603]: module `fixture` is private
+   --> crates/probar/src/fixture.rs:96:13
+    |
+  5 | use probar::fixture::{FixtureManager, Fixture};
+    |             ^^^^^^^ private module
+    |
+help: consider importing this trait instead:
+      probar::Fixture
+   --> crates/probar/src/fixture.rs:96:39
+    |
+  5 | use probar::fixture::{FixtureManager, Fixture};
+    |                                       ^^^^^^^
+note: the module `fixture` is defined here
+   --> /home/noah/src/probar/crates/probar/src/lib.rs:108:1
+    |
+108 | mod fixture;
+    | ^^^^^^^^^^^
+
+error[E0433]: failed to resolve: use of undeclared type `BrowserFixture`
+ --> crates/probar/src/fixture.rs:99:18
+  |
+8 | manager.register(BrowserFixture::new());
+  |                  ^^^^^^^^^^^^^^ use of undeclared type `BrowserFixture`
+
+error[E0433]: failed to resolve: use of undeclared type `DatabaseFixture`
+ --> crates/probar/src/fixture.rs:100:18
+  |
+9 | manager.register(DatabaseFixture::new());
+  |                  ^^^^^^^^^^^^^^^ use of undeclared type `DatabaseFixture`
+
+error: aborting due to 4 previous errors
+
+Some errors have detailed explanations: E0433, E0603.
+For more information about an error, try `rustc --explain E0433`.
+Couldn't compile the test.
+---- crates/probar/src/page_object.rs - page_object::PageObject (line 22) stdout ----
+error[E0412]: cannot find type `Locator` in this scope
+ --> crates/probar/src/page_object.rs:24:21
+  |
+4 |     username_input: Locator,
+  |                     ^^^^^^^ not found in this scope
+  |
+help: consider importing this struct
+  |
+2 + use probar::Locator;
+  |
+
+error[E0412]: cannot find type `Locator` in this scope
+ --> crates/probar/src/page_object.rs:25:21
+  |
+5 |     password_input: Locator,
+  |                     ^^^^^^^ not found in this scope
+  |
+help: consider importing this struct
+  |
+2 + use probar::Locator;
+  |
+
+error[E0412]: cannot find type `Locator` in this scope
+ --> crates/probar/src/page_object.rs:26:20
+  |
+6 |     submit_button: Locator,
+  |                    ^^^^^^^ not found in this scope
+  |
+help: consider importing this struct
+  |
+2 + use probar::Locator;
+  |
+
+error[E0405]: cannot find trait `PageObject` in this scope
+ --> crates/probar/src/page_object.rs:29:6
+  |
+9 | impl PageObject for LoginPage {
+  |      ^^^^^^^^^^ not found in this scope
+  |
+help: consider importing this trait
+  |
+2 + use probar::PageObject;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Locator`
+  --> crates/probar/src/page_object.rs:43:29
+   |
+23 |             username_input: Locator::new(Selector::css("input[name='username']")),
+   |                             ^^^^^^^ use of undeclared type `Locator`
+   |
+help: consider importing this struct
+   |
+ 2 + use probar::Locator;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `Selector`
+  --> crates/probar/src/page_object.rs:43:42
+   |
+23 |             username_input: Locator::new(Selector::css("input[name='username']")),
+   |                                          ^^^^^^^^ use of undeclared type `Selector`
+   |
+help: consider importing one of these items
+   |
+ 2 + use probar::Selector;
+   |
+ 2 + use proptest::sample::Selector;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `Locator`
+  --> crates/probar/src/page_object.rs:44:29
+   |
+24 |             password_input: Locator::new(Selector::css("input[name='password']")),
+   |                             ^^^^^^^ use of undeclared type `Locator`
+   |
+help: consider importing this struct
+   |
+ 2 + use probar::Locator;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `Selector`
+  --> crates/probar/src/page_object.rs:44:42
+   |
+24 |             password_input: Locator::new(Selector::css("input[name='password']")),
+   |                                          ^^^^^^^^ use of undeclared type `Selector`
+   |
+help: consider importing one of these items
+   |
+ 2 + use probar::Selector;
+   |
+ 2 + use proptest::sample::Selector;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `Locator`
+  --> crates/probar/src/page_object.rs:45:28
+   |
+25 |             submit_button: Locator::new(Selector::css("button[type='submit']")),
+   |                            ^^^^^^^ use of undeclared type `Locator`
+   |
+help: consider importing this struct
+   |
+ 2 + use probar::Locator;
+   |
+
+error[E0433]: failed to resolve: use of undeclared type `Selector`
+  --> crates/probar/src/page_object.rs:45:41
+   |
+25 |             submit_button: Locator::new(Selector::css("button[type='submit']")),
+   |                                         ^^^^^^^^ use of undeclared type `Selector`
+   |
+help: consider importing one of these items
+   |
+ 2 + use probar::Selector;
+   |
+ 2 + use proptest::sample::Selector;
+   |
+
+error[E0412]: cannot find type `ProbarResult` in this scope
+  --> crates/probar/src/page_object.rs:49:66
+   |
+29 |     pub async fn login(&self, username: &str, password: &str) -> ProbarResult<()> {
+   |                                                                  ^^^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this type alias
+   |
+ 2 + use probar::ProbarResult;
+   |
+
+error: aborting due to 11 previous errors
+
+Some errors have detailed explanations: E0405, E0412, E0433.
+For more information about an error, try `rustc --explain E0405`.
+Couldn't compile the test.
+---- crates/probar/src/fuzzer.rs - fuzzer (line 7) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `InputFuzzer`
+ --> crates/probar/src/fuzzer.rs:8:18
+  |
+3 | let mut fuzzer = InputFuzzer::new(Seed::from_u64(12345));
+  |                  ^^^^^^^^^^^ use of undeclared type `InputFuzzer`
+  |
+help: consider importing this struct
+  |
+2 + use probar::InputFuzzer;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `Seed`
+ --> crates/probar/src/fuzzer.rs:8:35
+  |
+3 | let mut fuzzer = InputFuzzer::new(Seed::from_u64(12345));
+  |                                   ^^^^ use of undeclared type `Seed`
+  |
+help: a trait with a similar name exists
+  |
+3 - let mut fuzzer = InputFuzzer::new(Seed::from_u64(12345));
+3 + let mut fuzzer = InputFuzzer::new(Send::from_u64(12345));
+  |
+help: consider importing this struct
+  |
+2 + use probar::Seed;
+  |
+
+error[E0425]: cannot find value `game` in this scope
+ --> crates/probar/src/fuzzer.rs:11:5
+  |
+6 |     game.update(inputs);
+  |     ^^^^ not found in this scope
+
+error: aborting due to 3 previous errors
+
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+Couldn't compile the test.
+---- crates/probar/src/media/video_recorder.rs - media::video_recorder::VideoRecorder (line 157) stdout ----
+error[E0425]: cannot find value `screenshots` in this scope
+  --> crates/probar/src/media/video_recorder.rs:167:19
+   |
+13 | for screenshot in screenshots {
+   |                   ^^^^^^^^^^^ not found in this scope
+
+error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+  --> crates/probar/src/media/video_recorder.rs:164:17
+   |
+ 4 | fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() {
+   |                                      ------------------------------------------------------------------ this function should return `Result` or `Option` to accept `?`
+...
+10 | recorder.start()?;
+   |                 ^ cannot use the `?` operator in a function that returns `()`
+   |
+help: consider adding return type
+   |
+ 4 ~ fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() -> Result<(), Box<dyn std::error::Error>> {
+ 5 | use probar::media::{VideoRecorder, VideoConfig};
+...
+18 | std::fs::write("test_recording.mp4", video_data)?;
+19 +     Ok(())
+   |
+
+error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+  --> crates/probar/src/media/video_recorder.rs:168:40
+   |
+ 4 | fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() {
+   |                                      ------------------------------------------------------------------ this function should return `Result` or `Option` to accept `?`
+...
+14 |     recorder.capture_frame(&screenshot)?;
+   |                                        ^ cannot use the `?` operator in a function that returns `()`
+   |
+help: consider adding return type
+   |
+ 4 ~ fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() -> Result<(), Box<dyn std::error::Error>> {
+ 5 | use probar::media::{VideoRecorder, VideoConfig};
+...
+18 | std::fs::write("test_recording.mp4", video_data)?;
+19 +     Ok(())
+   |
+
+error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+  --> crates/probar/src/media/video_recorder.rs:171:33
+   |
+ 4 | fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() {
+   |                                      ------------------------------------------------------------------ this function should return `Result` or `Option` to accept `?`
+...
+17 | let video_data = recorder.stop()?;
+   |                                 ^ cannot use the `?` operator in a function that returns `()`
+   |
+help: consider adding return type
+   |
+ 4 ~ fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() -> Result<(), Box<dyn std::error::Error>> {
+ 5 | use probar::media::{VideoRecorder, VideoConfig};
+...
+18 | std::fs::write("test_recording.mp4", video_data)?;
+19 +     Ok(())
+   |
+
+error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+  --> crates/probar/src/media/video_recorder.rs:172:49
+   |
+ 4 | fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() {
+   |                                      ------------------------------------------------------------------ this function should return `Result` or `Option` to accept `?`
+...
+18 | std::fs::write("test_recording.mp4", video_data)?;
+   |                                                 ^ cannot use the `?` operator in a function that returns `()`
+   |
+help: consider adding return type
+   |
+ 4 ~ fn main() { #[allow(non_snake_case)] fn _doctest_main_crates_probar_src_media_video_recorder_rs_157_0() -> Result<(), Box<dyn std::error::Error>> {
+ 5 | use probar::media::{VideoRecorder, VideoConfig};
+...
+18 | std::fs::write("test_recording.mp4", video_data)?;
+19 +     Ok(())
+   |
+
+error: aborting due to 5 previous errors
+
+Some errors have detailed explanations: E0277, E0425.
+For more information about an error, try `rustc --explain E0277`.
+Couldn't compile the test.
+---- crates/probar/src/media/png_exporter.rs - media::png_exporter::PngExporter (line 223) stdout ----
+error[E0433]: failed to resolve: use of undeclared type `PngExporter`
+ --> crates/probar/src/media/png_exporter.rs:224:16
+  |
+3 | let exporter = PngExporter::new()
+  |                ^^^^^^^^^^^ use of undeclared type `PngExporter`
+  |
+help: consider importing this struct
+  |
+2 + use probar::media::PngExporter;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `CompressionLevel`
+ --> crates/probar/src/media/png_exporter.rs:225:23
+  |
+4 |     .with_compression(CompressionLevel::Best)
+  |                       ^^^^^^^^^^^^^^^^ use of undeclared type `CompressionLevel`
+  |
+help: consider importing this enum
+  |
+2 + use probar::media::CompressionLevel;
+  |
+
+error[E0433]: failed to resolve: use of undeclared type `PngMetadata`
+ --> crates/probar/src/media/png_exporter.rs:226:20
+  |
+5 |     .with_metadata(PngMetadata::new().with_title("Login Test"));
+  |                    ^^^^^^^^^^^ use of undeclared type `PngMetadata`
+  |
+help: consider importing this struct
+  |
+2 + use probar::media::PngMetadata;
+  |
+
+error[E0425]: cannot find value `screenshot` in this scope
+ --> crates/probar/src/media/png_exporter.rs:228:33
+  |
+7 | let png_data = exporter.export(&screenshot)?;
+  |                                 ^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `screenshot` in this scope
+ --> crates/probar/src/media/png_exporter.rs:229:16
+  |
+8 | exporter.save(&screenshot, Path::new("screenshot.png"))?;
+  |                ^^^^^^^^^^ not found in this scope
+
+error[E0433]: failed to resolve: use of undeclared type `Path`
+ --> crates/probar/src/media/png_exporter.rs:229:28
+  |
+8 | exporter.save(&screenshot, Path::new("screenshot.png"))?;
+  |                            ^^^^ use of undeclared type `Path`
+  |
+help: consider importing this struct
+  |
+2 + use std::path::Path;
+  |
+
+error: aborting due to 6 previous errors
+
+Some errors have detailed explanations: E0425, E0433.
+For more information about an error, try `rustc --explain E0425`.
+Couldn't compile the test.
+---- crates/probar/src/runtime.rs - runtime::ProbarEntity (line 85) stdout ----
+error: cannot find derive macro `ProbarEntities` in this scope
+ --> crates/probar/src/runtime.rs:88:10
+  |
+6 | #[derive(ProbarEntities)]
+  |          ^^^^^^^^^^^^^^
+
+error[E0412]: cannot find type `Entity` in this scope
+ --> crates/probar/src/runtime.rs:90:25
+  |
+8 |     pub player1_paddle: Entity,
+  |                         ^^^^^^ not found in this scope
+  |
+help: there is an enum variant `probar::Selector::Entity`; try using the variant's enum
+  |
+8 -     pub player1_paddle: Entity,
+8 +     pub player1_paddle: probar::Selector,
+  |
+
+error[E0412]: cannot find type `Entity` in this scope
+ --> crates/probar/src/runtime.rs:91:25
+  |
+9 |     pub player2_paddle: Entity,
+  |                         ^^^^^^ not found in this scope
+  |
+help: there is an enum variant `probar::Selector::Entity`; try using the variant's enum
+  |
+9 -     pub player2_paddle: Entity,
+9 +     pub player2_paddle: probar::Selector,
+  |
+
+error[E0412]: cannot find type `Entity` in this scope
+  --> crates/probar/src/runtime.rs:92:15
+   |
+10 |     pub ball: Entity,
+   |               ^^^^^^ not found in this scope
+   |
+help: there is an enum variant `probar::Selector::Entity`; try using the variant's enum
+   |
+10 -     pub ball: Entity,
+10 +     pub ball: probar::Selector,
+   |
+
+error[E0425]: cannot find value `game` in this scope
+  --> crates/probar/src/runtime.rs:96:14
+   |
+14 | let paddle = game.entity(PongGame::Player1Paddle);
+   |              ^^^^ not found in this scope
+
+error[E0599]: no associated item named `Player1Paddle` found for struct `PongGame` in the current scope
+  --> crates/probar/src/runtime.rs:96:36
+   |
+ 7 | pub struct PongGame {
+   | ------------------- associated item `Player1Paddle` not found for this struct
+...
+14 | let paddle = game.entity(PongGame::Player1Paddle);
+   |                                    ^^^^^^^^^^^^^ associated item not found in `PongGame`
+
+error: aborting due to 6 previous errors
+
+Some errors have detailed explanations: E0412, E0425, E0599.
+For more information about an error, try `rustc --explain E0412`.
+Couldn't compile the test.
+
+failures:
+    crates/probar/src/assertion/retry.rs - assertion::retry::RetryAssertion (line 109)
+    crates/probar/src/assertion/soft.rs - assertion::soft::SoftAssertions (line 65)
+    crates/probar/src/fixture.rs - fixture::Fixture (line 25)
+    crates/probar/src/fixture.rs - fixture::FixtureManager (line 94)
+    crates/probar/src/fuzzer.rs - fuzzer (line 7)
+    crates/probar/src/media/gif_recorder.rs - media::gif_recorder::GifRecorder (line 138)
+    crates/probar/src/media/png_exporter.rs - media::png_exporter::PngExporter (line 223)
+    crates/probar/src/media/video_recorder.rs - media::video_recorder::VideoRecorder (line 157)
+    crates/probar/src/page_object.rs - page_object::PageObject (line 22)
+    crates/probar/src/reporter.rs - reporter::Reporter (line 233)
+    crates/probar/src/runtime.rs - runtime::ProbarEntity (line 85)
+    crates/probar/src/simulation.rs - simulation (line 7)
+
+test result: FAILED. 0 passed; 12 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+error: doctest failed, to rerun pass `-p probar --doc`

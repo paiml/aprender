@@ -1,0 +1,54 @@
+name: "Calculator Cross-Browser Testing"
+description: "Test calculator across all major browsers"
+version: "1.0"
+
+browsers:
+  chrome:
+    enabled: true
+    versions: ["stable", "beta"]
+    viewports:
+      - {width: 1920, height: 1080, name: "desktop"}
+      - {width: 375, height: 667, name: "mobile"}
+    features:
+      - wasm
+      - shared_array_buffer
+
+  firefox:
+    enabled: true
+    versions: ["stable"]
+    viewports:
+      - {width: 1920, height: 1080, name: "desktop"}
+      - {width: 375, height: 667, name: "mobile"}
+    features:
+      - wasm
+
+  webkit:
+    enabled: true
+    versions: ["stable"]
+    viewports:
+      - {width: 1920, height: 1080, name: "desktop"}
+      - {width: 375, height: 667, name: "mobile"}
+    features:
+      - wasm
+
+  mobile_chrome:
+    enabled: true
+    device: "Pixel 5"
+    touch: true
+
+test_matrix:
+  - browser: chrome
+    tests: ["playbooks/calculator.yaml", "playbooks/error_handling.yaml"]
+  - browser: firefox
+    tests: ["playbooks/calculator.yaml"]
+  - browser: webkit
+    tests: ["playbooks/calculator.yaml"]
+  - browser: mobile_chrome
+    tests: ["playbooks/calculator.yaml"]
+
+ci_integration:
+  parallel: true
+  fail_fast: false
+  retry_count: 2
+  screenshot_on_failure: true
+  video_on_failure: true

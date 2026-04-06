@@ -1,0 +1,20 @@
+{
+  "name": "Error Path - Division by Zero",
+  "description": "Record of division by zero error handling",
+  "recorded_at": "2024-12-14T00:00:00Z",
+  "duration_ms": 600,
+  "events": [
+    {"frame": 0, "type": "init", "state": "idle"},
+    {"frame": 10, "type": "click", "target": "[data-digit='1']", "state": "entering_first"},
+    {"frame": 20, "type": "click", "target": "[data-op='divide']", "state": "operator_selected"},
+    {"frame": 30, "type": "click", "target": "[data-digit='0']", "state": "entering_second"},
+    {"frame": 40, "type": "click", "target": "[data-action='equals']", "state": "error"},
+    {"frame": 50, "type": "assert", "display_contains": "Error", "passed": true},
+    {"frame": 60, "type": "click", "target": "[data-action='clear']", "state": "idle"}
+  ],
+  "final_state": {
+    "display": "0",
+    "history_length": 0
+  },
+  "deterministic": true
+}

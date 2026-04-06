@@ -1,0 +1,8 @@
+{
+  "device": "desktop",
+  "viewport": {"width": 1920, "height": 1080},
+  "scale_factor": 1.0,
+  "layout": "horizontal",
+  "button_size": "large",
+  "font_size": "24px"
+}

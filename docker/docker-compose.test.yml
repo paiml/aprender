@@ -1,0 +1,165 @@
+# PROBAR-SPEC-014: Docker Compose for Parallel Cross-Browser Testing
+#
+# Usage:
+#   docker-compose -f docker/docker-compose.test.yml up -d
+#   docker-compose -f docker/docker-compose.test.yml run --rm chrome probar test
+#   docker-compose -f docker/docker-compose.test.yml down
+#
+# Parallel testing:
+#   docker-compose -f docker/docker-compose.test.yml up -d
+#   docker-compose -f docker/docker-compose.test.yml exec chrome probar test &
+#   docker-compose -f docker/docker-compose.test.yml exec firefox probar test &
+#   docker-compose -f docker/docker-compose.test.yml exec webkit probar test &
+#   wait
+
+version: "3.9"
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.wasm-test
+  volumes:
+    - ../:/app:ro
+    - test-results:/results
+  networks:
+    - probar-test
+  environment:
+    - PROBAR_COOP_COEP=true
+    - PROBAR_TIMEOUT=60
+    - RUST_BACKTRACE=1
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - SYS_ADMIN  # Required for Chrome sandbox
+  mem_limit: 2g
+  cpus: 2
+  restart: "no"
+
+services:
+  # ==========================================================================
+  # Chrome Container
+  # ==========================================================================
+  chrome:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.wasm-test
+      target: chrome
+    container_name: probar-chrome
+    ports:
+      - "9222:9222"
+    environment:
+      - PROBAR_BROWSER=chrome
+      - PROBAR_CDP_PORT=9222
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9222/json/version"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # Firefox Container
+  # ==========================================================================
+  firefox:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.wasm-test
+      target: firefox
+    container_name: probar-firefox
+    ports:
+      - "9223:9223"
+    environment:
+      - PROBAR_BROWSER=firefox
+      - PROBAR_CDP_PORT=9223
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9223/json/version"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # WebKit Container
+  # ==========================================================================
+  webkit:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.wasm-test
+      target: webkit
+    container_name: probar-webkit
+    ports:
+      - "9224:9224"
+    environment:
+      - PROBAR_BROWSER=webkit
+      - PROBAR_CDP_PORT=9224
+    healthcheck:
+      test: ["CMD", "probar", "--version"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # WASM Application Server (serves test app with COOP/COEP)
+  # ==========================================================================
+  wasm-server:
+    image: nginx:alpine
+    container_name: probar-wasm-server
+    volumes:
+      - ../examples/wasm-app:/usr/share/nginx/html:ro
+      - ./nginx-coop-coep.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    networks:
+      - probar-test
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  # ==========================================================================
+  # Test Runner (orchestrates parallel tests)
+  # ==========================================================================
+  test-runner:
+    <<: *common
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.wasm-test
+      target: all-browsers
+    container_name: probar-test-runner
+    depends_on:
+      chrome:
+        condition: service_healthy
+      firefox:
+        condition: service_healthy
+      wasm-server:
+        condition: service_healthy
+    environment:
+      - PROBAR_PARALLEL=3
+      - PROBAR_BROWSERS=chrome,firefox,webkit
+      - CHROME_CDP_URL=http://chrome:9222
+      - FIREFOX_CDP_URL=http://firefox:9223
+      - WEBKIT_CDP_URL=http://webkit:9224
+      - WASM_SERVER_URL=http://wasm-server
+    command: >
+      bash -c "
+        echo 'Starting parallel cross-browser tests...'
+        probar test --browser chrome --cdp-url http://chrome:9222 &
+        probar test --browser firefox --cdp-url http://firefox:9223 &
+        probar test --browser webkit --cdp-url http://webkit:9224 &
+        wait
+        echo 'All browser tests completed'
+      "
+
+networks:
+  probar-test:
+    driver: bridge
+
+volumes:
+  test-results:

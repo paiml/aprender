@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Showcase Calculator - 100% Test Coverage Demo</title>
+    <style>
+        :root {
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-tertiary: #0f3460;
+            --accent: #e94560;
+            --accent-hover: #ff6b6b;
+            --text-primary: #eee;
+            --text-secondary: #aaa;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --error: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        header h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, var(--accent), #ff8a80);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        header .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+
+        .badge {
+            display: inline-block;
+            background: var(--bg-tertiary);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            margin-top: 10px;
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .calculator-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 280px;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .calculator-wrapper {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .calculator {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        }
+
+        .display {
+            background: var(--bg-primary);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .display-input {
+            font-size: 1.5rem;
+            color: var(--text-primary);
+            min-height: 40px;
+            word-break: break-all;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .display-result {
+            font-size: 2.5rem;
+            color: var(--accent);
+            font-weight: bold;
+            min-height: 50px;
+            margin-top: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .display-result.error {
+            color: var(--error);
+            font-size: 1.2rem;
+        }
+
+        .keypad {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 20px;
+            font-size: 1.3rem;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-weight: 600;
+        }
+
+        .btn-digit {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .btn-digit:hover {
+            background: #1a4a7a;
+            transform: translateY(-2px);
+        }
+
+        .btn-op {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-op:hover {
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+        }
+
+        .btn-clear {
+            background: var(--error);
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #dc2626;
+        }
+
+        .btn-equals {
+            background: var(--success);
+            color: var(--bg-primary);
+        }
+
+        .btn-equals:hover {
+            background: #22c55e;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 15px;
+        }
+
+        .panel h3 {
+            color: var(--accent);
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .history-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+        }
+
+        .history-item .expr {
+            color: var(--text-secondary);
+        }
+
+        .history-item .result {
+            color: var(--success);
+            float: right;
+        }
+
+        .anomaly-status {
+            font-size: 0.85rem;
+        }
+
+        .anomaly-status .status-line {
+            padding: 5px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .anomaly-status .status-ok {
+            color: var(--success);
+        }
+
+        .anomaly-status .status-warn {
+            color: var(--warning);
+        }
+
+        .anomaly-status .status-error {
+            color: var(--error);
+        }
+
+        .shortcuts {
+            font-size: 0.8rem;
+        }
+
+        .shortcuts .shortcut {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .shortcuts .key {
+            color: var(--accent);
+            font-family: monospace;
+        }
+
+        .probar-badge {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            padding: 10px;
+            border-top: 1px solid var(--bg-tertiary);
+            margin-top: 10px;
+        }
+
+        .probar-badge a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .probar-badge a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Showcase Calculator</h1>
+            <p class="subtitle">100% Test Coverage Demo - TUI + WASM</p>
+            <a href="https://github.com/paiml/probar" class="badge" target="_blank">Powered by Probar - Pragmatic AI Labs</a>
+        </header>
+
+        <div class="calculator-wrapper">
+            <div class="calculator">
+                <div class="display">
+                    <div class="display-input" id="display-input"></div>
+                    <div class="display-result" id="display-result"></div>
+                </div>
+
+                <div class="keypad">
+                    <!-- Row 1 -->
+                    <button class="btn btn-digit" id="btn-7" data-value="7">7</button>
+                    <button class="btn btn-digit" id="btn-8" data-value="8">8</button>
+                    <button class="btn btn-digit" id="btn-9" data-value="9">9</button>
+                    <button class="btn btn-op" id="btn-divide" data-value="/">/</button>
+
+                    <!-- Row 2 -->
+                    <button class="btn btn-digit" id="btn-4" data-value="4">4</button>
+                    <button class="btn btn-digit" id="btn-5" data-value="5">5</button>
+                    <button class="btn btn-digit" id="btn-6" data-value="6">6</button>
+                    <button class="btn btn-op" id="btn-times" data-value="*">×</button>
+
+                    <!-- Row 3 -->
+                    <button class="btn btn-digit" id="btn-1" data-value="1">1</button>
+                    <button class="btn btn-digit" id="btn-2" data-value="2">2</button>
+                    <button class="btn btn-digit" id="btn-3" data-value="3">3</button>
+                    <button class="btn btn-op" id="btn-minus" data-value="-">−</button>
+
+                    <!-- Row 4 -->
+                    <button class="btn btn-digit" id="btn-0" data-value="0">0</button>
+                    <button class="btn btn-digit" id="btn-decimal" data-value=".">.</button>
+                    <button class="btn btn-equals" id="btn-equals">=</button>
+                    <button class="btn btn-op" id="btn-plus" data-value="+">+</button>
+
+                    <!-- Row 5 -->
+                    <button class="btn btn-clear" id="btn-clear">C</button>
+                    <button class="btn btn-digit" id="btn-open-paren" data-value="(">(</button>
+                    <button class="btn btn-digit" id="btn-close-paren" data-value=")">)</button>
+                    <button class="btn btn-op" id="btn-power" data-value="^">^</button>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="panel">
+                    <h3>Anomaly Detection</h3>
+                    <div class="anomaly-status" id="anomaly-status">
+                        <div class="status-line status-ok">✓ Ready</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>History</h3>
+                    <div class="history-list" id="history-list">
+                        <div class="history-item" style="color: var(--text-secondary); text-align: center;">
+                            No calculations yet
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>Shortcuts</h3>
+                    <div class="shortcuts">
+                        <div class="shortcut"><span class="key">Enter</span><span>Calculate</span></div>
+                        <div class="shortcut"><span class="key">Esc</span><span>Clear</span></div>
+                        <div class="shortcut"><span class="key">Backspace</span><span>Delete</span></div>
+                        <div class="shortcut"><span class="key">0-9</span><span>Digits</span></div>
+                        <div class="shortcut"><span class="key">+-*/^</span><span>Operators</span></div>
+                    </div>
+                    <div class="probar-badge">
+                        <a href="https://github.com/paiml/probar" target="_blank">Probar</a> by Pragmatic AI Labs
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Calculator state (pure JS implementation matching WASM interface)
+        class Calculator {
+            constructor() {
+                this.input = '';
+                this.result = null;
+                this.history = [];
+            }
+
+            append(char) {
+                this.input += char;
+            }
+
+            appendWithSpaces(char) {
+                if (this.input && !this.input.endsWith(' ')) {
+                    this.input += ' ';
+                }
+                this.input += char + ' ';
+            }
+
+            backspace() {
+                this.input = this.input.slice(0, -1);
+            }
+
+            clear() {
+                this.input = '';
+                this.result = null;
+            }
+
+            evaluate() {
+                if (!this.input.trim()) return;
+
+                try {
+                    // Sanitize and evaluate
+                    let expr = this.input
+                        .replace(/\^/g, '**')  // Power operator
+                        .replace(/×/g, '*')
+                        .replace(/−/g, '-');
+
+                    // Check for division by zero
+                    if (/\/\s*0(?![.\d])/.test(expr)) {
+                        throw new Error('Division by zero');
+                    }
+
+                    // Safe evaluation using Function
+                    const result = Function('"use strict"; return (' + expr + ')')();
+
+                    if (!isFinite(result)) {
+                        throw new Error('Overflow');
+                    }
+                    if (isNaN(result)) {
+                        throw new Error('Invalid result');
+                    }
+
+                    // Format result
+                    const formatted = this.formatNumber(result);
+
+                    // Add to history
+                    this.history.unshift({
+                        expression: this.input,
+                        result: formatted
+                    });
+                    if (this.history.length > 10) {
+                        this.history.pop();
+                    }
+
+                    this.result = { ok: true, value: formatted };
+                    this.input = '';
+                } catch (e) {
+                    this.result = { ok: false, error: e.message };
+                }
+            }
+
+            formatNumber(val) {
+                if (Number.isInteger(val) && Math.abs(val) < 1e15) {
+                    return val.toString();
+                }
+                return parseFloat(val.toPrecision(10)).toString();
+            }
+
+            getAnomalyStatus() {
+                if (!this.result) {
+                    return [{ text: 'Ready', status: 'ok' }];
+                }
+
+                if (this.result.ok) {
+                    return [
+                        { text: 'No NaN detected', status: 'ok' },
+                        { text: 'No overflow', status: 'ok' },
+                        { text: 'All invariants satisfied', status: 'ok' }
+                    ];
+                } else {
+                    return [
+                        { text: this.result.error, status: 'error' }
+                    ];
+                }
+            }
+        }
+
+        // Initialize calculator
+        const calc = new Calculator();
+        const displayInput = document.getElementById('display-input');
+        const displayResult = document.getElementById('display-result');
+        const historyList = document.getElementById('history-list');
+        const anomalyStatus = document.getElementById('anomaly-status');
+
+        function updateDisplay() {
+            displayInput.textContent = calc.input || '\u00A0';
+
+            if (calc.result) {
+                if (calc.result.ok) {
+                    displayResult.textContent = calc.result.value;
+                    displayResult.classList.remove('error');
+                } else {
+                    displayResult.textContent = 'Error: ' + calc.result.error;
+                    displayResult.classList.add('error');
+                }
+            } else {
+                displayResult.textContent = '\u00A0';
+                displayResult.classList.remove('error');
+            }
+
+            // Update history
+            if (calc.history.length > 0) {
+                historyList.innerHTML = calc.history.map(h =>
+                    `<div class="history-item">
+                        <span class="expr">${h.expression}</span>
+                        <span class="result">= ${h.result}</span>
+                    </div>`
+                ).join('');
+            }
+
+            // Update Anomaly status
+            const status = calc.getAnomalyStatus();
+            anomalyStatus.innerHTML = status.map(s =>
+                `<div class="status-line status-${s.status}">
+                    ${s.status === 'ok' ? '✓' : s.status === 'warn' ? '⚠' : '✗'} ${s.text}
+                </div>`
+            ).join('');
+        }
+
+        // Button handlers
+        document.querySelectorAll('.btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.id;
+                const value = btn.dataset.value;
+
+                if (id === 'btn-clear') {
+                    calc.clear();
+                } else if (id === 'btn-equals') {
+                    calc.evaluate();
+                } else if (value) {
+                    if (['+', '-', '*', '/', '^'].includes(value)) {
+                        calc.appendWithSpaces(value);
+                    } else {
+                        calc.append(value);
+                    }
+                }
+
+                updateDisplay();
+            });
+        });
+
+        // Keyboard support
+        document.addEventListener('keydown', (e) => {
+            const key = e.key;
+
+            if (key === 'Enter') {
+                calc.evaluate();
+            } else if (key === 'Escape') {
+                calc.clear();
+            } else if (key === 'Backspace') {
+                calc.backspace();
+            } else if (/^[0-9.]$/.test(key)) {
+                calc.append(key);
+            } else if (['+', '-', '*', '/', '^'].includes(key)) {
+                calc.appendWithSpaces(key);
+            } else if (key === '(' || key === ')') {
+                calc.append(key);
+            } else {
+                return; // Don't update display for unhandled keys
+            }
+
+            e.preventDefault();
+            updateDisplay();
+        });
+
+        // Initial display
+        updateDisplay();
+
+        console.log('Calculator initialized - 100% Test Coverage Demo');
+    </script>
+</body>
+</html>
