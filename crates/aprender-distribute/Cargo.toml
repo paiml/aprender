@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
-name = "repartir"
+name = "aprender-distribute"
 version = "2.0.4"
 edition = "2021"
 authors = ["Pragmatic AI Labs"]

@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
-name = "alimentar"
+name = "aprender_data"
 version = "0.2.9"
 edition = "2021"
 authors = ["paiml"]
@@ -112,7 +112,7 @@ predicates = "3"
 jugar-probar = "1.0.1"
 
 [[bin]]
-name = "alimentar"
+name = "aprender_data"
 path = "src/main.rs"
 required-features = ["cli"]
 
@@ -121,7 +121,7 @@ name = "generate_fixtures"
 path = "scripts/generate_fixtures.rs"
 
 [lib]
-name = "alimentar"
+name = "aprender_data"
 path = "src/lib.rs"
 
 [profile.release]

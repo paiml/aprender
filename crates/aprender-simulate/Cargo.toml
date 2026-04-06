@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
-name = "simular"
+name = "aprender_simulate"
 version = "0.3.2"
 edition = "2021"
 rust-version = "1.82.0"
@@ -120,12 +120,12 @@ z3-proofs = []
 schema-validation = []
 
 [lib]
-name = "simular"
+name = "aprender_simulate"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "simular"
+name = "aprender_simulate"
 path = "src/main.rs"
 
 [[example]]

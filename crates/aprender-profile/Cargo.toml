@@ -1,5 +1,5 @@
 [package]
-name = "renacer"
+name = "aprender-profile"
 version = "0.10.2"
 edition = "2021"
 rust-version = "1.75"

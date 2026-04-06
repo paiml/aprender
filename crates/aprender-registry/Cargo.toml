@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
-name = "pacha"
+name = "aprender_registry"
 version = "0.2.6"
 edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
@@ -78,12 +78,12 @@ alimentar-integration = ["alimentar"]
 full = ["compression", "cli", "remote", "encryption", "signing", "lineage-graph", "aprender-integration", "alimentar-integration"]
 
 [[bin]]
-name = "pacha"
+name = "aprender_registry"
 path = "src/main.rs"
 required-features = ["cli"]
 
 [lib]
-name = "pacha"
+name = "aprender_registry"
 path = "src/lib.rs"
 
 [[bench]]

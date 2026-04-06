@@ -1,5 +1,5 @@
 [package]
-name = "trueno-graph"
+name = "aprender-graph"
 version = "0.1.18"
 edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]

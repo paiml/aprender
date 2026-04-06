@@ -1,5 +1,5 @@
 [package]
-name = "probador"
+name = "aprender-test-cli"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -18,7 +18,7 @@ browser = ["jugar-probar/browser"]
 llm = ["jugar-probar/llm"]
 
 [[bin]]
-name = "probador"
+name = "aprender-test-cli"
 path = "src/main.rs"
 
 [dependencies]

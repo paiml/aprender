@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
-name = "trueno-db"
+name = "aprender-db"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -111,7 +111,7 @@ tonic = { version = "0.12", optional = true }
 prost = { version = "0.13", optional = true }
 
 [[bin]]
-name = "trueno-db"
+name = "aprender-db"
 path = "src/main.rs"
 required-features = ["server"]
 
