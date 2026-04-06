@@ -92,16 +92,19 @@ provable-contracts-macros = { version = "0.2", path = "../../../provable-contrac
 batuta-common = "0.1"
 
 # Sovereign coding assistant (apr code → batuta agent engine) — PMAT-182
-batuta = { version = "0.7", path = "../../../batuta", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
+# GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
+batuta = { version = "0.7", optional = true, default-features = false, features = ["agents", "agents-inference", "rag"] }
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda/gpu features hardcoded here because apr-cli code has ungated CUDA imports.
 # TODO: Gate all CUDA code in apr-cli with #[cfg(feature = "cuda")] then remove from here.
-realizar = { version = "0.8", path = "../../../realizar", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
+# GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
+realizar = { version = "0.8", optional = true, default-features = false, features = ["server", "aprender-serve", "cli", "gpu", "cuda"] }
 
 # Whisper speech recognition (GH-516: apr run --input audio.wav)
 # Zero external deps — our own implementation in ../whisper.apr
-whisper-apr = { version = "0.2", path = "../../../whisper.apr", optional = true }
+# GH-344: path dep via .cargo/config.toml.dev-overrides when available
+whisper-apr = { version = "0.2", optional = true }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency
@@ -178,7 +181,8 @@ entrenar = { version = "0.7.3", optional = true, features = ["parquet"] }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
-alimentar = { version = "0.2.8", path = "../../../alimentar", default-features = false, features = ["shuffle"] }
+# GH-344: path dep via .cargo/config.toml.dev-overrides; CI uses checkout+symlink
+alimentar = { version = "0.2.8", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml = { package = "serde_yaml_ng", version = "0.10" }

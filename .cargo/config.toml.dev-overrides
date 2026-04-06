@@ -9,7 +9,10 @@
 # Or run: make dev-setup
 #
 # Required sibling repos (clone alongside aprender):
+#   ../alimentar     — data loading (datasets feature)
+#   ../batuta        — sovereign coding assistant (code feature in apr-cli)
 #   ../realizar      — inference engine
+#   ../whisper.apr   — whisper speech recognition (whisper feature in apr-cli)
 #   ../entrenar      — training engine (includes entrenar-lora)
 #   ../trueno        — SIMD compute (includes trueno-gpu, trueno-quant)
 #   ../renacer       — profiling
@@ -17,7 +20,10 @@
 #   ../pacha         — model registry
 
 [patch.crates-io]
+alimentar = { path = "../alimentar" }
+batuta = { path = "../batuta" }
 realizar = { path = "../realizar" }
+whisper-apr = { path = "../whisper.apr" }
 entrenar = { path = "../entrenar" }
 trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }

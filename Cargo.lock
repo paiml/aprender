@@ -124,33 +124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alimentar"
-version = "0.2.9"
-dependencies = [
- "arrow 57.3.0",
- "arrow-csv",
- "arrow-json",
- "bytes",
- "clap",
- "crossterm",
- "lz4_flex",
- "memmap2",
- "nu-ansi-term",
- "parquet 57.3.0",
- "rand 0.8.5",
- "reedline",
- "rmp-serde",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "thiserror 2.0.18",
- "tokio",
- "unicode-width 0.2.0",
- "zstd",
-]
-
-[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -268,7 +241,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "apr-cli"
 version = "0.4.15"
 dependencies = [
- "alimentar 0.2.9",
+ "alimentar",
  "aprender 0.27.8",
  "assert_cmd",
  "async-stream",
@@ -297,7 +270,7 @@ dependencies = [
  "proptest",
  "provable-contracts-macros 0.2.2",
  "ratatui",
- "realizar 0.8.6",
+ "realizar",
  "regex",
  "renacer",
  "rmp-serde",
@@ -378,7 +351,7 @@ name = "aprender"
 version = "0.27.8"
 dependencies = [
  "aes-gcm",
- "alimentar 0.2.9",
+ "alimentar",
  "alsa",
  "argon2",
  "batuta-common",
@@ -1193,6 +1166,8 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "batuta"
 version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7e77e2ff67b9473b3752dcca087d79b88d22ef8d8c0daae243341bba771fb03"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1207,7 +1182,7 @@ dependencies = [
  "indexmap",
  "pacha",
  "quick-xml",
- "realizar 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "realizar",
  "reqwest",
  "semver",
  "serde",
@@ -2411,7 +2386,7 @@ version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b9463d3c4bb43d5543ef458e5d485d4d654e32a040f6386f2a55a218513dda8"
 dependencies = [
- "alimentar 0.2.8",
+ "alimentar",
  "aprender 0.27.7",
  "arrow 57.3.0",
  "bytemuck",
@@ -2431,7 +2406,7 @@ dependencies = [
  "presentar-terminal",
  "provable-contracts-macros 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.9.2",
- "realizar 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "realizar",
  "regex",
  "rusqlite",
  "safetensors 0.7.0",
@@ -5715,49 +5690,11 @@ dependencies = [
 [[package]]
 name = "realizar"
 version = "0.8.6"
-dependencies = [
- "anyhow",
- "aprender 0.27.7",
- "arc-swap",
- "async-stream",
- "axum",
- "chrono",
- "clap",
- "futures",
- "half",
- "libc",
- "memmap2",
- "minijinja",
- "num-traits",
- "once_cell",
- "presentar-terminal",
- "provable-contracts-macros 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rand 0.8.5",
- "rayon",
- "renacer-core",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "smallvec",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tower 0.4.13",
- "tower-http",
- "tracing",
- "trueno 0.17.5",
- "trueno-gpu",
- "trueno-quant",
- "uuid",
-]
-
-[[package]]
-name = "realizar"
-version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e05fc171584cbf0114aafe2c28cf7d645d0d9ebe1abe06f94685d693ee368b17"
 dependencies = [
  "anyhow",
+ "aprender 0.27.7",
  "arc-swap",
  "async-stream",
  "axum",
@@ -8198,6 +8135,8 @@ dependencies = [
 [[package]]
 name = "whisper-apr"
 version = "0.2.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4153d59ba28ca44f0209d80ec72a574ab0a6f668b3a91feec3690892b902933"
 dependencies = [
  "aprender 0.27.7",
  "getrandom 0.2.17",
@@ -8206,7 +8145,7 @@ dependencies = [
  "openssl",
  "provable-contracts-macros 0.1.1",
  "rayon",
- "realizar 0.8.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "realizar",
  "thiserror 2.0.18",
  "trueno 0.17.5",
 ]
