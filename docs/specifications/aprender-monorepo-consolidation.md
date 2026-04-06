@@ -2,7 +2,7 @@
 
 **Version**: 1.7
 **Date**: 2026-04-06
-**Status**: IN PROGRESS — Phase 1-2 Active
+**Status**: IN PROGRESS — Phase 2 Complete, Phase 3 (dep wiring) next
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
@@ -138,7 +138,26 @@ Every successful large Rust project uses this pattern:
 
 ---
 
-## Current State (5 repos, 4752 .rs files, 32+ published crates)
+## Migration Progress (2026-04-06)
+
+| Phase | Status | Details |
+|-------|--------|---------|
+| Phase 1: Prepare workspace | DONE | `[workspace.package] version = "0.29.0"`, 35+ shared deps |
+| Phase 2a: trueno | DONE | 17 crates flattened to `crates/aprender-*` |
+| Phase 2b: provable-contracts | DONE | 3 crates → `aprender-contracts-*` |
+| Phase 2c: realizar | DONE | 1 crate → `aprender-serve` |
+| Phase 2d: entrenar | DONE | 8 crates → `aprender-train-*` (+1 excluded) |
+| Phase 2e: batuta | DONE | 1 crate → `aprender-orchestrate` |
+| Phase 2f: 14 satellites | DONE | 49 active members, 23 sub-crates pending wiring |
+| Phase 3: Wire workspace deps | NEXT | Replace version deps with `{ workspace = true }` |
+| Phase 4: Publish + shims | TODO | |
+| Phase 5: Archive old repos | TODO | |
+
+**Current count**: 49 active workspace members, 72 total crates in repo.
+
+---
+
+## Previous State (5 repos, 4752 .rs files, 32+ published crates)
 
 ### Repository Inventory
 
