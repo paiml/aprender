@@ -42,6 +42,8 @@ members = [
     "crates/aprender-train-bench",
     "crates/aprender-train-wasm",
     # "crates/aprender-train-canary",  # Excluded: sqlite3 link conflict with burn dep
+    # --- APR-MONO Phase 2e: was batuta (orchestration) ---
+    "crates/aprender-orchestrate",
 ]
 exclude = ["fuzz"]
 resolver = "2"

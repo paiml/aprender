@@ -1,18 +1,7 @@
-[workspace]
-resolver = "2"
-
-[workspace.package]
-version = "0.7.3"
-edition = "2021"
-authors = ["Pragmatic AI Labs"]
-license = "MIT"
-repository = "https://github.com/paiml/Batuta"
-rust-version = "1.89"
-
-[workspace.dependencies]
+# NOTE: Old [workspace] section removed — member of root paiml/aprender workspace.
 
 [package]
-name = "batuta"
+name = "aprender-orchestrate"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -323,107 +312,6 @@ codegen-units = 1
 # ============================================================================
 # LINTS (Per pmat rust-project-score recommendations)
 # ============================================================================
-
-[workspace.lints.rust]
-# Safety and correctness
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub = "allow"
-# Documentation
-missing_docs = "allow"
-
-[workspace.lints.clippy]
-# Correctness - MUST pass
-correctness = { level = "deny", priority = -1 }
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-# Performance - should pass
-perf = { level = "warn", priority = -1 }
-# Style - should pass
-style = { level = "warn", priority = -1 }
-# Complexity - advisory
-cognitive_complexity = "warn"
-too_many_arguments = "warn"
-# unwrap_used: allowed at workspace level because test code uses it pervasively.
-# Production code enforces via #[warn(clippy::unwrap_used)] in lib.rs.
-unwrap_used = "allow"
-expect_used = "allow"
-# Allow common pedantic lints (noise without safety value)
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-return_self_not_must_use = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-needless_pass_by_value = "allow"
-clone_on_ref_ptr = "allow"
-# Casting — intentional in metrics/scoring code
-cast_precision_loss = "allow"
-cast_possible_truncation = "allow"
-cast_sign_loss = "allow"
-cast_lossless = "allow"
-# Test-only noise (production enforced via lib.rs cfg_attr)
-float_cmp = "allow"
-float_cmp_const = "allow"
-field_reassign_with_default = "allow"
-default_trait_access = "allow"
-len_zero = "allow"
-useless_vec = "allow"
-cloned_ref_to_slice_refs = "allow"
-for_kv_map = "allow"
-assertions_on_constants = "warn"
-# Noise suppressors
-trivially_copy_pass_by_ref = "allow"
-unused_self = "allow"
-match_same_arms = "allow"
-doc_markdown = "allow"
-similar_names = "allow"
-too_many_lines = "allow"
-struct_excessive_bools = "allow"
-struct_field_names = "allow"
-unreadable_literal = "allow"
-items_after_statements = "allow"
-unnecessary_wraps = "allow"
-single_match_else = "allow"
-redundant_closure_for_method_calls = "allow"
-map_unwrap_or = "allow"
-if_not_else = "allow"
-manual_string_new = "allow"
-uninlined_format_args = "allow"
-used_underscore_binding = "allow"
-wildcard_imports = "allow"
-option_if_let_else = "allow"
-manual_let_else = "allow"
-fn_params_excessive_bools = "allow"
-unused_async = "allow"
-iter_without_into_iter = "allow"
-format_push_string = "allow"
-assigning_clones = "allow"
-explicit_iter_loop = "allow"
-into_iter_without_iter = "allow"
-stable_sort_primitive = "allow"
-unnecessary_literal_bound = "allow"
-unnecessary_debug_formatting = "allow"
-unnested_or_patterns = "allow"
-implicit_clone = "allow"
-ref_as_ptr = "allow"
-many_single_char_names = "allow"
-cast_possible_wrap = "allow"
-cast_ptr_alignment = "allow"
-large_stack_arrays = "allow"
-case_sensitive_file_extension_comparisons = "allow"
-implicit_hasher = "allow"
-match_wildcard_for_single_variants = "allow"
-bool_to_int_with_if = "allow"
-if_then_some_else_none = "allow"
-needless_raw_string_hashes = "allow"
-needless_continue = "allow"
-option_option = "allow"
-ref_option = "allow"
-str_to_string = "allow"
-format_collect = "allow"
-comparison_chain = "allow"
-no_effect_underscore_binding = "allow"
-doc_link_with_quotes = "allow"
 
 [lints]
 workspace = true
