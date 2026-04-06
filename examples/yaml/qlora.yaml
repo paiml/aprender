@@ -1,0 +1,32 @@
+# YAML-032: QLoRA (4-bit)
+# QA Focus: VRAM usage reduction > 50%
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: [q_proj, k_proj, v_proj, o_proj]
+
+data:
+  train: ./data/train.parquet
+  batch_size: 2
+
+optimizer:
+  name: adamw
+  lr: 0.0002
+  weight_decay: 0.0
+
+lora:
+  rank: 64
+  alpha: 128.0
+  target_modules: [q_proj, k_proj, v_proj, o_proj]
+  dropout: 0.1
+
+quantize:
+  bits: 4
+  symmetric: "true"
+  per_channel: "true"
+
+training:
+  epochs: 1
+  grad_clip: 0.3
+  output_dir: ./outputs/qlora

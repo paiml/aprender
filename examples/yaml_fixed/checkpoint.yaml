@@ -1,0 +1,16 @@
+model:
+  path: "model.gguf"
+  layers: []
+
+data:
+  train: "data/train.parquet"
+  batch_size: 32
+
+optimizer:
+  name: "adam"
+  lr: 0.001
+
+training:
+  epochs: 1
+  save_interval: 1
+  output_dir: "checkpoints/ckpt"

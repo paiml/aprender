@@ -1,0 +1,99 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "AdamW/SGD optimizer convergence and correctness contracts"
+  references:
+    - "Kingma & Ba (2014) Adam: A Method for Stochastic Optimization"
+    - "Loshchilov & Hutter (2019) Decoupled Weight Decay Regularization"
+
+equations:
+  adamw_update:
+    formula: "theta_t = (1 - lr * lambda) * theta_{t-1} - lr * m_hat_t / (sqrt(v_hat_t) + eps)"
+    domain: "theta in R^d, lr > 0, beta1 in (0,1), beta2 in (0,1), eps > 0, lambda >= 0"
+    preconditions:
+      - "lr > 0.0"
+      - "beta1 > 0.0 && beta1 < 1.0"
+      - "beta2 > 0.0 && beta2 < 1.0"
+      - "epsilon > 0.0"
+      - "weight_decay >= 0.0"
+      - "!params.is_empty()"
+    postconditions:
+      - "params.iter().all(|p| p.is_finite())"
+      - "params.len() == params_before.len()"
+    invariants:
+      - "Weight decay applied to parameters directly, not through gradient"
+      - "Bias-corrected moments: m_hat = m/(1-beta1^t), v_hat = v/(1-beta2^t)"
+  sgd_momentum_update:
+    formula: "v_t = mu * v_{t-1} - lr * grad; theta_t = theta_{t-1} + v_t"
+    domain: "theta in R^d, lr > 0, mu in [0,1)"
+    preconditions:
+      - "lr > 0.0"
+      - "momentum >= 0.0 && momentum < 1.0"
+      - "!params.is_empty()"
+      - "grad.len() == params.len()"
+    postconditions:
+      - "params.iter().all(|p| p.is_finite())"
+      - "velocity.len() == params.len()"
+    invariants:
+      - "Velocity accumulates gradient history"
+      - "Without momentum (mu=0), reduces to theta -= lr * grad"
+  convergence:
+    formula: "L(theta_T) <= L(theta_0) for sufficiently small lr after T steps on convex loss"
+    domain: "L convex, lr < 2/L_smooth"
+    preconditions:
+      - "lr > 0.0"
+      - "lr < 2.0 / l_smooth"
+      - "num_steps > 0"
+    postconditions:
+      - "loss_final.is_finite()"
+      - "loss_final <= loss_initial"
+    invariants:
+      - "Optimizer makes progress on convex objectives"
+
+proof_obligations:
+  - type: invariant
+    property: "AdamW weight decay decoupled from gradient"
+    formal: "Weight decay term applied multiplicatively to params, not added to gradient"
+    applies_to: all
+  - type: bound
+    property: "Learning rate positive"
+    formal: "lr > 0 at all steps"
+    applies_to: all
+  - type: equivalence
+    property: "Zero weight decay AdamW equals Adam"
+    formal: "AdamW(lambda=0) == Adam for same hyperparameters"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-OPT-001
+    rule: "AdamW convergence on quadratic"
+    prediction: "Loss decreases over 100 steps on convex quadratic"
+    test: "optim::adamw::tests::test_adamw_quadratic_convergence"
+    if_fails: "Moment update or bias correction incorrect"
+  - id: FALSIFY-OPT-002
+    rule: "AdamW weight decay effect"
+    prediction: "Parameters smaller with weight decay than without"
+    test: "optim::adamw::tests::test_adamw_weight_decay"
+    if_fails: "Weight decay not applied or sign error"
+  - id: FALSIFY-OPT-003
+    rule: "SGD with momentum faster than without"
+    prediction: "Momentum SGD reaches lower loss in same step budget"
+    test: "optim::convergence_tests::sgd_tests::tests::test_sgd_with_momentum_faster_than_no_momentum"
+    if_fails: "Velocity accumulation broken"
+  - id: FALSIFY-OPT-004
+    rule: "AdamW vs Adam difference"
+    prediction: "AdamW and Adam produce different parameter trajectories with weight decay"
+    test: "optim::adamw::tests::test_adamw_vs_adam_difference"
+    if_fails: "Weight decay coupling not properly decoupled"
+  - id: FALSIFY-OPT-005
+    rule: "Optimizer zero_grad clears all gradients"
+    prediction: "All parameter gradients are None after zero_grad"
+    test: "optim::optimizer::tests::test_optimizer_zero_grad"
+    if_fails: "zero_grad skipping parameters or not clearing"
+
+kani_harnesses:
+  - id: opt-kani-001
+    obligation: "Learning rate stays positive"
+    bound: 4
+    strategy: bounded_int

@@ -1,0 +1,28 @@
+# Network Isolation Configuration (SDG-01)
+# Defines VPC and network policies for sovereign deployment
+
+vpc:
+  name: entrenar-sovereign
+  cidr: 10.0.0.0/16
+  region: local
+  isolation: strict
+
+network_policies:
+  - name: deny-external
+    action: deny
+    source: external
+    destination: training-cluster
+  - name: allow-internal
+    action: allow
+    source: training-cluster
+    destination: training-cluster
+
+firewall:
+  ingress:
+    - port: 9000
+      protocol: tcp
+      description: DDP coordinator
+      source: internal
+  egress:
+    - destination: none
+      description: No external egress (sovereign mode)

@@ -1,0 +1,6943 @@
+{
+  "version": "1.0",
+  "generated": "2026-02-20T12:35:22.415100792+00:00",
+  "files": {
+    "src/storage/sqlite/types.rs": {
+      "lines": 157,
+      "test_lines": 96,
+      "tlr": 0.611465,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/neural/path_impl.rs": {
+      "lines": 53,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/core.rs": {
+      "lines": 174,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/ecosystem/realizar/provenance.rs": {
+      "lines": 127,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/weights/mod.rs": {
+      "lines": 182,
+      "test_lines": 2,
+      "tlr": 0.010989011,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/optim/optimizer.rs": {
+      "lines": 197,
+      "test_lines": 228,
+      "tlr": 1.1573604,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/config/cli/types/citation_format.rs": {
+      "lines": 35,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/tokenizer/mod.rs": {
+      "lines": 63,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/mod.rs": {
+      "lines": 49,
+      "test_lines": 2,
+      "tlr": 0.040816326,
+      "health": 65,
+      "status": "ideal"
+    },
+    "src/quant/granularity/calibrate.rs": {
+      "lines": 188,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/andon.rs": {
+      "lines": 301,
+      "test_lines": 177,
+      "tlr": 0.5880399,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/lora/layer/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/research/ro_crate/mod.rs": {
+      "lines": 15,
+      "test_lines": 2,
+      "tlr": 0.13333334,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/sovereign/registry/manifest.rs": {
+      "lines": 73,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ties.rs": {
+      "lines": 468,
+      "test_lines": 444,
+      "tlr": 0.94871795,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/config/mod.rs": {
+      "lines": 54,
+      "test_lines": 2,
+      "tlr": 0.037037037,
+      "health": 64,
+      "status": "ideal"
+    },
+    "src/monitor/inference/collector/tests.rs": {
+      "lines": 325,
+      "test_lines": 210,
+      "tlr": 0.64615387,
+      "health": 91,
+      "status": "acceptable"
+    },
+    "src/optim/simd/adamw.rs": {
+      "lines": 86,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/types/artifact_type.rs": {
+      "lines": 44,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/schedule/cubic/core.rs": {
+      "lines": 67,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/trainer/config.rs": {
+      "lines": 118,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/trainer/train_loop/tests.rs": {
+      "lines": 453,
+      "test_lines": 591,
+      "tlr": 1.3046358,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/calibrate/tests.rs": {
+      "lines": 484,
+      "test_lines": 260,
+      "tlr": 0.5371901,
+      "health": 85,
+      "status": "acceptable"
+    },
+    "src/transformer/model.rs": {
+      "lines": 478,
+      "test_lines": 423,
+      "tlr": 0.8849372,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/citl/pattern_store/fix_pattern.rs": {
+      "lines": 82,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/metrics/regression.rs": {
+      "lines": 165,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/bench.rs": {
+      "lines": 103,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/dashboard/wasm/run.rs": {
+      "lines": 172,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/benchmark/statistics.rs": {
+      "lines": 28,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/sparkline.rs": {
+      "lines": 192,
+      "test_lines": 242,
+      "tlr": 1.2604166,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/lib.rs": {
+      "lines": 77,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/adapter/merge_export.rs": {
+      "lines": 187,
+      "test_lines": 129,
+      "tlr": 0.6898396,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/preflight/checks/environment.rs": {
+      "lines": 214,
+      "test_lines": 166,
+      "tlr": 0.7757009,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/sovereign/registry/tests.rs": {
+      "lines": 306,
+      "test_lines": 220,
+      "tlr": 0.71895427,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/commutativity/helpers.rs": {
+      "lines": 126,
+      "test_lines": 194,
+      "tlr": 1.5396825,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/citl/trainer/outcome.rs": {
+      "lines": 90,
+      "test_lines": 43,
+      "tlr": 0.47777778,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/staging/mod.rs": {
+      "lines": 242,
+      "test_lines": 2,
+      "tlr": 0.008264462,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/cli/types/export_format.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/schedule/gradual/tests/mod.rs": {
+      "lines": 8,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/callback/tests.rs": {
+      "lines": 217,
+      "test_lines": 200,
+      "tlr": 0.921659,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/sovereign/registry/offline.rs": {
+      "lines": 216,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/distill/ensemble.rs": {
+      "lines": 285,
+      "test_lines": 199,
+      "tlr": 0.6982456,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/autograd/cuda_forward/mod.rs": {
+      "lines": 35,
+      "test_lines": 2,
+      "tlr": 0.057142857,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/sovereign/distribution/tests.rs": {
+      "lines": 200,
+      "test_lines": 200,
+      "tlr": 1.0,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quality/supply_chain/audit_summary.rs": {
+      "lines": 66,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/safety_andon/andon.rs": {
+      "lines": 171,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/preflight/types.rs": {
+      "lines": 138,
+      "test_lines": 51,
+      "tlr": 0.36956522,
+      "health": 89,
+      "status": "ideal"
+    },
+    "src/config/cli/types/shell_type.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/prometheus/tests.rs": {
+      "lines": 353,
+      "test_lines": 310,
+      "tlr": 0.87818694,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/path/mod.rs": {
+      "lines": 18,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/weights/detect.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 45,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/distillation/loss.rs": {
+      "lines": 129,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/gan/tests.rs": {
+      "lines": 312,
+      "test_lines": 150,
+      "tlr": 0.48076922,
+      "health": 82,
+      "status": "acceptable"
+    },
+    "src/optim/simd/adam.rs": {
+      "lines": 79,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/training.rs": {
+      "lines": 185,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/transformer/attention.rs": {
+      "lines": 773,
+      "test_lines": 513,
+      "tlr": 0.6636481,
+      "health": 71,
+      "status": "warning"
+    },
+    "src/finetune/reproducibility.rs": {
+      "lines": 507,
+      "test_lines": 325,
+      "tlr": 0.64102566,
+      "health": 70,
+      "status": "warning"
+    },
+    "src/search/mod.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/serialization_tests.rs": {
+      "lines": 39,
+      "test_lines": 20,
+      "tlr": 0.51282054,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/archive/deposit.rs": {
+      "lines": 68,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/property.rs": {
+      "lines": 150,
+      "test_lines": 60,
+      "tlr": 0.4,
+      "health": 92,
+      "status": "ideal"
+    },
+    "src/eval/classification/basic_tests.rs": {
+      "lines": 251,
+      "test_lines": 437,
+      "tlr": 1.7410358,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/tokenizer/traits.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/report/mod.rs": {
+      "lines": 18,
+      "test_lines": 2,
+      "tlr": 0.11111111,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/monitor/inference/collector/traits.rs": {
+      "lines": 21,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/neural/tests.rs": {
+      "lines": 125,
+      "test_lines": 140,
+      "tlr": 1.12,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/yaml_mode/mod.rs": {
+      "lines": 76,
+      "test_lines": 2,
+      "tlr": 0.02631579,
+      "health": 63,
+      "status": "ideal"
+    },
+    "src/efficiency/device/tpu.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/schedule/oneshot.rs": {
+      "lines": 235,
+      "test_lines": 317,
+      "tlr": 1.3489362,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/failure/tests.rs": {
+      "lines": 292,
+      "test_lines": 200,
+      "tlr": 0.6849315,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/tests/mod.rs": {
+      "lines": 8,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/trainer/stats.rs": {
+      "lines": 129,
+      "test_lines": 83,
+      "tlr": 0.64341086,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/graph.rs": {
+      "lines": 130,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/notebook/kernel.rs": {
+      "lines": 49,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/tests.rs": {
+      "lines": 356,
+      "test_lines": 110,
+      "tlr": 0.30898875,
+      "health": 72,
+      "status": "acceptable"
+    },
+    "src/aprender_compat.rs": {
+      "lines": 86,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/exporter.rs": {
+      "lines": 496,
+      "test_lines": 353,
+      "tlr": 0.7116935,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/ecosystem/realizar/metadata.rs": {
+      "lines": 68,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/distill/mod.rs": {
+      "lines": 38,
+      "test_lines": 2,
+      "tlr": 0.05263158,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/eval/classification/sklearn_parity_tests.rs": {
+      "lines": 259,
+      "test_lines": 378,
+      "tlr": 1.4594594,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/transformer_trainer/utils.rs": {
+      "lines": 11,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/serialization/error.rs": {
+      "lines": 49,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/src/sweep.rs": {
+      "lines": 505,
+      "test_lines": 407,
+      "tlr": 0.80594057,
+      "health": 77,
+      "status": "warning"
+    },
+    "src/train/trainer/train_loop/basic.rs": {
+      "lines": 256,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 45,
+      "status": "acceptable"
+    },
+    "src/error.rs": {
+      "lines": 44,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/anonymization.rs": {
+      "lines": 424,
+      "test_lines": 318,
+      "tlr": 0.75,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/dataset/options.rs": {
+      "lines": 91,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/result.rs": {
+      "lines": 61,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/artifact/error.rs": {
+      "lines": 10,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/artifact/mod.rs": {
+      "lines": 44,
+      "test_lines": 2,
+      "tlr": 0.045454547,
+      "health": 66,
+      "status": "ideal"
+    },
+    "src/monitor/report/tests.rs": {
+      "lines": 372,
+      "test_lines": 220,
+      "tlr": 0.5913978,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/dashboard/source.rs": {
+      "lines": 99,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/hpo/grid.rs": {
+      "lines": 229,
+      "test_lines": 192,
+      "tlr": 0.83842796,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/pipeline/sparse_export.rs": {
+      "lines": 295,
+      "test_lines": 189,
+      "tlr": 0.640678,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/publish/submission.rs": {
+      "lines": 54,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/property_tests.rs": {
+      "lines": 496,
+      "test_lines": 762,
+      "tlr": 1.5362903,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/scheduler/linear_warmup.rs": {
+      "lines": 51,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/loss/mse/l1_loss.rs": {
+      "lines": 93,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/tokenizer/hf.rs": {
+      "lines": 318,
+      "test_lines": 172,
+      "tlr": 0.5408805,
+      "health": 85,
+      "status": "acceptable"
+    },
+    "src/quant/granularity/mod.rs": {
+      "lines": 24,
+      "test_lines": 2,
+      "tlr": 0.083333336,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/research/notebook/exporter.rs": {
+      "lines": 273,
+      "test_lines": 106,
+      "tlr": 0.3882784,
+      "health": 86,
+      "status": "acceptable"
+    },
+    "src/sovereign/distribution/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/merge.rs": {
+      "lines": 52,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/cache.rs": {
+      "lines": 113,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/src/strategies.rs": {
+      "lines": 497,
+      "test_lines": 337,
+      "tlr": 0.6780684,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/transformer/embedding.rs": {
+      "lines": 152,
+      "test_lines": 138,
+      "tlr": 0.90789473,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/property_tests.rs": {
+      "lines": 101,
+      "test_lines": 60,
+      "tlr": 0.5940594,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/integrity/behavioral/violation.rs": {
+      "lines": 280,
+      "test_lines": 264,
+      "tlr": 0.94285715,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/moe/mod.rs": {
+      "lines": 268,
+      "test_lines": 2,
+      "tlr": 0.0074626864,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/prune/schedule/gradual/proptests.rs": {
+      "lines": 76,
+      "test_lines": 30,
+      "tlr": 0.39473686,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/safety_andon_tests.rs": {
+      "lines": 37,
+      "test_lines": 20,
+      "tlr": 0.5405405,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/mod.rs": {
+      "lines": 22,
+      "test_lines": 2,
+      "tlr": 0.09090909,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/cache.rs": {
+      "lines": 55,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/cli/commands/research/cite.rs": {
+      "lines": 60,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/storage/cloud/metadata.rs": {
+      "lines": 103,
+      "test_lines": 102,
+      "tlr": 0.99029124,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/preregistration.rs": {
+      "lines": 393,
+      "test_lines": 296,
+      "tlr": 0.7531807,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/llm/metrics.rs": {
+      "lines": 348,
+      "test_lines": 434,
+      "tlr": 1.2471265,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fine_tune/memory.rs": {
+      "lines": 59,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/callback/scheduler.rs": {
+      "lines": 114,
+      "test_lines": 79,
+      "tlr": 0.69298244,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/format.rs": {
+      "lines": 179,
+      "test_lines": 234,
+      "tlr": 1.3072625,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/autograd/precision/mod.rs": {
+      "lines": 51,
+      "test_lines": 2,
+      "tlr": 0.039215688,
+      "health": 65,
+      "status": "ideal"
+    },
+    "src/monitor/tests/metrics_collector.rs": {
+      "lines": 134,
+      "test_lines": 130,
+      "tlr": 0.9701493,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/sgd.rs": {
+      "lines": 165,
+      "test_lines": 112,
+      "tlr": 0.6787879,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/io/format.rs": {
+      "lines": 173,
+      "test_lines": 165,
+      "tlr": 0.9537572,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/tests/cv_tests.rs": {
+      "lines": 343,
+      "test_lines": 130,
+      "tlr": 0.37900874,
+      "health": 76,
+      "status": "acceptable"
+    },
+    "src/io/model.rs": {
+      "lines": 293,
+      "test_lines": 190,
+      "tlr": 0.64846414,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/generative/retrieval.rs": {
+      "lines": 52,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/search/mcts/search/stats.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/llm/mod.rs": {
+      "lines": 50,
+      "test_lines": 2,
+      "tlr": 0.04,
+      "health": 65,
+      "status": "ideal"
+    },
+    "src/efficiency/platform/tests.rs": {
+      "lines": 380,
+      "test_lines": 380,
+      "tlr": 1.0,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/publish/mod.rs": {
+      "lines": 36,
+      "test_lines": 3,
+      "tlr": 0.083333336,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/ecosystem/realizar/exporter.rs": {
+      "lines": 184,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/loss/causal_lm.rs": {
+      "lines": 239,
+      "test_lines": 167,
+      "tlr": 0.6987448,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-distill/src/validation.rs": {
+      "lines": 331,
+      "test_lines": 187,
+      "tlr": 0.5649547,
+      "health": 87,
+      "status": "acceptable"
+    },
+    "src/config/train/tests/json_batches.rs": {
+      "lines": 56,
+      "test_lines": 40,
+      "tlr": 0.71428573,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-common/src/cli.rs": {
+      "lines": 358,
+      "test_lines": 302,
+      "tlr": 0.8435754,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/simd/tests.rs": {
+      "lines": 481,
+      "test_lines": 180,
+      "tlr": 0.37422037,
+      "health": 76,
+      "status": "acceptable"
+    },
+    "src/config/infer/config.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/norm.rs": {
+      "lines": 161,
+      "test_lines": 167,
+      "tlr": 1.0372671,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/cli/commands/research/verify.rs": {
+      "lines": 334,
+      "test_lines": 373,
+      "tlr": 1.1167665,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/classification/average.rs": {
+      "lines": 14,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/llm/memory_evaluator.rs": {
+      "lines": 104,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/cloud/config.rs": {
+      "lines": 170,
+      "test_lines": 191,
+      "tlr": 1.1235294,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/counterfactual/feature_change.rs": {
+      "lines": 42,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/batuta/pricing.rs": {
+      "lines": 125,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/tree/tests.rs": {
+      "lines": 241,
+      "test_lines": 160,
+      "tlr": 0.66390043,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/efficiency/device/gpu.rs": {
+      "lines": 51,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/config.rs": {
+      "lines": 127,
+      "test_lines": 57,
+      "tlr": 0.4488189,
+      "health": 95,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/fetcher/options.rs": {
+      "lines": 75,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/adapter/merge_pipeline.rs": {
+      "lines": 100,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/nix/crate_spec.rs": {
+      "lines": 82,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/data.rs": {
+      "lines": 15,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/mod.rs": {
+      "lines": 401,
+      "test_lines": 2,
+      "tlr": 0.0049875313,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/monitor/tui/headless.rs": {
+      "lines": 462,
+      "test_lines": 198,
+      "tlr": 0.42857143,
+      "health": 79,
+      "status": "acceptable"
+    },
+    "src/monitor/storage/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/lora/adapter/peft_config.rs": {
+      "lines": 203,
+      "test_lines": 188,
+      "tlr": 0.92610836,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/backend/state.rs": {
+      "lines": 19,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/config/method.rs": {
+      "lines": 53,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/capability/mode.rs": {
+      "lines": 13,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/pipeline.rs": {
+      "lines": 586,
+      "test_lines": 669,
+      "tlr": 1.1416383,
+      "health": 85,
+      "status": "warning"
+    },
+    "src/storage/registry/policy.rs": {
+      "lines": 244,
+      "test_lines": 174,
+      "tlr": 0.71311474,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/curriculum/linear.rs": {
+      "lines": 90,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/basic_tests.rs": {
+      "lines": 17,
+      "test_lines": 20,
+      "tlr": 1.1764706,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/convergence_tests/sgd_tests.rs": {
+      "lines": 141,
+      "test_lines": 209,
+      "tlr": 1.4822695,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/eval/classification/mod.rs": {
+      "lines": 23,
+      "test_lines": 3,
+      "tlr": 0.13043478,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/config/cli/types/license.rs": {
+      "lines": 47,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/dataset.rs": {
+      "lines": 21,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/behavioral/metrics.rs": {
+      "lines": 202,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/citl/pattern_store/tests/suggestion.rs": {
+      "lines": 34,
+      "test_lines": 30,
+      "tlr": 0.88235295,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/src/main.rs": {
+      "lines": 618,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 45,
+      "status": "warning"
+    },
+    "crates/entrenar-common/src/lib.rs": {
+      "lines": 64,
+      "test_lines": 68,
+      "tlr": 1.0625,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/mod.rs": {
+      "lines": 57,
+      "test_lines": 2,
+      "tlr": 0.03508772,
+      "health": 64,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/latent.rs": {
+      "lines": 210,
+      "test_lines": 201,
+      "tlr": 0.95714283,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/loss/cross_entropy.rs": {
+      "lines": 205,
+      "test_lines": 180,
+      "tlr": 0.8780488,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/citl/trainer/trace.rs": {
+      "lines": 106,
+      "test_lines": 73,
+      "tlr": 0.6886792,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/citl/mod.rs": {
+      "lines": 26,
+      "test_lines": 2,
+      "tlr": 0.07692308,
+      "health": 70,
+      "status": "ideal"
+    },
+    "src/server/state.rs": {
+      "lines": 497,
+      "test_lines": 179,
+      "tlr": 0.36016098,
+      "health": 75,
+      "status": "acceptable"
+    },
+    "src/lora/config.rs": {
+      "lines": 375,
+      "test_lines": 379,
+      "tlr": 1.0106666,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/train/demo.rs": {
+      "lines": 23,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/alert/thresholds.rs": {
+      "lines": 33,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/wasm/dashboard.rs": {
+      "lines": 406,
+      "test_lines": 339,
+      "tlr": 0.83497536,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/archive/tests.rs": {
+      "lines": 413,
+      "test_lines": 771,
+      "tlr": 1.8668281,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/autograd/cuda_forward/normalization.rs": {
+      "lines": 141,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/config/cli/research/preregister.rs": {
+      "lines": 40,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/adapter/error.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tests/performance.rs": {
+      "lines": 101,
+      "test_lines": 50,
+      "tlr": 0.4950495,
+      "health": 99,
+      "status": "ideal"
+    },
+    "src/eval/classification/report.rs": {
+      "lines": 100,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/collector/stream.rs": {
+      "lines": 120,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/block.rs": {
+      "lines": 229,
+      "test_lines": 148,
+      "tlr": 0.6462882,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/autograd/mod.rs": {
+      "lines": 78,
+      "test_lines": 2,
+      "tlr": 0.025641026,
+      "health": 63,
+      "status": "ideal"
+    },
+    "src/citl/trainer/config.rs": {
+      "lines": 35,
+      "test_lines": 22,
+      "tlr": 0.62857145,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/knn/path.rs": {
+      "lines": 57,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/llm/eval_result.rs": {
+      "lines": 68,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/decision/pattern_store.rs": {
+      "lines": 332,
+      "test_lines": 345,
+      "tlr": 1.0391567,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/preflight/validator.rs": {
+      "lines": 286,
+      "test_lines": 315,
+      "tlr": 1.1013986,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/evaluator/tests/mod.rs": {
+      "lines": 4,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/tests/prop_attention.rs": {
+      "lines": 158,
+      "test_lines": 30,
+      "tlr": 0.18987341,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/trainer/tests.rs": {
+      "lines": 377,
+      "test_lines": 280,
+      "tlr": 0.7427056,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/sovereign/nix/mod.rs": {
+      "lines": 15,
+      "test_lines": 2,
+      "tlr": 0.13333334,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/tests/edge.rs": {
+      "lines": 33,
+      "test_lines": 30,
+      "tlr": 0.90909094,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/gguf_verify/tests/mod.rs": {
+      "lines": 60,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/tests/core_tests.rs": {
+      "lines": 348,
+      "test_lines": 260,
+      "tlr": 0.74712646,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/error.rs": {
+      "lines": 275,
+      "test_lines": 231,
+      "tlr": 0.84,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/tokenizer/config.rs": {
+      "lines": 156,
+      "test_lines": 89,
+      "tlr": 0.57051283,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/node.rs": {
+      "lines": 79,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/platform/platform_type.rs": {
+      "lines": 43,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/hierarchical.rs": {
+      "lines": 75,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/kfold.rs": {
+      "lines": 70,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/metrics.rs": {
+      "lines": 81,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/registry/types.rs": {
+      "lines": 129,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/stage.rs": {
+      "lines": 271,
+      "test_lines": 394,
+      "tlr": 1.4538746,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/staging/tests.rs": {
+      "lines": 416,
+      "test_lines": 350,
+      "tlr": 0.84134614,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/search/mcts/search/algorithm.rs": {
+      "lines": 317,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/tests/reconstructor.rs": {
+      "lines": 209,
+      "test_lines": 60,
+      "tlr": 0.28708133,
+      "health": 77,
+      "status": "acceptable"
+    },
+    "src/config/cli/research/init.rs": {
+      "lines": 54,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/simd/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/train/transformer_trainer/batch.rs": {
+      "lines": 104,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/hpo/tpe/sampling.rs": {
+      "lines": 127,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/init.rs": {
+      "lines": 412,
+      "test_lines": 362,
+      "tlr": 0.8786408,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/backend/tests/concurrency_tests.rs": {
+      "lines": 40,
+      "test_lines": 10,
+      "tlr": 0.25,
+      "health": 93,
+      "status": "ideal"
+    },
+    "src/monitor/prometheus/exporter.rs": {
+      "lines": 299,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/optim/hpo/tpe/mod.rs": {
+      "lines": 10,
+      "test_lines": 2,
+      "tlr": 0.2,
+      "health": 86,
+      "status": "ideal"
+    },
+    "src/monitor/inference/trace.rs": {
+      "lines": 218,
+      "test_lines": 128,
+      "tlr": 0.58715594,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/output.rs": {
+      "lines": 78,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/mod.rs": {
+      "lines": 17,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/trainer_integration/tests.rs": {
+      "lines": 335,
+      "test_lines": 230,
+      "tlr": 0.6865672,
+      "health": 94,
+      "status": "acceptable"
+    },
+    "src/train/callback/mod.rs": {
+      "lines": 42,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/benchmark/tests.rs": {
+      "lines": 237,
+      "test_lines": 180,
+      "tlr": 0.75949365,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/dare.rs": {
+      "lines": 455,
+      "test_lines": 444,
+      "tlr": 0.9758242,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/cli/commands/research/bundle.rs": {
+      "lines": 68,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/monitor/tui/state.rs": {
+      "lines": 644,
+      "test_lines": 337,
+      "tlr": 0.52329195,
+      "health": 65,
+      "status": "warning"
+    },
+    "src/cli/commands/tests/base.rs": {
+      "lines": 1267,
+      "test_lines": 640,
+      "tlr": 0.50513023,
+      "health": 48,
+      "status": "problem"
+    },
+    "src/monitor/inference/tests/helpers.rs": {
+      "lines": 73,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/research/tests.rs": {
+      "lines": 479,
+      "test_lines": 160,
+      "tlr": 0.33402923,
+      "health": 74,
+      "status": "acceptable"
+    },
+    "src/train/loss/mse/tests.rs": {
+      "lines": 323,
+      "test_lines": 240,
+      "tlr": 0.74303406,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/integrity/behavioral/counts.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/convergence_tests/mod.rs": {
+      "lines": 21,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/io/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_tensor.rs": {
+      "lines": 471,
+      "test_lines": 235,
+      "tlr": 0.49893844,
+      "health": 83,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/collector/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/eval/generative/falsification_passk_ndcg.rs": {
+      "lines": 274,
+      "test_lines": 210,
+      "tlr": 0.76642334,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/data_loader/config.rs": {
+      "lines": 112,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/neural/mod.rs": {
+      "lines": 28,
+      "test_lines": 2,
+      "tlr": 0.071428575,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/prune/snapshot_tests.rs": {
+      "lines": 353,
+      "test_lines": 515,
+      "tlr": 1.4589235,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/cli/commands/quantize.rs": {
+      "lines": 184,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quant/gguf_quant/mod.rs": {
+      "lines": 23,
+      "test_lines": 2,
+      "tlr": 0.08695652,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/autograd/ops/normalize.rs": {
+      "lines": 110,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/efficiency/platform/budget.rs": {
+      "lines": 112,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/lineage/tests.rs": {
+      "lines": 383,
+      "test_lines": 270,
+      "tlr": 0.7049608,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fetcher/tests/mod.rs": {
+      "lines": 6,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/tests/validation_basic.rs": {
+      "lines": 227,
+      "test_lines": 130,
+      "tlr": 0.5726872,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/finetune/tests.rs": {
+      "lines": 179,
+      "test_lines": 110,
+      "tlr": 0.61452514,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/fetcher.rs": {
+      "lines": 89,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/tests/mod.rs": {
+      "lines": 6,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/context.rs": {
+      "lines": 72,
+      "test_lines": 73,
+      "tlr": 1.0138888,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/yaml_mode/tests/extended_configs.rs": {
+      "lines": 296,
+      "test_lines": 140,
+      "tlr": 0.47297296,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/tokenizer/char.rs": {
+      "lines": 227,
+      "test_lines": 141,
+      "tlr": 0.62114537,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fine_tune/tests.rs": {
+      "lines": 292,
+      "test_lines": 270,
+      "tlr": 0.9246575,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/transformer/config.rs": {
+      "lines": 209,
+      "test_lines": 167,
+      "tlr": 0.79904306,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/clip.rs": {
+      "lines": 189,
+      "test_lines": 207,
+      "tlr": 1.0952381,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quant/benchmarks/mod.rs": {
+      "lines": 29,
+      "test_lines": 2,
+      "tlr": 0.06896552,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/citl/trainer/citl/tests.rs": {
+      "lines": 214,
+      "test_lines": 110,
+      "tlr": 0.5140187,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/safety_andon/emergency.rs": {
+      "lines": 83,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/tests/graph.rs": {
+      "lines": 205,
+      "test_lines": 130,
+      "tlr": 0.63414633,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-distill/src/config.rs": {
+      "lines": 432,
+      "test_lines": 131,
+      "tlr": 0.30324075,
+      "health": 72,
+      "status": "acceptable"
+    },
+    "src/optim/scheduler/mod.rs": {
+      "lines": 29,
+      "test_lines": 2,
+      "tlr": 0.06896552,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/types.rs": {
+      "lines": 48,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/infer/types.rs": {
+      "lines": 43,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/device/apple.rs": {
+      "lines": 114,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/benchmarks.rs": {
+      "lines": 511,
+      "test_lines": 375,
+      "tlr": 0.7338552,
+      "health": 74,
+      "status": "warning"
+    },
+    "src/quant/benchmarks/types.rs": {
+      "lines": 202,
+      "test_lines": 259,
+      "tlr": 1.2821782,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/registry/traits.rs": {
+      "lines": 66,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/mod.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/wasm/utils.rs": {
+      "lines": 147,
+      "test_lines": 166,
+      "tlr": 1.1292517,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/config/train/tests/demo_batches.rs": {
+      "lines": 35,
+      "test_lines": 40,
+      "tlr": 1.1428572,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/mod.rs": {
+      "lines": 43,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/drift.rs": {
+      "lines": 454,
+      "test_lines": 457,
+      "tlr": 1.0066079,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/artifact/artifact_type.rs": {
+      "lines": 33,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/dashboard/wasm/tests.rs": {
+      "lines": 144,
+      "test_lines": 120,
+      "tlr": 0.8333333,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/sovereign/registry/mod.rs": {
+      "lines": 15,
+      "test_lines": 2,
+      "tlr": 0.13333334,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/monitor/inference/mod.rs": {
+      "lines": 208,
+      "test_lines": 2,
+      "tlr": 0.009615385,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/tests/counterfactual_tests.rs": {
+      "lines": 68,
+      "test_lines": 20,
+      "tlr": 0.29411766,
+      "health": 99,
+      "status": "ideal"
+    },
+    "src/monitor/wasm/collector.rs": {
+      "lines": 440,
+      "test_lines": 391,
+      "tlr": 0.88863635,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/archive/identifiers.rs": {
+      "lines": 109,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/ops/activations.rs": {
+      "lines": 220,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "crates/entrenar-shell/src/main.rs": {
+      "lines": 68,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "crates/entrenar-shell/src/commands.rs": {
+      "lines": 867,
+      "test_lines": 718,
+      "tlr": 0.828143,
+      "health": 78,
+      "status": "warning"
+    },
+    "src/quant/calibration/helpers.rs": {
+      "lines": 35,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/decision/citl.rs": {
+      "lines": 447,
+      "test_lines": 279,
+      "tlr": 0.62416106,
+      "health": 90,
+      "status": "acceptable"
+    },
+    "src/autograd/tests/prop_matmul.rs": {
+      "lines": 77,
+      "test_lines": 20,
+      "tlr": 0.25974026,
+      "health": 94,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/weighted_average.rs": {
+      "lines": 67,
+      "test_lines": 50,
+      "tlr": 0.74626863,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-shell/src/lib.rs": {
+      "lines": 45,
+      "test_lines": 21,
+      "tlr": 0.46666667,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/transformer/weights/tests.rs": {
+      "lines": 526,
+      "test_lines": 290,
+      "tlr": 0.5513308,
+      "health": 67,
+      "status": "warning"
+    },
+    "src/storage/registry/memory/tests.rs": {
+      "lines": 275,
+      "test_lines": 171,
+      "tlr": 0.6218182,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/publish/result.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/adapter/peft_export.rs": {
+      "lines": 272,
+      "test_lines": 202,
+      "tlr": 0.74264705,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/callback/traits.rs": {
+      "lines": 163,
+      "test_lines": 98,
+      "tlr": 0.601227,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/hierarchical.rs": {
+      "lines": 153,
+      "test_lines": 90,
+      "tlr": 0.5882353,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/data_loader/iter.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/metrics/classification.rs": {
+      "lines": 287,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/ecosystem/mod.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/curriculum/tiered.rs": {
+      "lines": 110,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/report/output.rs": {
+      "lines": 17,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/nix/config.rs": {
+      "lines": 357,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/efficiency/metrics.rs": {
+      "lines": 467,
+      "test_lines": 327,
+      "tlr": 0.70021415,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/callback/pruning_callback.rs": {
+      "lines": 221,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/dashboard/snapshot.rs": {
+      "lines": 153,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/progress.rs": {
+      "lines": 220,
+      "test_lines": 172,
+      "tlr": 0.7818182,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/citl/trainer/correlation.rs": {
+      "lines": 75,
+      "test_lines": 49,
+      "tlr": 0.6533333,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/ro_crate/descriptor.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/transition.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/batuta/error.rs": {
+      "lines": 21,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/simd/axpy.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/gan/mod.rs": {
+      "lines": 12,
+      "test_lines": 2,
+      "tlr": 0.16666667,
+      "health": 82,
+      "status": "ideal"
+    },
+    "src/research/ro_crate/entity.rs": {
+      "lines": 303,
+      "test_lines": 423,
+      "tlr": 1.3960396,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/types/mod.rs": {
+      "lines": 24,
+      "test_lines": 2,
+      "tlr": 0.083333336,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/prune/schedule/gradual/tests/sparsity.rs": {
+      "lines": 339,
+      "test_lines": 170,
+      "tlr": 0.5014749,
+      "health": 83,
+      "status": "acceptable"
+    },
+    "src/optim/hpo/types/mod.rs": {
+      "lines": 15,
+      "test_lines": 2,
+      "tlr": 0.13333334,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/merge/tests.rs": {
+      "lines": 403,
+      "test_lines": 300,
+      "tlr": 0.7444169,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/main.rs": {
+      "lines": 41,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/retrain/action.rs": {
+      "lines": 12,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/safety_andon/sil.rs": {
+      "lines": 69,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/precision/scaler.rs": {
+      "lines": 145,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/research/mod.rs": {
+      "lines": 56,
+      "test_lines": 2,
+      "tlr": 0.035714287,
+      "health": 64,
+      "status": "ideal"
+    },
+    "src/merge/commutativity/property_tests.rs": {
+      "lines": 308,
+      "test_lines": 120,
+      "tlr": 0.38961038,
+      "health": 77,
+      "status": "acceptable"
+    },
+    "src/search/mcts/config.rs": {
+      "lines": 55,
+      "test_lines": 22,
+      "tlr": 0.4,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/llm/error.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/train/tests/arrow_conversion.rs": {
+      "lines": 45,
+      "test_lines": 50,
+      "tlr": 1.1111112,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/run.rs": {
+      "lines": 480,
+      "test_lines": 325,
+      "tlr": 0.6770833,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/dashboard/trend.rs": {
+      "lines": 77,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tui/render/epoch.rs": {
+      "lines": 83,
+      "test_lines": 29,
+      "tlr": 0.3493976,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/merge/commutativity/dare_tests.rs": {
+      "lines": 61,
+      "test_lines": 30,
+      "tlr": 0.4918033,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/schedule/gradual/mod.rs": {
+      "lines": 87,
+      "test_lines": 3,
+      "tlr": 0.03448276,
+      "health": 49,
+      "status": "ideal"
+    },
+    "src/prune/calibrate/collector.rs": {
+      "lines": 114,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/alert/system.rs": {
+      "lines": 121,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/types/output_format.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/distribution/tier.rs": {
+      "lines": 69,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/tests/file_io.rs": {
+      "lines": 101,
+      "test_lines": 60,
+      "tlr": 0.5940594,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/linear.rs": {
+      "lines": 293,
+      "test_lines": 224,
+      "tlr": 0.76450515,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/init.rs": {
+      "lines": 182,
+      "test_lines": 118,
+      "tlr": 0.64835167,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_forward/tests.rs": {
+      "lines": 26,
+      "test_lines": 20,
+      "tlr": 0.7692308,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/alert/types.rs": {
+      "lines": 102,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/loader/memory.rs": {
+      "lines": 57,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/config.rs": {
+      "lines": 75,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/train/tests/config_loading.rs": {
+      "lines": 153,
+      "test_lines": 70,
+      "tlr": 0.45751634,
+      "health": 96,
+      "status": "ideal"
+    },
+    "src/research/archive/provider.rs": {
+      "lines": 59,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/mod.rs": {
+      "lines": 22,
+      "test_lines": 2,
+      "tlr": 0.09090909,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/transformer/feedforward.rs": {
+      "lines": 373,
+      "test_lines": 390,
+      "tlr": 1.0455765,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/granularity/quantize.rs": {
+      "lines": 118,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/publish/model_card.rs": {
+      "lines": 132,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/neural/serialization.rs": {
+      "lines": 220,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/infer/inference.rs": {
+      "lines": 221,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/builder.rs": {
+      "lines": 387,
+      "test_lines": 296,
+      "tlr": 0.7648579,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/generative/code_gan/gan/code_gan.rs": {
+      "lines": 193,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/tests/fix_pattern.rs": {
+      "lines": 86,
+      "test_lines": 80,
+      "tlr": 0.9302326,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/example.rs": {
+      "lines": 54,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tui/color.rs": {
+      "lines": 690,
+      "test_lines": 342,
+      "tlr": 0.49565217,
+      "health": 64,
+      "status": "warning"
+    },
+    "src/eval/classification/confusion.rs": {
+      "lines": 147,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/train/tests/train_yaml.rs": {
+      "lines": 636,
+      "test_lines": 150,
+      "tlr": 0.23584905,
+      "health": 54,
+      "status": "warning"
+    },
+    "crates/entrenar-common/src/output.rs": {
+      "lines": 412,
+      "test_lines": 342,
+      "tlr": 0.8300971,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/tests/serialization.rs": {
+      "lines": 70,
+      "test_lines": 20,
+      "tlr": 0.2857143,
+      "health": 98,
+      "status": "ideal"
+    },
+    "src/search/mcts/search/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/autograd/ops/matmul.rs": {
+      "lines": 401,
+      "test_lines": 283,
+      "tlr": 0.7057357,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/pmat.rs": {
+      "lines": 405,
+      "test_lines": 351,
+      "tlr": 0.8666667,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-wasm/src/lib.rs": {
+      "lines": 582,
+      "test_lines": 708,
+      "tlr": 1.2164948,
+      "health": 85,
+      "status": "warning"
+    },
+    "src/merge/ensemble/tests/slerp.rs": {
+      "lines": 45,
+      "test_lines": 30,
+      "tlr": 0.6666667,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/transformer_trainer/trainer.rs": {
+      "lines": 300,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/ecosystem/batuta/mod.rs": {
+      "lines": 21,
+      "test_lines": 2,
+      "tlr": 0.0952381,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/prune/schedule/cubic/tests.rs": {
+      "lines": 410,
+      "test_lines": 240,
+      "tlr": 0.58536583,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/eval/drift/detector.rs": {
+      "lines": 403,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/eval/drift/statistical.rs": {
+      "lines": 62,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/config.rs": {
+      "lines": 31,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/bridge.rs": {
+      "lines": 1260,
+      "test_lines": 1214,
+      "tlr": 0.96349204,
+      "health": 60,
+      "status": "problem"
+    },
+    "src/optim/dp/utils.rs": {
+      "lines": 57,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/finetune/eval.rs": {
+      "lines": 552,
+      "test_lines": 271,
+      "tlr": 0.49094203,
+      "health": 64,
+      "status": "warning"
+    },
+    "src/monitor/inference/safety_andon/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/optim/dp/error.rs": {
+      "lines": 22,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/dp/tests.rs": {
+      "lines": 451,
+      "test_lines": 690,
+      "tlr": 1.5299335,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/mod.rs": {
+      "lines": 39,
+      "test_lines": 3,
+      "tlr": 0.07692308,
+      "health": 70,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_optim.rs": {
+      "lines": 891,
+      "test_lines": 697,
+      "tlr": 0.7822671,
+      "health": 76,
+      "status": "warning"
+    },
+    "src/quant/benchmarks/tests.rs": {
+      "lines": 274,
+      "test_lines": 150,
+      "tlr": 0.54744524,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/serialization/tests.rs": {
+      "lines": 292,
+      "test_lines": 250,
+      "tlr": 0.8561644,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/publish/config.rs": {
+      "lines": 57,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/backward.rs": {
+      "lines": 7,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/serialization/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/autograd/ops/mod.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/nix/system.rs": {
+      "lines": 49,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/cloud/memory.rs": {
+      "lines": 204,
+      "test_lines": 197,
+      "tlr": 0.96568626,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/scheduler.rs": {
+      "lines": 84,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/adapter/mod.rs": {
+      "lines": 35,
+      "test_lines": 2,
+      "tlr": 0.057142857,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/quality/supply_chain/mod.rs": {
+      "lines": 21,
+      "test_lines": 2,
+      "tlr": 0.0952381,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/optim/hpo/hyperband.rs": {
+      "lines": 178,
+      "test_lines": 158,
+      "tlr": 0.8876405,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/optimizer.rs": {
+      "lines": 65,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/mod.rs": {
+      "lines": 32,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/memory/registry.rs": {
+      "lines": 50,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/behavioral/assessment.rs": {
+      "lines": 88,
+      "test_lines": 137,
+      "tlr": 1.5568181,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/forest.rs": {
+      "lines": 418,
+      "test_lines": 299,
+      "tlr": 0.715311,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/loss/weighted.rs": {
+      "lines": 431,
+      "test_lines": 349,
+      "tlr": 0.8097448,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/dashboard/wasm/storage.rs": {
+      "lines": 220,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/quant/fake_quantize/quantize.rs": {
+      "lines": 177,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/store.rs": {
+      "lines": 328,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/cli/types/audit_type.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/mod.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/data_loader/tests.rs": {
+      "lines": 308,
+      "test_lines": 516,
+      "tlr": 1.6753247,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fine_tune/config.rs": {
+      "lines": 240,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/backend/tests/metrics_tests.rs": {
+      "lines": 38,
+      "test_lines": 30,
+      "tlr": 0.7894737,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/collator.rs": {
+      "lines": 128,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/artifact/role.rs": {
+      "lines": 136,
+      "test_lines": 138,
+      "tlr": 1.0147059,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/dataset_impl.rs": {
+      "lines": 101,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/trainer/core.rs": {
+      "lines": 429,
+      "test_lines": 321,
+      "tlr": 0.74825174,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/research/bundle.rs": {
+      "lines": 28,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/mod.rs": {
+      "lines": 130,
+      "test_lines": 3,
+      "tlr": 0.023076924,
+      "health": 51,
+      "status": "ideal"
+    },
+    "src/cli/commands/tests/research.rs": {
+      "lines": 1282,
+      "test_lines": 440,
+      "tlr": 0.34321374,
+      "health": 44,
+      "status": "problem"
+    },
+    "src/prune/trainer_integration/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "crates/entrenar-inspect/src/main.rs": {
+      "lines": 382,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/citl/trainer/citl/helpers.rs": {
+      "lines": 194,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/tree/path.rs": {
+      "lines": 282,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/train/callback/monitor.rs": {
+      "lines": 202,
+      "test_lines": 167,
+      "tlr": 0.8267327,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/batch.rs": {
+      "lines": 39,
+      "test_lines": 24,
+      "tlr": 0.61538464,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/literate.rs": {
+      "lines": 397,
+      "test_lines": 306,
+      "tlr": 0.77078086,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/model.rs": {
+      "lines": 65,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/hpo/types/space.rs": {
+      "lines": 70,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/validate/proptests.rs": {
+      "lines": 320,
+      "test_lines": 210,
+      "tlr": 0.65625,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/storage/cloud/traits.rs": {
+      "lines": 84,
+      "test_lines": 64,
+      "tlr": 0.7619048,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/tui/mod.rs": {
+      "lines": 132,
+      "test_lines": 155,
+      "tlr": 1.1742424,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/preflight/checks/tests.rs": {
+      "lines": 271,
+      "test_lines": 240,
+      "tlr": 0.88560885,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/data_loader/mod.rs": {
+      "lines": 34,
+      "test_lines": 2,
+      "tlr": 0.05882353,
+      "health": 62,
+      "status": "ideal"
+    },
+    "src/quant/gguf_quant/q8_0.rs": {
+      "lines": 98,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/tests.rs": {
+      "lines": 78,
+      "test_lines": 20,
+      "tlr": 0.25641027,
+      "health": 94,
+      "status": "ideal"
+    },
+    "src/efficiency/device/simd.rs": {
+      "lines": 179,
+      "test_lines": 277,
+      "tlr": 1.5474861,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/andon.rs": {
+      "lines": 429,
+      "test_lines": 356,
+      "tlr": 0.82983685,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/publish_pipeline.rs": {
+      "lines": 79,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/optim/dp/budget.rs": {
+      "lines": 39,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/graph_opt.rs": {
+      "lines": 1506,
+      "test_lines": 1151,
+      "tlr": 0.7642762,
+      "health": 55,
+      "status": "problem"
+    },
+    "crates/entrenar-inspect/src/validate.rs": {
+      "lines": 460,
+      "test_lines": 395,
+      "tlr": 0.8586956,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/export.rs": {
+      "lines": 236,
+      "test_lines": 152,
+      "tlr": 0.6440678,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/supply_chain/audit_status.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/distribution/format.rs": {
+      "lines": 190,
+      "test_lines": 344,
+      "tlr": 1.8105264,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/transformer_trainer/mod.rs": {
+      "lines": 18,
+      "test_lines": 2,
+      "tlr": 0.11111111,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/quant/granularity/params.rs": {
+      "lines": 53,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/collector/ring.rs": {
+      "lines": 133,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/schedule/cubic/proptests.rs": {
+      "lines": 27,
+      "test_lines": 10,
+      "tlr": 0.37037036,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/cli/commands/research/mod.rs": {
+      "lines": 28,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/gguf_verify/tests/falsify.rs": {
+      "lines": 484,
+      "test_lines": 160,
+      "tlr": 0.3305785,
+      "health": 73,
+      "status": "acceptable"
+    },
+    "src/integrity/behavioral/builder.rs": {
+      "lines": 83,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/weights/mapping.rs": {
+      "lines": 44,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/config.rs": {
+      "lines": 200,
+      "test_lines": 231,
+      "tlr": 1.155,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/llm/tests.rs": {
+      "lines": 383,
+      "test_lines": 653,
+      "tlr": 1.7049608,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/gguf_verify/tests/proptest_roundtrip.rs": {
+      "lines": 186,
+      "test_lines": 60,
+      "tlr": 0.32258064,
+      "health": 85,
+      "status": "ideal"
+    },
+    "src/storage/cloud/mod.rs": {
+      "lines": 43,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/capability/capabilities.rs": {
+      "lines": 229,
+      "test_lines": 202,
+      "tlr": 0.88209605,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/path/knn/tests.rs": {
+      "lines": 183,
+      "test_lines": 150,
+      "tlr": 0.8196721,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/generator.rs": {
+      "lines": 223,
+      "test_lines": 122,
+      "tlr": 0.5470852,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/supply_chain/tests.rs": {
+      "lines": 208,
+      "test_lines": 180,
+      "tlr": 0.86538464,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/mod.rs": {
+      "lines": 39,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/tests/mod.rs": {
+      "lines": 8,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/scheduler/warmup_cosine_decay.rs": {
+      "lines": 74,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/finetune/device.rs": {
+      "lines": 255,
+      "test_lines": 134,
+      "tlr": 0.5254902,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/tests/core.rs": {
+      "lines": 259,
+      "test_lines": 120,
+      "tlr": 0.46332046,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/prune/schedule/gradual/tests/validation.rs": {
+      "lines": 181,
+      "test_lines": 100,
+      "tlr": 0.5524862,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/publish/tests.rs": {
+      "lines": 236,
+      "test_lines": 170,
+      "tlr": 0.720339,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-inspect/src/architecture.rs": {
+      "lines": 344,
+      "test_lines": 300,
+      "tlr": 0.872093,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/server/handlers.rs": {
+      "lines": 400,
+      "test_lines": 275,
+      "tlr": 0.6875,
+      "health": 94,
+      "status": "acceptable"
+    },
+    "src/monitor/tests/property.rs": {
+      "lines": 66,
+      "test_lines": 40,
+      "tlr": 0.6060606,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-inspect/src/convert.rs": {
+      "lines": 296,
+      "test_lines": 282,
+      "tlr": 0.9527027,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/loss/mod.rs": {
+      "lines": 42,
+      "test_lines": 28,
+      "tlr": 0.6666667,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/distillation/tests.rs": {
+      "lines": 310,
+      "test_lines": 260,
+      "tlr": 0.83870965,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/evaluator/metric.rs": {
+      "lines": 332,
+      "test_lines": 353,
+      "tlr": 1.063253,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/train/batches/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/monitor/storage/json_file.rs": {
+      "lines": 99,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/tests/prop_basic.rs": {
+      "lines": 169,
+      "test_lines": 50,
+      "tlr": 0.295858,
+      "health": 83,
+      "status": "ideal"
+    },
+    "src/tokenizer/bpe.rs": {
+      "lines": 388,
+      "test_lines": 186,
+      "tlr": 0.47938144,
+      "health": 82,
+      "status": "acceptable"
+    },
+    "src/finetune/corpus.rs": {
+      "lines": 539,
+      "test_lines": 261,
+      "tlr": 0.48423004,
+      "health": 64,
+      "status": "warning"
+    },
+    "src/train/trainer/step.rs": {
+      "lines": 151,
+      "test_lines": 63,
+      "tlr": 0.41721854,
+      "health": 93,
+      "status": "ideal"
+    },
+    "crates/entrenar-lora/src/main.rs": {
+      "lines": 308,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/cli/commands/validate.rs": {
+      "lines": 382,
+      "test_lines": 340,
+      "tlr": 0.8900524,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/tests/integration.rs": {
+      "lines": 266,
+      "test_lines": 120,
+      "tlr": 0.45112783,
+      "health": 91,
+      "status": "acceptable"
+    },
+    "src/config/cli/types/archive_provider.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/validation.rs": {
+      "lines": 486,
+      "test_lines": 84,
+      "tlr": 0.17283951,
+      "health": 64,
+      "status": "acceptable"
+    },
+    "src/cli/commands/completion.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tests.rs": {
+      "lines": 112,
+      "test_lines": 40,
+      "tlr": 0.35714287,
+      "health": 88,
+      "status": "ideal"
+    },
+    "src/monitor/inference/safety_andon/tests.rs": {
+      "lines": 338,
+      "test_lines": 320,
+      "tlr": 0.9467456,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fetcher/tests/architecture.rs": {
+      "lines": 190,
+      "test_lines": 160,
+      "tlr": 0.84210527,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/tests/serde.rs": {
+      "lines": 38,
+      "test_lines": 30,
+      "tlr": 0.7894737,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/tui/callback/mod.rs": {
+      "lines": 11,
+      "test_lines": 2,
+      "tlr": 0.18181819,
+      "health": 84,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/leaderboard/falsification_tests.rs": {
+      "lines": 259,
+      "test_lines": 130,
+      "tlr": 0.5019305,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/lora/mod.rs": {
+      "lines": 32,
+      "test_lines": 4,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/alert/mod.rs": {
+      "lines": 13,
+      "test_lines": 2,
+      "tlr": 0.15384616,
+      "health": 80,
+      "status": "ideal"
+    },
+    "src/research/mod.rs": {
+      "lines": 41,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quality/supply_chain/dependency_audit.rs": {
+      "lines": 188,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tui/mod.rs": {
+      "lines": 51,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/strategy.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/counterfactual/error.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/tests/gemm.rs": {
+      "lines": 161,
+      "test_lines": 30,
+      "tlr": 0.1863354,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/optim/adam.rs": {
+      "lines": 154,
+      "test_lines": 35,
+      "tlr": 0.22727273,
+      "health": 78,
+      "status": "ideal"
+    },
+    "src/quant/granularity/types.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/publish/publisher.rs": {
+      "lines": 198,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/mod.rs": {
+      "lines": 35,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/weights.rs": {
+      "lines": 142,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/llm/heuristics.rs": {
+      "lines": 109,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/collector_tests.rs": {
+      "lines": 119,
+      "test_lines": 60,
+      "tlr": 0.5042017,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/artifact.rs": {
+      "lines": 86,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/eval/retrain/config.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/lora/adapter/io.rs": {
+      "lines": 145,
+      "test_lines": 54,
+      "tlr": 0.37241378,
+      "health": 89,
+      "status": "ideal"
+    },
+    "src/storage/registry/memory/mod.rs": {
+      "lines": 9,
+      "test_lines": 2,
+      "tlr": 0.22222222,
+      "health": 89,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/gemm.rs": {
+      "lines": 133,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/edge.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/mod.rs": {
+      "lines": 26,
+      "test_lines": 2,
+      "tlr": 0.07692308,
+      "health": 70,
+      "status": "ideal"
+    },
+    "src/lora/adapter/metadata.rs": {
+      "lines": 13,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/drift/types.rs": {
+      "lines": 290,
+      "test_lines": 387,
+      "tlr": 1.3344828,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/fake_quantize/ops.rs": {
+      "lines": 23,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-distill/src/main.rs": {
+      "lines": 428,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "crates/entrenar-lora/src/merge.rs": {
+      "lines": 406,
+      "test_lines": 351,
+      "tlr": 0.864532,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/trainer/epoch.rs": {
+      "lines": 232,
+      "test_lines": 168,
+      "tlr": 0.7241379,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/tests/validation_lora_quant.rs": {
+      "lines": 297,
+      "test_lines": 150,
+      "tlr": 0.5050505,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/tests/provenance_tests.rs": {
+      "lines": 61,
+      "test_lines": 20,
+      "tlr": 0.32786885,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/cli/commands/publish.rs": {
+      "lines": 385,
+      "test_lines": 332,
+      "tlr": 0.86233765,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/tracking/tests.rs": {
+      "lines": 700,
+      "test_lines": 520,
+      "tlr": 0.74285716,
+      "health": 74,
+      "status": "warning"
+    },
+    "src/prune/calibrate/stats.rs": {
+      "lines": 108,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/behavioral/tests.rs": {
+      "lines": 441,
+      "test_lines": 250,
+      "tlr": 0.5668934,
+      "health": 87,
+      "status": "acceptable"
+    },
+    "src/autograd/precision/precision_types.rs": {
+      "lines": 53,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/schema.rs": {
+      "lines": 810,
+      "test_lines": 625,
+      "tlr": 0.77160496,
+      "health": 75,
+      "status": "warning"
+    },
+    "src/train/trainer/result.rs": {
+      "lines": 35,
+      "test_lines": 28,
+      "tlr": 0.8,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quant/fake_quantize/tests.rs": {
+      "lines": 385,
+      "test_lines": 250,
+      "tlr": 0.64935064,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/tracking/storage.rs": {
+      "lines": 247,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/autograd/cuda_backward/structured.rs": {
+      "lines": 203,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "acceptable"
+    },
+    "src/train/loss/mse/mse_loss.rs": {
+      "lines": 93,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/tests.rs": {
+      "lines": 431,
+      "test_lines": 240,
+      "tlr": 0.55684453,
+      "health": 86,
+      "status": "acceptable"
+    },
+    "src/prune/trainer_integration/config.rs": {
+      "lines": 101,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/trainer/mod.rs": {
+      "lines": 29,
+      "test_lines": 2,
+      "tlr": 0.06896552,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/integrity/mod.rs": {
+      "lines": 18,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quant/calibration/mod.rs": {
+      "lines": 19,
+      "test_lines": 2,
+      "tlr": 0.10526316,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/trainer/distillation_trainer.rs": {
+      "lines": 119,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/mod.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/tree/mod.rs": {
+      "lines": 10,
+      "test_lines": 2,
+      "tlr": 0.2,
+      "health": 86,
+      "status": "ideal"
+    },
+    "src/train/tui/charts/loss_curve.rs": {
+      "lines": 242,
+      "test_lines": 215,
+      "tlr": 0.88842976,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/tui/charts/feature_importance.rs": {
+      "lines": 82,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/citation.rs": {
+      "lines": 468,
+      "test_lines": 287,
+      "tlr": 0.6132479,
+      "health": 90,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/loader/teacher.rs": {
+      "lines": 56,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/lineage/causal.rs": {
+      "lines": 75,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/evaluator/model_evaluator.rs": {
+      "lines": 431,
+      "test_lines": 306,
+      "tlr": 0.7099768,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/artifact/tests.rs": {
+      "lines": 186,
+      "test_lines": 130,
+      "tlr": 0.6989247,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/eval/generative/asr.rs": {
+      "lines": 65,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/storage/registry/memory/traits_impl.rs": {
+      "lines": 218,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/result.rs": {
+      "lines": 34,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/distill/tests.rs": {
+      "lines": 308,
+      "test_lines": 141,
+      "tlr": 0.45779222,
+      "health": 81,
+      "status": "acceptable"
+    },
+    "src/cli/commands/research/export.rs": {
+      "lines": 93,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/ties_dare.rs": {
+      "lines": 78,
+      "test_lines": 50,
+      "tlr": 0.64102566,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/distill/progressive.rs": {
+      "lines": 383,
+      "test_lines": 283,
+      "tlr": 0.7389034,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/artifact/research_artifact.rs": {
+      "lines": 94,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/weighted.rs": {
+      "lines": 60,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/transformer_trainer/config.rs": {
+      "lines": 90,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/sqlite_backend.rs": {
+      "lines": 57,
+      "test_lines": 2,
+      "tlr": 0.03508772,
+      "health": 64,
+      "status": "ideal"
+    },
+    "src/storage/trueno.rs": {
+      "lines": 455,
+      "test_lines": 311,
+      "tlr": 0.6835165,
+      "health": 94,
+      "status": "acceptable"
+    },
+    "src/citl/pattern_store/tests/persistence.rs": {
+      "lines": 94,
+      "test_lines": 40,
+      "tlr": 0.42553192,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/common.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/tests/mod.rs": {
+      "lines": 98,
+      "test_lines": 20,
+      "tlr": 0.20408164,
+      "health": 87,
+      "status": "ideal"
+    },
+    "src/train/tui/capability/layout.rs": {
+      "lines": 13,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/monitor.rs": {
+      "lines": 423,
+      "test_lines": 182,
+      "tlr": 0.43026003,
+      "health": 79,
+      "status": "acceptable"
+    },
+    "src/config/train/mod.rs": {
+      "lines": 30,
+      "test_lines": 2,
+      "tlr": 0.06666667,
+      "health": 68,
+      "status": "ideal"
+    },
+    "src/server/mod.rs": {
+      "lines": 451,
+      "test_lines": 320,
+      "tlr": 0.70953435,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/loader/tests.rs": {
+      "lines": 278,
+      "test_lines": 200,
+      "tlr": 0.7194245,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/distillation/attention.rs": {
+      "lines": 61,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/search/mcts/node.rs": {
+      "lines": 394,
+      "test_lines": 380,
+      "tlr": 0.964467,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-bench/src/cost.rs": {
+      "lines": 647,
+      "test_lines": 155,
+      "tlr": 0.23956724,
+      "health": 54,
+      "status": "warning"
+    },
+    "src/train/metrics/trait_def.rs": {
+      "lines": 17,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/pipeline/prune_quantize.rs": {
+      "lines": 296,
+      "test_lines": 165,
+      "tlr": 0.5574324,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/data.rs": {
+      "lines": 172,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/eval/drift/mod.rs": {
+      "lines": 25,
+      "test_lines": 2,
+      "tlr": 0.08,
+      "health": 70,
+      "status": "ideal"
+    },
+    "src/prune/calibrate/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/quant/error_analysis.rs": {
+      "lines": 469,
+      "test_lines": 410,
+      "tlr": 0.8742004,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/ro_crate/package.rs": {
+      "lines": 272,
+      "test_lines": 64,
+      "tlr": 0.23529412,
+      "health": 73,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/counterfactual/mod.rs": {
+      "lines": 14,
+      "test_lines": 2,
+      "tlr": 0.14285715,
+      "health": 79,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/elementwise.rs": {
+      "lines": 180,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/config/cli/research/export.rs": {
+      "lines": 34,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/knn/mod.rs": {
+      "lines": 11,
+      "test_lines": 2,
+      "tlr": 0.18181819,
+      "health": 84,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/loader/safetensors.rs": {
+      "lines": 239,
+      "test_lines": 11,
+      "tlr": 0.046025105,
+      "health": 58,
+      "status": "acceptable"
+    },
+    "src/autograd/cuda_backward/tests/structured.rs": {
+      "lines": 221,
+      "test_lines": 40,
+      "tlr": 0.18099548,
+      "health": 69,
+      "status": "acceptable"
+    },
+    "crates/entrenar-common/src/progress.rs": {
+      "lines": 393,
+      "test_lines": 337,
+      "tlr": 0.85750633,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/mod.rs": {
+      "lines": 57,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/tests/unit_ops.rs": {
+      "lines": 452,
+      "test_lines": 300,
+      "tlr": 0.6637168,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/gguf_verify/types.rs": {
+      "lines": 29,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/tests.rs": {
+      "lines": 356,
+      "test_lines": 300,
+      "tlr": 0.8426966,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/cli/commands/research/init.rs": {
+      "lines": 87,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/precision/config.rs": {
+      "lines": 91,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/lora/gradient_tests.rs": {
+      "lines": 324,
+      "test_lines": 457,
+      "tlr": 1.4104939,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/generative/code_gan/discriminator.rs": {
+      "lines": 233,
+      "test_lines": 132,
+      "tlr": 0.5665236,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/artifact/license.rs": {
+      "lines": 113,
+      "test_lines": 136,
+      "tlr": 1.2035398,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quant/benchmarks/generators.rs": {
+      "lines": 92,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/callback/progress.rs": {
+      "lines": 168,
+      "test_lines": 139,
+      "tlr": 0.82738096,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/dashboard.rs": {
+      "lines": 251,
+      "test_lines": 214,
+      "tlr": 0.85258967,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/lora/layer/core.rs": {
+      "lines": 216,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/cli/types/tests.rs": {
+      "lines": 303,
+      "test_lines": 250,
+      "tlr": 0.8250825,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/efficiency/platform/server.rs": {
+      "lines": 72,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tui/panel.rs": {
+      "lines": 630,
+      "test_lines": 319,
+      "tlr": 0.5063492,
+      "health": 65,
+      "status": "warning"
+    },
+    "src/hf_pipeline/fetcher/tests/hf_fetcher.rs": {
+      "lines": 285,
+      "test_lines": 230,
+      "tlr": 0.80701756,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/gguf_quant/q4_0.rs": {
+      "lines": 124,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/dataset/split.rs": {
+      "lines": 24,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/leaderboard/types.rs": {
+      "lines": 131,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/experiment_tests.rs": {
+      "lines": 41,
+      "test_lines": 40,
+      "tlr": 0.9756098,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/core.rs": {
+      "lines": 162,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_forward/test_activations.rs": {
+      "lines": 275,
+      "test_lines": 70,
+      "tlr": 0.25454545,
+      "health": 75,
+      "status": "acceptable"
+    },
+    "src/autograd/cuda_forward/cache.rs": {
+      "lines": 55,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/storage/preflight/checks/data_integrity.rs": {
+      "lines": 245,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/citl/pattern_store/suggestion.rs": {
+      "lines": 32,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/loader/mod.rs": {
+      "lines": 14,
+      "test_lines": 2,
+      "tlr": 0.14285715,
+      "health": 79,
+      "status": "ideal"
+    },
+    "src/train/tui/charts/tests.rs": {
+      "lines": 271,
+      "test_lines": 260,
+      "tlr": 0.9594096,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/generative/code_gan/gan/stats.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/paradigm/tests.rs": {
+      "lines": 405,
+      "test_lines": 360,
+      "tlr": 0.8888889,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/path/knn/decision_path.rs": {
+      "lines": 239,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/efficiency/paradigm/fine_tune.rs": {
+      "lines": 140,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/retrain/policy.rs": {
+      "lines": 15,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/callback/monitor.rs": {
+      "lines": 163,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/preflight/results.rs": {
+      "lines": 304,
+      "test_lines": 291,
+      "tlr": 0.9572368,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fetcher/tests/fetch_options.rs": {
+      "lines": 61,
+      "test_lines": 50,
+      "tlr": 0.8196721,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/artifact/author.rs": {
+      "lines": 72,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/fetcher/hf_fetcher.rs": {
+      "lines": 254,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/quant/gguf_quant/tests.rs": {
+      "lines": 337,
+      "test_lines": 230,
+      "tlr": 0.68249255,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/train/callback/checkpoint.rs": {
+      "lines": 226,
+      "test_lines": 162,
+      "tlr": 0.71681416,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/efficiency/platform/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/config/validate/mod.rs": {
+      "lines": 14,
+      "test_lines": 3,
+      "tlr": 0.21428572,
+      "health": 88,
+      "status": "ideal"
+    },
+    "src/decision/mod.rs": {
+      "lines": 24,
+      "test_lines": 2,
+      "tlr": 0.083333336,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/quant/calibration/types.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/train/config.rs": {
+      "lines": 380,
+      "test_lines": 391,
+      "tlr": 1.0289474,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/hpo/types/tests.rs": {
+      "lines": 444,
+      "test_lines": 670,
+      "tlr": 1.509009,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/loss/mse/huber_loss.rs": {
+      "lines": 136,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/generative/tests.rs": {
+      "lines": 315,
+      "test_lines": 420,
+      "tlr": 1.3333334,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/convergence_tests/adam_tests.rs": {
+      "lines": 205,
+      "test_lines": 303,
+      "tlr": 1.4780488,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/tui/callback/render.rs": {
+      "lines": 155,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/callback/mod.rs": {
+      "lines": 15,
+      "test_lines": 2,
+      "tlr": 0.13333334,
+      "health": 77,
+      "status": "ideal"
+    },
+    "src/train/tui/capability/tests.rs": {
+      "lines": 362,
+      "test_lines": 290,
+      "tlr": 0.80110496,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/cloud/gcs.rs": {
+      "lines": 77,
+      "test_lines": 76,
+      "tlr": 0.987013,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/citl/trainer/citl/types.rs": {
+      "lines": 60,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/mod.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/distillation.rs": {
+      "lines": 199,
+      "test_lines": 274,
+      "tlr": 1.3768845,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/notebook/cell.rs": {
+      "lines": 136,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/mod.rs": {
+      "lines": 42,
+      "test_lines": 2,
+      "tlr": 0.04761905,
+      "health": 66,
+      "status": "ideal"
+    },
+    "src/yaml_mode/tests/mod.rs": {
+      "lines": 11,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/search/mcts/traits.rs": {
+      "lines": 119,
+      "test_lines": 71,
+      "tlr": 0.5966387,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/tui/refresh.rs": {
+      "lines": 185,
+      "test_lines": 95,
+      "tlr": 0.5135135,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/research/archive/config.rs": {
+      "lines": 71,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/config.rs": {
+      "lines": 25,
+      "test_lines": 30,
+      "tlr": 1.2,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/tui/app.rs": {
+      "lines": 499,
+      "test_lines": 98,
+      "tlr": 0.19639279,
+      "health": 66,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/gguf_verify/parsing.rs": {
+      "lines": 270,
+      "test_lines": 149,
+      "tlr": 0.55185187,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/failure/analysis.rs": {
+      "lines": 90,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/drift/tests.rs": {
+      "lines": 243,
+      "test_lines": 170,
+      "tlr": 0.6995885,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-lora/src/memory.rs": {
+      "lines": 339,
+      "test_lines": 271,
+      "tlr": 0.79941005,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-lora/src/optimizer.rs": {
+      "lines": 426,
+      "test_lines": 374,
+      "tlr": 0.8779343,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/commutativity/edge_cases.rs": {
+      "lines": 95,
+      "test_lines": 50,
+      "tlr": 0.5263158,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/adamw.rs": {
+      "lines": 442,
+      "test_lines": 340,
+      "tlr": 0.7692308,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/callback/explainability.rs": {
+      "lines": 454,
+      "test_lines": 332,
+      "tlr": 0.7312775,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/callback/early_stopping.rs": {
+      "lines": 266,
+      "test_lines": 188,
+      "tlr": 0.7067669,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quality/mod.rs": {
+      "lines": 18,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/benchmark/mod.rs": {
+      "lines": 17,
+      "test_lines": 2,
+      "tlr": 0.11764706,
+      "health": 75,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/tree_path_tests.rs": {
+      "lines": 33,
+      "test_lines": 30,
+      "tlr": 0.90909094,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/tests.rs": {
+      "lines": 379,
+      "test_lines": 310,
+      "tlr": 0.81794196,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/dataset/mod.rs": {
+      "lines": 32,
+      "test_lines": 2,
+      "tlr": 0.0625,
+      "health": 68,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/leaderboard/parser.rs": {
+      "lines": 89,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/notebook/mod.rs": {
+      "lines": 33,
+      "test_lines": 2,
+      "tlr": 0.060606062,
+      "health": 68,
+      "status": "ideal"
+    },
+    "src/cli/commands/research/preregister.rs": {
+      "lines": 226,
+      "test_lines": 233,
+      "tlr": 1.0309734,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "crates/entrenar-shell/src/repl.rs": {
+      "lines": 167,
+      "test_lines": 40,
+      "tlr": 0.23952095,
+      "health": 79,
+      "status": "ideal"
+    },
+    "src/optim/dp/gradient.rs": {
+      "lines": 34,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/tests/elementwise.rs": {
+      "lines": 231,
+      "test_lines": 60,
+      "tlr": 0.25974026,
+      "health": 75,
+      "status": "acceptable"
+    },
+    "src/ecosystem/ruchy/tests.rs": {
+      "lines": 306,
+      "test_lines": 170,
+      "tlr": 0.5555556,
+      "health": 86,
+      "status": "acceptable"
+    },
+    "src/storage/mod.rs": {
+      "lines": 258,
+      "test_lines": 77,
+      "tlr": 0.2984496,
+      "health": 78,
+      "status": "acceptable"
+    },
+    "src/citl/trainer/mod.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/merge.rs": {
+      "lines": 255,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/quality/supply_chain/error.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/pipeline/stage.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/prometheus/types.rs": {
+      "lines": 118,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/generative/falsification_rouge_ppl.rs": {
+      "lines": 156,
+      "test_lines": 110,
+      "tlr": 0.7051282,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/dp/mod.rs": {
+      "lines": 47,
+      "test_lines": 2,
+      "tlr": 0.04255319,
+      "health": 65,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/fetcher/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/tests/chunk_id.rs": {
+      "lines": 81,
+      "test_lines": 100,
+      "tlr": 1.2345679,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/tui/buffer.rs": {
+      "lines": 226,
+      "test_lines": 198,
+      "tlr": 0.8761062,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/train/metrics/tests.rs": {
+      "lines": 270,
+      "test_lines": 270,
+      "tlr": 1.0,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/tests/node.rs": {
+      "lines": 80,
+      "test_lines": 30,
+      "tlr": 0.375,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/eval/classification/metrics.rs": {
+      "lines": 111,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/dp/accountant.rs": {
+      "lines": 137,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/preflight/checks/mod.rs": {
+      "lines": 80,
+      "test_lines": 2,
+      "tlr": 0.025,
+      "health": 63,
+      "status": "ideal"
+    },
+    "src/sovereign/distribution/component.rs": {
+      "lines": 58,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/loss/mse/mod.rs": {
+      "lines": 12,
+      "test_lines": 2,
+      "tlr": 0.16666667,
+      "health": 82,
+      "status": "ideal"
+    },
+    "src/finetune/popperian.rs": {
+      "lines": 654,
+      "test_lines": 431,
+      "tlr": 0.6590214,
+      "health": 71,
+      "status": "warning"
+    },
+    "src/tokenizer/error.rs": {
+      "lines": 28,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/ro_crate/tests.rs": {
+      "lines": 184,
+      "test_lines": 110,
+      "tlr": 0.59782606,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/tui/render/charts.rs": {
+      "lines": 225,
+      "test_lines": 47,
+      "tlr": 0.20888889,
+      "health": 71,
+      "status": "acceptable"
+    },
+    "src/optim/mod.rs": {
+      "lines": 31,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/loss/traits.rs": {
+      "lines": 14,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/ops/basic.rs": {
+      "lines": 531,
+      "test_lines": 456,
+      "tlr": 0.8587571,
+      "health": 79,
+      "status": "warning"
+    },
+    "src/hf_pipeline/dataset/batch.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/audit.rs": {
+      "lines": 144,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/realizar/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/config/cli/types/inspect_mode.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/finetune/mod.rs": {
+      "lines": 34,
+      "test_lines": 2,
+      "tlr": 0.05882353,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/monitor/inference/counterfactual/explanation.rs": {
+      "lines": 336,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/autograd/tests/prop_softmax.rs": {
+      "lines": 48,
+      "test_lines": 20,
+      "tlr": 0.41666666,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/counterfactual/tests.rs": {
+      "lines": 134,
+      "test_lines": 110,
+      "tlr": 0.8208955,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/output.rs": {
+      "lines": 49,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/traits.rs": {
+      "lines": 104,
+      "test_lines": 103,
+      "tlr": 0.99038464,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/types/parameter.rs": {
+      "lines": 116,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/benches/sweep_benchmarks.rs": {
+      "lines": 42,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/dashboard/wasm/mod.rs": {
+      "lines": 36,
+      "test_lines": 2,
+      "tlr": 0.055555556,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/mod.rs": {
+      "lines": 27,
+      "test_lines": 2,
+      "tlr": 0.074074075,
+      "health": 69,
+      "status": "ideal"
+    },
+    "crates/entrenar-common/src/error.rs": {
+      "lines": 267,
+      "test_lines": 257,
+      "tlr": 0.9625468,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/convergence_tests/adamw_tests.rs": {
+      "lines": 118,
+      "test_lines": 176,
+      "tlr": 1.4915254,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/metrics.rs": {
+      "lines": 234,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/io/tests.rs": {
+      "lines": 128,
+      "test_lines": 40,
+      "tlr": 0.3125,
+      "health": 85,
+      "status": "ideal"
+    },
+    "src/lora/layer/tests.rs": {
+      "lines": 312,
+      "test_lines": 120,
+      "tlr": 0.3846154,
+      "health": 76,
+      "status": "acceptable"
+    },
+    "src/monitor/gpu/render.rs": {
+      "lines": 158,
+      "test_lines": 177,
+      "tlr": 1.1202532,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/config/infer/stats.rs": {
+      "lines": 60,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/decision_trace_tests.rs": {
+      "lines": 36,
+      "test_lines": 20,
+      "tlr": 0.5555556,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/trainer_integration/trainer.rs": {
+      "lines": 302,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/train/arrow.rs": {
+      "lines": 44,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/integrity/lineage/timestamp.rs": {
+      "lines": 86,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quant/granularity/metrics.rs": {
+      "lines": 46,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_forward/test_matmul.rs": {
+      "lines": 142,
+      "test_lines": 30,
+      "tlr": 0.2112676,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/train/curriculum/adaptive.rs": {
+      "lines": 319,
+      "test_lines": 336,
+      "tlr": 1.0532916,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/autograd/tests/mod.rs": {
+      "lines": 9,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/trainer/span.rs": {
+      "lines": 167,
+      "test_lines": 173,
+      "tlr": 1.0359281,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/trainer/train_loop/mod.rs": {
+      "lines": 11,
+      "test_lines": 2,
+      "tlr": 0.18181819,
+      "health": 84,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/filter_ops_tests.rs": {
+      "lines": 287,
+      "test_lines": 120,
+      "tlr": 0.41811848,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/monitoring.rs": {
+      "lines": 130,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/cli/commands/inspect.rs": {
+      "lines": 253,
+      "test_lines": 137,
+      "tlr": 0.541502,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/pipeline/orchestrator.rs": {
+      "lines": 332,
+      "test_lines": 200,
+      "tlr": 0.60240966,
+      "health": 89,
+      "status": "acceptable"
+    },
+    "src/prune/schedule/cubic/mod.rs": {
+      "lines": 13,
+      "test_lines": 3,
+      "tlr": 0.23076923,
+      "health": 90,
+      "status": "ideal"
+    },
+    "src/autograd/checkpoint.rs": {
+      "lines": 1031,
+      "test_lines": 857,
+      "tlr": 0.83123183,
+      "health": 57,
+      "status": "problem"
+    },
+    "src/autograd/cuda_forward/matmul.rs": {
+      "lines": 128,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/extended.rs": {
+      "lines": 289,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 40,
+      "status": "acceptable"
+    },
+    "src/search/mcts/tree.rs": {
+      "lines": 261,
+      "test_lines": 206,
+      "tlr": 0.789272,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/eval/evaluator/leaderboard.rs": {
+      "lines": 177,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/optim/convergence_tests/helpers.rs": {
+      "lines": 170,
+      "test_lines": 10,
+      "tlr": 0.05882353,
+      "health": 64,
+      "status": "ideal"
+    },
+    "src/cli/commands/info.rs": {
+      "lines": 42,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/train/tui/reference.rs": {
+      "lines": 126,
+      "test_lines": 144,
+      "tlr": 1.1428572,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/trace.rs": {
+      "lines": 419,
+      "test_lines": 357,
+      "tlr": 0.85202867,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/wasm/options.rs": {
+      "lines": 133,
+      "test_lines": 67,
+      "tlr": 0.5037594,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/chunk_id.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/tests/test_utils.rs": {
+      "lines": 29,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/tests/manifest_parsing.rs": {
+      "lines": 399,
+      "test_lines": 140,
+      "tlr": 0.3508772,
+      "health": 75,
+      "status": "acceptable"
+    },
+    "src/config/train/loader.rs": {
+      "lines": 1179,
+      "test_lines": 572,
+      "tlr": 0.48515692,
+      "health": 47,
+      "status": "problem"
+    },
+    "src/monitor/inference/tests/inference_monitor_tests.rs": {
+      "lines": 169,
+      "test_lines": 110,
+      "tlr": 0.65088755,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/eval/generative/code.rs": {
+      "lines": 47,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/io/load.rs": {
+      "lines": 464,
+      "test_lines": 315,
+      "tlr": 0.6788793,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/transformer/mod.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/gguf_verify/tests/basic.rs": {
+      "lines": 346,
+      "test_lines": 330,
+      "tlr": 0.9537572,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/backend/tests/artifact_tests.rs": {
+      "lines": 61,
+      "test_lines": 40,
+      "tlr": 0.6557377,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/pipeline/tests.rs": {
+      "lines": 473,
+      "test_lines": 290,
+      "tlr": 0.6131078,
+      "health": 90,
+      "status": "acceptable"
+    },
+    "src/train/curriculum/mod.rs": {
+      "lines": 30,
+      "test_lines": 2,
+      "tlr": 0.06666667,
+      "health": 68,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_backward/mod.rs": {
+      "lines": 42,
+      "test_lines": 2,
+      "tlr": 0.04761905,
+      "health": 61,
+      "status": "ideal"
+    },
+    "src/lora/adapter/lora_adapter.rs": {
+      "lines": 304,
+      "test_lines": 272,
+      "tlr": 0.8947368,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/export/gguf_writer.rs": {
+      "lines": 353,
+      "test_lines": 488,
+      "tlr": 1.3824363,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/property_tests.rs": {
+      "lines": 233,
+      "test_lines": 140,
+      "tlr": 0.6008584,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/ecosystem/realizar/quantization.rs": {
+      "lines": 98,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/search_tests.rs": {
+      "lines": 103,
+      "test_lines": 40,
+      "tlr": 0.3883495,
+      "health": 91,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/mod.rs": {
+      "lines": 58,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/tests/store.rs": {
+      "lines": 189,
+      "test_lines": 130,
+      "tlr": 0.6878307,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-distill/src/pipeline.rs": {
+      "lines": 835,
+      "test_lines": 524,
+      "tlr": 0.62754494,
+      "health": 70,
+      "status": "warning"
+    },
+    "src/hf_pipeline/config/student.rs": {
+      "lines": 51,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/gguf_verify/mod.rs": {
+      "lines": 35,
+      "test_lines": 2,
+      "tlr": 0.057142857,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/prune/config/tests.rs": {
+      "lines": 405,
+      "test_lines": 240,
+      "tlr": 0.5925926,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/eval/retrain/tests.rs": {
+      "lines": 439,
+      "test_lines": 220,
+      "tlr": 0.5011389,
+      "health": 83,
+      "status": "acceptable"
+    },
+    "crates/entrenar-distill/src/weights.rs": {
+      "lines": 151,
+      "test_lines": 94,
+      "tlr": 0.6225166,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/integrity/lineage/mod.rs": {
+      "lines": 35,
+      "test_lines": 2,
+      "tlr": 0.057142857,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/autograd/tensor.rs": {
+      "lines": 246,
+      "test_lines": 251,
+      "tlr": 1.0203252,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/validate/error.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/train/batches/rebatch.rs": {
+      "lines": 45,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/platform/edge.rs": {
+      "lines": 100,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/transformer/cuda_block.rs": {
+      "lines": 676,
+      "test_lines": 22,
+      "tlr": 0.03254438,
+      "health": 41,
+      "status": "warning"
+    },
+    "src/efficiency/paradigm/model_paradigm.rs": {
+      "lines": 125,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/error.rs": {
+      "lines": 21,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tui/render/format.rs": {
+      "lines": 70,
+      "test_lines": 54,
+      "tlr": 0.7714286,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/fine_tune/method.rs": {
+      "lines": 32,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/integrity/trace_storage.rs": {
+      "lines": 498,
+      "test_lines": 485,
+      "tlr": 0.9738956,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/monitor/storage/in_memory.rs": {
+      "lines": 103,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quality/supply_chain/severity.rs": {
+      "lines": 135,
+      "test_lines": 211,
+      "tlr": 1.562963,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/dp/dp_sgd.rs": {
+      "lines": 137,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/realizar/tests.rs": {
+      "lines": 436,
+      "test_lines": 300,
+      "tlr": 0.6880734,
+      "health": 94,
+      "status": "acceptable"
+    },
+    "src/config/train/batches/tests.rs": {
+      "lines": 324,
+      "test_lines": 170,
+      "tlr": 0.52469134,
+      "health": 84,
+      "status": "acceptable"
+    },
+    "src/train/mod.rs": {
+      "lines": 70,
+      "test_lines": 2,
+      "tlr": 0.028571429,
+      "health": 63,
+      "status": "ideal"
+    },
+    "src/storage/cloud/local.rs": {
+      "lines": 229,
+      "test_lines": 207,
+      "tlr": 0.9039301,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/dashboard/tests.rs": {
+      "lines": 227,
+      "test_lines": 220,
+      "tlr": 0.969163,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/leaderboard/mod.rs": {
+      "lines": 28,
+      "test_lines": 3,
+      "tlr": 0.10714286,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/autograd/precision/conversions.rs": {
+      "lines": 69,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_training.rs": {
+      "lines": 455,
+      "test_lines": 283,
+      "tlr": 0.62197804,
+      "health": 90,
+      "status": "acceptable"
+    },
+    "src/quant/gguf_quant/quant_type.rs": {
+      "lines": 33,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/distillation/mod.rs": {
+      "lines": 29,
+      "test_lines": 2,
+      "tlr": 0.06896552,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/moe/router.rs": {
+      "lines": 260,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "crates/entrenar-shell/src/state.rs": {
+      "lines": 399,
+      "test_lines": 369,
+      "tlr": 0.924812,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/dp/config.rs": {
+      "lines": 100,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/trainer/citl/mod.rs": {
+      "lines": 19,
+      "test_lines": 2,
+      "tlr": 0.10526316,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/monitor/tests/edge_cases.rs": {
+      "lines": 43,
+      "test_lines": 40,
+      "tlr": 0.9302326,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/config/pruning_config.rs": {
+      "lines": 199,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/config.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/transformer/weights/convert.rs": {
+      "lines": 66,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/mod.rs": {
+      "lines": 22,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/config/infer/tests.rs": {
+      "lines": 493,
+      "test_lines": 390,
+      "tlr": 0.79107505,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/commutativity/ties_tests.rs": {
+      "lines": 61,
+      "test_lines": 20,
+      "tlr": 0.32786885,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/provenance/tests/attack.rs": {
+      "lines": 89,
+      "test_lines": 50,
+      "tlr": 0.56179774,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-lora/src/lib.rs": {
+      "lines": 103,
+      "test_lines": 108,
+      "tlr": 1.0485437,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_forward/test_normalization.rs": {
+      "lines": 204,
+      "test_lines": 40,
+      "tlr": 0.19607843,
+      "health": 70,
+      "status": "acceptable"
+    },
+    "src/config/mod.rs": {
+      "lines": 56,
+      "test_lines": 3,
+      "tlr": 0.05357143,
+      "health": 67,
+      "status": "ideal"
+    },
+    "src/citl/trainer/citl/core.rs": {
+      "lines": 169,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/leaderboard/tests.rs": {
+      "lines": 209,
+      "test_lines": 140,
+      "tlr": 0.6698565,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/distill/checkpoint.rs": {
+      "lines": 249,
+      "test_lines": 198,
+      "tlr": 0.79518074,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/quant_merge.rs": {
+      "lines": 157,
+      "test_lines": 88,
+      "tlr": 0.56050956,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/storage/error.rs": {
+      "lines": 20,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/transformer_trainer/tests.rs": {
+      "lines": 250,
+      "test_lines": 220,
+      "tlr": 0.88,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/granularity/tests.rs": {
+      "lines": 479,
+      "test_lines": 777,
+      "tlr": 1.6221294,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/io/save.rs": {
+      "lines": 456,
+      "test_lines": 531,
+      "tlr": 1.1644737,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/llm/stats.rs": {
+      "lines": 80,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/report/types.rs": {
+      "lines": 64,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/distill/loss.rs": {
+      "lines": 269,
+      "test_lines": 176,
+      "tlr": 0.6542751,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/train/tests/mod.rs": {
+      "lines": 13,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/archive/metadata.rs": {
+      "lines": 99,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/cuda_forward/activations.rs": {
+      "lines": 221,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/tests/default_values.rs": {
+      "lines": 64,
+      "test_lines": 30,
+      "tlr": 0.46875,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/scheduler/tests.rs": {
+      "lines": 347,
+      "test_lines": 290,
+      "tlr": 0.83573484,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/cli/research/deposit.rs": {
+      "lines": 38,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/trainer/state.rs": {
+      "lines": 112,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/edge_cases_tests.rs": {
+      "lines": 295,
+      "test_lines": 200,
+      "tlr": 0.6779661,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/fake_quantize/config.rs": {
+      "lines": 61,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/tests/property.rs": {
+      "lines": 91,
+      "test_lines": 50,
+      "tlr": 0.5494506,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/types/strategy.rs": {
+      "lines": 45,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/trainer/train_loop/validation.rs": {
+      "lines": 157,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/optim/scheduler/step_decay.rs": {
+      "lines": 52,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quality/supply_chain/advisory.rs": {
+      "lines": 29,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/batuta/tests.rs": {
+      "lines": 190,
+      "test_lines": 180,
+      "tlr": 0.94736844,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/distillation/utils.rs": {
+      "lines": 56,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/config/validate/tests.rs": {
+      "lines": 426,
+      "test_lines": 290,
+      "tlr": 0.68075114,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/backend/tests/parameter_tests.rs": {
+      "lines": 97,
+      "test_lines": 60,
+      "tlr": 0.6185567,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/curriculum/efficiency.rs": {
+      "lines": 26,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/autograd/precision/tests.rs": {
+      "lines": 251,
+      "test_lines": 529,
+      "tlr": 2.1075697,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/config/train/tests/rebatch.rs": {
+      "lines": 78,
+      "test_lines": 50,
+      "tlr": 0.64102566,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/generative/code_gan/gan/training_result.rs": {
+      "lines": 16,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/metrics/mod.rs": {
+      "lines": 21,
+      "test_lines": 2,
+      "tlr": 0.0952381,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/storage/memory.rs": {
+      "lines": 469,
+      "test_lines": 414,
+      "tlr": 0.88272923,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/llm/prompt.rs": {
+      "lines": 119,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/serialization/format.rs": {
+      "lines": 96,
+      "test_lines": 76,
+      "tlr": 0.7916667,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/pipeline/mod.rs": {
+      "lines": 23,
+      "test_lines": 2,
+      "tlr": 0.08695652,
+      "health": 71,
+      "status": "ideal"
+    },
+    "src/efficiency/device/cpu.rs": {
+      "lines": 152,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/params.rs": {
+      "lines": 603,
+      "test_lines": 628,
+      "tlr": 1.0414593,
+      "health": 85,
+      "status": "warning"
+    },
+    "src/monitor/inference/tests/mod.rs": {
+      "lines": 29,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/train/batches/parquet.rs": {
+      "lines": 307,
+      "test_lines": 378,
+      "tlr": 1.2312703,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fine_tune/mod.rs": {
+      "lines": 22,
+      "test_lines": 2,
+      "tlr": 0.09090909,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/config/cli/extended.rs": {
+      "lines": 447,
+      "test_lines": 474,
+      "tlr": 1.0604026,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/quant/fake_quantize/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    },
+    "src/quant/calibration/tests.rs": {
+      "lines": 475,
+      "test_lines": 370,
+      "tlr": 0.77894735,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/citl/pattern_store/tests/mod.rs": {
+      "lines": 11,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/templates.rs": {
+      "lines": 675,
+      "test_lines": 315,
+      "tlr": 0.46666667,
+      "health": 63,
+      "status": "warning"
+    },
+    "src/storage/registry/comparison.rs": {
+      "lines": 111,
+      "test_lines": 79,
+      "tlr": 0.7117117,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quant/benchmarks/runners.rs": {
+      "lines": 167,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-distill/src/lib.rs": {
+      "lines": 143,
+      "test_lines": 64,
+      "tlr": 0.44755244,
+      "health": 95,
+      "status": "ideal"
+    },
+    "src/cli/commands/train.rs": {
+      "lines": 222,
+      "test_lines": 107,
+      "tlr": 0.481982,
+      "health": 93,
+      "status": "acceptable"
+    },
+    "src/search/mcts/search/tests.rs": {
+      "lines": 336,
+      "test_lines": 120,
+      "tlr": 0.35714287,
+      "health": 75,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/fetcher/tests/weight_format.rs": {
+      "lines": 106,
+      "test_lines": 130,
+      "tlr": 1.226415,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/calibrate/config.rs": {
+      "lines": 92,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/benchmark/collection.rs": {
+      "lines": 221,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/prune/config/pattern.rs": {
+      "lines": 58,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/pipeline/metrics.rs": {
+      "lines": 124,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/storage/traits.rs": {
+      "lines": 30,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/trainer/mod.rs": {
+      "lines": 40,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quant/calibration/calibrator.rs": {
+      "lines": 263,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/serialization/serializer.rs": {
+      "lines": 137,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/version.rs": {
+      "lines": 99,
+      "test_lines": 70,
+      "tlr": 0.7070707,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/tpe/tests.rs": {
+      "lines": 273,
+      "test_lines": 315,
+      "tlr": 1.1538461,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/distillation/progressive.rs": {
+      "lines": 126,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/wasm/mod.rs": {
+      "lines": 34,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/retrain/retrainer.rs": {
+      "lines": 144,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/tui/capability/mod.rs": {
+      "lines": 14,
+      "test_lines": 2,
+      "tlr": 0.14285715,
+      "health": 79,
+      "status": "ideal"
+    },
+    "src/dashboard/mod.rs": {
+      "lines": 49,
+      "test_lines": 2,
+      "tlr": 0.040816326,
+      "health": 65,
+      "status": "ideal"
+    },
+    "src/train/callback/manager.rs": {
+      "lines": 484,
+      "test_lines": 466,
+      "tlr": 0.9628099,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/config/training.rs": {
+      "lines": 46,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/registry/error.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/cloud/s3.rs": {
+      "lines": 270,
+      "test_lines": 282,
+      "tlr": 1.0444444,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/decision/tests.rs": {
+      "lines": 139,
+      "test_lines": 40,
+      "tlr": 0.2877698,
+      "health": 83,
+      "status": "ideal"
+    },
+    "src/prune/schedule/mod.rs": {
+      "lines": 165,
+      "test_lines": 29,
+      "tlr": 0.17575757,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/prune/callback/tests/mod.rs": {
+      "lines": 7,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/report/analyzer.rs": {
+      "lines": 538,
+      "test_lines": 175,
+      "tlr": 0.32527882,
+      "health": 58,
+      "status": "warning"
+    },
+    "src/prune/callback/tests/construction.rs": {
+      "lines": 244,
+      "test_lines": 130,
+      "tlr": 0.5327869,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/reconstructor.rs": {
+      "lines": 125,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/callback/tests/integration.rs": {
+      "lines": 298,
+      "test_lines": 140,
+      "tlr": 0.46979865,
+      "health": 92,
+      "status": "acceptable"
+    },
+    "src/monitor/inference/provenance/attack.rs": {
+      "lines": 45,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/preflight/mod.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-inspect/src/inspect.rs": {
+      "lines": 462,
+      "test_lines": 350,
+      "tlr": 0.75757575,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/generative/mod.rs": {
+      "lines": 17,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/validate/validator.rs": {
+      "lines": 256,
+      "test_lines": 5,
+      "tlr": 0.01953125,
+      "health": 56,
+      "status": "acceptable"
+    },
+    "src/train/tui/charts/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/ecosystem/realizar/error.rs": {
+      "lines": 25,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/types.rs": {
+      "lines": 109,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/lora/adapter/tests.rs": {
+      "lines": 297,
+      "test_lines": 100,
+      "tlr": 0.33670035,
+      "health": 81,
+      "status": "acceptable"
+    },
+    "src/efficiency/benchmark/entry.rs": {
+      "lines": 218,
+      "test_lines": 287,
+      "tlr": 1.3165138,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/prune/config/mod.rs": {
+      "lines": 16,
+      "test_lines": 2,
+      "tlr": 0.125,
+      "health": 76,
+      "status": "ideal"
+    },
+    "src/cli/commands/monitor.rs": {
+      "lines": 100,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "src/cli/commands/research/deposit.rs": {
+      "lines": 87,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/prune/schedule/types.rs": {
+      "lines": 77,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/llm/traits.rs": {
+      "lines": 29,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/publish/falsification_tests.rs": {
+      "lines": 279,
+      "test_lines": 140,
+      "tlr": 0.50179213,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/tests/mod.rs": {
+      "lines": 9,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/paradigm/mod.rs": {
+      "lines": 14,
+      "test_lines": 2,
+      "tlr": 0.14285715,
+      "health": 79,
+      "status": "ideal"
+    },
+    "src/prune/golden_traces.rs": {
+      "lines": 429,
+      "test_lines": 325,
+      "tlr": 0.75757575,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/convergence_tests/integration_tests.rs": {
+      "lines": 117,
+      "test_lines": 155,
+      "tlr": 1.3247863,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/tests/error_cases.rs": {
+      "lines": 69,
+      "test_lines": 50,
+      "tlr": 0.7246377,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/run_tests.rs": {
+      "lines": 94,
+      "test_lines": 90,
+      "tlr": 0.9574468,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/citl/pattern_store/tests/config.rs": {
+      "lines": 11,
+      "test_lines": 10,
+      "tlr": 0.90909094,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/storage/cloud/error.rs": {
+      "lines": 57,
+      "test_lines": 38,
+      "tlr": 0.6666667,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/tui/render/bars.rs": {
+      "lines": 213,
+      "test_lines": 81,
+      "tlr": 0.3802817,
+      "health": 85,
+      "status": "acceptable"
+    },
+    "src/hf_pipeline/leaderboard/client.rs": {
+      "lines": 159,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/moe/tests.rs": {
+      "lines": 697,
+      "test_lines": 360,
+      "tlr": 0.5164993,
+      "health": 65,
+      "status": "warning"
+    },
+    "src/efficiency/device/mod.rs": {
+      "lines": 22,
+      "test_lines": 2,
+      "tlr": 0.09090909,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/search/mcts/mod.rs": {
+      "lines": 49,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/efficiency/device/compute.rs": {
+      "lines": 150,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/cli/research/cite.rs": {
+      "lines": 42,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/prometheus/mod.rs": {
+      "lines": 28,
+      "test_lines": 2,
+      "tlr": 0.071428575,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/span_tests.rs": {
+      "lines": 25,
+      "test_lines": 20,
+      "tlr": 0.8,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/teacher.rs": {
+      "lines": 20,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/fetcher/types.rs": {
+      "lines": 137,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/ruchy/session.rs": {
+      "lines": 219,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/eval/generative/mod.rs": {
+      "lines": 28,
+      "test_lines": 5,
+      "tlr": 0.17857143,
+      "health": 83,
+      "status": "ideal"
+    },
+    "src/cli/logging.rs": {
+      "lines": 19,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "ideal"
+    },
+    "src/tracking/mod.rs": {
+      "lines": 288,
+      "test_lines": 2,
+      "tlr": 0.0069444445,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/research/artifact/affiliation.rs": {
+      "lines": 43,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/tests/linear_path_tests.rs": {
+      "lines": 55,
+      "test_lines": 40,
+      "tlr": 0.72727275,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/merge/ensemble/slerp.rs": {
+      "lines": 18,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/retrain/mod.rs": {
+      "lines": 18,
+      "test_lines": 2,
+      "tlr": 0.11111111,
+      "health": 74,
+      "status": "ideal"
+    },
+    "src/config/infer/schema.rs": {
+      "lines": 187,
+      "test_lines": 248,
+      "tlr": 1.3262032,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/storage/tests.rs": {
+      "lines": 299,
+      "test_lines": 230,
+      "tlr": 0.7692308,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/yaml_mode/manifest/callback.rs": {
+      "lines": 52,
+      "test_lines": 21,
+      "tlr": 0.40384614,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/inference/collector/hash_chain.rs": {
+      "lines": 193,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/generative/text_gen.rs": {
+      "lines": 193,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/batuta/queue.rs": {
+      "lines": 93,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/buffer.rs": {
+      "lines": 278,
+      "test_lines": 246,
+      "tlr": 0.8848921,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/monitor/gpu/alert/tests.rs": {
+      "lines": 391,
+      "test_lines": 240,
+      "tlr": 0.6138107,
+      "health": 90,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/queries.rs": {
+      "lines": 398,
+      "test_lines": 149,
+      "tlr": 0.37437186,
+      "health": 76,
+      "status": "acceptable"
+    },
+    "src/config/cli/research/verify.rs": {
+      "lines": 24,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/mod.rs": {
+      "lines": 65,
+      "test_lines": 4,
+      "tlr": 0.06153846,
+      "health": 68,
+      "status": "ideal"
+    },
+    "src/autograd/ops/attention.rs": {
+      "lines": 192,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 50,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/src/lib.rs": {
+      "lines": 54,
+      "test_lines": 20,
+      "tlr": 0.37037036,
+      "health": 100,
+      "status": "ideal"
+    },
+    "crates/entrenar-inspect/src/lib.rs": {
+      "lines": 111,
+      "test_lines": 82,
+      "tlr": 0.7387387,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/autograd/tests/prop_layer_norm.rs": {
+      "lines": 106,
+      "test_lines": 30,
+      "tlr": 0.28301886,
+      "health": 82,
+      "status": "ideal"
+    },
+    "src/integrity/behavioral/mod.rs": {
+      "lines": 21,
+      "test_lines": 2,
+      "tlr": 0.0952381,
+      "health": 72,
+      "status": "ideal"
+    },
+    "src/train/curriculum/scheduler.rs": {
+      "lines": 33,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/ecosystem/batuta/client.rs": {
+      "lines": 129,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/export/gguf_verify/tests/stress.rs": {
+      "lines": 289,
+      "test_lines": 100,
+      "tlr": 0.34602076,
+      "health": 82,
+      "status": "acceptable"
+    },
+    "src/storage/sqlite/artifacts.rs": {
+      "lines": 37,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/notebook/tests.rs": {
+      "lines": 158,
+      "test_lines": 130,
+      "tlr": 0.8227848,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/publish.rs": {
+      "lines": 36,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quant/quant4bit.rs": {
+      "lines": 324,
+      "test_lines": 275,
+      "tlr": 0.84876543,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/optim/scheduler/cosine_annealing.rs": {
+      "lines": 66,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/sovereign/distribution/sovereign.rs": {
+      "lines": 178,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/research/citation_graph.rs": {
+      "lines": 438,
+      "test_lines": 322,
+      "tlr": 0.7351598,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/cloud/azure.rs": {
+      "lines": 79,
+      "test_lines": 78,
+      "tlr": 0.98734176,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/sovereign/nix/tests.rs": {
+      "lines": 173,
+      "test_lines": 190,
+      "tlr": 1.0982659,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/config/train/tests/training_batches.rs": {
+      "lines": 106,
+      "test_lines": 30,
+      "tlr": 0.28301886,
+      "health": 82,
+      "status": "ideal"
+    },
+    "src/optim/hpo/tpe/optimizer.rs": {
+      "lines": 265,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 55,
+      "status": "acceptable"
+    },
+    "src/config/cli/tests.rs": {
+      "lines": 461,
+      "test_lines": 270,
+      "tlr": 0.5856833,
+      "health": 88,
+      "status": "acceptable"
+    },
+    "src/search/mcts/search/result.rs": {
+      "lines": 19,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/inference/path/tree/types.rs": {
+      "lines": 27,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/storage/sqlite/backend/tests/param_matches_tests.rs": {
+      "lines": 1027,
+      "test_lines": 410,
+      "tlr": 0.39922103,
+      "health": 45,
+      "status": "problem"
+    },
+    "src/config/train/batches/loader.rs": {
+      "lines": 62,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/prune/data_loader/loader.rs": {
+      "lines": 120,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "crates/entrenar-bench/src/stats.rs": {
+      "lines": 507,
+      "test_lines": 394,
+      "tlr": 0.7771203,
+      "health": 76,
+      "status": "warning"
+    },
+    "src/monitor/inference/tests/hash_tests.rs": {
+      "lines": 107,
+      "test_lines": 100,
+      "tlr": 0.93457943,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/types/trial.rs": {
+      "lines": 56,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/tests/coverage.rs": {
+      "lines": 167,
+      "test_lines": 160,
+      "tlr": 0.9580838,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/monitor/tui/render/mod.rs": {
+      "lines": 455,
+      "test_lines": 149,
+      "tlr": 0.32747254,
+      "health": 73,
+      "status": "acceptable"
+    },
+    "src/server/api.rs": {
+      "lines": 339,
+      "test_lines": 353,
+      "tlr": 1.0412979,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/commutativity/slerp_tests.rs": {
+      "lines": 55,
+      "test_lines": 30,
+      "tlr": 0.54545456,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/optim/hpo/error.rs": {
+      "lines": 49,
+      "test_lines": 33,
+      "tlr": 0.67346936,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/quality/failure/mod.rs": {
+      "lines": 13,
+      "test_lines": 2,
+      "tlr": 0.15384616,
+      "health": 80,
+      "status": "ideal"
+    },
+    "src/hf_pipeline/config/yaml_config.rs": {
+      "lines": 182,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/train/curriculum/tests.rs": {
+      "lines": 268,
+      "test_lines": 220,
+      "tlr": 0.8208955,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/storage/preflight/check_result.rs": {
+      "lines": 123,
+      "test_lines": 94,
+      "tlr": 0.7642276,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/prune/falsification_checklist.rs": {
+      "lines": 309,
+      "test_lines": 141,
+      "tlr": 0.4563107,
+      "health": 81,
+      "status": "acceptable"
+    },
+    "src/merge/slerp.rs": {
+      "lines": 417,
+      "test_lines": 456,
+      "tlr": 1.0935252,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/archive/result.rs": {
+      "lines": 51,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/quality/failure/types.rs": {
+      "lines": 526,
+      "test_lines": 490,
+      "tlr": 0.9315589,
+      "health": 82,
+      "status": "warning"
+    },
+    "src/cli/mod.rs": {
+      "lines": 12,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/lora.rs": {
+      "lines": 53,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/lineage.rs": {
+      "lines": 448,
+      "test_lines": 482,
+      "tlr": 1.0758928,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/research/archive/mod.rs": {
+      "lines": 29,
+      "test_lines": 2,
+      "tlr": 0.06896552,
+      "health": 69,
+      "status": "ideal"
+    },
+    "src/integrity/lineage/event.rs": {
+      "lines": 278,
+      "test_lines": 372,
+      "tlr": 1.3381295,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/lora/qlora.rs": {
+      "lines": 574,
+      "test_lines": 483,
+      "tlr": 0.8414634,
+      "health": 78,
+      "status": "warning"
+    },
+    "src/config/train/batches/json.rs": {
+      "lines": 66,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/yaml_mode/manifest/quantize.rs": {
+      "lines": 58,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/monitor/gpu/types.rs": {
+      "lines": 220,
+      "test_lines": 168,
+      "tlr": 0.76363635,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/efficiency/device/tests.rs": {
+      "lines": 489,
+      "test_lines": 470,
+      "tlr": 0.9611452,
+      "health": 95,
+      "status": "acceptable"
+    },
+    "src/merge/commutativity/mod.rs": {
+      "lines": 15,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/eval/generative/falsification_asr_bleu.rs": {
+      "lines": 155,
+      "test_lines": 120,
+      "tlr": 0.7741935,
+      "health": 100,
+      "status": "ideal"
+    },
+    "src/train/tui/charts/gradient_flow.rs": {
+      "lines": 78,
+      "test_lines": 0,
+      "tlr": 0.0,
+      "health": 60,
+      "status": "ideal"
+    },
+    "src/config/infer/mod.rs": {
+      "lines": 20,
+      "test_lines": 2,
+      "tlr": 0.1,
+      "health": 73,
+      "status": "ideal"
+    }
+  }
+}

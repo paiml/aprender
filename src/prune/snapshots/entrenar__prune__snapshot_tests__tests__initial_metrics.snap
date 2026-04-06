@@ -1,0 +1,18 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 221
+expression: metrics
+---
+{
+  "achieved_sparsity": 0.0,
+  "target_sparsity": 0.5,
+  "total_parameters": 0,
+  "parameters_pruned": 0,
+  "parameters_remaining": 0,
+  "layer_sparsity": [],
+  "pre_prune_ppl": null,
+  "post_prune_ppl": null,
+  "ppl_increase_pct": null,
+  "finetune_losses": [],
+  "stage_durations": []
+}

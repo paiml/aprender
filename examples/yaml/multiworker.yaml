@@ -1,0 +1,19 @@
+# YAML-009: Multi-Worker Dataloading
+# QA Focus: No deadlocks or race conditions in log
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 5
+  output_dir: ./outputs/multiworker

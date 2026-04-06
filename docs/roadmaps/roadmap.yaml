@@ -1,0 +1,1538 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+roadmap:
+- id: ENT-002
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-002'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T13:45:42.800254814+00:00
+  updated: 2025-11-20T13:49:36.072178868+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-006
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-006'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T13:55:45.437239637+00:00
+  updated: 2025-11-20T14:01:03.682112169+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-004
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-004'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:10:18.020171400+00:00
+  updated: 2025-11-20T14:12:55.824221859+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-005
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-005'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:17:02.644516519+00:00
+  updated: 2025-11-20T14:20:10.718791317+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-008
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-008'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:22:34.624828235+00:00
+  updated: 2025-11-20T14:25:59.123571264+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-011
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-011'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:36:32.817307349+00:00
+  updated: 2025-11-20T14:37:53.856495356+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-012
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-012'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:41:24.060477724+00:00
+  updated: 2025-11-20T14:42:46.676933074+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-013
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-013'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:49:03.213731518+00:00
+  updated: 2025-11-20T14:50:26.023602847+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-014
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-014'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T14:52:53.721495848+00:00
+  updated: 2025-11-26T14:14:59.998126414+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-015
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-015'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:10:45.007678708+00:00
+  updated: 2025-11-26T14:36:22.082146746+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-016
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-016'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:18:49.408620602+00:00
+  updated: 2025-11-26T14:41:27.952863064+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-018
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-018'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:27:50.100364916+00:00
+  updated: 2025-11-26T14:45:54.842084862+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-021
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-021'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:35:18.378100037+00:00
+  updated: 2025-11-26T14:49:54.247115261+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-017
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-017'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:42:21.708173612+00:00
+  updated: 2025-11-26T14:43:58.764804554+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-019
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-019'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T16:54:06.921209005+00:00
+  updated: 2025-11-26T14:49:54.222299449+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-020
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-020'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T17:03:49.099791399+00:00
+  updated: 2025-11-26T14:49:54.236229395+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-4
+  github_issue: 4
+  item_type: task
+  title: 'Issue #4'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T20:41:41.725260150+00:00
+  updated: 2025-11-20T22:12:09.084387832+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-5
+  github_issue: 5
+  item_type: task
+  title: 'Issue #5'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:17:26.453075041+00:00
+  updated: 2025-11-20T22:24:53.061404793+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-1
+  github_issue: 1
+  item_type: task
+  title: 'Issue #1'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:30:54.495575020+00:00
+  updated: 2025-11-20T21:39:15.693854946+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-2
+  github_issue: 2
+  item_type: task
+  title: 'Issue #2'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:45:31.201200953+00:00
+  updated: 2025-11-20T21:53:00.795658985+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-3
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-3'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:54:33.258434029+00:00
+  updated: 2025-11-20T22:01:44.216244191+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-6
+  github_issue: 6
+  item_type: task
+  title: 'Issue #6'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T06:56:58.892989319+00:00
+  updated: 2025-11-21T07:01:15.402978526+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-7
+  github_issue: 7
+  item_type: task
+  title: 'Issue #7'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T07:06:47.099723411+00:00
+  updated: 2025-11-21T07:11:07.777427077+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-022
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-022'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T14:50:18.528733929+00:00
+  updated: 2025-11-26T14:53:17.869121191+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-023
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-023'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T14:53:24.167411263+00:00
+  updated: 2025-11-26T14:57:00.830795367+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-024
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-024'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T15:01:07.304577818+00:00
+  updated: 2026-02-14T21:51:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-031
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-031'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T22:33:44.990199974+00:00
+  updated: 2025-11-26T22:36:04.053272982+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-032
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-032'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T22:36:34.294587340+00:00
+  updated: 2025-11-26T22:38:56.058759515+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-033
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-033'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T22:39:47.611155558+00:00
+  updated: 2025-11-26T22:41:51.934858019+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-034
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-034'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T22:42:02.565750901+00:00
+  updated: 2025-11-26T22:45:19.010795212+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-035
+  github_issue: null
+  item_type: task
+  title: 'New task: ENT-035'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T22:46:30.498394636+00:00
+  updated: 2026-02-14T21:51:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-66
+  github_issue: 66
+  item_type: task
+  title: 'Issue #66'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-30T12:59:38.100736431+00:00
+  updated: 2025-11-30T12:59:38.100736431+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-067
+  github_issue: null
+  item_type: task
+  title: 'CB-120: Fix NaN-unsafe partial_cmp().unwrap() calls'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-05T14:57:39Z
+  updated: 2026-02-14T21:15:04.486927764+00:00
+  spec: null
+  acceptance_criteria:
+  - Replace partial_cmp().unwrap() with total_cmp() in 10 locations
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - compliance
+  - cb-120
+  notes: null
+- id: PMAT-068
+  github_issue: null
+  item_type: task
+  title: CB-121
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05T15:05:30Z
+  updated: 2026-02-14T21:15:17.330542134+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: ENT-155
+  github_issue: null
+  item_type: task
+  title: 'ENT-155: Extend Metric enum with generative AI variants'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Add WER, RTFx, BLEU, ROUGE, Perplexity, MMLUAccuracy, PassAtK, NDCGAtK variants
+  - Add RougeVariant companion enum
+  - Update higher_is_better(), name(), Display
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - eval
+  - metrics
+  notes: null
+- id: ENT-156
+  github_issue: null
+  item_type: task
+  title: 'ENT-156: WER and RTFx computation'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - word_error_rate via Levenshtein edit distance at word level
+  - real_time_factor_inverse computation
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - eval
+  - asr
+  notes: null
+- id: ENT-157
+  github_issue: null
+  item_type: task
+  title: 'ENT-157: BLEU, ROUGE, Perplexity'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - BLEU score with modified n-gram precision and brevity penalty
+  - ROUGE-N and ROUGE-L F1 scores
+  - Perplexity from log-probabilities
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - eval
+  - text-gen
+  notes: null
+- id: ENT-158
+  github_issue: null
+  item_type: task
+  title: 'ENT-158: pass@k and NDCG@k'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - pass@k unbiased estimator (Chen et al. 2021)
+  - NDCG@k normalized discounted cumulative gain
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - eval
+  - code
+  - retrieval
+  notes: null
+- id: ENT-159
+  github_issue: null
+  item_type: task
+  title: 'ENT-159: Generative metrics module wiring and property tests'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Module wiring with re-exports
+  - Property tests for all metrics via proptest
+  - WER, BLEU bounds, pass@k monotonicity, NDCG perfect ranking
+  phases: []
+  subtasks: []
+  estimated_effort: 3h
+  labels:
+  - eval
+  - testing
+  notes: null
+- id: ENT-160
+  github_issue: null
+  item_type: task
+  title: 'ENT-160: HF Leaderboard types'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - LeaderboardKind enum (OpenASR, OpenLLMv2, MTEB, BigCodeBench, Custom)
+  - LeaderboardEntry and HfLeaderboard structs
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - hf-pipeline
+  - leaderboard
+  notes: null
+- id: ENT-161
+  github_issue: null
+  item_type: task
+  title: 'ENT-161: HF Leaderboard HTTP client'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - LeaderboardClient with fetch, fetch_paginated, find_model
+  - Uses HF datasets-server JSON API
+  - Token resolution via HfModelFetcher::resolve_token()
+  phases: []
+  subtasks: []
+  estimated_effort: 3h
+  labels:
+  - hf-pipeline
+  - leaderboard
+  notes: null
+- id: ENT-162
+  github_issue: null
+  item_type: task
+  title: 'ENT-162: Leaderboard-to-EvalResult parser'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - to_leaderboard() converts HfLeaderboard to native Leaderboard
+  - column_to_metric() per-kind column mapping
+  - compare_with_leaderboard() inserts user model for ranking
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - hf-pipeline
+  - leaderboard
+  notes: null
+- id: ENT-163
+  github_issue: null
+  item_type: task
+  title: 'ENT-163: Leaderboard wiring and tests'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Module wiring with feature gate hub-publish
+  - Error variants in FetchError
+  - Unit and integration tests
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - hf-pipeline
+  - leaderboard
+  notes: null
+- id: ENT-164
+  github_issue: null
+  item_type: task
+  title: 'ENT-164: Publisher types and config'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - PublishConfig with repo_id, repo_type, private, token, license, tags
+  - PublishResult and PublishError types
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - hf-pipeline
+  - publish
+  notes: null
+- id: ENT-165
+  github_issue: null
+  item_type: task
+  title: 'ENT-165: HF Publisher core'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - HfPublisher with create_repo, upload_file, upload_bytes, publish
+  - Uses HF REST API via reqwest
+  - Token resolution from env/file
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - hf-pipeline
+  - publish
+  notes: null
+- id: ENT-166
+  github_issue: null
+  item_type: task
+  title: 'ENT-166: Model card generator'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - ModelCard struct with from_eval_result() and to_markdown()
+  - YAML front matter with model-index, license, tags
+  - Markdown body with evaluation results table
+  phases: []
+  subtasks: []
+  estimated_effort: 3h
+  labels:
+  - hf-pipeline
+  - publish
+  notes: null
+- id: ENT-167
+  github_issue: null
+  item_type: task
+  title: 'ENT-167: Leaderboard submission + OutputConfig integration'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T00:00:00Z
+  updated: 2026-02-14T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - JSONL submission formatting for leaderboard results
+  - OutputConfig extended with generate_model_card, hub_license, hub_tags, hub_private
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - hf-pipeline
+  - publish
+  notes: null
+- id: PMAT-168
+  github_issue: null
+  item_type: task
+  title: 'CB-500 Kaizen: comply advisory cleanup'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T17:26:48Z
+  updated: 2026-02-14T18:01:27.627769737+00:00
+  spec: null
+  acceptance_criteria:
+  - Fix CB-900 markdown false positive, CB-515 catch-all match arms to explicit variants, CB-511 eliminate thread::sleep flaky tests, CB-508 add clippy allows for clamped casts
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kaizen
+  - compliance
+  notes: null
+- id: PMAT-169
+  github_issue: null
+  item_type: task
+  title: 'DEBT: Match arm test co-location for metric.rs'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T17:40:51Z
+  updated: 2026-02-14T21:50:00.837608691+00:00
+  spec: null
+  acceptance_criteria:
+  - PMAT falsify claim 18 requires match arm tests co-located in same file. Tests exist in cv_tests.rs but PMAT scanner expects them in metric.rs test module. All 18 Metric variants are tested via test_metric_display_all_variants and test_cv_non_classification_metric_falls_back_to_accuracy.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - debt
+  - coverage
+  notes: null
+- id: PMAT-170
+  github_issue: null
+  item_type: task
+  title: 'CB-511 Kaizen: fix remaining flaky time-based tests'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:02:12Z
+  updated: 2026-02-14T18:09:42.632419843+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-171
+  github_issue: null
+  item_type: task
+  title: 'CB-508 Kaizen: fix lossy numeric casts in color.rs and render.rs'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:09:59Z
+  updated: 2026-02-14T18:18:36.801845600+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-172
+  github_issue: null
+  item_type: task
+  title: 'CB-950 Kaizen: quote truthy strings in YAML files'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:18:49Z
+  updated: 2026-02-14T18:27:29.682017061+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-173
+  github_issue: null
+  item_type: task
+  title: 'CB-515 Kaizen: replace catch-all match arms with explicit variants'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:29:49Z
+  updated: 2026-02-14T19:04:26.221689951+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-174
+  github_issue: null
+  item_type: task
+  title: 'CB-515 Kaizen: replace remaining catch-all match arms (batch 2)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T19:04:59Z
+  updated: 2026-02-14T19:17:02.579125375+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-175
+  github_issue: null
+  item_type: task
+  title: 'CB-516 Kaizen: extract hardcoded magic numbers to named constants'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T19:18:11Z
+  updated: 2026-02-14T19:31:23.628633324+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-176
+  github_issue: null
+  item_type: task
+  title: 'CB-518: eliminate expensive clone calls in loops'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T21:09:11Z
+  updated: 2026-02-14T21:10:03.726314229+00:00
+  spec: null
+  acceptance_criteria:
+  - Replace clone() calls inside for loops with iterator-based approaches (trainer.rs) and Cow borrows (results.rs)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kaizen
+  - cb-518
+  notes: null
+- id: PMAT-177
+  github_issue: null
+  item_type: task
+  title: 'ENT-DEBT-001: Large file decomposition complete'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T21:44:55Z
+  updated: 2026-02-14T21:45:26.824117633+00:00
+  spec: null
+  acceptance_criteria:
+  - Split 5 large files (>800 lines) into directory modules for PMAT file health compliance. All decomposed and pushed.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-178
+  github_issue: null
+  item_type: task
+  title: 'ENT-GGUF-EXPORT: GGUF export pipeline complete'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T21:55:55Z
+  updated: 2026-02-14T21:56:18.423548536+00:00
+  spec: null
+  acceptance_criteria:
+  - All 170 export tests pass, 16 falsifiable claims verified. Quantize + export to GGUF v3 via aprender delegation.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-179
+  github_issue: null
+  item_type: task
+  title: 'GH-66 Phase 1: Wire TrainingManifest into training pipeline'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T22:24:03Z
+  updated: 2026-02-14T22:26:07.582395760+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-180
+  github_issue: null
+  item_type: task
+  title: 'GH-66 Phase 2: Complete bridge coverage and enhanced CLI'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T22:51:22Z
+  updated: 2026-02-14T22:53:50.338388440+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-181
+  github_issue: null
+  item_type: task
+  title: 'GH-84: Constant Folding at Graph Construction Time'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T21:59:04Z
+  updated: 2026-02-16T22:09:56.549071563+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-182
+  github_issue: null
+  item_type: task
+  title: 'GH-83: Selective Gradient Checkpointing with Policy-Based Rematerialization'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-16T22:10:14Z
+  updated: 2026-02-16T22:14:26.091769860+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-183
+  github_issue: null
+  item_type: task
+  title: 'Phase 1: entrenar publish CLI command'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T09:51:53Z
+  updated: 2026-02-17T10:05:22.228255800+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-184
+  github_issue: null
+  item_type: task
+  title: 'Phase 2: HF Model ID auto-resolve in YAML config'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T10:12:36Z
+  updated: 2026-02-17T10:13:18.760069151+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-185
+  github_issue: null
+  item_type: task
+  title: 'Phase 3: YAML publish section for auto-publish after training'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T10:13:32Z
+  updated: 2026-02-17T10:19:58.248302248+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-186
+  github_issue: null
+  item_type: task
+  title: 'GH-84: Phase 4 — Smart entrenar init with model/data detection'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T10:23:16Z
+  updated: 2026-02-17T10:36:05.509719899+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-187
+  github_issue: null
+  item_type: task
+  title: 'GH-85: Phase 5 — Aprender delegation (loss, metrics, pruning)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T10:43:44Z
+  updated: 2026-02-17T11:08:09.244146667+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-188
+  github_issue: null
+  item_type: task
+  title: 'N-05: estimate_num_heads hardcoded 32 fallback'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-25T08:32:00Z
+  updated: 2026-02-25T08:37:46Z
+  spec: null
+  acceptance_criteria:
+  - architecture.rs:168 returns hardcoded 32 when hidden_dim not divisible by 64/128. Should return 0 (unknown).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-189
+  github_issue: null
+  item_type: task
+  title: 'N-06: leaderboard unwrap_or(0.0) silent zero'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-25T08:32:04Z
+  updated: 2026-02-25T08:37:50Z
+  spec: null
+  acceptance_criteria:
+  - leaderboard.rs:35,53 uses unwrap_or(0.0) for missing scores. Should use NEG_INFINITY/INFINITY to sort missing scores last.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-190
+  github_issue: null
+  item_type: task
+  title: 'N-07: loader.rs missing optional config field warnings'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-25T08:32:08Z
+  updated: 2026-02-25T08:37:50Z
+  spec: null
+  acceptance_criteria:
+  - loader.rs silent unwrap_or for rope_theta, max_position_embeddings, seq_len. Add eprintln warnings when defaulting.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-148
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-148'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T10:47:19.823681408+00:00
+  updated: 2026-03-04T10:47:19.823681408+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-153
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-153'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T11:13:55.942159603+00:00
+  updated: 2026-03-04T11:13:55.942159603+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-202
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-202'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-04T11:54:54.119702197+00:00
+  updated: 2026-03-04T11:54:54.119702197+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-203
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-001: Wire YAML lora config to TransformerTrainConfig and TransformerTrainer'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-08T12:28:46Z
+  updated: 2026-03-08T13:35:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-204
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-002: Parameter group separation — optimizer receives only LoRA + norm params'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-08T12:28:47Z
+  updated: 2026-03-08T13:35:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-205
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-003: Adapter-only checkpoint saving with PEFT export'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-08T12:28:48Z
+  updated: 2026-03-08T13:35:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-206
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-010: Paged optimizer states — page AdamW m/v to CPU when GPU VRAM pressure detected'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-03-08T13:35:13Z
+  updated: 2026-03-08T14:36:38.711323505+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-207
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-011: DoRA — Weight-Decomposed LoRA with magnitude/direction decomposition'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-03-08T13:35:14Z
+  updated: 2026-03-08T14:37:20.701082156+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-208
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-012: PiSSA initialization — SVD-based init from top-r singular components'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-03-08T13:35:15Z
+  updated: 2026-03-08T14:37:53.011044628+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-209
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-013: Multi-adapter training — N adapters sharing one frozen base model'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-03-08T13:35:16Z
+  updated: 2026-03-08T14:38:26.126292929+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-210
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-004: rsLoRA scaling (alpha/sqrt(r)) — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:24Z
+  updated: 2026-03-08T13:35:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-211
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-005: Flexible target modules with shorthand expansion — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:25Z
+  updated: 2026-03-08T13:35:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-212
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-006: LoRA+ optimizer separate LR for A and B matrices — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:27Z
+  updated: 2026-03-08T13:35:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-213
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-007: HuggingFace PEFT export with standard naming — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:29Z
+  updated: 2026-03-08T13:35:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-214
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-008: Double quantization for QLoRA — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:30Z
+  updated: 2026-03-08T13:35:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-215
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-009: Merge and export LoRA adapters to standard safetensors — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:32Z
+  updated: 2026-03-08T13:35:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-216
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-014: apr train LoRA integration — DONE'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-08T13:35:33Z
+  updated: 2026-03-08T13:35:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-217
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-015: apr train adapter checkpoint flow — DONE'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-08T13:35:34Z
+  updated: 2026-03-08T13:35:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-218
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-016: apr finetune plan LoRA HPO — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:38Z
+  updated: 2026-03-08T13:35:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-219
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-017: apr merge for LoRA adapters — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:39Z
+  updated: 2026-03-08T13:35:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-220
+  github_issue: null
+  item_type: task
+  title: 'ENT-LoRA-018: apr inspect LoRA diagnostics — DONE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-08T13:35:40Z
+  updated: 2026-03-08T13:35:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

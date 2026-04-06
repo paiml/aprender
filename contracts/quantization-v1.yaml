@@ -1,0 +1,91 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "4-bit/8-bit weight quantization contracts"
+  references:
+    - "Dettmers et al. (2023) QLoRA: Efficient Finetuning of Quantized Language Models"
+
+equations:
+  symmetric_4bit:
+    formula: "q = round(clamp(x / scale, -7, 7)); x_hat = q * scale"
+    domain: "x in R, scale = max(|x_block|) / 7, block_size = 64"
+    preconditions:
+      - "!input.is_empty()"
+      - "block_size > 0"
+      - "input.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "quantized.iter().all(|q| *q >= -7 && *q <= 7)"
+      - "scale >= 0.0"
+    invariants:
+      - "Quantized values in [-7, 7] (4-bit signed range)"
+      - "Scale factor positive for non-zero blocks"
+  quantization_error:
+    formula: "MSE(x, x_hat) <= (scale / 7)^2 / 4 per element (uniform quantization bound)"
+    domain: "x in R^n, block-wise quantization"
+    preconditions:
+      - "!x.is_empty()"
+      - "scale > 0.0"
+    postconditions:
+      - "mse.is_finite()"
+      - "mse >= 0.0"
+      - "mse <= (scale / 7.0).powi(2) / 4.0"
+    invariants:
+      - "Error bounded by quantization step size"
+  compression_ratio:
+    formula: "ratio = 32 / (4 + 32/block_size) for 4-bit with f32 scales"
+    domain: "block_size = 64"
+    preconditions:
+      - "self.len > 0"
+    postconditions:
+      - "ret > 1.0"
+      - "ret.is_finite()"
+    invariants:
+      - "Approximately 6x compression for 4-bit with block_size=64"
+
+proof_obligations:
+  - type: bound
+    property: "Quantized values in representable range"
+    formal: "-7 <= q <= 7 for all quantized values"
+    applies_to: all
+  - type: equivalence
+    property: "Dequantization recovers approximate values"
+    formal: "|x - dequantize(quantize(x))| < scale for all x"
+    applies_to: all
+  - type: invariant
+    property: "Zero input quantizes to zero"
+    formal: "quantize(0.0) == 0 and dequantize(0) == 0.0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-QUANT-001
+    rule: "Quantize-dequantize round-trip bounded error"
+    prediction: "Dequantized values close to originals within scale tolerance"
+    test: "quant::quant4bit::tests::test_quantize_dequantize_round_trip"
+    if_fails: "Scale computation or clamping incorrect"
+  - id: FALSIFY-QUANT-002
+    rule: "Zero values preserved"
+    prediction: "All-zero input quantizes and dequantizes to zero"
+    test: "quant::quant4bit::tests::test_quantize_zeros"
+    if_fails: "Division by zero in scale computation"
+  - id: FALSIFY-QUANT-003
+    rule: "Multiple blocks handled correctly"
+    prediction: "Inputs spanning multiple 64-element blocks quantize independently"
+    test: "quant::quant4bit::tests::test_quantize_multiple_blocks"
+    if_fails: "Block boundary indexing error"
+  - id: FALSIFY-QUANT-004
+    rule: "Odd-length input handled"
+    prediction: "Non-even-length inputs pack correctly in nibble pairs"
+    test: "quant::quant4bit::tests::test_quantize_odd_length"
+    if_fails: "Nibble packing off-by-one for odd lengths"
+  - id: FALSIFY-QUANT-005
+    rule: "Compression ratio matches theory"
+    prediction: "4-bit quantization achieves ~6x compression"
+    test: "quant::quant4bit::tests::test_quantized_data_size"
+    if_fails: "Memory layout or scale storage overhead miscalculated"
+
+kani_harnesses:
+  - id: quant-kani-001
+    obligation: "Quantized values in [-7, 7]"
+    bound: 4
+    strategy: bounded_int

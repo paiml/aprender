@@ -1,0 +1,80 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Model checkpoint save/restore and gradient checkpointing contracts"
+  references:
+    - "Chen et al. (2016) Training Deep Nets with Sublinear Memory Cost"
+
+equations:
+  checkpoint_memory:
+    formula: "M_checkpoint = O(sqrt(N)) vs M_standard = O(N) for N layers"
+    domain: "N > 0 layers, each with activations of size a"
+    preconditions:
+      - "num_layers > 0"
+      - "activation_size > 0"
+    postconditions:
+      - "checkpoint_memory <= (num_layers as f64).sqrt().ceil() as usize * activation_size"
+    invariants:
+      - "Only segment boundary activations stored during forward"
+      - "Intermediate activations recomputed during backward"
+  save_restore_identity:
+    formula: "load(save(model_state)) == model_state"
+    domain: "model_state = {weights, optimizer_state, epoch, loss}"
+    preconditions:
+      - "!model_state.weights.is_empty()"
+      - "model_state.weights.iter().all(|w| w.is_finite())"
+    postconditions:
+      - "restored.weights == model_state.weights"
+      - "restored.epoch == model_state.epoch"
+      - "restored.optimizer_state == model_state.optimizer_state"
+    invariants:
+      - "Serialization is lossless for all state components"
+      - "Optimizer moments (m, v) and step counter preserved"
+
+proof_obligations:
+  - type: equivalence
+    property: "Checkpoint round-trip identity"
+    formal: "weights_after_load == weights_before_save bitwise"
+    applies_to: all
+  - type: invariant
+    property: "Checkpoint preserves computation"
+    formal: "checkpoint(f)(x) == f(x) for any differentiable f"
+    applies_to: all
+  - type: bound
+    property: "Checkpoint memory bounded"
+    formal: "Memory usage <= O(sqrt(N)) for N-layer model with checkpointing"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CKPT-001
+    rule: "Gradient checkpoint preserves computation"
+    prediction: "Checkpointed forward produces same output as non-checkpointed"
+    test: "autograd::checkpoint::tests::test_checkpoint_preserves_computation"
+    if_fails: "Recomputation diverges from original forward pass"
+  - id: FALSIFY-CKPT-002
+    rule: "Checkpoint function correctness"
+    prediction: "checkpoint() wraps computation and returns correct tensor"
+    test: "autograd::checkpoint::tests::test_checkpoint_function"
+    if_fails: "Checkpoint wrapper drops or corrupts tensor"
+  - id: FALSIFY-CKPT-003
+    rule: "Checkpoint manager memory tracking"
+    prediction: "Manager tracks saved vs recomputed activation memory"
+    test: "autograd::checkpoint::tests::test_checkpoint_manager_memory_tracking"
+    if_fails: "Memory accounting incorrect"
+  - id: FALSIFY-CKPT-004
+    rule: "AdamW optimizer state checkpoint accessors"
+    prediction: "Step count, first/second moments round-trip through accessors"
+    test: "optim::adamw::tests::test_adamw_checkpoint_accessors"
+    if_fails: "Accessor get/set mismatch for optimizer state"
+  - id: FALSIFY-CKPT-005
+    rule: "Checkpoint callback saves on best loss"
+    prediction: "Callback saves when validation loss improves"
+    test: "train::callback::checkpoint::tests::test_checkpoint_callback_val_loss_for_best"
+    if_fails: "Best-loss comparison logic inverted or not triggered"
+
+kani_harnesses:
+  - id: ckpt-kani-001
+    obligation: "Checkpoint round-trip identity"
+    bound: 4
+    strategy: bounded_int

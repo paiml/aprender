@@ -1,0 +1,1059 @@
+# Experiment Tracking Specification Implementation Epic
+# Version: 1.8.0
+# Spec: docs/specifications/experiment-tracking-spec.md
+# Created: 2025-11-30
+# Completed: 2025-11-30
+# Status: COMPLETE
+
+epic:
+  id: "ENT-EPIC-001"
+  title: "Implement Experiment Tracking Specification v1.8.0"
+  spec_version: "1.8.0"
+  spec_path: "docs/specifications/experiment-tracking-spec.md"
+  toyota_principles: ["Jidoka", "Genchi Genbutsu", "Heijunka", "Kaizen", "Mieruka"]
+  status: "RELEASED"
+  completed: "2025-11-30"
+  released: "2025-11-30"
+  work_items_total: 35
+  work_items_completed: 35
+  qa_verification:
+    score: 100
+    status: "APPROVED"
+    inspector: "Gemini"
+    report: "docs/qa-reports/qa-verification-report-v1.8.0.md"
+    methodology: "Toyota Way (Genchi Genbutsu, Jidoka, Poka-Yoke)"
+    sign_off:
+      - role: "Lead Developer"
+        name: "Noah"
+        date: "2025-11-30"
+      - role: "QA Lead"
+        name: "Gemini"
+        date: "2025-11-30"
+      - role: "PM"
+        name: "Claude"
+        date: "2025-11-30"
+
+# =============================================================================
+# PHASE 1: Core Infrastructure
+# =============================================================================
+phases:
+  - id: "phase-1"
+    name: "Core Infrastructure"
+    description: "TruenoDB backend + Renacer span integration"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    target_sections: ["§3", "§5"]
+
+    work_items:
+      - id: "ENT-001"
+        title: "Implement TruenoDB ExperimentStorage backend"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/32"
+        spec_sections: ["§3.1", "§3.2"]
+        priority: "P0"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: []
+        acceptance_criteria:
+          - "TruenoDB opens ~/.entrenar/experiments.trueno"
+          - "ExperimentStorage trait implemented"
+          - "log_metric() writes to time-series"
+          - "log_artifact() uses CAS"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/storage/mod.rs: ExperimentStorage trait (9 methods)
+          - src/storage/trueno.rs: TruenoBackend (feature: monitor)
+          - src/storage/memory.rs: InMemoryStorage for testing
+          - tests/storage_test.rs: 6 lifecycle tests
+
+      - id: "ENT-002"
+        title: "Implement Renacer span integration for Run"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/33"
+        spec_sections: ["§5"]
+        priority: "P0"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "Run creates Renacer root span"
+          - "Metrics logged as span events"
+          - "Syscalls correlated with training steps"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/run.rs: Run<S: ExperimentStorage> generic struct
+          - Auto-incrementing step counters per metric key
+          - TracingConfig: tracing_enabled, export_otlp, golden_trace_path
+          - tests/run_tracing_test.rs: 14 tests
+
+      - id: "REN-001"
+        title: "Add experiment span type to Renacer"
+        project: "renacer"
+        repo: "paiml/renacer"
+        gh_issue: "https://github.com/paiml/renacer/issues/20"
+        spec_sections: ["§5"]
+        priority: "P0"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: []
+        acceptance_criteria:
+          - "SpanType::Experiment variant added"
+          - "Experiment metadata fields supported"
+          - "Golden trace comparison API"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/experiment_span.rs: SpanType enum, ExperimentMetadata, ExperimentSpan
+          - EquivalenceScore + compare_traces() using LCS algorithm
+          - 28 tests (10 unit + 18 integration)
+
+      - id: "TDB-phase5-experiment-schema"
+        title: "Add experiment schema to TruenoDB"
+        project: "trueno-db"
+        repo: "paiml/trueno-db"
+        gh_issue: "https://github.com/paiml/trueno-db/issues/4"
+        roadmap_id: "phase5-experiment-schema"
+        spec_sections: ["§3.1"]
+        priority: "P0"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "233a430"
+        dependencies: []
+        acceptance_criteria:
+          - "experiments table schema with metadata columns"
+          - "runs table schema with status and timing"
+          - "metrics time-series optimized for range queries"
+          - "artifacts table with CAS references"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/experiment/*.rs: ExperimentRecord, RunRecord, MetricRecord, ArtifactRecord
+          - ExperimentStore with get_metrics_for_run() query
+          - 31 tests, 175+ total passing
+          - Example: examples/experiment_tracking.rs
+          - Docs: book/src/components/experiment/schema.md
+
+  # =============================================================================
+  # PHASE 2: Live Dashboard
+  # =============================================================================
+  - id: "phase-2"
+    name: "Live Dashboard"
+    description: "DashboardSource trait + trueno-viz TUI"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "1de2da0"
+    target_sections: ["§7", "§21"]
+
+    work_items:
+      - id: "ENT-003"
+        title: "Implement DashboardSource trait"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/34"
+        spec_sections: ["§7.1", "§7.2"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "1de2da0"
+        dependencies: ["ENT-001", "ENT-002"]
+        acceptance_criteria:
+          - "DashboardSource trait defined"
+          - "Run implements DashboardSource"
+          - "Real-time metric streaming"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/dashboard/mod.rs: DashboardSource trait
+          - MetricSnapshot with min/max/mean/trend
+          - ResourceSnapshot for GPU/CPU/memory
+          - Trend enum with linear regression detection
+          - 22 tests
+
+      - id: "ENT-004"
+        title: "Implement WasmRun for browser dashboard"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/60"
+        spec_sections: ["§7.3"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "1de2da0"
+        dependencies: ["ENT-003"]
+        acceptance_criteria:
+          - "WasmRun compiles to WASM"
+          - "IndexedDB storage backend"
+          - "WebSocket metric streaming"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/dashboard/wasm.rs: IndexedDbStorage, WasmRun
+          - Feature-gated with "wasm"
+          - JavaScript-friendly wasm_bindgen bindings
+          - 12 tests
+
+      - id: "TVZ-001"
+        title: "Add experiment dashboard components to trueno-viz"
+        project: "trueno-viz"
+        repo: "paiml/trueno-viz"
+        gh_issue: "https://github.com/paiml/trueno-viz/issues/1"
+        spec_sections: ["§21"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: []
+        acceptance_criteria:
+          - "Sparkline for loss/accuracy"
+          - "Resource bar chart (Plan vs Actual)"
+          - "Run status table component"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/widgets/experiment/sparkline.rs: Sparkline with TrendDirection (7 tests)
+          - src/widgets/experiment/resource_bar.rs: ResourceBar with is_over_budget() (7 tests)
+          - src/widgets/experiment/run_table.rs: RunTable, RunRow, RunStatus (9 tests)
+          - 23 widget tests, 460 total passing
+
+  # =============================================================================
+  # PHASE 3: Quality Gates (Jidoka)
+  # =============================================================================
+  - id: "phase-3"
+    name: "Quality Gates"
+    description: "PMAT + cargo-deny + architectural anti-patterns"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    target_sections: ["§15", "§19", "§20", "§27"]
+
+    work_items:
+      - id: "ENT-005"
+        title: "Implement PMAT code quality integration"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/35"
+        spec_sections: ["§15"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "CodeQualityMetrics struct"
+          - "PMAT grade computed per run"
+          - "Mutation score tracked"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/quality/pmat.rs: CodeQualityMetrics, PmatGrade enum
+          - from_cargo_output() parses cargo-llvm-cov + cargo-mutants JSON
+          - Grade thresholds: A(95/85), B(85/75), C(75/65), D(60/50), F
+
+      - id: "ENT-006"
+        title: "Implement cargo-deny supply chain integration"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/36"
+        spec_sections: ["§19.3", "§19.4"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "DependencyAudit struct"
+          - "cargo-deny report parsing"
+          - "VULNERABLE status on dependency CVE"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/quality/supply_chain.rs: DependencyAudit, Advisory, AuditStatus
+          - Severity enum: None < Low < Medium < High < Critical
+          - AuditSummary for aggregate vulnerability reporting
+          - from_cargo_deny_output() JSON parser
+
+      - id: "ENT-007"
+        title: "Implement FailureContext structured diagnostics"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/37"
+        spec_sections: ["§20"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "FailureContext struct"
+          - "EntrenarError → FailureContext conversion"
+          - "Pareto failure analysis query"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/quality/failure.rs: FailureContext, FailureCategory
+          - Auto-categorization from error message patterns
+          - generate_suggested_fix() per category
+          - ParetoAnalysis with vital_few() for 80/20 rule
+
+      - id: "REN-002"
+        title: "Implement architectural anti-pattern detection"
+        project: "renacer"
+        repo: "paiml/renacer"
+        gh_issue: "https://github.com/paiml/renacer/issues/21"
+        spec_sections: ["§27"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        dependencies: ["REN-001"]
+        acceptance_criteria:
+          - "AntiPatternDetector struct"
+          - "GodProcess detection (>80% syscalls)"
+          - "TightLoop detection"
+          - "ArchitecturalQuality in trace output"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/analysis/anti_pattern.rs: ~1000 lines
+          - AntiPatternDetector, AntiPatternThresholds, ArchitecturalQuality
+          - AntiPattern enum: GodProcess, TightLoop, ExcessiveIO, BlockingMainThread
+          - trace.architectural_quality() integration
+          - 21 new tests, 870 total passing
+
+  # =============================================================================
+  # PHASE 4: Efficiency & Cost Tracking
+  # =============================================================================
+  - id: "phase-4"
+    name: "Efficiency & Cost Tracking"
+    description: "CPU/GPU parity, energy, cost-performance benchmarking"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "9b59c1e"
+    target_sections: ["§22", "§23", "§24", "§28"]
+
+    work_items:
+      - id: "ENT-008"
+        title: "Implement ComputeDevice abstraction"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/38"
+        spec_sections: ["§22.1"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b59c1e"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "ComputeDevice enum (CPU/GPU/TPU/AppleSilicon)"
+          - "Device capability introspection"
+          - "SimdCapability detection"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/efficiency/device.rs
+          - SimdCapability::detect() for x86_64/aarch64
+          - Cross-platform core detection
+          - macOS Apple Silicon chip detection
+
+      - id: "ENT-009"
+        title: "Implement EnergyMetrics and CostMetrics"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/39"
+        spec_sections: ["§22.2", "§22.3"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b59c1e"
+        dependencies: ["ENT-008"]
+        acceptance_criteria:
+          - "EnergyMetrics struct (watts, joules, carbon)"
+          - "CostMetrics struct ($/sample, $/epoch)"
+          - "Power reading integration"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/efficiency/metrics.rs
+          - Carbon intensity tracking, kWh conversion
+          - Cloud GPU pricing constants (A100, V100, T4)
+
+      - id: "ENT-010"
+        title: "Implement ModelParadigm enum"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/40"
+        spec_sections: ["§23"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b59c1e"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "ModelParadigm enum (TraditionalMl, DL, FineTuning, Distillation, MoE)"
+          - "FineTuneMethod variants (LoRA, QLoRA, Adapter, etc.)"
+          - "Paradigm-specific metrics traits"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/efficiency/paradigm.rs
+          - typical_memory_multiplier(), typical_training_speedup()
+          - typical_quality_retention() per paradigm
+
+      - id: "ENT-011"
+        title: "Implement CostPerformanceBenchmark"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/41"
+        spec_sections: ["§24"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b59c1e"
+        dependencies: ["ENT-008", "ENT-009", "ENT-010"]
+        acceptance_criteria:
+          - "CostPerformanceBenchmark struct"
+          - "Pareto frontier computation"
+          - "best_for_budget() and cheapest_for_quality()"
+          - "CLI: entrenar benchmark"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/efficiency/benchmark.rs
+          - BenchmarkEntry with quality, cost, energy
+          - pareto_frontier(), statistics summary
+
+      - id: "ENT-012"
+        title: "Implement PlatformEfficiency (Server vs Edge)"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/42"
+        spec_sections: ["§28"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b59c1e"
+        dependencies: ["ENT-008"]
+        acceptance_criteria:
+          - "PlatformEfficiency enum"
+          - "ServerEfficiency struct"
+          - "EdgeEfficiency struct (binary size, startup latency)"
+          - "WasmBudget compliance checking"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/efficiency/platform.rs
+          - WasmBudget presets: mobile(), desktop(), embedded()
+          - BudgetViolation enum for constraint checking
+
+  # =============================================================================
+  # PHASE 5: Behavioral Integrity & Lineage
+  # =============================================================================
+  - id: "phase-5"
+    name: "Behavioral Integrity & Lineage"
+    description: "Semantic equivalence, Lamport clocks, trace compression"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    target_sections: ["§25", "§26", "§29"]
+
+    work_items:
+      - id: "ENT-013"
+        title: "Implement BehavioralIntegrity metrics"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/43"
+        spec_sections: ["§25"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "0ce50e1"
+        dependencies: ["ENT-002", "REN-001"]
+        acceptance_criteria:
+          - "BehavioralIntegrity struct"
+          - "equivalence_score from Renacer"
+          - "MetamorphicViolation detection"
+          - "Promotion blocked if score < 0.90"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/integrity/behavioral.rs
+          - Composite scoring with weights
+          - IntegrityAssessment grades: Excellent/Good/Fair/Poor/Critical
+          - passes_gate() for promotion decisions
+
+      - id: "ENT-014"
+        title: "Implement LamportTimestamp for lineage"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/44"
+        spec_sections: ["§29"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "0ce50e1"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "LamportTimestamp struct"
+          - "CausalLineage with logical ordering"
+          - "happens_before() relationship"
+          - "Conflict resolution"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/integrity/lineage.rs
+          - happens_before(), is_concurrent_with()
+          - LineageEvent, LineageEventType enum
+          - CausalLineage collection management
+
+      - id: "ENT-015"
+        title: "Implement TraceStoragePolicy with compression"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/45"
+        spec_sections: ["§26"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "0ce50e1"
+        dependencies: ["ENT-002"]
+        acceptance_criteria:
+          - "TraceStoragePolicy struct"
+          - "CompressionAlgorithm enum (RLE, Zstd, LZ4)"
+          - "Load from renacer.toml"
+          - "maybe_compress() with threshold"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/integrity/trace_storage.rs
+          - Presets: minimal(), development(), production(), archival()
+          - Configurable retention, max size, sampling
+
+  # =============================================================================
+  # PHASE 6: Sovereign Deployment
+  # =============================================================================
+  - id: "phase-6"
+    name: "Sovereign Deployment"
+    description: "Air-gapped university deployment, Nix flakes, offline registry"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "f487d75"
+    target_sections: ["§30"]
+
+    work_items:
+      - id: "ENT-016"
+        title: "Implement SovereignDistribution manifest"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/46"
+        spec_sections: ["§30.1", "§30.2"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "f487d75"
+        dependencies: []
+        acceptance_criteria:
+          - "SovereignDistribution struct"
+          - "DistributionFormat enum (ISO, OCI, Nix, Flatpak)"
+          - "DistributionTier enum (Core, Standard, Full)"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/sovereign/distribution.rs
+          - SHA-256 checksum verification
+          - Factory methods: core(), standard(), full()
+
+      - id: "ENT-017"
+        title: "Implement OfflineModelRegistry"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/47"
+        spec_sections: ["§30.3"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "f487d75"
+        dependencies: ["ENT-016"]
+        acceptance_criteria:
+          - "OfflineModelRegistry struct"
+          - "mirror_from_hub() for seeding"
+          - "Offline load() with SHA-256 verification"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/sovereign/registry.rs
+          - ModelSource enum: HuggingFace, LocalFile, Custom
+          - register_local(), verify(), list_available()
+
+      - id: "ENT-018"
+        title: "Create Nix flake for sovereign-stack"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/48"
+        spec_sections: ["§30.5", "§30.8"]
+        priority: "P3"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "f487d75"
+        dependencies: ["ENT-016"]
+        acceptance_criteria:
+          - "flake.nix with all sovereign crates"
+          - "Reproducible build hash"
+          - "cachix integration"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/sovereign/nix.rs
+          - NixFlakeConfig with sovereign_stack() preset
+          - generate_flake_nix(), generate_cachix_config()
+          - templates/flake.nix.template
+
+  # =============================================================================
+  # PHASE 7: Academic Research Artifacts
+  # =============================================================================
+  - id: "phase-7"
+    name: "Academic Research Artifacts"
+    description: "FAIR compliance, citations, pre-registration, archival"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "9b98ed9"
+    target_sections: ["§31"]
+
+    work_items:
+      - id: "ENT-019"
+        title: "Implement ResearchArtifact and Author structs"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/49"
+        spec_sections: ["§31.1", "§31.2"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-001"]
+        acceptance_criteria:
+          - "ResearchArtifact struct"
+          - "Author with ORCID validation"
+          - "ContributorRole (CRediT taxonomy)"
+          - "Affiliation with ROR ID"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/artifact.rs: ResearchArtifact, Author, ContributorRole
+          - ORCID regex validation: ^(\d{4}-){3}\d{3}[\dX]$
+          - ROR ID validation: ^https://ror\.org/[a-z0-9]{9}$
+          - 21 tests
+
+      - id: "ENT-020"
+        title: "Implement CitationMetadata with BibTeX/CFF export"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/50"
+        spec_sections: ["§31.3", "§31.8"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-019"]
+        acceptance_criteria:
+          - "CitationMetadata struct"
+          - "to_bibtex() generation"
+          - "to_cff() generation"
+          - "CITATION.cff auto-generation"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/citation.rs: CitationMetadata, to_bibtex(), to_cff()
+          - BibTeX special character escaping
+          - Citation key generation (author_year_firstword)
+          - 11 tests
+
+      - id: "ENT-021"
+        title: "Implement LiterateDocument with Typst support"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/51"
+        spec_sections: ["§31.4"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-019"]
+        acceptance_criteria:
+          - "LiterateDocument enum"
+          - "Typst parsing and rendering"
+          - "mdBook integration"
+          - "ruchy session as document"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/research/literate.rs: LiterateDocument enum (Typst, Markdown, RawText)
+          - extract_code_blocks() for code extraction
+          - 12 tests
+
+      - id: "ENT-022"
+        title: "Implement PreRegistration with hash commitment"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/52"
+        spec_sections: ["§31.5", "§31.12"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-019"]
+        acceptance_criteria:
+          - "PreRegistration struct"
+          - "commit() with SHA-256"
+          - "reveal() with hash verification"
+          - "PreregisteredProtocol with Ed25519 signing"
+          - "TimestampProof (Git/RFC3161/OpenTimestamps)"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/research/preregistration.rs: PreRegistration, commit(), reveal()
+          - SHA-256 commitment hashing
+          - Ed25519 signing with ed25519-dalek
+          - TimestampProof enum variants
+          - 14 tests
+
+      - id: "ENT-023"
+        title: "Implement AnonymizationConfig for double-blind"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/53"
+        spec_sections: ["§31.11"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-019"]
+        acceptance_criteria:
+          - "AnonymizationConfig struct"
+          - "anonymize() method"
+          - "Deterministic anonymous IDs"
+          - "CLI: entrenar research export --anonymize"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/anonymization.rs: AnonymizationConfig, anonymize()
+          - Deterministic hash-based anonymous IDs with salt
+          - AnonymizedArtifact with stripped PII
+          - 12 tests
+
+      - id: "ENT-024"
+        title: "Implement NotebookExporter for Jupyter bridge"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/54"
+        spec_sections: ["§31.13"]
+        priority: "P3"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-021"]
+        acceptance_criteria:
+          - "NotebookExporter struct"
+          - "Typst → .ipynb conversion"
+          - "evcxr kernel support"
+          - "CLI: entrenar research export --format notebook"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/notebook.rs: NotebookExporter, Cell, CellType
+          - to_ipynb() JSON export
+          - evcxr Rust kernel metadata
+          - 14 tests
+
+      - id: "ENT-025"
+        title: "Implement CitationGraph with upstream aggregation"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/55"
+        spec_sections: ["§31.14"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-020"]
+        acceptance_criteria:
+          - "CitationGraph struct"
+          - "cite_upstream() auto-aggregation"
+          - "Dataset/model citation fetching"
+          - "CLI: entrenar research cite --include-upstream"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/citation_graph.rs: CitationGraph, CitationNode, CitationEdge
+          - Transitive upstream citation aggregation
+          - No duplicate citations
+          - 11 tests
+
+      - id: "ENT-026"
+        title: "Implement RoCrate bundling"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/56"
+        spec_sections: ["§31.15"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-019"]
+        acceptance_criteria:
+          - "RoCrate struct (JSON-LD)"
+          - "to_ro_crate() directory export"
+          - "to_ro_crate_zip() archive"
+          - "CLI: entrenar research bundle --format ro-crate"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/research/ro_crate.rs: RoCrate, RoCrateEntity
+          - RO-Crate 1.1 spec compliant JSON-LD
+          - ZIP archive export
+          - 10 tests
+
+      - id: "ENT-027"
+        title: "Implement ArchiveDeposit for Zenodo/figshare"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/57"
+        spec_sections: ["§31.7"]
+        priority: "P3"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "9b98ed9"
+        dependencies: ["ENT-026"]
+        acceptance_criteria:
+          - "ArchiveDeposit struct"
+          - "Zenodo API integration"
+          - "DOI minting"
+          - "CLI: entrenar research deposit --archive zenodo"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/research/archive.rs: ArchiveDeposit, ArchiveProvider, DepositResult
+          - Zenodo, Figshare, Dryad, Dataverse providers
+          - DOI format validation
+          - 15 tests
+
+  # =============================================================================
+  # PHASE 8: CLI & Integration
+  # =============================================================================
+  - id: "phase-8"
+    name: "CLI & Integration"
+    description: "entrenar CLI subcommands and cross-project integration"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "bb44397"
+    target_sections: ["§31.9", "§31.16"]
+
+    work_items:
+      - id: "ENT-028"
+        title: "Implement 'entrenar research' CLI subcommand"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/58"
+        spec_sections: ["§31.9", "§31.16"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "bb44397"
+        dependencies: ["ENT-019", "ENT-020", "ENT-022", "ENT-023", "ENT-026"]
+        acceptance_criteria:
+          - "entrenar research init"
+          - "entrenar research preregister"
+          - "entrenar research cite"
+          - "entrenar research export"
+          - "entrenar research deposit"
+          - "entrenar research bundle"
+          - "entrenar research verify"
+        estimated_complexity: "large"
+        implementation_notes: |
+          - src/config/cli.rs: 7 research subcommands with clap
+          - src/main.rs: Command handlers
+          - CRediT roles, Ed25519 signing, RO-Crate bundling
+          - BibTeX/CFF citation generation
+
+      - id: "ENT-029"
+        title: "Implement 'entrenar benchmark' CLI subcommand"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/59"
+        spec_sections: ["§24.3"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "bb44397"
+        dependencies: ["ENT-011"]
+        acceptance_criteria:
+          - "entrenar benchmark --dataset --task"
+          - "Pareto frontier output"
+          - "Cost-performance table"
+          - "Recommendation output"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - crates/entrenar-bench/src/cost.rs: Cost-performance module
+          - GPU cost models: A100-80GB, A100-40GB, V100, T4
+          - Pareto-optimal detection
+          - Constraint-based recommendations (budget, accuracy, memory)
+
+  # =============================================================================
+  # PHASE 9: Ecosystem Integration (Code Review Additions)
+  # =============================================================================
+  - id: "phase-9"
+    name: "Ecosystem Integration"
+    description: "Deep integration with Pacha, Batuta, Realizar, Ruchy - avoid Muda"
+    status: "completed"
+    started: "2025-11-30"
+    completed: "2025-11-30"
+    commit: "54749fe"
+    target_sections: ["§14.1", "§17", "§22.3", "§30.1"]
+
+    work_items:
+      - id: "ENT-030"
+        title: "Integrate Batuta Pricing API for CostMetrics"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/61"
+        spec_sections: ["§22.3"]
+        priority: "P1"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "54749fe"
+        dependencies: ["ENT-009"]
+        acceptance_criteria:
+          - "Fetch hourly rates from Batuta API"
+          - "Calculate total_cost_usd dynamically"
+          - "Fallback to config-based rates when unavailable"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/ecosystem/batuta.rs: BatutaClient, FallbackPricing
+          - GPU pricing with fallback when unavailable
+          - 16 tests (combined with ENT-031)
+
+      - id: "ENT-031"
+        title: "Integrate Batuta Queue State for ETA"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/62"
+        spec_sections: ["§17"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "54749fe"
+        dependencies: []
+        acceptance_criteria:
+          - "Query Batuta queue depth"
+          - "Adjust ETA based on cluster load"
+          - "Incorporate into Kalman filter state"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/ecosystem/batuta.rs: QueueState, adjust_eta()
+          - ETA adjustment based on queue depth
+
+      - id: "ENT-032"
+        title: "Integrate Realizar GGUF Export"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/63"
+        spec_sections: ["§30.1"]
+        priority: "P2"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "54749fe"
+        dependencies: ["ENT-016"]
+        acceptance_criteria:
+          - "entrenar export --format gguf delegates to realizar"
+          - "Quantization options exposed (Q4_K_M, Q5_K_M, etc.)"
+          - "GGUF metadata includes experiment provenance"
+        estimated_complexity: "medium"
+        implementation_notes: |
+          - src/ecosystem/realizar.rs: GgufExporter, QuantizationType
+          - Q4_K_M, Q5_K_M, Q8_0, F16 quantization types
+          - ExperimentProvenance in GGUF metadata
+          - 14 tests
+
+      - id: "ENT-033"
+        title: "Implement Ruchy Session Bridge"
+        project: "entrenar"
+        repo: "paiml/entrenar"
+        gh_issue: "https://github.com/paiml/entrenar/issues/64"
+        spec_sections: ["§14.1"]
+        priority: "P3"
+        status: "completed"
+        started: "2025-11-30"
+        completed: "2025-11-30"
+        commit: "54749fe"
+        dependencies: ["ENT-021"]
+        acceptance_criteria:
+          - "From<RuchySession> for EntrenarSession implementation"
+          - "Feature flag 'ruchy-sessions' working"
+          - "Session history preserved as experiment artifact"
+        estimated_complexity: "small"
+        implementation_notes: |
+          - src/ecosystem/ruchy.rs: RuchyBridge, session_to_artifact()
+          - Feature-gated with "ruchy-sessions"
+          - 12 tests
+
+# =============================================================================
+# Cross-Project Dependencies
+# =============================================================================
+cross_project_dependencies:
+  - from: "entrenar"
+    to: "trueno-db"
+    items: ["ENT-001 → phase5-experiment-schema"]
+    roadmap_file: "docs/roadmaps/roadmap.yaml"
+
+  - from: "entrenar"
+    to: "renacer"
+    items: ["ENT-002 → REN-001", "ENT-013 → REN-002"]
+
+  - from: "entrenar"
+    to: "trueno-viz"
+    items: ["ENT-003 → TVZ-001"]
+
+  - from: "entrenar"
+    to: "batuta"
+    items: ["ENT-030 → BAT-INT", "ENT-031 → BAT-INT"]
+    gh_issue: "https://github.com/paiml/batuta/issues/8"
+    description: "Source of Truth for Pricing & Orchestration (avoid Muda)"
+
+  - from: "entrenar"
+    to: "pacha"
+    items: ["ENT-017 → PAC-INT", "ENT-025 → PAC-INT"]
+    gh_issue: "https://github.com/paiml/pacha/issues/1"
+    description: "Source of Truth for Data/Model versioning & Citations (avoid Muda)"
+
+  - from: "entrenar"
+    to: "realizar"
+    items: ["ENT-032 → REA-INT"]
+    gh_issue: "https://github.com/paiml/realizar/issues/18"
+    description: "GGUF Conversion Engine for edge deployment"
+
+  - from: "entrenar"
+    to: "ruchy"
+    items: ["ENT-033 → RUC-INT"]
+    gh_issue: "https://github.com/paiml/ruchy/issues/166"
+    description: "Session recording bridge for literate experiments"
+
+# =============================================================================
+# Metadata
+# =============================================================================
+metadata:
+  total_work_items: 35
+  projects_involved: ["entrenar", "renacer", "trueno-db", "trueno-viz", "batuta", "pacha", "realizar", "ruchy"]
+  estimated_total_complexity: "very-large"
+  spec_references: 90
+  compliance_items: 36
+  code_review_version: "2025-11-30"
+  status: "APPROVED"

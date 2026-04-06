@@ -1,0 +1,16 @@
+model:
+  path: "model.gguf"
+  layers: []
+
+data:
+  train: "data/train.parquet"
+  batch_size: 32
+
+optimizer:
+  name: "adam"
+  lr: 0.001
+
+lora:
+  rank: 8
+  alpha: 16
+  target_modules: [q_proj]

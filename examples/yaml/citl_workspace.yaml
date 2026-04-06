@@ -1,0 +1,20 @@
+# YAML-017: Cross-Crate Decision Tracking
+# QA Focus: Graph connectivity verified
+# Validation: 25-point checklist required
+# Note: CITL features require separate integration
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 1
+  output_dir: ./outputs/citl-workspace

@@ -1,0 +1,122 @@
+# PMAT Configuration for Entrenar
+# Training & Optimization Library - EXTREME TDD Quality Gates
+# Following Toyota Way principles
+
+[project]
+name = "entrenar"
+description = "Training & Optimization library with autograd, LoRA, quantization, and model merging"
+languages = ["rust"]
+
+[quality]
+# EXTREME TDD requirements (from entrenar-spec.md)
+min_coverage = 90           # Test coverage >90%
+min_mutation_score = 80     # Mutation kill rate >80%
+max_tdg_score = 25          # A+ grade minimum (TDG score >90 = grade A)
+
+[complexity]
+# Complexity thresholds (from CLAUDE.md)
+max_cyclomatic = 10         # Cyclomatic complexity ≤10
+max_cognitive = 15          # Cognitive complexity ≤15
+
+[testing]
+# Test commands
+test_command = "cargo test --all-features"
+coverage_command = "cargo llvm-cov --html --output-dir target/coverage/html"
+mutation_command = "cargo mutants --output target/mutants.out"
+
+[mutation]
+# Mutation testing configuration
+target_dirs = ["src/autograd/", "src/optim/", "src/lora/", "src/quant/", "src/merge/"]
+exclude_dirs = ["tests/", "benches/", "examples/"]
+timeout_multiplier = 2.0
+timeout_seconds = 300       # 5 minutes max per mutant
+
+[tdg]
+# Technical Debt Grading
+include_comments = true
+language_specific_rules = true
+
+[hooks]
+# Git hooks (to be installed with pmat hooks install)
+pre_commit = [
+    "cargo fmt --check",
+    "cargo clippy -- -D warnings",
+    "cargo test --lib",
+    "pmat analyze tdg src/ --min-score 90"
+]
+
+[roadmap]
+# Roadmap tracking
+spec_file = "docs/specifications/entrenar-spec.md"
+output_file = "roadmap.yaml"
+total_phases = 7
+total_hours = 824           # 103 days @ 8h/day
+total_tickets = 40          # ENT-001 through ENT-040
+
+# Phase breakdown
+[[roadmap.phases]]
+name = "Phase 1: Autograd Engine"
+hours = 200
+tickets = ["ENT-001", "ENT-002", "ENT-003", "ENT-004", "ENT-005", "ENT-006", "ENT-007", "ENT-008"]
+
+[[roadmap.phases]]
+name = "Phase 2: Optimizers"
+hours = 120
+tickets = ["ENT-009", "ENT-010", "ENT-011", "ENT-012", "ENT-013", "ENT-014", "ENT-015"]
+
+[[roadmap.phases]]
+name = "Phase 3: LoRA"
+hours = 144
+tickets = ["ENT-016", "ENT-017", "ENT-018", "ENT-019", "ENT-020", "ENT-021"]
+
+[[roadmap.phases]]
+name = "Phase 4: Quantization"
+hours = 136
+tickets = ["ENT-022", "ENT-023", "ENT-024", "ENT-025", "ENT-026", "ENT-027"]
+
+[[roadmap.phases]]
+name = "Phase 5: Model Merging"
+hours = 96
+tickets = ["ENT-028", "ENT-029", "ENT-030", "ENT-031", "ENT-032"]
+
+[[roadmap.phases]]
+name = "Phase 6: Declarative Config"
+hours = 64
+tickets = ["ENT-033", "ENT-034", "ENT-035", "ENT-036"]
+
+[[roadmap.phases]]
+name = "Phase 7: Distillation"
+hours = 64
+tickets = ["ENT-037", "ENT-038", "ENT-039", "ENT-040"]
+
+[benchmarks]
+# Performance targets (from entrenar-spec.md Table)
+[[benchmarks.targets]]
+operation = "Matmul backward"
+size = "512×512"
+target = "3× forward time"
+backend = "GPU"
+
+[[benchmarks.targets]]
+operation = "Adam step"
+size = "1M params"
+target = "<10ms"
+backend = "SIMD"
+
+[[benchmarks.targets]]
+operation = "Softmax backward"
+size = "10K"
+target = "2× forward time"
+backend = "SIMD"
+
+[[benchmarks.targets]]
+operation = "Q4_0 quantize"
+size = "1GB"
+target = "<1s"
+backend = "Scalar"
+
+[[benchmarks.targets]]
+operation = "LoRA merge"
+size = "7B model, rank=64"
+target = "<5s"
+backend = "SIMD"

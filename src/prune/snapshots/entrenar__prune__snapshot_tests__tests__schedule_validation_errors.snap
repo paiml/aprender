@@ -1,0 +1,27 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 328
+expression: errors
+---
+[
+  {
+    "error": "end_step (50) must be greater than start_step (100)",
+    "name": "gradual_end_before_start"
+  },
+  {
+    "error": "initial_sparsity (-0.1) must be between 0.0 and 1.0",
+    "name": "gradual_negative_initial"
+  },
+  {
+    "error": "final_sparsity (1.5) must be between 0.0 and 1.0",
+    "name": "gradual_final_over_one"
+  },
+  {
+    "error": "end_step (50) must be greater than start_step (100)",
+    "name": "cubic_end_before_start"
+  },
+  {
+    "error": "final_sparsity (-0.1) must be between 0.0 and 1.0",
+    "name": "cubic_negative_sparsity"
+  }
+]

@@ -1,0 +1,19 @@
+# YAML-025: Dropout Regularization
+# QA Focus: Training loss > Training loss (no dropout); Val loss improves
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 20
+  output_dir: ./outputs/dropout

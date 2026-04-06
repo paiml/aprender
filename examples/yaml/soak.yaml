@@ -1,0 +1,19 @@
+# YAML-096: Maximal Load Soak Test
+# QA Focus: No OOM; scheduler handles backpressure
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 256
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 100
+  output_dir: ./outputs/soak

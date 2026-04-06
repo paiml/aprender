@@ -1,0 +1,32 @@
+# YAML-005: Deterministic Replay (R-084, C-DETERM-001)
+# QA Focus: Run twice; artifacts must have identical SHA256
+# Validation: 25-point checklist required (Heijunka verification)
+#
+# Contract C-DETERM-001 guarantees:
+#   - CUBLAS_WORKSPACE_CONFIG=:4096:8
+#   - CUDNN_DETERMINISTIC=1
+#   - CUDNN_BENCHMARK=0
+#   - Fixed seed propagation through all RNG
+#
+# Usage:
+#   apr train apply --task pretrain --config deterministic.yaml
+#   apr train apply --task pretrain --config deterministic.yaml --deterministic --seed 42
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: sgd
+  lr: 0.01
+  momentum: 0.9
+
+training:
+  epochs: 3
+  deterministic: true
+  seed: 42
+  output_dir: ./outputs/deterministic

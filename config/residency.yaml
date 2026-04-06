@@ -1,0 +1,21 @@
+# Sovereign Data Residency Configuration (SDG-01)
+# Defines geographic boundaries and network isolation policies
+
+residency:
+  default_region: local
+  allowed_regions:
+    - local
+    - us-east-1
+    - eu-west-1
+  enforcement: strict
+
+network_isolation:
+  enabled: true
+  allowed_endpoints: []
+  offline_mode: true
+  geo_fence: true
+
+boundary_enforce:
+  region_check: true
+  cross_border_logging: true
+  legal_basis_required: true

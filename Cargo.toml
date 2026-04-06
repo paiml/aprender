@@ -1,0 +1,446 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/entrenar-common",
+    "crates/entrenar-distill",
+    "crates/entrenar-shell",
+    "crates/entrenar-lora",
+    "crates/entrenar-inspect",
+    "crates/entrenar-bench",
+]
+exclude = ["crates/burn-canary"]
+
+[workspace.package]
+edition = "2021"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "allow"
+missing_debug_implementations = "allow"
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "allow"
+unused_parens = "allow"
+unused_comparisons = "allow"
+unused_assignments = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+checked_conversions = "warn"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+field_reassign_with_default = "allow"
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+no_effect_underscore_binding = "allow"
+useless_vec = "allow"
+assertions_on_constants = "allow"
+absurd_extreme_comparisons = "allow"
+approx_constant = "allow"
+default_trait_access = "allow"
+clone_on_ref_ptr = "allow"
+missing_const_for_thread_local = "allow"
+redundant_field_names = "allow"
+let_underscore_untyped = "allow"
+ignored_unit_patterns = "allow"
+cloned_ref_to_slice_refs = "allow"
+type_complexity = "allow"
+redundant_closure = "allow"
+single_match_else = "allow"
+missing_safety_doc = "allow"
+let_with_type_underscore = "allow"
+ignore_without_reason = "allow"
+inefficient_to_string = "warn"
+explicit_iter_loop = "warn"
+manual_ok_or = "warn"
+explicit_deref_methods = "warn"
+implicit_clone = "allow"
+inconsistent_struct_constructor = "warn"
+redundant_closure_for_method_calls = "warn"
+unnested_or_patterns = "warn"
+many_single_char_names = "allow"
+cast_precision_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+similar_names = "allow"
+doc_markdown = "allow"
+missing_const_for_fn = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+float_cmp = "allow"
+unreadable_literal = "allow"
+items_after_statements = "allow"
+large_stack_arrays = "allow"
+struct_excessive_bools = "allow"
+needless_pass_by_value = "allow"
+unused_self = "allow"
+trivially_copy_pass_by_ref = "allow"
+assigning_clones = "allow"
+match_same_arms = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+used_underscore_binding = "allow"
+comparison_chain = "allow"
+format_push_string = "allow"
+too_many_lines = "allow"
+match_wildcard_for_single_variants = "allow"
+struct_field_names = "allow"
+manual_let_else = "allow"
+unnecessary_wraps = "allow"
+
+[package]
+name = "entrenar"
+version = "0.7.13"
+edition = "2021"
+rust-version = "1.87"
+authors = ["PAIML <hello@paiml.com>"]
+description = "Training & Optimization library with autograd, LoRA, quantization, and model merging"
+repository = "https://github.com/paiml/entrenar"
+license = "MIT"
+keywords = ["machine-learning", "neural-networks", "autograd", "lora", "quantization"]
+categories = ["science", "mathematics"]
+exclude = [
+    "book/",
+    "docs/",
+    "examples/",
+    "tests/",
+    "scripts/",
+    ".pmat/",
+    ".pmat-work/",
+    ".pmat-metrics/",
+    ".github/",
+    "*.md",
+    "/models/",
+    "wasm-pkg/",
+    "target/",
+    "**/*.profraw",
+    "**/*.profdata",
+    ".vscode/",
+    ".idea/",
+    "**/*.proptest-regressions",
+    "/checkpoints/",
+    "/data/",
+    "/golden_traces/",
+    "/output/",
+    "/outputs/",
+    "*.gguf",
+    "*.parquet",
+]
+
+[lib]
+# NOTE: For WASM builds, use `wasm-pack build` which sets cdylib target automatically.
+# Listing both ["cdylib", "rlib"] here causes cargo output filename collisions
+# during parallel test compilation (cargo#6313), so we only specify rlib for native.
+crate-type = ["rlib"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["tui"]  # TUI IPC writer always available (state types used unconditionally)
+cpu-fallback = []  # Explicit opt-in for CPU-only builds (CI without GPU)
+gguf = []  # Placeholder for future GGUF support via Realizar
+monitor = ["trueno-db"]  # Training monitoring with persistence
+tui = ["dep:presentar-terminal"]  # TUI dashboard (PMAT-507: gated due to presentar API drift)
+wasm = ["wasm-bindgen", "getrandom", "js-sys"]  # WASM bindings for browser dashboard
+citl = ["trueno-rag", "tokio", "uuid"]  # Compiler-in-the-Loop training with RAG-based fix suggestions
+server = ["axum", "tower", "tower-http", "tokio"]  # REST/HTTP API server
+tracing = ["renacer"]  # Renacer distributed tracing integration
+ruchy-sessions = []  # Ruchy session bridge for preserving training history
+dhat-heap = ["dep:dhat"]  # Heap profiling via dhat-rs
+kani = []  # Formal verification proofs via kani (cargo kani)
+gpu = ["trueno/gpu", "tokio"]  # GPU-accelerated training via wgpu
+cuda = ["trueno-gpu/cuda", "tokio", "realizar?/cuda"]  # NVIDIA CUDA training
+nvml = ["nvml-wrapper"]  # Real GPU monitoring via NVIDIA NVML
+parquet = ["dep:alimentar", "dep:arrow"]  # Parquet batch loading via alimentar
+hub = ["dep:hf-hub", "aprender/hf-hub-integration"]  # HuggingFace Hub model fetching
+hub-publish = ["hub", "dep:reqwest"]  # HuggingFace Hub publishing + leaderboard reading
+
+[dependencies]
+# Contract macros for pre/post-condition enforcement (zero cost in release)
+provable-contracts-macros = { version = "0.2" }
+# Core PAIML stack
+ndarray = "0.16"
+trueno = { version = "0.17", features = ["parallel"] }  # SIMD-accelerated compute
+trueno-gpu = { version = "0.4", optional = true }  # CUDA compute
+realizar = { version = "0.8", optional = true }  # CUDA inference engine
+aprender = { version = "0.27" }  # ML interpret module + .apr format + tokenizers
+trueno-viz = { version = "0.2", features = ["terminal"] }  # Terminal visualization
+presentar-terminal = { version = "0.3.5", optional = true }  # Sovereign TUI framework (gated by "tui" feature)
+presentar-core = "0.3.4"  # Presentar core traits (crates.io — path removed, presentar restructured)
+trueno-db = { version = "0.3.16", optional = true }  # Time-series storage
+chrono = { version = "0.4", features = ["serde"] }  # Timestamps for metric storage
+renacer = { version = "0.9", optional = true }  # Distributed tracing
+wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
+getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM random
+js-sys = { version = "0.3", optional = true }  # JavaScript types for WASM
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+toml = "0.8"
+thiserror = "2.0"
+rand = "0.9"
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"  # Shell completion generation
+dirs = "5.0"  # Cache directory resolution for HF pipeline
+trueno-rag = { version = "0.2.0", optional = true }  # RAG pipeline for CITL
+tokio = { version = "1.41", features = ["rt", "rt-multi-thread", "macros", "net"], optional = true }  # Async runtime
+uuid = { version = "1.11", features = ["v4", "serde"], optional = true }  # UUIDs for CITL patterns
+axum = { version = "0.8", optional = true }  # HTTP server for REST API
+tower = { version = "0.5", optional = true }  # Tower service utilities
+tower-http = { version = "0.6", features = ["trace", "cors"], optional = true }  # HTTP middleware
+safetensors = "0.7"  # SafeTensors format parsing
+half = "2.4"  # bf16/f16 to f32 conversion for weight loading
+rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite experiment store
+sha2 = "0.10"  # SHA256 hashing for artifact CAS
+hex = "0.4"  # Hex encoding for hashes
+regex = "1.10"  # ORCID/ROR validation
+ed25519-dalek = "2.1"  # Ed25519 signing for pre-registration
+bytemuck = { version = "1.19", features = ["derive"] }  # Safe byte casting for tensor data
+jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
+validator = { version = "0.20", features = ["derive"] }  # Declarative struct validation (AI-05)
+schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
+fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
+arrow = { version = "57", default-features = false, optional = true }  # Arrow array types for alimentar integration
+nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
+hostname = "0.4.2"
+ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
+dhat = { version = "0.3", optional = true }  # Heap profiling
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hf-hub = { version = "0.4", optional = true }  # HuggingFace Hub API (gated behind hub feature)
+reqwest = { version = "0.12", features = ["json", "blocking"], optional = true }  # HTTP client for HF Hub publishing/leaderboard
+zip = "2.2"  # RO-Crate ZIP export (requires native compression, not available on WASM)
+alimentar = { version = "0.2.4", optional = true }  # Dataset loading with parquet/arrow support (gated behind parquet feature)
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+proptest = "1.4"
+approx = "0.5"
+tempfile = "3.8"
+criterion = "0.5"
+arrow = { version = "57", default-features = false }  # For MNIST example array access
+parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
+insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
+dirs = "5.0"  # Cache directory detection for examples
+jugar-probar = "1.0"  # TUI snapshot testing (ENT-140)
+provable-contracts = { version = "0.2" }  # Contract trait enforcement (Section 23)
+
+[[bench]]
+name = "monitor_bench"
+harness = false
+required-features = ["monitor"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+
+[[bin]]
+name = "entrenar"
+path = "src/main.rs"
+required-features = []
+
+[[example]]
+name = "llama2-train"
+path = "examples/llama2/train.rs"
+required-features = []
+
+[[example]]
+name = "llama2-finetune-lora"
+path = "examples/llama2/finetune_lora.rs"
+required-features = []
+
+[[example]]
+name = "llama2-finetune-qlora"
+path = "examples/llama2/finetune_qlora.rs"
+required-features = []
+
+[[example]]
+name = "llama2-memory-benchmarks"
+path = "examples/llama2/memory_benchmarks.rs"
+required-features = []
+
+[[example]]
+name = "merge_models"
+path = "examples/merge_models.rs"
+required-features = []
+
+[[example]]
+name = "train_from_yaml"
+path = "examples/train_from_yaml.rs"
+required-features = []
+
+[[example]]
+name = "distillation"
+path = "examples/distillation.rs"
+required-features = []
+
+[[example]]
+name = "training_loop"
+path = "examples/training_loop.rs"
+required-features = []
+
+[[example]]
+name = "model_io"
+path = "examples/model_io.rs"
+required-features = []
+
+[[example]]
+name = "train_from_yaml_example"
+path = "examples/train_from_yaml_example.rs"
+required-features = []
+
+[[example]]
+name = "explainability"
+path = "examples/explainability.rs"
+required-features = []
+
+[[example]]
+name = "monitoring"
+path = "examples/monitoring.rs"
+required-features = []
+
+[[example]]
+name = "hf_distillation"
+path = "examples/hf_distillation.rs"
+required-features = ["hub"]
+
+[[example]]
+name = "finetune_real"
+path = "examples/finetune_real.rs"
+required-features = ["hub"]
+
+[[example]]
+name = "citl"
+path = "examples/citl.rs"
+required-features = ["citl"]
+
+[[example]]
+name = "mnist_train"
+path = "examples/mnist_train.rs"
+required-features = ["parquet"]
+
+[[example]]
+name = "mnist_train_gpu"
+path = "examples/mnist_train_gpu.rs"
+required-features = ["gpu", "parquet"]
+
+[[example]]
+name = "cli_bench"
+path = "examples/cli_bench.rs"
+required-features = []
+
+[[example]]
+name = "cli_inspect"
+path = "examples/cli_inspect.rs"
+required-features = []
+
+[[example]]
+name = "cli_audit"
+path = "examples/cli_audit.rs"
+required-features = []
+
+[[example]]
+name = "cli_monitor"
+path = "examples/cli_monitor.rs"
+required-features = []
+
+[[example]]
+name = "cuda_backend"
+path = "examples/cuda_backend.rs"
+required-features = []
+
+[[example]]
+name = "drift_simulation"
+path = "examples/drift_simulation.rs"
+required-features = []
+
+[[example]]
+name = "calibration_check"
+path = "examples/calibration_check.rs"
+required-features = []
+
+[[example]]
+name = "finetune_test_gen"
+path = "examples/finetune_test_gen.rs"
+required-features = []
+
+[[example]]
+name = "nvml_test"
+path = "examples/nvml_test.rs"
+required-features = ["nvml"]
+
+[[example]]
+name = "shell_safety_classify"
+path = "examples/shell_safety_classify.rs"
+required-features = []
+
+[[example]]
+name = "design_by_contract"
+path = "examples/design_by_contract.rs"
+required-features = []
+
+[[example]]
+name = "classify_tune_demo"
+path = "examples/classify_tune_demo.rs"
+required-features = []
+
+[[example]]
+name = "gpu_ledger"
+path = "examples/gpu_ledger.rs"
+required-features = []
+
+[[example]]
+name = "multi_adapter_training"
+path = "examples/multi_adapter_training.rs"
+required-features = []
+
+[[example]]
+name = "cluster_training"
+path = "examples/cluster_training.rs"
+required-features = []
+
+[[example]]
+name = "wgpu_train"
+path = "examples/wgpu_train.rs"
+required-features = ["gpu"]
+
+[[example]]
+name = "wgpu_canary"
+path = "examples/wgpu_canary.rs"
+required-features = ["gpu"]
+
+[[example]]
+name = "wgpu_eval"
+path = "examples/wgpu_eval.rs"
+required-features = ["gpu"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[workspace.dependencies]
+
+
+

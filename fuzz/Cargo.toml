@@ -1,0 +1,39 @@
+[package]
+name = "entrenar-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.entrenar]
+path = ".."
+
+# Parameter calculation fuzzing (LLaMA model configs)
+[[bin]]
+name = "parameter_calc"
+path = "fuzz_targets/parameter_calc.rs"
+test = false
+doc = false
+bench = false
+
+# Tensor operations fuzzing (autograd ops)
+[[bin]]
+name = "tensor_ops"
+path = "fuzz_targets/tensor_ops.rs"
+test = false
+doc = false
+bench = false
+
+# LoRA configuration fuzzing
+[[bin]]
+name = "lora_config"
+path = "fuzz_targets/lora_config.rs"
+test = false
+doc = false
+bench = false

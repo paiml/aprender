@@ -1,0 +1,76 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "BPE tokenization encode/decode contracts"
+  references:
+    - "Sennrich et al. (2016) Neural Machine Translation of Rare Words with Subword Units"
+
+equations:
+  bpe_merge:
+    formula: "merge(corpus, k) applies k most-frequent byte-pair merges"
+    domain: "corpus: list of strings, k <= vocab_size - base_vocab_size"
+    preconditions:
+      - "!corpus.is_empty()"
+      - "k > 0"
+      - "k <= vocab_size - base_vocab_size"
+    postconditions:
+      - "vocab.len() == base_vocab_size + k"
+      - "total_tokens_after <= total_tokens_before"
+    invariants:
+      - "Each merge reduces total token count in corpus"
+      - "Vocabulary size increases by 1 per merge"
+  encode_decode_identity:
+    formula: "decode(encode(text)) == normalize(text)"
+    domain: "text: valid UTF-8 string"
+    preconditions:
+      - "!text.is_empty()"
+      - "tokenizer.is_trained()"
+    postconditions:
+      - "!ret.is_empty()"
+      - "ret.iter().all(|id| *id < vocab_size)"
+    invariants:
+      - "Encoding is deterministic for same input"
+      - "Token IDs are valid indices into vocabulary"
+
+proof_obligations:
+  - type: equivalence
+    property: "Round-trip identity"
+    formal: "decode(encode(text)) == text for trained tokenizer"
+    applies_to: all
+  - type: invariant
+    property: "Token IDs in range"
+    formal: "0 <= id < vocab_size for all ids in encode output"
+    applies_to: all
+  - type: bound
+    property: "Output length bounded"
+    formal: "len(encode(text)) <= len(text) (each char produces at most 1 token)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TOK-001
+    rule: "BPE encode-decode round-trip"
+    prediction: "Decoded output matches original text after training"
+    test: "tokenizer::bpe::tests::test_bpe_encode_decode"
+    if_fails: "Merge rules or vocabulary mapping inconsistent"
+  - id: FALSIFY-TOK-002
+    rule: "BPE training produces valid vocabulary"
+    prediction: "After training, vocab_size > 0 and is_trained == true"
+    test: "tokenizer::bpe::tests::test_bpe_train"
+    if_fails: "Training loop not populating vocabulary"
+  - id: FALSIFY-TOK-003
+    rule: "Untrained tokenizer rejects encode"
+    prediction: "Encoding before training returns error"
+    test: "tokenizer::bpe::tests::test_bpe_encode_not_trained"
+    if_fails: "Missing is_trained guard in encode path"
+  - id: FALSIFY-TOK-004
+    rule: "Token-to-ID and ID-to-token bijection"
+    prediction: "id_to_token(token_to_id(t)) == t for all tokens in vocabulary"
+    test: "tokenizer::bpe::tests::test_bpe_id_to_token"
+    if_fails: "Forward and reverse maps out of sync"
+
+kani_harnesses:
+  - id: tok-kani-001
+    obligation: "Token IDs in valid range"
+    bound: 4
+    strategy: bounded_int

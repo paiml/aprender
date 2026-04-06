@@ -1,0 +1,93 @@
+#!/bin/bash
+# Pre-commit hook: Quality gates enforcement
+#
+# Enforces:
+# 1. Code formatting (cargo fmt)
+# 2. Clippy lints (zero warnings)
+# 3. Tests pass
+# 4. Security audit
+# 5. SATD check
+#
+# To install: git config core.hooksPath .githooks
+# To bypass (EMERGENCY ONLY): git commit --no-verify
+
+set -euo pipefail
+
+echo "Running pre-commit quality gates..."
+echo ""
+
+# Check if we're in a rebase or merge
+if [ -d ".git/rebase-merge" ] || [ -d ".git/rebase-apply" ]; then
+    echo "Skipping hooks during rebase"
+    exit 0
+fi
+
+# 1. Format check
+echo "Checking code formatting..."
+if ! cargo fmt -- --check > /dev/null 2>&1; then
+    echo "FAIL: Code not formatted"
+    echo "   Run: cargo fmt"
+    exit 1
+fi
+echo "   Formatting OK"
+
+# 2. Clippy
+echo "Running clippy..."
+if ! cargo clippy --all-targets -- -D warnings > /dev/null 2>&1; then
+    echo "FAIL: Clippy warnings found"
+    echo "   Run: cargo clippy --all-targets"
+    exit 1
+fi
+echo "   Clippy OK"
+
+# 3. Tests
+echo "Running tests..."
+if ! cargo test --quiet > /dev/null 2>&1; then
+    echo "FAIL: Tests failed"
+    echo "   Run: cargo test"
+    exit 1
+fi
+echo "   Tests OK"
+
+# 4. Security audit
+echo "Checking security..."
+if command -v cargo-audit > /dev/null 2>&1; then
+    if ! cargo audit --quiet > /dev/null 2>&1; then
+        echo "WARNING: Security audit found issues"
+        echo "   Run: cargo audit"
+    else
+        echo "   Security OK"
+    fi
+else
+    echo "   cargo-audit not installed, skipping"
+fi
+
+# 5. Complexity check (staged files only)
+echo "Checking complexity..."
+if command -v pmat > /dev/null 2>&1; then
+    STAGED_SRC=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs' 2>/dev/null | head -20)
+    if [ -n "$STAGED_SRC" ]; then
+        COMPLEXITY_FAILED=0
+        for SRC_FILE in $STAGED_SRC; do
+            if [ -f "$SRC_FILE" ]; then
+                FILE_OUTPUT=$(pmat analyze complexity --file "$SRC_FILE" --max-cyclomatic 30 --max-cognitive 25 2>&1)
+                if echo "$FILE_OUTPUT" | grep -q 'Errors.*: [1-9]'; then
+                    COMPLEXITY_FAILED=1
+                fi
+            fi
+        done
+        if [ "$COMPLEXITY_FAILED" -eq 0 ]; then
+            echo "   Complexity OK"
+        else
+            echo "WARNING: Some files exceed complexity thresholds"
+        fi
+    else
+        echo "   No source files staged, skipping"
+    fi
+else
+    echo "   pmat not installed, skipping"
+fi
+
+echo ""
+echo "All pre-commit checks passed!"
+exit 0

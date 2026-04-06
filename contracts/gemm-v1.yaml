@@ -1,0 +1,99 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "BLAS-level GEMM forward/backward and BF16 precision contracts"
+  references:
+    - "Dongarra et al. (1990) A set of Level 3 Basic Linear Algebra Subprograms"
+    - "Kalamkar et al. (2019) A Study of BFLOAT16 for Deep Learning Training"
+
+equations:
+  gemm:
+    formula: "C = alpha * A @ B + beta * C"
+    domain: "A in R^(m x k), B in R^(k x n), C in R^(m x n), alpha=1, beta=0"
+    preconditions:
+      - "a.len() == m * k"
+      - "b.len() == k * n"
+      - "c.len() == m * n"
+      - "k > 0"
+    postconditions:
+      - "c.len() == m * n"
+      - "c.iter().all(|v| v.is_finite())"
+    invariants:
+      - "cuBLAS tensor core path when available, PTX fallback otherwise"
+      - "Thread block tiling: 16x16 for naive PTX kernel"
+  gemm_backward:
+    formula: "dA = dC @ B^T, dB = A^T @ dC"
+    domain: "A in R^(m x k), B in R^(k x n), dC in R^(m x n)"
+    preconditions:
+      - "a.len() == m * k"
+      - "b.len() == k * n"
+      - "grad_c.len() == m * n"
+      - "k > 0"
+    postconditions:
+      - "grad_a.len() == m * k"
+      - "grad_b.len() == k * n"
+      - "grad_a.iter().all(|v| v.is_finite())"
+      - "grad_b.iter().all(|v| v.is_finite())"
+    invariants:
+      - "Backward GEMM uses transposed operands"
+  bf16_precision:
+    formula: "gemm_bf16(A, B) approx gemm_fp32(A, B) with FP32 accumulation"
+    domain: "A, B in BF16, accumulator in FP32"
+    preconditions:
+      - "a.len() == b.len()"
+      - "!a.is_empty()"
+    postconditions:
+      - "ret.iter().all(|v| v.is_finite())"
+      - "ret.len() == m * n"
+    invariants:
+      - "BF16 truncates mantissa to 7 bits (vs 23 for FP32)"
+      - "FP32 accumulation preserves precision for large reductions"
+
+proof_obligations:
+  - type: equivalence
+    property: "GEMM backward correct"
+    formal: "gemm_backward_a(dC, B) == dC @ B^T and gemm_backward_b(A, dC) == A^T @ dC"
+    tolerance: 1.0e-5
+    applies_to: all
+  - type: bound
+    property: "BF16 GEMM error bounded"
+    formal: "|gemm_bf16(A,B) - gemm_fp32(A,B)| < eps * k * max(|A|) * max(|B|)"
+    applies_to: all
+  - type: invariant
+    property: "Identity matrix preserves input"
+    formal: "gemm(A, I) == A and gemm(I, B) == B"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GEMM-001
+    rule: "GEMM backward dA correctness"
+    prediction: "dA = dC @ B^T computed correctly for known matrices"
+    test: "autograd::cuda_backward::tests::gemm::test_gemm_backward_a_basic"
+    if_fails: "Transpose or accumulation wrong in backward A kernel"
+  - id: FALSIFY-GEMM-002
+    rule: "GEMM backward dB correctness"
+    prediction: "dB = A^T @ dC computed correctly for known matrices"
+    test: "autograd::cuda_backward::tests::gemm::test_gemm_backward_b_basic"
+    if_fails: "Transpose or accumulation wrong in backward B kernel"
+  - id: FALSIFY-GEMM-003
+    rule: "BF16 GEMM identity matrix"
+    prediction: "BF16 GEMM with identity matrix returns input unchanged"
+    test: "autograd::precision::tests::test_gemm_bf16_reference_identity"
+    if_fails: "BF16 truncation corrupts identity multiplication"
+  - id: FALSIFY-GEMM-004
+    rule: "BF16 vs FP32 GEMM closeness"
+    prediction: "BF16 GEMM output within tolerance of FP32 GEMM"
+    test: "autograd::precision::tests::test_gemm_bf16_reference_vs_fp32"
+    if_fails: "BF16 accumulation losing too much precision"
+  - id: FALSIFY-GEMM-005
+    rule: "BF16 FP32 accumulation"
+    prediction: "FP32 accumulator prevents catastrophic cancellation"
+    test: "autograd::precision::tests::test_gemm_bf16_reference_fp32_accumulation"
+    if_fails: "Accumulator using BF16 instead of FP32"
+
+kani_harnesses:
+  - id: gemm-kani-001
+    obligation: "Output dimensions M x N"
+    bound: 4
+    strategy: bounded_int

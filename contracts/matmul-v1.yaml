@@ -1,0 +1,98 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Matrix multiplication correctness and backward contracts"
+  references:
+    - "Golub & Van Loan (2013) Matrix Computations, 4th Edition"
+
+equations:
+  matmul:
+    formula: "C[i,j] = sum_k(A[i,k] * B[k,j]) for i in [0,m), j in [0,n)"
+    domain: "A in R^(m x k), B in R^(k x n), C in R^(m x n)"
+    preconditions:
+      - "a.len() == m * k"
+      - "b.len() == k * n"
+      - "k > 0"
+    postconditions:
+      - "ret.len() == m * n"
+      - "ret.data().iter().all(|v| v.is_finite())"
+    invariants:
+      - "Inner dimensions must match: cols(A) == rows(B)"
+      - "Output shape: (m, n)"
+  matmul_nt:
+    formula: "C = A @ B^T where C[i,j] = sum_k(A[i,k] * B[j,k])"
+    domain: "A in R^(m x k), B in R^(n x k), C in R^(m x n)"
+    preconditions:
+      - "a.len() == m * k"
+      - "b.len() == n * k"
+      - "k > 0"
+    postconditions:
+      - "ret.len() == m * n"
+      - "ret.data().iter().all(|v| v.is_finite())"
+    invariants:
+      - "Equivalent to matmul(A, transpose(B))"
+      - "Avoids explicit transpose allocation"
+  backward:
+    formula: "dL/dA = dL/dC @ B^T, dL/dB = A^T @ dL/dC"
+    domain: "C = A @ B, dL/dC in R^(m x n)"
+    preconditions:
+      - "grad_output.len() == m * n"
+      - "a.len() == m * k"
+      - "b.len() == k * n"
+    postconditions:
+      - "grad_a.len() == m * k"
+      - "grad_b.len() == k * n"
+      - "grad_a.iter().all(|g| g.is_finite())"
+      - "grad_b.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Gradient shapes match operand shapes"
+
+proof_obligations:
+  - type: equivalence
+    property: "matmul_nt equivalent to transpose-then-matmul"
+    formal: "matmul_nt(A, B) == matmul(A, B^T) within floating-point tolerance"
+    tolerance: 1.0e-5
+    applies_to: all
+  - type: invariant
+    property: "Size mismatch panics"
+    formal: "matmul(A, B) panics if A.len != m*k or B.len != k*n"
+    applies_to: all
+  - type: equivalence
+    property: "Backward gradient correct"
+    formal: "|analytical_grad - numerical_grad| < eps"
+    tolerance: 1.0e-3
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-MATMUL-001
+    rule: "2x2 matmul correctness"
+    prediction: "[1,2;3,4] @ [5,6;7,8] = [19,22;43,50]"
+    test: "autograd::ops::matmul::tests::test_matmul_compute_2x2"
+    if_fails: "Index arithmetic wrong in inner loop"
+  - id: FALSIFY-MATMUL-002
+    rule: "Non-square matmul"
+    prediction: "(2x3) @ (3x2) produces correct (2x2) output"
+    test: "autograd::ops::matmul::tests::test_matmul_compute_2x3_3x2"
+    if_fails: "Dimension handling incorrect for rectangular matrices"
+  - id: FALSIFY-MATMUL-003
+    rule: "Backward gradient propagation"
+    prediction: "Both dL/dA and dL/dB computed and accumulated correctly"
+    test: "autograd::ops::matmul::tests::test_matmul_backward"
+    if_fails: "Transposed matmul in backward has wrong dimensions"
+  - id: FALSIFY-MATMUL-004
+    rule: "matmul_nt equivalence"
+    prediction: "matmul_nt(A,B) produces same result as matmul(A, transpose(B))"
+    test: "autograd::ops::matmul::tests::test_matmul_nt_equivalence_to_transpose_matmul"
+    if_fails: "NT kernel indexing differs from explicit transpose path"
+  - id: FALSIFY-MATMUL-005
+    rule: "Size mismatch detection for A"
+    prediction: "Panics when A dimensions don't match m*k"
+    test: "autograd::ops::matmul::tests::test_matmul_size_mismatch_a"
+    if_fails: "Missing assertion on matrix A dimensions"
+
+kani_harnesses:
+  - id: matmul-kani-001
+    obligation: "Output dimensions correct"
+    bound: 4
+    strategy: bounded_int

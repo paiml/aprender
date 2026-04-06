@@ -1,0 +1,78 @@
+# Docker Compose for Jaeger - OpenTelemetry Backend
+#
+# LLaMA Training Observability Stack
+# Part of Phase 4 (Tracing & Observability) - entrenar spec
+#
+# Usage:
+#   docker-compose -f docker-compose-jaeger.yml up -d
+#   docker-compose -f docker-compose-jaeger.yml down
+#
+# Access Jaeger UI: http://localhost:16686
+# OTLP gRPC endpoint: localhost:4317
+# OTLP HTTP endpoint: localhost:4318
+
+version: '3.8'
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: entrenar-jaeger
+    restart: unless-stopped
+    environment:
+      # Collector endpoints
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+
+      # Span storage
+      - SPAN_STORAGE_TYPE=memory
+
+      # Memory limits (adjust for production)
+      - MEMORY_MAX_TRACES=10000
+
+      # Sampling strategy
+      - SAMPLING_STRATEGIES_FILE=/etc/jaeger/sampling_strategies.json
+
+    ports:
+      # Jaeger UI
+      - "16686:16686"
+
+      # OTLP gRPC (for renacer --otlp-endpoint)
+      - "4317:4317"
+
+      # OTLP HTTP
+      - "4318:4318"
+
+      # Jaeger collector (Thrift)
+      - "14268:14268"
+
+      # Jaeger agent (Thrift compact)
+      - "6831:6831/udp"
+
+      # Zipkin
+      - "9411:9411"
+
+    volumes:
+      # Optional: Custom sampling strategies
+      - ./jaeger-sampling.json:/etc/jaeger/sampling_strategies.json:ro
+
+    networks:
+      - entrenar-observability
+
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:16686"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    labels:
+      - "com.entrenar.service=jaeger"
+      - "com.entrenar.description=OpenTelemetry tracing backend"
+
+networks:
+  entrenar-observability:
+    driver: bridge
+    name: entrenar-observability
+
+# Optional: Add Prometheus for metrics (future enhancement)
+# Optional: Add Grafana for dashboards (future enhancement)

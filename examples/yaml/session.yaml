@@ -1,0 +1,20 @@
+# YAML-083: Ruchy Session Resume
+# QA Focus: Session state restored exactly
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 20
+  save_interval: 1
+  output_dir: ./outputs/session

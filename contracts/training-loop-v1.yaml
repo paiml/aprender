@@ -1,0 +1,72 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Training loop convergence and gradient correctness"
+  references:
+    - "Kingma & Ba (2014) Adam: A Method for Stochastic Optimization"
+
+equations:
+  loss_decrease:
+    lean_theorem: "ProvableContracts.Theorems.CrossEntropy.NonNegativity"
+    formula: "E[L(θ_{t+1})] ≤ E[L(θ_t)] for sufficiently small lr"
+    domain: "θ ∈ ℝ^d, lr ∈ (0, lr_max)"
+    preconditions:
+      - "lr > 0.0"
+      - "lr < lr_max"
+      - "!params.is_empty()"
+    postconditions:
+      - "loss.is_finite()"
+      - "!loss.is_nan()"
+    invariants:
+      - "Loss monotonically non-increasing (in expectation)"
+  gradient_norm:
+    formula: "|∇L(θ)| < clip_value after gradient clipping"
+    domain: "θ ∈ ℝ^d, clip_value > 0"
+    preconditions:
+      - "clip_value > 0.0"
+      - "!gradients.is_empty()"
+      - "gradients.iter().all(|g| g.is_finite())"
+    postconditions:
+      - "grad_norm <= clip_value"
+      - "gradients.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Gradient norm bounded by clip_value"
+
+proof_obligations:
+  - type: bound
+    property: "Gradient norm bounded after clipping"
+    formal: "|grad| ≤ clip_value after clip_grad_norm"
+    applies_to: all
+  - type: invariant
+    property: "Loss finite"
+    formal: "loss is not NaN or Inf at any training step"
+    applies_to: all
+  - type: equivalence
+    property: "CUDA forward matches CPU"
+    formal: "|forward_cuda(x) - forward_cpu(x)| < eps per element"
+    tolerance: 1.0e-4
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TRAIN-001
+    rule: "Gradient clipping"
+    prediction: "Gradient norm ≤ clip_value after clipping"
+    test: "Inject large gradients, verify clipped"
+    if_fails: "clip_grad_norm not applied"
+  - id: FALSIFY-TRAIN-002
+    rule: "Loss finite"
+    prediction: "No NaN/Inf in loss for 100 steps"
+    test: "Train on random data, check each step"
+    if_fails: "Numeric overflow in loss computation"
+  - id: FALSIFY-TRAIN-003
+    rule: "CUDA/CPU parity"
+    prediction: "Forward pass produces same output within tolerance"
+    test: "Same input, compare CUDA and CPU outputs"
+    if_fails: "CUDA kernel dispatch error"
+
+kani_harnesses:
+  - id: train-kani-001
+    obligation: "Gradient norm bounded after clipping"
+    bound: 4
+    strategy: stub_float

@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "name": "example-model",
+    "architecture": "simple-mlp",
+    "version": "0.1.0",
+    "training_config": null,
+    "custom": {
+      "activation": "relu",
+      "input_dim": 4,
+      "hidden_dim": 2,
+      "output_dim": 1
+    }
+  },
+  "parameters": [
+    {
+      "name": "layer1.weight",
+      "shape": [
+        4
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "layer1.bias",
+      "shape": [
+        2
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "layer2.weight",
+      "shape": [
+        2
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "layer2.bias",
+      "shape": [
+        1
+      ],
+      "dtype": "f32",
+      "requires_grad": false
+    }
+  ],
+  "data": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.01,
+    0.02,
+    0.5,
+    0.6,
+    0.1
+  ]
+}

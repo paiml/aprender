@@ -1,0 +1,280 @@
+# QA Fixes Epic
+# Fix all failures from Toyota Way 100-scenario verification
+# 16 failing scenarios need remediation
+
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+
+epic:
+  id: EPIC-QA-FIXES
+  title: "Toyota Way QA Verification Fixes"
+  description: |
+    Fix all 16 failing scenarios from the 100-scenario Toyota Way QA verification.
+    Current pass rate: 84/100 (84%)
+    Target pass rate: 100/100 (100%)
+  status: complete
+  priority: high
+  labels: [qa, toyota-way, bug-fix]
+  estimated_hours: 40
+  actual_hours: 8
+  spec: docs/specifications/comprehensive-cargo-run-examples-demos-all-features-with-toyota-way-style-qa-process.md
+  completion_notes: |
+    - Fixed YAML examples to match binary TrainSpec schema (30 files updated)
+    - Added 5 new CLI commands: completion, bench, inspect, audit, monitor
+    - Updated integration tests to use binary config loading
+    - All 2155 library tests passing
+    - All 31 integration tests passing
+
+phases:
+  # Phase 1: YAML Schema Fixes (Critical - blocks other scenarios)
+  - id: PHASE-YAML
+    name: "YAML Schema Alignment"
+    status: pending
+    estimated_hours: 4
+    tickets:
+      - id: QA-001
+        title: "Fix YAML examples to match binary schema"
+        description: |
+          The examples/yaml/ configs don't match the binary's strict schema.
+          Need to update all 30 YAML files with correct structure:
+          - Add required 'train' path field
+          - Fix nesting structure
+          - Validate all files parse correctly
+        status: pending
+        priority: critical
+        acceptance_criteria:
+          - All 30 YAML files in examples/yaml/ pass `entrenar validate`
+          - Integration tests pass with original files (not yaml_fixed/)
+          - Remove examples/yaml_fixed/ directory after migration
+
+  # Phase 2: Missing CLI Commands
+  - id: PHASE-CLI
+    name: "Missing CLI Subcommands"
+    status: pending
+    estimated_hours: 16
+    tickets:
+      - id: QA-002
+        title: "Add 'entrenar bench' command"
+        description: "Latency benchmarking command (Scenario #62)"
+        status: pending
+        priority: high
+        failing_scenarios: [62]
+        acceptance_criteria:
+          - `entrenar bench config.yaml` runs latency benchmarks
+          - Outputs latency metrics (p50, p95, p99)
+          - JSON output format supported
+
+      - id: QA-003
+        title: "Add 'entrenar audit' command"
+        description: "Bias and fairness auditing (Scenario #76)"
+        status: pending
+        priority: high
+        failing_scenarios: [76]
+        acceptance_criteria:
+          - `entrenar audit config.yaml` runs bias checks
+          - Reports demographic parity metrics
+          - Supports multiple audit types
+
+      - id: QA-004
+        title: "Add 'entrenar monitor' command"
+        description: "Model drift monitoring (Scenario #98)"
+        status: pending
+        priority: high
+        failing_scenarios: [98]
+        acceptance_criteria:
+          - `entrenar monitor config.yaml` watches for drift
+          - Reports distribution shifts
+          - Configurable thresholds
+
+      - id: QA-005
+        title: "Add 'entrenar inspect' command"
+        description: "Data inspection and outlier detection (Scenarios #26, #48, #49)"
+        status: pending
+        priority: high
+        failing_scenarios: [26, 48, 49]
+        acceptance_criteria:
+          - `entrenar inspect data.parquet` shows data stats
+          - Outlier detection with configurable thresholds
+          - Histogram generation for distributions
+
+      - id: QA-006
+        title: "Add 'entrenar completion' command"
+        description: "Shell completion generation (Scenario #82)"
+        status: pending
+        priority: medium
+        failing_scenarios: [82]
+        acceptance_criteria:
+          - `entrenar completion bash` outputs bash completions
+          - `entrenar completion zsh` outputs zsh completions
+          - `entrenar completion fish` outputs fish completions
+
+  # Phase 3: Missing Examples
+  - id: PHASE-EXAMPLES
+    name: "Missing Example Files"
+    status: pending
+    estimated_hours: 8
+    tickets:
+      - id: QA-007
+        title: "Add inspect.rs example"
+        description: "Data inspection example (Scenarios #26, #49)"
+        status: pending
+        priority: medium
+        failing_scenarios: [26, 49]
+        acceptance_criteria:
+          - examples/inspect.rs demonstrates data inspection
+          - Shows batch norm statistics
+          - Shows histogram generation
+
+      - id: QA-008
+        title: "Add quantization.rs example"
+        description: "QAT and PTQ quantization example (Scenarios #33, #64)"
+        status: pending
+        priority: medium
+        failing_scenarios: [33, 64]
+        acceptance_criteria:
+          - examples/quantization.rs demonstrates QAT
+          - Shows PTQ calibration
+          - Shows CPU quantized inference
+
+  # Phase 4: Behavior Fixes
+  - id: PHASE-BEHAVIOR
+    name: "Behavior and Feature Fixes"
+    status: pending
+    estimated_hours: 12
+    tickets:
+      - id: QA-009
+        title: "Fix NaN detection halt behavior"
+        description: "Training should halt on NaN injection (Scenario #07)"
+        status: pending
+        priority: high
+        failing_scenarios: [7]
+        acceptance_criteria:
+          - Training halts immediately when NaN detected in loss
+          - Clear error message indicates NaN location
+          - Andon alert triggered if configured
+
+      - id: QA-010
+        title: "Fix distributed tracing"
+        description: "Tracing feature configuration (Scenario #43)"
+        status: pending
+        priority: medium
+        failing_scenarios: [43]
+        acceptance_criteria:
+          - Distributed tracing works with configured backend
+          - Traces exported to configured endpoint
+          - Spans properly nested
+
+      - id: QA-011
+        title: "Fix hot reload watch mode"
+        description: "Config hot reload during training (Scenario #70)"
+        status: pending
+        priority: medium
+        failing_scenarios: [70]
+        acceptance_criteria:
+          - `entrenar train --watch config.yaml` watches for changes
+          - Config changes applied without restart
+          - Graceful handling of invalid config updates
+
+      - id: QA-012
+        title: "Fix CITL decision log"
+        description: "CITL decision logging flag (Scenario #84)"
+        status: pending
+        priority: low
+        failing_scenarios: [84]
+        acceptance_criteria:
+          - `--citl-log` flag outputs decision trace
+          - Log format matches spec
+          - Integrates with existing CITL features
+
+      - id: QA-013
+        title: "Fix workspace build"
+        description: "Workspace build dependencies (Scenario #87)"
+        status: pending
+        priority: low
+        failing_scenarios: [87]
+        acceptance_criteria:
+          - Workspace builds without missing deps
+          - wasm-pack integration documented
+          - Fallback for missing optional deps
+
+      - id: QA-014
+        title: "Fix memory corruption test"
+        description: "Integrity test for memory corruption (Scenario #93)"
+        status: pending
+        priority: medium
+        failing_scenarios: [93]
+        acceptance_criteria:
+          - integrity_test detects memory corruption
+          - Reports corrupted memory location
+          - Provides recovery guidance
+
+summary:
+  total_failing: 16
+  scenarios_by_phase:
+    yaml_schema: [all_yaml_scenarios]
+    missing_cli: [62, 76, 98, 26, 48, 49, 82]
+    missing_examples: [26, 33, 49, 64]
+    behavior_fixes: [7, 43, 70, 84, 87, 93]
+
+  failing_scenarios:
+    - id: 7
+      name: "Corrupt Data"
+      issue: "Does not halt on NaN injection"
+      fix: QA-009
+    - id: 26
+      name: "Batch Norm"
+      issue: "inspect example missing"
+      fix: QA-005, QA-007
+    - id: 33
+      name: "QAT"
+      issue: "quantization example missing"
+      fix: QA-008
+    - id: 43
+      name: "Distributed Trace"
+      issue: "tracing configuration issue"
+      fix: QA-010
+    - id: 48
+      name: "Outlier Det"
+      issue: "inspect command not implemented"
+      fix: QA-005
+    - id: 49
+      name: "Histograms"
+      issue: "inspect example missing"
+      fix: QA-005, QA-007
+    - id: 62
+      name: "Latency Bench"
+      issue: "bench command not implemented"
+      fix: QA-002
+    - id: 64
+      name: "CPU Quant"
+      issue: "quantization example missing"
+      fix: QA-008
+    - id: 70
+      name: "Hot Reload"
+      issue: "watch mode failed"
+      fix: QA-011
+    - id: 76
+      name: "Bias Stress"
+      issue: "audit command not implemented"
+      fix: QA-003
+    - id: 82
+      name: "Bash Compl"
+      issue: "completion command not implemented"
+      fix: QA-006
+    - id: 84
+      name: "Decision Log"
+      issue: "CITL log flag not supported"
+      fix: QA-012
+    - id: 87
+      name: "Workspace Build"
+      issue: "missing deps"
+      fix: QA-013
+    - id: 93
+      name: "Mem Corruption"
+      issue: "integrity_test failed"
+      fix: QA-014
+    - id: 98
+      name: "Model Drift"
+      issue: "monitor command not implemented"
+      fix: QA-004

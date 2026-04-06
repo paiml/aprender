@@ -1,0 +1,36 @@
+# LLaMA Toy Model Configuration (124M parameters)
+# Suitable for testing and development on single GPU
+
+[model]
+vocab_size = 32000
+hidden_size = 768
+num_layers = 12
+num_heads = 12
+intermediate_size = 3072  # 4 * hidden_size
+max_seq_len = 2048
+rope_theta = 10000.0
+
+[training]
+learning_rate = 3e-4
+weight_decay = 0.01
+beta1 = 0.9
+beta2 = 0.95
+epsilon = 1e-8
+grad_clip = 1.0
+batch_size = 32
+num_epochs = 10
+
+[lr_schedule]
+type = "cosine"
+warmup_steps = 1000
+min_lr = 3e-5
+
+[data]
+train_path = "data/train.jsonl"
+val_path = "data/val.jsonl"
+context_length = 2048
+
+[checkpointing]
+save_every = 1000  # steps
+checkpoint_dir = "checkpoints/124m"
+keep_last_n = 3

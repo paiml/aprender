@@ -1,0 +1,20 @@
+# YAML-051: Automatic Checkpointing
+# QA Focus: Resume from step 100 works perfectly
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 10
+  save_interval: 1
+  output_dir: ./checkpoints

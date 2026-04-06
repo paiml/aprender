@@ -1,0 +1,68 @@
+
+Creating model...
+  Model name: example-model
+  Architecture: simple-mlp
+  Parameters: 4
+
+Saving model to JSON...
+  ✓ Saved to example_model.json
+
+Saving model to YAML...
+  ✓ Saved to example_model.yaml
+
+Loading model from JSON...
+  ✓ Loaded model: example-model
+  ✓ Parameters: 4
+  ✓ Data integrity check: true
+
+Loading model from YAML...
+  ✓ Loaded model: example-model
+  ✓ Parameters: 4
+
+Model Metadata:
+  Name: example-model
+  Architecture: simple-mlp
+  Version: 0.1.0
+
+Custom Metadata:
+  output_dim: 1
+  activation: "relu"
+  input_dim: 4
+  hidden_dim: 2
+
+Parameters:
+  layer1.weight (size=4, requires_grad=true)
+  layer1.bias (size=2, requires_grad=true)
+  layer2.weight (size=2, requires_grad=true)
+  layer2.bias (size=1, requires_grad=false)
+
+Cleaning up...
+  ✓ Removed temporary files
+
+=== Example Complete ===
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 25.69    0.000306           7        43           write
+ 16.12    0.000192          14        13           mmap
+  7.39    0.000088           9         9           read
+  6.05    0.000072           9         8           close
+  8.98    0.000107          13         8           openat
+  5.54    0.000066          11         6           mprotect
+  2.69    0.000032           6         5           rt_sigaction
+  3.61    0.000043          10         4           newfstatat
+  2.18    0.000026           6         4           unknown
+  4.03    0.000048          12         4           pread64
+  3.27    0.000039          13         3           brk
+  1.60    0.000019           6         3           sigaltstack
+  3.02    0.000036          18         2           unlink
+  1.09    0.000013           6         2           lseek
+  1.60    0.000019           9         2         1 arch_prctl
+  1.26    0.000015           7         2           statx
+  1.85    0.000022          11         2           munmap
+  1.26    0.000015           7         2           getrandom
+  0.50    0.000006           6         1           set_robust_list
+  1.09    0.000013          13         1         1 access
+  0.59    0.000007           7         1           poll
+  0.59    0.000007           7         1           set_tid_address
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.001191           9       126         2 total

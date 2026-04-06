@@ -1,0 +1,11 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 51
+expression: schedule
+---
+{
+  "type": "cubic",
+  "start_step": 0,
+  "end_step": 10000,
+  "final_sparsity": 0.7
+}

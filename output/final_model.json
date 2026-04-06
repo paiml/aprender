@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "name": "model-from-examples/example-model.gguf",
+    "architecture": "simple-mlp",
+    "version": "0.1.0",
+    "training_config": null,
+    "custom": {
+      "batch_size": 2,
+      "learning_rate": 0.009999999776482582,
+      "optimizer": "adam",
+      "config_path": "examples/example-model.gguf"
+    }
+  },
+  "parameters": [
+    {
+      "name": "param_0",
+      "shape": [
+        4
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "param_1",
+      "shape": [
+        2
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "param_2",
+      "shape": [
+        2
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    },
+    {
+      "name": "param_3",
+      "shape": [
+        1
+      ],
+      "dtype": "f32",
+      "requires_grad": true
+    }
+  ],
+  "data": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.01,
+    0.02,
+    0.5,
+    0.6,
+    0.1
+  ]
+}

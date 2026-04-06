@@ -1,0 +1,20 @@
+# YAML-044: Andon Alert System
+# QA Focus: "ANDON" alert triggered in < 5 steps
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 10
+  grad_clip: 1.0
+  output_dir: ./outputs/andon

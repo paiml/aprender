@@ -1,0 +1,32 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 179
+expression: method_info
+---
+[
+  {
+    "display_name": "Magnitude",
+    "name": "magnitude",
+    "requires_calibration": false
+  },
+  {
+    "display_name": "Wanda",
+    "name": "wanda",
+    "requires_calibration": true
+  },
+  {
+    "display_name": "SparseGPT",
+    "name": "sparsegpt",
+    "requires_calibration": true
+  },
+  {
+    "display_name": "Minitron (Depth)",
+    "name": "minitron_depth",
+    "requires_calibration": true
+  },
+  {
+    "display_name": "Minitron (Width)",
+    "name": "minitron_width",
+    "requires_calibration": true
+  }
+]

@@ -1,0 +1,6 @@
+book/
+wasm-pkg/
+crates/entrenar-wasm/pkg/
+target/
+*.js
+*.wasm

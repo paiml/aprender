@@ -1,0 +1,39 @@
+# PMAT Quality Metrics Configuration
+# Generated for entrenar project
+
+[thresholds]
+# Coverage thresholds
+min_coverage = 90.0
+min_branch_coverage = 85.0
+
+# Complexity thresholds
+max_cyclomatic_complexity = 15
+max_cognitive_complexity = 20
+max_complexity_p99 = 50
+
+# Code quality thresholds
+max_dead_code_percent = 15.0
+min_entropy = 2.0
+
+# File size thresholds (lines)
+# Note: Some files exceed these due to comprehensive test suites and TUI code
+max_file_lines = 3000
+warn_file_lines = 1500
+
+# Technical debt
+max_satd_density = 0.05
+
+[file_health]
+# Allow larger files for specific patterns
+allow_large_files = [
+    "src/train/tui.rs",        # TUI rendering code
+    "src/config/cli.rs",        # CLI argument parsing
+    "src/monitor/inference/path.rs",  # Decision path implementations
+    "src/yaml_mode/tests.rs",   # Comprehensive test suite
+]
+
+[gates]
+# Quality gates configuration
+fail_on_dead_code = false
+fail_on_complexity = true
+fail_on_coverage = false

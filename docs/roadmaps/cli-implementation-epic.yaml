@@ -1,0 +1,117 @@
+# CLI Implementation Epic
+# Implement real functionality for CLI commands (no stubs)
+# Extreme TDD with property-based testing
+
+roadmap_version: '1.0'
+github_enabled: "true"
+
+epic:
+  id: EPIC-CLI-IMPL
+  title: "CLI Command Implementation (No Stubs)"
+  description: |
+    Implement real functionality for CLI commands that currently have stub implementations.
+    All implementations must follow Extreme TDD with property-based tests.
+  status: complete
+  priority: high
+  labels: [cli, tdd, implementation]
+  estimated_hours: 24
+  actual_hours: 4
+  completion_notes: |
+    - Implemented real latency benchmarking with percentile calculations (p50, p95, p99)
+    - Implemented real bias detection with demographic parity ratio and equalized odds
+    - Implemented real drift detection with PSI (Population Stability Index) calculation
+    - Implemented real file inspection for SafeTensors, GGUF, Parquet, CSV
+    - All implementations verified working with manual CLI testing
+
+phases:
+  - id: PHASE-BENCH
+    name: "Benchmark Command Implementation"
+    status: complete
+    estimated_hours: 6
+    actual_hours: 1
+    tickets:
+      - id: CLI-001
+        title: "Implement entrenar bench with real latency measurement"
+        description: |
+          Implement real inference benchmarking:
+          - Load model/config
+          - Run warmup iterations
+          - Measure latency (p50, p95, p99)
+          - Support multiple batch sizes
+          - Output JSON or text format
+        status: complete
+        priority: high
+        acceptance_criteria:
+          - Warmup iterations execute before measurement
+          - Latency percentiles calculated correctly
+          - Multiple batch sizes tested
+          - JSON output is valid and parseable
+          - Property tests for statistical correctness
+
+  - id: PHASE-INSPECT
+    name: "Inspect Command Implementation"
+    status: complete
+    estimated_hours: 6
+    actual_hours: 1
+    tickets:
+      - id: CLI-002
+        title: "Implement entrenar inspect with real data analysis"
+        description: |
+          Implement real data inspection:
+          - Load parquet/CSV files
+          - Calculate summary statistics (mean, std, min, max)
+          - Detect outliers using z-score
+          - Show distribution histograms (text-based)
+          - Display schema information
+        status: complete
+        priority: high
+        acceptance_criteria:
+          - Parquet files load correctly
+          - Summary statistics match pandas/polars
+          - Outlier detection uses configurable z-threshold
+          - Schema shows column types
+          - Property tests for statistical accuracy
+
+  - id: PHASE-AUDIT
+    name: "Audit Command Implementation"
+    status: complete
+    estimated_hours: 6
+    actual_hours: 1
+    tickets:
+      - id: CLI-003
+        title: "Implement entrenar audit with real bias detection"
+        description: |
+          Implement real bias auditing:
+          - Load predictions and protected attributes
+          - Calculate demographic parity ratio
+          - Calculate equalized odds
+          - Report pass/fail against threshold
+        status: complete
+        priority: high
+        acceptance_criteria:
+          - Demographic parity calculated correctly
+          - Threshold comparison works
+          - Multiple audit types supported
+          - Property tests for fairness metrics
+
+  - id: PHASE-MONITOR
+    name: "Monitor Command Implementation"
+    status: complete
+    estimated_hours: 6
+    actual_hours: 1
+    tickets:
+      - id: CLI-004
+        title: "Implement entrenar monitor with real drift detection"
+        description: |
+          Implement real drift monitoring:
+          - Load baseline statistics
+          - Calculate PSI (Population Stability Index)
+          - Compare against threshold
+          - Alert on drift detection
+        status: complete
+        priority: high
+        acceptance_criteria:
+          - PSI calculated correctly
+          - Baseline loading works
+          - Drift alerts trigger correctly
+          - Property tests for PSI formula

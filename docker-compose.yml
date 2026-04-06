@@ -1,0 +1,34 @@
+# entrenar development environment
+version: "3.8"
+
+services:
+  entrenar:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: tester
+    volumes:
+      - ./src:/build/src
+      - ./tests:/build/tests
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+
+  entrenar-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - RUST_LOG=info
+
+volumes:
+  cargo-cache:

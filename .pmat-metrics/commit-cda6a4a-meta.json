@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-172",
+  "prompt": "CB-950 Kaizen: quote truthy strings in YAML files",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-14T18:27:29.684886943Z"
+}

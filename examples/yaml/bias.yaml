@@ -1,0 +1,19 @@
+# YAML-076: Bias Stress Test
+# QA Focus: Parity score > 0.9
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 1
+  output_dir: ./outputs/bias-audit

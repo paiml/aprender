@@ -1,0 +1,35 @@
+# Example training configuration for entrenar
+#
+# This demonstrates the declarative YAML API for model training
+
+model:
+  path: examples/example-model.gguf
+  layers: []
+
+data:
+  train: examples/train.parquet
+  batch_size: 2
+
+optimizer:
+  name: adam
+  lr: 0.01
+  beta1: 0.9
+  beta2: 0.999
+
+training:
+  epochs: 5
+  grad_clip: 1.0
+  output_dir: ./output
+
+# Optional: LoRA configuration
+# lora:
+#   rank: 64
+#   alpha: 16
+#   target_modules: [q_proj, v_proj]
+#   dropout: 0.0
+
+# Optional: Quantization
+# quantize:
+#   bits: 4
+#   symmetric: true
+#   per_channel: true
