@@ -1,8 +1,8 @@
 # APR-MONO: Sovereign Stack Monorepo Consolidation
 
-**Version**: 1.3
+**Version**: 1.7
 **Date**: 2026-04-06
-**Status**: PROPOSAL — Ready for Review
+**Status**: IN PROGRESS — Phase 1-2 Active
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contract**: `contracts/cgp/cgp-monorepo-consolidation-v1.yaml`
