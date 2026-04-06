@@ -299,7 +299,7 @@ pub enum ExtendedCommands {
         #[arg(long)]
         prefill: bool,
     },
-    /// PTX analysis and bug detection (trueno-explain: register pressure, roofline, 15+ bug detectors)
+    /// PTX analysis and bug detection (register pressure, roofline)
     #[command(name = "ptx")]
     Ptx {
         /// Path to a PTX source file

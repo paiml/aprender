@@ -451,7 +451,7 @@ impl RosettaStone {
                 total_params += params;
                 tensors.push(TensorInfo {
                     name: entry.name.clone(),
-                    dtype: format!("{:?}", entry.dtype),
+                    dtype: entry.dtype.to_string(),
                     shape: entry.shape.clone(),
                     size_bytes: entry.size as usize,
                     stats: None,

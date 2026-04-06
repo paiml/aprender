@@ -30,8 +30,8 @@ pub enum Commands {
         /// Output format (text, json, srt, vtt)
         #[arg(short = 'f', long, default_value = "text")]
         format: String,
-        /// Disable GPU acceleration
-        #[arg(long, conflicts_with = "gpu")]
+        /// Disable GPU acceleration (force CPU-only inference)
+        #[arg(long, alias = "cpu", conflicts_with = "gpu")]
         no_gpu: bool,
         /// Force GPU acceleration
         #[arg(long, conflicts_with = "no_gpu")]

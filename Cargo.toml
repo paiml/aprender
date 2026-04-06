@@ -326,6 +326,7 @@ cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA 
 cpu-only = []
 showcase-profile = []  # Renacer profiling (disabled: renacer→aprender circular dep)
 showcase-zram = ["trueno-zram-core"]  # Enable trueno-zram KV cache compression for showcase benchmarks (PAR-040)
+explainable-monitor-integration = []  # Enable integration tests for aprender explainability + entrenar InferenceMonitor (GH-305)
 # Chaos engineering features (from renacer)
 chaos-basic = []
 chaos-network = ["chaos-basic"]

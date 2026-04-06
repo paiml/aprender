@@ -39,7 +39,16 @@ fn dispatch_run(
         trace_level
     };
     let merged_prompt = prompt.or(positional_prompt).cloned();
-    let effective_prompt = if chat {
+    // GH-638: Auto-detect chat template from model name when --chat not explicit.
+    // Instruct/Chat models (Qwen-Instruct, LLaMA-Instruct, Mistral-Instruct, etc.)
+    // need ChatML wrapping for correct output. Without it, the model ignores the
+    // prompt structure and produces garbled responses.
+    let use_chat = chat || {
+        let src_lower = source.to_lowercase();
+        merged_prompt.is_some()
+            && (src_lower.contains("instruct") || src_lower.contains("chat"))
+    };
+    let effective_prompt = if use_chat {
         merged_prompt
             .as_ref()
             .map(|p| format!("<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n"))

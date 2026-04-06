@@ -182,6 +182,26 @@ pub enum TensorDType {
     Q6K = 14,
 }
 
+impl std::fmt::Display for TensorDType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::F32 => "F32",
+            Self::F16 => "F16",
+            Self::BF16 => "BF16",
+            Self::F64 => "F64",
+            Self::I32 => "I32",
+            Self::I64 => "I64",
+            Self::I8 => "I8",
+            Self::U8 => "U8",
+            Self::AprQ4 => "APR_Q4",
+            Self::AprQ8 => "APR_Q8",
+            Self::Q4K => "Q4_K",
+            Self::Q6K => "Q6_K",
+        };
+        f.write_str(name)
+    }
+}
+
 // ============================================================================
 // Compile-time assertions: GGML-aligned IDs must match the standard (GH-438)
 // ============================================================================

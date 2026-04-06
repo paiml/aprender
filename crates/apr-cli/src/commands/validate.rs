@@ -112,6 +112,33 @@ fn run_rosetta_validation(
         .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
 
     if json {
+        // GH-610: Apply strict checks before JSON output (was previously skipped)
+        if strict
+            && !skip_contract
+            && (report.total_nan_count > 0
+                || report.total_inf_count > 0
+                || !report.all_zero_tensors.is_empty())
+        {
+            let mut issues = Vec::new();
+            if report.total_nan_count > 0 {
+                issues.push(format!("{} NaN values", report.total_nan_count));
+            }
+            if report.total_inf_count > 0 {
+                issues.push(format!("{} Inf values", report.total_inf_count));
+            }
+            if !report.all_zero_tensors.is_empty() {
+                issues.push(format!(
+                    "{} all-zero tensors",
+                    report.all_zero_tensors.len()
+                ));
+            }
+            // Still print the JSON report before returning error
+            let _ = print_rosetta_validation_json(path, &report, format, quality);
+            return Err(CliError::ValidationFailed(format!(
+                "Strict mode: {}",
+                issues.join(", ")
+            )));
+        }
         return print_rosetta_validation_json(path, &report, format, quality);
     }
 
