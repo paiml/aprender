@@ -24,7 +24,8 @@ fn profile_gpu_generation(
 
     let format = detect_format(path);
 
-    println!(
+    // GH-684: progress to stderr so --format json keeps stdout clean
+    eprintln!(
         "{}",
         format!("Loading {format} model for GPU generation profiling...").dimmed()
     );
@@ -53,7 +54,7 @@ fn profile_gpu_generation(
                 quantize: Some(aprender::format::QuantizationType::Q4K),
                 ..aprender::format::ImportOptions::default()
             };
-            println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
+            eprintln!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
             aprender::format::apr_import(&path.display().to_string(), &tmp_apr, import_opts)
                 .map_err(|e| CliError::ValidationFailed(format!("SafeTensors→Q4K failed: {e}")))?;
             let mapped = realizar::apr::MappedAprModel::from_path(&tmp_apr)
@@ -96,7 +97,7 @@ fn profile_gpu_generation(
     };
 
     // Warmup passes
-    println!(
+    eprintln!(
         "{}",
         format!(
             "GPU warmup: {} passes x {} tokens...",
@@ -112,7 +113,7 @@ fn profile_gpu_generation(
     }
 
     // Measurement passes — collect per-token timing
-    println!(
+    eprintln!(
         "{}",
         format!(
             "GPU measurement: {} passes x {} tokens...",
@@ -165,7 +166,7 @@ fn profile_gpu_generation(
             per_pass_decode_times.push(decode_ms);
 
             if pass == 0 {
-                println!(
+                eprintln!(
                     "{}",
                     format!(
                         "  Pass 0: {} tokens in {:.1}ms (prefill: {:.1}ms, decode: {:.1}ms = {:.1} tok/s)",
@@ -342,7 +343,7 @@ fn run_brick_profiler_pass(
 ) -> Vec<Hotspot> {
     use realizar::gguf::QuantizedGenerateConfig;
 
-    println!(
+    eprintln!(
         "{}",
         "Per-operation profiling pass (no CUDA graph)...".dimmed()
     );

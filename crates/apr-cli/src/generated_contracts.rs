@@ -3839,3 +3839,27 @@ macro_rules! contract_pre_encryption_idempotency {
     () => {{}};
     ($($t:tt)*) => {{}};
 }
+macro_rules! contract_pre_apr_model_validity {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_exit_code_on_failure {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_flag_integrity {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_rank_bounds_safety {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_quantize {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
+macro_rules! contract_pre_temperature_bounds {
+    () => {{}};
+    ($($t:tt)*) => {{}};
+}
