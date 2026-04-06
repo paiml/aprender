@@ -6,9 +6,9 @@
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
-**Contracts**: `contracts/cgp-monorepo-consolidation-v1.yaml`, `contracts/cgp-monorepo-build-v1.yaml`
-**Falsification**: 13 conditions (FALSIFY-MONO-001–013) + 7 build conditions (FALSIFY-BUILD-001–007)
-**Integration Tests**: `tests/monorepo_invariants.rs` (8 tests enforcing build contract)
+**Contracts**: `cgp-monorepo-consolidation-v1.yaml`, `cgp-monorepo-build-v1.yaml`, `apr-cli-commands-v1.yaml`
+**Falsification**: 13 MONO + 7 BUILD + 7 CLI = 27 falsification conditions
+**Integration Tests**: `tests/monorepo_invariants.rs` (8 tests), `crates/apr-cli/tests/cli_commands.rs` (6 tests, 57 commands)
 
 ---
 

@@ -1,0 +1,409 @@
+# APR CLI Commands Provable Contract
+#
+# Every `apr` subcommand MUST satisfy this contract.
+# Enforcement: tests/apr_cli_commands.rs
+#
+# FALSIFY-CLI-001: If any command listed here does not respond to --help
+# FALSIFY-CLI-002: If any command not listed here appears in `apr --help`
+# FALSIFY-CLI-003: If any command exits with code other than 0/1/2
+# FALSIFY-CLI-004: If any command panics on --help
+
+kind: CLICommandContract
+name: apr-cli-commands
+version: "1.0.0"
+scope: "all apr CLI subcommands (57 commands)"
+binary: "apr"
+install: "cargo install aprender"
+
+description: |
+  Provable contract covering every `apr` subcommand. Each command must:
+  1. Respond to `--help` with exit code 0
+  2. Have a description (non-empty about text)
+  3. Produce exit code 0 (success), 1 (runtime error), or 2 (usage error)
+  4. Never panic on --help or missing required args
+
+# ── Command Registry ──
+# This is the SINGLE SOURCE OF TRUTH for all apr subcommands.
+# If a command exists in `apr --help` but not here, FALSIFY-CLI-002 fires.
+# If a command is listed here but not in `apr --help`, FALSIFY-CLI-001 fires.
+
+commands:
+  # ── Core Inference ──
+  - name: run
+    category: inference
+    description: "Run model directly (auto-download, cache, execute)"
+    requires_model: true
+    side_effects: [network, filesystem]
+
+  - name: serve
+    category: inference
+    description: "Inference server (plan/run)"
+    requires_model: true
+    side_effects: [network, filesystem]
+
+  - name: chat
+    category: inference
+    description: "Interactive chat with language model"
+    requires_model: true
+    side_effects: [network, filesystem]
+
+  - name: code
+    category: inference
+    description: "Sovereign AI coding assistant"
+    requires_model: true
+    side_effects: [network, filesystem]
+
+  # ── Model Inspection (read-only, no side effects) ──
+  - name: inspect
+    category: inspection
+    description: "Inspect model metadata, vocab, and structure"
+    requires_model: true
+    side_effects: []
+
+  - name: debug
+    category: inspection
+    description: "Simple debugging output"
+    requires_model: true
+    side_effects: []
+
+  - name: validate
+    category: inspection
+    description: "Validate model integrity and quality"
+    requires_model: true
+    side_effects: []
+
+  - name: lint
+    category: inspection
+    description: "Check for best practices and conventions"
+    requires_model: true
+    side_effects: []
+
+  - name: explain
+    category: inspection
+    description: "Explain errors, architecture, tensors, and kernel dispatch"
+    requires_model: false
+    side_effects: []
+
+  - name: tensors
+    category: inspection
+    description: "List tensor names and shapes"
+    requires_model: true
+    side_effects: []
+
+  - name: trace
+    category: inspection
+    description: "Layer-by-layer trace analysis"
+    requires_model: true
+    side_effects: []
+
+  - name: diff
+    category: inspection
+    description: "Compare two models"
+    requires_model: true
+    side_effects: []
+
+  - name: hex
+    category: inspection
+    description: "Format-aware binary forensics"
+    requires_model: true
+    side_effects: []
+
+  - name: tree
+    category: inspection
+    description: "Model architecture tree view"
+    requires_model: true
+    side_effects: []
+
+  - name: flow
+    category: inspection
+    description: "Data flow visualization"
+    requires_model: true
+    side_effects: []
+
+  # ── Model Operations (transforms, creates files) ──
+  - name: export
+    category: model_ops
+    description: "Export model to other formats"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: import
+    category: model_ops
+    description: "Import from external formats"
+    requires_model: false
+    side_effects: [network, filesystem]
+
+  - name: convert
+    category: model_ops
+    description: "Convert/optimize model"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: compile
+    category: model_ops
+    description: "Compile model into standalone executable"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: merge
+    category: model_ops
+    description: "Merge multiple models"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: quantize
+    category: model_ops
+    description: "Quantize model weights"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: rosetta
+    category: model_ops
+    description: "Rosetta Stone - Universal model format converter"
+    requires_model: true
+    side_effects: [filesystem]
+
+  # ── Model Registry ──
+  - name: pull
+    category: registry
+    description: "Download and cache model from HuggingFace"
+    requires_model: false
+    side_effects: [network, filesystem]
+
+  - name: list
+    category: registry
+    description: "List cached models"
+    requires_model: false
+    side_effects: []
+
+  - name: rm
+    category: registry
+    description: "Remove model from cache"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: publish
+    category: registry
+    description: "Publish model to HuggingFace Hub"
+    requires_model: true
+    side_effects: [network]
+
+  # ── Training ──
+  - name: finetune
+    category: training
+    description: "Fine-tune model with LoRA/QLoRA"
+    requires_model: true
+    side_effects: [filesystem, gpu]
+
+  - name: prune
+    category: training
+    description: "Prune model (structured/unstructured)"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: distill
+    category: training
+    description: "Knowledge distillation (teacher -> student)"
+    requires_model: true
+    side_effects: [filesystem, gpu]
+
+  - name: train
+    category: training
+    description: "Training pipeline (plan/apply)"
+    requires_model: false
+    side_effects: [filesystem, gpu]
+
+  - name: tokenize
+    category: training
+    description: "Tokenizer training pipeline (plan/apply)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: tune
+    category: training
+    description: "ML tuning: LoRA/QLoRA configuration, memory planning"
+    requires_model: true
+    side_effects: [filesystem]
+
+  # ── Evaluation & QA ──
+  - name: bench
+    category: evaluation
+    description: "Benchmark throughput"
+    requires_model: true
+    side_effects: []
+
+  - name: eval
+    category: evaluation
+    description: "Evaluate model perplexity or classification metrics"
+    requires_model: true
+    side_effects: []
+
+  - name: check
+    category: evaluation
+    description: "Model self-test: 10-stage pipeline integrity check"
+    requires_model: true
+    side_effects: []
+
+  - name: qa
+    category: evaluation
+    description: "Falsifiable QA checklist for model releases"
+    requires_model: true
+    side_effects: []
+
+  - name: qualify
+    category: evaluation
+    description: "Cross-subcommand smoke test"
+    requires_model: true
+    side_effects: []
+
+  - name: canary
+    category: evaluation
+    description: "Manage canary tests for regression"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: compare-hf
+    category: evaluation
+    description: "Compare APR model against HuggingFace source"
+    requires_model: true
+    side_effects: [network]
+
+  - name: parity
+    category: evaluation
+    description: "GPU/CPU parity check"
+    requires_model: true
+    side_effects: [gpu]
+
+  # ── GPU & Profiling ──
+  - name: gpu
+    category: hardware
+    description: "GPU status and VRAM reservation management"
+    requires_model: false
+    side_effects: [gpu]
+
+  - name: profile
+    category: hardware
+    description: "Deep profiling with Roofline analysis"
+    requires_model: true
+    side_effects: []
+
+  - name: ptx
+    category: hardware
+    description: "PTX analysis and bug detection"
+    requires_model: false
+    side_effects: []
+
+  - name: ptx-map
+    category: hardware
+    description: "Model-to-PTX source mapping"
+    requires_model: true
+    side_effects: []
+
+  - name: cbtop
+    category: hardware
+    description: "ComputeBrick pipeline monitor"
+    requires_model: false
+    side_effects: []
+
+  # ── Data & Pipeline ──
+  - name: data
+    category: data
+    description: "Data quality pipeline"
+    requires_model: false
+    side_effects: [filesystem]
+
+  - name: pipeline
+    category: data
+    description: "Pipeline orchestration (plan/apply/status)"
+    requires_model: false
+    side_effects: [filesystem]
+
+  # ── TUI & Monitoring ──
+  - name: tui
+    category: ui
+    description: "Interactive terminal UI"
+    requires_model: false
+    side_effects: []
+
+  - name: monitor
+    category: ui
+    description: "Attach live TUI to a running training session"
+    requires_model: false
+    side_effects: []
+
+  - name: runs
+    category: ui
+    description: "List, show, and compare training experiment runs"
+    requires_model: false
+    side_effects: []
+
+  - name: experiment
+    category: ui
+    description: "Interactive experiment browser"
+    requires_model: false
+    side_effects: []
+
+  # ── Miscellaneous ──
+  - name: showcase
+    category: misc
+    description: "Qwen2.5-Coder showcase demo"
+    requires_model: true
+    side_effects: [network, filesystem]
+
+  - name: probar
+    category: misc
+    description: "Export for probar visual regression testing"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: diagnose
+    category: misc
+    description: "Automated Five Whys diagnosis on a training checkpoint"
+    requires_model: true
+    side_effects: []
+
+  - name: oracle
+    category: misc
+    description: "RAG oracle — search Sovereign AI Stack documentation"
+    requires_model: false
+    side_effects: []
+
+  - name: encrypt
+    category: model_ops
+    description: "Encrypt .apr model file (AES-256-GCM)"
+    requires_model: true
+    side_effects: [filesystem]
+
+  - name: decrypt
+    category: model_ops
+    description: "Decrypt .apr model file"
+    requires_model: true
+    side_effects: [filesystem]
+
+# ── Falsification Conditions ──
+
+falsification:
+  - name: FALSIFY-CLI-001
+    description: "Command listed in contract but missing from `apr --help`"
+    check: "Every command.name in this YAML must appear in `apr --help` output"
+    enforcement: "cargo test --test apr_cli_commands test_all_contract_commands_exist"
+
+  - name: FALSIFY-CLI-002
+    description: "Command in `apr --help` but missing from contract"
+    check: "Every command in `apr --help` must have an entry in this YAML"
+    enforcement: "cargo test --test apr_cli_commands test_no_unregistered_commands"
+
+  - name: FALSIFY-CLI-003
+    description: "Command --help exits with non-zero code"
+    check: "Every command must exit 0 on --help"
+    enforcement: "cargo test --test apr_cli_commands test_all_commands_help"
+
+  - name: FALSIFY-CLI-004
+    description: "Command panics on --help"
+    check: "No command may panic when invoked with --help"
+    enforcement: "cargo test --test apr_cli_commands test_all_commands_help"
+
+  - name: FALSIFY-CLI-005
+    description: "Command count drifts from contract"
+    check: "The number of commands in `apr --help` must equal the count in this YAML"
+    enforcement: "cargo test --test apr_cli_commands test_command_count_matches"
