@@ -1185,6 +1185,16 @@ fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
                 "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions"
             }),
         )
+        // GH-672: Return JSON error body for unmatched routes (not empty 404)
+        .fallback(|| async {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({
+                    "error": "not_found",
+                    "message": "Route not found. Available: /health, /v1/completions, /v1/chat/completions"
+                })),
+            )
+        })
 }
 
 include!("handler_apr_cpu_completion.rs");

@@ -113,11 +113,27 @@ impl TensorListOptions {
         self
     }
 
-    /// Set filter pattern
+    /// Set filter pattern (supports substring match and simple glob: `*` and `?`)
     #[must_use]
     pub fn with_filter(mut self, pattern: impl Into<String>) -> Self {
         self.filter = Some(pattern.into());
         self
+    }
+
+    /// Check if a tensor name matches the filter pattern.
+    /// GH-669: Supports glob-style `*` (any chars) and `?` (one char).
+    /// Falls back to substring match when no glob chars present.
+    pub fn matches_filter(&self, name: &str) -> bool {
+        match &self.filter {
+            None => true,
+            Some(pattern) => {
+                if pattern.contains('*') || pattern.contains('?') {
+                    glob_match(pattern, name)
+                } else {
+                    name.contains(pattern.as_str())
+                }
+            }
+        }
     }
 
     /// Set maximum tensor count
@@ -126,6 +142,35 @@ impl TensorListOptions {
         self.limit = limit;
         self
     }
+}
+
+/// Simple glob matching: `*` matches any sequence, `?` matches one char.
+/// GH-669: Enables `--filter 'blk.0.*'` to match `blk.0.attn_k.weight` etc.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let p = pattern.as_bytes();
+    let t = text.as_bytes();
+    let (mut pi, mut ti) = (0, 0);
+    let (mut star_pi, mut star_ti) = (usize::MAX, 0);
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == b'?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == b'*' {
+            star_pi = pi;
+            star_ti = ti;
+            pi += 1;
+        } else if star_pi != usize::MAX {
+            pi = star_pi + 1;
+            star_ti += 1;
+            ti = star_ti;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == b'*' {
+        pi += 1;
+    }
+    pi == p.len()
 }
 
 // ============================================================================
@@ -251,10 +296,8 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
     let mut total_matching = 0usize;
 
     for name in reader.tensor_names() {
-        if let Some(ref pattern) = options.filter {
-            if !name.contains(pattern.as_str()) {
-                continue;
-            }
+        if !options.matches_filter(name) {
+            continue;
         }
 
         if let Some(entry) = reader.get_tensor(name) {
@@ -295,10 +338,8 @@ fn list_tensors_v2_mmap(data: &[u8], options: TensorListOptions) -> Result<Tenso
     let mut total_matching = 0usize;
 
     for name in reader.tensor_names() {
-        if let Some(ref pattern) = options.filter {
-            if !name.contains(pattern.as_str()) {
-                continue;
-            }
+        if !options.matches_filter(name) {
+            continue;
         }
 
         if let Some(entry) = reader.get_tensor(name) {
@@ -351,10 +392,8 @@ fn extract_tensors_from_metadata_with_counts(
 
     for (name, shape_val) in shapes {
         // Apply filter
-        if let Some(ref pattern) = options.filter {
-            if !name.contains(pattern.as_str()) {
-                continue;
-            }
+        if !options.matches_filter(name) {
+            continue;
         }
 
         let shape = parse_shape_array(shape_val);
