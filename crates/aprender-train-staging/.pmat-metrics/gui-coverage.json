@@ -1,0 +1,12 @@
+{
+  "grid_width": 15,
+  "grid_height": 29,
+  "overall_coverage": 0.9862069,
+  "covered_cells": 429,
+  "total_cells": 435,
+  "min_coverage": 0.0,
+  "max_coverage": 1.0,
+  "total_interactions": 0,
+  "meets_threshold": true,
+  "uncovered_regions": []
+}

@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-171",
+  "prompt": "CB-508 Kaizen: fix lossy numeric casts in color.rs and render.rs",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-14T18:18:36.804431324Z"
+}

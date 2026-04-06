@@ -1,0 +1,52 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 213
+expression: stage_info
+---
+[
+  {
+    "is_active": false,
+    "is_terminal": false,
+    "name": "Idle"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Calibrating"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Computing Importance"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Pruning"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Fine-Tuning"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Evaluating"
+  },
+  {
+    "is_active": true,
+    "is_terminal": false,
+    "name": "Exporting"
+  },
+  {
+    "is_active": false,
+    "is_terminal": true,
+    "name": "Complete"
+  },
+  {
+    "is_active": false,
+    "is_terminal": true,
+    "name": "Failed"
+  }
+]

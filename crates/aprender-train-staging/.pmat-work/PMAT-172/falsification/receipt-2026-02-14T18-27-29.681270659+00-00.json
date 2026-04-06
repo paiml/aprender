@@ -1,0 +1,188 @@
+{
+  "id": "019c5d68-6911-70a3-aee4-3b1d217cc163",
+  "git_sha": "cda6a4a0a8838554e8170fd6ae745334b5fc07fb",
+  "timestamp": "2026-02-14T18:27:29.681270659+00:00",
+  "trigger": "WorkComplete",
+  "work_item_id": "PMAT-172",
+  "verdicts": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "method": "ManifestIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All 1020 files present",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "method": "MetaFalsification",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Detected dummy gaming pattern correctly",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "method": "CoverageGaming",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No gaming patterns found in 1020 files",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "method": "DifferentialCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "2 changed files (coverage check requires llvm-cov data)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "method": "AbsoluteCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No coverage data (run 'make coverage' to establish baseline), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "method": "TdgRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No TDG data (baseline: 0.0)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "method": "ComplexityRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Complexity check passed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "method": "SupplyChainIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No vulnerabilities (cached 392 min ago)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "method": "FileSizeRegression",
+      "falsified": true,
+      "is_blocking": false,
+      "explanation": "41 file(s) exceed 500 lines: src/lora/qlora.rs (574 lines), src/hf_pipeline/export/pipeline.rs (586 lines), src/hf_pipeline/export/gguf_verify.rs (1587 lines), src/quality/failure/types.rs (527 lines), src/config/schema.rs (526 lines), src/config/train/tests/train_yaml.rs (636 lines), src/config/train/loader.rs (910 lines), src/transformer/attention.rs (773 lines), src/transformer/cuda_block.rs (645 lines), src/transformer/weights.rs (871 lines), src/finetune/eval.rs (549 lines), src/finetune/reproducibility.rs (507 lines), src/finetune/popperian.rs (751 lines), src/finetune/corpus.rs (539 lines), src/cli/commands/tests/base.rs (1259 lines), src/cli/commands/tests/research.rs (1276 lines), src/monitor/tui/color.rs (665 lines), src/monitor/tui/panel.rs (630 lines), src/monitor/tui/render.rs (998 lines), src/monitor/tui/state.rs (644 lines), src/autograd/cuda_backward.rs (1237 lines), src/autograd/cuda_forward.rs (1173 lines), src/autograd/cuda_optim.rs (891 lines), src/autograd/ops/basic.rs (531 lines), tests/gradient_llama.rs (805 lines), tests/probar_tui_compliance.rs (852 lines), tests/chaos_llama.rs (551 lines), tests/tui_snapshot_test.rs (762 lines), crates/entrenar-wasm/src/lib.rs (582 lines), crates/entrenar-bench/src/main.rs (591 lines), crates/entrenar-bench/src/cost.rs (647 lines), crates/entrenar-bench/src/stats.rs (507 lines), crates/entrenar-bench/src/sweep.rs (505 lines), crates/entrenar-shell/src/commands.rs (867 lines), crates/entrenar-distill/src/pipeline.rs (835 lines), examples/hf_distillation.rs (504 lines), examples/finetune_real.rs (2011 lines), examples/finetune_test_gen.rs (661 lines), examples/mnist_train.rs (515 lines), examples/llama2/memory_benchmarks.rs (536 lines), examples/mnist_train_gpu.rs (532 lines)",
+      "evidence_summary": "FileList([\"src/lora/qlora.rs\", \"src/hf_pipeline/export/pipeline.rs\", \"src/hf_pipeline/export/gguf_verify.rs\", \"src/quality/failure/types.rs\", \"src/config/schema.rs\", \"src/config/train/tests/train_yaml.rs\", \"src/config/train/loader.rs\", \"src/transformer/attention.rs\", \"src/transformer/cuda_block.rs\", \"src/transformer/weights.rs\", \"src/finetune/eval.rs\", \"src/finetune/reproducibility.rs\", \"src/finetune/popperian.rs\", \"src/finetune/corpus.rs\", \"src/cli/commands/tests/base.rs\", \"src/cli/commands/tests/research.rs\", \"src/monitor/tui/color.rs\", \"src/monitor/tui/panel.rs\", \"src/monitor/tui/render.rs\", \"src/monitor/tui/state.rs\", \"src/autograd/cuda_backward.rs\", \"src/autograd/cuda_forward.rs\", \"src/autograd/cuda_optim.rs\", \"src/autograd/ops/basic.rs\", \"tests/gradient_llama.rs\", \"tests/probar_tui_compliance.rs\", \"tests/chaos_llama.rs\", \"tests/tui_snapshot_test.rs\", \"crates/entrenar-wasm/src/lib.rs\", \"crates/entrenar-bench/src/main.rs\", \"crates/entrenar-bench/src/cost.rs\", \"crates/entrenar-bench/src/stats.rs\", \"crates/entrenar-bench/src/sweep.rs\", \"crates/entrenar-shell/src/commands.rs\", \"crates/entrenar-distill/src/pipeline.rs\", \"examples/hf_distillation.rs\", \"examples/finetune_real.rs\", \"examples/finetune_test_gen.rs\", \"examples/mnist_train.rs\", \"examples/llama2/memory_benchmarks.rs\", \"examples/mnist_train_gpu.rs\"])"
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "method": "SpecQuality",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No spec file found (optional)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "method": "GitHubSync",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All changes committed and pushed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "method": "ExamplesCompile",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No examples cache (run 'cargo build --examples' to populate)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "method": "BookValidation",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "pmat-book not found (skipping validation)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "method": "SatdDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No new SATD markers (0 existing)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "method": "DeadCodeDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No dead code detected",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "method": "PerFileCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No per-file coverage data (run 'make coverage'), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "method": "LintPass",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "PASSED (cached 393 min ago, consider re-running)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "method": "VariantCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "2 changed file(s) — all match variants tested",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "method": "FixChainLimit",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No fix chains > 3 consecutive commits",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "method": "CrossCrateParity",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No cross-crate config (create .pmat-work/cross-crate.json to enable)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "method": "RegressionGate",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No benchmark cache (run benchmarks to populate .pmat-metrics/benchmark-status.json)",
+      "evidence_summary": null
+    }
+  ],
+  "overrides": [],
+  "summary": {
+    "total": 21,
+    "passed": 20,
+    "failed": 0,
+    "warnings": 1,
+    "overridden": 0,
+    "allows_completion": true,
+    "health_score": 0.9523809523809523
+  },
+  "content_hash": "3f6d6a1083ad42fc8b052d1a0da735b94d92ec7197a810c9678d41d499385262"
+}

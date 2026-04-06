@@ -1,0 +1,58 @@
+# Distributed Data-Parallel (DDP) Training Example
+# Contracts: C-DDP-001, C-RING-001, C-SHARD-001, C-WIRE-002
+#
+# Architecture:
+#   Per-block AllReduce over TCP wire protocol v2.
+#   Ring AllReduce with scatter-reduce + all-gather phases.
+#   File-level data sharding (worker N loads files N, N+world_size, ...).
+#
+# Usage (coordinator, rank 0):
+#   apr train apply --task pretrain --config distributed.yaml \
+#     --distributed --world-size 2 --rank 0 --coordinator-addr 0.0.0.0:9000
+#
+# Usage (worker, rank 1):
+#   apr train apply --task pretrain --config distributed.yaml \
+#     --distributed --world-size 2 --rank 1 --coordinator-addr 10.0.0.1:9000
+#
+# Or specify distributed config inline in the YAML:
+
+model:
+  path: ./models/mock.gguf
+  architecture:
+    hidden_size: 1024
+    num_layers: 24
+    num_heads: 16
+    num_kv_heads: 4
+    intermediate_size: 4096
+    vocab_size: 32768
+
+data:
+  train: ./data/train.parquet
+  batch_size: 4
+  seq_len: 1024
+
+optimizer:
+  name: adamw
+  lr: 3.0e-4
+  beta1: 0.9
+  beta2: 0.95
+  weight_decay: 0.1
+
+training:
+  epochs: 1
+  max_steps: 100
+  warmup_steps: 10
+  mode: causal_lm
+  mixed_precision: fp32
+  gradient_accumulation: 1
+  grad_clip: 1.0
+  deterministic: true
+  seed: 42
+  output_dir: ./outputs/distributed
+
+  distributed:
+    world_size: 2
+    rank: 0
+    coordinator_addr: "0.0.0.0:9000"
+    role: coordinator
+    backend: auto

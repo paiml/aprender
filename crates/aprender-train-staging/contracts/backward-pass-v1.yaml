@@ -1,0 +1,97 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Backward pass gradient computation correctness"
+  references:
+    - "Baydin et al. (2018) Automatic Differentiation in Machine Learning: a Survey"
+
+equations:
+  chain_rule:
+    lean_theorem: "ProvableContracts.Theorems.Autograd.ChainRule"
+    formula: "dL/dx_i = sum_j (dL/dy_j * dy_j/dx_i)"
+    domain: "x ∈ R^d, y = f(x), L: R^n -> R"
+    preconditions:
+      - "!grad_output.is_empty()"
+      - "grad_output.len() == output.len()"
+      - "grad_output.iter().all(|g| g.is_finite())"
+    postconditions:
+      - "ret.len() == input.len()"
+      - "ret.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Gradient flows backward through computation graph via chain rule"
+      - "Gradient shape matches parameter shape"
+  softmax_backward:
+    lean_theorem: "ProvableContracts.Theorems.Softmax.Monotonicity"
+    formula: "dL/dx_i = y_i * (dL/dy_i - sum_k(y_k * dL/dy_k))"
+    domain: "y = softmax(x), y_i >= 0, sum(y) = 1"
+    preconditions:
+      - "!y.is_empty()"
+      - "y.iter().all(|v| *v >= 0.0 && v.is_finite())"
+      - "(y.iter().sum::<f32>() - 1.0).abs() < 1e-5"
+      - "grad_output.len() == y.len()"
+    postconditions:
+      - "ret.len() == y.len()"
+      - "ret.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Jacobian-vector product computed without materializing full Jacobian"
+  matmul_backward:
+    lean_theorem: "ProvableContracts.Theorems.MatMul.BackwardCorrectness"
+    formula: "dL/dA = dL/dC @ B^T, dL/dB = A^T @ dL/dC"
+    domain: "A ∈ R^(m×k), B ∈ R^(k×n), C = A @ B"
+    preconditions:
+      - "a.len() == m * k"
+      - "b.len() == k * n"
+      - "grad_output.len() == m * n"
+      - "k > 0"
+    postconditions:
+      - "grad_a.len() == a.len()"
+      - "grad_b.len() == b.len()"
+      - "grad_a.iter().all(|g| g.is_finite())"
+      - "grad_b.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Gradient dimensions consistent with forward operands"
+      - "Gradient accumulation is additive for shared parameters"
+
+proof_obligations:
+  - type: equivalence
+    property: "Analytical gradient matches numerical gradient"
+    formal: "|grad_analytical - grad_numerical| < eps for all parameters"
+    tolerance: 1.0e-3
+    applies_to: all
+  - type: invariant
+    property: "Gradient finite"
+    formal: "No NaN or Inf in any computed gradient"
+    applies_to: all
+  - type: bound
+    property: "Gradient norm bounded after clipping"
+    formal: "|grad| <= clip_value after clip_grad_norm"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BACKWARD-001
+    rule: "Softmax backward gradient correctness"
+    prediction: "Analytical softmax gradient matches finite-difference within 1e-3"
+    test: "autograd::tests::unit_ops::test_softmax_backward_gradient_check"
+    if_fails: "Jacobian-vector product formula incorrect"
+  - id: FALSIFY-BACKWARD-002
+    rule: "Matmul backward gradient correctness"
+    prediction: "dL/dA and dL/dB computed correctly via transposed matmul"
+    test: "autograd::ops::matmul::tests::test_matmul_backward"
+    if_fails: "Transpose dimensions swapped in backward matmul"
+  - id: FALSIFY-BACKWARD-003
+    rule: "Gradient clipping bound"
+    prediction: "Gradient norm <= clip_value after clipping"
+    test: "autograd::cuda_optim::tests::test_gradient_clip_basic"
+    if_fails: "clip_grad_norm not applied or scale factor wrong"
+  - id: FALSIFY-BACKWARD-004
+    rule: "Gradient flows to A only when A requires grad"
+    prediction: "Grad computed for A, None for B when only A requires grad"
+    test: "autograd::ops::matmul::tests::test_matmul_a_requires_grad_only"
+    if_fails: "requires_grad check missing in backward dispatch"
+
+kani_harnesses:
+  - id: backward-kani-001
+    obligation: "Gradient dimensions match parameter dimensions"
+    bound: 4
+    strategy: stub_float

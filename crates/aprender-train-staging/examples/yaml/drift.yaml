@@ -1,0 +1,19 @@
+# YAML-098: Model Drift Critical Alert
+# QA Focus: Emergency stop triggered
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 100
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 1
+  output_dir: ./outputs/drift

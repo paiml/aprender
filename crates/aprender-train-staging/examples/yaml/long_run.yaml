@@ -1,0 +1,19 @@
+# YAML-058: Memory Leak Check (Long Run)
+# QA Focus: RSS memory stable over 24h (simulated)
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 1000
+  output_dir: ./outputs/long-run

@@ -1,0 +1,24 @@
+# YAML-021: Llama2 7B Training (Mock)
+# QA Focus: Graph construction valid; parameter count exact
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: [q_proj, k_proj, v_proj, o_proj]
+
+data:
+  train: ./data/train.parquet
+  batch_size: 1
+  seq_len: 2048
+
+optimizer:
+  name: adamw
+  lr: 0.00002
+  beta1: 0.9
+  beta2: 0.95
+  weight_decay: 0.1
+
+training:
+  epochs: 1
+  grad_clip: 1.0
+  output_dir: ./outputs/llama2-mock

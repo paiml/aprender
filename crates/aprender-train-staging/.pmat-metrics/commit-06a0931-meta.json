@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-170",
+  "prompt": "CB-511 Kaizen: fix remaining flaky time-based tests",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-14T18:09:42.635065662Z"
+}

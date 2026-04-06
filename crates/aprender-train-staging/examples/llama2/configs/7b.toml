@@ -1,0 +1,50 @@
+# LLaMA 2 7B Configuration
+# Requires ~28GB GPU memory for full fine-tuning
+# Or ~7.5GB with QLoRA
+
+[model]
+vocab_size = 32000
+hidden_size = 4096
+num_layers = 32
+num_heads = 32
+intermediate_size = 11008
+max_seq_len = 4096
+rope_theta = 10000.0
+
+[training]
+learning_rate = 1e-4
+weight_decay = 0.01
+beta1 = 0.9
+beta2 = 0.95
+epsilon = 1e-8
+grad_clip = 1.0
+batch_size = 4  # Reduced for 7B model
+num_epochs = 3
+
+[lr_schedule]
+type = "cosine"
+warmup_steps = 2000
+min_lr = 1e-5
+
+[data]
+train_path = "data/train.jsonl"
+val_path = "data/val.jsonl"
+context_length = 4096
+
+[checkpointing]
+save_every = 500  # steps
+checkpoint_dir = "checkpoints/7b"
+keep_last_n = 2
+
+[lora]
+# LoRA configuration for parameter-efficient fine-tuning
+rank = 64
+alpha = 128.0
+target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+dropout = 0.0
+
+[qlora]
+# QLoRA configuration for memory-efficient fine-tuning
+quantize_base = true
+bits = 4
+block_size = 64

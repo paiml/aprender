@@ -1,0 +1,1 @@
+{"content_hash":"d3b9ec21bdf8f46e","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/backward-pass-v1.yaml","line":null,"contract_stem":"backward-pass-v1","suppressed":false}]}

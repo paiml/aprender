@@ -1,0 +1,21 @@
+# YAML-001: MNIST Baseline (CPU)
+# QA Focus: Verify alimentar downloads and caches correctly
+# Validation: 25-point checklist required
+
+# Binary schema: TrainSpec from src/config/schema.rs
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 5
+  grad_clip: 1.0
+  output_dir: ./outputs/mnist-cpu

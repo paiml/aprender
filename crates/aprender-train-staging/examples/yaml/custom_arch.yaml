@@ -1,0 +1,19 @@
+# YAML-023: Custom Architecture via YAML
+# QA Focus: Layer dimensions match spec
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 64
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 10
+  output_dir: ./outputs/custom-arch

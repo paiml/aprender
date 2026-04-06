@@ -1,0 +1,75 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Batch processing and data loading contracts"
+  references:
+    - "Goyal et al. (2017) Accurate, Large Minibatch SGD: Training ImageNet in 1 Hour"
+
+equations:
+  batch_partition:
+    formula: "num_batches = ceil(N / batch_size)"
+    domain: "N > 0 samples, batch_size > 0"
+    preconditions:
+      - "n > 0"
+      - "batch_size > 0"
+    postconditions:
+      - "ret >= 1"
+      - "ret == (n + batch_size - 1) / batch_size"
+    invariants:
+      - "All samples appear exactly once per epoch"
+      - "Last batch may be smaller than batch_size"
+  gradient_scaling:
+    formula: "grad_batch = (1/batch_size) * sum_i(grad_i)"
+    domain: "batch_size samples per batch"
+    preconditions:
+      - "batch_size > 0"
+      - "!gradients.is_empty()"
+      - "gradients.iter().all(|g| g.is_finite())"
+    postconditions:
+      - "ret.len() == gradients[0].len()"
+      - "ret.iter().all(|g| g.is_finite())"
+    invariants:
+      - "Mean gradient independent of batch size for same data"
+
+proof_obligations:
+  - type: invariant
+    property: "Batch size matches input-target pairing"
+    formal: "batch.inputs.len() == batch.targets.len()"
+    applies_to: all
+  - type: bound
+    property: "Batch size positive"
+    formal: "batch.size() > 0 for non-empty batch"
+    applies_to: all
+  - type: invariant
+    property: "Input-target alignment preserved"
+    formal: "inputs[i] paired with targets[i] for all i in batch"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Batch creation preserves size"
+    prediction: "Batch of 3 inputs reports size() == 3"
+    test: "train::batch::tests::test_batch_creation"
+    if_fails: "Size computation not using inputs length"
+  - id: FALSIFY-BATCH-002
+    rule: "Batch dimensions in dataset pipeline"
+    prediction: "Dataset batching produces correct tensor shapes"
+    test: "hf_pipeline::dataset::tests::test_batch_dimensions"
+    if_fails: "Batching reshape or padding incorrect"
+  - id: FALSIFY-BATCH-003
+    rule: "Batch size from data loader config"
+    prediction: "Batch size correctly read from YAML loader config"
+    test: "yaml_mode::bridge::tests::test_batch_size_from_loader"
+    if_fails: "Config parsing not propagating batch_size field"
+  - id: FALSIFY-BATCH-004
+    rule: "Default batch size when no loader"
+    prediction: "Reasonable default batch size used when loader absent"
+    test: "yaml_mode::bridge::tests::test_batch_size_default_without_loader"
+    if_fails: "Default batch_size not set or zero"
+
+kani_harnesses:
+  - id: batch-kani-001
+    obligation: "Batch size positive"
+    bound: 4
+    strategy: bounded_int

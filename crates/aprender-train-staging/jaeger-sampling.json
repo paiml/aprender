@@ -1,0 +1,21 @@
+{
+  "service_strategies": [
+    {
+      "service": "llama-training",
+      "type": "probabilistic",
+      "param": 1.0,
+      "_comment": "Sample 100% of llama-training traces (development mode)"
+    },
+    {
+      "service": "llama-finetuning",
+      "type": "probabilistic",
+      "param": 1.0,
+      "_comment": "Sample 100% of fine-tuning traces"
+    }
+  ],
+  "default_strategy": {
+    "type": "probabilistic",
+    "param": 0.1,
+    "_comment": "Sample 10% of other services"
+  }
+}

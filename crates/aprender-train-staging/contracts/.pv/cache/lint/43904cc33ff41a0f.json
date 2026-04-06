@@ -1,0 +1,1 @@
+{"content_hash":"43904cc33ff41a0f","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/checkpoint-v1.yaml","line":null,"contract_stem":"checkpoint-v1","suppressed":false}]}

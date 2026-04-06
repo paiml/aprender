@@ -1,0 +1,19 @@
+# YAML-004: Parquet High-Throughput
+# QA Focus: Throughput > 10k samples/sec
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 256
+
+optimizer:
+  name: adam
+  lr: 0.0005
+
+training:
+  epochs: 10
+  output_dir: ./outputs/parquet

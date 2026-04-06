@@ -1,0 +1,20 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: null
+roadmap:
+- id: Achieve PMAT A+ compliance
+  github_issue: null
+  item_type: task
+  title: 'New task: Achieve PMAT A+ compliance'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22T09:56:57.329373861+00:00
+  updated: 2026-01-22T09:56:57.329373861+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

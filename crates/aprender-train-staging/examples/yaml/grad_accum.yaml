@@ -1,0 +1,20 @@
+# YAML-037: Gradient Accumulation
+# QA Focus: Math equivalence to large batch size verified
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 4
+
+optimizer:
+  name: sgd
+  lr: 0.01
+  momentum: 0.9
+
+training:
+  epochs: 10
+  output_dir: ./outputs/grad-accum

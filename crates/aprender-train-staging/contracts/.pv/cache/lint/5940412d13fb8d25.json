@@ -1,0 +1,1 @@
+{"content_hash":"5940412d13fb8d25","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/lora-v1.yaml","line":null,"contract_stem":"lora-v1","suppressed":false}]}

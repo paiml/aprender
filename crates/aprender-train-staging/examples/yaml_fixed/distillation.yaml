@@ -1,0 +1,12 @@
+# 'entrenar distill' command doesn't exist, but creating yaml anyway
+model:
+  path: "model.gguf"
+  layers: []
+
+data:
+  train: "data/train.parquet"
+  batch_size: 32
+
+optimizer:
+  name: "adam"
+  lr: 0.001

@@ -1,0 +1,54 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "LoRA/QLoRA weight decomposition contracts"
+  references:
+    - "Hu et al. (2021) LoRA: Low-Rank Adaptation of Large Language Models"
+
+equations:
+  lora_decomposition:
+    formula: "W_adapted = W_frozen + (α/r) * B @ A"
+    domain: "W ∈ ℝ^(d×k), A ∈ ℝ^(r×k), B ∈ ℝ^(d×r), r << min(d,k)"
+    preconditions:
+      - "r > 0"
+      - "r <= d.min(k)"
+      - "alpha > 0.0"
+      - "a.len() == r * k"
+      - "b.len() == d * r"
+      - "w_frozen.len() == d * k"
+    postconditions:
+      - "ret.len() == d * k"
+      - "ret.iter().all(|v| v.is_finite())"
+      - "w_frozen_after == w_frozen_before"
+    invariants:
+      - "W_frozen unchanged during training"
+      - "rank(B @ A) ≤ r"
+
+proof_obligations:
+  - type: invariant
+    property: "Frozen weights unchanged"
+    formal: "W_frozen at step t == W_frozen at step 0"
+    applies_to: all
+  - type: bound
+    property: "LoRA rank preserved"
+    formal: "rank(B @ A) ≤ r"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-LORA-001
+    rule: "Frozen weights"
+    prediction: "Base model weights identical before and after training"
+    test: "Compare W_frozen checksum at step 0 and step N"
+    if_fails: "Gradient leaking into frozen weights"
+  - id: FALSIFY-LORA-002
+    rule: "Rank bound"
+    prediction: "Adapted weight change has rank ≤ r"
+    test: "SVD of (W_adapted - W_frozen), check singular values"
+    if_fails: "Alpha scaling or merge error"
+
+kani_harnesses:
+  - id: lora-kani-001
+    obligation: "Frozen weights unchanged"
+    bound: 4
+    strategy: bounded_int

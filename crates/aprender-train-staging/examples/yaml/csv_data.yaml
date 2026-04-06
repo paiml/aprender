@@ -1,0 +1,20 @@
+# YAML-003: Custom Dataset (CSV)
+# QA Focus: Check CSV parsing robustness (header handling)
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.csv
+  batch_size: 64
+
+optimizer:
+  name: adamw
+  lr: 0.001
+  weight_decay: 0.01
+
+training:
+  epochs: 20
+  output_dir: ./outputs/csv

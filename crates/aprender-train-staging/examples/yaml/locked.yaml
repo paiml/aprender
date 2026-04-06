@@ -1,0 +1,20 @@
+# YAML-060: Lockfile Adherence
+# QA Focus: Run matches locked parameters exactly
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: sgd
+  lr: 0.01
+  momentum: 0.9
+
+training:
+  epochs: 5
+  output_dir: ./outputs/locked

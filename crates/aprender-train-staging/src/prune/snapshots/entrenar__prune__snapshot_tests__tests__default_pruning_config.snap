@@ -1,0 +1,20 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 101
+expression: config
+---
+{
+  "method": "magnitude",
+  "target_sparsity": 0.5,
+  "pattern": {
+    "type": "unstructured"
+  },
+  "schedule": {
+    "type": "one_shot",
+    "step": 0
+  },
+  "fine_tune_after_pruning": true,
+  "fine_tune_steps": 1000,
+  "fine_tune_lr": 0.00001,
+  "skip_embed_layers": true
+}

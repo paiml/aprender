@@ -1,0 +1,12 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 258
+expression: config
+---
+{
+  "num_samples": 1024,
+  "sequence_length": 4096,
+  "dataset": "c4",
+  "batch_size": 16,
+  "normalize": true
+}

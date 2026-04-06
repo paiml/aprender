@@ -1,0 +1,57 @@
+
+Initial learning rate: 0.010000
+Gradient clipping: enabled (max_norm=1.0)
+
+Training data:
+  Batches: 3
+  Batch size: 3
+
+Starting training...
+
+Epoch 1: loss=1.0000, lr=0.010000
+Epoch 2: loss=1.0000, lr=0.010000
+Epoch 3: loss=1.0000, lr=0.010000
+Epoch 4: loss=1.0000, lr=0.010000
+Epoch 5: loss=1.0000, lr=0.010000
+Epoch 6: loss=1.0000, lr=0.010000
+  → Reducing learning rate
+Epoch 7: loss=1.0000, lr=0.001000
+Epoch 8: loss=1.0000, lr=0.001000
+Epoch 9: loss=1.0000, lr=0.001000
+Epoch 10: loss=1.0000, lr=0.001000
+
+=== Training Complete ===
+
+Training Metrics:
+  Total epochs: 10
+  Total steps: 30
+  Best loss: 1.0000
+  Avg loss (last 3 epochs): 1.0000
+
+⚠ Training may have plateaued
+
+Final parameters:
+  param[0]: [0.1, 0.2, 0.3], shape=[3], strides=[1], layout=CFcf (0xf), const ndim=1
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 26.39    0.000190           6        28           write
+ 17.36    0.000125           9        13           mmap
+  8.61    0.000062          10         6           mprotect
+  7.08    0.000051          10         5           read
+  4.31    0.000031           6         5           rt_sigaction
+  3.61    0.000026           6         4           close
+  5.83    0.000042          10         4           openat
+  3.75    0.000027           6         4           newfstatat
+  3.47    0.000025           6         4           pread64
+  3.61    0.000026           6         4           unknown
+  2.64    0.000019           6         3           sigaltstack
+  3.61    0.000026           8         3           brk
+  1.94    0.000014           7         2         1 arch_prctl
+  3.06    0.000022          11         2           munmap
+  1.11    0.000008           8         1         1 access
+  0.83    0.000006           6         1           set_robust_list
+  0.97    0.000007           7         1           poll
+  0.97    0.000007           7         1           getrandom
+  0.83    0.000006           6         1           set_tid_address
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.000720           7        92         2 total

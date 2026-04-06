@@ -1,0 +1,343 @@
+# MLOps Enhancements Epic - December 2025
+# Specification: docs/specifications/enhancements-dec-2025-mlops-spec.md
+# Toyota Way: Extreme TDD, Jidoka, Kaizen
+
+project:
+  name: entrenar-mlops-enhancements
+  version: 1.0.0
+  spec_ref: enhancements-dec-2025-mlops-spec.md
+  total_tickets: 18
+  quality_gates:
+    test_coverage: ">90%"
+    mutation_kill_rate: ">80%"
+    property_test_cases: 200
+
+# Phase 1: Foundation (P0 - Critical)
+phases:
+  - name: "Phase 1: Foundation"
+    status: in-progress
+    tickets:
+      - id: MLOPS-001
+        github_issue: 68
+        name: "SQLite backend for experiment storage"
+        priority: P0
+        estimated_hours: 16
+        actual_hours: 0
+        status: in-progress
+        toyota_principle: Heijunka
+        tdd_checklist:
+          - "Write SqliteBackend struct tests"
+          - "Write connection pool tests"
+          - "Write schema migration tests"
+          - "Write ExperimentStorage trait implementation tests"
+          - "Property tests for concurrent access"
+        acceptance_criteria:
+          - "SqliteBackend implements ExperimentStorage trait"
+          - "WAL mode enabled for concurrency"
+          - "Schema migrations via refinery"
+          - "Connection pooling with sqlx"
+          - ">95% test coverage"
+
+      - id: MLOPS-002
+        github_issue: 31
+        name: "Extended experiment tracking API"
+        priority: P0
+        estimated_hours: 12
+        actual_hours: 0
+        status: pending
+        toyota_principle: Genchi Genbutsu
+        tdd_checklist:
+          - "Write Experiment struct tests"
+          - "Write Run lifecycle tests"
+          - "Write metrics aggregation tests"
+          - "Write artifact storage tests"
+          - "Property tests for data integrity"
+        acceptance_criteria:
+          - "Experiment/Run structs with full metadata"
+          - "Metrics aggregation (min/max/mean)"
+          - "Artifact upload with SHA-256"
+          - ">95% test coverage"
+
+      - id: MLOPS-003
+        github_issue: 73
+        name: "Parameter logging API"
+        priority: P1
+        estimated_hours: 8
+        actual_hours: 0
+        status: pending
+        toyota_principle: Standardized Work
+        tdd_checklist:
+          - "Write ParameterValue enum tests"
+          - "Write log_param tests"
+          - "Write log_params batch tests"
+          - "Write parameter search tests"
+          - "Property tests for type safety"
+        acceptance_criteria:
+          - "ParameterValue enum with all types"
+          - "log_param and log_params methods"
+          - "search_runs_by_params with filters"
+          - ">95% test coverage"
+
+      - id: MLOPS-004
+        github_issue: 25
+        name: "GitHub Actions CI pipeline"
+        priority: P0
+        estimated_hours: 4
+        actual_hours: 0
+        status: pending
+        toyota_principle: Jidoka
+        acceptance_criteria:
+          - ".github/workflows/ci.yml created"
+          - "Tier 1/2/3 test stages"
+          - "Coverage threshold enforcement"
+
+  # Phase 2: Monitoring
+  - name: "Phase 2: Monitoring"
+    status: pending
+    tickets:
+      - id: MLOPS-005
+        github_issue: 74
+        name: "GPU monitoring (btop-style)"
+        priority: P1
+        estimated_hours: 16
+        actual_hours: 0
+        status: pending
+        toyota_principle: Andon
+        tdd_checklist:
+          - "Write GpuMetrics struct tests"
+          - "Write GpuMonitor tests (mock NVML)"
+          - "Write AndonSystem alert tests"
+          - "Write dashboard integration tests"
+          - "Property tests for metric bounds"
+        acceptance_criteria:
+          - "GpuMetrics struct with all NVML fields"
+          - "Graceful degradation without NVML"
+          - "Andon alerts for thermal/memory"
+          - ">90% test coverage"
+
+      - id: MLOPS-006
+        github_issue: 24
+        name: "Prometheus metrics export"
+        priority: P1
+        estimated_hours: 8
+        actual_hours: 0
+        status: pending
+        toyota_principle: Andon
+        tdd_checklist:
+          - "Write PrometheusExporter tests"
+          - "Write metric registration tests"
+          - "Write text format export tests"
+          - "Property tests for label cardinality"
+        acceptance_criteria:
+          - "PrometheusExporter with GaugeVec"
+          - "Text format export"
+          - "Feature-gated behind 'prometheus'"
+          - ">90% test coverage"
+
+      - id: MLOPS-007
+        github_issue: 22
+        name: "Makefile targets enhancement"
+        priority: P1
+        estimated_hours: 2
+        actual_hours: 0
+        status: pending
+        toyota_principle: Standardized Work
+        acceptance_criteria:
+          - "examples/examples-fast/examples-list targets"
+          - "mutants/mutants-fast/mutants-file targets"
+          - "property-test/property-test-fast targets"
+
+  # Phase 3: Model Lifecycle
+  - name: "Phase 3: Model Lifecycle"
+    status: pending
+    tickets:
+      - id: MLOPS-008
+        github_issue: 70
+        name: "Model staging workflows"
+        priority: P1
+        estimated_hours: 12
+        actual_hours: 0
+        status: pending
+        toyota_principle: Kanban
+        tdd_checklist:
+          - "Write ModelStage enum tests"
+          - "Write ModelVersion tests"
+          - "Write transition_stage tests"
+          - "Write PromotionPolicy tests"
+          - "Property tests for stage transitions"
+        acceptance_criteria:
+          - "ModelStage: None/Dev/Staging/Prod/Archived"
+          - "Promotion policy validation"
+          - "Auto-rollback on regression"
+          - ">90% test coverage"
+
+      - id: MLOPS-009
+        github_issue: 67
+        name: "REST/HTTP API server"
+        priority: P1
+        estimated_hours: 16
+        actual_hours: 0
+        status: pending
+        toyota_principle: Jidoka
+        tdd_checklist:
+          - "Write TrackingServer tests"
+          - "Write endpoint handler tests"
+          - "Write auth middleware tests"
+          - "Integration tests with reqwest"
+        acceptance_criteria:
+          - "axum-based HTTP server"
+          - "RESTful /api/v1/* endpoints"
+          - "API key authentication"
+          - ">90% test coverage"
+
+      - id: MLOPS-010
+        github_issue: 72
+        name: "Cloud storage backends"
+        priority: P2
+        estimated_hours: 12
+        actual_hours: 0
+        status: pending
+        toyota_principle: Heijunka
+        tdd_checklist:
+          - "Write ArtifactBackend enum tests"
+          - "Write S3Backend tests (mocked)"
+          - "Write CasArtifactStorage tests"
+          - "Property tests for deduplication"
+        acceptance_criteria:
+          - "Local/S3/Azure/GCS backends"
+          - "Content-addressable storage"
+          - "Presigned URL generation"
+          - ">90% test coverage"
+
+  # Phase 4: Optimization
+  - name: "Phase 4: Optimization"
+    status: pending
+    tickets:
+      - id: MLOPS-011
+        github_issue: 69
+        name: "Bayesian hyperparameter optimization"
+        priority: P1
+        estimated_hours: 24
+        actual_hours: 0
+        status: pending
+        toyota_principle: Kaizen
+        tdd_checklist:
+          - "Write ParameterDomain tests"
+          - "Write TPEOptimizer tests"
+          - "Write HyperbandScheduler tests"
+          - "Write acquisition function tests"
+          - "Property tests for convergence"
+        acceptance_criteria:
+          - "TPE optimizer implementation"
+          - "Hyperband successive halving"
+          - "EI/UCB/PI acquisition functions"
+          - ">90% test coverage"
+
+      - id: MLOPS-012
+        github_issue: 28
+        name: "DecisionPatternStore (trueno-rag)"
+        priority: P1
+        estimated_hours: 8
+        actual_hours: 0
+        status: complete
+        notes: "Already implemented in src/citl/pattern_store.rs"
+
+      - id: MLOPS-013
+        github_issue: 29
+        name: "DecisionCITL trainer"
+        priority: P1
+        estimated_hours: 8
+        actual_hours: 0
+        status: complete
+        notes: "Already implemented in src/citl/trainer.rs"
+
+  # Phase 5: Advanced Features
+  - name: "Phase 5: Advanced Features"
+    status: pending
+    tickets:
+      - id: MLOPS-014
+        github_issue: 71
+        name: "LLM evaluation metrics"
+        priority: P2
+        estimated_hours: 12
+        actual_hours: 0
+        status: pending
+        toyota_principle: Genchi Genbutsu
+        tdd_checklist:
+          - "Write LLMMetrics struct tests"
+          - "Write PromptVersion tests"
+          - "Write EvalResult tests"
+          - "Write LLMEvaluator trait tests"
+          - "Property tests for metrics bounds"
+        acceptance_criteria:
+          - "Token/latency/cost tracking"
+          - "Prompt versioning with SHA-256"
+          - "Quality evaluation scores"
+          - ">90% test coverage"
+
+      - id: MLOPS-015
+        github_issue: 27
+        name: "Differential privacy (DP-SGD)"
+        priority: P2
+        estimated_hours: 16
+        actual_hours: 0
+        status: pending
+        toyota_principle: Jidoka
+        tdd_checklist:
+          - "Write PrivacyBudget tests"
+          - "Write gradient clipping tests"
+          - "Write noise injection tests"
+          - "Write RdpAccountant tests"
+          - "Property tests for privacy bounds"
+        acceptance_criteria:
+          - "DP-SGD optimizer wrapper"
+          - "RDP accounting"
+          - "Privacy budget tracking"
+          - ">90% test coverage"
+
+      - id: MLOPS-016
+        github_issue: 26
+        name: "Subword tokenization integration"
+        priority: P2
+        estimated_hours: 8
+        actual_hours: 0
+        status: pending
+        toyota_principle: Just-in-Time
+        acceptance_criteria:
+          - "Integration with aprender tokenizers"
+          - "TokenizedDataset wrapper"
+          - "Lazy tokenization"
+
+      - id: MLOPS-017
+        github_issue: 21
+        name: "Aprender explainability integration"
+        priority: P2
+        estimated_hours: 4
+        actual_hours: 0
+        status: pending
+        toyota_principle: Genchi Genbutsu
+        acceptance_criteria:
+          - "ExplainabilityCallback enhancement"
+          - "Feature importance display"
+          - "SHAP/LIME integration"
+
+      - id: MLOPS-018
+        github_issue: 66
+        name: "YAML Mode Training completion"
+        priority: P0
+        estimated_hours: 8
+        actual_hours: 0
+        status: pending
+        toyota_principle: Muda
+        acceptance_criteria:
+          - "All YAML Mode features implemented"
+          - "CLI commands working"
+          - "Documentation complete"
+
+# Summary
+summary:
+  total_estimated_hours: 194
+  total_actual_hours: 0
+  tickets_complete: 2
+  tickets_in_progress: 1
+  tickets_pending: 15

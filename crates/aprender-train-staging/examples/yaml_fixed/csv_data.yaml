@@ -1,0 +1,12 @@
+model:
+  path: "model.gguf"
+  layers: []
+
+data:
+  train: "data/train.csv"
+  batch_size: 32
+  auto_infer_types: "true"
+
+optimizer:
+  name: "adam"
+  lr: 0.001

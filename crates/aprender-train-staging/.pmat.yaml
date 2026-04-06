@@ -1,0 +1,19 @@
+comply:
+  checks:
+    cb-040:
+      enabled: false
+  suppressions:
+    - rules: ["CB-954"]
+      files: [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+      reason: "secrets: inherit is standard GHA syntax"
+    - rules: ["CB-953"]
+      files: [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+      reason: "paiml/.github reusable workflows canonical at @main"
+  thresholds:
+    min_tdg_grade: "A"
+    tdg_exclude_paths:
+      - "examples/*"
+      - "tests/*"
+      - "benches/*"
+      - "src/config/train/loader/*"
+      - "src/train/transformer_trainer/*"

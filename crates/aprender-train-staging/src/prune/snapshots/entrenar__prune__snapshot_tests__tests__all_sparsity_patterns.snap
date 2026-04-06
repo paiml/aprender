@@ -1,0 +1,49 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 153
+expression: patterns
+---
+[
+  [
+    "unstructured",
+    {
+      "type": "unstructured"
+    }
+  ],
+  [
+    "nm_2_4",
+    {
+      "type": "nm",
+      "n": 2,
+      "m": 4
+    }
+  ],
+  [
+    "nm_4_8",
+    {
+      "type": "nm",
+      "n": 4,
+      "m": 8
+    }
+  ],
+  [
+    "block_4x4",
+    {
+      "type": "block",
+      "height": 4,
+      "width": 4
+    }
+  ],
+  [
+    "row",
+    {
+      "type": "row"
+    }
+  ],
+  [
+    "column",
+    {
+      "type": "column"
+    }
+  ]
+]

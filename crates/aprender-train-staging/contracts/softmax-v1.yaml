@@ -1,0 +1,84 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Numerically stable softmax activation contracts"
+  references:
+    - "Goodfellow et al. (2016) Deep Learning, Section 4.1 Numerical Stability"
+
+equations:
+  softmax:
+    lean_theorem: "ProvableContracts.Theorems.Softmax.PartitionOfUnity"
+    formula: "softmax(x)_i = exp(x_i - max(x)) / sum_j(exp(x_j - max(x)))"
+    domain: "x in R^n, n >= 1"
+    preconditions:
+      - "!a.data().is_empty()"
+      - "a.data().iter().all(|v| v.is_finite())"
+    postconditions:
+      - "ret.len() == a.len()"
+      - "ret.data().iter().all(|v| *v >= 0.0)"
+      - "(ret.data().iter().copied().sum::<f32>() - 1.0).abs() < 1e-6"
+    invariants:
+      - "Output sums to 1: sum(softmax(x)) = 1"
+      - "All outputs non-negative: softmax(x)_i >= 0"
+      - "Monotonic: x_i > x_j implies softmax(x)_i > softmax(x)_j"
+  log_sum_exp:
+    lean_theorem: "ProvableContracts.Theorems.Softmax.ShiftInvariance"
+    formula: "log(sum(exp(x))) = max(x) + log(sum(exp(x - max(x))))"
+    domain: "x in R^n"
+    preconditions:
+      - "!a.data().is_empty()"
+      - "a.data().iter().all(|v| v.is_finite())"
+    postconditions:
+      - "ret.is_finite()"
+    invariants:
+      - "Subtraction of max prevents overflow in exp()"
+      - "Result finite for all finite inputs"
+
+proof_obligations:
+  - type: invariant
+    property: "Probability distribution"
+    formal: "sum(softmax(x)) = 1 and softmax(x)_i >= 0 for all i"
+    applies_to: all
+  - type: bound
+    property: "No overflow"
+    formal: "softmax(x) finite for all finite x (via max subtraction)"
+    applies_to: all
+  - type: equivalence
+    property: "Backward gradient correct"
+    formal: "|analytical_grad - numerical_grad| < 1e-3"
+    tolerance: 1.0e-3
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-SOFTMAX-001
+    rule: "Softmax sums to one"
+    prediction: "|sum(softmax(x)) - 1.0| < 1e-6 for arbitrary input"
+    test: "autograd::tests::unit_ops::test_softmax_forward"
+    if_fails: "Normalization denominator incorrect"
+  - id: FALSIFY-SOFTMAX-002
+    rule: "Softmax backward gradient check"
+    prediction: "Analytical gradient matches finite-difference gradient"
+    test: "autograd::tests::unit_ops::test_softmax_backward_gradient_check"
+    if_fails: "Jacobian-vector product formula wrong"
+  - id: FALSIFY-SOFTMAX-003
+    rule: "Numerical stability with large inputs"
+    prediction: "softmax([1000, 1001, 1002]) produces valid probabilities, no NaN/Inf"
+    test: "train::loss::cross_entropy::tests::test_softmax_numerical_stability"
+    if_fails: "Max-subtraction trick not applied before exp()"
+  - id: FALSIFY-SOFTMAX-004
+    rule: "Distillation softmax sums to one"
+    prediction: "Softmax over logits in distillation pipeline produces valid distribution"
+    test: "hf_pipeline::distillation::tests::test_softmax_sums_to_one"
+    if_fails: "Distillation-specific softmax diverges from reference implementation"
+  - id: FALSIFY-SOFTMAX-005
+    rule: "Softmax all positive"
+    prediction: "All softmax outputs strictly non-negative"
+    test: "hf_pipeline::distillation::tests::test_softmax_all_positive"
+    if_fails: "Negative values produced by exp() underflow or sign error"
+
+kani_harnesses:
+  - id: softmax-kani-001
+    obligation: "Output sums to 1"
+    bound: 4
+    strategy: stub_float

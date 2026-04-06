@@ -1,0 +1,22 @@
+---
+source: src/prune/snapshot_tests.rs
+assertion_line: 351
+expression: config
+---
+method: wanda
+target_sparsity: 0.5
+pattern:
+  type: nm
+  n: 2
+  m: 4
+schedule:
+  type: gradual
+  start_step: 1000
+  end_step: 5000
+  initial_sparsity: 0
+  final_sparsity: 0.5
+  frequency: 100
+fine_tune_after_pruning: true
+fine_tune_steps: 1000
+fine_tune_lr: 0.00001
+skip_embed_layers: true

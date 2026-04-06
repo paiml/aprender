@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF6B35"/>
+      <stop offset="100%" style="stop-color:#F7931E"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4ECDC4"/>
+      <stop offset="100%" style="stop-color:#44A08D"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <g transform="translate(640, 260)">
+    <!-- Neural network visualization -->
+    <!-- Input layer -->
+    <circle cx="-80" cy="-40" r="16" fill="url(#orange)" opacity="0.9"/>
+    <circle cx="-80" cy="0" r="16" fill="url(#orange)" opacity="0.9"/>
+    <circle cx="-80" cy="40" r="16" fill="url(#orange)" opacity="0.9"/>
+    <!-- Hidden layer -->
+    <circle cx="0" cy="-20" r="20" fill="url(#teal)"/>
+    <circle cx="0" cy="30" r="20" fill="url(#teal)"/>
+    <!-- Output -->
+    <circle cx="80" cy="5" r="24" fill="url(#orange)"/>
+    <!-- Connections -->
+    <line x1="-64" y1="-40" x2="-20" y2="-20" stroke="#4ECDC4" stroke-width="3" opacity="0.6"/>
+    <line x1="-64" y1="0" x2="-20" y2="-20" stroke="#4ECDC4" stroke-width="3" opacity="0.6"/>
+    <line x1="-64" y1="0" x2="-20" y2="30" stroke="#4ECDC4" stroke-width="3" opacity="0.6"/>
+    <line x1="-64" y1="40" x2="-20" y2="30" stroke="#4ECDC4" stroke-width="3" opacity="0.6"/>
+    <line x1="20" y1="-20" x2="56" y2="5" stroke="#FF6B35" stroke-width="3" opacity="0.8"/>
+    <line x1="20" y1="30" x2="56" y2="5" stroke="#FF6B35" stroke-width="3" opacity="0.8"/>
+    <!-- Gradient flow arrow (backprop) -->
+    <path d="M 80 35 Q 50 70, 0 60 Q -40 55, -80 75" stroke="#F7931E" stroke-width="4" fill="none" stroke-dasharray="8,4"/>
+    <polygon points="-80,75 -70,65 -68,78" fill="#F7931E"/>
+  </g>
+  <text x="640" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">entrenar</text>
+  <text x="640" y="530" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">Neural Network Training in Pure Rust</text>
+</svg>

@@ -1,0 +1,20 @@
+# YAML-028: Gradient Clipping (Jidoka)
+# QA Focus: Max gradient norm never exceeds 1.0
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 16
+
+optimizer:
+  name: adam
+  lr: 0.0001
+
+training:
+  epochs: 10
+  grad_clip: 1.0
+  output_dir: ./outputs/grad-clip

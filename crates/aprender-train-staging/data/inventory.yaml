@@ -1,0 +1,50 @@
+# Data Inventory — Entrenar Training Library
+# Classification: PUBLIC
+# Purpose: Document all data assets, their classification, and lifecycle
+
+datasets:
+  - name: training-data
+    classification: public
+    purpose: Model training
+    format: parquet
+    lifecycle:
+      retention_days: 365
+      expiration: annual-review
+    location: data/train.parquet
+
+  - name: validation-data
+    classification: public
+    purpose: Model validation
+    format: parquet
+    lifecycle:
+      retention_days: 365
+      expiration: annual-review
+    location: data/val.parquet
+
+  - name: pretokenized-data
+    classification: public
+    purpose: Pre-tokenized training sequences
+    format: parquet
+    lifecycle:
+      retention_days: 365
+      expiration: regenerate-on-tokenizer-change
+    location: data/pretokenized-2048/
+
+artifacts:
+  - name: model-checkpoints
+    classification: internal
+    purpose: Training checkpoint persistence
+    format: safetensors
+    lifecycle:
+      retention_days: 90
+      expiration: pruned-by-max-checkpoints
+    location: checkpoints/
+
+  - name: model-weights
+    classification: internal
+    purpose: Final trained model weights
+    format: safetensors
+    lifecycle:
+      retention_days: indefinite
+      expiration: manual
+    location: output/

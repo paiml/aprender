@@ -1,0 +1,19 @@
+# YAML-062: Inference Latency Benchmark
+# QA Focus: P99 latency within spec
+# Validation: 25-point checklist required
+
+model:
+  path: ./models/mock.gguf
+  layers: []
+
+data:
+  train: ./data/train.parquet
+  batch_size: 32
+
+optimizer:
+  name: adam
+  lr: 0.001
+
+training:
+  epochs: 1
+  output_dir: ./outputs/benchmark
