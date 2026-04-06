@@ -36,7 +36,7 @@ cargo install trueno-rag    # trueno-rag binary
 
 **After (1 binary):**
 ```
-cargo install apr-cli       # apr binary — THE entry point
+cargo install aprender      # apr binary — THE entry point (like `cargo install ollama`)
 apr run                     # inference (was: realizar)
 apr train                   # training (was: entrenar)
 apr serve                   # serving (was: realizar serve)
@@ -156,6 +156,7 @@ Every successful large Rust project uses this pattern:
 | Phase 4a: Compilation verification | DONE | 62/68 compile, 6 pre-existing issues |
 | Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
 | Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
+| Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5: Publish + shims | TODO | |
 | Phase 6: Archive old repos | TODO | |
 
