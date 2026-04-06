@@ -1,0 +1,25 @@
+[package]
+name = "presentar-layout"
+description = "Layout engine for Presentar UI framework"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+presentar-core = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+serde_json = { workspace = true }
+
+[[bench]]
+name = "layout"
+harness = false
+
+[lints]
+workspace = true

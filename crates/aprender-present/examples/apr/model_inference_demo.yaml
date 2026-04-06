@@ -1,0 +1,44 @@
+# APR-005: Model Inference Demo
+# QA Focus: Real-time inference visualization
+presentar: "1.0"
+name: "model-inference"
+version: "1.0.0"
+description: "Real-time model inference demonstration"
+
+data:
+  model:
+    source: "./models/classifier.apr"
+    format: "apr"
+  input:
+    source: "./data/sample_input.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "model-info"
+      widgets:
+        - type: "model_card"
+          data: "{{ data.model }}"
+          mode: "inference"
+
+    - id: "input-data"
+      widgets:
+        - type: "data_card"
+          data: "{{ data.input }}"
+
+    - id: "predictions"
+      widgets:
+        - type: "chart"
+          chart_type: "bar"
+          data: "{{ inference(data.model, data.input) }}"
+          title: "Prediction Probabilities"
+          orientation: "horizontal"
+
+# Acceptance Criteria:
+# - Model card shows inference mode
+# - Input data displayed
+# - Prediction probabilities visualized
+# - 15-point checklist complete

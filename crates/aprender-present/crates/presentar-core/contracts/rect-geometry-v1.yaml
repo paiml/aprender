@@ -1,0 +1,88 @@
+# Rectangle Geometry Contract v1.0.0
+#
+# Mathematical foundation for axis-aligned rectangle intersection and inset.
+#
+# References:
+#   - Computational Geometry: Algorithms and Applications (de Berg et al.)
+#   - Flutter RenderBox layout model
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-22"
+  author: "PAIML Engineering"
+  description: "Axis-aligned rectangle intersection, union, and inset operations"
+  references:
+    - "de Berg et al. Computational Geometry"
+    - "Flutter RenderBox layout model"
+
+equations:
+  intersection:
+    formula: "I = (max(x1,x2), max(y1,y2), min(r1,r2)-max(x1,x2), min(b1,b2)-max(y1,y2))"
+    domain: "self, other: Rect with width >= 0, height >= 0"
+    codomain: "Option<Rect> where result width > 0 and height > 0, or None"
+    preconditions:
+      - "self.width >= 0.0"
+      - "self.height >= 0.0"
+      - "other.width >= 0.0"
+      - "other.height >= 0.0"
+    postconditions: []
+    lean_theorem: Theorems.Intersection
+    properties:
+      - commutativity: "intersection(a,b) == intersection(b,a)"
+      - containment: "intersection(a,b).area() <= min(a.area(), b.area())"
+      - idempotent: "intersection(a,a) == Some(a)"
+
+  inset:
+    formula: "R' = (x+d, y+d, max(0, w-2d), max(0, h-2d))"
+    domain: "self: Rect, amount: f32"
+    codomain: "Rect with width >= 0, height >= 0"
+    preconditions:
+      - "self.width >= 0.0"
+      - "self.height >= 0.0"
+    postconditions:
+      - "ret.width >= 0.0"
+      - "ret.height >= 0.0"
+    lean_theorem: Theorems.Inset
+    properties:
+      - non_negative_dims: "result width and height are never negative"
+      - zero_inset_identity: "inset(r, 0.0) == r"
+      - monotone_shrink: "inset(r, a).area() <= r.area() for a >= 0"
+
+kani_harnesses:
+  - id: KANI-001
+    obligation: OBL-001
+    property: "Output finite"
+    bound: 8
+    strategy: stub_float
+    harness: verify_basic
+
+proof_obligations:
+  - type: precondition
+    property: "Rectangle dimensions are non-negative"
+    formal: "width >= 0 and height >= 0"
+    applies_to: all
+  - type: postcondition
+    property: "Inset produces non-negative dimensions"
+    formal: "result.width >= 0 and result.height >= 0"
+    applies_to: inset
+  - type: invariant
+    property: "Intersection is commutative"
+    formal: "intersection(A, B) = intersection(B, A)"
+    applies_to: intersection
+
+falsification_tests:
+  - id: FALSIFY-RG-001
+    rule: "Intersection commutativity"
+    prediction: "intersection(a,b) == intersection(b,a) for all rect pairs"
+    test: "proptest with random Rect pairs"
+    if_fails: "Asymmetric min/max logic"
+  - id: FALSIFY-RG-002
+    rule: "Inset non-negative"
+    prediction: "inset(r, d).width >= 0 and inset(r, d).height >= 0"
+    test: "proptest with random rects and large inset amounts"
+    if_fails: "Missing max(0, ...) clamp"
+  - id: FALSIFY-RG-003
+    rule: "Self-intersection identity"
+    prediction: "intersection(r, r) == Some(r)"
+    test: "proptest with random non-degenerate rects"
+    if_fails: "Strict vs non-strict comparison in overlap check"

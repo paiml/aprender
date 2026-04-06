@@ -1,0 +1,3 @@
+[core]
+    autostage = true
+    analytics = false

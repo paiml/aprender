@@ -1,0 +1,74 @@
+# Presentar Scene Format v1.0
+# ML Parameter Tuning Interface
+
+prs_version: "1.0"
+
+metadata:
+  name: "parameter-tuner"
+  title: "Model Parameter Tuner"
+  description: "Interactive interface for tuning model hyperparameters"
+  tags: ["ml", "tuning", "parameters"]
+
+resources:
+  models:
+    generator:
+      type: apr
+      source: "./models/text-generator.apr"
+
+layout:
+  type: grid
+  columns: 3
+  rows: 2
+  gap: 12
+
+widgets:
+  - id: temperature
+    type: slider
+    position: { row: 0, col: 0 }
+    config:
+      label: "Temperature"
+      min: 0.0
+      max: 2.0
+      step: 0.1
+      default: 0.7
+
+  - id: top_p
+    type: slider
+    position: { row: 0, col: 1 }
+    config:
+      label: "Top P"
+      min: 0.0
+      max: 1.0
+      step: 0.05
+      default: 0.9
+
+  - id: max_tokens
+    type: slider
+    position: { row: 0, col: 2 }
+    config:
+      label: "Max Tokens"
+      min: 1
+      max: 512
+      step: 1
+      default: 128
+
+  - id: prompt
+    type: textbox
+    position: { row: 1, col: 0, colspan: 2 }
+    config:
+      label: "Prompt"
+      placeholder: "Enter your prompt..."
+      max_length: 2048
+
+  - id: generate_btn
+    type: button
+    position: { row: 1, col: 2 }
+    config:
+      label: "Generate"
+      action: generate
+
+bindings:
+  - trigger: generate_btn.click
+    actions:
+      - target: inference.generator
+        input: "{{ { prompt: prompt.value, temperature: temperature.value, top_p: top_p.value, max_tokens: max_tokens.value } }}"

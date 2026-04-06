@@ -1,0 +1,36 @@
+# PMAT Quality Gates Configuration for presentar
+# ComputeBrick ecosystem - GPU-accelerated presentations
+
+[quality]
+coverage_threshold = 95.0
+max_complexity = 20
+max_binary_size_mb = 50
+max_dead_code = 60.0
+min_provability = 0.65
+
+[dead_code]
+# Binaries have main() functions that aren't unit tested
+exclude = [
+    "**/bin/*.rs",
+    "**/random_seed.rs",
+    "**/display_rules.rs",
+    "**/tui_compare.rs",
+]
+
+[satd]
+# Generated files from wasm-bindgen and mdbook
+exclude = [
+    "www/pkg/**",
+    "web/showcase/pkg/**",
+    "book/book/**",
+]
+
+[compute-brick]
+enabled = true
+require_safety_comments = true
+require_target_feature = true
+cv_threshold_percent = 15.0
+efficiency_threshold_percent = 25.0
+
+[hooks]
+pre_commit = ["pmat comply check --failures-only"]

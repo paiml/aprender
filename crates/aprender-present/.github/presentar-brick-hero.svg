@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickSuccess" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16a34a;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickWarning" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#facc15;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ca8a04;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickIdle" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#475569;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#334155;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="meterGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22d3ee;stop-opacity:1" />
+      <stop offset="40%" style="stop-color:#4ade80;stop-opacity:1" />
+      <stop offset="70%" style="stop-color:#facc15;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f87171;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Glow filters -->
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feFlood flood-color="#4ade80" flood-opacity="0.6"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="glowCyan" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feFlood flood-color="#22d3ee" flood-opacity="0.4"/>
+      <feComposite in2="blur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="400" fill="url(#bgGrad)"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.08" stroke="#22d3ee">
+    <line x1="0" y1="80" x2="800" y2="80" stroke-width="0.5"/>
+    <line x1="0" y1="160" x2="800" y2="160" stroke-width="0.5"/>
+    <line x1="0" y1="240" x2="800" y2="240" stroke-width="0.5"/>
+    <line x1="0" y1="320" x2="800" y2="320" stroke-width="0.5"/>
+    <line x1="160" y1="0" x2="160" y2="400" stroke-width="0.5"/>
+    <line x1="320" y1="0" x2="320" y2="400" stroke-width="0.5"/>
+    <line x1="480" y1="0" x2="480" y2="400" stroke-width="0.5"/>
+    <line x1="640" y1="0" x2="640" y2="400" stroke-width="0.5"/>
+  </g>
+
+  <!-- Header -->
+  <text x="400" y="45" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="bold" fill="#f8fafc" text-anchor="middle">
+    PRESENTAR
+  </text>
+  <text x="400" y="70" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#94a3b8" text-anchor="middle">
+    Brick Computer - SIMD Visualization
+  </text>
+
+  <!-- SIMD Lanes Panel -->
+  <rect x="40" y="90" width="440" height="140" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="115" font-family="system-ui" font-size="12" fill="#22d3ee" font-weight="bold">SIMD LANES (AVX-256)</text>
+
+  <!-- 8 SIMD Lane Bricks -->
+  <g transform="translate(55, 130)">
+    <!-- Lane 0 - Success -->
+    <rect x="0" y="0" width="45" height="70" rx="4" fill="url(#brickSuccess)" filter="url(#glowGreen)"/>
+    <text x="22" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">0</text>
+    <text x="22" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">50μs</text>
+
+    <!-- Lane 1 - Success -->
+    <rect x="52" y="0" width="45" height="70" rx="4" fill="url(#brickSuccess)" filter="url(#glowGreen)"/>
+    <text x="74" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">1</text>
+    <text x="74" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">60μs</text>
+
+    <!-- Lane 2 - Success -->
+    <rect x="104" y="0" width="45" height="70" rx="4" fill="url(#brickSuccess)" filter="url(#glowGreen)"/>
+    <text x="126" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">2</text>
+    <text x="126" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">70μs</text>
+
+    <!-- Lane 3 - Success -->
+    <rect x="156" y="0" width="45" height="70" rx="4" fill="url(#brickSuccess)" filter="url(#glowGreen)"/>
+    <text x="178" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">3</text>
+    <text x="178" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">80μs</text>
+
+    <!-- Lane 4 - Success -->
+    <rect x="208" y="0" width="45" height="70" rx="4" fill="url(#brickSuccess)" filter="url(#glowGreen)"/>
+    <text x="230" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">4</text>
+    <text x="230" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">90μs</text>
+
+    <!-- Lane 5 - Warning -->
+    <rect x="260" y="0" width="45" height="70" rx="4" fill="url(#brickWarning)"/>
+    <text x="282" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">5</text>
+    <text x="282" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">110μs</text>
+
+    <!-- Lane 6 - Warning -->
+    <rect x="312" y="0" width="45" height="70" rx="4" fill="url(#brickWarning)"/>
+    <text x="334" y="30" font-family="monospace" font-size="20" fill="#000" text-anchor="middle" font-weight="bold">6</text>
+    <text x="334" y="55" font-family="system-ui" font-size="9" fill="#000" text-anchor="middle">120μs</text>
+
+    <!-- Lane 7 - Idle -->
+    <rect x="364" y="0" width="45" height="70" rx="4" fill="url(#brickIdle)" opacity="0.6"/>
+    <text x="386" y="30" font-family="monospace" font-size="20" fill="#94a3b8" text-anchor="middle" font-weight="bold">7</text>
+    <text x="386" y="55" font-family="system-ui" font-size="9" fill="#94a3b8" text-anchor="middle">idle</text>
+  </g>
+
+  <!-- Performance Panel -->
+  <rect x="500" y="90" width="260" height="140" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="520" y="115" font-family="system-ui" font-size="12" fill="#e879f9" font-weight="bold">PERFORMANCE</text>
+
+  <text x="520" y="140" font-family="system-ui" font-size="11" fill="#94a3b8">Throughput:</text>
+  <text x="720" y="140" font-family="monospace" font-size="11" fill="#4ade80" text-anchor="end">80,000 ops/s</text>
+
+  <text x="520" y="160" font-family="system-ui" font-size="11" fill="#94a3b8">Avg Latency:</text>
+  <text x="720" y="160" font-family="monospace" font-size="11" fill="#22d3ee" text-anchor="end">85 μs</text>
+
+  <text x="520" y="180" font-family="system-ui" font-size="11" fill="#94a3b8">Total Ops:</text>
+  <text x="720" y="180" font-family="monospace" font-size="11" fill="#f8fafc" text-anchor="end">1,024,000</text>
+
+  <text x="520" y="210" font-family="system-ui" font-size="11" fill="#94a3b8">Lanes:</text>
+  <rect x="580" y="200" width="12" height="12" rx="2" fill="#4ade80"/>
+  <text x="598" y="210" font-family="system-ui" font-size="10" fill="#f8fafc">5</text>
+  <rect x="620" y="200" width="12" height="12" rx="2" fill="#facc15"/>
+  <text x="638" y="210" font-family="system-ui" font-size="10" fill="#f8fafc">2</text>
+  <rect x="660" y="200" width="12" height="12" rx="2" fill="#475569"/>
+  <text x="678" y="210" font-family="system-ui" font-size="10" fill="#94a3b8">1</text>
+
+  <!-- Budget Utilization -->
+  <rect x="40" y="245" width="720" height="65" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="60" y="270" font-family="system-ui" font-size="12" fill="#60a5fa" font-weight="bold">BUDGET UTILIZATION</text>
+
+  <!-- Meter background -->
+  <rect x="60" y="282" width="500" height="16" rx="4" fill="#334155"/>
+  <!-- Meter fill -->
+  <rect x="60" y="282" width="200" height="16" rx="4" fill="#4ade80"/>
+
+  <text x="580" y="294" font-family="monospace" font-size="12" fill="#4ade80">40.2%</text>
+  <text x="640" y="294" font-family="system-ui" font-size="10" fill="#94a3b8">(healthy)</text>
+
+  <!-- Sparkline history -->
+  <text x="60" y="330" font-family="system-ui" font-size="10" fill="#64748b">History:</text>
+  <path d="M120,340 L140,338 L160,335 L180,337 L200,332 L220,330 L240,333 L260,328 L280,325 L300,327 L320,322 L340,320 L360,323 L380,318 L400,315 L420,317 L440,312 L460,310 L480,313 L500,308 L520,305 L540,307 L560,302 L580,300 L600,303 L620,298 L640,295 L660,297 L680,292 L700,290"
+        stroke="#4ade80" stroke-width="2" fill="none" filter="url(#glowCyan)"/>
+
+  <!-- Brick Verification Status -->
+  <rect x="40" y="355" width="720" height="35" rx="8" fill="#1e293b" stroke="#16a34a" stroke-width="1"/>
+  <circle cx="60" cy="372" r="6" fill="#4ade80"/>
+  <text x="75" y="377" font-family="system-ui" font-size="12" fill="#4ade80" font-weight="bold">BRICK VERIFICATION PASSED</text>
+  <text x="280" y="377" font-family="system-ui" font-size="11" fill="#94a3b8">JIDOKA: Render allowed</text>
+  <text x="680" y="377" font-family="system-ui" font-size="10" fill="#64748b" text-anchor="end">presentar v0.2</text>
+</svg>

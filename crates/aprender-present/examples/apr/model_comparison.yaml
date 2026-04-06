@@ -1,0 +1,33 @@
+# APR-002: Model Comparison
+# QA Focus: Side-by-side model comparison accurate
+presentar: "1.0"
+name: "model-comparison"
+version: "1.0.0"
+description: "Side-by-side comparison of two ML models"
+
+data:
+  model_a:
+    source: "./models/mlp_v1.apr"
+    format: "apr"
+  model_b:
+    source: "./models/mlp_v2.apr"
+    format: "apr"
+
+layout:
+  type: "row"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "comparison"
+      widgets:
+        - type: "model_card"
+          data: "{{ data.model_a }}"
+          flex: 1
+        - type: "model_card"
+          data: "{{ data.model_b }}"
+          flex: 1
+
+# Acceptance Criteria:
+# - Both models displayed side-by-side
+# - Metrics comparable at a glance
+# - 15-point checklist complete

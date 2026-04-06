@@ -1,0 +1,56 @@
+{
+  "$schema": "https://presentar.dev/schemas/build-manifest-v1.json",
+  "version": "1.0.0",
+  "description": "Build manifest for reproducible builds (B1/B2)",
+
+  "rust": {
+    "version": "1.83.0",
+    "edition": "2021",
+    "profile": "release",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "wasm32-unknown-unknown"
+    ],
+    "components": [
+      "rustfmt",
+      "clippy",
+      "rust-src",
+      "rust-analyzer",
+      "llvm-tools-preview"
+    ]
+  },
+
+  "python": {
+    "version": "3.11.7",
+    "pip_requirements": "requirements.txt"
+  },
+
+  "node": {
+    "version": "20.11.0",
+    "package_manager": "npm"
+  },
+
+  "docker": {
+    "base_image": "rust:1.83.0-slim-bookworm",
+    "dockerfile": "Dockerfile",
+    "platforms": ["linux/amd64", "linux/arm64"]
+  },
+
+  "nix": {
+    "flake": "flake.nix",
+    "system": "x86_64-linux"
+  },
+
+  "seeds": {
+    "random_seed": 42,
+    "test_seed": 42,
+    "bench_seed": 12345,
+    "proptest_seed": "0xdeadbeef"
+  },
+
+  "verification": {
+    "cargo_lock_checksum": "sha256:...",
+    "rust_toolchain_checksum": "sha256:...",
+    "reproducible": true
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "presentar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WASM-first visualization framework",
+  "scripts": {
+    "build": "cargo build --workspace",
+    "test": "cargo test --workspace",
+    "bench": "cargo criterion",
+    "lint": "cargo clippy -- -D warnings"
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

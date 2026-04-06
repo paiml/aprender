@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentar - WASM Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 {
+            color: #111827;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #6b7280;
+            margin-bottom: 20px;
+        }
+        #canvas {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #10b981;
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .error { background: #ef4444; }
+        .loading { background: #6366f1; }
+    </style>
+</head>
+<body>
+    <h1>Presentar Dashboard</h1>
+    <p class="subtitle">WASM-first visualization framework</p>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="status" class="status loading">Loading WASM...</div>
+
+    <script type="module">
+        import init, { App, log } from './pkg/presentar.js';
+
+        async function main() {
+            try {
+                await init();
+                log('Presentar WASM initialized');
+
+                const app = new App('canvas');
+                document.getElementById('status').textContent =
+                    `Ready - Canvas: ${app.width()}x${app.height()}`;
+                document.getElementById('status').className = 'status';
+
+                // Demo: render some shapes
+                const commands = [
+                    {
+                        "Rect": {
+                            "bounds": {"x": 20, "y": 20, "width": 200, "height": 100},
+                            "radius": {"top_left": 8, "top_right": 8, "bottom_right": 8, "bottom_left": 8},
+                            "style": {"fill": {"r": 0.39, "g": 0.4, "b": 0.95, "a": 1}, "stroke": null, "shadow": null}
+                        }
+                    },
+                    {
+                        "Text": {
+                            "content": "Hello from WASM!",
+                            "position": {"x": 40, "y": 60},
+                            "style": {"size": 24, "color": {"r": 1, "g": 1, "b": 1, "a": 1}, "weight": "Bold", "style": "Normal"}
+                        }
+                    },
+                    {
+                        "Circle": {
+                            "center": {"x": 400, "y": 150},
+                            "radius": 60,
+                            "style": {"fill": {"r": 0.06, "g": 0.72, "b": 0.51, "a": 1}, "stroke": null, "shadow": null}
+                        }
+                    },
+                    {
+                        "Text": {
+                            "content": "Presentar - WASM-first UI Framework",
+                            "position": {"x": 20, "y": 180},
+                            "style": {"size": 18, "color": {"r": 0.07, "g": 0.09, "b": 0.15, "a": 1}, "weight": "Medium", "style": "Normal"}
+                        }
+                    },
+                    {
+                        "Rect": {
+                            "bounds": {"x": 20, "y": 220, "width": 300, "height": 8},
+                            "radius": {"top_left": 4, "top_right": 4, "bottom_right": 4, "bottom_left": 4},
+                            "style": {"fill": {"r": 0.9, "g": 0.9, "b": 0.9, "a": 1}, "stroke": null, "shadow": null}
+                        }
+                    },
+                    {
+                        "Rect": {
+                            "bounds": {"x": 20, "y": 220, "width": 225, "height": 8},
+                            "radius": {"top_left": 4, "top_right": 4, "bottom_right": 4, "bottom_left": 4},
+                            "style": {"fill": {"r": 0.06, "g": 0.72, "b": 0.51, "a": 1}, "stroke": null, "shadow": null}
+                        }
+                    },
+                    {
+                        "Text": {
+                            "content": "75% Progress",
+                            "position": {"x": 330, "y": 218},
+                            "style": {"size": 12, "color": {"r": 0.4, "g": 0.4, "b": 0.4, "a": 1}, "weight": "Normal", "style": "Normal"}
+                        }
+                    }
+                ];
+
+                app.render_json(JSON.stringify(commands));
+                log('Demo rendered successfully');
+
+            } catch (e) {
+                console.error('Presentar init failed:', e);
+                document.getElementById('status').textContent = `Error: ${e}`;
+                document.getElementById('status').className = 'status error';
+            }
+        }
+
+        main();
+    </script>
+</body>
+</html>

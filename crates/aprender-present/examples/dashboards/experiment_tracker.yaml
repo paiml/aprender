@@ -1,0 +1,42 @@
+# DSH-005: Experiment Tracker
+# QA Focus: Multi-run comparison
+presentar: "1.0"
+name: "experiment-tracker"
+version: "1.0.0"
+description: "ML experiment tracking dashboard"
+
+data:
+  experiments:
+    source: "pacha://experiments"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Experiment Tracker"
+          style: "heading-1"
+
+    - id: "experiments-table"
+      widgets:
+        - type: "data_table"
+          data: "{{ data.experiments }}"
+          columns: ["name", "accuracy", "loss", "duration"]
+          sortable: true
+
+    - id: "accuracy-vs-size"
+      widgets:
+        - type: "chart"
+          chart_type: "scatter"
+          x: "{{ data.experiments.columns.param_count }}"
+          y: "{{ data.experiments.columns.accuracy }}"
+          title: "Accuracy vs Model Size"
+
+# Acceptance Criteria:
+# - Experiments listed
+# - Table sortable
+# - Scatter shows correlation
+# - 15-point checklist complete

@@ -1,0 +1,14 @@
+# DVC Ignore file
+# Similar to .gitignore but for DVC
+
+# Build artifacts
+target/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

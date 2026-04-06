@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentar Browser Tests</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 20px; }
+        .test { padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .pass { background: #065f46; }
+        .fail { background: #991b1b; }
+        .running { background: #1e40af; }
+        #canvas { display: none; }
+        #summary { margin-top: 20px; padding: 15px; background: #374151; border-radius: 8px; }
+        .stats { display: flex; gap: 20px; margin-top: 10px; }
+        .stat { padding: 10px 20px; border-radius: 4px; }
+        .stat.pass-stat { background: #065f46; }
+        .stat.fail-stat { background: #991b1b; }
+    </style>
+</head>
+<body>
+    <h1>Presentar Browser Test Suite</h1>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="tests"></div>
+    <div id="summary"></div>
+
+    <script type="module">
+        import init, { App, log } from './pkg/presentar.js';
+
+        const results = [];
+
+        function test(name, fn) {
+            const div = document.createElement('div');
+            div.className = 'test running';
+            div.textContent = `⏳ ${name}`;
+            document.getElementById('tests').appendChild(div);
+
+            try {
+                fn();
+                div.className = 'test pass';
+                div.textContent = `✓ ${name}`;
+                results.push({ name, pass: true });
+            } catch (e) {
+                div.className = 'test fail';
+                div.textContent = `✗ ${name}: ${e.message}`;
+                results.push({ name, pass: false, error: e.message });
+            }
+        }
+
+        function assertEqual(actual, expected, msg) {
+            if (actual !== expected) {
+                throw new Error(`${msg}: expected ${expected}, got ${actual}`);
+            }
+        }
+
+        function assertTrue(condition, msg) {
+            if (!condition) {
+                throw new Error(msg || 'Assertion failed');
+            }
+        }
+
+        async function runTests() {
+            await init();
+            log('Test suite initialized');
+
+            // Test: App creation
+            test('App creation with valid canvas', () => {
+                const app = new App('canvas');
+                assertTrue(app !== null, 'App should be created');
+            });
+
+            test('App dimensions match canvas', () => {
+                const app = new App('canvas');
+                assertEqual(app.width(), 800, 'Width');
+                assertEqual(app.height(), 600, 'Height');
+            });
+
+            test('App clear does not throw', () => {
+                const app = new App('canvas');
+                app.clear(); // Should not throw
+                assertTrue(true);
+            });
+
+            // Test: JSON rendering - Rect
+            test('Render Rect via JSON', () => {
+                const app = new App('canvas');
+                const cmd = [{
+                    "Rect": {
+                        "bounds": {"x": 10, "y": 10, "width": 100, "height": 50},
+                        "radius": {"top_left": 0, "top_right": 0, "bottom_right": 0, "bottom_left": 0},
+                        "style": {"fill": {"r": 1, "g": 0, "b": 0, "a": 1}, "stroke": null, "shadow": null}
+                    }
+                }];
+                app.render_json(JSON.stringify(cmd));
+                assertTrue(true, 'Rect rendered without error');
+            });
+
+            // Test: JSON rendering - Circle
+            test('Render Circle via JSON', () => {
+                const app = new App('canvas');
+                const cmd = [{
+                    "Circle": {
+                        "center": {"x": 100, "y": 100},
+                        "radius": 50,
+                        "style": {"fill": {"r": 0, "g": 1, "b": 0, "a": 1}, "stroke": null, "shadow": null}
+                    }
+                }];
+                app.render_json(JSON.stringify(cmd));
+                assertTrue(true, 'Circle rendered without error');
+            });
+
+            // Test: JSON rendering - Text
+            test('Render Text via JSON', () => {
+                const app = new App('canvas');
+                const cmd = [{
+                    "Text": {
+                        "content": "Test Text",
+                        "position": {"x": 10, "y": 30},
+                        "style": {"size": 16, "color": {"r": 0, "g": 0, "b": 0, "a": 1}, "weight": "Normal", "style": "Normal"}
+                    }
+                }];
+                app.render_json(JSON.stringify(cmd));
+                assertTrue(true, 'Text rendered without error');
+            });
+
+            // Test: JSON rendering - Rounded Rect
+            test('Render Rounded Rect via JSON', () => {
+                const app = new App('canvas');
+                const cmd = [{
+                    "Rect": {
+                        "bounds": {"x": 10, "y": 10, "width": 100, "height": 50},
+                        "radius": {"top_left": 8, "top_right": 8, "bottom_right": 8, "bottom_left": 8},
+                        "style": {"fill": {"r": 0.5, "g": 0.5, "b": 1, "a": 1}, "stroke": null, "shadow": null}
+                    }
+                }];
+                app.render_json(JSON.stringify(cmd));
+                assertTrue(true, 'Rounded rect rendered without error');
+            });
+
+            // Test: Multiple commands
+            test('Render multiple commands', () => {
+                const app = new App('canvas');
+                const cmds = [
+                    {"Rect": {"bounds": {"x": 0, "y": 0, "width": 50, "height": 50}, "radius": {"top_left": 0, "top_right": 0, "bottom_right": 0, "bottom_left": 0}, "style": {"fill": {"r": 1, "g": 0, "b": 0, "a": 1}, "stroke": null, "shadow": null}}},
+                    {"Circle": {"center": {"x": 100, "y": 25}, "radius": 25, "style": {"fill": {"r": 0, "g": 1, "b": 0, "a": 1}, "stroke": null, "shadow": null}}},
+                    {"Text": {"content": "Hello", "position": {"x": 150, "y": 30}, "style": {"size": 14, "color": {"r": 0, "g": 0, "b": 0, "a": 1}, "weight": "Normal", "style": "Normal"}}}
+                ];
+                app.render_json(JSON.stringify(cmds));
+                assertTrue(true, 'Multiple commands rendered');
+            });
+
+            // Test: Invalid JSON error handling
+            test('Invalid JSON returns error', () => {
+                const app = new App('canvas');
+                let threw = false;
+                try {
+                    app.render_json('not json');
+                } catch (e) {
+                    threw = true;
+                }
+                assertTrue(threw, 'Should throw on invalid JSON');
+            });
+
+            // Test: Invalid canvas ID
+            test('Invalid canvas ID throws', () => {
+                let threw = false;
+                try {
+                    new App('nonexistent');
+                } catch (e) {
+                    threw = true;
+                }
+                assertTrue(threw, 'Should throw on invalid canvas ID');
+            });
+
+            // Summary
+            const passed = results.filter(r => r.pass).length;
+            const failed = results.filter(r => !r.pass).length;
+            const summary = document.getElementById('summary');
+            summary.innerHTML = `
+                <h2>Test Results</h2>
+                <div class="stats">
+                    <div class="stat pass-stat">✓ ${passed} passed</div>
+                    <div class="stat fail-stat">✗ ${failed} failed</div>
+                </div>
+            `;
+
+            // Exit code for CI (check console)
+            if (failed > 0) {
+                console.error(`TESTS FAILED: ${failed}/${passed + failed}`);
+            } else {
+                console.log(`ALL TESTS PASSED: ${passed}/${passed + failed}`);
+            }
+        }
+
+        runTests();
+    </script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "$schema": "https://presentar.dev/schemas/benchmark-v1.json",
+  "version": "1.0.0",
+  "recorded_at": "2026-01-12T10:00:00Z",
+  "git_commit": "1bc6d0a",
+  "hardware": {
+    "cpu": "AMD Threadripper 7960X",
+    "cores": 48,
+    "threads": 96,
+    "ram_gb": 128,
+    "storage": "NVMe RAID-0"
+  },
+  "software": {
+    "os": "Ubuntu 24.04 LTS",
+    "kernel": "6.8.0-90-generic",
+    "rust": "1.83.0"
+  },
+  "parameters": {
+    "sample_size": 1000,
+    "warmup_iterations": 100,
+    "confidence_level": 0.95
+  },
+  "results": {
+    "full_render": {
+      "mean_ms": 0.82,
+      "stddev_ms": 0.03,
+      "ci_lower_ms": 0.79,
+      "ci_upper_ms": 0.85,
+      "samples": 1000,
+      "unit": "milliseconds"
+    },
+    "diff_update": {
+      "mean_ms": 0.05,
+      "stddev_ms": 0.01,
+      "ci_lower_ms": 0.04,
+      "ci_upper_ms": 0.06,
+      "samples": 1000,
+      "unit": "milliseconds"
+    },
+    "memory_rss_mb": {
+      "mean_mb": 42,
+      "stddev_mb": 2,
+      "ci_lower_mb": 40,
+      "ci_upper_mb": 44,
+      "samples": 100,
+      "unit": "megabytes"
+    },
+    "cpu_idle_percent": {
+      "mean_percent": 2.1,
+      "stddev_percent": 0.5,
+      "ci_lower_percent": 1.9,
+      "ci_upper_percent": 2.3,
+      "samples": 60,
+      "unit": "percent"
+    }
+  },
+  "comparisons": {
+    "vs_ttop": {
+      "render_speedup": 1.15,
+      "memory_reduction": 0.85,
+      "cohens_d": 0.82,
+      "p_value": 0.001,
+      "interpretation": "Large effect size, statistically significant"
+    }
+  }
+}

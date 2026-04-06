@@ -1,0 +1,36 @@
+# CHT-002: Bar Chart Grouped
+# QA Focus: Grouped bar chart alignment
+presentar: "1.0"
+name: "bar-chart-grouped"
+version: "1.0.0"
+description: "Grouped bar chart for quarterly comparison"
+
+data:
+  revenue:
+    source: "inline://quarterly_revenue"
+    format: "json"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Quarterly Revenue"
+          style: "heading-1"
+
+    - id: "chart"
+      widgets:
+        - type: "chart"
+          chart_type: "bar"
+          data: "{{ data.revenue }}"
+          title: "Quarterly Revenue"
+          grouped: true
+
+# Acceptance Criteria:
+# - Bars grouped by quarter
+# - Colors distinct for each year
+# - Legend matches series
+# - 15-point checklist complete

@@ -1,0 +1,17 @@
+[thresholds]
+# Coverage
+min_coverage = 85.0
+
+# Complexity
+max_cyclomatic = 15
+max_cognitive = 20
+
+# Dependencies
+max_transitive_deps = 260
+max_duplicate_crates = 40
+
+# Performance
+max_build_time_secs = 300
+
+# Test quality
+min_proptest_cases = 64

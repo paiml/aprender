@@ -1,0 +1,26 @@
+[book]
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Presentar - Sovereign AI Visualization Framework"
+description = "WASM-first visualization and rapid application framework built on the Sovereign AI Stack with EXTREME TDD methodology"
+
+[build]
+build-dir = "book"
+create-missing = true
+use-default-preprocessors = true
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/paiml/presentar"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/paiml/presentar/edit/main/book/{path}"
+site-url = "/presentar/"
+
+[output.html.playground]
+editable = true
+copyable = true
+copy-js = true
+runnable = false

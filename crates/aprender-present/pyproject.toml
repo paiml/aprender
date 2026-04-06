@@ -1,0 +1,43 @@
+[project]
+name = "presentar"
+version = "0.1.0"
+description = "WASM-first visualization framework - Python utilities"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26.0",
+    "pytest>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest-xdist>=3.5.0",
+    "pytest-cov>=4.1.0",
+    "hypothesis>=6.92.0",
+]
+ml = [
+    "torch>=2.1.0",
+    "tensorflow>=2.15.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "python_tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
+env = [
+    "RANDOM_SEED=42",
+    "PYTHONHASHSEED=42",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "conftest.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+
+# Random seed configuration for reproducibility
+[tool.presentar]
+random_seed = 42
+test_seed = 42
+bench_seed = 12345

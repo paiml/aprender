@@ -1,0 +1,12 @@
+# Python dependencies for Presentar utilities
+# Version pins for reproducibility (B1 criteria)
+
+numpy==1.26.4
+pytest==8.0.2
+pytest-xdist==3.5.0
+pytest-cov==4.1.0
+hypothesis==6.97.0
+
+# ML dependencies (optional)
+# torch==2.1.2
+# tensorflow==2.15.0

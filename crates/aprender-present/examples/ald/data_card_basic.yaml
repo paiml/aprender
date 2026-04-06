@@ -1,0 +1,36 @@
+# ALD-001: Data Card Basic
+# QA Focus: Dataset metadata displays correctly
+presentar: "1.0"
+name: "data-card-basic"
+version: "1.0.0"
+description: "Basic data card displaying dataset metadata"
+
+data:
+  dataset:
+    source: "./data/mnist.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Dataset Overview"
+          style: "heading-1"
+
+    - id: "data-display"
+      widgets:
+        - type: "data_card"
+          data: "{{ data.dataset }}"
+          show_stats: true
+          show_preview: true
+
+# Acceptance Criteria:
+# - Row count accurate
+# - Column types displayed
+# - Byte size formatted
+# - Preview renders first 10 rows
+# - 15-point checklist complete

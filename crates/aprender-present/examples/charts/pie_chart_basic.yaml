@@ -1,0 +1,37 @@
+# CHT-003: Pie Chart Basic
+# QA Focus: Pie chart percentages correct
+presentar: "1.0"
+name: "pie-chart-basic"
+version: "1.0.0"
+description: "Basic pie chart with labels and percentages"
+
+data:
+  categories:
+    source: "inline://category_breakdown"
+    format: "json"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Category Breakdown"
+          style: "heading-1"
+
+    - id: "chart"
+      widgets:
+        - type: "chart"
+          chart_type: "pie"
+          data: "{{ data.categories }}"
+          title: "Category Breakdown"
+          show_labels: true
+          show_percentages: true
+
+# Acceptance Criteria:
+# - Slices sum to 100%
+# - Labels visible
+# - Percentages accurate
+# - 15-point checklist complete

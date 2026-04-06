@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-015",
+  "prompt": "PMAT-015: Remove dead code from random_seed.rs, ui_atoms.rs (80 lines)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-01-13T17:50:12.694417518Z"
+}

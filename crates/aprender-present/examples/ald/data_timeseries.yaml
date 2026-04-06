@@ -1,0 +1,38 @@
+# ALD-006: Data Time Series
+# QA Focus: Temporal data visualization
+presentar: "1.0"
+name: "data-timeseries"
+version: "1.0.0"
+description: "Time series stock price visualization"
+
+data:
+  dataset:
+    source: "./data/stock_prices.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Stock Price Over Time"
+          style: "heading-1"
+
+    - id: "timeseries"
+      widgets:
+        - type: "chart"
+          chart_type: "line"
+          data: "{{ data.dataset }}"
+          x: "{{ data.dataset.columns.timestamp }}"
+          y: "{{ data.dataset.columns.price }}"
+          title: "Stock Price Over Time"
+          x_axis_type: "datetime"
+
+# Acceptance Criteria:
+# - Time axis formatted correctly
+# - Price curve smooth
+# - Hover shows date and price
+# - 15-point checklist complete

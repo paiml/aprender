@@ -1,0 +1,31 @@
+# MLflow Configuration for Model Versioning
+# F2: Popper ML Reproducibility Criterion
+
+experiment_name: presentar-benchmarks
+
+tracking:
+  backend_store_uri: file:./mlruns
+  artifact_location: file:./mlartifacts
+
+default_artifact_root: ./mlartifacts
+
+run_settings:
+  # Random seed for reproducibility (F1)
+  random_seed: 42
+
+  # Automatic logging
+  autolog:
+    log_models: true
+    log_input_examples: true
+    log_model_signatures: true
+
+# Model registry settings
+model_registry:
+  model_name: presentar-benchmark-model
+  description: "Performance benchmark models for presentar-terminal"
+
+# Reproducibility settings
+reproducibility:
+  seed: 42
+  deterministic: true
+  log_system_metrics: true

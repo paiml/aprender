@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentar - Interactive Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1f2937;
+            color: #f9fafb;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 10px; }
+        .subtitle { color: #9ca3af; margin-bottom: 20px; }
+        #canvas {
+            background: #f8fafc;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        #info {
+            margin-top: 20px;
+            padding: 15px 25px;
+            background: #374151;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .counter {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+        }
+        .counter button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .counter button:first-child { background: #ef4444; color: white; }
+        .counter button:last-child { background: #10b981; color: white; }
+        .counter span {
+            font-size: 24px;
+            min-width: 60px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Presentar Interactive Demo</h1>
+    <p class="subtitle">Click on the canvas - events handled in WASM</p>
+    <canvas id="canvas" width="600" height="400" tabindex="0"></canvas>
+    <div id="info">Click anywhere on canvas...</div>
+    <div class="counter">
+        <button id="dec">- Decrease</button>
+        <span id="count">0</span>
+        <button id="inc">+ Increase</button>
+    </div>
+
+    <script type="module">
+        import init, { App, log } from './pkg/presentar.js';
+
+        let clickCount = 0;
+        let app;
+
+        function renderCounter() {
+            const commands = [
+                // Background
+                {"Rect": {"bounds": {"x": 0, "y": 0, "width": 600, "height": 400}, "radius": {"top_left": 0, "top_right": 0, "bottom_right": 0, "bottom_left": 0}, "style": {"fill": {"r": 0.97, "g": 0.98, "b": 0.99, "a": 1}, "stroke": null, "shadow": null}}},
+                // Title
+                {"Text": {"content": "Interactive Counter", "position": {"x": 180, "y": 30}, "style": {"size": 28, "color": {"r": 0.07, "g": 0.09, "b": 0.15, "a": 1}, "weight": "Bold", "style": "Normal"}}},
+                // Counter display box
+                {"Rect": {"bounds": {"x": 200, "y": 120, "width": 200, "height": 100}, "radius": {"top_left": 12, "top_right": 12, "bottom_right": 12, "bottom_left": 12}, "style": {"fill": {"r": 0.39, "g": 0.4, "b": 0.95, "a": 1}, "stroke": null, "shadow": null}}},
+                // Counter value
+                {"Text": {"content": String(clickCount), "position": {"x": 270, "y": 155}, "style": {"size": 48, "color": {"r": 1, "g": 1, "b": 1, "a": 1}, "weight": "Bold", "style": "Normal"}}},
+                // Instructions
+                {"Text": {"content": "Click canvas or use buttons below", "position": {"x": 175, "y": 280}, "style": {"size": 14, "color": {"r": 0.4, "g": 0.45, "b": 0.5, "a": 1}, "weight": "Normal", "style": "Normal"}}},
+                // Click indicator circles
+            ];
+
+            // Add visual feedback circles based on click count
+            const circleCount = Math.min(clickCount, 10);
+            for (let i = 0; i < circleCount; i++) {
+                const x = 60 + i * 50;
+                const hue = (i * 36) / 360;
+                commands.push({
+                    "Circle": {
+                        "center": {"x": x, "y": 350},
+                        "radius": 15,
+                        "style": {"fill": {"r": Math.sin(hue * Math.PI * 2) * 0.5 + 0.5, "g": Math.sin((hue + 0.33) * Math.PI * 2) * 0.5 + 0.5, "b": Math.sin((hue + 0.66) * Math.PI * 2) * 0.5 + 0.5, "a": 1}, "stroke": null, "shadow": null}
+                    }
+                });
+            }
+
+            app.render_json(JSON.stringify(commands));
+        }
+
+        async function main() {
+            await init();
+            log('Interactive demo initialized');
+
+            app = new App('canvas');
+            renderCounter();
+
+            // Set up click handler via WASM
+            app.on_click((eventJson) => {
+                const event = JSON.parse(eventJson);
+                clickCount++;
+                document.getElementById('count').textContent = clickCount;
+                document.getElementById('info').textContent =
+                    `Click at (${event.MouseUp.position.x.toFixed(0)}, ${event.MouseUp.position.y.toFixed(0)}) - Total: ${clickCount}`;
+                renderCounter();
+            });
+
+            // Set up mousemove handler
+            app.on_mousemove((eventJson) => {
+                const event = JSON.parse(eventJson);
+                const pos = event.MouseMove.position;
+                // Could update hover state here
+            });
+
+            // HTML button handlers
+            document.getElementById('inc').onclick = () => {
+                clickCount++;
+                document.getElementById('count').textContent = clickCount;
+                renderCounter();
+            };
+
+            document.getElementById('dec').onclick = () => {
+                clickCount = Math.max(0, clickCount - 1);
+                document.getElementById('count').textContent = clickCount;
+                renderCounter();
+            };
+
+            log('Event handlers registered');
+        }
+
+        main();
+    </script>
+</body>
+</html>

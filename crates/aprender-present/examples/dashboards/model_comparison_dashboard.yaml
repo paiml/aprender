@@ -1,0 +1,44 @@
+# DSH-003: Model Comparison Dashboard
+# QA Focus: A/B model comparison
+presentar: "1.0"
+name: "model-comparison-dashboard"
+version: "1.0.0"
+description: "Multi-model comparison dashboard"
+
+data:
+  baseline:
+    source: "./models/baseline.apr"
+    format: "apr"
+  improved:
+    source: "./models/improved.apr"
+    format: "apr"
+  experimental:
+    source: "./models/experimental.apr"
+    format: "apr"
+
+layout:
+  type: "grid"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "accuracy-comparison"
+      span: [1, 6]
+      widgets:
+        - type: "chart"
+          chart_type: "bar"
+          data: "{{ [data.baseline.metrics.accuracy, data.improved.metrics.accuracy, data.experimental.metrics.accuracy] }}"
+          title: "Accuracy Comparison"
+
+    - id: "size-comparison"
+      span: [7, 12]
+      widgets:
+        - type: "chart"
+          chart_type: "bar"
+          data: "{{ [data.baseline.param_count, data.improved.param_count, data.experimental.param_count] }}"
+          title: "Model Size"
+
+# Acceptance Criteria:
+# - All models displayed
+# - Metrics comparable
+# - Chart axes aligned
+# - 15-point checklist complete

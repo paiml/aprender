@@ -1,0 +1,100 @@
+# Color WCAG Contrast & Interpolation Contract v1.0.0
+#
+# Mathematical foundation for WCAG 2.1 relative luminance and contrast ratio,
+# plus color linear interpolation.
+#
+# References:
+#   - W3C WCAG 2.1 §1.4.3 https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
+#   - W3C WCAG 2.1 §1.4.3 https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
+#   - sRGB linearization: IEC 61966-2-1:1999
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-22"
+  author: "PAIML Engineering"
+  description: "WCAG 2.1 color contrast ratio and linear interpolation"
+  references:
+    - "W3C WCAG 2.1 Contrast Ratio"
+    - "IEC 61966-2-1:1999 (sRGB)"
+
+equations:
+  contrast_ratio:
+    formula: "CR = (L_lighter + 0.05) / (L_darker + 0.05)"
+    domain: "self, other: Color with r,g,b,a in [0.0, 1.0]"
+    codomain: "CR in [1.0, 21.0]"
+    preconditions:
+      - "self.r >= 0.0 && self.r <= 1.0"
+      - "self.g >= 0.0 && self.g <= 1.0"
+      - "self.b >= 0.0 && self.b <= 1.0"
+      - "other.r >= 0.0 && other.r <= 1.0"
+      - "other.g >= 0.0 && other.g <= 1.0"
+      - "other.b >= 0.0 && other.b <= 1.0"
+    postconditions:
+      - "ret >= 1.0"
+      - "ret <= 21.0 + 0.1"
+    lean_theorem: Theorems.Contrast_Ratio
+    properties:
+      - symmetry: "contrast_ratio(a,b) == contrast_ratio(b,a)"
+      - identity: "contrast_ratio(c,c) == 1.0"
+      - maximum: "contrast_ratio(BLACK, WHITE) ~= 21.0"
+
+  lerp:
+    formula: "result_c = self_c + (other_c - self_c) * t, for c in {r,g,b,a}"
+    domain: "self, other: Color, t in [0.0, 1.0]"
+    codomain: "Color with components in [0.0, 1.0]"
+    preconditions:
+      - "self.r >= 0.0 && self.r <= 1.0"
+      - "other.r >= 0.0 && other.r <= 1.0"
+    postconditions:
+      - "ret.r >= 0.0 && ret.r <= 1.0"
+      - "ret.g >= 0.0 && ret.g <= 1.0"
+      - "ret.b >= 0.0 && ret.b <= 1.0"
+      - "ret.a >= 0.0 && ret.a <= 1.0"
+    lean_theorem: Theorems.Lerp
+    properties:
+      - boundary_t0: "lerp(a, b, 0.0) == a"
+      - boundary_t1: "lerp(a, b, 1.0) == b"
+      - clamped: "t is clamped to [0.0, 1.0] before interpolation"
+
+kani_harnesses:
+  - id: KANI-001
+    obligation: OBL-001
+    property: "Output finite"
+    bound: 8
+    strategy: stub_float
+    harness: verify_basic
+
+proof_obligations:
+  - type: precondition
+    property: "Color components are in valid sRGB range"
+    formal: "for all c in {r,g,b,a}: 0.0 <= c <= 1.0"
+    applies_to: all
+  - type: postcondition
+    property: "Contrast ratio is in WCAG-defined range"
+    formal: "1.0 <= CR <= 21.0"
+    applies_to: contrast_ratio
+  - type: invariant
+    property: "Contrast ratio is symmetric"
+    formal: "CR(a,b) = CR(b,a)"
+    applies_to: contrast_ratio
+  - type: postcondition
+    property: "Interpolated color stays in valid range"
+    formal: "for all c in {r,g,b,a}: 0.0 <= lerp(a,b,t)_c <= 1.0"
+    applies_to: lerp
+
+falsification_tests:
+  - id: FALSIFY-CW-001
+    rule: "Contrast range"
+    prediction: "1.0 <= contrast_ratio(c1, c2) <= 21.0 for all valid colors"
+    test: "proptest with random Color pairs"
+    if_fails: "Luminance linearization incorrect"
+  - id: FALSIFY-CW-002
+    rule: "Contrast symmetry"
+    prediction: "contrast_ratio(a,b) == contrast_ratio(b,a)"
+    test: "proptest with random Color pairs"
+    if_fails: "Lighter/darker swap logic broken"
+  - id: FALSIFY-CW-003
+    rule: "Lerp boundaries"
+    prediction: "lerp(a,b,0) == a and lerp(a,b,1) == b"
+    test: "proptest with random Color endpoints"
+    if_fails: "Interpolation formula incorrect"

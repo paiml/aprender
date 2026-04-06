@@ -1,0 +1,44 @@
+# DSH-002: Dataset Explorer
+# QA Focus: Interactive data exploration
+presentar: "1.0"
+name: "dataset-explorer"
+version: "1.0.0"
+description: "Interactive dataset exploration dashboard"
+
+data:
+  dataset:
+    source: "./data/tabular.ald"
+    format: "ald"
+
+layout:
+  type: "row"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "controls"
+      span: [1, 3]
+      widgets:
+        - type: "select"
+          data: "{{ data.dataset.column_names }}"
+          bind: "state.selected_column"
+        - type: "text_input"
+          placeholder: "Filter..."
+          bind: "state.filter_query"
+
+    - id: "data-view"
+      span: [4, 12]
+      widgets:
+        - type: "data_table"
+          data: "{{ data.dataset }}"
+          filter: "{{ state.filter_query }}"
+          sortable: true
+        - type: "chart"
+          chart_type: "histogram"
+          data: "{{ data.dataset.columns[state.selected_column] }}"
+          visible: "{{ state.selected_column != null }}"
+
+# Acceptance Criteria:
+# - Column selection works
+# - Filter updates table
+# - Histogram shows selected column
+# - 15-point checklist complete

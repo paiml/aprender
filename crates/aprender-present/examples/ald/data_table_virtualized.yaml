@@ -1,0 +1,37 @@
+# ALD-002: Data Table Virtualized
+# QA Focus: Large dataset scrolling smooth
+presentar: "1.0"
+name: "data-table-virtualized"
+version: "1.0.0"
+description: "Virtualized data table for large datasets"
+
+data:
+  dataset:
+    source: "./data/large_100k.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Large Dataset (100k rows)"
+          style: "heading-1"
+
+    - id: "table"
+      widgets:
+        - type: "data_table"
+          data: "{{ data.dataset }}"
+          virtualized: true
+          page_size: 50
+          sortable: true
+          filterable: true
+
+# Acceptance Criteria:
+# - 100k rows scrolls at 60 FPS
+# - Sorting responsive <100ms
+# - Filtering works correctly
+# - 15-point checklist complete

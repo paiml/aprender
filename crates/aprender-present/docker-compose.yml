@@ -1,0 +1,73 @@
+# Docker Compose Configuration for Reproducible Development and CI
+# Ensures identical environment across all systems
+
+version: '3.8'
+
+services:
+  # Development environment with all tools
+  dev:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    environment:
+      - RUST_BACKTRACE=1
+      - CARGO_INCREMENTAL=0
+      - PRESENTAR_TEST_SEED=42
+      - PROPTEST_SEED=0xdeadbeef
+    working_dir: /app
+    command: bash
+
+  # Test runner
+  test:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app:ro
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - RUST_BACKTRACE=1
+      - PRESENTAR_TEST_SEED=42
+    command: cargo test --workspace
+
+  # Benchmark runner
+  bench:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - PRESENTAR_BENCH_SEED=12345
+      - CRITERION_DEBUG=0
+    command: cargo criterion --message-format json
+
+  # Coverage generator
+  coverage:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+    environment:
+      - PRESENTAR_TEST_SEED=42
+    command: cargo llvm-cov --workspace --html
+
+  # Production runtime
+  ptop:
+    build:
+      context: .
+      target: runtime
+    stdin_open: true
+    tty: true
+    command: ["--help"]
+
+volumes:
+  cargo-cache:
+  target-cache:

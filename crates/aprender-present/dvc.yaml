@@ -1,0 +1,31 @@
+# DVC Pipeline Configuration for Data Versioning
+# See: https://dvc.org/doc/user-guide/project-structure/pipelines-files
+
+stages:
+  generate-fixtures:
+    cmd: cargo run --bin generate-fixtures --release
+    deps:
+      - crates/presentar-terminal/src/tools/bench.rs
+    outs:
+      - tests/fixtures/current/:
+          cache: true
+    params:
+      - params.yaml:
+          - fixtures.seed
+          - fixtures.cores
+
+  benchmark:
+    cmd: cargo criterion --message-format json > benchmarks/results.json
+    deps:
+      - crates/presentar-terminal/benches/
+      - tests/fixtures/current/
+    metrics:
+      - benchmarks/results.json:
+          cache: false
+    plots:
+      - benchmarks/plots/:
+          x: iteration
+          y: time_ns
+
+params:
+  - params.yaml

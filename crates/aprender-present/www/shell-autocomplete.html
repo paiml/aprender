@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shell Autocomplete Demo - Presentar</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            background: #1a1b26;
+            color: #a9b1d6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+        h1 {
+            color: #7aa2f7;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .subtitle {
+            color: #565f89;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .demo-container {
+            width: 100%;
+            max-width: 600px;
+        }
+        .shell-input-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .shell-prompt {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ece6a;
+            font-weight: bold;
+        }
+        #shell-input {
+            width: 100%;
+            padding: 16px 16px 16px 40px;
+            font-size: 16px;
+            font-family: inherit;
+            background: #24283b;
+            border: 2px solid #414868;
+            border-radius: 8px;
+            color: #c0caf5;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #shell-input:focus {
+            border-color: #7aa2f7;
+        }
+        #shell-input::placeholder {
+            color: #565f89;
+        }
+        .suggestions {
+            background: #24283b;
+            border: 1px solid #414868;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+        .suggestion {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            border-bottom: 1px solid #1a1b26;
+            transition: background 0.15s;
+        }
+        .suggestion:last-child {
+            border-bottom: none;
+        }
+        .suggestion:hover {
+            background: #414868;
+        }
+        .suggestion.selected {
+            background: #364a82;
+        }
+        .suggestion-text {
+            color: #c0caf5;
+        }
+        .suggestion-score {
+            color: #565f89;
+            font-size: 12px;
+        }
+        .model-info {
+            background: #24283b;
+            border: 1px solid #414868;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .model-info h3 {
+            color: #7aa2f7;
+            font-size: 14px;
+            margin-bottom: 12px;
+            font-weight: 500;
+        }
+        .model-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .stat {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            color: #9ece6a;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 11px;
+            color: #565f89;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status {
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            text-align: center;
+        }
+        .status.loading { background: #364a82; color: #7aa2f7; }
+        .status.ready { background: #1a3028; color: #9ece6a; }
+        .status.error { background: #3b2028; color: #f7768e; }
+        .latency {
+            color: #565f89;
+            font-size: 12px;
+            text-align: right;
+            margin-top: 8px;
+        }
+        .footer {
+            margin-top: auto;
+            padding-top: 40px;
+            color: #565f89;
+            font-size: 12px;
+            text-align: center;
+        }
+        .footer a {
+            color: #7aa2f7;
+            text-decoration: none;
+        }
+        .no-suggestions {
+            padding: 16px;
+            color: #565f89;
+            text-align: center;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <h1>Shell Autocomplete Demo</h1>
+    <p class="subtitle">Powered by aprender-shell-base.apr (N-gram Markov Model)</p>
+
+    <div class="demo-container">
+        <div id="status" class="status loading">Loading WASM module...</div>
+
+        <div id="model-info" class="model-info" style="display: none;">
+            <h3>Model: <span id="model-name-display"></span></h3>
+            <div class="model-stats">
+                <div class="stat">
+                    <div class="stat-value" id="vocab-size">-</div>
+                    <div class="stat-label">Commands</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="ngram-count">-</div>
+                    <div class="stat-label">N-grams</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="ngram-size">-</div>
+                    <div class="stat-label">N-gram Size</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="shell-input-container">
+            <span class="shell-prompt">$</span>
+            <input type="text" id="shell-input" placeholder="Type a command (git, cargo, docker...)" autocomplete="off" disabled>
+        </div>
+
+        <div id="suggestions" class="suggestions" style="display: none;">
+        </div>
+
+        <div id="latency" class="latency"></div>
+    </div>
+
+    <div class="footer">
+        <p>Zero-Infrastructure AI Demo</p>
+        <p><a href="https://github.com/anthropics/presentar">Presentar</a> - WASM-first visualization framework</p>
+    </div>
+
+    <script type="module">
+        import init, { ShellAutocompleteDemo } from './pkg/presentar.js';
+
+        let autocomplete = null;
+        let selectedIndex = -1;
+
+        async function main() {
+            const statusEl = document.getElementById('status');
+            const inputEl = document.getElementById('shell-input');
+            const suggestionsEl = document.getElementById('suggestions');
+            const modelInfoEl = document.getElementById('model-info');
+            const latencyEl = document.getElementById('latency');
+
+            try {
+                // Fetch and initialize WASM
+                statusEl.textContent = 'Initializing WASM...';
+                await init();
+
+                // Load autocomplete dynamically
+                statusEl.textContent = 'Fetching model data (aprender-shell-base.apr)...';
+                const modelResponse = await fetch('./assets/aprender-shell-base.apr'); // Path from www/
+                if (!modelResponse.ok) {
+                    throw new Error(`Failed to fetch model: ${modelResponse.statusText}`);
+                }
+                const modelBytes = new Uint8Array(await modelResponse.arrayBuffer());
+
+                statusEl.textContent = 'Initializing model...';
+                autocomplete = ShellAutocompleteDemo.fromBytes(modelBytes);
+
+                // Display model info
+                const modelInfoJson = JSON.parse(autocomplete.model_info());
+                document.getElementById('model-name-display').textContent = modelInfoJson.model_name + '.apr';
+                document.getElementById('vocab-size').textContent = modelInfoJson.vocab_size;
+                document.getElementById('ngram-count').textContent = modelInfoJson.ngram_count;
+                document.getElementById('ngram-size').textContent = modelInfoJson.ngram_size;
+                modelInfoEl.style.display = 'block';
+
+                // Ready
+                statusEl.textContent = `Ready - ${autocomplete.vocab_size()} commands loaded`;
+                statusEl.className = 'status ready';
+                inputEl.disabled = false;
+                inputEl.focus();
+
+                // Input event handler
+                inputEl.addEventListener('input', () => {
+                    const prefix = inputEl.value;
+                    selectedIndex = -1;
+
+                    if (!prefix.trim()) {
+                        suggestionsEl.style.display = 'none';
+                        latencyEl.textContent = '';
+                        return;
+                    }
+
+                    const start = performance.now();
+                    const result = JSON.parse(autocomplete.suggest(prefix, 8));
+                    const elapsed = performance.now() - start;
+
+                    renderSuggestions(result.suggestions);
+                    latencyEl.textContent = `Inference: ${elapsed.toFixed(2)}ms`;
+                });
+
+                // Keyboard navigation
+                inputEl.addEventListener('keydown', (e) => {
+                    const items = suggestionsEl.querySelectorAll('.suggestion');
+                    if (items.length === 0) return;
+
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        selectedIndex = Math.min(selectedIndex + 1, items.length - 1);
+                        updateSelection(items);
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        selectedIndex = Math.max(selectedIndex - 1, 0);
+                        updateSelection(items);
+                    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+                        e.preventDefault();
+                        selectSuggestion(items[selectedIndex].dataset.text);
+                    } else if (e.key === 'Tab' && items.length > 0) {
+                        e.preventDefault();
+                        const idx = selectedIndex >= 0 ? selectedIndex : 0;
+                        selectSuggestion(items[idx].dataset.text);
+                    } else if (e.key === 'Escape') {
+                        suggestionsEl.style.display = 'none';
+                        selectedIndex = -1;
+                    }
+                });
+
+            } catch (e) {
+                console.error('Initialization failed:', e);
+                statusEl.textContent = `Error: ${e}`;
+                statusEl.className = 'status error';
+            }
+        }
+
+        function renderSuggestions(suggestions) {
+            const suggestionsEl = document.getElementById('suggestions');
+
+            if (!suggestions || suggestions.length === 0) {
+                suggestionsEl.innerHTML = '<div class="no-suggestions">No suggestions</div>';
+                suggestionsEl.style.display = 'block';
+                return;
+            }
+
+            suggestionsEl.innerHTML = suggestions.map((s, i) => `
+                <div class="suggestion" data-text="${escapeHtml(s.text)}" data-index="${i}">
+                    <span class="suggestion-text">${escapeHtml(s.text)}</span>
+                    <span class="suggestion-score">${(s.score * 100).toFixed(1)}%</span>
+                </div>
+            `).join('');
+
+            // Click handler
+            suggestionsEl.querySelectorAll('.suggestion').forEach(el => {
+                el.addEventListener('click', () => {
+                    selectSuggestion(el.dataset.text);
+                });
+            });
+
+            suggestionsEl.style.display = 'block';
+        }
+
+        function updateSelection(items) {
+            items.forEach((item, i) => {
+                item.classList.toggle('selected', i === selectedIndex);
+            });
+        }
+
+        function selectSuggestion(text) {
+            const inputEl = document.getElementById('shell-input');
+            inputEl.value = text;
+            document.getElementById('suggestions').style.display = 'none';
+            selectedIndex = -1;
+            inputEl.focus();
+
+            // Trigger new suggestions for the selected text
+            inputEl.dispatchEvent(new Event('input'));
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        main();
+    </script>
+</body>
+</html>

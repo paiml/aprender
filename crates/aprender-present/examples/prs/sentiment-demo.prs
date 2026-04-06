@@ -1,0 +1,84 @@
+# Presentar Scene Format v1.0
+# Sentiment Analysis Demo
+
+prs_version: "1.0"
+
+metadata:
+  name: "sentiment-analysis-demo"
+  title: "Real-time Sentiment Analysis"
+  description: "Interactive sentiment classifier with confidence visualization"
+  author: "alice@example.com"
+  created: "2025-12-06T10:00:00Z"
+  license: "MIT"
+  tags: ["nlp", "sentiment", "demo"]
+
+resources:
+  models:
+    sentiment_model:
+      type: apr
+      source: "https://registry.paiml.com/models/sentiment-bert-q4.apr"
+      hash: "blake3:a1b2c3d4e5f6789012345678901234567890123456789012345678901234"
+      size_bytes: 45000000
+
+  datasets:
+    examples:
+      type: ald
+      source: "./data/sentiment-examples.ald"
+
+layout:
+  type: grid
+  columns: 2
+  rows: 2
+  gap: 16
+
+widgets:
+  - id: text_input
+    type: textbox
+    position: { row: 0, col: 0, colspan: 2 }
+    config:
+      label: "Enter text to analyze"
+      placeholder: "Type a sentence..."
+      max_length: 512
+
+  - id: sentiment_chart
+    type: bar_chart
+    position: { row: 1, col: 0 }
+    config:
+      title: "Sentiment Scores"
+      data: "{{ inference.sentiment_model | select('scores') }}"
+      x_axis: "{{ ['Positive', 'Negative', 'Neutral'] }}"
+
+  - id: confidence_gauge
+    type: gauge
+    position: { row: 1, col: 1 }
+    config:
+      value: "{{ inference.sentiment_model | select('confidence') | percentage }}"
+      min: 0
+      max: 100
+      thresholds:
+        - { value: 50, color: "red" }
+        - { value: 75, color: "yellow" }
+        - { value: 100, color: "green" }
+
+bindings:
+  - trigger: "text_input.change"
+    debounce_ms: 300
+    actions:
+      - target: inference.sentiment_model
+        input: "{{ text_input.value }}"
+      - target: sentiment_chart
+        action: refresh
+      - target: confidence_gauge
+        action: refresh
+
+theme:
+  preset: "dark"
+  custom:
+    primary_color: "#4A90D9"
+    font_family: "Inter, sans-serif"
+
+permissions:
+  network:
+    - "https://registry.paiml.com/*"
+  filesystem: []
+  clipboard: false

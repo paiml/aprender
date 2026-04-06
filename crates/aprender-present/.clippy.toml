@@ -1,0 +1,23 @@
+# Clippy configuration for Presentar
+# See: https://rust-lang.github.io/rust-clippy/master/index.html
+
+# Disallow unwrap() in production code (Cloudflare-class defect prevention)
+disallowed-methods = [
+    { path = "std::result::Result::unwrap", reason = "Use .expect() with context message or proper error handling" },
+    { path = "std::option::Option::unwrap", reason = "Use .expect() with context message or proper error handling" },
+]
+
+# Maximum cognitive complexity per function
+cognitive-complexity-threshold = 15
+
+# Maximum number of lines per function
+too-many-lines-threshold = 100
+
+# Maximum number of arguments per function
+too-many-arguments-threshold = 7
+
+# Stack size threshold for large_stack_frames lint
+stack-size-threshold = 1000000
+
+# Large array threshold
+array-size-threshold = 262144

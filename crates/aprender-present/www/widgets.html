@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentar - Widget Rendering Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #1f2937;
+            color: #f9fafb;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { margin-bottom: 10px; }
+        .subtitle { color: #9ca3af; margin-bottom: 20px; }
+        .demos { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+        .demo {
+            background: #374151;
+            padding: 20px;
+            border-radius: 12px;
+        }
+        .demo h2 { font-size: 14px; color: #9ca3af; margin-bottom: 10px; }
+        canvas { background: #f8fafc; border-radius: 8px; display: block; }
+        .controls { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #6366f1; color: white; }
+        .btn-secondary { background: #4b5563; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Presentar Widget Rendering</h1>
+    <p class="subtitle">Rust widgets rendered directly in browser via WASM</p>
+
+    <div class="demos">
+        <div class="demo">
+            <h2>Counter Widget</h2>
+            <canvas id="counter" width="400" height="200"></canvas>
+            <div class="controls">
+                <button class="btn-secondary" id="dec">- Decrease</button>
+                <button class="btn-primary" id="inc">+ Increase</button>
+            </div>
+        </div>
+
+        <div class="demo">
+            <h2>Dashboard Widget</h2>
+            <canvas id="dashboard" width="400" height="200"></canvas>
+            <div class="controls">
+                <button class="btn-primary" id="update">Update Data</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import init, { App, log } from './pkg/presentar.js';
+
+        let count = 0;
+        let revenue = 1_200_000;
+
+        async function main() {
+            await init();
+            log('Widget demo initialized');
+
+            // Counter widget
+            const counterApp = new App('counter');
+            counterApp.render_counter(count);
+
+            document.getElementById('inc').onclick = () => {
+                count++;
+                counterApp.render_counter(count);
+            };
+            document.getElementById('dec').onclick = () => {
+                count = Math.max(0, count - 1);
+                counterApp.render_counter(count);
+            };
+
+            // Dashboard widget
+            const dashApp = new App('dashboard');
+            dashApp.render_dashboard('Revenue', revenue, 0.75);
+
+            document.getElementById('update').onclick = () => {
+                revenue += Math.random() * 100000 - 50000;
+                const progress = Math.min(1, Math.max(0, revenue / 2_000_000));
+                dashApp.render_dashboard('Revenue', revenue, progress);
+            };
+
+            log('Widgets rendered');
+        }
+
+        main();
+    </script>
+</body>
+</html>

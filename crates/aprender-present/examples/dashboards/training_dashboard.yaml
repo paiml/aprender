@@ -1,0 +1,52 @@
+# DSH-001: Model Training Dashboard
+# QA Focus: Real-time training metrics
+presentar: "1.0"
+name: "training-dashboard"
+version: "1.0.0"
+description: "Real-time model training monitoring dashboard"
+
+data:
+  model:
+    source: "./models/training.apr"
+    format: "apr"
+    watch: true
+
+layout:
+  type: "grid"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "model-info"
+      span: [1, 4]
+      widgets:
+        - type: "model_card"
+          data: "{{ data.model }}"
+
+    - id: "loss-chart"
+      span: [5, 8]
+      widgets:
+        - type: "chart"
+          chart_type: "line"
+          data: "{{ data.model.metrics.loss_history }}"
+          title: "Loss"
+
+    - id: "accuracy-chart"
+      span: [9, 12]
+      widgets:
+        - type: "chart"
+          chart_type: "line"
+          data: "{{ data.model.metrics.accuracy_history }}"
+          title: "Accuracy"
+
+    - id: "epoch-status"
+      span: [1, 12]
+      widgets:
+        - type: "text"
+          content: "Epoch: {{ data.model.current_epoch }}"
+          style: "heading-2"
+
+# Acceptance Criteria:
+# - Updates at 60 FPS during training
+# - Charts animate smoothly
+# - Memory stable over 10 minutes
+# - 15-point checklist complete

@@ -1,0 +1,54 @@
+# Presentar Scene Format v1.0
+# CIFAR-10 Image Classifier
+
+prs_version: "1.0"
+
+metadata:
+  name: "image-classifier"
+  title: "CIFAR-10 Classifier"
+  description: "Upload an image to classify it into one of 10 categories"
+  license: "Apache-2.0"
+  tags: ["vision", "classifier", "cifar10"]
+
+resources:
+  models:
+    classifier:
+      type: apr
+      source: "https://registry.paiml.com/models/cifar10-resnet.apr"
+      hash: "blake3:abc123def456789012345678901234567890123456789012345678901234"
+      size_bytes: 25000000
+
+layout:
+  type: grid
+  columns: 2
+  rows: 1
+  gap: 24
+
+widgets:
+  - id: image_upload
+    type: image
+    position: { row: 0, col: 0 }
+    config:
+      mode: upload
+      accept: ["image/png", "image/jpeg"]
+
+  - id: predictions
+    type: bar_chart
+    position: { row: 0, col: 1 }
+    config:
+      title: "Predictions"
+      data: "{{ inference.classifier | select('probabilities') }}"
+      x_axis: "{{ ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck'] }}"
+
+bindings:
+  - trigger: image_upload.change
+    actions:
+      - target: inference.classifier
+        input: "{{ image_upload.data }}"
+
+theme:
+  preset: "light"
+
+permissions:
+  network:
+    - "https://registry.paiml.com/*"
