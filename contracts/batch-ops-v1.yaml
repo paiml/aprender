@@ -1,0 +1,83 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Batch operations contract for model registry bulk model management"
+  crate: "pacha"
+  references:
+    - "Dean et al. (2012) Large Scale Distributed Deep Networks, NIPS"
+
+equations:
+  batch_register:
+    formula: "batch_register(models) = [register(m_i) for m_i in models]"
+    domain: "models in Vec<Model>, |models| >= 1"
+    invariants:
+      - "Output count equals input count"
+      - "Each model gets a unique identifier"
+      - "No partial failures leave inconsistent state"
+  batch_predict:
+    formula: "batch_predict(inputs, model) = [model.predict(x_i) for x_i in inputs]"
+    domain: "inputs in Vec<Tensor>, |inputs| >= 1"
+    invariants:
+      - "Output batch size equals input batch size"
+      - "Each output has same shape as single predict"
+  batch_evaluate:
+    formula: "batch_evaluate(models, dataset) = [(m_i, metric(m_i, dataset)) for m_i in models]"
+    domain: "models in Vec<Model>, |dataset| >= 1"
+    invariants:
+      - "All models evaluated against same dataset"
+      - "Metrics are comparable across batch"
+
+proof_obligations:
+  - type: invariant
+    property: "Batch output count preservation"
+    formal: "|batch_op(inputs)| == |inputs|"
+    applies_to: all
+  - type: invariant
+    property: "Unique identifiers in batch register"
+    formal: "forall i != j: batch_register(models)[i].id != batch_register(models)[j].id"
+    applies_to: all
+  - type: invariant
+    property: "Batch atomicity"
+    formal: "batch_register either succeeds fully or rolls back completely"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCHOP-001
+    rule: "Output count preservation"
+    test: "test_register_and_get_model"
+    prediction: "verified"
+    if_fails: "Batch drops or duplicates entries"
+  - id: FALSIFY-BATCHOP-002
+    rule: "Unique identifiers"
+    test: "test_register_duplicate_model_fails"
+    prediction: "verified"
+    if_fails: "ID generator produces collisions"
+  - id: FALSIFY-BATCHOP-003
+    rule: "Batch atomicity"
+    test: "test_model_artifact_roundtrip"
+    prediction: "verified"
+    if_fails: "Partial state left on batch failure"
+
+kani_harnesses:
+  - id: KANI-BATCHOP-001
+    obligation: PO-BATCHOP-001
+    property: "Batch count preservation"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_batch_count
+  - id: KANI-BATCHOP-002
+    obligation: PO-BATCHOP-002
+    property: "Unique identifiers"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_unique_ids
+
+qa_gate:
+  id: QA-BATCHOP
+  name: "batch operations contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_register_and_get_model
+    - test_register_duplicate_model_fails
+    - test_model_artifact_roundtrip

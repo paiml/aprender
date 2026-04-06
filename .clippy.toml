@@ -1,0 +1,10 @@
+# Clippy configuration
+# See: https://rust-lang.github.io/rust-clippy/master/index.html#configuration
+
+# Enforce maximum cognitive complexity per function
+cognitive-complexity-threshold = 25
+
+# Banned methods (Cloudflare-class defect prevention)
+# Note: disallowed-methods removed — unwrap_used/expect_used lints at workspace level
+# provide the same coverage without conflicting with test code allows.
+disallowed-methods = []

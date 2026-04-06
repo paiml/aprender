@@ -1,0 +1,7 @@
+[formatting]
+align_entries = false
+align_comments = true
+array_trailing_comma = true
+array_auto_expand = true
+inline_table_expand = false
+reorder_keys = false
