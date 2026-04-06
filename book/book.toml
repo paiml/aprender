@@ -1,0 +1,26 @@
+[book]
+authors = ["Pragmatic AI Labs <contact@paiml.com>"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Realizar - Building a Pure Rust ML Inference Engine from Scratch"
+description = "A comprehensive guide to building a production-grade ML model serving engine in pure Rust with EXTREME TDD methodology"
+
+[build]
+build-dir = "book"
+create-missing = true
+use-default-preprocessors = true
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/paiml/realizar"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/paiml/realizar/edit/main/book/{path}"
+site-url = "/realizar/"
+
+[output.html.playground]
+editable = true
+copyable = true
+copy-js = true
+runnable = false

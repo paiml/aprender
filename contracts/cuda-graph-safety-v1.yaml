@@ -1,0 +1,88 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-04-02"
+  author: "candle-vs-apr F-PARITY-02 (12.1x regression root cause)"
+  description: "CUDA graph capture safety — prevent context poisoning from failed graph capture"
+  references:
+    - "candle-vs-apr: 22.7→273.8 tok/s after fix (12.1x)"
+    - "realizr 81c912d2: default to eager path"
+    - "trueno 5dfe852d: CudaStream::wait_event() for event-based ordering"
+    - "CUDA drivers 570.207, 590.48.01: cuStreamBeginCapture returns CUDA_ERROR_UNKNOWN (901)"
+
+# Five-whys that motivated this contract:
+# 1. Why 22.7 tok/s? → CUDA context poisoned by failed graph capture
+# 2. Why poisoned? → forward_graphed_decode.rs attempted graph capture by default
+# 3. Why attempt? → Used CUDA_GRAPH_DISABLE (opt-out) not CUDA_GRAPH_ENABLE (opt-in)
+# 4. Why fail? → Driver 570.207 returns CUDA_ERROR_UNKNOWN from cuStreamBeginCapture
+# 5. Root cause: inconsistent opt-in/opt-out between two graph capture code paths
+
+equations:
+  graph_capture_opt_in:
+    formula: "graph_capture_attempted ⟹ CUDA_GRAPH_ENABLE == '1'"
+    domain: "All code paths that call cuStreamBeginCapture"
+    invariants:
+      - "Graph capture NEVER attempted unless CUDA_GRAPH_ENABLE=1 is set"
+      - "Default behavior is eager (non-graphed) decode"
+      - "No code path uses CUDA_GRAPH_DISABLE (opt-out) — only CUDA_GRAPH_ENABLE (opt-in)"
+
+  context_poison_prevention:
+    formula: "graph_capture_fail(err) ⟹ context_valid_after(err)"
+    domain: "Error handling for cuStreamBeginCapture, cuStreamEndCapture"
+    invariants:
+      - "Failed graph capture does NOT corrupt subsequent eager kernel launches"
+      - "graph_capture_failed flag prevents retry"
+      - "Stream is synchronized after failed capture before any eager call"
+
+  env_flag_consistency:
+    formula: "∀ feature_flag, polarity(flag) = OPT_IN"
+    domain: "All CUDA_GRAPH_* environment variables"
+    invariants:
+      - "Only CUDA_GRAPH_ENABLE exists (opt-in). No CUDA_GRAPH_DISABLE."
+      - "SKIP_CUDA_GRAPH is allowed as a debug override but not as a production default"
+
+proof_obligations:
+  - type: invariant
+    property: "Graph capture opt-in only"
+    formal: "∀ path ∈ graph_capture_paths, path.guard = CUDA_GRAPH_ENABLE == '1'"
+    applies_to: all
+
+  - type: invariant
+    property: "No CUDA_GRAPH_DISABLE in codebase"
+    formal: "grep -rn 'CUDA_GRAPH_DISABLE' src/ | wc -l == 0"
+    applies_to: all
+
+  - type: invariant
+    property: "Eager path does not attempt capture"
+    formal: "¬CUDA_GRAPH_ENABLE ⟹ ¬cuStreamBeginCapture called"
+    applies_to: all
+
+  - type: postcondition
+    property: "Failed capture leaves context valid"
+    formal: "capture_fail ⟹ next_eager_call succeeds with expected throughput"
+    applies_to: error_handling
+
+falsification_tests:
+  - id: "FALSIFY-CGS-001"
+    rule: "Eager path full throughput without CUDA_GRAPH_ENABLE"
+    prediction: "decode tok/s > 200 without CUDA_GRAPH_ENABLE=1"
+    test: probador_llm_load_eager_throughput
+    if_fails: "CUDA context poisoned by attempted graph capture on default path"
+
+  - id: "FALSIFY-CGS-002"
+    rule: "Graph capture failure falls back to eager"
+    prediction: "graph_capture_failed=true, fallback tok/s > 200 after driver error 901"
+    test: probador_llm_load_graph_failure_fallback
+    if_fails: "Failed graph capture corrupts CUDA context, no eager fallback"
+
+  - id: "FALSIFY-CGS-003"
+    rule: "No CUDA_GRAPH_DISABLE opt-out in codebase"
+    prediction: "grep -rn 'CUDA_GRAPH_DISABLE' src/ returns 0 matches"
+    test: grep_cuda_graph_disable_absent
+    if_fails: "Opt-out pattern exists, violating opt-in-only policy"
+
+  - id: "FALSIFY-CGS-004"
+    rule: "Consistent graph capture guard condition"
+    prediction: "graphed_capture.rs and forward_graphed_decode.rs both check CUDA_GRAPH_ENABLE"
+    test: grep_cuda_graph_enable_consistency
+    if_fails: "Guard condition diverged between two graph capture code paths"

@@ -1,0 +1,36 @@
+{
+  "model": "test_model_32h_2l",
+  "config": {
+    "vocab_size": 100,
+    "hidden_dim": 32,
+    "num_heads": 1,
+    "num_layers": 2,
+    "intermediate_dim": 64
+  },
+  "benchmarks": {
+    "model_forward": {
+      "seq_len_1": {"mean": 19.2, "std": 0.6, "unit": "µs"},
+      "seq_len_5": {"mean": 45.1, "std": 1.4, "unit": "µs"},
+      "seq_len_10": {"mean": 82.3, "std": 2.3, "unit": "µs"},
+      "seq_len_20": {"mean": 151.7, "std": 3.9, "unit": "µs"}
+    },
+    "generation": {
+      "greedy_5_tokens": {"mean": 1.68, "std": 0.04, "unit": "ms"},
+      "top_k_5_tokens": {"mean": 1.75, "std": 0.05, "unit": "ms"},
+      "top_p_5_tokens": {"mean": 1.82, "std": 0.06, "unit": "ms"}
+    },
+    "generation_varying_length": {
+      "tokens_1": {"mean": 0.545, "std": 0.015, "unit": "ms"},
+      "tokens_5": {"mean": 1.68, "std": 0.04, "unit": "ms"},
+      "tokens_10": {"mean": 3.42, "std": 0.07, "unit": "ms"},
+      "tokens_20": {"mean": 6.89, "std": 0.13, "unit": "ms"}
+    }
+  },
+  "metadata": {
+    "timestamp": "2025-11-19T11:00:00Z",
+    "llama_cpp_version": "b1500",
+    "system": "linux_x86_64",
+    "cpu": "Intel(R) Xeon(R)",
+    "simd": "AVX2"
+  }
+}

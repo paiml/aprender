@@ -1,0 +1,47 @@
+[Benchmarking realizar (port: 8085, tokens: 5)...
+  [ 1/15] 0ms
+  [ 2/15] 0ms
+  [ 3/15] 0ms
+  [ 4/15] 0ms
+  [ 5/15] 0ms
+  [ 6/15] 0ms
+  [ 7/15] 0ms
+  [ 8/15] 0ms
+  [ 9/15] 0ms
+  [10/15] 0ms
+  [11/15] 0ms
+  [12/15] 0ms
+  [13/15] 0ms
+  [14/15] 0ms
+  [15/15] 0ms
+
+realizar Results:
+  Mean: 0ms
+  Min: 0ms
+  Max: 0ms
+  Throughput: ~0 tok/s
+
+{"server":"realizar","mean_ms":0,"min_ms":0,"max_ms":0,"throughput_tps":0},Benchmarking Ollama (model: qwen2.5-coder:1.5b, tokens: 50)...
+  [ 1/15] 2165ms
+  [ 2/15] 95ms
+  [ 3/15] 100ms
+  [ 4/15] 94ms
+  [ 5/15] 94ms
+  [ 6/15] 95ms
+  [ 7/15] 94ms
+  [ 8/15] 103ms
+  [ 9/15] 98ms
+  [10/15] 107ms
+  [11/15] 101ms
+  [12/15] 96ms
+  [13/15] 92ms
+  [14/15] 102ms
+  [15/15] 99ms
+
+Ollama Results:
+  Mean: 98ms
+  Min: 92ms
+  Max: 107ms
+  Throughput: ~263 tok/s
+
+{"server":"ollama","model":"qwen2.5-coder:1.5b","mean_ms":98,"min_ms":92,"max_ms":107,"throughput_tps":263},]

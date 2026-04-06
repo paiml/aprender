@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <linearGradient id="aprGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10B981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="pytorchGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#EF4444;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#DC2626;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="#1F2937"/>
+
+  <!-- Title -->
+  <text x="400" y="40" text-anchor="middle" fill="#F9FAFB" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold">
+    Lambda Performance: .apr vs PyTorch
+  </text>
+  <text x="400" y="65" text-anchor="middle" fill="#9CA3AF" font-family="system-ui, sans-serif" font-size="14">
+    Aprender .apr format DOMINATES PyTorch on AWS Lambda
+  </text>
+
+  <!-- Cold Start Section -->
+  <text x="50" y="110" fill="#F9FAFB" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Cold Start</text>
+
+  <!-- .apr bar (tiny) -->
+  <rect x="50" y="125" width="3" height="30" rx="2" fill="url(#aprGrad)" filter="url(#shadow)"/>
+  <text x="60" y="145" fill="#10B981" font-family="monospace" font-size="14" font-weight="bold">15µs</text>
+  <text x="110" y="145" fill="#6B7280" font-family="system-ui, sans-serif" font-size="12">.apr (Aprender)</text>
+
+  <!-- PyTorch bar (huge) -->
+  <rect x="50" y="165" width="650" height="30" rx="2" fill="url(#pytorchGrad)" filter="url(#shadow)"/>
+  <text x="710" y="185" fill="#EF4444" font-family="monospace" font-size="14" font-weight="bold">800ms</text>
+  <text x="60" y="185" fill="#FFF" font-family="system-ui, sans-serif" font-size="12">PyTorch</text>
+
+  <!-- Speedup badge -->
+  <rect x="300" y="200" width="120" height="28" rx="14" fill="#10B981"/>
+  <text x="360" y="219" text-anchor="middle" fill="#FFF" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">53,000x faster</text>
+
+  <!-- Inference Section -->
+  <text x="50" y="260" fill="#F9FAFB" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Inference Latency</text>
+
+  <!-- .apr bar -->
+  <rect x="50" y="275" width="60" height="30" rx="2" fill="url(#aprGrad)" filter="url(#shadow)"/>
+  <text x="120" y="295" fill="#10B981" font-family="monospace" font-size="14" font-weight="bold">0.6µs</text>
+  <text x="175" y="295" fill="#6B7280" font-family="system-ui, sans-serif" font-size="12">.apr</text>
+
+  <!-- PyTorch bar -->
+  <rect x="50" y="315" width="500" height="30" rx="2" fill="url(#pytorchGrad)" filter="url(#shadow)"/>
+  <text x="560" y="335" fill="#EF4444" font-family="monospace" font-size="14" font-weight="bold">5.0µs</text>
+  <text x="610" y="335" fill="#6B7280" font-family="system-ui, sans-serif" font-size="12">PyTorch</text>
+
+  <!-- Speedup badge -->
+  <rect x="300" y="350" width="100" height="28" rx="14" fill="#10B981"/>
+  <text x="350" y="369" text-anchor="middle" fill="#FFF" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">8.5x faster</text>
+
+  <!-- Model Size Section -->
+  <text x="50" y="410" fill="#F9FAFB" font-family="system-ui, sans-serif" font-size="16" font-weight="600">Binary Size</text>
+
+  <!-- .apr bar (tiny) -->
+  <rect x="50" y="425" width="2" height="25" rx="1" fill="url(#aprGrad)" filter="url(#shadow)"/>
+  <text x="60" y="442" fill="#10B981" font-family="monospace" font-size="13" font-weight="bold">3.2KB</text>
+  <text x="115" y="442" fill="#6B7280" font-family="system-ui, sans-serif" font-size="11">.apr model</text>
+
+  <!-- PyTorch bar -->
+  <rect x="50" y="455" width="600" height="25" rx="1" fill="url(#pytorchGrad)" filter="url(#shadow)"/>
+  <text x="660" y="472" fill="#EF4444" font-family="monospace" font-size="13" font-weight="bold">>100MB</text>
+  <text x="60" y="472" fill="#FFF" font-family="system-ui, sans-serif" font-size="11">PyTorch + deps</text>
+
+  <!-- Speedup badge -->
+  <rect x="300" y="483" width="120" height="24" rx="12" fill="#10B981"/>
+  <text x="360" y="500" text-anchor="middle" fill="#FFF" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">30,000x smaller</text>
+
+  <!-- Footer -->
+  <text x="400" y="520" text-anchor="middle" fill="#6B7280" font-family="system-ui, sans-serif" font-size="11">
+    Benchmark: MNIST 784-feature LogisticRegression | Statistical: p &lt; 0.001, 10,000 iterations
+  </text>
+</svg>

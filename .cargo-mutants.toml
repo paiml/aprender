@@ -1,0 +1,24 @@
+# cargo-mutants configuration for Realizar
+# Mutation testing to validate test suite effectiveness
+
+# Timeout for each mutation test (seconds)
+timeout = 300
+
+# Number of parallel jobs
+jobs = 4
+
+# Exclude from mutation testing
+exclude_globs = [
+    "target/**",
+    "benches/**",
+    "examples/**",
+]
+
+# Exclude specific functions from mutation
+exclude_functions = [
+    "fmt",  # Display implementations
+    "clone", # Derived traits
+]
+
+# Minimum test coverage to generate mutants
+minimum_test_time = "1s"

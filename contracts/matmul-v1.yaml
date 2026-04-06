@@ -1,0 +1,85 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Matrix multiplication contracts for CPU and GPU compute paths"
+  references:
+    - "Goto & van de Geijn (2008) Anatomy of High-Performance Matrix Multiplication"
+    - "BLAS Level 3 specification: General Matrix Multiply"
+
+equations:
+  matmul:
+    formula: "C[i,j] = Σ_k A[i,k] * B[k,j], A ∈ ℝ^{m×k}, B ∈ ℝ^{k×n}, C ∈ ℝ^{m×n}"
+    domain: "m, k, n > 0, A.len() = m*k, B.len() = k*n"
+    invariants:
+      - "Output shape is [m, n]"
+      - "Result is independent of evaluation order (up to float rounding)"
+  matvec:
+    formula: "y[i] = Σ_j W[i,j] * x[j], W ∈ ℝ^{out×in}, x ∈ ℝ^{in}, y ∈ ℝ^{out}"
+    domain: "W.len() = out_dim * in_dim, x.len() = in_dim"
+    invariants:
+      - "Output length = out_dim"
+      - "W stored row-major: W[i,j] at offset i * in_dim + j"
+  identity_matmul:
+    formula: "I @ A = A and A @ I = A"
+    domain: "I = identity matrix, A ∈ ℝ^{m×n}"
+    invariants:
+      - "Matmul with identity preserves input exactly"
+  transposed_matmul:
+    formula: "cpu_matmul_transposed_simd: y = W^T x where W stored in [out, in] layout"
+    domain: "W ∈ ℝ^{out×in}, x ∈ ℝ^{in}"
+    invariants:
+      - "SIMD and scalar paths produce equivalent results"
+      - "Output length = out_dim"
+
+proof_obligations:
+  - type: invariant
+    property: "Dimension validation"
+    formal: "A.len() = m*k ∧ B.len() = k*n, else Err"
+    applies_to: all
+  - type: invariant
+    property: "Output shape correctness"
+    formal: "matmul(A, B).len() = m * n"
+    applies_to: all
+  - type: invariant
+    property: "Identity matmul"
+    formal: "matmul(I, A) = A for identity I"
+    tolerance: 1.0e-7
+    applies_to: all
+  - type: invariant
+    property: "CPU-GPU equivalence for matmul"
+    formal: "|matmul_cpu(A,B) - matmul_gpu(A,B)| < eps element-wise"
+    tolerance: 1.0e-3
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-MATMUL-001
+    rule: "Dimension mismatch rejected"
+    prediction: "matmul with mismatched A.len() != m*k returns Err"
+    test: "Pass A with wrong length to GpuCompute::matmul"
+    if_fails: "Missing dimension validation causes out-of-bounds read"
+  - id: FALSIFY-MATMUL-002
+    rule: "Identity multiplication"
+    prediction: "matmul(I, A) = A within tolerance"
+    test: "Create identity matrix, multiply with random A, compare"
+    if_fails: "Index calculation error in inner loop"
+  - id: FALSIFY-MATMUL-003
+    rule: "Commutativity of transpose"
+    prediction: "(A @ B)^T = B^T @ A^T"
+    test: "Compute both sides, compare element-wise"
+    if_fails: "Transpose or multiplication index mapping is wrong"
+  - id: FALSIFY-MATMUL-004
+    rule: "f32_matmul matvec correctness"
+    prediction: "f32_matmul(W, x, out, in) matches naive dot products"
+    test: "Known W and x, verify against hand-computed output"
+    if_fails: "Row-major offset calculation wrong in f32_matmul"
+
+kani_harnesses:
+  - id: matmul-kani-001
+    obligation: "Dimension validation"
+    bound: 4
+    strategy: bounded_int
+  - id: matmul-kani-002
+    obligation: "Output shape correctness"
+    bound: 4
+    strategy: bounded_int

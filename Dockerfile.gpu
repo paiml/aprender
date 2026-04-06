@@ -1,0 +1,77 @@
+# Realizar - GPU-enabled Docker build with CUDA support
+#
+# Build: docker build -f Dockerfile.gpu -t realizar:gpu .
+# Run: docker run --gpus all -p 3000:3000 realizar:gpu
+
+# Stage 1: Build with CUDA
+FROM nvidia/cuda:12.3.0-devel-ubuntu22.04 as builder
+
+# Install Rust and build dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    pkg-config \
+    libssl-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy manifests
+COPY Cargo.toml Cargo.lock ./
+
+# Create dummy source to cache dependencies
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    echo "pub fn lib() {}" > src/lib.rs
+
+# Build dependencies with GPU feature (cached layer)
+RUN cargo build --release --features "server,gpu" && \
+    rm -rf src target/release/deps/realizar*
+
+# Copy actual source code
+COPY src ./src
+COPY tests ./tests
+COPY examples ./examples
+COPY benches ./benches
+
+# Build application with GPU support
+RUN cargo build --release --features "server,gpu"
+
+# Stage 2: Runtime with CUDA
+FROM nvidia/cuda:12.3.0-runtime-ubuntu22.04
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd -m -u 1000 realizar && \
+    mkdir -p /app/models && \
+    chown -R realizar:realizar /app
+
+USER realizar
+WORKDIR /app
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/realizar /usr/local/bin/realizar
+
+# Expose API port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+# Environment variables for GPU
+ENV CUDA_VISIBLE_DEVICES=0
+ENV RUST_LOG=info
+
+# Default command: serve in demo mode
+CMD ["realizar", "serve", "--demo", "--host", "0.0.0.0", "--port", "3000"]

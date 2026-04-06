@@ -1,0 +1,96 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "GGUF quantization and dequantization contracts for model weights"
+  references:
+    - "Frantar et al. (2023) GPTQ: Accurate Post-Training Quantization for GPT"
+    - "Dettmers et al. (2023) QLoRA: Efficient Finetuning of Quantized LLMs"
+
+equations:
+  q4_0_dequant:
+    formula: "value = scale * (quant_nibble - 8), block_size = 32"
+    domain: "scale ∈ ℝ, quant_nibble ∈ [0, 15]"
+    invariants:
+      - "Block size is always 32 values"
+      - "Each byte encodes 2 values (low nibble, high nibble)"
+  q8_0_dequant:
+    formula: "value = scale * quant_int8, block_size = 32"
+    domain: "scale ∈ ℝ, quant_int8 ∈ [-128, 127]"
+    invariants:
+      - "Scale factor is per-block (1 f32 per 32 values)"
+      - "Dequantized values are finite (no NaN/Inf)"
+  q4_k_dequant:
+    formula: "value = d * block_scale * quant - dmin * block_min, super_block_size = 256"
+    domain: "d, dmin ∈ f16, block_scale ∈ [0, 63], quant ∈ [0, 15]"
+    invariants:
+      - "Super-block has 8 blocks of 32 values each"
+      - "6-bit packed scales: blocks 0-3 simple, blocks 4-7 packed layout"
+  quantize_roundtrip:
+    formula: "|dequantize(quantize(x)) - x| ≤ max_error(format)"
+    domain: "x ∈ ℝ^n"
+    invariants:
+      - "Q8_0 max relative error < 1% for typical weight distributions"
+      - "Q4_K achieves 4.5 bits per weight with < 5% perplexity degradation"
+  simd_scalar_equivalence:
+    formula: "dequant_simd(data) = dequant_scalar(data) within floating-point tolerance"
+    domain: "data: valid quantized block bytes"
+    invariants:
+      - "SIMD and scalar produce identical results up to float rounding"
+      - "SIMD path selected based on runtime CPU feature detection"
+
+proof_obligations:
+  - type: invariant
+    property: "SIMD-scalar equivalence for all formats"
+    formal: "|dequant_simd(x) - dequant_scalar(x)| < eps for all valid x"
+    tolerance: 1.0e-4
+    applies_to: all
+  - type: bound
+    property: "Dequantized values are finite"
+    formal: "∀ v ∈ dequant(data): v.is_finite()"
+    applies_to: all
+  - type: invariant
+    property: "Block size consistency"
+    formal: "input.len() mod block_byte_size = 0 for valid input"
+    applies_to: all
+  - type: bound
+    property: "Quantize output bounded"
+    formal: "quantize_q8(x) ∈ [-128, 127] for all x"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-QUANT-001
+    rule: "Q4_K SIMD-scalar equivalence"
+    prediction: "dequantize_q4_k_simd(data) ≈ dequantize_q4_k_parallel(data)"
+    test: "Generate random Q4_K blocks, compare SIMD vs scalar output"
+    if_fails: "SIMD shuffle or scale extraction diverges from scalar path"
+  - id: FALSIFY-QUANT-002
+    rule: "Q8_0 roundtrip fidelity"
+    prediction: "dequant(quant(x)) within 1% of x for normal distribution"
+    test: "Quantize random f32 vector to Q8_0, dequantize, check max error"
+    if_fails: "Scale computation or rounding in quantize_to_q8_blocks is wrong"
+  - id: FALSIFY-QUANT-003
+    rule: "Invalid block size rejected"
+    prediction: "dequantize_q4_0 with non-multiple-of-block-size returns Err"
+    test: "Pass truncated data (e.g., 17 bytes for Q4_0 block)"
+    if_fails: "Missing block size validation in dequantization"
+  - id: FALSIFY-QUANT-004
+    rule: "Zero scale produces zero output"
+    prediction: "Q8_0 block with scale=0.0 dequantizes to all zeros"
+    test: "Create Q8_0 block with scale=0.0, verify output is all 0.0"
+    if_fails: "Scale multiplication path has additive offset bug"
+  - id: FALSIFY-QUANT-005
+    rule: "Fused quantize-matmul equivalence"
+    prediction: "fused_rmsnorm_q4_0_matmul ≈ separate rmsnorm + dequant + matmul"
+    test: "Compare fused vs decomposed pipeline on random input"
+    if_fails: "Fused kernel skips or reorders normalization step"
+
+kani_harnesses:
+  - id: quant-kani-001
+    obligation: "Dequantized values are finite"
+    bound: 4
+    strategy: stub_float
+  - id: quant-kani-002
+    obligation: "Quantize output bounded"
+    bound: 8
+    strategy: bounded_int

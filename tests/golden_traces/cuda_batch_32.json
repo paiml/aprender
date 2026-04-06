@@ -1,0 +1,96 @@
+{
+  "name": "cuda_batch_32_golden",
+  "description": "Golden baseline trace for CUDA batch-32 inference on RTX 4090",
+  "created": "2025-12-16",
+  "hardware": {
+    "gpu": "NVIDIA GeForce RTX 4090",
+    "cuda_capability": "8.9",
+    "vram_gb": 24
+  },
+  "config": {
+    "backend": "cuda",
+    "batch_size": 32,
+    "max_tokens": 16,
+    "model": "phi-2-q4_k_m.gguf"
+  },
+  "expected_metrics": {
+    "throughput_tok_per_sec_min": 150.0,
+    "throughput_tok_per_sec_target": 192.0,
+    "latency_p50_ms_max": 50.0,
+    "latency_p99_ms_max": 200.0
+  },
+  "required_spans": [
+    {
+      "name_pattern": "gpu_kernel:gemm*",
+      "attributes": {
+        "gpu.backend": "cuda"
+      },
+      "duration_us_max": 5000,
+      "min_count": 1
+    },
+    {
+      "name_pattern": "gpu_kernel:softmax*",
+      "attributes": {
+        "gpu.backend": "cuda"
+      },
+      "duration_us_max": 2000,
+      "min_count": 1
+    },
+    {
+      "name_pattern": "gpu_kernel:attention*",
+      "attributes": {
+        "gpu.backend": "cuda"
+      },
+      "duration_us_max": 3000,
+      "min_count": 0
+    }
+  ],
+  "forbidden_spans": [
+    {
+      "name_pattern": "compute_block:scalar*",
+      "reason": "No scalar fallback should occur in CUDA mode"
+    },
+    {
+      "name_pattern": "compute_block:cpu*",
+      "reason": "No CPU compute should occur in CUDA mode"
+    }
+  ],
+  "sample_trace": {
+    "spans": [
+      {
+        "name": "gpu_transfer:weights_to_gpu",
+        "duration_us": 50000,
+        "attributes": {
+          "gpu.transfer.direction": "cpu_to_gpu",
+          "gpu.transfer.bytes": "7208960000"
+        }
+      },
+      {
+        "name": "gpu_kernel:gemm_fp32",
+        "duration_us": 3000,
+        "attributes": {
+          "gpu.backend": "cuda",
+          "gpu.device": "RTX 4090",
+          "batch_size": "32"
+        }
+      },
+      {
+        "name": "gpu_kernel:softmax_fp32",
+        "duration_us": 500,
+        "attributes": {
+          "gpu.backend": "cuda"
+        }
+      },
+      {
+        "name": "gpu_kernel:attention_fp32",
+        "duration_us": 2000,
+        "attributes": {
+          "gpu.backend": "cuda"
+        }
+      }
+    ],
+    "total_tokens": 512,
+    "total_duration_ms": 2500,
+    "throughput_tok_per_sec": 204.8
+  }
+}

@@ -1,0 +1,33 @@
+# Auto-generated mdBook output (contains third-party JS runtime)
+book/
+book/book/
+
+# Build artifacts
+target/
+target_disk/
+
+# Other generated files
+*.lock
+
+# Reference artifacts (not production code)
+src/gguf/gguf_monolith.rs
+
+# Python benchmark/baseline scripts (not production Rust)
+baselines/
+benches/comparative/*.py
+
+# Benchmarks, examples, and test infrastructure (not production logic)
+benches/
+examples/
+tests/
+src/*/tests/
+src/*/tests.rs
+src/*/*/tests/
+src/*/*/tests.rs
+
+# Benchmark runtime and visualization (not production inference logic)
+src/bench/
+src/bench_*.rs
+
+# Binary entry points (lambda functions, monitoring tools)
+src/bin/

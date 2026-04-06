@@ -1,0 +1,86 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Transformer forward pass contracts for LLM inference"
+  references:
+    - "Vaswani et al. (2017) Attention Is All You Need"
+    - "Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding"
+
+equations:
+  embedding_lookup:
+    formula: "hidden[t] = W_emb[token_id[t]], shape [hidden_dim]"
+    domain: "token_id ∈ [0, vocab_size), W_emb ∈ ℝ^{vocab_size × hidden_dim}"
+    invariants:
+      - "token_id < vocab_size (bounds check)"
+      - "output length = len(token_ids) * hidden_dim"
+  rms_norm:
+    formula: "RMSNorm(x) = x / sqrt(mean(x^2) + eps) * weight"
+    domain: "x ∈ ℝ^d, eps > 0, weight ∈ ℝ^d"
+    invariants:
+      - "Output has same shape as input"
+      - "eps prevents division by zero"
+  rope:
+    formula: "RoPE(x, pos) = [x1*cos(pos*freq) - x2*sin(pos*freq), x1*sin(pos*freq) + x2*cos(pos*freq)]"
+    domain: "x ∈ ℝ^{head_dim}, freq = 1/theta^(2i/d), pos ∈ ℕ"
+    invariants:
+      - "RoPE preserves vector norm: ||RoPE(x)|| = ||x||"
+      - "Rotation is orthogonal: RoPE(x)^T RoPE(y) depends only on relative position"
+  attention_scores:
+    formula: "scores = softmax(Q K^T / sqrt(d_k) + mask)"
+    domain: "Q ∈ ℝ^{seq×d_k}, K ∈ ℝ^{seq×d_k}, mask ∈ {0, -inf}^{seq×seq}"
+    invariants:
+      - "Each row of scores sums to 1.0"
+      - "Causal mask: scores[i][j] = 0 for j > i"
+
+proof_obligations:
+  - type: bound
+    property: "Embedding token ID within vocabulary"
+    formal: "0 ≤ token_id < vocab_size for all tokens"
+    applies_to: all
+  - type: invariant
+    property: "RoPE norm preservation"
+    formal: "| ||RoPE(x)|| - ||x|| | < eps"
+    tolerance: 1.0e-5
+    applies_to: all
+  - type: invariant
+    property: "Attention weights normalized"
+    formal: "|Σ_j scores[i][j] - 1.0| < eps for all i"
+    tolerance: 1.0e-6
+    applies_to: all
+  - type: invariant
+    property: "Causal mask enforced"
+    formal: "scores[i][j] = 0 for j > i (no future leakage)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-FWD-001
+    rule: "Embedding bounds"
+    prediction: "Out-of-bounds token_id returns error, not panic"
+    test: test_embed_out_of_vocab_token
+    if_fails: "Missing bounds check in embedding lookup"
+  - id: FALSIFY-FWD-002
+    rule: "RoPE norm preservation"
+    prediction: "||RoPE(x)|| ≈ ||x|| for random vectors"
+    test: test_rope_preserves_norm
+    if_fails: "Rotation matrix is not orthogonal"
+  - id: FALSIFY-FWD-003
+    rule: "Attention normalization"
+    prediction: "Softmax rows sum to 1.0 after causal masking"
+    test: test_apply_causal_mask_softmax_basic
+    if_fails: "Softmax applied before masking or mask values wrong"
+  - id: FALSIFY-FWD-004
+    rule: "RMSNorm stability"
+    prediction: "RMSNorm produces finite output for zero input"
+    test: test_rms_norm_zeros
+    if_fails: "Division by zero when input is zero (eps not applied)"
+
+kani_harnesses:
+  - id: fwd-kani-001
+    obligation: "Embedding token ID within vocabulary"
+    bound: 8
+    strategy: bounded_int
+  - id: fwd-kani-002
+    obligation: "RoPE norm preservation"
+    bound: 4
+    strategy: stub_float

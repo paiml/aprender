@@ -1,0 +1,50 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "candle-vs-apr F-TOOLPARITY-01 (25.6% delta)"
+  description: "apr-cli and realizr must produce equivalent throughput on same model"
+  references:
+    - "candle-vs-apr: apr-cli 21.9 vs realizr 17.4 tok/s on APR (25.6%)"
+    - "GGUF parity confirmed: 2.1% delta (PASS)"
+    - "realizr GH-176: feature flag divergence (FP8 cache)"
+
+# Five-whys:
+# 1. Why 25.6% delta? → apr-cli embeds realizr with FP8 weight cache
+# 2. Why FP8 cache? → apr-cli Cargo.toml enables --features fp8-cache
+# 3. Why not standalone? → realizr binary built without fp8-cache feature
+# 4. Why divergent? → No contract enforcing feature parity
+# 5. Root cause: feature flag divergence between tools
+
+equations:
+  throughput_parity:
+    formula: "|apr_tok_s - realizr_tok_s| / max(apr, realizr) <= 0.05"
+    domain: "Same model, same format, same hardware"
+    invariants:
+      - "Both tools use identical realizr engine version"
+      - "Feature flags must match for benchmark comparisons"
+      - "5% threshold allows for measurement noise"
+
+  feature_alignment:
+    formula: "apr_features ⊇ realizr_features ∧ realizr_features ⊇ apr_features"
+    domain: "Cargo.toml feature flags affecting inference"
+    invariants:
+      - "FP8 cache, HGEMM, graph capture flags must match"
+      - "CI gate checks feature parity on release"
+
+obligations:
+  - "Release builds of apr-cli and realizr use same feature set"
+  - "CI runs probador on both tools, asserts delta <= 5%"
+  - "Feature divergence logged as warning in benchmark output"
+
+falsification_tests:
+  - id: "FALSIFY-TP-001"
+    rule: "GGUF tool parity: |delta| <= 5%"
+    prediction: "|apr_cli_tok_s - realizr_tok_s| / max(apr_cli, realizr) <= 0.05 on GGUF"
+    test: probador_llm_load_tool_parity_gguf
+    if_fails: "Feature flag divergence causes throughput delta on GGUF format"
+  - id: "FALSIFY-TP-002"
+    rule: "APR tool parity: |delta| <= 5%"
+    prediction: "|apr_cli_tok_s - realizr_tok_s| / max(apr_cli, realizr) <= 0.05 on APR"
+    test: probador_llm_load_tool_parity_apr
+    if_fails: "Feature flag divergence causes throughput delta on APR format"

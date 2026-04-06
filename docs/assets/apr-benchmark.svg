@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <defs>
+    <linearGradient id="barGrad1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4CAF50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8BC34A;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="barGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2196F3;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#03A9F4;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="barGrad3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF9800;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFC107;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="barGrad4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#9C27B0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E91E63;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="400" fill="#1a1a2e"/>
+
+  <!-- Title -->
+  <text x="400" y="35" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold" fill="#ffffff" text-anchor="middle">APR Model Benchmark Results (Seed: 42)</text>
+  <text x="400" y="55" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#888888" text-anchor="middle">Reproducible benchmarks with deterministic weight generation</text>
+
+  <!-- Y-axis labels -->
+  <text x="140" y="105" font-family="monospace" font-size="11" fill="#cccccc" text-anchor="end">Iris (131 params)</text>
+  <text x="140" y="165" font-family="monospace" font-size="11" fill="#cccccc" text-anchor="end">MNIST (102K params)</text>
+  <text x="140" y="225" font-family="monospace" font-size="11" fill="#cccccc" text-anchor="end">CIFAR (790K params)</text>
+  <text x="140" y="285" font-family="monospace" font-size="11" fill="#cccccc" text-anchor="end">Large (656K params)</text>
+
+  <!-- Inference bars -->
+  <rect x="150" y="90" width="600" height="25" rx="4" fill="url(#barGrad1)"/>
+  <text x="160" y="107" font-family="monospace" font-size="11" fill="#ffffff" font-weight="bold">103ns | 9.6 Melem/s</text>
+
+  <rect x="150" y="150" width="45" height="25" rx="4" fill="url(#barGrad2)"/>
+  <text x="205" y="167" font-family="monospace" font-size="11" fill="#03A9F4" font-weight="bold">73us | 13.6 Kelem/s</text>
+
+  <rect x="150" y="210" width="35" height="25" rx="4" fill="url(#barGrad3)"/>
+  <text x="195" y="227" font-family="monospace" font-size="11" fill="#FFC107" font-weight="bold">578us | 1.7 Kelem/s</text>
+
+  <rect x="150" y="270" width="27" height="25" rx="4" fill="url(#barGrad4)"/>
+  <text x="187" y="287" font-family="monospace" font-size="11" fill="#E91E63" font-weight="bold">445us | 2.2 Kelem/s</text>
+
+  <!-- Batch throughput section -->
+  <line x1="50" y1="320" x2="750" y2="320" stroke="#444" stroke-width="1"/>
+  <text x="400" y="345" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="bold" fill="#ffffff" text-anchor="middle">Batch Throughput (256 samples)</text>
+
+  <!-- Throughput boxes -->
+  <rect x="100" y="360" width="180" height="30" rx="6" fill="#1E3A5F"/>
+  <text x="190" y="380" font-family="monospace" font-size="12" fill="#4CAF50" text-anchor="middle" font-weight="bold">MNIST: 15.7 Kelem/s</text>
+
+  <rect x="310" y="360" width="180" height="30" rx="6" fill="#1E3A5F"/>
+  <text x="400" y="380" font-family="monospace" font-size="12" fill="#2196F3" text-anchor="middle" font-weight="bold">Header Parse: 14ns</text>
+
+  <rect x="520" y="360" width="180" height="30" rx="6" fill="#1E3A5F"/>
+  <text x="610" y="380" font-family="monospace" font-size="12" fill="#FF9800" text-anchor="middle" font-weight="bold">Load: 533 MiB/s</text>
+
+  <!-- Scale indicator -->
+  <text x="750" y="105" font-family="monospace" font-size="10" fill="#666666" text-anchor="end">Scale: log</text>
+</svg>

@@ -1,0 +1,164 @@
+# PARITY-110: Renacer Assertions for Modality Verification
+#
+# These assertions are falsifiable - they MUST be capable of failing.
+# If CUDA silently falls back to CPU, these assertions will catch it.
+
+[otlp]
+endpoint = "http://localhost:4317"
+service_name = "realizar-modality-tests"
+batch_size = 1024
+batch_delay_ms = 100
+
+# ============================================
+# CRITICAL ASSERTIONS - Must pass for release
+# ============================================
+
+[[assertion]]
+name = "cuda_kernel_required"
+description = "CUDA kernel span MUST exist when CUDA backend is requested"
+type = "span_count"
+span_name_pattern = "gpu_kernel:*"
+attribute_filter = { "gpu.backend" = "cuda" }
+min_spans = 1
+fail_on_violation = true
+severity = "critical"
+
+[[assertion]]
+name = "cuda_gemm_kernel_required"
+description = "GEMM kernel MUST exist for matrix operations"
+type = "span_count"
+span_name_pattern = "gpu_kernel:gemm*"
+min_spans = 1
+fail_on_violation = true
+severity = "critical"
+
+[[assertion]]
+name = "gemm_under_5ms"
+description = "GEMM on RTX 4090 should complete in <5ms"
+type = "span_duration"
+span_name_pattern = "gpu_kernel:gemm*"
+max_duration_us = 5000
+fail_on_violation = true
+severity = "critical"
+
+[[assertion]]
+name = "no_scalar_fallback_in_cuda_mode"
+description = "No scalar fallback when CUDA is explicitly requested"
+type = "span_count"
+span_name_pattern = "compute_block:scalar*"
+max_spans = 0
+fail_on_violation = true
+severity = "critical"
+# Only active when REALIZAR_BACKEND=cuda
+
+# ============================================
+# SIMD ASSERTIONS
+# ============================================
+
+[[assertion]]
+name = "simd_kernel_when_forced"
+description = "SIMD compute block MUST exist when SIMD is forced"
+type = "span_count"
+span_name_pattern = "compute_block:simd*"
+min_spans = 1
+fail_on_violation = true
+severity = "warning"
+# Only active when REALIZAR_FORCE_SIMD=1
+
+[[assertion]]
+name = "simd_faster_than_scalar"
+description = "SIMD operations should be faster than 50ms"
+type = "span_duration"
+span_name_pattern = "compute_block:simd*"
+max_duration_us = 50000
+fail_on_violation = false
+severity = "warning"
+
+# ============================================
+# SCALAR ASSERTIONS (Baseline)
+# ============================================
+
+[[assertion]]
+name = "scalar_kernel_when_forced"
+description = "Scalar compute block MUST exist when scalar is forced"
+type = "span_count"
+span_name_pattern = "compute_block:scalar*"
+min_spans = 1
+fail_on_violation = true
+severity = "info"
+# Only active when REALIZAR_FORCE_SCALAR=1
+
+[[assertion]]
+name = "no_gpu_in_scalar_mode"
+description = "No GPU kernels when scalar is explicitly forced"
+type = "span_count"
+span_name_pattern = "gpu_kernel:*"
+max_spans = 0
+fail_on_violation = true
+severity = "warning"
+# Only active when REALIZAR_FORCE_SCALAR=1
+
+# ============================================
+# PERFORMANCE HIERARCHY
+# ============================================
+
+[[assertion]]
+name = "throughput_m4_floor"
+description = "CUDA throughput must meet M4 floor (100 tok/s)"
+type = "throughput"
+min_tok_per_sec = 100.0
+fail_on_violation = true
+severity = "critical"
+# Only for CUDA mode
+
+[[assertion]]
+name = "throughput_m4_target"
+description = "CUDA throughput should meet M4 target (192 tok/s)"
+type = "throughput"
+min_tok_per_sec = 192.0
+fail_on_violation = false  # Warning only
+severity = "warning"
+
+# ============================================
+# GPU MEMORY ASSERTIONS
+# ============================================
+
+[[assertion]]
+name = "gpu_transfer_exists"
+description = "GPU memory transfer should be recorded"
+type = "span_count"
+span_name_pattern = "gpu_transfer:*"
+min_spans = 1
+fail_on_violation = false
+severity = "info"
+
+[[assertion]]
+name = "gpu_utilization_active"
+description = "GPU utilization should be >50% during CUDA inference"
+type = "metric"
+metric_name = "gpu.utilization_percent"
+min_value = 50
+fail_on_violation = false
+severity = "warning"
+
+# ============================================
+# REGRESSION PREVENTION
+# ============================================
+
+[[golden_trace]]
+name = "cuda_batch_32_baseline"
+file = "tests/golden_traces/cuda_batch_32.json"
+tolerance_percent = 10.0
+required_spans = ["gpu_kernel:gemm_fp32", "gpu_kernel:softmax_fp32"]
+
+[[golden_trace]]
+name = "simd_batch_32_baseline"
+file = "tests/golden_traces/simd_batch_32.json"
+tolerance_percent = 20.0
+required_spans = ["compute_block:simd_matmul"]
+
+[[golden_trace]]
+name = "scalar_baseline"
+file = "tests/golden_traces/scalar_baseline.json"
+tolerance_percent = 30.0
+required_spans = ["compute_block:scalar_matmul"]

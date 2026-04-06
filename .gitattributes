@@ -1,0 +1,22 @@
+# Git attributes for Realizar
+
+# Auto-detect text files and perform LF normalization
+* text=auto
+
+# Rust source files
+*.rs text eol=lf
+*.toml text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+Makefile text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Git configuration
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Lock files (binary)
+Cargo.lock binary

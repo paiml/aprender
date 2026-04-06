@@ -1,0 +1,21 @@
+{
+  "timestamp": "2025-11-27T20:23:46Z",
+  "winner": "aprender",
+  "speedup_p50": 9.669230769230769,
+  "speedup_mean": 9.648619622641508,
+  "throughput_ratio": 9.6993203206588,
+  "p_value": 0.0,
+  "significant": true,
+  "cohens_d": 6.633235370543613,
+  "effect_size": "large",
+  "aprender": {
+    "p50_us": 0.52,
+    "mean_us": 0.53,
+    "throughput": 1896707
+  },
+  "pytorch": {
+    "p50_us": 5.028,
+    "mean_us": 5.1137684,
+    "throughput": 195550.50635457016
+  }
+}

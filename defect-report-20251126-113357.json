@@ -1,0 +1,1944 @@
+{
+  "metadata": {
+    "tool": "pmat",
+    "version": "2.205.0",
+    "generated_at": "2025-11-26T11:33:57.939007271Z",
+    "project_root": ".",
+    "total_files_analyzed": 13,
+    "analysis_duration_ms": 1179
+  },
+  "defects": [
+    {
+      "id": "SATD-0002",
+      "severity": "low",
+      "category": "technical_debt",
+      "file_path": "./book/book/book.js",
+      "line_start": 399,
+      "line_end": null,
+      "column_start": 9,
+      "column_end": null,
+      "message": "Design: e.relatedTarget is null in Safari and Firefox on macOS (see workaround below)",
+      "rule_id": "satd-design",
+      "fix_suggestion": "Refactor to improve design and architecture",
+      "metrics": {
+        "debt_category": 0.0
+      }
+    },
+    {
+      "id": "PERF-0001",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 19,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_test_model' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0002",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 44,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_hit' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0003",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 59,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_miss' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0004",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 73,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_eviction' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 82.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0
+      }
+    },
+    {
+      "id": "PERF-0005",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 100,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_concurrent' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0006",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 131,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_metrics' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 82.0,
+        "space_complexity_class": 0.0
+      }
+    },
+    {
+      "id": "PERF-0007",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 148,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_key_creation' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0008",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/cache.rs",
+      "line_start": 177,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'benchmark_cache_varying_capacity' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0009",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/quantize.rs",
+      "line_start": 20,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_q4_0_data' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 0.0,
+        "confidence": 82.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0010",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/quantize.rs",
+      "line_start": 36,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_q8_0_data' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0011",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/quantize.rs",
+      "line_start": 52,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_q4_k_data' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 82.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0
+      }
+    },
+    {
+      "id": "PERF-0012",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/quantize.rs",
+      "line_start": 72,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_q5_k_data' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 82.0,
+        "space_complexity_class": 0.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0013",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./benches/quantize.rs",
+      "line_start": 96,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_q6_k_data' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 0.0,
+        "confidence": 82.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0014",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./book/book/book.js",
+      "line_start": 447,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'sidebar' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 0.0,
+        "confidence": 82.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0015",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./book/book/book.js",
+      "line_start": 455,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'showSidebar' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 0.0,
+        "confidence": 82.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0016",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./book/book/book.js",
+      "line_start": 466,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'hideSidebar' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 82.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0
+      }
+    },
+    {
+      "id": "PERF-0017",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./book/book/book.js",
+      "line_start": 478,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'sidebarToggle' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 0.0,
+        "time_complexity_class": 4.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0018",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./examples/gguf_loading.rs",
+      "line_start": 126,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_example_gguf_model' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0019",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./examples/inference.rs",
+      "line_start": 125,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'format_params' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 0.0,
+        "confidence": 82.0
+      }
+    },
+    {
+      "id": "PERF-0020",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 50,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'to_nanoseconds' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0021",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 61,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'format' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0022",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 75,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'speedup' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0023",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 92,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'load_benchmark_file' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0024",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 105,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'parse_benchmark_result' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0025",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./scripts/compare_benchmarks.py",
+      "line_start": 114,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'generate_markdown_report' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0026",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 361,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_u32' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0027",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 373,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_i32' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0028",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 385,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_f32' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0029",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 397,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_bool' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0030",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 409,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_u64' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0031",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 421,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_i64' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0032",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 433,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'read_f64' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0033",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/gguf.rs",
+      "line_start": 445,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'parse_tensor_info' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0034",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 116,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'softmax' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0035",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 765,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'scale' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0036",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1320,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0037",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1354,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'with_default_base' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0038",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1372,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'forward' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0039",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2239,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'forward' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0040",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2811,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_zero_head_dim_error' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0041",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2817,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_forward_shape' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0042",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2833,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_forward_computation' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0043",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2860,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_shape_mismatch_error' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0044",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2873,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_kv_seq_len_mismatch_error' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0045",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2886,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_softmax_weights_sum' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0046",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2914,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_attention_single_position' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0047",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2934,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_flash_attention_matches_standard' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0048",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 2967,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_flash_attention_multi_position' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0049",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3016,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_flash_attention_zero_block_size_error' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0050",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3028,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_flash_attention_large_sequence' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0051",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3117,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_forward_shape' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0052",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3127,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_position_zero_identity' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0053",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3149,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_preserves_norm' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0054",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3174,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_different_positions' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0055",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3194,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_dimension_mismatch_error' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0056",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3203,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_batched' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0057",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3226,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_rope_inv_freq_computation' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0058",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/quantize.rs",
+      "line_start": 190,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'dequantize_q4_0' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0059",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/quantize.rs",
+      "line_start": 254,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'dequantize_q8_0' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0060",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/quantize.rs",
+      "line_start": 497,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'dequantize_q6_k' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0061",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/tokenizer.rs",
+      "line_start": 145,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0062",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/tokenizer.rs",
+      "line_start": 191,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'encode' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0063",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/tokenizer.rs",
+      "line_start": 338,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0064",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/tokenizer.rs",
+      "line_start": 388,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'encode' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0065",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./src/tokenizer.rs",
+      "line_start": 418,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'viterbi_forward' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0066",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./tests/load_test.rs",
+      "line_start": 316,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'load_test_batch_tokenize' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0067",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./tests/load_test.rs",
+      "line_start": 385,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'load_test_batch_generate' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 72.0,
+        "time_complexity_class": 4.0
+      }
+    },
+    {
+      "id": "PERF-0068",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./tests/property_safetensors.rs",
+      "line_start": 18,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'f32_tensor_strategy' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0,
+        "confidence": 72.0
+      }
+    },
+    {
+      "id": "PERF-0069",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./tests/property_safetensors.rs",
+      "line_start": 23,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'shape_strategy' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "time_complexity_class": 4.0,
+        "confidence": 72.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0070",
+      "severity": "medium",
+      "category": "performance",
+      "file_path": "./tests/property_safetensors.rs",
+      "line_start": 28,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'create_safetensors_file' has high time complexity: O(n²)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Consider using a more efficient algorithm or data structure to reduce quadratic complexity",
+      "metrics": {
+        "confidence": 72.0,
+        "time_complexity_class": 4.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0071",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./book/book/searcher.js",
+      "line_start": 94,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'renderURL' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "confidence": 70.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0072",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./book/book/searcher.js",
+      "line_start": 128,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'formatSearchMetric' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0073",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./book/book/searcher.js",
+      "line_start": 138,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'formatSearchResult' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0074",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./book/book/searcher.js",
+      "line_start": 159,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'makeTeaser' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0075",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 394,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 70.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "PERF-0076",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 437,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'forward' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0077",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 650,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "PERF-0078",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 678,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'forward' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0079",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1103,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'mha' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "PERF-0080",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1115,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'mqa' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0081",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1130,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'gqa' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0082",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1147,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'forward' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0083",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1503,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'new' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0084",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1520,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'compute_slopes' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0085",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 1573,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'get_bias' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "confidence": 70.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0086",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3241,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_creation' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0087",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3248,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_zero_heads_error' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0088",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3254,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_slopes_power_of_2' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0089",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3267,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_slopes_non_power_of_2' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0
+      }
+    },
+    {
+      "id": "PERF-0090",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3288,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_bias_shape' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0091",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3297,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_bias_zero_seq_len_error' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "PERF-0092",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3304,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_bias_diagonal_zero' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "confidence": 70.0,
+        "space_complexity_class": 2.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "PERF-0093",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/layers.rs",
+      "line_start": 3322,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'test_alibi_bias_symmetry' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0094",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/quantize.rs",
+      "line_start": 317,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'dequantize_q4_k' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "time_complexity_class": 5.0,
+        "space_complexity_class": 2.0,
+        "confidence": 70.0
+      }
+    },
+    {
+      "id": "PERF-0095",
+      "severity": "high",
+      "category": "performance",
+      "file_path": "./src/quantize.rs",
+      "line_start": 400,
+      "line_end": null,
+      "column_start": null,
+      "column_end": null,
+      "message": "Function 'dequantize_q5_k' has high time complexity: O(n³)",
+      "rule_id": "high-complexity",
+      "fix_suggestion": "Cubic complexity is rarely acceptable; consider algorithmic improvements",
+      "metrics": {
+        "space_complexity_class": 2.0,
+        "confidence": 70.0,
+        "time_complexity_class": 5.0
+      }
+    },
+    {
+      "id": "SATD-0001",
+      "severity": "critical",
+      "category": "technical_debt",
+      "file_path": "./book/book/searcher.js",
+      "line_start": 148,
+      "line_end": null,
+      "column_start": 9,
+      "column_end": null,
+      "message": "Security: encodeURIComponent escapes all chars that could allow an XSS except",
+      "rule_id": "satd-security",
+      "fix_suggestion": "Address the security vulnerability",
+      "metrics": {
+        "debt_category": 0.0
+      }
+    }
+  ],
+  "summary": {
+    "total_defects": 97,
+    "by_severity": {
+      "critical": 1,
+      "high": 25,
+      "low": 1,
+      "medium": 70
+    },
+    "by_category": {
+      "Performance": 95,
+      "TechnicalDebt": 2
+    },
+    "hotspot_files": [
+      {
+        "path": "./src/layers.rs",
+        "defect_count": 43,
+        "severity_score": 167.0
+      },
+      {
+        "path": "./book/book/searcher.js",
+        "defect_count": 5,
+        "severity_score": 30.0
+      },
+      {
+        "path": "./src/gguf.rs",
+        "defect_count": 8,
+        "severity_score": 24.0
+      },
+      {
+        "path": "./benches/cache.rs",
+        "defect_count": 8,
+        "severity_score": 24.0
+      },
+      {
+        "path": "./src/quantize.rs",
+        "defect_count": 5,
+        "severity_score": 19.0
+      },
+      {
+        "path": "./scripts/compare_benchmarks.py",
+        "defect_count": 6,
+        "severity_score": 18.0
+      },
+      {
+        "path": "./src/tokenizer.rs",
+        "defect_count": 5,
+        "severity_score": 15.0
+      },
+      {
+        "path": "./benches/quantize.rs",
+        "defect_count": 5,
+        "severity_score": 15.0
+      },
+      {
+        "path": "./book/book/book.js",
+        "defect_count": 5,
+        "severity_score": 13.0
+      },
+      {
+        "path": "./tests/property_safetensors.rs",
+        "defect_count": 3,
+        "severity_score": 9.0
+      }
+    ]
+  },
+  "file_index": {
+    "./benches/cache.rs": [
+      "PERF-0001",
+      "PERF-0002",
+      "PERF-0003",
+      "PERF-0004",
+      "PERF-0005",
+      "PERF-0006",
+      "PERF-0007",
+      "PERF-0008"
+    ],
+    "./benches/quantize.rs": [
+      "PERF-0009",
+      "PERF-0010",
+      "PERF-0011",
+      "PERF-0012",
+      "PERF-0013"
+    ],
+    "./book/book/book.js": [
+      "SATD-0002",
+      "PERF-0014",
+      "PERF-0015",
+      "PERF-0016",
+      "PERF-0017"
+    ],
+    "./book/book/searcher.js": [
+      "PERF-0071",
+      "PERF-0072",
+      "PERF-0073",
+      "PERF-0074",
+      "SATD-0001"
+    ],
+    "./examples/gguf_loading.rs": [
+      "PERF-0018"
+    ],
+    "./examples/inference.rs": [
+      "PERF-0019"
+    ],
+    "./scripts/compare_benchmarks.py": [
+      "PERF-0020",
+      "PERF-0021",
+      "PERF-0022",
+      "PERF-0023",
+      "PERF-0024",
+      "PERF-0025"
+    ],
+    "./src/gguf.rs": [
+      "PERF-0026",
+      "PERF-0027",
+      "PERF-0028",
+      "PERF-0029",
+      "PERF-0030",
+      "PERF-0031",
+      "PERF-0032",
+      "PERF-0033"
+    ],
+    "./src/layers.rs": [
+      "PERF-0034",
+      "PERF-0035",
+      "PERF-0036",
+      "PERF-0037",
+      "PERF-0038",
+      "PERF-0039",
+      "PERF-0040",
+      "PERF-0041",
+      "PERF-0042",
+      "PERF-0043",
+      "PERF-0044",
+      "PERF-0045",
+      "PERF-0046",
+      "PERF-0047",
+      "PERF-0048",
+      "PERF-0049",
+      "PERF-0050",
+      "PERF-0051",
+      "PERF-0052",
+      "PERF-0053",
+      "PERF-0054",
+      "PERF-0055",
+      "PERF-0056",
+      "PERF-0057",
+      "PERF-0075",
+      "PERF-0076",
+      "PERF-0077",
+      "PERF-0078",
+      "PERF-0079",
+      "PERF-0080",
+      "PERF-0081",
+      "PERF-0082",
+      "PERF-0083",
+      "PERF-0084",
+      "PERF-0085",
+      "PERF-0086",
+      "PERF-0087",
+      "PERF-0088",
+      "PERF-0089",
+      "PERF-0090",
+      "PERF-0091",
+      "PERF-0092",
+      "PERF-0093"
+    ],
+    "./src/quantize.rs": [
+      "PERF-0058",
+      "PERF-0059",
+      "PERF-0060",
+      "PERF-0094",
+      "PERF-0095"
+    ],
+    "./src/tokenizer.rs": [
+      "PERF-0061",
+      "PERF-0062",
+      "PERF-0063",
+      "PERF-0064",
+      "PERF-0065"
+    ],
+    "./tests/load_test.rs": [
+      "PERF-0066",
+      "PERF-0067"
+    ],
+    "./tests/property_safetensors.rs": [
+      "PERF-0068",
+      "PERF-0069",
+      "PERF-0070"
+    ]
+  }
+}

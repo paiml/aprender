@@ -1,0 +1,262 @@
+# GEMV Scheduler State Machine (PARITY-119)
+#
+# This playbook defines the state machine for CudaScheduler GEMV execution.
+# Used for probar playbook testing to verify state transitions and invariants.
+#
+# Usage:
+#   probar playbook tests/playbooks/gemv_scheduler.yaml --validate
+#   probar playbook tests/playbooks/gemv_scheduler.yaml --mutate
+#   probar playbook tests/playbooks/gemv_scheduler.yaml --export svg
+
+machine:
+  id: "gemv_scheduler_flow"
+  version: "1.0.0"
+  description: "CudaScheduler GEMV execution state machine"
+  initial: "uninitialized"
+
+  states:
+    uninitialized:
+      description: "Scheduler not yet created"
+      invariants:
+        - condition: "scheduler == null"
+          message: "Scheduler must not exist yet"
+        - condition: "cuda_context == null"
+          message: "No CUDA context before init"
+
+    initialized:
+      description: "CudaScheduler created with CUDA context"
+      invariants:
+        - condition: "scheduler.context != null"
+          message: "CUDA context must exist after init"
+        - condition: "scheduler.modules.is_empty()"
+          message: "No kernel modules loaded initially"
+        - condition: "scheduler.stream != null"
+          message: "CUDA stream must be initialized"
+
+    kernel_compiled:
+      description: "GEMV kernel PTX compiled and module loaded"
+      invariants:
+        - condition: "scheduler.modules.contains_key('gemv_coalesced')"
+          message: "Coalesced GEMV kernel must be loaded"
+        - condition: "ptx.contains('bar.sync')"
+          message: "PTX must have barrier synchronization"
+        - condition: "ptx.contains('.shared')"
+          message: "PTX must use shared memory"
+
+    buffers_allocated:
+      description: "GPU buffers allocated for input/output"
+      invariants:
+        - condition: "buf_a.size == k * sizeof(f32)"
+          message: "Input vector buffer size correct"
+        - condition: "buf_b.size == k * n * sizeof(f32)"
+          message: "Matrix buffer size correct"
+        - condition: "buf_c.size == n * sizeof(f32)"
+          message: "Output buffer size correct"
+        - condition: "buf_c.initialized_to_zero"
+          message: "Output buffer must be zeroed (PARITY-114)"
+
+    kernel_launched:
+      description: "Kernel submitted to CUDA stream"
+      invariants:
+        - condition: "launch_config.block_x == 256"
+          message: "Block size must be 256 threads"
+        - condition: "launch_config.grid_x == ceil(n / 256)"
+          message: "Grid size must cover all outputs"
+        - condition: "launch_config.shared_mem == 1024"
+          message: "Shared memory must be 256*4 bytes"
+
+    result_ready:
+      description: "Kernel completed, results available"
+      invariants:
+        - condition: "output.len() == n"
+          message: "Output vector has correct length"
+        - condition: "cuda_error == 0"
+          message: "No CUDA errors"
+        - condition: "output == cpu_reference"
+          message: "Output matches CPU reference"
+
+    error:
+      description: "Error state for CUDA failures"
+      invariants:
+        - condition: "last_error != null"
+          message: "Error must be recorded"
+        - condition: "error_recoverable || resources_freed"
+          message: "Either recoverable or cleaned up"
+
+  transitions:
+    - id: "create_scheduler"
+      from: "uninitialized"
+      to: "initialized"
+      event: "CudaScheduler::new()"
+      assertions:
+        - type: cuda_context_valid
+          description: "CUDA driver API initialized"
+        - type: device_available
+          description: "GPU device accessible"
+
+    - id: "compile_gemv_kernel"
+      from: "initialized"
+      to: "kernel_compiled"
+      event: "generate_ptx(CoalescedGemv)"
+      assertions:
+        - type: ptx_valid
+          description: "PTX compiles without errors"
+        - type: module_loaded
+          description: "cuModuleLoadData succeeds"
+        - type: kernel_found
+          description: "gemv_coalesced entry point exists"
+
+    - id: "allocate_buffers"
+      from: "kernel_compiled"
+      to: "buffers_allocated"
+      event: "GpuBuffer::from_host()"
+      assertions:
+        - type: memory_sufficient
+          description: "GPU has enough free memory"
+        - type: buffers_aligned
+          description: "Buffers are 256-byte aligned"
+
+    - id: "launch_kernel"
+      from: "buffers_allocated"
+      to: "kernel_launched"
+      event: "stream.launch_kernel()"
+      assertions:
+        - type: launch_config_valid
+          description: "Grid/block dimensions valid"
+        - type: shared_memory_configured
+          description: "Shared memory size set"
+        - type: args_valid
+          description: "Kernel arguments correct"
+
+    - id: "synchronize"
+      from: "kernel_launched"
+      to: "result_ready"
+      event: "stream.synchronize()"
+      assertions:
+        - type: no_cuda_error
+          description: "cuStreamSynchronize returns CUDA_SUCCESS"
+        - type: output_valid
+          description: "Output buffer contains correct values"
+
+    - id: "cuda_error_from_init"
+      from: "initialized"
+      to: "error"
+      event: "CUDA_ERROR_*"
+      guard: "cuda_error != 0"
+      assertions:
+        - type: error_recorded
+          description: "Error captured in Result"
+
+    - id: "cuda_error_from_compile"
+      from: "kernel_compiled"
+      to: "error"
+      event: "CUDA_ERROR_*"
+      guard: "cuda_error != 0"
+
+    - id: "cuda_error_from_alloc"
+      from: "buffers_allocated"
+      to: "error"
+      event: "CUDA_ERROR_OUT_OF_MEMORY"
+      guard: "gpu_memory_free < required"
+
+    - id: "cuda_error_from_launch"
+      from: "kernel_launched"
+      to: "error"
+      event: "CUDA_ERROR_LAUNCH_FAILED"
+      guard: "kernel_failed"
+
+    - id: "recovery"
+      from: "error"
+      to: "initialized"
+      event: "reset()"
+      guard: "error_recoverable"
+      assertions:
+        - type: resources_freed
+          description: "All GPU resources released"
+
+# Mutation testing configuration
+mutations:
+  - class: M1_TRANSITION_REMOVAL
+    target: "compile_gemv_kernel"
+    description: "Remove kernel compilation step"
+    expected: "KILLED"
+    rationale: "Without kernel, launch_kernel will fail"
+
+  - class: M2_STATE_SKIP
+    target: "buffers_allocated"
+    description: "Skip buffer allocation"
+    expected: "KILLED"
+    rationale: "Null pointer dereference in kernel"
+
+  - class: M3_INVARIANT_WEAKENING
+    target: "output.len() == n"
+    mutation: "output.len() >= 0"
+    description: "Weaken output length check"
+    expected: "KILLED"
+    rationale: "Wrong output length indicates bug"
+
+  - class: M4_GUARD_REMOVAL
+    target: "cuda_error_from_alloc"
+    description: "Remove OOM guard"
+    expected: "KILLED"
+    rationale: "Must detect allocation failures"
+
+  - class: M5_ASSERTION_REMOVAL
+    target: "shared_memory_configured"
+    description: "Remove shared memory assertion"
+    expected: "KILLED"
+    rationale: "Missing shared memory breaks kernel"
+
+# Test scenarios
+scenarios:
+  - name: "happy_path"
+    description: "Normal successful execution"
+    steps:
+      - trigger: "CudaScheduler::new()"
+        expect_state: "initialized"
+      - trigger: "matmul(&x, &a, 1, k, n)"
+        expect_state: "result_ready"
+        expect_output: "matches_cpu_reference"
+
+  - name: "small_dimensions"
+    description: "Edge case: n < TILE_SIZE"
+    config:
+      k: 16
+      n: 8
+    steps:
+      - trigger: "matmul(&x, &a, 1, 16, 8)"
+        expect_state: "result_ready"
+        expect_output: "sum_of_k_ones == 16.0"
+
+  - name: "state_isolation"
+    description: "Verify no state leakage between calls"
+    steps:
+      - trigger: "matmul(&x1, &a1, 1, k, n)"
+        record_output: "r1"
+      - trigger: "matmul(&x1, &a1, 1, k, n)"
+        record_output: "r2"
+        expect: "r1 == r2"
+
+  - name: "error_recovery"
+    description: "Recover from CUDA error"
+    steps:
+      - trigger: "cause_oom_error()"
+        expect_state: "error"
+      - trigger: "reset()"
+        expect_state: "initialized"
+      - trigger: "matmul(&x, &a, 1, k, n)"
+        expect_state: "result_ready"
+
+# Visualization hints for SVG export
+visualization:
+  layout: "hierarchical"
+  highlight_critical_path: "true"
+  critical_path:
+    - "uninitialized"
+    - "initialized"
+    - "kernel_compiled"
+    - "buffers_allocated"
+    - "kernel_launched"
+    - "result_ready"
+  error_color: "#FF6B6B"
+  success_color: "#4ECDC4"

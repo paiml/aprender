@@ -1,0 +1,43 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "KV cache management for transformer inference"
+  references:
+    - "Pope et al. (2022) Efficiently Scaling Transformer Inference"
+
+equations:
+  cache_append:
+    formula: "cache[pos] = (K_new, V_new); pos += 1"
+    domain: "pos ∈ [0, max_seq_len)"
+    invariants:
+      - "pos monotonically increasing within a sequence"
+      - "cache[i] immutable for i < pos"
+
+proof_obligations:
+  - type: bound
+    property: "Cache position within bounds"
+    formal: "0 ≤ pos < max_seq_len at all times"
+    applies_to: all
+  - type: invariant
+    property: "Past entries immutable"
+    formal: "cache[i] for i < current_pos never modified"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-KV-001
+    rule: "Position bounds"
+    prediction: "No out-of-bounds access even at max_seq_len"
+    test: "Fill cache to capacity, attempt one more"
+    if_fails: "Missing bounds check"
+  - id: FALSIFY-KV-002
+    rule: "Immutability"
+    prediction: "Past KV entries unchanged after new token"
+    test: "Snapshot cache, generate token, compare snapshot"
+    if_fails: "In-place mutation of past entries"
+
+kani_harnesses:
+  - id: kv-kani-001
+    obligation: "Cache position within bounds"
+    bound: 8
+    strategy: bounded_int

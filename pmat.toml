@@ -1,0 +1,60 @@
+# PMAT Configuration for Realizar
+# Quality gates and technical debt grading
+
+[quality]
+# Minimum acceptable coverage percentage
+min_coverage = 85.0
+
+# Maximum cyclomatic complexity per function
+max_complexity = 10
+
+# Minimum mutation score percentage
+mutation_score = 80.0
+
+# Maximum allowed TODOs
+max_todos = 5
+
+[tdg]
+# Technical Debt Grading (TDG) thresholds
+# A: 90-100, B: 80-89, C: 70-79, D: 60-69, F: <60
+
+# Coverage weight in TDG score
+coverage_weight = 0.3
+
+# Complexity weight in TDG score
+complexity_weight = 0.2
+
+# Test count weight in TDG score
+test_weight = 0.2
+
+# Documentation weight in TDG score
+doc_weight = 0.15
+
+# Mutation score weight in TDG score
+mutation_weight = 0.15
+
+[roadmap]
+# Sprint configuration
+current_sprint = 1
+sprint_length_weeks = 2
+velocity = 15  # story points per sprint
+
+# Milestone tracking
+milestones = [
+    { name = "Phase 1: Foundation", target_sprint = 4 },
+    { name = "Phase 2: GPU Acceleration", target_sprint = 8 },
+    { name = "Phase 3: WASM Support", target_sprint = 12 },
+    { name = "Phase 4: Advanced Operations", target_sprint = 16 },
+    { name = "Phase 5: Aprender Integration", target_sprint = 20 },
+    { name = "Phase 6: Production Deployment", target_sprint = 24 },
+]
+
+[analysis]
+# Paths to analyze
+include = ["src/**/*.rs"]
+exclude = ["target/**", "tests/**"]
+
+# Analysis options
+check_todos = true
+check_fixmes = true
+check_deprecated = true

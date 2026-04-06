@@ -1,0 +1,60 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "candle-vs-apr F-FMTPARITY-01 (SafeTensors 92% gap)"
+  description: "SafeTensors GPU inference must use format-adaptive kernel dispatch"
+  references:
+    - "candle-vs-apr: SafeT 21.2 vs GGUF 273.8 tok/s (92% gap)"
+    - "realizr GH-174: FP16 HGEMM path via gemm_b_cached_f16()"
+    - "Root cause: GemmTiled (FP32 SGEMM) hardcoded — 7.11x BW penalty"
+
+# Five-whys:
+# 1. Why 21.2 vs 273.8? → FP32 SGEMM (GemmTiled) instead of fused Q4K
+# 2. Why FP32 SGEMM? → gemm_b_cached() hardcodes KernelType::GemmTiled
+# 3. Why no FP16? → Weights converted to F32 on GPU upload
+# 4. Why F32 upload? → get_tensor_auto() always returns Vec<f32>
+# 5. Root cause: no format-adaptive kernel dispatch — 7.11x BW penalty
+
+equations:
+  dtype_preserving_upload:
+    formula: "tensor.dtype == F16 ⟹ gpu_weight.dtype == F16"
+    domain: "SafeTensors CUDA weight upload"
+    invariants:
+      - "F16 tensors uploaded via load_weights_f16() — no F32 conversion"
+      - "F32 tensors use existing load_weights() path"
+      - "BF16 tensors converted to F16 (not F32) where possible"
+
+  adaptive_kernel_dispatch:
+    formula: "has_weights_f16(name) ⟹ dispatch == cuBLAS_HGEMM"
+    domain: "GEMM kernel selection in forward pass"
+    invariants:
+      - "gemm_b_cached_f16() checks named_fp16_weight_cache first"
+      - "Falls back to gemm_b_cached() (FP32) when no F16 weights"
+      - "cuBLAS HGEMM uses tensor cores (FP16 × FP16 → FP32)"
+
+  performance_floor:
+    formula: "safetensors_f16_tok_s >= 0.3 × gguf_q4k_tok_s"
+    domain: "Decode throughput at c=1"
+    invariants:
+      - "FP16 HGEMM is ~2x faster than FP32 SGEMM (bandwidth savings)"
+      - "Still slower than Q4K (0.5625 bytes/elem vs 2 bytes/elem)"
+      - "Minimum 0.3x parity — currently 0.08x (FAILING)"
+
+obligations:
+  - "SafeTensors loader must detect F16 dtype before upload"
+  - "Forward pass must call gemm_b_cached_f16() for all projections"
+  - "cuBLAS handle must be initialized for HGEMM dispatch"
+  - "FP16 activation scratch must be pre-allocated"
+
+falsification_tests:
+  - id: "FALSIFY-SGP-001"
+    rule: "SafeTensors F16 weights preserved on GPU"
+    prediction: "executor.has_weights_f16('blk.0.attn_qkv') == true"
+    test: probador_llm_load_safetensors_f16_weights
+    if_fails: "F16 tensors converted to F32 on upload — dtype-preserving path not active"
+  - id: "FALSIFY-SGP-002"
+    rule: "SafeTensors F16 decode >= 0.3x GGUF Q4K"
+    prediction: "safetensors_f16_tok_s / gguf_q4k_tok_s >= 0.3"
+    test: probador_llm_load_safetensors_vs_gguf
+    if_fails: "FP32 SGEMM still dispatched instead of cuBLAS HGEMM for F16 weights"

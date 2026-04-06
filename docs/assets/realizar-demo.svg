@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <defs>
+    <linearGradient id="termBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d2d2d"/>
+      <stop offset="100%" style="stop-color:#1a1a1a"/>
+    </linearGradient>
+    <linearGradient id="rustGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f74c00"/>
+      <stop offset="100%" style="stop-color:#b7410e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Terminal window -->
+  <rect x="20" y="20" width="760" height="360" rx="10" fill="url(#termBg)" stroke="#404040" stroke-width="2"/>
+
+  <!-- Terminal header -->
+  <rect x="20" y="20" width="760" height="30" rx="10" fill="#3d3d3d"/>
+  <circle cx="45" cy="35" r="6" fill="#ff5f56"/>
+  <circle cx="65" cy="35" r="6" fill="#ffbd2e"/>
+  <circle cx="85" cy="35" r="6" fill="#27ca40"/>
+  <text x="400" y="40" font-family="monospace" font-size="12" fill="#888" text-anchor="middle">realizar serve --demo</text>
+
+  <!-- Terminal content with animation -->
+  <g font-family="'JetBrains Mono', 'Fira Code', monospace" font-size="14">
+    <!-- Prompt line 1 -->
+    <text x="40" y="80" fill="#27ca40">$</text>
+    <text x="60" y="80" fill="#e0e0e0">realizar serve --demo --port 8080</text>
+
+    <!-- Server startup -->
+    <text x="40" y="110" fill="#888">
+      <animate attributeName="opacity" values="0;1" dur="0.5s" begin="0.5s" fill="freeze"/>
+      Starting Realizar inference server...
+    </text>
+
+    <!-- ASCII art logo -->
+    <text x="40" y="140" fill="url(#rustGrad)" font-size="11">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1s" fill="freeze"/>
+      ____            _ _
+    </text>
+    <text x="40" y="155" fill="url(#rustGrad)" font-size="11">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1.1s" fill="freeze"/>
+     |  _ \ ___  __ _| (_)______ _ _ __
+    </text>
+    <text x="40" y="170" fill="url(#rustGrad)" font-size="11">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1.2s" fill="freeze"/>
+     | |_) / _ \/ _` | | |_  / _` | '__|
+    </text>
+    <text x="40" y="185" fill="url(#rustGrad)" font-size="11">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1.3s" fill="freeze"/>
+     |  _ &lt;  __/ (_| | | |/ / (_| | |
+    </text>
+    <text x="40" y="200" fill="url(#rustGrad)" font-size="11">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1.4s" fill="freeze"/>
+     |_| \_\___|\__,_|_|_/___\__,_|_|
+    </text>
+
+    <!-- Server info -->
+    <text x="40" y="230" fill="#27ca40">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="1.8s" fill="freeze"/>
+      [INFO] Model loaded: demo (32 params)
+    </text>
+    <text x="40" y="250" fill="#27ca40">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="2s" fill="freeze"/>
+      [INFO] Server listening on http://127.0.0.1:8080
+    </text>
+
+    <!-- API endpoints -->
+    <text x="40" y="280" fill="#888">
+      <animate attributeName="opacity" values="0;1" dur="0.3s" begin="2.2s" fill="freeze"/>
+      Endpoints:
+    </text>
+    <text x="60" y="300" fill="#61afef">
+      <animate attributeName="opacity" values="0;1" dur="0.2s" begin="2.4s" fill="freeze"/>
+      GET  /health
+    </text>
+    <text x="60" y="320" fill="#61afef">
+      <animate attributeName="opacity" values="0;1" dur="0.2s" begin="2.5s" fill="freeze"/>
+      POST /generate
+    </text>
+    <text x="60" y="340" fill="#61afef">
+      <animate attributeName="opacity" values="0;1" dur="0.2s" begin="2.6s" fill="freeze"/>
+      POST /tokenize
+    </text>
+    <text x="60" y="360" fill="#61afef">
+      <animate attributeName="opacity" values="0;1" dur="0.2s" begin="2.7s" fill="freeze"/>
+      GET  /metrics
+    </text>
+
+    <!-- Blinking cursor -->
+    <rect x="40" y="368" width="8" height="2" fill="#e0e0e0">
+      <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- Performance badge -->
+  <g transform="translate(580, 80)">
+    <rect x="0" y="0" width="180" height="60" rx="8" fill="#1e3a1e" stroke="#27ca40" stroke-width="1"/>
+    <text x="90" y="25" font-family="sans-serif" font-size="12" fill="#27ca40" text-anchor="middle" font-weight="bold">PERFORMANCE</text>
+    <text x="90" y="48" font-family="sans-serif" font-size="18" fill="#27ca40" text-anchor="middle" font-weight="bold">9.6x faster</text>
+    <animate attributeName="opacity" values="0;1" dur="0.5s" begin="3s" fill="freeze"/>
+  </g>
+</svg>

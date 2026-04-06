@@ -1,0 +1,60 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Sampling algorithms for LLM token generation"
+  references:
+    - "Holtzman et al. (2019) The Curious Case of Neural Text Degeneration"
+
+equations:
+  temperature_scaling:
+    formula: "P_scaled(x)_i = softmax(x_i / T)"
+    domain: "x ∈ ℝ^V, T > 0"
+    invariants:
+      - "T→0: argmax selection, T→∞: uniform"
+      - "P_scaled sums to 1.0"
+  top_p:
+    formula: "V_p = min{V_sorted : Σ P(v) ≥ p}, renormalize over V_p"
+    domain: "P ∈ (0,1)^V, p ∈ (0,1]"
+    invariants:
+      - "Σ P_filtered = 1.0 after renormalization"
+      - "|V_p| ≤ |V|"
+
+proof_obligations:
+  - type: invariant
+    property: "Temperature-scaled probabilities sum to 1"
+    formal: "|Σ softmax(x/T) - 1.0| < eps"
+    tolerance: 1.0e-6
+    applies_to: all
+  - type: bound
+    property: "Top-p vocabulary size bounded"
+    formal: "|V_p| ≥ 1 and |V_p| ≤ |V|"
+    applies_to: all
+  - type: invariant
+    property: "Top-p renormalized"
+    formal: "Σ P_filtered = 1.0 after top-p filtering"
+    tolerance: 1.0e-6
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-SAMP-001
+    rule: "Temperature normalization"
+    prediction: "Sum = 1.0 for T in {0.1, 0.5, 1.0, 2.0}"
+    test: "Random logits, multiple temperatures"
+    if_fails: "Division before softmax wrong"
+  - id: FALSIFY-SAMP-002
+    rule: "Top-p bounds"
+    prediction: "At least 1 token, at most vocab_size"
+    test: "p=0.01 and p=1.0 edge cases"
+    if_fails: "Cumulative sum threshold bug"
+  - id: FALSIFY-SAMP-003
+    rule: "Top-p renormalization"
+    prediction: "Filtered probs sum to 1.0"
+    test: "Apply top-p, check sum"
+    if_fails: "Renormalization denominator wrong"
+
+kani_harnesses:
+  - id: samp-kani-001
+    obligation: "Temperature-scaled probabilities sum to 1"
+    bound: 4
+    strategy: stub_float

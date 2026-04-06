@@ -1,0 +1,784 @@
+[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "0.8.6"
+edition = "2021"
+authors = ["Pragmatic AI Labs <contact@paiml.com>"]
+license = "MIT"
+repository = "https://github.com/paiml/realizar"
+rust-version = "1.89"
+
+[workspace.dependencies]
+
+[package]
+name = "realizar"
+version = "0.8.6"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Pragmatic AI Labs <contact@paiml.com>"]
+license = "MIT"
+description = "Pure Rust ML inference engine built from scratch - model serving for GGUF and safetensors"
+repository = "https://github.com/paiml/realizar"
+homepage = "https://github.com/paiml/realizar"
+documentation = "https://docs.rs/realizar"
+readme = "README.md"
+keywords = ["machine-learning", "inference", "model-serving", "gguf", "transformer"]
+categories = ["science", "web-programming::http-server"]
+exclude = [
+    "artifacts/", "models/", "docs/", "tests/", "benches/", "book/",
+    "target/", ".pmat/", ".pmat-work/", ".vscode/", ".idea/",
+    "*.profraw", "*.profdata", "proptest-regressions/",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[workspace.lints.rust]
+# unsafe is expected: SIMD intrinsics (quantize/), mmap (gguf/model.rs), libc FFI (memory.rs)
+unsafe_code = "allow"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "allow"
+# Allow coverage cfg for cargo-llvm-cov
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("dhat-heap"))'] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "allow"
+expect_used = "allow"
+checked_conversions = "warn"
+redundant_clone = "allow"
+# Allow noisy lints in test code
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+similar_names = "allow"
+unreadable_literal = "allow"
+useless_vec = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+float_cmp = "allow"
+missing_const_for_fn = "allow"
+significant_drop_tightening = "allow"
+redundant_pub_crate = "allow"
+option_if_let_else = "allow"
+unreachable_pub = "allow"
+too_many_lines = "allow"
+cognitive_complexity = "allow"
+uninlined_format_args = "allow"
+doc_markdown = "allow"
+wildcard_imports = "allow"
+enum_glob_use = "allow"
+items_after_statements = "allow"
+redundant_closure_for_method_calls = "allow"
+unnecessary_wraps = "allow"
+match_same_arms = "allow"
+match_wildcard_for_single_variants = "allow"
+needless_pass_by_value = "allow"
+unused_self = "allow"
+default_trait_access = "allow"
+no_effect_underscore_binding = "allow"
+manual_div_ceil = "allow"
+
+[lints]
+workspace = true
+
+[dependencies]
+# OUR ecosystem - SIMD/GPU compute primitives (we control this)
+# High-performance SIMD compute library with GPU support
+# PAR-073: Using local path for development, version for crates.io
+trueno = { version = "0.17", features = ["gpu"] }
+# CUDA PTX generation and runtime for NVIDIA GPUs (optional, pure Rust, no LLVM/nvcc)
+# v0.4.12: BatchedQ6K, MultiWarp, RopeNeox, FlashDecoding kernels
+trueno-gpu = { version = "0.4", optional = true, features = ["cuda"] }
+# KV cache storage (for attention caching)
+trueno-db = { version = "0.3.16", optional = true }
+# K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
+trueno-quant = { version = "0.1" }
+
+# Contract macros for pre/post-condition enforcement (zero cost in release)
+provable-contracts-macros = { version = "0.2" }
+
+# PMAT-284: Core tracing primitives (zero-dep, breaks renacer circular dep)
+renacer-core = { version = "0.1" }
+
+# ML algorithms and .apr model format (optional for aprender model serving)
+# v0.24.1: chat templates, GGUF tokenizer preservation (local may be newer)
+aprender = { version = ">=0.27", optional = true }
+
+# Data loading library (optional for data pipeline examples)
+alimentar = { version = "0.2", optional = true, default-features = false, features = ["local", "shuffle"] }
+
+# Model registry (optional for pull/push commands)
+pacha = { version = "0.2", optional = true }
+
+# Terminal/PNG visualization for benchmarks and metrics
+trueno-viz = { version = "0.2", optional = true, features = ["terminal"] }
+
+# HTTP server ONLY (swappable via HttpServer trait)
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
+tokio-stream = { version = "0.1", optional = true }
+tower = { version = "0.4", features = ["util"], optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+futures = { version = "0.3", optional = true }
+async-stream = { version = "0.3", optional = true }
+
+# CLI
+clap = { version = "4", features = ["derive"], optional = true }
+
+# Terminal UI and CLI utilities (Ollama-style spinners, progress)
+presentar-terminal = { version = "0.3.2", optional = true }
+
+# Lambda runtime (lightweight HTTP client)
+ureq = { version = "2", features = ["json"], optional = true }
+
+# TUI monitoring (PARITY-107)
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# HTTP client for real model server benchmarking (blocking for bench harness)
+reqwest = { version = "0.11", features = ["json", "blocking"], optional = true }
+
+# Serialization (for REST API, not ML code)
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Lock-free concurrent data structures
+arc-swap = { version = "1.7", optional = true }
+
+# Heap profiling (opt-in)
+dhat = { version = "0.3", optional = true }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Structured logging / tracing (optional, for CUDA kernel spans)
+tracing = { version = "0.1", optional = true }
+
+# Audit logging (timestamps and UUIDs)
+chrono = { version = ">=0.4.26", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Numerical traits (for generic code)
+num-traits = "0.2"
+
+# Half-precision floats (for Q4_K and other K-quantization formats)
+half = { version = "2.4", features = ["std"] }
+
+# Lazy initialization (for f16-to-f32 LUT, per spec §4.1)
+once_cell = "1.21"
+
+# Memory-mapped file I/O for zero-copy model loading (per spec Phase 1)
+memmap2 = "0.9"
+
+# Compression for APR v2 format (GH-35)
+lz4_flex = { version = "0.11", optional = true }
+zstd = { version = "0.13", optional = true }
+
+# Parallel processing for multi-core inference (per spec Phase 2/3)
+rayon = "1.10"
+
+# Random number generation for sampling
+rand = "0.8"
+
+# Small buffer optimization (per spec Section 4.1)
+# Stack allocation for small token buffers and attention scores
+smallvec = "1.13"
+
+# Chat template engine (Jinja2-compatible) for model-specific formatting
+# Supports ChatML, LLaMA2, Mistral, Phi, Alpaca formats
+minijinja = { version = "2.14", features = ["loader"] }
+
+# That's it. NO candle, NO llama-cpp-rs, NO hf-hub
+# We build everything from scratch: GGUF parser, safetensors, transformer, quantization, tokenizer
+
+# System interface for memory pinning (mlock)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# WASM-specific: uuid needs js feature for browser RNG
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { version = "1", features = ["v4", "serde", "js"] }
+
+[build-dependencies]
+# Parsing provable-contracts binding.yaml for CONTRACT_* env vars (build.rs)
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+# Contract trait enforcement (Section 23)
+provable-contracts = { version = "0.2" }
+
+# Visual regression testing framework (playbooks, TUI testing, GPU pixel verification)
+jugar-probar = { version = "0.4", features = ["tui", "gpu"] }
+
+# GPU edge-case test framework (null fuzzing, boundary probing, lifecycle chaos)
+trueno-cuda-edge = { version = "0.1" }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Serial test execution for GPU tests (CUDA context conflicts)
+serial_test = "3"
+
+# Rich terminal output for examples (progress bars, colors, tables)
+indicatif = "0.17"
+console = "0.15"
+comfy-table = "6"
+
+# Arrow for data pipeline example
+arrow = { version = "53", default-features = false }
+
+# Property-based testing
+proptest = "1.4"
+
+# Test utilities
+approx = "0.5"
+
+# Temporary files for mmap tests
+tempfile = "3"
+
+# For testing HTTP endpoints (canonical tower/axum testing)
+http-body-util = "0.1"
+hyper = { version = "1.4", features = ["full"] }
+mime = "0.3"
+
+# For external HTTP benchmarking (REAL model server calls)
+reqwest = { version = "0.11", features = ["json", "blocking"] }
+
+# For CLI integration tests
+assert_cmd = "2.0"
+predicates = "3.0"
+glob = "0.3"
+
+[features]
+default = ["server", "cli", "gpu"]
+
+# Core features
+gpu = ["trueno/gpu"]  # Enable GPU acceleration via Trueno (wgpu)
+cuda = ["dep:trueno-gpu", "dep:tracing"]  # Enable CUDA PTX generation for NVIDIA GPUs
+kv-cache = ["dep:trueno-db"]  # KV cache for attention optimization
+apr-compression = ["dep:lz4_flex", "dep:zstd"]  # LZ4/ZSTD decompression for APR v2 (GH-35)
+
+# Optional components
+server = ["dep:axum", "dep:tokio", "dep:tokio-stream", "dep:tower", "dep:tower-http", "dep:futures", "dep:async-stream", "dep:arc-swap"]  # HTTP server support
+cli = ["dep:clap", "dep:presentar-terminal", "server"]  # CLI binary (requires server, with Ollama-style progress)
+aprender-serve = ["dep:aprender", "server"]  # Aprender ML model serving (requires server)
+lambda = ["dep:ureq"]  # AWS Lambda handler (lightweight HTTP runtime)
+alimentar-data = ["dep:alimentar"]  # Data loading with alimentar
+visualization = ["dep:trueno-viz"]  # Terminal/PNG benchmark visualization
+registry = ["dep:pacha"]  # Model registry with Pacha (pull/push/cache)
+tui = ["dep:ratatui", "dep:crossterm", "dep:ureq", "dep:clap"]  # PARITY-107: Real-time monitoring TUI
+bench-http = ["dep:reqwest"]  # Real HTTP benchmarking of external model servers
+
+# Testing features
+load-test-enabled = ["server"]  # Enable load tests (requires running server)
+heavy-tests = []  # Include 29k lines of gguf.rs tests (OOMs on <16GB RAM)
+
+# Debugging features
+trace = []  # Phase 14: Enable BrickTracer for GPU/CPU parity debugging
+dhat-heap = ["dep:dhat"]  # Heap profiling with dhat-rs
+
+# Convenience meta-features
+full = ["server", "cli", "gpu", "cuda", "registry"]  # Everything enabled
+minimal = []  # Only core inference engine
+
+[[bin]]
+name = "realizar"
+required-features = ["cli"]
+
+[[bin]]
+name = "wine_lambda"
+required-features = ["lambda"]
+
+[[bin]]
+name = "mnist_lambda"
+required-features = ["aprender-serve", "lambda"]
+
+[[bin]]
+name = "realizar-monitor"
+path = "src/bin/realizar_monitor/main.rs"
+required-features = ["tui"]
+
+[[bench]]
+name = "tensor_ops"
+harness = false
+
+[[bench]]
+name = "inference"
+harness = false
+
+[[bench]]
+name = "cache"
+harness = false
+
+[[bench]]
+name = "tokenizer"
+harness = false
+
+[[bench]]
+name = "quantize"
+harness = false
+
+[[bench]]
+name = "lambda"
+harness = false
+required-features = ["lambda"]
+
+[[bench]]
+name = "comparative"
+harness = false
+
+[[bench]]
+name = "apr_real"
+harness = false
+
+[[bench]]
+name = "gguf_real"
+harness = false
+
+[[bench]]
+name = "external_matrix"
+harness = false
+
+[[bench]]
+name = "performance_parity"
+harness = false
+
+[[bench]]
+name = "cuda_executor"
+harness = false
+required-features = ["cuda"]
+
+[[bench]]
+name = "cuda_batched_inference"
+harness = false
+required-features = ["cuda"]
+
+[[example]]
+name = "performance_parity"
+
+[[example]]
+name = "chat_template"
+
+[[example]]
+name = "inference"
+
+[[example]]
+name = "tokenization"
+
+[[example]]
+name = "gguf_loading"
+
+[[example]]
+name = "cuda_debug"
+required-features = ["cuda"]
+
+[[example]]
+name = "imp800_gpu_parity"
+required-features = ["cuda"]
+
+[[example]]
+name = "imp900_optimized_gpu"
+required-features = ["cuda"]
+
+[[example]]
+name = "imp_801_flash_attention_falsification"
+required-features = ["cuda"]
+
+[[example]]
+name = "imp_1010_full_cuda_benchmark"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_ptx"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_gemv"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_gemv_correctness"
+required-features = ["cuda"]
+
+[[example]]
+name = "parity_036_gpu_attention"
+required-features = ["cuda"]
+
+[[example]]
+name = "parity_038_async_streams"
+required-features = ["cuda"]
+
+[[example]]
+name = "parity_039_flash_attention"
+required-features = ["cuda"]
+
+[[example]]
+name = "parity_040_fp16_attention"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_q4k_cuda"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_flash_decoding"
+required-features = ["cuda"]
+
+[[example]]
+name = "cuda_chat_completions"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_batched_forward"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_batched_gemv"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_continuous_batching"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_multisequence_graph"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_speculative"
+required-features = ["cuda"]
+
+[[example]]
+name = "check_token_74403"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_cpu_gpu"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_layer0_full"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_lm_head_input"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_q_projection"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_cpu_gpu_divergence"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_gpu_divergence"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_hidden_state"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_layer0_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_layer_by_layer"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_lm_head_divergence"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_lm_head"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_normed_hidden_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_normed_hidden"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_pos1"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_gemv"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_gemv_tiled"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_rmsnorm_input"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q6k_lm_head_test"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_single_row"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_speculative"
+required-features = ["cuda"]
+
+[[example]]
+name = "final_hidden_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "hidden_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "layer0_attention_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "layer0_step_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "pmat_benchmark_matrix"
+required-features = ["cuda"]
+
+[[example]]
+name = "profile_7b"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_generation"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_gpu_bias"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_graphed"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_lm_head_only"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_m16"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_q6k_correctness"
+required-features = ["cuda"]
+
+[[example]]
+name = "apr_gpu_benchmark"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_apr_gpu"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_apr_vs_gguf"
+required-features = ["cuda"]
+
+[[example]]
+name = "bench_tiled_q4k"
+required-features = ["cuda"]
+
+[[example]]
+name = "brick_divergence_trace"
+required-features = ["cuda"]
+
+[[example]]
+name = "check_gpu_logits"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_hidden_before_norm"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_layers"
+required-features = ["cuda"]
+
+[[example]]
+name = "compare_weights"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_layer0_divergence"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_layer0_stepwise"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_lm_head_direct"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_controlled"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_gemv_layer0"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q4k_real_input"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q6k_controlled"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q6k_gemv"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_q6k_row"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_rmsnorm_layer0"
+required-features = ["cuda"]
+
+[[example]]
+name = "debug_tiled_q4k"
+required-features = ["cuda"]
+
+[[example]]
+name = "dump_q6k_ptx"
+required-features = ["cuda"]
+
+[[example]]
+name = "fresh_compare"
+required-features = ["cuda"]
+
+[[example]]
+name = "gpu_showcase_benchmark"
+required-features = ["cuda"]
+
+[[example]]
+name = "layer_by_layer_trace"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_attention_debug"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_attention_phi2_dims"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_q4k_phi2_dims"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_q6k_gemv_direct"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_q6k_single_row"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_tc_attention"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_tiled_vs_cpu"
+required-features = ["cuda"]
+
+[[example]]
+name = "trace_all_layers"
+required-features = ["cuda"]
+
+[[example]]
+name = "trace_final"
+required-features = ["cuda"]
+
+[[example]]
+name = "trace_pos1_divergence"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_cuda_minimal"
+required-features = ["cuda"]
+
+[[example]]
+name = "verify_attention_kernel"
+required-features = ["cuda"]
+
+[[example]]
+name = "test_apr_quantized_cache"
+required-features = ["cuda"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"           # Link-time optimization for maximum performance
+codegen-units = 1     # Single codegen unit for max optimization
+panic = "abort"       # Smaller binary size
+strip = true          # Remove debug symbols
+
+[profile.profiling]
+inherits = "release"
+strip = false         # Keep symbols for dhat-rs / perf / flamegraph
+debug = 1             # Line tables only (minimal size overhead)
+lto = "thin"          # Faster link than fat LTO
+
+[profile.bench]
+inherits = "release"
+# Note: panic setting cannot be overridden in bench profile (inherits from release)
+
+[profile.dev]
+panic = "abort"
+opt-level = 0         # Fast compilation
+debug = true
+
+# Faster compile times for development
+[profile.dev.package."*"]
+opt-level = 3
+
+# Test profile - optimized for GPU benchmarks (PAR-023)
+# Note: opt-level=3 required for accurate GPU timing measurements
+[profile.test]
+opt-level = 3
+debug = false          # Reduce memory during debug info generation
+lto = false            # Disable LTO for faster compile
+codegen-units = 4      # Balance between speed and optimization
+incremental = true     # Enable incremental compilation
+
+# trueno dependencies now using crates.io versions (0.14.1, 0.4.11)
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"

@@ -1,0 +1,86 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "GPU kernel dispatch and PTX parity validation contracts"
+  references:
+    - "NVIDIA CUDA Programming Guide (2024) — Kernel Launch Configuration"
+    - "GH-219: PTX Parity Validation specification"
+
+equations:
+  ptx_parity:
+    formula: "∀ kernel_pair (batched, single): structural_equivalence(batched.ptx, single.ptx)"
+    domain: "6 kernel pairs: RmsNorm, Rope, Swiglu, ResidualAdd, Q4KGemv, Q6KGemv"
+    invariants:
+      - "Batched kernel has batch dispatch mechanism (ctaid.y or m_dim)"
+      - "No u64 shared memory addressing (must use u32)"
+      - "Shared memory size matches between batched and reference"
+  dispatch_strategy:
+    formula: "dispatch = if data_size > gpu_threshold then GPU else CPU"
+    domain: "data_size ∈ ℕ, gpu_threshold > 0"
+    invariants:
+      - "CPU and GPU produce numerically equivalent results"
+      - "Dispatch decision is deterministic for given input size"
+  kernel_dimensions:
+    formula: "grid = (ceil(n/block_x), ceil(m/block_y), batch_size)"
+    domain: "block_x, block_y > 0, n, m > 0"
+    invariants:
+      - "Thread count covers all elements: grid * block ≥ problem_size"
+      - "Shared memory does not exceed device limit"
+  dispatch_metrics:
+    formula: "gpu_ratio = gpu_dispatches / (cpu_dispatches + gpu_dispatches)"
+    domain: "dispatches ∈ ℕ"
+    invariants:
+      - "0 ≤ gpu_ratio ≤ 1"
+      - "total_dispatches = cpu_dispatches + gpu_dispatches"
+
+proof_obligations:
+  - type: invariant
+    property: "PTX parity for all 6 kernel pairs"
+    formal: "validate_all_kernel_pairs(dims).all_passed() = true"
+    applies_to: all
+  - type: invariant
+    property: "Dispatch metrics consistency"
+    formal: "total_dispatches = cpu_dispatches + gpu_dispatches at all times"
+    applies_to: all
+  - type: invariant
+    property: "CPU-GPU numerical equivalence"
+    formal: "|cpu_result - gpu_result| < eps for identical inputs"
+    tolerance: 1.0e-3
+    applies_to: all
+  - type: bound
+    property: "GPU ratio bounded"
+    formal: "0.0 ≤ gpu_ratio ≤ 1.0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-KERN-001
+    rule: "Dispatch metric consistency"
+    prediction: "total = cpu + gpu after N dispatches"
+    test: test_dispatch_metrics_record_dispatches
+    if_fails: "Atomic counter race condition or off-by-one"
+  - id: FALSIFY-KERN-002
+    rule: "GPU ratio bounds"
+    prediction: "gpu_ratio in [0.0, 1.0] including edge cases"
+    test: test_dispatch_metrics_gpu_ratio
+    if_fails: "Division by zero when no dispatches recorded"
+  - id: FALSIFY-KERN-003
+    rule: "PTX parity report completeness"
+    prediction: "Report covers all 6 kernel pairs"
+    test: test_validate_all_kernel_pairs_no_cuda_gh219
+    if_fails: "Missing kernel pair registration in validator"
+  - id: FALSIFY-KERN-004
+    rule: "Latency histogram bounds"
+    prediction: "Sum of bucket counts = total latency count"
+    test: test_dispatch_metrics_cpu_latency
+    if_fails: "Bucket boundary assignment drops or double-counts"
+
+kani_harnesses:
+  - id: kern-kani-001
+    obligation: "GPU ratio bounded"
+    bound: 4
+    strategy: bounded_int
+  - id: kern-kani-002
+    obligation: "Dispatch metrics consistency"
+    bound: 8
+    strategy: bounded_int

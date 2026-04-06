@@ -1,0 +1,24 @@
+# Prometheus configuration for Realizar metrics
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'realizar-monitor'
+
+scrape_configs:
+  - job_name: 'realizar-cpu'
+    static_configs:
+      - targets: ['realizar-cpu:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'realizar-gpu'
+    static_configs:
+      - targets: ['realizar-gpu:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

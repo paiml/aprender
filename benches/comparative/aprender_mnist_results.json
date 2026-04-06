@@ -1,0 +1,31 @@
+{
+  "config": {
+    "seed": 42,
+    "input_dim": 784,
+    "num_classes": 2,
+    "warmup_iterations": 100,
+    "benchmark_iterations": 10000,
+    "training_samples": 1000,
+    "aprender_version": "0.2.1",
+    "rust_version": "stable",
+    "platform": "linux x86_64",
+    "cpu": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "timestamp": "1764274185Z"
+  },
+  "results": [
+    {
+    "name": "Aprender LogisticRegression",
+    "iterations": 10000,
+    "mean_us": 0.53,
+    "std_us": 0.07,
+    "ci_95_lower": 0.53,
+    "ci_95_upper": 0.53,
+    "p50_us": 0.52,
+    "p95_us": 0.53,
+    "p99_us": 0.53,
+    "min_us": 0.52,
+    "max_us": 4.04,
+    "throughput_per_sec": 1896707
+  }
+  ]
+}
