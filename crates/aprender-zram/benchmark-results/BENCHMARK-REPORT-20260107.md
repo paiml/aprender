@@ -1,0 +1,157 @@
+# BENCH-001 v2.1.0 Benchmark Report
+
+**Date:** 2026-01-07
+**Benchmark ID:** BENCH-001-20260107
+**Specification Version:** 2.1.0
+
+## Environment
+
+| Property | Value |
+|----------|-------|
+| Hostname | noah-Lambda-Vector |
+| CPU | AMD Ryzen Threadripper 7960X 24-Cores (48 threads) |
+| RAM | 125 GB |
+| Kernel | 6.8.0-90-generic |
+| GPU | NVIDIA RTX 4090 (CUDA backend) |
+| AVX-512 | **Enabled** (optimal SIMD path) |
+| AVX2 | Enabled |
+
+## Criterion Benchmark Results
+
+### Compression Throughput (LZ4, per 4KB page)
+
+| Workload | Throughput | Latency |
+|----------|------------|---------|
+| W1-ZEROS (100% compressible) | **5.20 GiB/s** | 734 ns |
+| W2-TEXT (70% compressible) | **4.62 GiB/s** | 824 ns |
+| W3-MIXED (35% compressible) | **3.25 GiB/s** | 1.17 µs |
+| W4-RANDOM (0% compressible) | **3.13 GiB/s** | 1.22 µs |
+
+### Decompression Throughput (LZ4)
+
+| Workload | Throughput | Latency |
+|----------|------------|---------|
+| W1-ZEROS | 491 MiB/s | 7.95 µs |
+| W2-TEXT | **1.55 GiB/s** | 2.46 µs |
+| W3-MIXED | **1.08 GiB/s** | 3.54 µs |
+| W4-RANDOM | 535 MiB/s | 7.30 µs |
+
+### ZSTD Compression (Level 1)
+
+| Workload | Throughput | Latency |
+|----------|------------|---------|
+| W1-ZEROS | **15.36 GiB/s** | 254 ns |
+| W2-TEXT | **12.42 GiB/s** | 307 ns |
+| W3-MIXED | **12.52 GiB/s** | 305 ns |
+| W4-RANDOM | **10.32 GiB/s** | 370 ns |
+
+### Batch Throughput (P6-BATCH Pattern)
+
+| Batch Size | Throughput | Per-Page Latency |
+|------------|------------|------------------|
+| 32 pages | 3.86 GiB/s | 987 ns |
+| 64 pages | **4.67 GiB/s** | 815 ns |
+| 128 pages | **4.52 GiB/s** | 843 ns |
+| 256 pages | **4.55 GiB/s** | 838 ns |
+
+### Compression Ratios
+
+| Workload | Ratio | Compressed Size |
+|----------|-------|-----------------|
+| W1-ZEROS | **157.5x** | 26 bytes |
+| W2-TEXT | **33.9x** | 121 bytes |
+| W3-MIXED | 1.76x | 2,324 bytes |
+| W4-RANDOM | 1.00x | 4,096 bytes (incompressible) |
+
+### IOPS Benchmarks (Page Store)
+
+| Operation | 100 pages | 1000 pages | 10000 pages |
+|-----------|-----------|------------|-------------|
+| Sequential Write | 450K elem/s | 546K elem/s | 374K elem/s |
+| Random Write | 426K elem/s | 525K elem/s | - |
+| Sequential Read | **832K elem/s** | **830K elem/s** | **673K elem/s** |
+
+## Bash Benchmark Results (Quick Mode)
+
+### RAM Baseline (tmpfs) - Theoretical Maximum
+
+| Pattern | Throughput | IOPS | P50 Latency | P99 Latency |
+|---------|------------|------|-------------|-------------|
+| SEQ_READ | **50.69 GB/s** | 48.3K | 158.7 µs | 246.7 µs |
+| RAND_READ | **14.58 GB/s** | 3,560K | 0.9 µs | 1.5 µs |
+| BATCH | 7.77 GB/s | 1,897K | 0.9 µs | 1.6 µs |
+
+### Kernel ZRAM (LZ4)
+
+| Pattern | Throughput | IOPS | P50 Latency | P99 Latency |
+|---------|------------|------|-------------|-------------|
+| SEQ_READ | **171.15 GB/s** | 163.2K | 47.3 µs | 81.4 µs |
+| RAND_READ | 9.59 GB/s | 2,341K | 1.4 µs | 1.8 µs |
+| BATCH | (interrupted) | - | - | - |
+
+## Artifacts Generated
+
+```
+benchmark-results/
+├── 20260107-014015/
+│   ├── environment.json          # System configuration
+│   ├── bench-trace.jsonl         # renacer-compatible JSON traces
+│   ├── ram_baseline_*.json       # fio results for RAM baseline
+│   └── kernel_zram_*.json        # fio results for kernel zram
+├── criterion-reports/            # Criterion HTML reports
+│   ├── lz4_compress/
+│   ├── lz4_decompress/
+│   ├── zstd_compress/
+│   ├── batch_throughput/
+│   └── compression_ratio/
+├── compression-flamegraph.svg    # Flame graph visualization
+└── BENCHMARK-REPORT-20260107.md  # This report
+```
+
+## Key Findings
+
+### 1. SIMD Performance Verified
+- AVX-512 enabled achieving **5.2 GiB/s** LZ4 compression
+- ZSTD level 1 achieves **15+ GiB/s** with AVX-512
+
+### 2. Compression Ratios
+- Text data: **33.9x** compression (excellent)
+- Mixed data: **1.76x** compression (expected)
+- Random data: 1.0x (incompressible, as designed)
+
+### 3. Batch Throughput
+- Optimal batch size: **64-128 pages**
+- Throughput: **4.5-4.7 GiB/s** sustained
+
+### 4. RAM Baseline
+- Sequential read: **50.69 GB/s** (theoretical max)
+- Random read: **3.56M IOPS** (memory-bound limit)
+
+### 5. Kernel ZRAM Comparison
+- Sequential read: **171.15 GB/s** (kernel zram)
+- This is the target to beat for trueno-ublk
+
+## Flamegraph Analysis
+
+The compression flamegraph (`compression-flamegraph.svg`) shows:
+- Hot paths in LZ4 compression routines
+- SIMD dispatch overhead
+- Memory allocation patterns
+
+## Statistical Notes
+
+- All criterion benchmarks used 100 samples (except ratio: 10)
+- Measurement time: 10 seconds per benchmark
+- Warm-up: 3 seconds
+- Outliers detected and reported per benchmark group
+
+## Recommendations
+
+1. **trueno-ublk target**: Need to achieve >50% of kernel zram performance (85+ GB/s seq read)
+2. **Batch optimization**: 64-128 page batches are optimal
+3. **ZSTD consideration**: ZSTD level 1 is faster than LZ4 for compression, consider as alternative
+
+---
+
+*Generated by BENCH-001 v2.1.0 Scientific Swap Benchmark*
+*Specification: docs/specifications/scientific-swap-benchmark.md*

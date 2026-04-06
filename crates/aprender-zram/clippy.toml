@@ -1,0 +1,18 @@
+# Clippy configuration for trueno-zram
+# Prevents Cloudflare-class defects (unwrap/expect panics in production)
+
+# Disallow methods that can panic in production code
+# Use expect() with descriptive messages instead of unwrap()
+disallowed-methods = [
+    { path = "core::option::Option::unwrap", reason = "use expect() with descriptive message or proper error handling" },
+    { path = "core::result::Result::unwrap", reason = "use expect() with descriptive message or ? operator" },
+]
+
+# Cognitive complexity threshold (from pmat analysis showing 16 max)
+cognitive-complexity-threshold = 25
+
+# Type complexity threshold
+type-complexity-threshold = 350
+
+# Maximum lines in a function
+too-many-lines-threshold = 200

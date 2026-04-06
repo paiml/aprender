@@ -1,0 +1,12 @@
+{
+    "timestamp": "2026-01-06T14:20:13+01:00",
+    "hostname": "noah-Lambda-Vector",
+    "platform": "Linux",
+    "kernel": "6.8.0-90-generic",
+    "cpu": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "cpu_cores": 48,
+    "ram_gb": 125,
+    "gpu_backend": "cuda",
+    "avx512": true,
+    "avx2": true
+}

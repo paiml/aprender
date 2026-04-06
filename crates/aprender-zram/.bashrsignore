@@ -1,0 +1,26 @@
+# .bashrsignore - bashrs lint ignore rules for trueno-zram
+# See: https://github.com/paiml/bashrs
+
+# DET002: Non-deterministic timestamp usage
+# Justification: Timestamps in logs and reports are intentional
+# Files: scripts/docker-test-harness.sh, scripts/falsification-runner.sh, scripts/test-swap-deadlock.sh
+DET002
+
+# SC2247: Multiplying strings doesn't work in shell
+# Justification: False positive - this is Python code inside heredoc (Issue #120)
+# File: scripts/test-swap-deadlock.sh line 105
+SC2247
+
+# SEC001: Command injection risk via eval
+# Justification: Intentional use for dynamic test function dispatch
+# File: scripts/falsification-runner.sh - test runner pattern
+# Manual review: COMPLETED - eval only uses function names from controlled array
+SEC001
+
+# SEC010: Path traversal risk
+# Justification: All paths are controlled within the script:
+#   - RESULTS_DIR: Set from env or defaults to /workspace/test-results
+#   - write_file/read_file: Created via mktemp (secure random)
+#   - /mnt/test: Fixed path for test mount point
+# Manual review: COMPLETED - no user-controlled paths used
+SEC010

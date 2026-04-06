@@ -1,0 +1,23 @@
+name: Post-Release Verification
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    name: Verify Published Crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Wait for crates.io propagation
+        run: sleep 30
+      - name: Verify crate installs
+        run: cargo install trueno-zram-cli --locked || echo "CLI crate not yet published"
+      - name: Smoke test
+        run: cargo test --workspace --lib

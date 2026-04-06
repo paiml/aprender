@@ -1,0 +1,179 @@
+# docker-compose.test.yml
+# Test matrix for trueno-ublk
+# Per testing-debugging-troubleshooting.md Section 4.3
+#
+# Usage:
+#   docker-compose -f docker/docker-compose.test.yml up unit-tests
+#   docker-compose -f docker/docker-compose.test.yml up --abort-on-container-exit
+
+version: '3.8'
+
+x-common-volumes: &common-volumes
+  - ..:/workspace:ro
+  - cargo-cache:/root/.cargo/registry
+  - cargo-git:/root/.cargo/git
+  - target-cache:/workspace/target
+
+x-privileged-config: &privileged-config
+  privileged: true
+  cap_add:
+    - SYS_ADMIN
+    - SYS_RAWIO
+    - MKNOD
+    - NET_ADMIN
+
+services:
+  # ============================================================================
+  # Unit Tests (no privileges needed)
+  # ============================================================================
+  unit-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    command: ["unit"]
+    volumes: *common-volumes
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_LOG=debug
+
+  # ============================================================================
+  # Component Tests (privileged for ublk module)
+  # ============================================================================
+  component-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["component"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+    devices:
+      - /dev/ublk-control:/dev/ublk-control
+    depends_on:
+      unit-tests:
+        condition: service_completed_successfully
+
+  # ============================================================================
+  # I/O Verification Tests (F016-F035)
+  # ============================================================================
+  io-verification:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["io-verify"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+    tmpfs:
+      - /tmp:size=2G
+    depends_on:
+      component-tests:
+        condition: service_completed_successfully
+
+  # ============================================================================
+  # Filesystem Integration Tests (F086-F095)
+  # ============================================================================
+  filesystem-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["filesystem"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+    tmpfs:
+      - /mnt/test:size=4G
+    depends_on:
+      io-verification:
+        condition: service_completed_successfully
+
+  # ============================================================================
+  # Stress Tests (memory pressure, concurrent I/O)
+  # ============================================================================
+  stress-tests:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["stress"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+    mem_limit: 8g
+    memswap_limit: 16g
+    tmpfs:
+      - /mnt/test:size=4G
+    depends_on:
+      filesystem-tests:
+        condition: service_completed_successfully
+
+  # ============================================================================
+  # Falsification Matrix (F001-F100)
+  # ============================================================================
+  falsification:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["falsification"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+      - ../test-results:/workspace/test-results
+    tmpfs:
+      - /mnt/test:size=4G
+    environment:
+      - FALSIFICATION_RANGE=F001-F100
+      - PMAT_REPORT=true
+
+  # ============================================================================
+  # Five-Whys Debug Session (interactive)
+  # ============================================================================
+  debug-session:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["debug"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - ..:/workspace
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+    tmpfs:
+      - /mnt/test:size=4G
+
+  # ============================================================================
+  # Full Test Suite
+  # ============================================================================
+  full-suite:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ublk-test
+    <<: *privileged-config
+    command: ["full"]
+    volumes:
+      - ..:/workspace:ro
+      - /lib/modules:/lib/modules:ro
+      - cargo-cache:/root/.cargo/registry
+      - ../test-results:/workspace/test-results
+    tmpfs:
+      - /mnt/test:size=4G
+
+volumes:
+  cargo-cache:
+  cargo-git:
+  target-cache:
+
+networks:
+  default:
+    driver: bridge

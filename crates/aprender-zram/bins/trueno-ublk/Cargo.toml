@@ -1,0 +1,118 @@
+[package]
+name = "trueno-ublk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pure Rust ublk block device for compressed RAM storage (educational - use kernel zram for production)"
+keywords = ["ublk", "zram", "compression", "gpu", "block-device"]
+categories = ["command-line-utilities", "compression", "filesystem"]
+
+[lib]
+name = "trueno_ublk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "trueno-ublk"
+path = "src/main.rs"
+
+[[example]]
+name = "block_device"
+path = "examples/block_device.rs"
+
+[[example]]
+name = "compression_stats"
+path = "examples/compression_stats.rs"
+
+[[example]]
+name = "entropy_routing"
+path = "examples/entropy_routing.rs"
+
+[[example]]
+name = "batched_benchmark"
+path = "examples/batched_benchmark.rs"
+
+[dependencies]
+# Internal crates (cuda disabled - API mismatch with trueno-gpu)
+trueno-zram-core = { version = "0.3.0", path = "../../crates/trueno-zram-core" }
+
+# CLI
+clap = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+# ublk (zero deps - direct kernel interface)
+io-uring = "0.7"
+ctrlc = "3.4"
+
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# System info
+nix = { version = "0.29", features = ["fs", "mount", "event", "ioctl", "mman", "user", "sched", "process"] }
+procfs = "0.17"
+libublk = "0.4.5"
+
+# Parallel processing
+rayon = "1.10"
+
+# Fast hasher for integer keys (2-5x faster than SipHash for u64)
+rustc-hash = "2.1"
+
+# Fast locks (PERF-018: 10-20% faster than std RwLock, spinning before sleeping)
+parking_lot = "0.12"
+
+# Memory locking for swap deadlock prevention (DT-007)
+duende-mlock = "1.0"
+
+# ublk device lifecycle management (cleanup orphaned devices)
+duende-ublk = "0.2"
+
+# Daemon lifecycle management (DT-008)
+duende-core = "0.2"
+duende-platform = "0.2"
+duende-policy = "0.2"
+
+# Async trait for Daemon impl
+async-trait = "0.1"
+
+# Visualization integration (VIZ-001/002/003/004)
+renacer = { version = "0.9", default-features = false }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = "3.14"
+jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "iops"
+harness = false
+
+[[bench]]
+name = "swap_comparison"
+harness = false
+
+[features]
+default = []
+# cuda feature disabled - trueno-gpu API mismatch in trueno-zram-core 0.2
+# cuda = ["trueno-zram-core/cuda"]
+
+[lints]
+workspace = true

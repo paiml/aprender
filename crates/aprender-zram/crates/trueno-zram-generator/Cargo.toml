@@ -1,0 +1,22 @@
+[package]
+name = "trueno-zram-generator"
+description = "systemd generator for zram device configuration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+trueno-zram-core.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+toml.workspace = true
+
+[features]
+default = ["std"]
+std = []
+
+[lints]
+workspace = true

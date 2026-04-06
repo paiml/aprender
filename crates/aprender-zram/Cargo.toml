@@ -1,0 +1,123 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/trueno-zram-core",
+    "crates/trueno-zram-adaptive",
+    "crates/trueno-zram-generator",
+    "crates/trueno-zram-cli",
+    "bins/trueno-ublk",
+]
+
+[workspace.package]
+version = "0.3.1"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT OR Apache-2.0"
+authors = ["Noah Gift <noah@paiml.com>"]
+repository = "https://github.com/paiml/trueno-zram"
+keywords = ["compression", "zram", "simd", "lz4", "zstd"]
+categories = ["compression", "memory-management"]
+
+[workspace.dependencies]
+# Internal crates
+trueno-zram-core = { version = "0.3.0", path = "crates/trueno-zram-core" }
+trueno-zram-adaptive = { version = "0.3.0", path = "crates/trueno-zram-adaptive" }
+
+# Error handling
+thiserror = "2.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Testing
+proptest = "1.6"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Async (for CLI)
+tokio = { version = "1.44", features = ["full"] }
+
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+name = "trueno-zram"
+description = "SIMD-accelerated LZ4/ZSTD compression engine for Linux zram devices"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[dependencies]
+trueno-zram-core.workspace = true
+trueno-zram-adaptive = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[features]
+default = ["std", "adaptive"]
+std = []
+cuda = ["trueno-zram-core/cuda"]
+adaptive = ["dep:trueno-zram-adaptive"]
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(feature, values("cuda"))'] }
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+checked_conversions = "warn"
+fallible_impl_from = "warn"
+expect_used = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+lto = true
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"
+
+[workspace.metadata.release]
+shared-version = true
+
+[[workspace.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
