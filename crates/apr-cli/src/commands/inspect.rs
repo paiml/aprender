@@ -135,7 +135,7 @@ pub(crate) fn run(
         Ok(
             aprender::format::rosetta::FormatType::Gguf
             | aprender::format::rosetta::FormatType::SafeTensors,
-        ) => run_rosetta_inspect(path, json_output),
+        ) => run_rosetta_inspect(path, show_vocab, json_output),
         _ => {
             // Default: APR v2 inspect (existing path)
             let file = File::open(path)?;
@@ -278,7 +278,47 @@ fn output_rosetta_text(report: &aprender::format::rosetta::InspectionReport) {
     );
 }
 
-fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
+/// GH-682: Display vocabulary/tokenizer metadata from GGUF/SafeTensors models.
+fn output_rosetta_vocab(report: &aprender::format::rosetta::InspectionReport) {
+    let vocab_keys: Vec<(&str, &str)> = report
+        .metadata
+        .iter()
+        .filter(|(k, _)| k.starts_with("tokenizer.ggml."))
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+
+    if vocab_keys.is_empty() {
+        println!("\n  (no tokenizer metadata present in model)");
+        return;
+    }
+
+    output::subheader("Vocabulary");
+    let pairs: Vec<(&str, String)> = vocab_keys
+        .iter()
+        .filter(|(k, _)| {
+            // Show concise tokenizer info, skip large arrays
+            !k.ends_with(".tokens") && !k.ends_with(".merges") && !k.ends_with(".token_type")
+        })
+        .map(|(k, v)| {
+            let short_key = k.strip_prefix("tokenizer.ggml.").unwrap_or(k);
+            (short_key, v.to_string())
+        })
+        .collect();
+    println!("{}", output::kv_table(&pairs));
+
+    // Show token counts for the large arrays
+    for (k, v) in &vocab_keys {
+        if k.ends_with(".tokens") || k.ends_with(".merges") {
+            let short_key = k.strip_prefix("tokenizer.ggml.").unwrap_or(k);
+            if let Some(len) = v.strip_prefix("[len=").and_then(|s| s.strip_suffix(']')) {
+                println!("  {short_key}: {len} entries");
+            }
+        }
+    }
+}
+
+// Contract: apr-inspect-flags-v1 F-INSPECT-FLAGS-001
+fn run_rosetta_inspect(path: &Path, show_vocab: bool, json_output: bool) -> Result<(), CliError> {
     use aprender::format::rosetta::RosettaStone;
 
     let rosetta = RosettaStone::new();
@@ -290,6 +330,11 @@ fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
         output_rosetta_json(path, &report);
     } else {
         output_rosetta_text(&report);
+    }
+
+    // GH-682: --vocab flag was dropped by rosetta dispatch path
+    if show_vocab {
+        output_rosetta_vocab(&report);
     }
 
     Ok(())
