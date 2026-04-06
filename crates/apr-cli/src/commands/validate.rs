@@ -81,6 +81,14 @@ fn run_apr_validation(
         }
     }
 
+    // GH-647: Exit non-zero when validation shows contract violations
+    if report.total_score < 50 {
+        return Err(CliError::ValidationFailed(format!(
+            "Score {}/100 (below 50% threshold)",
+            report.total_score
+        )));
+    }
+
     Ok(())
 }
 
