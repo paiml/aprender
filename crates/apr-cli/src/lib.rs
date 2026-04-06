@@ -90,3 +90,45 @@ include!("dispatch_run.rs");
 include!("dispatch.rs");
 include!("dispatch_analysis.rs");
 include!("lib_07.rs");
+
+/// Full CLI entry point for `cargo install aprender`.
+///
+/// This function encapsulates the complete `apr` binary logic so that
+/// the `aprender` facade crate can produce the same binary via
+/// `cargo install aprender` (in addition to `cargo install apr-cli`).
+pub fn cli_main() -> std::process::ExitCode {
+    // GH-667: Reset SIGPIPE to default so piping to head/less doesn't panic.
+    #[cfg(unix)]
+    #[allow(unsafe_code)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
+    // GH-646: Clear FPCR.FZ16 on aarch64 so f16 subnormals work.
+    #[cfg(target_arch = "aarch64")]
+    #[allow(unsafe_code)]
+    unsafe {
+        let fpcr: u64;
+        core::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
+        if fpcr & (1 << 19) != 0 {
+            let new_fpcr = fpcr & !(1 << 19);
+            core::arch::asm!("msr fpcr, {}", in(reg) new_fpcr);
+        }
+    }
+
+    // GH-662: Respect NO_COLOR env var and non-TTY output.
+    let no_color = std::env::var("NO_COLOR").is_ok();
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    if no_color || !is_tty {
+        colored::control::set_override(false);
+    }
+
+    let cli = Cli::parse();
+    match execute_command(&cli) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("error: {e}");
+            e.exit_code()
+        }
+    }
+}

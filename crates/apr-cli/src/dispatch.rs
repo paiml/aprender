@@ -162,7 +162,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_no_side_effects!();
     contract_pre_idempotent_inspection!();
     contract_pre_idempotent_output!();
-    Some(match cli.command.as_ref() {
+    let result = match cli.command.as_ref() {
         Commands::Inspect {
             file,
             vocab,
@@ -220,7 +220,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         Commands::Canary { command } => canary::run(command.clone()),
 
         _ => return None,
-    });
+    };
     contract_post_no_side_effects!(&());
     contract_post_idempotent_output!(&());
     Some(result)

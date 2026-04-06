@@ -62,7 +62,7 @@ chrono = "0.4"
 toml = "0.8"
 # ML tuner integration (SHOWCASE-BRICK-001, Section 12)
 # Uses aprender 0.24.0 RandomForest for learned optimization
-aprender = { version = "0.27", optional = true, default-features = false }
+aprender = { path = "../aprender-core", package = "aprender-core", optional = true, default-features = false }
 # Execution path graph (PAR-201, Section E.7)
 trueno-graph = { version = "0.1.17", optional = true }
 # TUI visualization for execution graphs (PAR-201)

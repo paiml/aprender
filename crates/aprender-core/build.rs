@@ -3,7 +3,7 @@
 //! Two responsibilities:
 //!
 //! 1. **Model family contracts** (PMAT-250): Reads YAML files from
-//!    `contracts/model-families/` and generates Rust code with compiled-in
+//!    `../../contracts/model-families/` and generates Rust code with compiled-in
 //!    family data. This catches YAML/Rust contract drift at build time.
 //!
 //! 2. **Provable-contracts bindings**: Reads `binding.yaml` from the sibling
@@ -319,10 +319,10 @@ fn main() {
     emit_provable_contract_bindings();
 
     // ── Phase 2: Model family contracts → generated Rust code ──
-    let families_dir = Path::new("contracts/model-families");
+    let families_dir = Path::new("../../contracts/model-families");
 
     // Tell Cargo to re-run if any YAML changes
-    println!("cargo:rerun-if-changed=contracts/model-families");
+    println!("cargo:rerun-if-changed=../../contracts/model-families");
 
     if !families_dir.exists() {
         // No contracts directory — generate empty registry
@@ -330,7 +330,7 @@ fn main() {
         let out_path = Path::new(&out_dir).join("model_families_generated.rs");
         fs::write(
             &out_path,
-            "// No contracts/model-families/ directory found at build time\n\
+            "// No ../../contracts/model-families/ directory found at build time\n\
              // Using empty generated registry\n\
              \n\
              /// Known model family names (generated at build time)\n\
@@ -342,7 +342,7 @@ fn main() {
 
     let mut families: Vec<FamilyData> = Vec::new();
 
-    let entries = fs::read_dir(families_dir).expect("read contracts/model-families");
+    let entries = fs::read_dir(families_dir).expect("read ../../contracts/model-families");
     for entry in entries {
         let entry = entry.expect("dir entry");
         let path = entry.path();

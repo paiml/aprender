@@ -1,0 +1,295 @@
+[package]
+name = "aprender-core"
+version = "0.29.0"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Noah Gift <noah@paiml.com>"]
+license = "MIT"
+description = "Next-generation machine learning library in pure Rust"
+repository = "https://github.com/paiml/aprender"
+documentation = "https://docs.rs/aprender"
+readme = "README.md"
+keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
+categories = ["science", "algorithms"]
+exclude = [
+    # Build/IDE artifacts
+    "target/",
+    "*.profraw",
+    "*.profdata",
+    ".vscode/",
+    ".idea/",
+    "proptest-regressions/",
+    # Dev tool artifacts (CB-510 class: recursive patterns required)
+    ".pmat/",
+    ".pmat-metrics/",
+    ".pmat-metrics.toml",
+    "*.bak",
+    # CI/CD and dev infrastructure (not needed by library consumers)
+    ".github/",
+    ".githooks/",
+    ".bashrsignore",
+    "Makefile",
+    "scripts/",
+    # Documentation (published on GitHub Pages, not crates.io)
+    "docs/",
+    "book/",
+    # Test data and traces
+    "golden_traces/",
+    "tokenizer.json",
+    "defect-report-*.json",
+    "trace_*.json",
+    "fuzz/",
+    # Model files (root-anchored: /models/ not models/ per CB-510)
+    "/models/",
+    # Contracts not consumed by build.rs (model-families/ IS needed)
+    "contracts/chat-template-semantics-v1.yaml",
+    "contracts/classification-finetune-v1.yaml",
+    "contracts/kernel-fusion-v1.yaml",
+    "contracts/layer-parity-v1.yaml",
+    "contracts/model-metadata-bounds-v1.yaml",
+    "contracts/quantized-dot-product-v1.yaml",
+    "contracts/special-tokens-registry-v1.yaml",
+    "contracts/tensor-layout-v1.yaml",
+    "contracts/tokenizer-vocab-v1.yaml",
+    "contracts/publish-safety-v1.yaml",
+]
+
+[lib]
+name = "aprender"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"  # SafeTensors JSON metadata
+bincode = "1.3"
+rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
+tempfile = "3.14"  # Streaming APR writer temp file (realizar#136)
+
+# Random number generation for model_selection
+rand = { version = "0.9", features = ["small_rng"] }
+rand_chacha = "0.9"  # ChaCha20 PRNG for Monte Carlo simulations
+
+# Audio processing
+rustfft = { version = "6.2", optional = true }  # FFT for mel spectrogram computation
+thiserror = { version = "2.0", optional = true }  # Error handling for audio module
+
+# Native audio capture (Linux ALSA)
+alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio capture
+
+# Parallelization for graph algorithms (optional for WASM compatibility)
+rayon = { version = "1.10", optional = true }
+
+# Shared formatting and system utilities (Batuta stack)
+batuta-common = "0.1"
+
+# Core compute primitives - SIMD-accelerated tensor operations
+# v0.14.5: wgpu adapter limits fix (buffer >256MB for 7B+ models)
+trueno = "0.17"
+
+# K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
+# Path dependency until published to crates.io
+trueno-quant = "0.1"
+
+# RAG pipeline for document-based ML (optional, GH-125)
+trueno-rag = { version = "0.2", optional = true }
+
+# Compression for .apr format (optional, spec §3.3)
+lz4_flex = { version = "0.11", optional = true }
+zstd = { version = "0.13", optional = true }
+
+# Half-precision floats for quantization (spec §6.2)
+half = { version = "2.4", optional = true, default-features = false, features = ["std"] }
+
+# Digital signatures for .apr format (optional, spec §4.2)
+ed25519-dalek = { version = "2.1", optional = true, default-features = false, features = ["std", "zeroize", "rand_core"] }
+
+# Encryption for .apr format (optional, spec §4.1)
+aes-gcm = { version = "0.10", optional = true }
+argon2 = { version = "0.5", optional = true, default-features = false, features = ["std"] }
+x25519-dalek = { version = "2.0", optional = true, default-features = false, features = ["static_secrets"] }
+hkdf = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
+
+# Data loading
+alimentar = { version = "0.2.8", optional = true }
+
+# entrenar: removed as runtime dep — explainable types now live in aprender (GH-305)
+# entrenar remains as dev-dependency for InferenceMonitor integration tests
+
+# Syscall/GPU profiling for showcase benchmarks (dev-only to avoid circular dep)
+# renacer depends on aprender, so it cannot be a runtime dep
+# renacer = { version = "0.10", optional = true }
+
+# SIMD-accelerated compression for KV cache (optional)
+trueno-zram-core = { version = "0.3.0", optional = true }
+
+# Hugging Face Hub integration (optional, spec §11.8, hf-hub-upload-spec.md)
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
+dirs = { version = "6.0", optional = true }
+ureq = { version = "2.12", optional = true, features = ["json"] }  # Direct HTTP for HF Hub upload (APR-PUB-001)
+
+# SafeTensors format parsing (optional, for HF model comparison)
+safetensors = { version = "0.4", optional = true }
+
+# WASM bindings for noise generator (optional, spec: noise-generator-apr-wasm-spec.md)
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+minijinja = { version = "2.14.0", features = ["loader", "serde"] }
+
+# UCBD: compile-time contract enforcement via #[contract] proc macro
+provable-contracts-macros = "0.3"
+
+# Toyota Way: ONE source of truth for quantization (Step E)
+# NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
+# Resolution requires creating a separate quantization crate.
+# See docs/specifications/qwen2.5-coder-showcase-demo.md Section E.7 for roadmap.
+# realizar = { version = "0.6", default-features = false, optional = true }  # BLOCKED
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+proptest = "1.6"
+criterion = "0.5"
+renacer = "0.10"
+tempfile = "3.14"  # For format module tests
+jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
+ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
+provable-contracts = "0.3"  # Contract enforcement (dev-only)
+entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
+
+[features]
+default = ["parallel"]
+parallel = ["rayon"]  # Enable parallel graph algorithms (disable for WASM)
+datasets = ["alimentar"]  # Enable data loading from alimentar
+format-compression = ["lz4_flex", "zstd"]  # Enable LZ4/ZSTD compression for .apr format (spec §3.3, GH-146)
+format-signing = ["ed25519-dalek"]  # Enable Ed25519 signatures for .apr format (spec §4.2)
+format-encryption = ["aes-gcm", "argon2", "x25519-dalek", "hkdf", "sha2"]  # Enable encryption for .apr format (spec §4.1)
+format-quantize = ["half"]  # Enable quantization for .apr format (spec §6.2)
+format-homomorphic = []  # Enable homomorphic encryption for .apr format (spec: homomorphic-encryption-spec.md)
+# Note: mmap is automatic on native platforms, no feature needed (spec: bundle-mmap-spec.md)
+hf-hub-integration = ["hf-hub", "dirs", "ureq", "sha2"]  # Enable Hugging Face Hub integration (GH-100, APR-PUB-001)
+audio = ["rustfft", "thiserror"]  # Enable audio processing (mel spectrogram, resampling)
+audio-capture = ["audio"]  # Enable audio capture base functionality
+audio-alsa = ["audio-capture", "alsa"]  # Enable ALSA audio capture (Linux only)
+audio-coreaudio = ["audio-capture"]  # Enable CoreAudio capture (macOS only)
+audio-wasapi = ["audio-capture"]  # Enable WASAPI capture (Windows only)
+audio-webaudio = ["audio-capture"]  # Enable WebAudio capture (WASM only)
+audio-playback = ["audio"]  # Enable audio playback
+audio-codec = ["audio"]  # Enable audio codec decoding (WAV, MP3, AAC, FLAC, Opus)
+audio-noise = ["audio"]  # Enable ML-based noise generation (GH-144)
+audio-noise-wasm = ["audio-noise", "wasm-bindgen", "js-sys"]  # Enable WASM bindings for noise generator
+safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable SafeTensors comparison (GH-121)
+rag = ["trueno-rag"]  # Enable RAG pipeline for document-based ML (GH-125)
+# inference-monitoring feature removed — explainable types now unconditional (GH-305)
+gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
+model-tests = []  # Enable heavy model/inference tests (requires models/ dir, ollama, GPU)
+cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
+cpu-only = []
+showcase-profile = []  # Renacer profiling (disabled: renacer→aprender circular dep)
+showcase-zram = ["trueno-zram-core"]  # Enable trueno-zram KV cache compression for showcase benchmarks (PAR-040)
+explainable-monitor-integration = []  # Enable integration tests for aprender explainability + entrenar InferenceMonitor (GH-305)
+# Chaos engineering features (from renacer)
+chaos-basic = []
+chaos-network = ["chaos-basic"]
+chaos-byzantine = ["chaos-basic"]
+chaos-full = ["chaos-network", "chaos-byzantine"]
+
+# WASM support: enable getrandom's "js" feature for browser environments
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+# Memory-mapped I/O for native platforms (spec: bundle-mmap-spec.md)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+memmap2 = "0.9"
+
+[[test]]
+name = "book"
+path = "tests/book/mod.rs"
+
+[[bench]]
+name = "linear_regression"
+harness = false
+
+[[bench]]
+name = "kmeans"
+harness = false
+
+[[bench]]
+name = "dataframe"
+harness = false
+
+[[bench]]
+name = "graph"
+harness = false
+
+[[bench]]
+name = "recommend"
+harness = false
+
+[[bench]]
+name = "citl"
+harness = false
+
+[[bench]]
+name = "bpe"
+harness = false
+
+[[bench]]
+name = "ollama_parity"
+harness = false
+required-features = ["format-quantize"]
+
+[[example]]
+name = "shell_encryption_demo"
+required-features = ["format-encryption"]
+
+[[example]]
+name = "chat_template"
+
+[[example]]
+name = "text_preprocessing"
+
+[[example]]
+name = "time_series_forecasting"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "none"
+debug = true  # Enable debug info for flamegraph/profiling
+
+[profile.dev]
+lto = false
+panic = "abort"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[package.metadata.release]
+sign-commit = false
+sign-tag = false
+push = true
+publish = true
+shared-version = true
+tag-name = "v{{version}}"
+pre-release-commit-message = "release: aprender v{{version}}"
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+# PMAT-262: Self-patch so transitive deps (realizar, entrenar) use the local
+# workspace aprender instead of a stale crates.io version. This prevents type
+# mismatches when building apr-cli from the workspace.
+# GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml.dev-overrides
+# so that `git clone && cargo check` works without sibling repos.
+# See .cargo/config.toml.dev-overrides for full-stack development setup.
