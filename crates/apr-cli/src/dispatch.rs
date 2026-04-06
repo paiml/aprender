@@ -30,8 +30,9 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Dispatch runtime commands: check, run, serve.
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
+        // GH-685: forward cli.verbose to check
         Commands::Check { file, no_gpu, json } => crate::error::resolve_model_path(file)
-            .and_then(|r| commands::check::run(&r, *no_gpu, *json || cli.json)),
+            .and_then(|r| commands::check::run(&r, *no_gpu, *json || cli.json, cli.verbose)),
         Commands::Run {
             source,
             positional_prompt,
@@ -165,6 +166,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j))
         }
 
+        // GH-685: forward cli.verbose to debug
         Commands::Debug {
             file,
             drama,
@@ -172,8 +174,8 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             strings,
             limit,
         } => {
-            let (d, h, s, l, j) = (*drama, *hex, *strings, *limit, cli.json);
-            crate::pipe::with_stdin_support(file, |p| debug::run(p, d, h, s, l, j))
+            let (d, h, s, l, j, verb) = (*drama, *hex, *strings, *limit, cli.json, cli.verbose);
+            crate::pipe::with_stdin_support(file, |p| debug::run(p, d, h, s, l, j, verb))
         }
 
         Commands::Validate {

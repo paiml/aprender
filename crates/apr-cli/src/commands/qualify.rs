@@ -284,7 +284,7 @@ fn dispatch_smoke_gate(
         "debug" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                debug::run(&p, false, false, false, 256, false)
+                debug::run(&p, false, false, false, 256, false, false)
             })
         }
         "tree" => {
@@ -321,7 +321,7 @@ fn dispatch_smoke_gate(
             {
                 let p = path.to_path_buf();
                 run_gate(name, display, timeout, verbose, move || {
-                    crate::commands::check::run(&p, false, false)
+                    crate::commands::check::run(&p, false, false, false)
                 })
             }
             #[cfg(not(feature = "inference"))]

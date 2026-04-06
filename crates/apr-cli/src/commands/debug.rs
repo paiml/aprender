@@ -30,6 +30,7 @@ struct HeaderInfo {
 }
 
 /// Run the debug command
+// GH-685: added verbose param
 pub(crate) fn run(
     path: &Path,
     drama: bool,
@@ -37,6 +38,7 @@ pub(crate) fn run(
     strings: bool,
     limit: usize,
     json: bool,
+    verbose: bool,
 ) -> Result<(), CliError> {
     contract_pre_flag_integrity!();
     validate_path(path)?;
@@ -58,7 +60,20 @@ pub(crate) fn run(
     let detected = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path));
 
     if let Ok(FormatType::Gguf | FormatType::SafeTensors) = detected {
-        return run_rosetta_debug(path, drama);
+        let result = run_rosetta_debug(path, drama);
+        // GH-685: verbose adds extra detail
+        if verbose {
+            if let Ok(rosetta) = aprender::format::rosetta::RosettaStone::new().inspect(path) {
+                eprintln!();
+                eprintln!("  [verbose] {} metadata keys, {} tensors, {} bytes",
+                    rosetta.metadata.len(), rosetta.tensors.len(), rosetta.file_size);
+                for (k, v) in &rosetta.metadata {
+                    let display_v = if v.len() > 80 { format!("{}...", &v[..80]) } else { v.clone() };
+                    eprintln!("  [verbose] {k} = {display_v}");
+                }
+            }
+        }
+        return result;
     }
 
     // APR path: read and parse header

@@ -135,8 +135,16 @@ pub(crate) fn run(
         Ok(
             aprender::format::rosetta::FormatType::Gguf
             | aprender::format::rosetta::FormatType::SafeTensors,
-        // GH-685: forward show_weights to rosetta path (was dropped like --vocab)
-        ) => run_rosetta_inspect(path, show_vocab, show_weights, json_output),
+            // GH-685: forward all flags to rosetta path (were dropped)
+        ) => {
+            let result = run_rosetta_inspect(path, show_vocab, show_weights, json_output);
+            // GH-685: --filters on GGUF/SafeTensors — acknowledge the flag
+            if show_filters && !json_output {
+                println!();
+                println!("  (--filters: GGUF/SafeTensors format has no security filter metadata)");
+            }
+            result
+        }
         _ => {
             // Default: APR v2 inspect (existing path)
             let file = File::open(path)?;
@@ -384,7 +392,11 @@ fn output_rosetta_weights(report: &aprender::format::rosetta::InspectionReport) 
             output::table(&["Tensor", "DType", "Elements", "Size"], &rows)
         );
     }
-    let total_elements: usize = report.tensors.iter().map(|t| t.shape.iter().product::<usize>()).sum();
+    let total_elements: usize = report
+        .tensors
+        .iter()
+        .map(|t| t.shape.iter().product::<usize>())
+        .sum();
     let total_bytes: u64 = report.tensors.iter().map(|t| t.size_bytes as u64).sum();
     println!(
         "  Total: {} tensors, {} elements, {}",
