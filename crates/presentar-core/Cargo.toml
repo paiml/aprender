@@ -1,0 +1,46 @@
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+name = "presentar-core"
+description = "Core types and traits for Presentar UI framework"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+trueno = { workspace = true, optional = true }
+provable-contracts-macros = { path = "../../../provable-contracts/crates/provable-contracts-macros" }
+
+[build-dependencies]
+serde = { workspace = true }
+serde_yaml_ng = { workspace = true }
+
+[features]
+# PROBAR-SPEC-009: Brick Architecture is MANDATORY, not optional
+# All widgets MUST implement Brick trait - tests define interface
+# CB-081: Brick types defined natively (no jugar-probar prod dep)
+default = ["simd"]
+simd = ["dep:trueno"]
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[[bench]]
+name = "layout"
+harness = false
+
+[[bench]]
+name = "compute_blocks"
+harness = false
+
+[lints]
+workspace = true

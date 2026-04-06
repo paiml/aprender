@@ -1,0 +1,73 @@
+# Layout Constraints Contract v1.0.0
+#
+# Mathematical foundation for box-model constraint solving.
+# Constraints define a valid region [min_w, max_w] x [min_h, max_h]
+# and constrain() clamps a Size into that region.
+#
+# References:
+#   - Flutter BoxConstraints model
+#   - CSS Box Model Level 3
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-22"
+  author: "PAIML Engineering"
+  description: "Box-model constraint clamping for TUI layout"
+  references:
+    - "Flutter BoxConstraints"
+    - "CSS Box Model Level 3"
+
+equations:
+  constrain:
+    formula: "result = (clamp(w, min_w, max_w), clamp(h, min_h, max_h))"
+    domain: "self: Constraints, size: Size"
+    codomain: "Size where min_w <= w <= max_w, min_h <= h <= max_h"
+    preconditions:
+      - "self.min_width <= self.max_width"
+      - "self.min_height <= self.max_height"
+      - "self.min_width >= 0.0"
+      - "self.min_height >= 0.0"
+    postconditions:
+      - "ret.width >= self.min_width"
+      - "ret.width <= self.max_width"
+      - "ret.height >= self.min_height"
+      - "ret.height <= self.max_height"
+    lean_theorem: Theorems.Constrain
+    properties:
+      - idempotent: "constrain(constrain(s)) == constrain(s)"
+      - monotone: "s in bounds => constrain(s) == s"
+      - bounded: "result always within [min, max]"
+
+kani_harnesses:
+  - id: KANI-001
+    obligation: OBL-001
+    property: "Output finite"
+    bound: 8
+    strategy: stub_float
+    harness: verify_basic
+
+proof_obligations:
+  - type: precondition
+    property: "Constraint bounds are well-ordered"
+    formal: "min_width <= max_width and min_height <= max_height"
+    applies_to: constrain
+  - type: postcondition
+    property: "Constrained size is within bounds"
+    formal: "min_w <= result.width <= max_w and min_h <= result.height <= max_h"
+    applies_to: constrain
+  - type: invariant
+    property: "Constraining is idempotent"
+    formal: "constrain(constrain(s)) = constrain(s)"
+    applies_to: constrain
+
+falsification_tests:
+  - id: FALSIFY-CL-001
+    rule: "Constrain bounds"
+    prediction: "constrain(s).width in [min_w, max_w] for all sizes"
+    test: "proptest with random constraints and sizes"
+    if_fails: "Clamp logic incorrect"
+  - id: FALSIFY-CL-002
+    rule: "Constrain idempotent"
+    prediction: "constrain(constrain(s)) == constrain(s)"
+    test: "proptest: double application"
+    if_fails: "Floating point precision issue in clamp"

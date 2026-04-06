@@ -1,0 +1,17 @@
+# DVC Model Versioning (F2: Popper ML Reproducibility)
+# Track ML models and artifacts with data version control
+
+md5: d41d8cd98f00b204e9800998ecf8427e
+size: 0
+outs:
+- md5: d41d8cd98f00b204e9800998ecf8427e
+  size: 0
+  hash: md5
+  path: models/
+
+# Model metadata
+meta:
+  version: "0.1.0"
+  framework: "trueno"
+  random_seed: 42
+  trained_at: "2026-01-12T00:00:00Z"

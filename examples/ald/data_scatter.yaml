@@ -1,0 +1,38 @@
+# ALD-004: Data Scatter Plot
+# QA Focus: Correlation visualization
+presentar: "1.0"
+name: "data-scatter"
+version: "1.0.0"
+description: "Scatter plot with color-coded categories"
+
+data:
+  dataset:
+    source: "./data/iris.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Iris Scatter Plot"
+          style: "heading-1"
+
+    - id: "scatter"
+      widgets:
+        - type: "chart"
+          chart_type: "scatter"
+          data: "{{ data.dataset }}"
+          x: "{{ data.dataset.columns.sepal_length }}"
+          y: "{{ data.dataset.columns.petal_length }}"
+          color: "{{ data.dataset.columns.species }}"
+          title: "Sepal vs Petal Length"
+
+# Acceptance Criteria:
+# - Points at correct coordinates
+# - Colors match species
+# - Legend displays correctly
+# - 15-point checklist complete

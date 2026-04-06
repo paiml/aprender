@@ -1,0 +1,37 @@
+# DSH-008: Confusion Matrix Dashboard
+# QA Focus: Classification results
+presentar: "1.0"
+name: "confusion-matrix"
+version: "1.0.0"
+description: "Classification confusion matrix visualization"
+
+data:
+  predictions:
+    source: "./data/predictions.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Confusion Matrix"
+          style: "heading-1"
+
+    - id: "matrix"
+      widgets:
+        - type: "chart"
+          chart_type: "heatmap"
+          data: "{{ confusion_matrix(data.predictions.columns.true, data.predictions.columns.pred) }}"
+          title: "Confusion Matrix"
+          colormap: "blues"
+          annotate: true
+
+# Acceptance Criteria:
+# - Matrix square
+# - Diagonal emphasized
+# - Values annotated
+# - 15-point checklist complete

@@ -1,0 +1,6 @@
+# asdf version management
+# B1: Reproducibility via version pinning
+
+rust 1.83.0
+python 3.11.7
+nodejs 20.11.0

@@ -1,0 +1,26 @@
+# DVC Parameters for Reproducible Experiments
+# See: https://dvc.org/doc/command-reference/params
+
+# Random seed configuration
+seed:
+  test: 42
+  proptest: 0xdeadbeef
+  benchmark: 12345
+
+# Fixture generation parameters
+fixtures:
+  seed: 42
+  cores: 48
+  memory_gb: 128
+  interfaces: 4
+
+# Benchmark configuration
+benchmark:
+  sample_size: 100
+  warmup_iterations: 10
+  measurement_time_ms: 5000
+
+# Statistical analysis parameters
+statistics:
+  confidence_level: 0.95
+  effect_size_threshold: 0.5  # Cohen's d

@@ -1,0 +1,35 @@
+# EDG-002: Large Dataset (1M rows)
+# QA Focus: Virtualization performance
+presentar: "1.0"
+name: "large-dataset"
+version: "1.0.0"
+description: "Performance test with 1 million rows"
+
+data:
+  dataset:
+    source: "./data/million_rows.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Large Dataset (1M rows)"
+          style: "heading-1"
+
+    - id: "table"
+      widgets:
+        - type: "data_table"
+          data: "{{ data.dataset }}"
+          virtualized: true
+          row_height: 32
+
+# Acceptance Criteria:
+# - Scrolling at 60 FPS
+# - Memory <200MB
+# - Initial render <500ms
+# - 15-point checklist complete

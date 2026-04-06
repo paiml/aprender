@@ -1,0 +1,36 @@
+# APR-010: Model Export Preview
+# QA Focus: Export format preview
+presentar: "1.0"
+name: "model-export-preview"
+version: "1.0.0"
+description: "Model export preview with format options"
+
+data:
+  model:
+    source: "./models/export_ready.apr"
+    format: "apr"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "model-info"
+      widgets:
+        - type: "model_card"
+          data: "{{ data.model }}"
+
+    - id: "export-actions"
+      widgets:
+        - type: "button"
+          content: "Export to ONNX"
+          action: "export_onnx"
+        - type: "button"
+          content: "Export to SafeTensors"
+          action: "export_safetensors"
+
+# Acceptance Criteria:
+# - Model card displays correctly
+# - Export buttons visible and styled
+# - Actions trigger correctly
+# - 15-point checklist complete

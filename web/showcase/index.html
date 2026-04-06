@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentar WASM Showcase - Real Rust/WebAssembly Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f9fafb;
+            color: #111827;
+            min-height: 100vh;
+        }
+        body.dark {
+            background: #111827;
+            color: #f3f4f6;
+        }
+        header {
+            padding: 20px 24px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        body.dark header {
+            background: #1f2937;
+            border-color: #374151;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            color: #111827;
+        }
+        body.dark h1 { color: #f3f4f6; }
+        .badge {
+            display: inline-block;
+            background: #059669;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .badge.wasm {
+            background: #6366f1;
+        }
+        .subtitle { color: #6b7280; font-size: 13px; margin-top: 4px; }
+        .canvas-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        #mainCanvas {
+            display: block;
+            width: 100%;
+            height: 600px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        body.dark #mainCanvas {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+        }
+        .controls {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            padding: 16px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
+        .btn-secondary { background: #e5e7eb; color: #374151; }
+        body.dark .btn-secondary { background: #374151; color: #f3f4f6; }
+        .btn-secondary:hover { background: #d1d5db; }
+        body.dark .btn-secondary:hover { background: #4b5563; }
+        .info-panel {
+            max-width: 1200px;
+            margin: 0 auto 20px;
+            padding: 0 20px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .info-card {
+            background: white;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+            border: 1px solid #e5e7eb;
+        }
+        body.dark .info-card {
+            background: #1f2937;
+            border-color: #374151;
+        }
+        .info-label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+        .info-value { font-size: 20px; font-weight: 700; color: #6366f1; }
+        .inference-panel {
+            max-width: 600px;
+            margin: 0 auto 20px;
+            padding: 0 20px;
+        }
+        .inference-input {
+            display: flex;
+            gap: 8px;
+        }
+        .inference-input input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        body.dark .inference-input input {
+            background: #374151;
+            border-color: #4b5563;
+            color: #f3f4f6;
+        }
+        .inference-result {
+            margin-top: 12px;
+            padding: 12px;
+            background: #f3f4f6;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        body.dark .inference-result {
+            background: #374151;
+        }
+        footer {
+            text-align: center;
+            padding: 16px;
+            color: #6b7280;
+            font-size: 12px;
+            border-top: 1px solid #e5e7eb;
+        }
+        body.dark footer { border-color: #374151; }
+        footer a { color: #6366f1; text-decoration: none; }
+        .loading {
+            text-align: center;
+            padding: 100px 20px;
+            color: #6b7280;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #6366f1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error {
+            text-align: center;
+            padding: 40px 20px;
+            color: #dc2626;
+            background: #fef2f2;
+            border-radius: 8px;
+            margin: 20px;
+        }
+        body.dark .error {
+            background: #450a0a;
+            color: #fca5a5;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Presentar WASM Showcase <span class="badge wasm">Real WASM</span> <span class="badge">Rust</span></h1>
+        <p class="subtitle">All rendering and logic runs in Rust/WebAssembly - no JavaScript reimplementation</p>
+    </header>
+
+    <div id="loading" class="loading">
+        <div class="loading-spinner"></div>
+        <p>Loading WebAssembly module...</p>
+    </div>
+
+    <div id="app" style="display: none;">
+        <div class="canvas-container">
+            <canvas id="mainCanvas" width="1200" height="600"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn-primary" id="btn-update">Update Data</button>
+            <button class="btn-secondary" id="btn-theme">Toggle Theme</button>
+        </div>
+
+        <div class="info-panel">
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-label">WASM Size</div>
+                    <div class="info-value" id="wasm-size">-</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Frame Rate</div>
+                    <div class="info-value" id="fps-display">-</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Engine</div>
+                    <div class="info-value">Rust/Canvas2D</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Data Source</div>
+                    <div class="info-value">LCG RNG</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="inference-panel">
+            <h3 style="margin-bottom: 12px; font-size: 16px;">Test Inference (Heuristic Demo)</h3>
+            <div class="inference-input">
+                <input type="text" id="inference-text" placeholder="Enter text for sentiment analysis..." value="This product is great!">
+                <button class="btn-primary" id="btn-inference">Analyze</button>
+            </div>
+            <div class="inference-result" id="inference-result">
+                Click "Analyze" to run inference in WASM
+            </div>
+        </div>
+    </div>
+
+    <div id="error" class="error" style="display: none;">
+        <h3>Failed to load WebAssembly</h3>
+        <p id="error-message"></p>
+    </div>
+
+    <footer>
+        Built with <a href="https://github.com/paiml/presentar">Presentar</a> - Sovereign AI Stack<br>
+        <small>All visualization and logic implemented in Rust, compiled to WebAssembly</small>
+    </footer>
+
+    <script type="module">
+        // =====================================================================
+        // Real WASM Module Loading - No JavaScript reimplementation!
+        // =====================================================================
+        import init, { ShowcaseDemo, init as wasmInit } from './pkg/presentar.js';
+
+        const loadingEl = document.getElementById('loading');
+        const appEl = document.getElementById('app');
+        const errorEl = document.getElementById('error');
+
+        async function main() {
+            try {
+                // Initialize WASM module
+                const wasm = await init();
+
+                // Get WASM binary size
+                const wasmSize = wasm.memory.buffer.byteLength;
+                document.getElementById('wasm-size').textContent =
+                    (wasmSize / 1024).toFixed(0) + ' KB';
+
+                // Initialize panic hook for better errors
+                wasmInit();
+
+                // Create the showcase demo attached to our canvas
+                const demo = new ShowcaseDemo('mainCanvas');
+
+                // Hide loading, show app
+                loadingEl.style.display = 'none';
+                appEl.style.display = 'block';
+
+                // Animation loop - all rendering happens in Rust!
+                let lastFpsUpdate = 0;
+                function animate(timestamp) {
+                    // Update state in Rust
+                    demo.update(timestamp);
+
+                    // Render in Rust
+                    demo.render();
+
+                    // Update FPS display periodically
+                    if (timestamp - lastFpsUpdate > 500) {
+                        document.getElementById('fps-display').textContent =
+                            demo.get_fps() + ' fps';
+                        lastFpsUpdate = timestamp;
+                    }
+
+                    requestAnimationFrame(animate);
+                }
+
+                // Start animation loop
+                requestAnimationFrame(animate);
+
+                // Button handlers - call Rust methods
+                document.getElementById('btn-update').onclick = () => {
+                    demo.trigger_update();
+                };
+
+                document.getElementById('btn-theme').onclick = () => {
+                    demo.toggle_theme();
+                    document.body.classList.toggle('dark');
+                };
+
+                document.getElementById('btn-inference').onclick = () => {
+                    const text = document.getElementById('inference-text').value;
+                    // This calls Rust code!
+                    const result = demo.run_inference(text);
+                    document.getElementById('inference-result').textContent = result;
+                };
+
+                // Also run inference on Enter key
+                document.getElementById('inference-text').onkeydown = (e) => {
+                    if (e.key === 'Enter') {
+                        document.getElementById('btn-inference').click();
+                    }
+                };
+
+                console.log('Presentar WASM Showcase loaded successfully!');
+                console.log('All rendering is performed by Rust/WebAssembly.');
+
+            } catch (err) {
+                console.error('Failed to load WASM:', err);
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                document.getElementById('error-message').textContent = err.message || String(err);
+            }
+        }
+
+        main();
+    </script>
+</body>
+</html>

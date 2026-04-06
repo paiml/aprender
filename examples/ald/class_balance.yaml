@@ -1,0 +1,36 @@
+# ALD-008: Data Class Balance
+# QA Focus: Label distribution bar chart
+presentar: "1.0"
+name: "class-balance"
+version: "1.0.0"
+description: "Class distribution visualization"
+
+data:
+  dataset:
+    source: "./data/classification.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Class Distribution"
+          style: "heading-1"
+
+    - id: "balance-chart"
+      widgets:
+        - type: "chart"
+          chart_type: "bar"
+          data: "{{ count_by(data.dataset.columns.label) }}"
+          title: "Class Distribution"
+          orientation: "horizontal"
+
+# Acceptance Criteria:
+# - All classes displayed
+# - Counts accurate
+# - Bar lengths proportional
+# - 15-point checklist complete

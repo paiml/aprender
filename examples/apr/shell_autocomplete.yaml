@@ -1,0 +1,80 @@
+# APR-006: Shell Command Autocomplete Demo
+# Showcase: Real trained N-gram Markov model (aprender-shell-base.apr)
+# Spec: docs/specifications/showcase-demo-aprender-shell-apr.md
+presentar: "1.0"
+name: "shell-autocomplete"
+version: "1.0.0"
+description: "Interactive shell command autocomplete using trained N-gram model"
+
+# Model reference - loads .apr at startup
+models:
+  shell:
+    source: "./demo/assets/aprender-shell-base.apr"
+    format: "apr"
+
+layout:
+  type: "app"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Shell Autocomplete Demo"
+          style: "heading-1"
+        - type: "text"
+          content: "Powered by aprender-shell-base.apr (N-gram Markov model)"
+          style: "subtitle"
+
+    - id: "model-info"
+      widgets:
+        - type: "model_card"
+          data: "{{ models.shell }}"
+          show_metrics: true
+          compact: true
+
+    - id: "input-section"
+      widgets:
+        - type: "autocomplete"
+          id: "shell-input"
+          placeholder: "Type a shell command (e.g., git, cargo, docker)..."
+          model: "{{ models.shell }}"
+          max_suggestions: 8
+          # Suggestions computed via expression: suggest(model, prefix, count)
+          suggestions: "{{ suggest(models.shell, state.shell_input, 8) }}"
+
+    - id: "suggestions"
+      widgets:
+        - type: "list"
+          data: "{{ suggest(models.shell, state.shell_input, 8) }}"
+          item_template: |
+            <row>
+              <text style="monospace">{{ item.text }}</text>
+              <text style="score">{{ item.score | percentage }}</text>
+            </row>
+
+    - id: "stats"
+      widgets:
+        - type: "text"
+          content: "Model: {{ models.shell.name }} | Vocab: {{ models.shell.vocab_size }} | N-grams: {{ models.shell.ngram_count }}"
+          style: "caption"
+
+# State bindings
+state:
+  shell_input: ""
+
+# Interactions
+interactions:
+  - trigger: "shell-input:change"
+    action: "update_state"
+    target: "shell_input"
+  - trigger: "suggestion:click"
+    action: "set_input"
+    target: "shell-input"
+
+# Acceptance Criteria:
+# - Model loads from .apr file at startup
+# - Input field accepts user typing
+# - Suggestions update in real-time (<16ms)
+# - Click on suggestion fills input
+# - Model stats displayed

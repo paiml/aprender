@@ -1,0 +1,35 @@
+# APR-001: Model Card Basic
+# QA Focus: Model metadata displays correctly
+presentar: "1.0"
+name: "model-card-basic"
+version: "1.0.0"
+description: "Basic model card displaying MLP model metadata"
+
+data:
+  model:
+    source: "./models/mnist_mlp.apr"
+    format: "apr"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "MLP Model Card"
+          style: "heading-1"
+
+    - id: "model-display"
+      widgets:
+        - type: "model_card"
+          data: "{{ data.model }}"
+          show_metrics: true
+          show_architecture: true
+
+# Acceptance Criteria:
+# - Model name, type, and version displayed
+# - Architecture diagram renders
+# - Training metrics (loss, accuracy) shown
+# - 15-point checklist complete

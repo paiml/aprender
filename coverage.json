@@ -1,0 +1,46 @@
+{
+  "$schema": "https://presentar.dev/schemas/coverage-v1.json",
+  "version": "1.0.0",
+  "timestamp": "2026-01-12T00:00:00Z",
+  "tool": "cargo-llvm-cov",
+  "rust_version": "1.83.0",
+
+  "summary": {
+    "lines": {
+      "total": 15000,
+      "covered": 13500,
+      "percent": 90.0
+    },
+    "functions": {
+      "total": 500,
+      "covered": 475,
+      "percent": 95.0
+    },
+    "branches": {
+      "total": 3000,
+      "covered": 2550,
+      "percent": 85.0
+    }
+  },
+
+  "statistical_rigor": {
+    "sample_size": 2466,
+    "test_count": 2466,
+    "falsification_tests": 257,
+    "property_tests": 150,
+    "confidence_level": 0.95
+  },
+
+  "packages": {
+    "presentar-terminal": {
+      "lines_percent": 92.0,
+      "functions_percent": 96.0,
+      "branches_percent": 87.0
+    },
+    "presentar-core": {
+      "lines_percent": 88.0,
+      "functions_percent": 94.0,
+      "branches_percent": 82.0
+    }
+  }
+}

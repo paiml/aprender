@@ -1,0 +1,34 @@
+# EDG-001: Empty Dataset
+# QA Focus: Graceful empty state
+presentar: "1.0"
+name: "empty-dataset"
+version: "1.0.0"
+description: "Graceful handling of empty datasets"
+
+data:
+  dataset:
+    source: "./data/empty.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Empty Dataset Handling"
+          style: "heading-1"
+
+    - id: "data-display"
+      widgets:
+        - type: "data_card"
+          data: "{{ data.dataset }}"
+          empty_message: "No data available"
+
+# Acceptance Criteria:
+# - No crash on empty data
+# - Empty state message shown
+# - Layout stable
+# - 15-point checklist complete

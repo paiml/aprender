@@ -1,0 +1,9 @@
+=== DIFF VISUALIZATION ===
+
+Found 104 differing cells:
+
+Row 0:
+  REF: ╭ CPU 0% │ 48 cores │ 0.0GHz │ up 0m │ ╮╭ Memory │ 0.0G / 0.0G (0%) ───────────╮
+  TGT: ╭────  CPU 0% │ 48 cores │ 0.0GHz │ up 0m │ LAV 0.00 ──────╮╭────────  Memory │ 
+  DIF:  ^^^^ ^^^^ ^^ ^^^^^^^^^^^^^^^^^^^ ^^^^ ^^ ^^^^^^^^^ ^^^^^^^^^^^^^^^^ ^^^^^^^^^^^
+

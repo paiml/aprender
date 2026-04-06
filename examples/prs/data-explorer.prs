@@ -1,0 +1,46 @@
+# Presentar Scene Format v1.0
+# Interactive Data Explorer
+
+prs_version: "1.0"
+
+metadata:
+  name: "data-explorer"
+  title: "Sales Data Explorer"
+  description: "Interactive dashboard for exploring sales data"
+  tags: ["data", "analytics", "dashboard"]
+
+resources:
+  datasets:
+    sales:
+      type: ald
+      source: "./data/sales-2024.ald"
+
+layout:
+  type: flex
+  direction: column
+  gap: 16
+
+widgets:
+  - id: filters
+    type: dropdown
+    config:
+      label: "Region"
+      options: "{{ dataset.sales | select('region') | unique }}"
+
+  - id: chart
+    type: line_chart
+    config:
+      title: "Sales Over Time"
+      data: "{{ dataset.sales | filter('region == filters.value') }}"
+      x_axis: date
+      y_axis: revenue
+
+  - id: table
+    type: table
+    config:
+      data: "{{ dataset.sales | filter('region == filters.value') | limit(100) }}"
+      columns: ["date", "region", "product", "revenue"]
+      sortable: true
+
+theme:
+  preset: "dark"

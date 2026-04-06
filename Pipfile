@@ -1,0 +1,19 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+numpy = ">=1.26.0"
+
+[dev-packages]
+pytest = ">=8.0.0"
+pytest-cov = ">=4.1.0"
+hypothesis = ">=6.92.0"
+
+[requires]
+python_version = "3.11"
+
+[scripts]
+test = "pytest"
+seed = "python scripts/set_seeds.py"

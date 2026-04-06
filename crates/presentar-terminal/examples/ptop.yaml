@@ -1,0 +1,95 @@
+# ptop configuration file
+# Location: ~/.config/ptop/config.yaml
+#
+# Copy this file to ~/.config/ptop/config.yaml and customize as needed.
+# ptop will automatically reload the config when the file changes.
+#
+# Generate a default config with: ptop --dump-config > ~/.config/ptop/config.yaml
+
+# Refresh interval in milliseconds
+refresh_ms: 1000
+
+# Layout configuration
+layout:
+  snap_to_grid: true
+  grid_size: 4
+  min_panel_width: 30
+  min_panel_height: 6
+
+# Panel configuration
+panels:
+  cpu:
+    enabled: true
+    histogram: braille    # braille | block | ascii
+    show_temperature: true
+    show_frequency: true
+    sparkline_history: 60  # seconds of history
+
+  memory:
+    enabled: true
+    histogram: braille
+
+  disk:
+    enabled: true
+
+  network:
+    enabled: true
+    sparkline_history: 60
+
+  process:
+    enabled: true
+    max_processes: 20
+    columns:
+      - pid
+      - user
+      - cpu
+      - mem
+      - cmd
+
+  gpu:
+    enabled: auto         # auto-detect availability
+    show_temperature: true
+    show_frequency: true
+
+  sensors:
+    enabled: auto
+
+  battery:
+    enabled: auto
+
+  connections:
+    enabled: true
+
+  files:
+    enabled: true
+
+  psi:
+    enabled: auto         # Pressure Stall Information (Linux 4.20+)
+
+  containers:
+    enabled: auto         # Docker/Podman
+
+# Keybindings (default values shown)
+# All keybinding fields are now fully supported (SPEC-024 compliant)
+keybindings:
+  quit: q
+  help: "?"
+  toggle_fps: f
+  filter: "/"
+  sort_cpu: c
+  sort_mem: m
+  sort_pid: p
+  kill_process: k
+  explode: Enter
+  collapse: Escape
+  navigate: Tab
+  toggle_panel: 1-9
+
+# Theme (future - not yet implemented)
+# theme:
+#   cpu_color: "64C8FF"
+#   memory_color: "B478FF"
+#   disk_color: "64B4FF"
+#   network_color: "FF9664"
+#   process_color: "DCC464"
+#   gpu_color: "64FF96"

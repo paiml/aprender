@@ -1,0 +1,16 @@
+# PropTest Configuration for Reproducible Property-Based Testing
+# See: https://altsysrq.github.io/proptest-book/proptest/config.html
+
+[default]
+# Fixed seed for CI reproducibility
+# Can be overridden with PROPTEST_SEED environment variable
+fork = false
+timeout = 10000
+cases = 256
+max_shrink_iters = 10000
+
+# Verbose output for debugging failures
+verbose = 1
+
+# Failure persistence for regression testing
+failure_persistence = "proptest-regressions"

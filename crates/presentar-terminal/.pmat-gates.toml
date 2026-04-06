@@ -1,0 +1,58 @@
+# PMAT Quality Gates - Simplified TUI Backend
+# ZERO TOLERANCE: All gates MUST pass
+
+[gates]
+# Minimum quality grade (A = 90+, B+ = 85+, B = 80+)
+min_grade = "A"
+
+# ZERO TOLERANCE: 95% minimum coverage
+min_coverage = 95
+
+# Mutation testing threshold
+min_mutation_score = 80
+
+# Maximum cyclomatic complexity per function
+max_complexity = 10
+
+# Maximum nesting depth (JPL Rule 1)
+max_nesting = 3
+
+# Maximum lines per function (JPL Rule 4)
+max_function_lines = 40
+
+[thresholds]
+# TDG (Test-Driven Grade) score minimum
+min_tdg_score = 85
+
+# Repository health minimum
+min_repo_score = 90
+
+# Rust project score minimum
+min_rust_score = 90
+
+[enforcement]
+# CRITICAL: Fail on ANY regression
+fail_on_regression = true
+
+# ZERO score drop tolerance
+max_score_drop = 0
+
+# ALL gates must pass - no exceptions
+require_all_gates = true
+
+# Block merge on failure
+block_merge_on_failure = true
+
+[satd]
+# Self-Admitted Technical Debt - FORBIDDEN
+allow_todo = false
+allow_fixme = false
+allow_hack = false
+allow_xxx = false
+
+[security]
+# Audit must pass
+require_audit_pass = true
+
+# No known vulnerabilities
+max_vulnerabilities = 0

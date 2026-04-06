@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="543.2" viewBox="0 0 540 543.2">
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  <style>text { font-family: system-ui, -apple-system, sans-serif; }</style>
+  <text x="87.6" y="47.2" font-size="32.0" font-weight="normal" fill="rgb(17,24,39)">Presentar Dashboard</text>
+  <text x="123.0" y="94.3" font-size="14.0" font-weight="normal" fill="rgb(107,114,128)">Real-time analytics powered by WASM</text>
+  <text x="128.8" y="133.4" font-size="12.0" font-weight="normal" fill="rgb(107,114,128)">Revenue</text>
+  <text x="112.0" y="165.4" font-size="28.0" font-weight="normal" fill="rgb(17,24,39)">$1.2M</text>
+  <text x="128.8" y="191.1" font-size="14.0" font-weight="normal" fill="rgb(0,255,0)">+12.5%</text>
+  <text x="248.4" y="133.4" font-size="12.0" font-weight="normal" fill="rgb(107,114,128)">Orders</text>
+  <text x="228.0" y="165.4" font-size="28.0" font-weight="normal" fill="rgb(17,24,39)">3,847</text>
+  <text x="249.0" y="191.1" font-size="14.0" font-weight="normal" fill="rgb(0,255,0)">+8.2%</text>
+  <text x="368.0" y="133.4" font-size="12.0" font-weight="normal" fill="rgb(107,114,128)">Users</text>
+  <text x="344.0" y="165.4" font-size="28.0" font-weight="normal" fill="rgb(17,24,39)">12.4K</text>
+  <text x="365.0" y="191.1" font-size="14.0" font-weight="normal" fill="rgb(255,0,0)">-2.1%</text>
+  <rect x="20.0" y="220.0" width="500.0" height="200.0" rx="0.0" fill="rgb(255,255,255)" stroke="none" stroke-width="0.0"/>
+  <text x="218.0" y="258.6" font-size="16.0" font-weight="normal" fill="rgb(25,25,25)">Monthly Sales</text>
+  <rect x="60.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="144.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="228.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="312.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="396.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="480.0" y="290.0" width="1.0" height="90.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="290.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="308.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="326.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="344.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="362.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <rect x="60.0" y="380.0" width="420.0" height="1.0" rx="0.0" fill="rgb(229,229,229)" stroke="none" stroke-width="0.0"/>
+  <text x="60.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">1.0</text>
+  <text x="144.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">2.0</text>
+  <text x="228.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">3.0</text>
+  <text x="312.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">4.0</text>
+  <text x="396.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">5.0</text>
+  <text x="480.0" y="403.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">6.0</text>
+  <text x="25.0" y="302.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">280.0</text>
+  <text x="25.0" y="320.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">248.0</text>
+  <text x="25.0" y="338.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">216.0</text>
+  <text x="25.0" y="356.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">184.0</text>
+  <text x="25.0" y="374.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">152.0</text>
+  <text x="25.0" y="392.5" font-size="10.0" font-weight="normal" fill="rgb(76,76,76)">120.0</text>
+  <rect x="60.0" y="346.2" width="84.0" height="33.8" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="144.0" y="346.2" width="84.0" height="16.9" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="228.0" y="323.8" width="84.0" height="39.4" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="312.0" y="290.0" width="84.0" height="33.8" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="396.0" y="290.0" width="84.0" height="16.9" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="58.0" y="378.0" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="142.0" y="344.2" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="226.0" y="361.1" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="310.0" y="321.8" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="394.0" y="288.0" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="478.0" y="304.9" width="4.0" height="4.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <rect x="410.0" y="270.0" width="100.0" height="30.0" rx="0.0" fill="rgb(255,255,255)" stroke="none" stroke-width="0.0"/>
+  <rect x="410.0" y="270.0" width="100.0" height="30.0" rx="0.0" fill="none" stroke="rgb(204,204,204)" stroke-width="1.0"/>
+  <rect x="415.0" y="279.0" width="12.0" height="12.0" rx="0.0" fill="rgb(99,102,241)" stroke="none" stroke-width="0.0"/>
+  <text x="432.0" y="299.2" font-size="12.0" font-weight="normal" fill="rgb(51,51,51)">Sales</text>
+  <text x="194.4" y="459.3" font-size="18.0" font-weight="normal" fill="rgb(0,0,0)">Goals Progress</text>
+  <text x="184.6" y="489.5" font-size="14.0" font-weight="normal" fill="rgb(0,0,0)">Revenue</text>
+  <rect x="255.4" y="482.0" width="100.0" height="8.0" rx="0.0" fill="rgb(224,224,224)" stroke="none" stroke-width="0.0"/>
+  <rect x="255.4" y="482.0" width="75.0" height="8.0" rx="0.0" fill="rgb(0,255,0)" stroke="none" stroke-width="0.0"/>
+  <text x="188.8" y="518.3" font-size="14.0" font-weight="normal" fill="rgb(0,0,0)">Growth</text>
+  <rect x="251.2" y="510.8" width="100.0" height="8.0" rx="0.0" fill="rgb(224,224,224)" stroke="none" stroke-width="0.0"/>
+  <rect x="251.2" y="510.8" width="45.0" height="8.0" rx="0.0" fill="rgb(0,0,255)" stroke="none" stroke-width="0.0"/>
+</svg>

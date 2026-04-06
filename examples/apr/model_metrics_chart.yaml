@@ -1,0 +1,39 @@
+# APR-003: Model Metrics Chart
+# QA Focus: Training curves render correctly
+presentar: "1.0"
+name: "model-metrics-chart"
+version: "1.0.0"
+description: "Training loss curve visualization"
+
+data:
+  model:
+    source: "./models/trained.apr"
+    format: "apr"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Training Metrics"
+          style: "heading-1"
+
+    - id: "loss-chart"
+      widgets:
+        - type: "chart"
+          chart_type: "line"
+          data: "{{ data.model.metrics.loss_history }}"
+          title: "Training Loss"
+          x: "epoch"
+          y: "loss"
+          stroke_width: 2
+          anti_alias: true
+
+# Acceptance Criteria:
+# - Loss curve smooth with anti-aliasing
+# - Epoch labels correct
+# - Hover shows exact loss value
+# - 15-point checklist complete

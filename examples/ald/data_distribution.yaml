@@ -1,0 +1,38 @@
+# ALD-003: Data Distribution Chart
+# QA Focus: Histogram renders accurately
+presentar: "1.0"
+name: "data-distribution"
+version: "1.0.0"
+description: "Feature distribution histogram"
+
+data:
+  dataset:
+    source: "./data/features.ald"
+    format: "ald"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Feature Distribution"
+          style: "heading-1"
+
+    - id: "histogram"
+      widgets:
+        - type: "chart"
+          chart_type: "histogram"
+          data: "{{ data.dataset.columns.feature_1 }}"
+          bins: 50
+          title: "Feature Distribution"
+          x: "value"
+          y: "count"
+
+# Acceptance Criteria:
+# - Histogram bins correct
+# - X-axis shows value range
+# - Y-axis shows counts
+# - 15-point checklist complete

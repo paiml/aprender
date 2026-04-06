@@ -1,0 +1,19 @@
+# Presentar Scene Format v1.0
+# Minimal example
+
+prs_version: "1.0"
+
+metadata:
+  name: "hello-world"
+  title: "Hello World"
+  description: "Minimal .prs example"
+
+layout:
+  type: flex
+  direction: column
+
+widgets:
+  - id: greeting
+    type: markdown
+    config:
+      content: "# Hello, Presentar!"

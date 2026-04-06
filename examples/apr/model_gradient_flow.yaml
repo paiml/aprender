@@ -1,0 +1,37 @@
+# APR-007: Model Gradient Flow
+# QA Focus: Gradient magnitude heatmap
+presentar: "1.0"
+name: "gradient-flow"
+version: "1.0.0"
+description: "Gradient magnitude visualization across layers"
+
+data:
+  model:
+    source: "./models/deep_net.apr"
+    format: "apr"
+
+layout:
+  type: "column"
+  columns: 12
+  gap: 16
+  sections:
+    - id: "header"
+      widgets:
+        - type: "text"
+          content: "Gradient Flow Analysis"
+          style: "heading-1"
+
+    - id: "gradient-heatmap"
+      widgets:
+        - type: "chart"
+          chart_type: "heatmap"
+          data: "{{ data.model.gradients }}"
+          title: "Gradient Magnitudes by Layer"
+          colormap: "viridis"
+          annotate: true
+
+# Acceptance Criteria:
+# - Heatmap renders correctly
+# - Color scale shows gradient magnitude
+# - Layer names visible
+# - 15-point checklist complete

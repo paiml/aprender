@@ -1,0 +1,2 @@
+cpu_scores pixel-perfect test fixture
+Validates TextStyle colors are visible (not black on dark background)

@@ -1,0 +1,16 @@
+# Code Owners for Presentar
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+* @paiml/presentar-maintainers
+
+# Specifications require review from architects
+docs/specifications/ @paiml/architects
+
+# Security-sensitive areas require security review
+crates/*/src/seed.rs @paiml/security
+.github/workflows/ @paiml/security
+
+# Benchmarks require performance review
+benches/ @paiml/performance
+data/benchmarks/ @paiml/performance
