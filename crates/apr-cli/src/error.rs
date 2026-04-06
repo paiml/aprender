@@ -64,6 +64,8 @@ impl CliError {
     /// Get exit code for this error
     pub fn exit_code(&self) -> ExitCode {
         contract_pre_exit_code_semantics!();
+        contract_pre_error_mapping!();
+        contract_pre_exit_code_on_error!();
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
             Self::InvalidFormat(_) => ExitCode::from(4),

@@ -95,6 +95,7 @@ pub(crate) struct CanaryCheckResult {
 
 /// Run the canary command
 pub(crate) fn run(command: CanaryCommands) -> Result<()> {
+    contract_pre_canary_regression_detection!();
     match command {
         CanaryCommands::Create {
             file,

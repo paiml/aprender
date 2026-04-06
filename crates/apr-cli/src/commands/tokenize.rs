@@ -20,6 +20,7 @@ pub(crate) fn run_plan(
     format: &str,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_tokenizer_training_correctness!();
     validate_algorithm(algorithm)?;
     validate_vocab_size(vocab_size)?;
 

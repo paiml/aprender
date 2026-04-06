@@ -34,6 +34,7 @@ struct StageResult {
 // GH-685: added verbose param
 pub(crate) fn run(path: &Path, no_gpu: bool, json: bool, verbose: bool) -> Result<(), CliError> {
     contract_pre_apr_model_validity!();
+    contract_pre_model_integrity_check!();
     if !json {
         output::section("Model Self-Test (PMAT-112: Real Validation)");
         println!("Model: {}\n", path.display().to_string().cyan());

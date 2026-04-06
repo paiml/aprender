@@ -42,6 +42,7 @@ pub(crate) fn run_plan(
     _format: &str,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_training_plan_apply_semantics!();
     match task {
         "pretrain" | "causal_lm" => run_plan_pretrain(config_path, json_output),
         "classify" => Err(classify_not_available()),

@@ -251,6 +251,8 @@ pub(crate) fn run(
 ) -> Result<()> {
     contract_pre_format_conversion_roundtrip!();
     contract_pre_atomic_write_safety!();
+    contract_pre_export_roundtrip!();
+    contract_pre_export_fidelity!();
     // Handle --list-formats
     if list_formats {
         return run_list_formats(json_output);

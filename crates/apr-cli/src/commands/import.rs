@@ -24,6 +24,8 @@ pub(crate) fn run(
     allow_no_config: bool,
 ) -> Result<()> {
     contract_pre_format_conversion_roundtrip!();
+    contract_pre_import_format_detection!();
+    contract_pre_import_integrity!();
     // GH-267: Detect PyTorch model.bin format and give helpful error
     reject_pytorch_format(source)?;
 

@@ -11,6 +11,7 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
     tokenizer: Option<&GgufTokenizer>,
     quantize: Option<QuantizationType>,
 ) -> Result<()> {
+    contract_pre_apr_tokenizer_embedding!();
     // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
     let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
     metadata.original_format = Some("gguf".to_string());

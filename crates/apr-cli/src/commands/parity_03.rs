@@ -8,6 +8,7 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, OwnedQuantizedModelCuda,
     };
+    contract_pre_gpu_cpu_parity!();
 
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));

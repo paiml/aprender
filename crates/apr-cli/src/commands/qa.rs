@@ -395,6 +395,7 @@ pub fn run(
     skip_capability: bool,
     assert_classifier_head: bool,
 ) -> Result<()> {
+    contract_pre_qa_gate_composition!();
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
         min_speedup: min_speedup.unwrap_or(0.2), // Ollama uses llama.cpp optimized kernels

@@ -4,6 +4,7 @@
 fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_side_effect_classification!();
     contract_pre_dispatch_completeness!();
+    contract_pre_output_format_fidelity!();
     // Try runtime commands first (check, run, serve)
     if let Some(result) = dispatch_runtime_commands(cli) {
         return Some(result);
@@ -156,6 +157,8 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 #[allow(clippy::many_single_char_names)]
 fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_no_side_effects!();
+    contract_pre_idempotent_inspection!();
+    contract_pre_idempotent_output!();
     Some(match cli.command.as_ref() {
         Commands::Inspect {
             file,
@@ -419,6 +422,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
 fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     contract_pre_output_path_validation!();
+    contract_pre_rm_confirmation_gate!();
     Some(match cli.command.as_ref() {
         Commands::Merge {
             files,

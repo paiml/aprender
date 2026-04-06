@@ -372,6 +372,7 @@ pub struct TokenUsage {
 
 /// Format tools into prompt for model (ChatML format with tool definitions)
 pub(super) fn format_tools_prompt(tools: &[Tool]) -> String {
+    contract_pre_idempotency_classification!();
     if tools.is_empty() {
         return String::new();
     }

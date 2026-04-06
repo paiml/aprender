@@ -439,6 +439,7 @@ pub(crate) fn run_audit(
     preamble_prefix: Option<&str>,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_data_validation!();
     use alimentar::{imbalance::ImbalanceDetector, quality::QualityChecker, ArrowDataset, Dataset};
 
     if !path.exists() {
@@ -550,6 +551,7 @@ pub(crate) fn run_split(
     output_dir: &Path,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_data_split_determinism!();
     use alimentar::{split::DatasetSplit, ArrowDataset, Dataset};
 
     if !path.exists() {

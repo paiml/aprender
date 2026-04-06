@@ -915,6 +915,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Delegates to [`dispatch_analysis_commands`] and [`dispatch_profiling_commands`]
 /// sub-dispatchers to keep cyclomatic complexity below 10 per function.
 fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
+    contract_pre_feature_gated_dispatch!();
     // Try analysis commands first (cbtop, probar, compare-hf, hex, tree, flow, oracle)
     if let Some(result) = dispatch_analysis_commands(cli) {
         return result;

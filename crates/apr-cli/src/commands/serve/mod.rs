@@ -29,6 +29,10 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_graceful_shutdown!();
     contract_pre_resource_cleanup!();
     contract_pre_concurrent_isolation!();
+    contract_pre_request_routing!();
+    contract_pre_cors_negotiation!();
+    contract_pre_concurrent_model_access!();
+    contract_pre_server_lifecycle!();
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.
     #[cfg(feature = "inference")]

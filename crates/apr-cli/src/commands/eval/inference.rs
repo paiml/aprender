@@ -170,6 +170,8 @@ pub(crate) fn run_humaneval(
 /// Sample a token from logits with temperature.
 /// Temperature=0.0 -> greedy argmax. Temperature>0 -> softmax sampling.
 pub(super) fn sample_token(logits: &[f32], temperature: f32, rng_state: &mut u64) -> u32 {
+    contract_pre_repeat_penalty!();
+    contract_pre_generation_temperature_zero!();
     if temperature <= 0.0 || logits.is_empty() {
         // Greedy argmax
         return logits

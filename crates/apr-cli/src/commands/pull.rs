@@ -45,6 +45,7 @@ pub struct FileChecksum {
 
 /// Run the pull command
 pub fn run(model_ref: &str, force: bool) -> Result<()> {
+    contract_pre_pull_cache_integrity!();
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
 

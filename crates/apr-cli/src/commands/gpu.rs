@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::CliError;
 
 pub fn run(json: bool) -> Result<()> {
+    contract_pre_json_output_consistency!();
     let uuid = entrenar::gpu::ledger::detect_gpu_uuid();
     let total_mb = entrenar::gpu::ledger::detect_total_memory_mb();
     let mem_type = entrenar::gpu::ledger::detect_memory_type();

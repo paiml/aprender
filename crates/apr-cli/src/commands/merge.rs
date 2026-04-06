@@ -233,6 +233,7 @@ pub(crate) fn run(
     plan: bool,
 ) -> Result<()> {
     contract_pre_merge_tensor_shape!();
+    contract_pre_merge_weight_conservation!();
     if plan {
         return run_plan(
             files,

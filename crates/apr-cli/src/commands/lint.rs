@@ -16,6 +16,7 @@ use std::path::Path;
 // GH-685: added quiet param — suppress WARN/INFO when quiet=true
 pub(crate) fn run(file: &Path, json: bool, quiet: bool) -> Result<()> {
     contract_pre_apr_model_validity!();
+    contract_pre_lint_model_conventions!();
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));

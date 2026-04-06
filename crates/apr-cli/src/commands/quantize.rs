@@ -88,6 +88,7 @@ pub(crate) fn run(
     json_output: bool,
 ) -> Result<()> {
     contract_pre_quantize!();
+    contract_pre_quantize_precision_bound!();
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }

@@ -1,5 +1,6 @@
 impl ChatSession {
         pub(super) fn new(path: &Path) -> Result<Self, CliError> {
+            contract_pre_session_persistence!();
             println!("{}", "Loading model...".cyan());
             let start = Instant::now();
 

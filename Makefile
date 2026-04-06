@@ -827,7 +827,7 @@ dev-setup: ## Set up local dev environment with sibling repo overrides
 	@echo ""
 	@$(MAKE) --no-print-directory check-siblings
 
-publish: ## Publish crate(s) to crates.io — temporarily removes [patch] to avoid diamond deps
+publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then verifies cargo install
 	@echo "Publishing to crates.io (removing [patch.crates-io] temporarily)..."
 	@if [ -f .cargo/config.toml ]; then \
 		cp .cargo/config.toml .cargo/config.toml.publish-backup; \
@@ -844,14 +844,49 @@ publish: ## Publish crate(s) to crates.io — temporarily removes [patch] to avo
 		exit 1; \
 	fi; \
 	echo "Publishing $$CRATE..."; \
-	cargo publish -p $$CRATE --allow-dirty --no-verify; \
+	cargo publish -p $$CRATE --allow-dirty; \
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
 		cp .cargo/config.toml.publish-backup .cargo/config.toml; \
 		rm -f .cargo/config.toml.publish-backup; \
 	fi; \
-	exit $$STATUS
+	if [ $$STATUS -ne 0 ]; then \
+		echo "FAIL: cargo publish failed"; \
+		exit $$STATUS; \
+	fi; \
+	echo ""; \
+	echo "=== POST-PUBLISH VERIFICATION (PMAT-517) ==="; \
+	echo "Waiting for crates.io index to update..."; \
+	sleep 15; \
+	if [ "$$CRATE" = "apr-cli" ]; then \
+		echo "Verifying: cargo install apr-cli --force ..."; \
+		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
+		INSTALL_STATUS=$$?; \
+		if [ $$INSTALL_STATUS -ne 0 ]; then \
+			echo ""; \
+			echo "FATAL: cargo install apr-cli FAILED after publish!"; \
+			echo "The published crate is BROKEN. You must fix and republish."; \
+			echo "Build log: /tmp/publish-verify-$$CRATE.log"; \
+			exit 1; \
+		fi; \
+		echo "Verifying apr --version..."; \
+		VERSION=$$(apr --version 2>&1); \
+		echo "  $$VERSION"; \
+		echo "POST-PUBLISH VERIFICATION: PASSED"; \
+	else \
+		echo "Verifying: cargo install apr-cli --force (depends on $$CRATE)..."; \
+		cargo install apr-cli --force 2>&1 | tee /tmp/publish-verify-$$CRATE.log; \
+		INSTALL_STATUS=$$?; \
+		if [ $$INSTALL_STATUS -ne 0 ]; then \
+			echo ""; \
+			echo "FATAL: cargo install apr-cli FAILED after publishing $$CRATE!"; \
+			echo "The published $$CRATE broke the apr-cli build."; \
+			echo "Build log: /tmp/publish-verify-$$CRATE.log"; \
+			exit 1; \
+		fi; \
+		echo "POST-PUBLISH VERIFICATION: PASSED"; \
+	fi
 
 check-siblings: ## Verify sibling repos exist and versions are compatible
 	@echo "Checking sibling repositories..."

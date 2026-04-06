@@ -95,6 +95,7 @@ pub(crate) fn run(
     profile: bool,
 ) -> Result<(), CliError> {
     contract_pre_temperature_bounds!();
+    contract_pre_session_state_machine!();
     // Validate file exists
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));

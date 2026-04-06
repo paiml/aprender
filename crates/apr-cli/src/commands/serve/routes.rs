@@ -61,6 +61,7 @@ async fn root_handler(State(state): State<Arc<ServerState>>) -> Json<ServerInfo>
 async fn health_handler(
     State(state): State<Arc<ServerState>>,
 ) -> (StatusCode, Json<HealthResponse>) {
+    contract_pre_timeout_honoring!();
     let health = health_check(&state);
 
     if state.config.verbose {

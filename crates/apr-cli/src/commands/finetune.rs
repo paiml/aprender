@@ -944,6 +944,7 @@ fn dispatch_finetune_mode(
     method: &str,
     vram_gb: f64,
 ) -> Option<Result<()>> {
+    contract_pre_vram_estimation_tolerance!();
     if merge_mode {
         return Some(run_merge(
             model_path,
@@ -1050,6 +1051,8 @@ pub(crate) fn run(
     gpu_share: u32,
 ) -> Result<()> {
     contract_pre_rank_bounds_safety!();
+    contract_pre_alpha_rank_ratio!();
+    contract_pre_checkpoint_metadata_roundtrip!();
     if experimental_mps {
         setup_mps(gpu_share, json_output)?;
     }
@@ -1207,6 +1210,7 @@ fn display_finetune_plan(
     plan_only: bool,
     json_output: bool,
 ) {
+    contract_pre_vram_feasibility!();
     let planner = MemoryPlanner::new(model_params);
     let req = planner.estimate(config.method, config.rank);
 

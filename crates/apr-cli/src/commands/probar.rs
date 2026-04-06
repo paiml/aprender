@@ -86,6 +86,7 @@ pub(crate) fn run(
     assert_mode: bool,
     tolerance: f32,
 ) -> Result<(), CliError> {
+    contract_pre_probar_property_tests!();
     validate_path(path)?;
     fs::create_dir_all(output_dir)?;
 

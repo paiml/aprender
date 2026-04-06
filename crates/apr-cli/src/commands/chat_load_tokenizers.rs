@@ -5,6 +5,7 @@ fn load_tokenizers(
     model_bytes: &[u8],
     path: &Path,
 ) -> Result<(Option<LlamaTokenizer>, Option<Qwen2BpeTokenizer>), CliError> {
+    contract_pre_byte_encoder_coverage!();
     match format {
         ModelFormat::Gguf => {
             let tok = LlamaTokenizer::from_gguf_bytes(model_bytes).map_err(|e| {
