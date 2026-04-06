@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 use serde_json::Value;
 
 /// Run the certify command.

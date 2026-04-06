@@ -354,9 +354,10 @@ falsification_tests: []
         assert!(defs.path.contains("Defs/Softmax"));
         assert!(defs.content.contains("noncomputable def softmax"));
         assert!(defs.content.contains("namespace ProvableContracts.Softmax"));
-        assert!(defs
-            .content
-            .contains("Mathlib.Analysis.SpecialFunctions.ExpDeriv"));
+        assert!(
+            defs.content
+                .contains("Mathlib.Analysis.SpecialFunctions.ExpDeriv")
+        );
 
         // Check theorem file
         let thm = &files[1];

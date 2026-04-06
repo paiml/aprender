@@ -1,6 +1,6 @@
 //! `pv kaizen` — fleet-wide contract enforcement improvement.
 
-use provable_contracts::binding::{parse_binding, BindingRegistry, ImplStatus};
+use provable_contracts::binding::{BindingRegistry, ImplStatus, parse_binding};
 use provable_contracts::codegen;
 use std::path::{Path, PathBuf};
 

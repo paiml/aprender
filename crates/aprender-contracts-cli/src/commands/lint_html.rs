@@ -1,7 +1,7 @@
 //! HTML report output for pv lint.
 
-use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::LintReport;
+use provable_contracts::lint::rules::RuleSeverity;
 
 pub fn render_html(report: &LintReport) -> String {
     let mut html = String::new();

@@ -9,7 +9,7 @@
 use serde::Serialize;
 
 use super::finding::LintFinding;
-use super::rules::{RuleSeverity, RULES};
+use super::rules::{RULES, RuleSeverity};
 
 const SARIF_SCHEMA: &str =
     "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json";

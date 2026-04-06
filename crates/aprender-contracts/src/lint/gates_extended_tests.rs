@@ -452,7 +452,7 @@ fn test_capitalize_first_already_capitalized() {
 #[test]
 fn test_enforcement_level_gate_basic_contract_meets_basic() {
     let mut c = minimal_contract(); // no tests, no kani = Basic
-                                    // Explicitly declare Basic so declared == actual
+    // Explicitly declare Basic so declared == actual
     c.metadata.enforcement_level = Some(EnforcementLevel::Basic);
     let contracts = vec![("test-v1".to_string(), c)];
     let (result, findings) = run_enforcement_level_gate(&contracts, EnforcementLevel::Basic);
@@ -637,7 +637,7 @@ fn test_level_lock_aliases() {
     // Test the alias parsing: "l1" => Basic, "l4" => Strict, "l5" => Proven
     let mut c = minimal_contract();
     c.metadata.locked_level = Some("l1".to_string()); // Basic
-                                                      // Basic contract locked at Basic => no regression
+    // Basic contract locked at Basic => no regression
     let contracts = vec![("alias-v1".to_string(), c.clone())];
     let (result, _) = run_enforcement_level_gate(&contracts, EnforcementLevel::Basic);
     assert!(result.passed);

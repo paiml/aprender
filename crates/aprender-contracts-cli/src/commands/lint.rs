@@ -3,7 +3,7 @@ use std::path::Path;
 use provable_contracts::lint::config::{find_config, load_config};
 use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::trend;
-use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
+use provable_contracts::lint::{GateDetail, LintConfig, LintReport, run_lint};
 
 #[path = "lint_render.rs"]
 mod lint_render;

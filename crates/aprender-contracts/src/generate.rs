@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use crate::binding::BindingRegistry;
 use crate::book_gen::generate_contract_page;
 use crate::coq_gen::generate_coq_spec;
-use crate::graph::{dependency_graph, DependencyGraph};
+use crate::graph::{DependencyGraph, dependency_graph};
 use crate::invariant_gen::generate_invariants;
 use crate::kani_gen::generate_kani_harnesses;
 use crate::probar_gen::{generate_probar_tests, generate_wired_probar_tests};
@@ -213,22 +213,30 @@ kani_harnesses:
         let dir = tempfile::tempdir().unwrap();
         let result = generate_all(&c, "test-kernel-v1", dir.path(), None).unwrap();
         assert_eq!(result.files.len(), 5); // scaffold + kani + probar + coq + book
-        assert!(result
-            .files
-            .iter()
-            .any(|f| f.kind == ArtifactKind::Scaffold));
-        assert!(result
-            .files
-            .iter()
-            .any(|f| f.kind == ArtifactKind::KaniHarness));
-        assert!(result
-            .files
-            .iter()
-            .any(|f| f.kind == ArtifactKind::ProbarTest));
-        assert!(result
-            .files
-            .iter()
-            .any(|f| f.kind == ArtifactKind::BookPage));
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.kind == ArtifactKind::Scaffold)
+        );
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.kind == ArtifactKind::KaniHarness)
+        );
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.kind == ArtifactKind::ProbarTest)
+        );
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.kind == ArtifactKind::BookPage)
+        );
         for f in &result.files {
             assert!(f.absolute_path.exists());
             assert!(f.bytes > 0);
@@ -255,10 +263,12 @@ bindings:
         let dir = tempfile::tempdir().unwrap();
         let result = generate_all(&c, "test-kernel-v1", dir.path(), Some(&binding)).unwrap();
         assert_eq!(result.files.len(), 6); // scaffold + kani + probar + wired + coq + book
-        assert!(result
-            .files
-            .iter()
-            .any(|f| f.kind == ArtifactKind::WiredProbarTest));
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.kind == ArtifactKind::WiredProbarTest)
+        );
     }
 
     #[test]

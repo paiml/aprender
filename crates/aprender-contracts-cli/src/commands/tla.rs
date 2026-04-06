@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 use provable_contracts::tla_gen::generate_tla_module;
 
 pub fn run(contract_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use provable_contracts::graph::{dependency_graph, graph_nodes, DependencyGraph};
+use provable_contracts::graph::{DependencyGraph, dependency_graph, graph_nodes};
 
 use crate::contract_walk::collect_contracts;
 

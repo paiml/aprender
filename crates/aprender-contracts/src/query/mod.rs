@@ -169,11 +169,7 @@ fn clean_path(raw: &str) -> String {
 }
 
 fn opt_vec(source: &[String], include: bool) -> Vec<String> {
-    if include {
-        source.to_vec()
-    } else {
-        Vec::new()
-    }
+    if include { source.to_vec() } else { Vec::new() }
 }
 
 fn graph_fields(

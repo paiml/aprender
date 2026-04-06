@@ -18,7 +18,7 @@ use std::path::Path;
 
 use provable_contracts::schema::{parse_contract, parse_contract_str};
 use provable_contracts::scoring::{
-    score_contract, score_contract_weighted, ContractScore, Grade, ScoringWeights,
+    ContractScore, Grade, ScoringWeights, score_contract, score_contract_weighted,
 };
 
 /// Inline contract for self-contained demonstration (no file I/O needed).

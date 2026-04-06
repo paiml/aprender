@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 
 /// Walk `dir` recursively and collect every parseable `.yaml` contract
 /// into `out` as `(stem, contract)` pairs.

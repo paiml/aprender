@@ -31,7 +31,7 @@
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{parse_macro_input, Expr, ItemFn, Lit, Meta, Token};
+use syn::{Expr, ItemFn, Lit, Meta, Token, parse_macro_input};
 
 /// Arguments to `#[contract("contract-name", equation = "equation-name")]`
 struct ContractArgs {

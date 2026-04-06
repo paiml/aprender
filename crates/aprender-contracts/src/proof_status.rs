@@ -588,11 +588,7 @@ fn build_kernel_classes(statuses: &[ContractProofStatus]) -> Vec<KernelClassSumm
 
 /// Truncate a string to at most `max` bytes for column alignment
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() > max {
-        &s[..max]
-    } else {
-        s
-    }
+    if s.len() > max { &s[..max] } else { s }
 }
 
 /// Generate an ISO-8601-style Unix epoch timestamp string

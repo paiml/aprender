@@ -587,3 +587,43 @@ Codegen: 294 contracts, 1025 Lean theorems, 31 compilable postcondition macros.
 - GH-687: L5 Lean proofs for 4 work contracts
 - GH-691: Per-crate penetration reporting (apr-cli vs aprender lib)
 - GH-367: InternLM2.5 architecture — fused QKV tensor naming
+
+---
+
+## 38. Document and Asset Integrity
+
+**Contract**: `document-integrity-v1.yaml`
+
+Mathematical enforcement of document and asset file structure. All
+invariants are decidable properties on finite byte sequences — no
+approximation, no heuristics, no ML. Pure structural validation.
+
+**Markdown (.md)** — 9 equations:
+- `heading_hierarchy`: DAG property — h₁=1, ∀i: hᵢ ≤ hᵢ₋₁+1, |{h=1}|=1
+- `link_wellformedness`: ∀ link: url.len()>0 ∧ ¬starts_with("javascript:")
+- `code_fence_language`: ∀ fence: lang.len()>0 (no bare ```)
+- `table_column_parity`: ∀ rows r in table: |r| = |header|
+- `required_sections`: configurable required heading set
+- `readme_drift`: byte-level comparison actual vs generate_readme()
+- `yaml_frontmatter`: YAML front matter parses as valid YAML
+- `badge_format`: alt text non-empty, URL well-formed
+
+**SVG (.svg)** — 1 equation:
+- `svg_structural_safety`: valid XML, viewBox present, no `<script>`,
+  no `<foreignObject>`, correct namespace, bounded dimensions
+
+**YAML (.yaml/.yml)** — 2 equations:
+- `yaml_structural_validity`: parses, no duplicate keys, depth ≤ 20
+- `yaml_key_convention`: keys match /^[a-z][a-z0-9_-]*$/
+
+**Media assets** — 3 equations:
+- `media_magic_bytes`: file magic matches extension (PNG/JPEG/GIF/MP4/WebM/WAV/MP3)
+- `media_metadata_present`: width/height/fps/codec/sample_rate non-zero
+- `media_dimension_bounds`: 1≤w≤8192, 1≤h≤8192, fps≤240, size≤100MB
+
+**Animation (GIF/APNG/Lottie)** — 1 equation:
+- `animation_bounds`: frame_count≤1000, duration≤60s, no infinite loops
+
+15 falsification tests, 6 Kani harnesses, 10 proof obligations.
+Implementation: `pv lint --docs` validates all .md/.svg/.yaml/media files
+in a project tree. README drift via `pv lint --readme-drift`.

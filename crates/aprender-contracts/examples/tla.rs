@@ -1,5 +1,5 @@
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::{Contract, parse_contract};
 use provable_contracts::tla_gen::generate_tla_module;
 fn main() {
     let d = std::env::args().nth(1).unwrap_or_else(|| {

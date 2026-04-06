@@ -1,0 +1,509 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  kind: kernel
+  description: >
+    Document and asset integrity contract — mathematical enforcement of
+    Markdown (.md), SVG (.svg), YAML (.yaml/.yml), and media file
+    structure, layout, and content invariants.
+
+    Markdown: heading hierarchy (DAG, no skips), required sections, link
+    well-formedness, code fence language tags, table column parity, badge
+    format, YAML front-matter schema. CONTRACT-README.md drift detection
+    against live contract state.
+
+    SVG: valid XML, viewBox present, no embedded scripts (XSS), bounded
+    dimensions, namespace correctness.
+
+    YAML: valid parse, no duplicate keys, anchors resolve, max depth
+    bounded, key naming conventions (kebab-case or snake_case).
+
+    Media assets: file magic bytes match extension, dimensions bounded,
+    duration bounded, codec metadata present, no corrupt headers.
+    Animation (GIF/APNG/Lottie): frame count bounded, total duration
+    bounded, no infinite loops in production assets.
+
+    All invariants are decidable properties on finite byte sequences — no
+    approximation, no heuristics, no ML. Pure structural validation.
+  references:
+  - 'CommonMark Spec 0.31.2 (https://spec.commonmark.org/0.31.2/)'
+  - 'W3C SVG 1.1 (https://www.w3.org/TR/SVG11/)'
+  - 'GitHub Flavored Markdown Spec (https://github.github.com/gfm/)'
+  - 'YAML 1.2 Spec (https://yaml.org/spec/1.2.2/)'
+  - 'ISO 14496-12 (MP4/ISOBMFF container format)'
+  - 'RFC 2083 (PNG), RFC 2046 (MIME), GIF89a Spec'
+  depends_on:
+  - media-pipeline-v1
+
+equations:
+  heading_hierarchy:
+    formula: |
+      For heading sequence H = [h_1, h_2, ..., h_n] where h_i ∈ {1..6}:
+        h_1 = 1 (document starts with H1)
+        ∀ i > 1: h_i ≤ h_{i-1} + 1 (no level skips: H1→H3 illegal)
+        |{i : h_i = 1}| = 1 (exactly one H1)
+    domain: Ordered sequence of heading levels in a .md file
+    codomain: Boolean (valid hierarchy)
+    invariants:
+    - Heading levels form a valid tree (no orphan H3 under H1)
+    - Exactly one H1 per document
+    preconditions:
+    - input is valid UTF-8
+    - input.len() > 0
+    postconditions:
+    - result == true implies headings form a proper outline tree
+    lean_theorem: Theorems.HeadingHierarchy
+
+  link_wellformedness:
+    formula: |
+      For every link [text](url) or ![alt](src) in document:
+        url is non-empty
+        url contains no unescaped spaces
+        url does not start with "javascript:" (XSS)
+        If relative: target file exists on disk (optional fs check)
+    domain: Set of markdown links in a .md file
+    codomain: List of violations (empty = valid)
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result.iter().all(|v| !v.url.is_empty())
+    lean_theorem: Theorems.LinkWellformedness
+
+  code_fence_language:
+    formula: |
+      For every fenced code block ```lang ... ```:
+        lang is non-empty (no bare ```)
+        lang ∈ KNOWN_LANGUAGES ∪ {user-defined}
+    domain: Set of fenced code blocks
+    codomain: Boolean (all blocks tagged)
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result == true implies no untagged code fences
+    lean_theorem: Theorems.CodeFenceLanguage
+
+  table_column_parity:
+    formula: |
+      For every GFM table:
+        |header_cols| = |separator_cols| = |row_cols| for all rows
+        separator matches /^[-:]+$/
+    domain: Set of GFM tables in a .md file
+    codomain: Boolean (all tables have consistent column counts)
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result == true implies column count invariant holds
+    lean_theorem: Theorems.TableColumnParity
+
+  readme_drift:
+    formula: |
+      drift(actual, generated) = actual ≠ generate_readme(contracts, binding)
+      A README is stale when its content diverges from the canonical
+      generation. Byte-level comparison after normalization (trailing
+      whitespace, final newline).
+    domain: "Tuple (actual_readme, contracts, binding)"
+    codomain: "DriftResult with stale flag and diff_lines count"
+    preconditions:
+    - actual_readme is valid UTF-8
+    - contracts.len() > 0
+    postconditions:
+    - result.stale == false implies actual == generated
+    lean_theorem: Theorems.ReadmeDrift
+
+  svg_structural_safety:
+    formula: |
+      For every .svg file:
+        valid_xml(content) = true
+        has_element("svg", content) = true
+        has_attr("viewBox", root) = true
+        count_elements("script", content) = 0
+        count_elements("foreignObject", content) = 0
+        namespace(root) = "http://www.w3.org/2000/svg"
+        width, height ∈ (0, 10000] (bounded dimensions)
+    domain: SVG file content (UTF-8 string)
+    codomain: List of violations (empty = valid)
+    preconditions:
+    - input is valid UTF-8
+    - input.len() > 0
+    postconditions:
+    - result.is_empty() implies file is safe to render
+    lean_theorem: Theorems.SvgStructuralSafety
+
+  required_sections:
+    formula: |
+      For README.md files:
+        contains_section("Installation" | "Setup" | "Getting Started")
+        contains_section("Usage" | "Examples" | "Quick Start")
+        contains_section("License")
+      For CONTRACT-README.md files:
+        contains_section("Contract Coverage")
+        contains_section("Bound Contracts")
+        contains_section("Verification Ladder")
+    domain: Markdown document with heading structure
+    codomain: List of missing required sections
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result.is_empty() implies all required sections present
+    lean_theorem: Theorems.RequiredSections
+
+  yaml_frontmatter:
+    formula: |
+      If document starts with "---\n":
+        frontmatter = content between first "---" and second "---"
+        serde_yaml::from_str(frontmatter).is_ok()
+        Keys are valid identifiers (no spaces, no special chars)
+    domain: Markdown document with optional YAML front matter
+    codomain: Option<FrontmatterResult> (None if no front matter)
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result.is_some() implies front matter parses as valid YAML
+    lean_theorem: Theorems.YamlFrontmatter
+
+  badge_format:
+    formula: |
+      For every badge ![label](url):
+        url matches shields.io or img.shields.io pattern
+        OR url is a local asset path
+        alt text is non-empty
+    domain: Set of image links in markdown
+    codomain: Boolean (all badges well-formed)
+    preconditions:
+    - input is valid UTF-8
+    postconditions:
+    - result == true implies all badges have alt text
+    lean_theorem: Theorems.BadgeFormat
+
+  yaml_structural_validity:
+    formula: |
+      For every .yaml/.yml file:
+        serde_yaml::from_str(content).is_ok()     (valid YAML)
+        no_duplicate_keys(content)                 (RFC 7159 §4)
+        max_depth(content) <= 20                   (bounded nesting)
+        all anchors &name have corresponding *name (no dangling refs)
+    domain: YAML file content (UTF-8 string)
+    codomain: List of violations (empty = valid)
+    preconditions:
+    - input is valid UTF-8
+    - input.len() > 0
+    postconditions:
+    - result.is_empty() implies file is structurally sound YAML
+    lean_theorem: Theorems.YamlStructuralValidity
+
+  yaml_key_convention:
+    formula: |
+      For every mapping key k in YAML document:
+        k matches /^[a-z][a-z0-9_-]*$/ (kebab-case or snake_case)
+        OR k is a numeric string (array index)
+        OR k is a well-known exception (e.g., "TOTAL", version fields)
+    domain: Set of mapping keys in a YAML document
+    codomain: List of non-conforming keys
+    preconditions:
+    - input parses as valid YAML
+    postconditions:
+    - result.is_empty() implies all keys follow naming convention
+    lean_theorem: Theorems.YamlKeyConvention
+
+  media_magic_bytes:
+    formula: |
+      For media files (.mp4, .webm, .mp3, .wav, .png, .jpg, .gif, .webp):
+        magic_bytes(content) matches expected_magic(extension)
+        PNG: [0x89, 0x50, 0x4E, 0x47]
+        JPEG: [0xFF, 0xD8, 0xFF]
+        GIF: [0x47, 0x49, 0x46, 0x38]
+        MP4: ftyp at offset 4
+        WebM: [0x1A, 0x45, 0xDF, 0xA3] (EBML)
+        WAV: RIFF....WAVE
+        MP3: [0xFF, 0xFB] or ID3
+    domain: File path with content bytes
+    codomain: Boolean (magic matches extension)
+    preconditions:
+    - file.len() >= 4
+    postconditions:
+    - result == true implies extension matches actual file format
+    lean_theorem: Theorems.MediaMagicBytes
+
+  media_metadata_present:
+    formula: |
+      For video files: width > 0, height > 0, fps > 0, codec non-empty
+      For audio files: sample_rate > 0, channels > 0, codec non-empty
+      For images: width > 0, height > 0
+      Duration (if applicable): 0 < duration <= max_duration
+    domain: Media file with decoded metadata
+    codomain: List of missing/invalid metadata fields
+    preconditions:
+    - file magic bytes valid
+    postconditions:
+    - result.is_empty() implies all required metadata present
+    lean_theorem: Theorems.MediaMetadataPresent
+
+  media_dimension_bounds:
+    formula: |
+      For images/video: 1 <= width <= 8192, 1 <= height <= 8192
+      For video: 0.1 <= fps <= 240
+      For audio: sample_rate in {8000, 11025, 16000, 22050, 44100, 48000, 96000}
+      File size <= max_size (configurable, default 100MB)
+    domain: Decoded media metadata
+    codomain: List of out-of-bounds fields
+    preconditions:
+    - metadata successfully decoded
+    postconditions:
+    - result.is_empty() implies all dimensions within bounds
+    lean_theorem: Theorems.MediaDimensionBounds
+
+  animation_bounds:
+    formula: |
+      For animated formats (GIF, APNG, Lottie JSON):
+        1 <= frame_count <= max_frames (default 1000)
+        0 < total_duration_ms <= max_duration_ms (default 60000)
+        no infinite loop flag in production assets (GIF loop_count != 0)
+    domain: Animated asset with frame metadata
+    codomain: List of bound violations
+    preconditions:
+    - file is a recognized animation format
+    postconditions:
+    - result.is_empty() implies animation is bounded
+    lean_theorem: Theorems.AnimationBounds
+
+kernel_structure:
+  phases:
+  - name: parse
+    description: Extract structural elements (headings, links, tables, fences, SVG nodes)
+  - name: validate
+    description: Check each invariant against extracted elements
+  - name: report
+    description: Emit violations with line numbers and fix suggestions
+
+proof_obligations:
+- type: invariant
+  property: Heading hierarchy forms valid tree
+  formal: '∀ i: h_i ≤ h_{i-1} + 1 ∧ h_1 = 1 ∧ |{h=1}| = 1'
+  applies_to: heading_hierarchy
+  lean:
+    theorem: Theorems.HeadingHierarchy
+    status: sorry
+- type: invariant
+  property: No script injection in SVG
+  formal: 'count(script) = 0 ∧ count(foreignObject) = 0'
+  applies_to: svg_structural_safety
+  lean:
+    theorem: Theorems.SvgStructuralSafety
+    status: sorry
+- type: invariant
+  property: Table column count consistent
+  formal: '∀ rows r in table: |r| = |header|'
+  applies_to: table_column_parity
+  lean:
+    theorem: Theorems.TableColumnParity
+    status: sorry
+- type: postcondition
+  property: README drift detection is sound
+  formal: '¬stale ⟹ actual = generated'
+  applies_to: readme_drift
+  lean:
+    theorem: Theorems.ReadmeDrift
+    status: sorry
+- type: invariant
+  property: Link URLs are non-empty and safe
+  formal: '∀ link: url.len() > 0 ∧ ¬url.starts_with("javascript:")'
+  applies_to: link_wellformedness
+  lean:
+    theorem: Theorems.LinkWellformedness
+    status: sorry
+- type: invariant
+  property: All code fences have language tags
+  formal: '∀ fence: lang.len() > 0'
+  applies_to: code_fence_language
+  lean:
+    theorem: Theorems.CodeFenceLanguage
+    status: sorry
+- type: invariant
+  property: YAML parses without errors
+  formal: 'serde_yaml::from_str(content).is_ok()'
+  applies_to: yaml_structural_validity
+  lean:
+    theorem: Theorems.YamlStructuralValidity
+    status: sorry
+- type: invariant
+  property: Media magic bytes match extension
+  formal: '∀ file: magic(content) = expected_magic(ext)'
+  applies_to: media_magic_bytes
+  lean:
+    theorem: Theorems.MediaMagicBytes
+    status: sorry
+- type: bound
+  property: Media dimensions within safe bounds
+  formal: '1 <= width <= 8192 ∧ 1 <= height <= 8192'
+  applies_to: media_dimension_bounds
+  lean:
+    theorem: Theorems.MediaDimensionBounds
+    status: sorry
+- type: bound
+  property: Animation frame count bounded
+  formal: '1 <= frame_count <= 1000 ∧ duration_ms <= 60000'
+  applies_to: animation_bounds
+  lean:
+    theorem: Theorems.AnimationBounds
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-DOC-001
+  rule: Heading hierarchy
+  prediction: H1→H3 skip detected as violation
+  test: |
+    let md = "# Title\n### Skipped H2\n";
+    assert!(!validate_heading_hierarchy(md));
+  if_fails: Heading skip not detected
+- id: FALSIFY-DOC-002
+  rule: Heading hierarchy
+  prediction: Multiple H1s detected as violation
+  test: |
+    let md = "# Title\n# Another Title\n";
+    assert!(!validate_heading_hierarchy(md));
+  if_fails: Duplicate H1 not detected
+- id: FALSIFY-DOC-003
+  rule: Link well-formedness
+  prediction: javascript:alert() link flagged
+  test: |
+    let md = "[click](javascript:alert(1))\n";
+    let violations = validate_links(md);
+    assert!(!violations.is_empty());
+  if_fails: XSS link not flagged
+- id: FALSIFY-DOC-004
+  rule: Code fence language
+  prediction: Bare ``` flagged as violation
+  test: |
+    let md = "```\ncode\n```\n";
+    assert!(!validate_code_fences(md));
+  if_fails: Untagged fence not detected
+- id: FALSIFY-DOC-005
+  rule: Table column parity
+  prediction: Mismatched column count flagged
+  test: |
+    let md = "| A | B |\n|---|---|\n| 1 | 2 | 3 |\n";
+    assert!(!validate_tables(md));
+  if_fails: Column mismatch not detected
+- id: FALSIFY-DOC-006
+  rule: SVG structural safety
+  prediction: SVG with <script> tag flagged
+  test: |
+    let svg = "<svg><script>alert(1)</script></svg>";
+    let violations = validate_svg(svg);
+    assert!(!violations.is_empty());
+  if_fails: Script injection not detected
+- id: FALSIFY-DOC-007
+  rule: README drift
+  prediction: Modified README detected as stale
+  test: |
+    let actual = "# Old content\n";
+    let generated = "# New content\n";
+    assert!(detect_drift(actual, generated).stale);
+  if_fails: Stale README not detected
+- id: FALSIFY-DOC-008
+  rule: SVG structural safety
+  prediction: SVG without viewBox flagged
+  test: |
+    let svg = "<svg xmlns='http://www.w3.org/2000/svg'><rect/></svg>";
+    let violations = validate_svg(svg);
+    assert!(violations.iter().any(|v| v.contains("viewBox")));
+  if_fails: Missing viewBox not detected
+- id: FALSIFY-DOC-009
+  rule: Required sections
+  prediction: README without License section flagged
+  test: |
+    let md = "# Project\n## Usage\nHello\n";
+    let missing = validate_required_sections(md, &["License"]);
+    assert!(!missing.is_empty());
+  if_fails: Missing required section not detected
+- id: FALSIFY-DOC-010
+  rule: YAML structural validity
+  prediction: Invalid YAML detected (unclosed brace)
+  test: |
+    let yaml = "key: {unclosed\n";
+    assert!(!validate_yaml(yaml).is_empty());
+  if_fails: Invalid YAML not detected
+- id: FALSIFY-DOC-011
+  rule: YAML structural validity
+  prediction: Duplicate key detected
+  test: |
+    let yaml = "name: foo\nname: bar\n";
+    let violations = validate_yaml(yaml);
+    assert!(violations.iter().any(|v| v.contains("duplicate")));
+  if_fails: Duplicate YAML key not detected
+- id: FALSIFY-DOC-012
+  rule: Media magic bytes
+  prediction: PNG extension with JPEG magic bytes flagged
+  test: |
+    let magic = &[0xFF, 0xD8, 0xFF, 0xE0]; // JPEG magic
+    assert!(!validate_magic_bytes("image.png", magic));
+  if_fails: Extension/magic mismatch not detected
+- id: FALSIFY-DOC-013
+  rule: Media dimension bounds
+  prediction: Image wider than 8192 pixels flagged
+  test: |
+    let meta = MediaMeta { width: 16384, height: 1080 };
+    assert!(!validate_dimensions(&meta).is_empty());
+  if_fails: Oversized image not detected
+- id: FALSIFY-DOC-014
+  rule: Animation bounds
+  prediction: GIF with 5000 frames flagged
+  test: |
+    let anim = AnimMeta { frame_count: 5000, duration_ms: 30000 };
+    assert!(!validate_animation(&anim).is_empty());
+  if_fails: Excessive frame count not detected
+- id: FALSIFY-DOC-015
+  rule: Animation bounds
+  prediction: Infinite loop GIF flagged in production
+  test: |
+    let anim = AnimMeta { loop_count: 0, frame_count: 10, duration_ms: 1000 };
+    assert!(!validate_animation(&anim).is_empty());
+  if_fails: Infinite loop animation not detected
+
+kani_harnesses:
+- id: KANI-DOC-001
+  obligation: Heading hierarchy forms valid tree
+  property: 'h_i <= h_{i-1} + 1'
+  bound: 16
+  strategy: bounded_int
+  harness: verify_heading_hierarchy
+- id: KANI-DOC-002
+  obligation: Table column count consistent
+  property: '|row| = |header| for all rows'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_table_column_parity
+- id: KANI-DOC-003
+  obligation: No script injection in SVG
+  property: 'count(script) = 0'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_svg_no_script
+- id: KANI-DOC-004
+  obligation: YAML parses without errors
+  property: 'serde_yaml::from_str(content).is_ok()'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_yaml_valid
+- id: KANI-DOC-005
+  obligation: Media magic bytes match extension
+  property: 'magic(content) = expected_magic(ext)'
+  bound: 8
+  strategy: exhaustive
+  harness: verify_magic_bytes
+- id: KANI-DOC-006
+  obligation: Animation frame count bounded
+  property: 'frame_count <= 1000'
+  bound: 4
+  strategy: bounded_int
+  harness: verify_animation_bounds
+
+qa_gate:
+  id: F-DOC-001
+  name: Document and Asset Integrity Contract
+  description: Mathematical enforcement of .md, .svg, .yaml, and media file structure
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 15 falsification tests pass + all invariants hold

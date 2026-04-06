@@ -3,7 +3,7 @@ use std::path::Path;
 use provable_contracts::binding::parse_binding;
 use provable_contracts::obligation_matrix::{format_obligation_table, obligation_matrix};
 use provable_contracts::proof_status::{format_text, proof_status_report};
-use provable_contracts::schema::{parse_contract, ContractKind};
+use provable_contracts::schema::{ContractKind, parse_contract};
 
 use crate::contract_walk::collect_contracts;
 
