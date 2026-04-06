@@ -1,0 +1,392 @@
+roadmap_version: '2.0'
+github_enabled: false
+github_repo: paiml/verificar
+roadmap:
+# Phase 1: Grammar Expansion (Complete Transpiler Coverage)
+- id: VERIFICAR-040
+  github_issue: null
+  item_type: task
+  title: Add C grammar for decy transpiler
+  status: done
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - CGrammar struct with tree-sitter-c integration
+  - CEnumerator for exhaustive generation
+  - Support pointer arithmetic, struct declarations, preprocessor directives
+  - 80+ tests covering C language features
+  phases: []
+  subtasks: []
+  estimated_effort: 8-12 hours
+  labels:
+  - grammar
+  - c
+  - decy
+  notes: Priority for CPython, Git, SQLite transpilation targets
+
+- id: VERIFICAR-041
+  github_issue: null
+  item_type: task
+  title: Add TypeScript grammar for decy target
+  status: skipped
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - TypeScriptGrammar with tree-sitter-typescript
+  - TypeScriptEnumerator for type-safe generation
+  - Support interfaces, generics, async/await
+  - 60+ tests
+  phases: []
+  subtasks: []
+  estimated_effort: 6-8 hours
+  labels:
+  - grammar
+  - typescript
+  notes: null
+
+- id: VERIFICAR-042
+  github_issue: null
+  item_type: task
+  title: Add Ruchy grammar for ruchy language
+  status: done
+  priority: low
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - RuchyGrammar for ruchy language syntax
+  - Support fn/fun, let/var, struct, enum, impl, trait
+  - Actor model (actor, spawn, send, receive, ask)
+  - Effect system, pipeline operators, optional chaining
+  - 81 tests covering Ruchy language features
+  phases: []
+  subtasks: []
+  estimated_effort: 4-6 hours
+  labels:
+  - grammar
+  - ruchy
+  notes: Lower priority - ruchy is self-hosting, less critical for synthetic data
+
+# Phase 2: End-to-End ML Training Pipeline
+- id: VERIFICAR-050
+  github_issue: null
+  item_type: task
+  title: Implement large-scale data generation pipeline
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Generate 10K+ verified (source, target, correctness) tuples
+  - Parallel generation with rayon (multicore utilization)
+  - Progress tracking and estimated time remaining
+  - Automatic Parquet sharding (1GB chunks)
+  - Support all sampling strategies (exhaustive, coverage-guided, swarm, boundary)
+  phases: []
+  subtasks: []
+  estimated_effort: 8-10 hours
+  labels:
+  - pipeline
+  - performance
+  - data
+  notes: Critical path for ML training. BLOCKER - alimentar v0.1.0 is scaffold only, need data loading infrastructure first.
+
+- id: VERIFICAR-051
+  github_issue: null
+  item_type: task
+  title: Implement bug prediction model training
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Train RandomForest on generated data (10K+ examples)
+  - 80/20 train/test split with stratification
+  - Track precision, recall, F1, AUC metrics
+  - Save trained model to disk (bincode/serde)
+  - Cross-validation (5-fold)
+  phases: []
+  subtasks: []
+  estimated_effort: 6-8 hours
+  labels:
+  - ml
+  - training
+  - aprender
+  notes: Use aprender RandomForestClassifier trained on CodeFeatures -> bug probability
+
+- id: VERIFICAR-052
+  github_issue: null
+  item_type: task
+  title: Implement model evaluation and benchmarking
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Confusion matrix visualization
+  - ROC curve and AUC calculation
+  - Feature importance analysis
+  - Benchmark inference speed (predictions/sec)
+  - Comparison baseline vs trained model
+  phases: []
+  subtasks: []
+  estimated_effort: 6-8 hours
+  labels:
+  - ml
+  - evaluation
+  - metrics
+  notes: Critical for understanding model quality and production readiness
+
+- id: VERIFICAR-053
+  github_issue: null
+  item_type: task
+  title: Implement RL test prioritizer training loop
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Online training with Thompson Sampling
+  - Track regret over time (cumulative bug detection)
+  - Save/load prioritizer state (Beta distribution parameters)
+  - Adaptive exploration rate decay
+  - Comparison vs random baseline
+  phases: []
+  subtasks: []
+  estimated_effort: 4-6 hours
+  labels:
+  - ml
+  - rl
+  - prioritization
+  notes: Build on VERIFICAR-021 with actual training loop
+
+# Phase 3: Transpiler Integration and Validation
+- id: VERIFICAR-060
+  github_issue: null
+  item_type: task
+  title: Integrate with decy (C-to-Rust) transpiler
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - DecyTranspiler trait implementation
+  - Validate against CPython subset (100+ functions)
+  - Oracle verification with gcc + rustc
+  - Bug detection on real C code
+  phases: []
+  subtasks: []
+  estimated_effort: 10-12 hours
+  labels:
+  - transpiler
+  - decy
+  - integration
+  notes: High value - enables CPython, Git, SQLite verification
+
+- id: VERIFICAR-061
+  github_issue: null
+  item_type: task
+  title: Integrate with bashrs transpiler
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - BashrsTranspiler trait implementation
+  - Validate against bash scripts corpus (500+ scripts)
+  - Oracle verification with bash + compiled Rust
+  - Automated dogfooding (bashrs validates itself)
+  phases: []
+  subtasks: []
+  estimated_effort: 6-8 hours
+  labels:
+  - transpiler
+  - bashrs
+  - integration
+  notes: Grammar already implemented (VERIFICAR-013), need full integration
+
+- id: VERIFICAR-062
+  github_issue: null
+  item_type: task
+  title: Validate depyler with advanced pattern corpus
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Run AdvancedDepylerPatternGenerator against depyler v3.20.0
+  - Track compilation success rate (target >90%)
+  - Identify remaining type inference gaps
+  - Generate regression test corpus
+  phases: []
+  subtasks: []
+  estimated_effort: 4-6 hours
+  labels:
+  - transpiler
+  - depyler
+  - validation
+  notes: Leverages DEPYLER-0523→0527 fixes. AdvancedDepylerPatternGenerator ready in v0.3.2.
+
+# Phase 4: Performance and Scale
+- id: VERIFICAR-070
+  github_issue: null
+  item_type: task
+  title: Optimize generation performance with parallel execution
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Parallel generation with rayon (utilize all cores)
+  - 10x speedup on multicore systems
+  - Memory-efficient streaming (no OOM on 100K+ examples)
+  - Benchmark generation throughput (examples/sec)
+  phases: []
+  subtasks: []
+  estimated_effort: 6-8 hours
+  labels:
+  - performance
+  - parallel
+  notes: Critical for large-scale data generation
+
+- id: VERIFICAR-071
+  github_issue: null
+  item_type: task
+  title: Implement incremental data generation and caching
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Cache verified examples (avoid re-verification)
+  - Incremental generation (resume from checkpoint)
+  - Deduplication (avoid redundant examples)
+  - SQLite index for fast lookup
+  phases: []
+  subtasks: []
+  estimated_effort: 4-6 hours
+  labels:
+  - performance
+  - caching
+  notes: Nice-to-have for iterative development
+
+# Phase 5: Production Deployment
+- id: VERIFICAR-080
+  github_issue: null
+  item_type: task
+  title: Create CLI for end-to-end pipeline
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - verificar generate --count 10000 --strategy swarm --output data/
+  - verificar verify --input data/ --transpilers depyler,bashrs,decy
+  - verificar train --input data/verified/ --output models/
+  - verificar evaluate --model models/bug_predictor.bin --test data/test/
+  - Rich progress bars (indicatif)
+  phases: []
+  subtasks: []
+  estimated_effort: 8-10 hours
+  labels:
+  - cli
+  - ux
+  notes: User-facing interface for entire pipeline
+
+- id: VERIFICAR-081
+  github_issue: null
+  item_type: task
+  title: Package and publish to crates.io
+  status: done
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Published to crates.io as verificar v0.3.2 ✅
+  - Complete README with quickstart ✅
+  - API documentation (docs.rs) ✅
+  - CHANGELOG with version history ✅
+  phases: []
+  subtasks: []
+  estimated_effort: 4-6 hours
+  labels:
+  - release
+  - documentation
+  notes: v0.3.2 published 2025-11-25 with advanced depyler patterns
+
+# Phase 6: Advanced Features (Future)
+- id: VERIFICAR-090
+  github_issue: null
+  item_type: task
+  title: Implement LLM fine-tuning integration with entrenar
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - Export verified tuples to JSON for LLM training
+  - Integration with entrenar for LoRA fine-tuning
+  - Prompt templates for code-to-code translation
+  - Evaluation on held-out test set
+  phases: []
+  subtasks: []
+  estimated_effort: 12-16 hours
+  labels:
+  - ml
+  - llm
+  - entrenar
+  notes: Advanced - requires entrenar stability
+
+- id: VERIFICAR-091
+  github_issue: null
+  item_type: task
+  title: Implement semantic equivalence oracle (beyond I/O)
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 1970-01-01T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - AST-based semantic similarity
+  - Memory layout equivalence
+  - Performance profile matching
+  - Formal verification integration (bounded model checking)
+  phases: []
+  subtasks: []
+  estimated_effort: 16-20 hours
+  labels:
+  - oracle
+  - formal-verification
+  notes: Research-grade feature - I/O oracle sufficient for v0.4

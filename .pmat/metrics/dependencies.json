@@ -1,0 +1,51 @@
+{
+  "direct_count": 10,
+  "transitive_count": 52,
+  "timestamp": "2026-04-03T14:00:29.030993917+00:00",
+  "previous": {
+    "direct_count": 10,
+    "transitive_count": 53,
+    "timestamp": "2026-04-03T13:05:42.158570726+00:00",
+    "previous": {
+      "direct_count": 10,
+      "transitive_count": 53,
+      "timestamp": "2026-03-28T12:11:19.861036558+00:00",
+      "previous": {
+        "direct_count": 10,
+        "transitive_count": 53,
+        "timestamp": "2026-03-28T11:07:03.342390005+00:00",
+        "previous": {
+          "direct_count": 10,
+          "transitive_count": 53,
+          "timestamp": "2026-03-28T10:44:44.142287751+00:00",
+          "previous": {
+            "direct_count": 10,
+            "transitive_count": 53,
+            "timestamp": "2026-03-28T09:43:54.437874328+00:00",
+            "previous": {
+              "direct_count": 10,
+              "transitive_count": 53,
+              "timestamp": "2026-03-18T21:03:16.584785110+00:00",
+              "previous": {
+                "direct_count": 10,
+                "transitive_count": 53,
+                "timestamp": "2026-02-21T20:41:25.721848048+00:00",
+                "previous": {
+                  "direct_count": 10,
+                  "transitive_count": 53,
+                  "timestamp": "2026-02-21T20:37:18.295026442+00:00",
+                  "previous": {
+                    "direct_count": 10,
+                    "transitive_count": 53,
+                    "timestamp": "2026-02-09T16:15:20.225711004+00:00",
+                    "previous": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

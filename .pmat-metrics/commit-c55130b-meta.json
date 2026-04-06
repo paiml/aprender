@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "VERIFICAR-091",
+  "prompt": "Implement semantic equivalence oracle (beyond I/O)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2025-11-26T13:18:00.116595541Z"
+}

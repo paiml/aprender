@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "VERIFICAR-031",
+  "prompt": "Achieve 85% mutation score",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2025-11-25T14:10:55.205047060Z"
+}

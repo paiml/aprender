@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "VERIFICAR-003",
+  "prompt": "Implement coverage-guided generation (NAUTILUS-style)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2025-11-25T07:03:27.965980794Z"
+}
