@@ -3,6 +3,7 @@
 **Version**: 1.7
 **Date**: 2026-04-06
 **Status**: IN PROGRESS — Phase 1-2 Active
+**Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
 **Contract**: `contracts/cgp/cgp-monorepo-consolidation-v1.yaml`
@@ -197,6 +198,42 @@ apr-cli ──→ aprender ──→ trueno 0.17, trueno-quant
 3. **Publishing order matters**: trueno → aprender → entrenar → realizar → apr-cli (5 sequential publishes, any can break)
 4. **Circular deps**: aprender→trueno, but trueno's inference needs aprender's tokenizer
 5. **19 broken publishes** documented in paiml/aprender#701
+
+---
+
+## Architectural Decision: Flat `crates/` Layout
+
+**Decision**: All workspace crates live as direct children of `crates/` with
+`aprender-*` naming. No nesting of sub-crates inside other crates.
+
+**Rationale**: Every successful large Rust monorepo uses this pattern:
+
+| Project | Crates | Layout | Nesting? |
+|---------|--------|--------|----------|
+| Polars [1] | 28 | `crates/*` glob | None |
+| Burn [8] | 33 | `crates/*` glob | None |
+| Nushell [9] | 40+ | `crates/*` explicit | None |
+| DataFusion [10] | 38 | `datafusion/*` explicit | Minimal (proto/gen only) |
+| TiKV | 20+ | `components/*` glob | Some (outlier) |
+
+**Rule**: When importing a repo that itself has sub-crates (e.g., trueno has
+trueno-gpu, trueno-quant, etc.), those sub-crates are **moved to top-level
+`crates/aprender-*`**, not nested under the parent. The subtree merge brings
+the full repo into a staging directory, then sub-crates are moved out and
+renamed.
+
+**Why not nest?** Nested crates create path complexity in `[workspace] members`,
+confuse `cargo metadata`, and violate the expectation that `ls crates/` shows
+all workspace members. Flat layout means `members = ["crates/*"]` works as a
+single glob — no explicit member lists needed.
+
+### Additional Citations
+
+| # | Reference | Relevance |
+|---|-----------|-----------|
+| [8] | Burn ML framework, `tracel-ai/burn`, 33 crates at `crates/burn-*` | Flat layout for ML monorepo with similar scope |
+| [9] | Nushell, `nushell/nushell`, 40+ crates at `crates/nu-*` | Flat layout at scale with explicit member list |
+| [10] | Apache DataFusion, `apache/datafusion`, 38 crates at `datafusion/*` | Flat layout for query engine with minimal exceptions |
 
 ---
 
@@ -604,7 +641,8 @@ If ANY of these become true, the migration hypothesis is wrong:
 | FALSIFY-MONO-009 | Workspace version bump breaks downstream | Patch bump causes API incompatibility | Polars pattern: shared version [1] |
 | FALSIFY-MONO-010 | Crate name not in Appendix A registry | Any `[package] name` not listed in spec | CI script validates against registry |
 | FALSIFY-MONO-011 | Non-apr-cli binary found in workspace | Any `[[bin]]` section outside apr-cli | CI grep for `[[bin]]` in Cargo.toml files |
-| FALSIFY-MONO-012 | apr subcommand missing contract | Any Commands enum variant without contract YAML | CI cross-checks enum vs contracts/ |
+| FALSIFY-MONO-012 | Nested crate violates flat layout | Any crate deeper than `crates/<name>/` | CI checks manifest path depth |
+| FALSIFY-MONO-013 | apr subcommand missing contract | Any Commands enum variant without contract YAML | CI cross-checks enum vs contracts/ |
 
 ---
 

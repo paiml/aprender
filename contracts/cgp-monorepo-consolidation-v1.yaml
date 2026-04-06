@@ -34,13 +34,14 @@
 #       workflow, containerized, 20/20 repos GREEN.
 kind: MigrationContract
 name: cgp-monorepo-consolidation
-version: "1.0.0"
-scope: "paiml/aprender monorepo (19 repos → 1)"
+version: "1.1.0"
+scope: "paiml/aprender monorepo (20 repos → 1, 63 workspace crates)"
 
 description: |
-  Provable contract for consolidating 19 PAIML repositories into a single
-  paiml/aprender monorepo with ~48 workspace crates. Defines success criteria,
-  falsification conditions, and infra requirements.
+  Provable contract for consolidating 20 PAIML repositories into a single
+  paiml/aprender monorepo with ~63 workspace crates under flat crates/aprender-*
+  layout (Polars/Burn/Nushell pattern). Defines success criteria, falsification
+  conditions, and infra requirements.
 
 preconditions:
   - "All 19 source repos compile independently (cargo build passes)"
@@ -212,6 +213,29 @@ falsification:
       fi
 
   - name: FALSIFY-MONO-012
+    description: "Nested crate found (violates flat layout invariant)"
+    check: |
+      All workspace members MUST be direct children of crates/.
+      No crate may live nested inside another crate directory.
+      Pattern: crates/<name>/Cargo.toml — never crates/<parent>/crates/<child>.
+      Industry standard: Polars, Burn, Nushell all use flat crates/ layout.
+    enforcement: |
+      # Every workspace member path must match crates/<single-dir>/
+      cargo metadata --format-version 1 --no-deps \
+        | jq -r '.workspace_members[]' \
+        | sed 's/ .*//' \
+        | while read pkg; do
+            path=$(cargo metadata --format-version 1 --no-deps \
+              | jq -r --arg p "$pkg" '.packages[] | select(.id == $p) | .manifest_path')
+            rel=$(realpath --relative-to="$(pwd)" "$(dirname "$path")")
+            depth=$(echo "$rel" | tr '/' '\n' | wc -l)
+            if [ "$depth" -gt 2 ] && [ "$rel" != "." ]; then
+              echo "FALSIFY-MONO-012: nested crate at $rel (must be crates/<name>)"
+              exit 1
+            fi
+          done
+
+  - name: FALSIFY-MONO-013
     description: "apr subcommand has no provable contract"
     check: |
       Every variant in apr-cli's Commands enum must have a matching

@@ -86,7 +86,7 @@ libc = "0.2"
 # Core aprender library
 aprender = { path = "../..", version = "0.27.5", default-features = true, features = ["format-compression"] }
 async-stream = "0.3"
-provable-contracts-macros = { version = "0.2", path = "../../../provable-contracts/crates/provable-contracts-macros" }
+provable-contracts-macros = "0.3"
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"

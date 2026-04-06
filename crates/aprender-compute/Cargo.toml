@@ -1,120 +1,17 @@
-[workspace]
-resolver = "2"
-members = [".", "xtask", "trueno-gpu", "trueno-explain", "crates/cbtop", "crates/cgp", "crates/trueno-quant", "crates/trueno-sparse", "crates/trueno-fft", "crates/trueno-solve", "crates/trueno-rand", "crates/trueno-image", "crates/trueno-tensor", "crates/trueno-gemm-codegen", "trueno-cuda-edge", "trueno-ptx-debug"]
-exclude = []
-
-# Workspace-level lints (PMAT best practices)
-[workspace.package]
-edition = "2021"
-
-[workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub = "allow"
-missing_docs = "allow"
-rust_2018_idioms = { level = "allow", priority = -1 }
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(internal_matrix_tests)'] }
-
-[workspace.lints.clippy]
-# Correctness (critical)
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "warn", priority = -1 }
-
-# Performance
-perf = { level = "warn", priority = -1 }
-
-# Known Defects (v2.200.0 - Cloudflare outage 2025-11-18)
-# NOTE: These are allowed at workspace level to unblock -D warnings CI.
-# Enforcement is via targeted audits and pmat tooling instead.
-unwrap_used = "allow"
-expect_used = "allow"
-panic = "allow"
-unreachable = "allow"
-
-# Code quality
-complexity = { level = "warn", priority = -1 }
-style = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-
-# Additional high-value lints (PMAT best practices)
-fallible_impl_from = "warn"
-
-# Development-phase allows (to be addressed incrementally)
-# These pedantic/style lints are allowed at workspace level to enable
-# -D warnings CI. They should be addressed in focused cleanup sprints.
-uninlined_format_args = "allow"
-useless_vec = "allow"
-unnecessary_unwrap = "allow"
-doc_markdown = "allow"
-must_use_candidate = "allow"
-return_self_not_must_use = "allow"
-cast_lossless = "allow"
-wildcard_imports = "allow"
-semicolon_if_nothing_returned = "allow"
-items_after_statements = "allow"
-needless_raw_string_hashes = "allow"
-format_push_string = "allow"
-similar_names = "allow"
-redundant_closure = "allow"
-redundant_closure_for_method_calls = "allow"
-cast_possible_wrap = "allow"
-cast_sign_loss = "allow"
-cast_precision_loss = "allow"
-cast_possible_truncation = "allow"
-cast_ptr_alignment = "allow"
-checked_conversions = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-module_name_repetitions = "allow"
-too_many_lines = "allow"
-too_many_arguments = "allow"
-unused_async = "allow"
-trivially_copy_pass_by_ref = "allow"
-match_same_arms = "allow"
-ptr_as_ptr = "allow"
-used_underscore_binding = "allow"
-used_underscore_items = "allow"
-unused_self = "allow"
-needless_pass_by_value = "allow"
-single_match_else = "allow"
-unreadable_literal = "allow"
-excessive_precision = "allow"
-inline_always = "allow"
-option_if_let_else = "allow"
-map_unwrap_or = "allow"
-or_fun_call = "allow"
-default_trait_access = "allow"
-many_single_char_names = "allow"
-struct_excessive_bools = "allow"
-manual_let_else = "allow"
-implicit_clone = "allow"
-unnecessary_wraps = "allow"
-iter_without_into_iter = "allow"
-manual_assert = "allow"
-if_not_else = "allow"
-linkedlist = "allow"
-match_wildcard_for_single_variants = "allow"
-bool_to_int_with_if = "allow"
-clone_on_ref_ptr = "allow"
-explicit_iter_loop = "allow"
-needless_lifetimes = "allow"
-elidable_lifetime_names = "allow"
-map_entry = "allow"
-assigning_clones = "allow"
-result_unit_err = "allow"
-missing_fields_in_debug = { level = "allow", priority = 1 }
-cloned_instead_of_copied = "allow"
-borrow_as_ptr = "allow"
-needless_question_mark = "allow"
+# NOTE: Workspace declaration removed — this crate is now a member of
+# the root paiml/aprender workspace (APR-MONO consolidation).
+# Sub-crates (aprender-gpu, aprender-quant, etc.) are also root workspace members.
+# Old workspace.lints.clippy entries removed — root workspace handles linting.
 
 [package]
-name = "trueno"
-version = "0.18.0"
-edition = "2021"
+name = "aprender-compute"
+version.workspace = true
+edition.workspace = true
 rust-version = "1.89"
-authors = ["Pragmatic AI Labs"]
-license = "MIT"
-description = "High-performance SIMD compute library with GPU support, LLM inference engine, and GGUF model loading"
-repository = "https://github.com/paiml/trueno"
+authors.workspace = true
+license.workspace = true
+description = "High-performance SIMD compute library with GPU support, LLM inference engine, and GGUF model loading (was: trueno)"
+repository.workspace = true
 readme = "README.md"
 keywords = ["simd", "gpu", "wasm", "performance", "vectorization"]
 categories = ["algorithms", "mathematics", "science"]
@@ -140,11 +37,11 @@ futures-intrusive = { version = "0.5", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
-trueno-gpu = { version = "0.4.0", path = "trueno-gpu", optional = true }
+aprender-gpu = { version = "0.29.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
-provable-contracts-macros = { version = "0.2", path = "../provable-contracts/crates/provable-contracts-macros" }
+provable-contracts-macros = "0.3"
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
-trueno-gemm-codegen = { version = "0.1", path = "crates/trueno-gemm-codegen" }
+aprender-gemm-codegen = { version = "0.29.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
@@ -156,7 +53,7 @@ presentar-core = { version = "0.3", optional = true }
 # Stress test reporting types compatible with renacer (TRUENO-SPEC-025)
 # Note: renacer 0.9.1 has compilation issue; using compatible local types instead
 dhat = { version = "0.3", optional = true }
-trueno-quant = { version = "0.1", path = "crates/trueno-quant" }
+aprender-quant = { version = "0.29.0", path = "../aprender-quant", package = "aprender-quant" }
 num_cpus = "1.17.0"
 anyhow = "1.0.100"
 # Hardware capability detection (PMAT-447)
@@ -192,10 +89,10 @@ nalgebra = "0.34"  # For eigendecomposition benchmark comparison
 simular = "0.2.0"
 regex = "1.11"  # For PTX/WGSL pattern validation in falsification tests
 # GPU edge-case test framework (TCE-001)
-trueno-cuda-edge = { version = "0.1", path = "trueno-cuda-edge" }
+aprender-cuda-edge = { version = "0.29.0", path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
 # Sparse and solver crates for contract tests
-trueno-sparse = { version = "0.1", path = "crates/trueno-sparse" }
-trueno-solve = { version = "0.1", path = "crates/trueno-solve" }
+aprender-sparse = { version = "0.29.0", path = "../aprender-sparse", package = "aprender-sparse" }
+aprender-solve = { version = "0.29.0", path = "../aprender-solve", package = "aprender-solve" }
 ndarray = "0.17.2"
 faer = "0.24"  # For GEMM benchmark comparison (fastest pure-Rust BLAS)
 matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind ndarray)
@@ -208,7 +105,7 @@ gpu = ["wgpu", "pollster", "bytemuck", "futures-intrusive"]
 gpu-wasm = ["wgpu", "bytemuck", "futures-intrusive", "wasm-bindgen-futures", "wasm-bindgen", "web-sys"]
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
 # Provides accurate device info (e.g., "NVIDIA GeForce RTX 4090") and real-time memory metrics
-cuda-monitor = ["trueno-gpu/cuda"]
+cuda-monitor = ["aprender-gpu/cuda"]
 # Chaos engineering features (from renacer v0.4.1)
 chaos-basic = []
 chaos-network = ["chaos-basic"]
@@ -219,9 +116,9 @@ tracing = ["dep:tracing"]
 # Hardware capability detection with home directory support (PMAT-447)
 hardware-detect = ["dep:dirs"]
 # TUI monitoring (TRUENO-SPEC-020) with stress reporting and logging
-tui-monitor = ["presentar-core", "presentar-terminal", "crossterm", "trueno-gpu", "dep:tracing", "tracing-subscriber", "tracing-appender", "dep:dirs"]
+tui-monitor = ["presentar-core", "presentar-terminal", "crossterm", "aprender-gpu", "dep:tracing", "tracing-subscriber", "tracing-appender", "dep:dirs"]
 # CUDA support for TUI (real hardware monitoring)
-cuda = ["trueno-gpu/cuda"]
+cuda = ["aprender-gpu/cuda"]
 # ML-based kernel selection and throughput prediction (SHOWCASE-BRICK-001)
 # Uses aprender RandomForest for learned optimization
 ml-tuner = ["aprender"]
@@ -241,7 +138,7 @@ codegen-units = 1
 debug = true  # Enable debug symbols for profiling (flamegraph, perf)
 
 [lib]
-name = "trueno"
+name = "aprender_compute"
 path = "src/lib.rs"
 
 [[bench]]
@@ -313,7 +210,7 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
-[workspace.dependencies]
+# [workspace.dependencies] removed — root workspace handles shared deps
 
 [profile.test]
 opt-level = 1              # Slight optimization for faster test execution

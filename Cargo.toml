@@ -1,5 +1,32 @@
 [workspace]
-members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli", "crates/aprender-bench-tokenizer", "crates/aprender-bench-compute"]
+members = [
+    ".",
+    # --- Pre-existing aprender crates ---
+    "crates/aprender-shell",
+    "crates/aprender-tsp",
+    "crates/aprender-monte-carlo",
+    "crates/apr-cli",
+    "crates/aprender-bench-tokenizer",
+    "crates/aprender-bench-compute",
+    # --- APR-MONO Phase 2a: was trueno (compute primitives) ---
+    "crates/aprender-compute",
+    "crates/aprender-gpu",
+    "crates/aprender-explain",
+    "crates/aprender-cuda-edge",
+    "crates/aprender-ptx-debug",
+    "crates/aprender-cupti",
+    "crates/aprender-cbtop",
+    "crates/aprender-cgp",
+    "crates/aprender-quant",
+    "crates/aprender-sparse",
+    "crates/aprender-fft",
+    "crates/aprender-solve",
+    "crates/aprender-rand",
+    "crates/aprender-image",
+    "crates/aprender-tensor",
+    "crates/aprender-gemm-codegen",
+    "crates/aprender-compute-xtask",
+]
 exclude = ["fuzz"]
 resolver = "2"
 
@@ -65,8 +92,8 @@ sha2 = "0.10"
 minijinja = { version = "2.14", features = ["loader", "serde"] }
 
 # Contracts
-provable-contracts = "0.2"
-provable-contracts-macros = "0.2"
+provable-contracts = "0.3"
+provable-contracts-macros = "0.3"
 
 # HF Hub
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
@@ -337,7 +364,7 @@ js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 # UCBD: compile-time contract enforcement via #[contract] proc macro
-provable-contracts-macros = "0.2"
+provable-contracts-macros = "0.3"
 
 # Toyota Way: ONE source of truth for quantization (Step E)
 # NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
@@ -356,7 +383,7 @@ renacer = "0.10"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = "0.2"  # Contract enforcement (dev-only)
+provable-contracts = "0.3"  # Contract enforcement (dev-only)
 entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]

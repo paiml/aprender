@@ -1,0 +1,47 @@
+[package]
+name = "aprender-cgp"
+version.workspace = true
+edition = "2021"
+rust-version = "1.89"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+description = "Compute-GPU-Profile: Unified performance analysis CLI for scalar, SIMD, wgpu, and CUDA workloads"
+repository = "https://github.com/paiml/trueno"
+keywords = ["profiling", "gpu", "simd", "cuda", "performance"]
+categories = ["command-line-utilities", "development-tools::profiling"]
+
+[lints]
+workspace = true
+
+[dependencies]
+# CLI framework
+clap = { version = "4", features = ["derive"] }
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml_ng = "0.10"
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+# Time
+chrono = "0.4"
+# System detection
+which = "7"
+num_cpus = "1.17"
+# Output formatting
+comfy-table = "7"
+colored = "3"
+# GPU profiling: direct cuBLAS measurement (OWN THE STACK)
+aprender-gpu = { path = "../aprender-gpu", features = ["cuda"], optional = true, package = "aprender-gpu" }
+
+[features]
+default = []
+cuda = ["dep:aprender-gpu"]
+
+[dev-dependencies]
+proptest = "1.9"
+tempfile = "3"
+
+[[bin]]
+name = "aprender-cgp"
+path = "src/main.rs"
