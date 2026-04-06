@@ -232,8 +232,8 @@ pub(crate) fn run(
     Ok(())
 }
 
-/// GH-254: Print benchmark results as JSON (machine-parseable output).
-/// Always exits 0 — failure info is in the JSON body.
+/// Print benchmark results as JSON (machine-parseable output).
+/// GH-254→GH-601: Exit code matches `passed` field — non-zero when failed.
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
 fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
@@ -253,7 +253,15 @@ fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
         "{}",
         serde_json::to_string_pretty(&output).unwrap_or_default()
     );
-    Ok(())
+    // GH-601: Exit code must match JSON "passed" field.
+    if result.passed {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "Throughput {:.1} tok/s below minimum (spec H12)",
+            result.tokens_per_second
+        )))
+    }
 }
 
 /// Resolve brick budget target and description from name (spec §9.2).
