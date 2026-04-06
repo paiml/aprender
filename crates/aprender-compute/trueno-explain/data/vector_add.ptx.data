@@ -1,0 +1,42 @@
+.version 8.0
+.target sm_70
+.address_size 64
+
+.entry vector_add(
+    .param .u64 param_a,
+    .param .u64 param_b,
+    .param .u64 param_c,
+    .param .u32 param_n
+)
+{
+    .reg .f32 %f<24>;
+    .reg .b32 %r<18>;
+    .reg .b64 %rd<12>;
+    .reg .pred %p<4>;
+
+    ld.param.u64 %rd1, [param_a];
+    ld.param.u64 %rd2, [param_b];
+    ld.param.u64 %rd3, [param_c];
+    ld.param.u32 %r1, [param_n];
+
+    mov.u32 %r2, %tid.x;
+    mov.u32 %r3, %ntid.x;
+    mov.u32 %r4, %ctaid.x;
+    mad.lo.s32 %r5, %r4, %r3, %r2;
+
+    setp.ge.u32 %p1, %r5, %r1;
+    @%p1 bra exit;
+
+    mul.wide.u32 %rd4, %r5, 4;
+    add.u64 %rd5, %rd1, %rd4;
+    add.u64 %rd6, %rd2, %rd4;
+    add.u64 %rd7, %rd3, %rd4;
+
+    ld.global.f32 %f1, [%rd5];
+    ld.global.f32 %f2, [%rd6];
+    add.f32 %f3, %f1, %f2;
+    st.global.f32 [%rd7], %f3;
+
+exit:
+    ret;
+}

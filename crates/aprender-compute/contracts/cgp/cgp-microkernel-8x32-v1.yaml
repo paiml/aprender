@@ -1,0 +1,138 @@
+# 8x32 AVX-512 Microkernel Performance Contract (updated 2026-04-05)
+# Locks in baseline after SIMD B-packing optimization (commit d213d026).
+#
+# Theory: broadcast-A with row-major C [45] uses MR scalar broadcasts × NR/16
+# zmm loads. The 8×32 tile has 16 zmm accumulators (50% register utilization).
+# SIMD B-packing [62] reduces packing overhead by 8× (2 zmm vs 32 scalars/K-step).
+# KC=256 is optimal for NR=32: NR×KC×4 = 32KB = L1d size [62].
+kind: PerformanceContract
+name: cgp-microkernel-8x32
+version: "2.0.0"
+kernel: avx512_microkernel_8x32_rowmajor
+hardware:
+  cpu: "AMD Ryzen Threadripper 7960X"
+  isa: "AVX-512F+FMA"
+  l1d_bytes: 32768
+  l2_bytes: 1048576
+  l3_bytes: 33554432
+
+bounds:
+  # Single-thread criterion measurements (post SIMD B-packing)
+  - size: 64
+    max_time_us: 6.0
+    min_gflops: 100
+    note: "4.6 µs measured = 115 GFLOPS"
+
+  - size: 128
+    max_time_us: 45.0
+    min_gflops: 100
+    note: "37 µs measured = 114 GFLOPS"
+
+  - size: 256
+    max_time_us: 350.0
+    min_gflops: 100
+    note: "285 µs measured = 118 GFLOPS"
+
+  - size: 512
+    max_time_us: 2200.0
+    min_gflops: 120
+    note: "1.85 ms measured = 145 GFLOPS (criterion)"
+
+  - size: 1024
+    max_time_us: 18000.0
+    min_gflops: 120
+    note: "15.39 ms measured = 140 GFLOPS (criterion)"
+
+  # Parallel performance (8T cap, CCD-aware [63])
+  - size: 1024
+    threads: 8
+    max_time_us: 5000.0
+    min_gflops: 500
+    note: "3.43 ms measured = 626 GFLOPS at 8T"
+
+  # Competitor ratios (criterion head-to-head)
+  - competitor: faer_024
+    size: 1024
+    max_ratio: 1.10
+    measured_ratio: 1.02
+    note: "trueno 15.39ms vs faer 15.11ms = 0.98x (2% gap)"
+
+  - competitor: ndarray_017
+    size: 1024
+    min_ratio: 1.0
+    measured_ratio: 1.17
+    note: "trueno 15.39ms vs ndarray 18.01ms"
+
+  - competitor: numpy_openblas
+    size: 1024
+    min_ratio: 1.0
+    measured_ratio: 1.09
+    note: "trueno 140 GFLOPS 1T vs NumPy/OpenBLAS-AVX2 129 GFLOPS"
+
+optimization_history:
+  - experiment: "SIMD B-packing (NR=32 zmm copy)"
+    result: "+5-8% at 1024 (128→140 GFLOPS)"
+    status: POSITIVE
+    commit: "d213d026"
+    reference: "[62] Low et al., ACM TOMS 2016"
+
+  - experiment: "8×48 codegen (NR=48, KC=128)"
+    result: "REGRESSED 135→41 GFLOPS at 512"
+    status: NEGATIVE
+    commit: "f63483af"
+    reference: "[62] KC must satisfy NR×KC×4 ≤ L1d"
+
+  - experiment: "Broadcast-B 64×6 (faer-style)"
+    result: "REGRESSED 140→47 GFLOPS"
+    status: NEGATIVE
+    commit: "545d5047"
+    reference: "[45] C scatter cost dominates for row-major"
+
+  - experiment: "Shared packed-B parallel"
+    result: "REGRESSED 628→398 GFLOPS"
+    status: NEGATIVE
+    commit: "cdf63de7"
+    reference: "[63] Per-thread packing > shared due to coherence"
+
+  - experiment: "AVX-512 GEMV"
+    result: "REGRESSED 74.7→61.6 GFLOPS at 128×512"
+    status: NEGATIVE
+    commit: "41a59284"
+    reference: "[60][61] Bandwidth-bound, frequency throttle"
+
+  - experiment: "8T thread cap (CCD topology)"
+    result: "559→626 GFLOPS (8T vs 12T)"
+    status: POSITIVE
+    commit: "8d13709c"
+    reference: "[63] CCD L3 sharing topology"
+
+  - experiment: "Software prefetch in microkernel"
+    result: "No change (B already in L1 from packing)"
+    status: NEUTRAL
+    reference: "[62] Packed data already L1-resident"
+
+  - experiment: "Manual 2-way K-unrolling"
+    result: "REGRESSED (register spill at 18 zmm live)"
+    status: NEGATIVE
+    reference: "[62] LLVM autounroll is near-optimal"
+
+references:
+  - "[44] Van Zee & van de Geijn, ACM TOMS 2015 — BLIS framework"
+  - "[45] Goto & van de Geijn, ACM TOMS 2008 — Anatomy of GEMM"
+  - "[62] Low et al., ACM TOMS 2016 — Analytical BLIS modeling"
+  - "[63] Van Zee et al., ACM TOMS 2016 — BLIS portability"
+
+falsification:
+  - name: FALSIFY-MICROKERNEL-001
+    description: "1024 1T must achieve > 120 GFLOPS"
+    check: "gflops_1024_1t > 120"
+    test: "test_falsification_gemm_perf_regression"
+  - name: FALSIFY-MICROKERNEL-002
+    description: "faer gap must be < 1.10x at 1024"
+    check: "faer_ratio_1024 < 1.10"
+  - name: FALSIFY-MICROKERNEL-003
+    description: "ndarray ratio must be >= 1.0x at 1024"
+    check: "ndarray_ratio_1024 >= 1.0"
+  - name: FALSIFY-MICROKERNEL-004
+    description: "8T parallel must achieve > 500 GFLOPS at 1024"
+    check: "gflops_1024_8t > 500"

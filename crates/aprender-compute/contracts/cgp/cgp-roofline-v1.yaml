@@ -1,0 +1,41 @@
+# Roofline model contract — validates hardware parameter correctness
+# Reference: Williams et al. (2009), spec section 3.1
+kind: PerformanceContract
+name: cgp-roofline-model
+version: "1.0.0"
+kernel: roofline_model
+
+hardware:
+  gpu: "NVIDIA GeForce RTX 4090"
+  compute_capability: "8.9"
+
+equations:
+  ridge_point:
+    formula: "ridge = peak_compute_flops / peak_bandwidth_bytes_per_sec"
+    domain: "peak_compute > 0, peak_bandwidth > 0"
+
+performance_bounds:
+  - target: "RTX 4090 FP16 TC"
+    peak_compute_tflops: 330
+    peak_bandwidth_gbps: 1008
+    ridge_flop_per_byte: 327.4
+    tolerance_pct: 1.0
+  - target: "RTX 4090 FP32"
+    peak_compute_tflops: 82.6
+    peak_bandwidth_gbps: 1008
+    ridge_flop_per_byte: 81.9
+    tolerance_pct: 1.0
+
+falsification:
+  - name: FALSIFY-ROOF-001
+    description: "FP16 ridge point = 330000/1008 = 327.38"
+    check: "abs(ridge_fp16 - 327.38) < 0.5"
+  - name: FALSIFY-ROOF-002
+    description: "Memory-bound kernel classified correctly"
+    check: "classify(AI=8.0, ridge=327.4) == MemoryBound"
+  - name: FALSIFY-ROOF-003
+    description: "Compute-bound kernel classified correctly"
+    check: "classify(AI=500.0, ridge=327.4) == ComputeBound"
+  - name: FALSIFY-ROOF-004
+    description: "DRAM bandwidth within 5% of spec"
+    check: "abs(measured_bw - 1008e9) / 1008e9 < 0.05"

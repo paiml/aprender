@@ -1,0 +1,223 @@
+{
+  "version": "0.1.0",
+  "timestamp": "2026-01-30T13:59:42.576210690+00:00",
+  "entries": [
+    {
+      "workload": "dot_product",
+      "size": 1000,
+      "backend": "Simd",
+      "gflops": 37096.80411032591,
+      "efficiency": 1.0,
+      "cv_percent": 9.188619093718211,
+      "score": 89
+    },
+    {
+      "workload": "dot_product",
+      "size": 10000,
+      "backend": "Simd",
+      "gflops": 36783.57098585485,
+      "efficiency": 1.0,
+      "cv_percent": 0.4318686917782761,
+      "score": 97
+    },
+    {
+      "workload": "dot_product",
+      "size": 100000,
+      "backend": "Simd",
+      "gflops": 13790.349488826496,
+      "efficiency": 1.0,
+      "cv_percent": 4.022719398609146,
+      "score": 89
+    },
+    {
+      "workload": "dot_product",
+      "size": 1000000,
+      "backend": "Simd",
+      "gflops": 1055.515461170928,
+      "efficiency": 0.5126330063656518,
+      "cv_percent": 2.352369448075473,
+      "score": 89
+    },
+    {
+      "workload": "dot_product",
+      "size": 4000000,
+      "backend": "Simd",
+      "gflops": 99.32413785373728,
+      "efficiency": 0.04823883047260491,
+      "cv_percent": 4.345827799357272,
+      "score": 88
+    },
+    {
+      "workload": "dot_product",
+      "size": 16000000,
+      "backend": "Simd",
+      "gflops": 9.217549061882371,
+      "efficiency": 0.1920322721225494,
+      "cv_percent": 7.496099146596305,
+      "score": 52
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 1000,
+      "backend": "Simd",
+      "gflops": 8421.83275924507,
+      "efficiency": 1.0,
+      "cv_percent": 1.186206292246564,
+      "score": 80
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 10000,
+      "backend": "Simd",
+      "gflops": 7826.630737213833,
+      "efficiency": 1.0,
+      "cv_percent": 1.854415433533897,
+      "score": 80
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 100000,
+      "backend": "Simd",
+      "gflops": 1663.890760405967,
+      "efficiency": 0.8081031061588723,
+      "cv_percent": 10.109750759843672,
+      "score": 80
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 1000000,
+      "backend": "Simd",
+      "gflops": 147.5143044955696,
+      "efficiency": 0.07164338579333816,
+      "cv_percent": 4.70894427223381,
+      "score": 80
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 4000000,
+      "backend": "Simd",
+      "gflops": 11.553063291906367,
+      "efficiency": 0.722066455744148,
+      "cv_percent": 7.4723765498063255,
+      "score": 51
+    },
+    {
+      "workload": "elementwise_mul",
+      "size": 16000000,
+      "backend": "Simd",
+      "gflops": 3.7752472968777933,
+      "efficiency": 0.23595295605486208,
+      "cv_percent": 7.676823518266715,
+      "score": 41
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 1000,
+      "backend": "Simd",
+      "gflops": 14716.053743028273,
+      "efficiency": 1.0,
+      "cv_percent": 1.2443542148281204,
+      "score": 82
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 10000,
+      "backend": "Simd",
+      "gflops": 13001.517277066225,
+      "efficiency": 1.0,
+      "cv_percent": 0.13509746668435985,
+      "score": 89
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 100000,
+      "backend": "Simd",
+      "gflops": 4785.365589586284,
+      "efficiency": 1.0,
+      "cv_percent": 0.42700944197851254,
+      "score": 97
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 1000000,
+      "backend": "Simd",
+      "gflops": 471.2613660196327,
+      "efficiency": 0.22887787032378346,
+      "cv_percent": 0.5657621896897445,
+      "score": 97
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 4000000,
+      "backend": "Simd",
+      "gflops": 113.60277637776582,
+      "efficiency": 0.05517354783360037,
+      "cv_percent": 1.6544304063807989,
+      "score": 97
+    },
+    {
+      "workload": "sum_reduction",
+      "size": 16000000,
+      "backend": "Simd",
+      "gflops": 16.12968643041185,
+      "efficiency": 0.3360351339669136,
+      "cv_percent": 6.056420342495159,
+      "score": 55
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 1000,
+      "backend": "Simd",
+      "gflops": 10512.59408771709,
+      "efficiency": 1.0,
+      "cv_percent": 1.2013020520255961,
+      "score": 92
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 10000,
+      "backend": "Simd",
+      "gflops": 8181.464891288783,
+      "efficiency": 1.0,
+      "cv_percent": 3.024947606681668,
+      "score": 84
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 100000,
+      "backend": "Simd",
+      "gflops": 1585.8660970337921,
+      "efficiency": 0.3851044039250436,
+      "cv_percent": 6.210179514174864,
+      "score": 84
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 1000000,
+      "backend": "Simd",
+      "gflops": 146.46605881567103,
+      "efficiency": 0.07113428350723798,
+      "cv_percent": 1.815393661730964,
+      "score": 84
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 4000000,
+      "backend": "Simd",
+      "gflops": 13.673190779581168,
+      "efficiency": 0.5697162824825487,
+      "cv_percent": 16.303348622179268,
+      "score": 42
+    },
+    {
+      "workload": "memory_bandwidth",
+      "size": 16000000,
+      "backend": "Simd",
+      "gflops": 3.3448877469858016,
+      "efficiency": 0.13937032279107506,
+      "cv_percent": 15.342338271390682,
+      "score": 38
+    }
+  ],
+  "system": "48 cores @ 5362 MHz, AVX2=true, AVX512=true, L3=32MB, mem_bw=192 GB/s"
+}

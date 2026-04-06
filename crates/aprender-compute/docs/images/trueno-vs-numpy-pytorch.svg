@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="truenoBg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#1e3a8a;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="numpyBg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="pytorchBg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#dc2626;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#991b1b;stop-opacity:0.9"/>
+    </linearGradient>
+    <filter id="shadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="700" fill="#0f172a"/>
+
+  <!-- Title -->
+  <text x="600" y="40" text-anchor="middle" font-size="32" font-weight="bold" fill="#f1f5f9">
+    Trueno vs NumPy/PyTorch Performance
+  </text>
+
+  <!-- Dot Product Chart (1K elements) -->
+  <g transform="translate(80, 80)">
+    <text x="0" y="0" font-size="20" font-weight="bold" fill="#f1f5f9">Dot Product (1K elements)</text>
+    <text x="0" y="25" font-size="14" fill="#94a3b8">Lower is better (nanoseconds)</text>
+
+    <!-- Y-axis scale -->
+    <line x1="0" y1="50" x2="0" y2="250" stroke="#475569" stroke-width="2"/>
+    <text x="-10" y="55" text-anchor="end" font-size="12" fill="#64748b">1000ns</text>
+    <text x="-10" y="150" text-anchor="end" font-size="12" fill="#64748b">500ns</text>
+    <text x="-10" y="245" text-anchor="end" font-size="12" fill="#64748b">0ns</text>
+
+    <!-- PyTorch bar -->
+    <rect x="50" y="51" width="200" height="197" rx="6" fill="url(#pytorchBg)" filter="url(#shadow)"/>
+    <text x="150" y="160" text-anchor="middle" font-size="18" font-weight="bold" fill="#ffffff">PyTorch</text>
+    <text x="150" y="185" text-anchor="middle" font-size="16" fill="#fca5a5">988ns</text>
+    <text x="150" y="210" text-anchor="middle" font-size="13" fill="#fca5a5">2.8x slower</text>
+
+    <!-- NumPy bar -->
+    <rect x="280" y="112" width="200" height="136" rx="6" fill="url(#numpyBg)" filter="url(#shadow)"/>
+    <text x="380" y="170" text-anchor="middle" font-size="18" font-weight="bold" fill="#ffffff">NumPy</text>
+    <text x="380" y="195" text-anchor="middle" font-size="16" fill="#fef3c7">576ns</text>
+    <text x="380" y="220" text-anchor="middle" font-size="13" fill="#fef3c7">1.6x slower</text>
+
+    <!-- Trueno bar -->
+    <rect x="510" y="178" width="200" height="70" rx="6" fill="url(#truenoBg)" filter="url(#shadow)"/>
+    <text x="610" y="205" text-anchor="middle" font-size="18" font-weight="bold" fill="#ffffff">Trueno</text>
+    <text x="610" y="230" text-anchor="middle" font-size="16" fill="#bfdbfe">352ns ⚡</text>
+
+    <!-- Speedup annotation -->
+    <text x="610" y="285" text-anchor="middle" font-size="16" font-weight="bold" fill="#22c55e">11.9x faster than scalar baseline</text>
+  </g>
+
+  <!-- Why Trueno Wins - Compact Grid -->
+  <g transform="translate(80, 390)">
+    <text x="0" y="0" font-size="20" font-weight="bold" fill="#f1f5f9">5 Technical Advantages</text>
+
+    <!-- Advantage boxes in 2 rows -->
+    <!-- Row 1 -->
+    <g transform="translate(0, 30)">
+      <!-- 1. Zero Overhead -->
+      <rect x="0" y="0" width="215" height="100" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
+      <text x="107" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#3b82f6">1. Zero Overhead</text>
+      <text x="107" y="48" text-anchor="middle" font-size="11" fill="#cbd5e1">No Python interpreter</text>
+      <text x="107" y="65" text-anchor="middle" font-size="11" fill="#cbd5e1">No GIL contention</text>
+      <text x="107" y="88" text-anchor="middle" font-size="12" font-weight="bold" fill="#22c55e">2-4x baseline</text>
+
+      <!-- 2. Explicit SIMD -->
+      <rect x="230" y="0" width="215" height="100" rx="8" fill="#1e293b" stroke="#8b5cf6" stroke-width="2"/>
+      <text x="337" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#8b5cf6">2. Explicit SIMD</text>
+      <text x="337" y="48" text-anchor="middle" font-size="11" fill="#cbd5e1">AVX-512: 16 f32/cycle</text>
+      <text x="337" y="65" text-anchor="middle" font-size="11" fill="#cbd5e1">Guaranteed intrinsics</text>
+      <text x="337" y="88" text-anchor="middle" font-size="12" font-weight="bold" fill="#22c55e">4-8x compute</text>
+
+      <!-- 3. Smart GPU -->
+      <rect x="460" y="0" width="215" height="100" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="2"/>
+      <text x="567" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#f59e0b">3. Smart GPU</text>
+      <text x="567" y="48" text-anchor="middle" font-size="11" fill="#cbd5e1">Workload-aware</text>
+      <text x="567" y="65" text-anchor="middle" font-size="11" fill="#cbd5e1">Avoids PCIe overhead</text>
+      <text x="567" y="88" text-anchor="middle" font-size="12" font-weight="bold" fill="#22c55e">2-10x matmul</text>
+
+      <!-- 4. Memory Layout -->
+      <rect x="690" y="0" width="215" height="100" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="2"/>
+      <text x="797" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#06b6d4">4. Memory Layout</text>
+      <text x="797" y="48" text-anchor="middle" font-size="11" fill="#cbd5e1">SIMD-aligned Vec&lt;T&gt;</text>
+      <text x="797" y="65" text-anchor="middle" font-size="11" fill="#cbd5e1">Zero-copy ops</text>
+      <text x="797" y="88" text-anchor="middle" font-size="12" font-weight="bold" fill="#22c55e">Fewer cache misses</text>
+
+      <!-- 5. Backend Efficiency -->
+      <rect x="920" y="0" width="195" height="100" rx="8" fill="#1e293b" stroke="#ec4899" stroke-width="2"/>
+      <text x="1017" y="25" text-anchor="middle" font-size="14" font-weight="bold" fill="#ec4899">5. Efficiency</text>
+      <text x="1017" y="48" text-anchor="middle" font-size="11" fill="#cbd5e1">Resolve once</text>
+      <text x="1017" y="65" text-anchor="middle" font-size="11" fill="#cbd5e1">No redundant checks</text>
+      <text x="1017" y="88" text-anchor="middle" font-size="12" font-weight="bold" fill="#22c55e">Optimized dispatch</text>
+    </g>
+  </g>
+
+  <!-- Footer -->
+  <g transform="translate(600, 665)">
+    <text x="0" y="0" text-anchor="middle" font-size="13" fill="#64748b">
+      📖 Replicate: make bench-comprehensive | Built with EXTREME TDD ⚡
+    </text>
+  </g>
+
+  <!-- GPU Performance callout -->
+  <g transform="translate(850, 90)">
+    <rect x="0" y="0" width="280" height="120" rx="10" fill="#1e293b" stroke="#10b981" stroke-width="2" filter="url(#shadow)"/>
+    <text x="140" y="30" text-anchor="middle" font-size="16" font-weight="bold" fill="#10b981">Matrix Multiply (500×500)</text>
+    <text x="140" y="60" text-anchor="middle" font-size="14" fill="#f1f5f9">Trueno GPU</text>
+    <text x="140" y="85" text-anchor="middle" font-size="20" font-weight="bold" fill="#22c55e">2-10x faster</text>
+    <text x="140" y="108" text-anchor="middle" font-size="12" fill="#94a3b8">vs scalar baseline</text>
+  </g>
+</svg>

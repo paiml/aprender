@@ -1,0 +1,275 @@
+# APR-MONO: Monorepo Consolidation Provable Contract
+# Contract-first: defines falsification conditions BEFORE migration begins.
+#
+# 19 repos → 1 monorepo. This contract specifies what must hold true
+# for the migration to be considered successful, and what evidence
+# would prove the migration was a mistake (falsification).
+#
+# Grounding:
+#   [1] Potvin & Levenberg, "Why Google Stores Billions of Lines of Code
+#       in a Single Repository," CACM 59(7), July 2016.
+#       DOI: 10.1145/2854146. (Monorepo enables atomic changes, unified
+#       tooling, simplified dependency management. Scale: 2B lines, 45K commits/day.)
+#
+#   [2] Brousse, "The Issue of Monorepo and Polyrepo in Large Enterprises,"
+#       ACM ICSE Companion 2019, pp. 150-159. DOI: 10.1109/ICSE-Companion.2019.00062.
+#       (Taxonomy: monorepo vs polyrepo vs hybrid. Monorepo wins for tightly-coupled
+#       projects; polyrepo wins for independent products.)
+#
+#   [3] Brito et al., "On the Use of Monorepos in Open Source Projects,"
+#       MSR 2023. (Empirical study: 377 monorepos on GitHub. Median 8 packages.
+#       Most common motivation: shared dependencies and atomic cross-package changes.)
+#
+#   [4] Rastogi et al., "Dependency Smells in JavaScript Monorepo Projects,"
+#       ICSME 2023. (Diamond dependency elimination is the #1 measurable benefit
+#       of monorepo migration. Cross-package version skew drops to zero.)
+#
+#   [5] Infra spec: clean-room-spec.md — 9 whack-a-mole patterns,
+#       19 broken publishes, `[patch.crates-io]` as root cause.
+#
+#   [6] Infra spec: release-system.md — Trusted Publishing, tag-triggered
+#       releases, OIDC auth, no stored tokens.
+#
+#   [7] Infra spec: unified-ci-pipeline.md — sovereign-ci.yml reusable
+#       workflow, containerized, 20/20 repos GREEN.
+kind: MigrationContract
+name: cgp-monorepo-consolidation
+version: "1.0.0"
+scope: "paiml/aprender monorepo (19 repos → 1)"
+
+description: |
+  Provable contract for consolidating 19 PAIML repositories into a single
+  paiml/aprender monorepo with ~48 workspace crates. Defines success criteria,
+  falsification conditions, and infra requirements.
+
+preconditions:
+  - "All 19 source repos compile independently (cargo build passes)"
+  - "apr-cli installs from crates.io (cargo install apr-cli)"
+  - "Unified CI template (sovereign-ci.yml) covers all repos"
+  - "Clean-room build spec verified (clean-room-spec.md)"
+
+postconditions:
+  - "cargo test --workspace passes (all ~5500 .rs files compile together)"
+  - "cargo publish -p apr-cli succeeds without [patch.crates-io]"
+  - "cargo install apr-cli from crates.io builds on clean machine"
+  - "All shim crates (trueno 0.19, entrenar 0.8, etc.) resolve correctly"
+  - "Zero cross-crate version mismatch for 90 days post-migration"
+
+# ── Infrastructure Requirements ──
+# These must be updated in paiml/infra before or during migration.
+
+infra_requirements:
+  - id: INFRA-CI-MONO
+    description: |
+      sovereign-ci.yml must support workspace repos with ~48 crates.
+      Current template assumes single-crate repos. Changes needed:
+      - `cargo test --workspace` instead of `cargo test`
+      - `cargo clippy --workspace` instead of `cargo clippy`
+      - sccache warmup for larger build graph (~48 crates)
+      - CI time budget: current 30-90s → expect 3-5 min for full workspace
+    spec_ref: "unified-ci-pipeline.md Section 2.1"
+
+  - id: INFRA-PUBLISH-MONO
+    description: |
+      release-system.md must support workspace publish ordering.
+      Cannot `cargo publish -p apr-cli` until deps are published first.
+      Need: topological sort of workspace crates, publish in dep order.
+      Tool: `cargo-workspaces` or custom `xtask publish` command.
+    spec_ref: "release-system.md Section: Release Flow"
+
+  - id: INFRA-CLEAN-ROOM-MONO
+    description: |
+      clean-room-spec.md clean-room build must work for workspace.
+      Container must have enough disk for ~48 crate build graph.
+      Resource budget: expect 2-3× current memory/disk for full workspace.
+    spec_ref: "clean-room-spec.md Section: Resource Budget"
+
+  - id: INFRA-BRANCH-PROTECT
+    description: |
+      Branch protection rules for 19 repos → 1 repo. Archive old repos
+      as read-only (Settings → Danger Zone → Archive). New repo gets
+      same protection rules as current paiml/aprender (require gate job).
+    spec_ref: "sovereign-stack-protected-branch-strategy.md"
+
+  - id: INFRA-NIGHTLY
+    description: |
+      Nightly clean-room audit must run on monorepo.
+      Currently runs per-repo; must consolidate into single nightly job
+      that tests workspace, not individual crates.
+    spec_ref: "unified-ci-pipeline.md Section: Nightly"
+
+# ── Falsification Conditions ──
+# If ANY of these become true, the migration hypothesis is wrong.
+
+falsification:
+  - name: FALSIFY-MONO-001
+    description: "Compile time regression exceeds 3× on incremental builds"
+    check: |
+      Measure: `cargo build -p apr-cli` (incremental, after touching 1 file in aprender-compute)
+      Before: ~5s (current polyrepo)
+      Threshold: if > 15s, the workspace dep graph is too coupled.
+      Mitigation: `default-members` to exclude unrelated crates.
+    citation: "[1] Google's monorepo uses build graph analysis to avoid recompiling unrelated code"
+
+  - name: FALSIFY-MONO-002
+    description: "CI time exceeds 10 minutes for PR gate"
+    check: |
+      Measure: total wall-clock time for sovereign-ci.yml on a 1-file change.
+      Before: 30-90s per repo.
+      Threshold: if > 10 min, CI is rebuilding too much.
+      Mitigation: cargo-nextest --partition, sccache, targeted `cargo test -p changed_crate`.
+    citation: "[1] Google uses fine-grained build targets to keep CI under 5 min"
+
+  - name: FALSIFY-MONO-003
+    description: "Merge conflicts increase after consolidation"
+    check: |
+      Measure: merge conflicts per PR (30-day rolling average).
+      Before: ~0 (each repo has 1-2 contributors).
+      Threshold: if > 2 conflicts/week, the monorepo creates contention.
+      Mitigation: CODEOWNERS file, directory-based ownership.
+    citation: "[2] Brousse: monorepo contention is the #1 risk for large teams"
+
+  - name: FALSIFY-MONO-004
+    description: "Daily apr-cli publish takes > 5 minutes"
+    check: |
+      Measure: time from `make publish CRATE=apr-cli` to verified `cargo install`.
+      Before: 15-30 min (5 sequential publishes + coordination).
+      Threshold: if > 5 min, the monorepo didn't achieve its primary goal.
+    citation: "[6] release-system.md: tag-triggered publish with OIDC"
+
+  - name: FALSIFY-MONO-005
+    description: "Broken publish incidents continue post-migration"
+    check: |
+      Measure: `cargo install apr-cli` failures in the 90 days post-migration.
+      Before: 19 incidents in ~5 months (paiml/aprender#701).
+      Threshold: if > 2 incidents in 90 days, the monorepo didn't fix the root cause.
+      Expected: 0 incidents (workspace eliminates version skew).
+    citation: "[4] Rastogi: diamond dependency elimination is the #1 measurable benefit"
+
+  - name: FALSIFY-MONO-006
+    description: "git clone time exceeds 30 seconds"
+    check: |
+      Measure: `time git clone --depth 1 paiml/aprender` on 100 Mbps link.
+      Threshold: if > 30s, the repo is too large for new contributors.
+      Mitigation: .gitattributes for LFS on large binaries, shallow clones.
+    citation: "[3] Brito: median monorepo is 8 packages; ours is 48 — monitor clone time"
+
+  - name: FALSIFY-MONO-007
+    description: "git subtree merge loses commit history"
+    check: |
+      After migration: `git log --follow -- crates/aprender-compute/src/lib.rs`
+      must show commits from the original trueno repo.
+      If history is lost, git subtree was applied incorrectly.
+    citation: "Standard git subtree preservation requirement"
+
+  - name: FALSIFY-MONO-008
+    description: "Shim crates fail to re-export correctly"
+    check: |
+      `cargo install trueno-shim-test` (a test crate depending on `trueno = "0.19"`)
+      must compile and produce identical results to `trueno = "0.18"`.
+      If types mismatch, the re-export is incomplete.
+    citation: "[5] clean-room-spec.md: WM-1 pattern — version conflict masking"
+
+  - name: FALSIFY-MONO-009
+    description: "Workspace version bump breaks downstream crates"
+    check: |
+      When bumping [workspace.package] version from 0.29.0 → 0.29.1,
+      ALL published crates must remain compatible (no breaking API changes
+      unless major version bump). Polars uses this pattern for 28 crates.
+    citation: "[1] Polars: single workspace version for 28 crates"
+
+  - name: FALSIFY-MONO-010
+    description: "Crate naming violates the definitive registry (Appendix A)"
+    check: |
+      Every [package] name in the workspace MUST appear in Appendix A
+      of aprender-monorepo-consolidation.md. No crate may be added,
+      renamed, or removed without updating the spec first.
+      Enforcement: CI script checks `cargo metadata --format-version 1`
+      workspace member names against the registry.
+    enforcement: |
+      # Add to sovereign-ci.yml:
+      cargo metadata --format-version 1 --no-deps \
+        | jq -r '.packages[].name' | sort > /tmp/actual-crates.txt
+      grep '| `aprender' docs/specifications/aprender-monorepo-consolidation.md \
+        | grep -oP '`[^`]+`' | tr -d '`' | sort > /tmp/registered-crates.txt
+      diff /tmp/registered-crates.txt /tmp/actual-crates.txt \
+        || (echo "FALSIFY-MONO-010: unregistered crate name found"; exit 1)
+
+  - name: FALSIFY-MONO-011
+    description: "Non-apr-cli binary found in workspace"
+    check: |
+      apr-cli is THE ONLY user-facing binary. No other crate may
+      contain [[bin]] sections (exception: aprender-contracts-cli for
+      build tooling only, not user-facing ML tooling).
+    enforcement: |
+      # Scan all Cargo.toml files for [[bin]] sections
+      violations=$(find crates/ -name Cargo.toml -exec grep -l '\[\[bin\]\]' {} \; \
+        | grep -v 'apr-cli' | grep -v 'aprender-contracts-cli')
+      if [ -n "$violations" ]; then
+        echo "FALSIFY-MONO-011: unauthorized [[bin]] in: $violations"
+        echo "Only apr-cli may produce user-facing binaries."
+        exit 1
+      fi
+
+  - name: FALSIFY-MONO-012
+    description: "apr subcommand has no provable contract"
+    check: |
+      Every variant in apr-cli's Commands enum must have a matching
+      contract YAML in contracts/. Missing contracts = unspecified behavior.
+    enforcement: |
+      grep -oP '^\s+(\w+)\s*[{,]' crates/apr-cli/src/commands_enum.rs \
+        | tr -d ' {,' | tr '[:upper:]' '[:lower:]' | sort -u > /tmp/cmds.txt
+      ls contracts/apr-cli-*.yaml 2>/dev/null \
+        | xargs -I{} basename {} .yaml | sed 's/apr-cli-//' \
+        | sed 's/-v[0-9].*//' | sort -u > /tmp/contracts.txt
+      missing=$(comm -23 /tmp/cmds.txt /tmp/contracts.txt)
+      if [ -n "$missing" ]; then
+        echo "FALSIFY-MONO-012: subcommands missing contracts: $missing"
+        exit 1
+      fi
+
+# ── Migration Phases ──
+
+phases:
+  - id: P0-contracts
+    name: "Write contracts and falsification conditions"
+    status: "THIS CONTRACT"
+    deliverable: "cgp-monorepo-consolidation-v1.yaml"
+
+  - id: P1-infra
+    name: "Update paiml/infra specs for workspace CI"
+    deliverables:
+      - "unified-ci-pipeline.md: workspace-aware gate job"
+      - "release-system.md: topological publish ordering"
+      - "clean-room-spec.md: workspace resource budget"
+
+  - id: P2-prepare
+    name: "Create workspace skeleton in paiml/aprender"
+    deliverables:
+      - "Cargo.toml with [workspace] and members = ['crates/*']"
+      - "[workspace.package] version and [workspace.dependencies]"
+
+  - id: P3-migrate
+    name: "git subtree add for each repo (preserving history)"
+    order: |
+      1. provable-contracts (build.rs dep, no other deps)
+      2. trueno (core compute, deps only on provable-contracts)
+      3. presentar, renacer, certeza (tooling, dep on trueno)
+      4. trueno-db, trueno-graph, trueno-rag, trueno-viz (data, dep on trueno)
+      5. alimentar, simular, repartir, verificar (data/sim, various deps)
+      6. entrenar (training, deps on trueno+aprender)
+      7. realizar (serving, deps on trueno+aprender)
+      8. batuta (orchestration, deps on everything)
+      9. probar (testing, deps on trueno+presentar)
+
+  - id: P4-wire
+    name: "Replace version-pinned deps with workspace paths"
+    deliverable: "All cross-crate deps use { workspace = true }"
+
+  - id: P5-publish
+    name: "Publish workspace crates + shim crates"
+    deliverable: "cargo install apr-cli works from crates.io"
+
+  - id: P6-archive
+    name: "Archive old repos as read-only"
+    deliverable: "19 repos archived, README points to monorepo"

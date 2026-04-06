@@ -1,0 +1,39 @@
+# CPU BLIS GEMM performance contract
+# Generated from cgp profile scaling --size 1024 --runs 5 (2026-04-05)
+# Hardware: Threadripper 7960X (24C/48T, AVX2+FMA+AVX-512)
+kind: PerformanceContract
+name: gemm-blis-cpu-1024
+version: "1.0.0"
+kernel: gemm_blis
+hardware:
+  cpu: "AMD Ryzen Threadripper 7960X 24-Cores"
+  features: ["avx2", "fma", "avx512f"]
+
+bounds:
+  - size: [1024, 1024, 1024]
+    # Single-thread: 20.24ms = 106 GFLOPS (94.7% of 112 GFLOPS peak)
+    max_time_us: 25000         # 25ms single-thread ceiling
+    min_tflops: 0.080          # 80 GFLOPS floor (allows 25% regression)
+    max_regression_pct: 15
+  - size: [1024, 1024, 1024]
+    # 8-thread parallel: 4.64ms = 463 GFLOPS
+    max_time_us: 6000          # 6ms 8-thread ceiling
+    min_tflops: 0.350          # 350 GFLOPS floor (allows 25% regression)
+    max_regression_pct: 15
+
+metrics:
+  parallel_efficiency_8t:
+    min: 40.0                  # 8T efficiency: 489/(112*8)=55%, floor at 40%
+  single_thread_peak_pct:
+    min: 80.0                  # Single-thread: 106/112=94.7%, floor at 80%
+
+falsification:
+  - name: FALSIFY-BLIS-001
+    description: "1024x1024 single-thread must exceed 80 GFLOPS"
+    check: "gflops_1t > 80.0"
+  - name: FALSIFY-BLIS-002
+    description: "1024x1024 8-thread must exceed 350 GFLOPS"
+    check: "gflops_8t > 350.0"
+  - name: FALSIFY-BLIS-003
+    description: "8-thread scaling must exceed 3.5x"
+    check: "speedup_8t > 3.5"

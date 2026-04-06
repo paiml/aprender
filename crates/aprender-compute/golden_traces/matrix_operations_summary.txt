@@ -1,0 +1,144 @@
+=================================
+
+📐 Matrix Construction
+----------------------
+
+Matrix m1 (2×3):
+  [   1.0,    2.0,    3.0]
+  [   4.0,    5.0,    6.0]
+Identity matrix I₃ (3×3):
+  [   1.0,    0.0,    0.0]
+  [   0.0,    1.0,    0.0]
+  [   0.0,    0.0,    1.0]
+Zero matrix 0₃ₓ₂ (3×2):
+  [   0.0,    0.0]
+  [   0.0,    0.0]
+  [   0.0,    0.0]
+
+📊 Matrix Multiplication (matmul)
+----------------------------------
+
+Matrix A (2×3):
+  [   1.0,    2.0,    3.0]
+  [   4.0,    5.0,    6.0]
+Matrix B (3×2):
+  [   7.0,    8.0]
+  [   9.0,   10.0]
+  [  11.0,   12.0]
+A × B (2×2):
+  [  58.0,   64.0]
+  [ 139.0,  154.0]
+Calculation:
+  C[0,0] = 1×7 + 2×9 + 3×11 = 58
+  C[0,1] = 1×8 + 2×10 + 3×12 = 64
+  C[1,0] = 4×7 + 5×9 + 6×11 = 139
+  C[1,1] = 4×8 + 5×10 + 6×12 = 154
+
+🔄 Matrix Transpose
+-------------------
+
+Original matrix M (2×3):
+  [   1.0,    2.0,    3.0]
+  [   4.0,    5.0,    6.0]
+Transposed M^T (3×2):
+  [   1.0,    4.0]
+  [   2.0,    5.0]
+  [   3.0,    6.0]
+Properties:
+  • Rows and columns swapped: 2×3 → 3×2
+  • Element M[i,j] becomes M^T[j,i]
+  • (M^T)^T = M
+
+🎯 Matrix-Vector Multiplication (matvec)
+-----------------------------------------
+
+Matrix A (3×4):
+  [   1.0,    2.0,    3.0,    4.0]
+  [   5.0,    6.0,    7.0,    8.0]
+  [   9.0,   10.0,   11.0,   12.0]
+Vector v (4×1):
+  [   1.0,    2.0,    3.0,    4.0]
+A × v (3×1):
+  [  30.0,   70.0,  110.0]
+Calculation:
+  result[0] = 1×1 + 2×2 + 3×3 + 4×4 = 30
+  result[1] = 5×1 + 6×2 + 7×3 + 8×4 = 70
+  result[2] = 9×1 + 10×2 + 11×3 + 12×4 = 110
+
+🎯 Vector-Matrix Multiplication (vecmat)
+-----------------------------------------
+
+Vector v^T (1×3):
+  [   1.0,    2.0,    3.0]
+Matrix A (3×4):
+  [   1.0,    2.0,    3.0,    4.0]
+  [   5.0,    6.0,    7.0,    8.0]
+  [   9.0,   10.0,   11.0,   12.0]
+v^T × A (1×4):
+  [  38.0,   44.0,   50.0,   56.0]
+Calculation:
+  result[0] = 1×1 + 2×5 + 3×9 = 38
+  result[1] = 1×2 + 2×6 + 3×10 = 44
+  result[2] = 1×3 + 2×7 + 3×11 = 50
+  result[3] = 1×4 + 2×8 + 3×12 = 56
+
+🧠 Real-World Use Case: Neural Network Linear Layer
+----------------------------------------------------
+
+Weight matrix W (3×4):
+  [   0.1,    0.2,   -0.1,    0.3]
+  [  -0.2,    0.1,    0.4,   -0.1]
+  [   0.3,   -0.1,    0.2,    0.1]
+Input vector x (4D):
+  [   1.0,    2.0,    3.0,    4.0]
+Bias vector b (3D):
+  [   0.1,   -0.1,    0.2]
+Linear layer output y = W×x + b:
+  [   1.5,    0.7,    1.3]
+  → This becomes the input to the activation function
+  → Common activations: ReLU, sigmoid, tanh, softmax
+
+📦 Batch Processing: Multiple Inputs
+-------------------------------------
+
+Processing 3 samples through the same linear layer:
+  Sample 1: [0.2, -0.3, 0.5]
+  Sample 2: [0.3, 0.0, 0.1]
+  Sample 3: [0.0, 0.3, 0.4]
+
+✅ Verified Mathematical Properties
+------------------------------------
+
+✓ Identity: I×v = v
+✓ Transpose: (A×v)^T = v^T×A^T
+✓ Zero: A×0 = 0
+
+🎉 All matrix operations working correctly!
+
+📚 For more examples, see:
+   • examples/activation_functions.rs - Neural network activations
+   • examples/ml_similarity.rs - ML vector operations
+   • examples/performance_demo.rs - SIMD performance
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 49.43    0.006377          61       104           write
+ 11.32    0.001460         112        13           mmap
+  4.66    0.000601         120         5           mprotect
+  2.42    0.000312          62         5           rt_sigaction
+  1.85    0.000239          59         4           close
+  1.94    0.000250          62         4         1 unknown
+  7.61    0.000982         245         4           openat
+  2.61    0.000337          84         4           fstat
+  3.57    0.000461         153         3           sigaltstack
+  2.48    0.000320         106         3           read
+  1.26    0.000163          54         3           brk
+  2.60    0.000335         167         2           munmap
+  1.66    0.000214         107         2           pread64
+  1.00    0.000129         129         1         1 access
+  0.57    0.000073          73         1           set_robust_list
+  3.05    0.000393         393         1           getrandom
+  0.57    0.000074          74         1           set_tid_address
+  0.90    0.000116         116         1           poll
+  0.51    0.000066          66         1           arch_prctl
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.012902          79       162         2 total

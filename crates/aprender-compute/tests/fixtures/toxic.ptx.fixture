@@ -1,0 +1,28 @@
+.version 8.0
+.target sm_70
+.address_size 64
+
+.entry toxic_kernel(
+    .param .u64 param_base
+)
+{
+    .reg .u32 %r<10>;
+    .reg .u64 %rd<10>;
+
+    // Load base address
+    ld.param.u64 %rd0, [param_base];
+
+    // THE BUG: Load value from shared memory
+    ld.shared.u32 %r1, [%rd1];
+
+    // Compute address using loaded value
+    // This is the F082 violation: %rd3 depends on %r1 (from ld.shared)
+    cvt.u64.u32 %rd2, %r1;
+    add.u64 %rd3, %rd0, %rd2;
+
+    // Store to computed address (should be flagged by F082)
+    mov.u32 %r5, 0xCAFEBABE;
+    st.global.u32 [%rd3], %r5;
+
+    ret;
+}

@@ -1,0 +1,213 @@
+version: "1.0"
+name: "cbtop TUI State Machine"
+description: "Verify cbtop TUI state transitions and visual correctness"
+machine:
+  id: "cbtop_flow"
+  initial: "overview_idle"
+  states:
+    overview_idle:
+      id: "overview_idle"
+      invariants:
+        - description: "Title bar shows hardware info"
+          condition: "frame.contains('cbtop')"
+        - description: "Tab bar shows all panels"
+          condition: "frame.contains('1:Overview')"
+        - description: "Load status shows stopped"
+          condition: "frame.contains('STOPPED') || frame.contains('RUNNING')"
+    overview_running:
+      id: "overview_running"
+      invariants:
+        - description: "Load status shows running"
+          condition: "frame.contains('RUNNING')"
+        - description: "CPU usage updating"
+          condition: "frame.contains('CPU Usage:')"
+        - description: "GFLOP/s displayed"
+          condition: "frame.contains('GFLOP/s')"
+    cpu_panel:
+      id: "cpu_panel"
+      invariants:
+        - description: "Per-core CPU bars visible"
+          condition: "frame.contains('Core 0:')"
+        - description: "Active panel highlighted"
+          condition: "frame.contains('[2:CPU]')"
+    gpu_panel:
+      id: "gpu_panel"
+      invariants:
+        - description: "GPU metrics visible"
+          condition: "frame.contains('Utilization:') || frame.contains('No GPU')"
+        - description: "Temperature shown"
+          condition: "frame.contains('Temperature:') || frame.contains('N/A')"
+    memory_panel:
+      id: "memory_panel"
+      invariants:
+        - description: "Memory breakdown visible"
+          condition: "frame.contains('Memory:')"
+        - description: "Swap usage shown"
+          condition: "frame.contains('Swap:')"
+    network_panel:
+      id: "network_panel"
+      invariants:
+        - description: "Network TX/RX visible"
+          condition: "frame.contains('TX:') && frame.contains('RX:')"
+    disk_panel:
+      id: "disk_panel"
+      invariants:
+        - description: "Disk mounts visible"
+          condition: "frame.contains('/') && frame.contains('%')"
+    help_panel:
+      id: "help_panel"
+      invariants:
+        - description: "Help content visible"
+          condition: "frame.contains('Help') || frame.contains('Keys')"
+  transitions:
+    - id: "start_load"
+      from: "overview_idle"
+      to: "overview_running"
+      event: "space_press"
+      actions:
+        - type: key
+          key: "Space"
+    - id: "stop_load"
+      from: "overview_running"
+      to: "overview_idle"
+      event: "space_press"
+      actions:
+        - type: key
+          key: "Space"
+    - id: "nav_to_cpu"
+      from: "*"
+      to: "cpu_panel"
+      event: "key_2"
+      actions:
+        - type: key
+          key: "2"
+    - id: "nav_to_gpu"
+      from: "*"
+      to: "gpu_panel"
+      event: "key_3"
+      actions:
+        - type: key
+          key: "3"
+    - id: "nav_to_memory"
+      from: "*"
+      to: "memory_panel"
+      event: "key_5"
+      actions:
+        - type: key
+          key: "5"
+    - id: "nav_to_help"
+      from: "*"
+      to: "help_panel"
+      event: "key_9"
+      actions:
+        - type: key
+          key: "9"
+    - id: "nav_to_overview"
+      from: "*"
+      to: "overview_idle"
+      event: "key_1"
+      actions:
+        - type: key
+          key: "1"
+  forbidden:
+    - from: "overview_idle"
+      to: "overview_running"
+      guard: "not space_press"
+      reason: "Load only starts with Space key"
+playbook:
+  setup:
+    - type: launch
+      command: "cargo run -p cbtop --release"
+    - type: wait
+      condition: "frame.contains('cbtop')"
+      timeout_ms: 5000
+  steps:
+    - name: "Verify initial state"
+      assert:
+        - "frame.contains('cbtop')"
+        - "frame.contains('1:Overview')"
+        - "frame.contains('CPU Usage:')"
+      capture:
+        - var: "initial_frame"
+          type: "screenshot"
+    - name: "Start load generation"
+      transitions: ["start_load"]
+      wait_ms: 500
+      assert:
+        - "frame.contains('RUNNING')"
+      capture:
+        - var: "running_frame"
+          type: "screenshot"
+    - name: "Navigate to CPU panel"
+      transitions: ["nav_to_cpu"]
+      assert:
+        - "frame.contains('Core 0:')"
+        - "frame.contains('[2:CPU]')"
+    - name: "Navigate to GPU panel"
+      transitions: ["nav_to_gpu"]
+      assert:
+        - "frame.contains('GPU') || frame.contains('Utilization:')"
+    - name: "Navigate to Memory panel"
+      transitions: ["nav_to_memory"]
+      assert:
+        - "frame.contains('Memory:')"
+        - "frame.contains('Swap:')"
+    - name: "Navigate to Help panel"
+      transitions: ["nav_to_help"]
+      assert:
+        - "frame.contains('Help')"
+    - name: "Return to Overview"
+      transitions: ["nav_to_overview"]
+      assert:
+        - "frame.contains('[1:Overview]')"
+    - name: "Stop load generation"
+      transitions: ["stop_load"]
+      assert:
+        - "frame.contains('STOPPED')"
+  teardown:
+    - type: key
+      key: "q"
+    - type: screenshot
+      path: "./snapshots/cbtop_final.png"
+assertions:
+  path:
+    must_visit:
+      - "overview_idle"
+      - "overview_running"
+      - "cpu_panel"
+      - "gpu_panel"
+      - "memory_panel"
+      - "help_panel"
+  visual:
+    - name: "Progress bars render correctly"
+      condition: "frame.contains('█') && frame.contains('░')"
+    - name: "Box drawing characters present"
+      condition: "frame.contains('┌') && frame.contains('┘')"
+    - name: "Percentages displayed"
+      condition: "frame.matches('\\d+\\.\\d+%')"
+performance:
+  max_startup_ms: 2000
+  max_frame_render_ms: 16  # 60fps target
+  max_memory_mb: 100
+coverage:
+  panels:
+    - overview
+    - cpu
+    - gpu
+    - pcie
+    - memory
+    - thermal
+    - load
+    - config
+    - help
+  features:
+    - title_bar
+    - tab_navigation
+    - cpu_bars
+    - memory_breakdown
+    - network_tx_rx
+    - disk_mounts
+    - gpu_metrics
+    - status_bar
+    - color_gradients
+    - braille_graphs

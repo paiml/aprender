@@ -1,0 +1,6 @@
+comply:
+  suppressions:
+    # CB-954: secrets: inherit is standard GHA reusable workflow syntax
+    - rules: ["CB-954"]
+      files: [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+      reason: "secrets: inherit is standard GitHub Actions syntax, not plaintext"

@@ -1,0 +1,80 @@
+
+Comparing Scalar vs SSE2 backends across different operations
+See docs/PERFORMANCE_GUIDE.md for detailed analysis
+
+================================================================================
+
+📊 Vector Size: 100 elements
+
+  Dot Product:            15.00ns       5.00ns      174.0% 🚀 Excellent
+    └─ Compute-intensive: 340% faster expected
+  Sum Reduction:           0.00ns       3.00ns      -81.6% ❌ Limited
+    └─ Compute-intensive: 315% faster expected
+  Max Finding:            65.00ns       3.00ns     1543.9% 🚀 Excellent
+    └─ Compute-intensive: 348% faster expected
+  Element-wise Add:       48.00ns      38.00ns       24.2% ✅ Good
+    └─ Memory-bound: 3-10% faster expected
+  Element-wise Mul:       38.00ns      36.00ns        3.6% ❌ Limited
+    └─ Memory-bound: 5-6% faster expected
+--------------------------------------------------------------------------------
+
+📊 Vector Size: 1000 elements
+
+  Dot Product:            79.00ns      27.00ns      190.0% 🚀 Excellent
+    └─ Compute-intensive: 340% faster expected
+  Sum Reduction:           0.00ns      10.00ns      -96.9% ❌ Limited
+    └─ Compute-intensive: 315% faster expected
+  Max Finding:             1.11µs      10.00ns    10193.7% 🚀 Excellent
+    └─ Compute-intensive: 348% faster expected
+  Element-wise Add:      157.00ns     135.00ns       16.1% ✅ Good
+    └─ Memory-bound: 3-10% faster expected
+  Element-wise Mul:      155.00ns     147.00ns        5.6% ⚠️  Modest
+    └─ Memory-bound: 5-6% faster expected
+--------------------------------------------------------------------------------
+
+📊 Vector Size: 10000 elements
+
+  Dot Product:           781.00ns     235.00ns      231.1% 🚀 Excellent
+    └─ Compute-intensive: 340% faster expected
+  Sum Reduction:           0.00ns     151.00ns      -99.8% ❌ Limited
+    └─ Compute-intensive: 315% faster expected
+  Max Finding:            11.87µs     121.00ns     9702.5% 🚀 Excellent
+    └─ Compute-intensive: 348% faster expected
+  Element-wise Add:        2.10µs       2.15µs       -1.9% ❌ Limited
+    └─ Memory-bound: 3-10% faster expected
+  Element-wise Mul:        2.27µs       2.19µs        3.7% ❌ Limited
+    └─ Memory-bound: 5-6% faster expected
+--------------------------------------------------------------------------------
+
+✨ Key Takeaways:
+
+  ✅ Compute-intensive operations (dot, sum, max): 200-400% faster
+  ⚠️  Memory-bound operations (add, mul): 3-10% faster
+
+  💡 Why: SIMD excels at computation but can't overcome memory bandwidth
+
+  📖 See docs/PERFORMANCE_GUIDE.md for tuning tips and detailed analysis
+================================================================================
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 24.31    0.002652          54        49           write
+ 27.42    0.002991         106        28           brk
+ 10.77    0.001175          90        13           mmap
+  4.41    0.000481          96         5           mprotect
+  1.76    0.000192          38         5           rt_sigaction
+  2.62    0.000286          71         4         1 unknown
+  2.89    0.000315          78         4           close
+  2.81    0.000306          76         4           fstat
+  9.70    0.001058         264         4           openat
+  1.99    0.000217          72         3           sigaltstack
+  2.92    0.000318         106         3           read
+  2.20    0.000240         120         2           munmap
+  1.35    0.000147          73         2           pread64
+  1.38    0.000150         150         1         1 access
+  0.86    0.000094          94         1           poll
+  0.83    0.000090          90         1           getrandom
+  0.75    0.000082          82         1           set_tid_address
+  0.32    0.000035          35         1           arch_prctl
+  0.72    0.000079          79         1           set_robust_list
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.010908          82       132         2 total

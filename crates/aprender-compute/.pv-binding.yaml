@@ -1,0 +1,96 @@
+binding: cross-crate-registry-v1
+version: 1
+description: >
+  Cross-crate contract registry mapping each trueno crate to its
+  YAML contracts, key types, and CUDA library parity targets.
+
+crates:
+  trueno-sparse:
+    cuda_parity: cuSPARSE
+    contracts:
+      - sparse-spmv-v1.yaml
+      - sparse-spmm-v1.yaml
+      - sparse-spgemm-v1.yaml
+      - sparse-formats-v1.yaml
+      - sparse-bsr-v1.yaml
+    key_types:
+      - CsrMatrix
+      - CooMatrix
+      - BsrMatrix
+      - SellMatrix
+    traits:
+      - SparseOps
+      - SparseBackend
+
+  trueno-fft:
+    cuda_parity: cuFFT
+    contracts:
+      - fft-stockham-v1.yaml
+      - fft-2d-v1.yaml
+      - fft-3d-v1.yaml
+      - fft-bluestein-v1.yaml
+    key_types:
+      - FftPlan
+      - Complex
+    traits:
+      - Fft
+
+  trueno-solve:
+    cuda_parity: cuSOLVER + cuBLAS
+    contracts:
+      - solve-lu-v1.yaml
+      - solve-qr-v1.yaml
+      - solve-svd-v1.yaml
+      - solve-cholesky-v1.yaml
+      - blas-trsm-v1.yaml
+      - blas-level3-v1.yaml
+      - blas-gemmex-v1.yaml
+    key_types:
+      - LuFactorization
+      - QrFactorization
+      - SvdResult
+      - CholeskyFactorization
+      - TrsmResult
+    traits:
+      - Solver
+
+  trueno-image:
+    cuda_parity: NPP
+    contracts:
+      - image-conv2d-v1.yaml
+      - image-canny-v1.yaml
+      - image-resize-v1.yaml
+      - image-color-v1.yaml
+      - image-histogram-v1.yaml
+    key_types:
+      - ImageBuf
+      - BorderMode
+      - Interpolation
+      - DType
+    traits:
+      - ImageOps
+
+  trueno-rand:
+    cuda_parity: cuRAND
+    contracts:
+      - rand-philox-v1.yaml
+      - rand-threefry-v1.yaml
+    key_types:
+      - Philox4x32
+      - Threefry4x64
+    traits:
+      - Rng
+
+  trueno-tensor:
+    cuda_parity: cuTENSOR
+    contracts:
+      - tensor-contraction-v1.yaml
+    key_types:
+      - Tensor
+    functions:
+      - einsum
+      - einsum_nary
+      - matmul
+      - outer
+      - trace
+      - batch_matmul

@@ -1,0 +1,37 @@
+[package]
+name = "trueno-gpu-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.trueno-gpu]
+path = ".."
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_ptx_builder"
+path = "fuzz_targets/fuzz_ptx_builder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_gemm_kernel"
+path = "fuzz_targets/fuzz_gemm_kernel.rs"
+test = false
+doc = false
+bench = false

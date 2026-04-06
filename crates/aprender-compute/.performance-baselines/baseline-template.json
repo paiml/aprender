@@ -1,0 +1,94 @@
+{
+  "metadata": {
+    "description": "Performance baseline for regression detection",
+    "date": "YYYY-MM-DD",
+    "commit": "COMMIT_HASH",
+    "cpu": "CPU_MODEL",
+    "gpu": "GPU_MODEL",
+    "platform": "linux|macos|windows",
+    "note": "Baselines generated from criterion benchmarks with 100 samples"
+  },
+  "regression_policy": {
+    "max_slowdown_percent": 5.0,
+    "min_speedup_vs_scalar": {
+      "gpu_vec_add_1M": 1.5,
+      "gpu_dot_1M": 1.5,
+      "gpu_matmul_1000": 5.0,
+      "gpu_activations_1M": 1.5
+    }
+  },
+  "benchmarks": {
+    "gpu_vec_add_1K": {
+      "gpu_time_ms": null,
+      "scalar_time_ns": null,
+      "speedup": null,
+      "status": "POPULATE_FROM_BENCHMARK"
+    },
+    "gpu_vec_add_10K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_vec_add_100K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_vec_add_1M": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_dot_1K": {
+      "gpu_time_ms": null,
+      "scalar_time_ns": null,
+      "speedup": null
+    },
+    "gpu_dot_10K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_dot_100K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_dot_1M": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_matmul_100": {
+      "gpu_time_ms": null,
+      "scalar_time_ms": null,
+      "speedup": null
+    },
+    "gpu_matmul_500": {
+      "gpu_time_ms": null,
+      "scalar_time_ms": null,
+      "speedup": null
+    },
+    "gpu_matmul_1000": {
+      "gpu_time_ms": null,
+      "scalar_time_ms": null,
+      "speedup": null
+    },
+    "gpu_relu_10K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_relu_100K": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "gpu_relu_1M": {
+      "gpu_time_ms": null,
+      "scalar_time_us": null,
+      "speedup": null
+    },
+    "comment": "Additional activation benchmarks (leaky_relu, elu, clip, sigmoid, tanh, swish, gelu, softmax, log_softmax) follow same pattern"
+  }
+}

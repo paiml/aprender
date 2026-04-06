@@ -1,0 +1,41 @@
+# Q4K GEMV parallel threshold contract
+# Contract-first: defines threshold change before implementation
+kind: PerformanceContract
+name: q4k-parallel-threshold
+version: "1.0.0"
+kernel: matmul_q4k_f32_dispatch
+
+description: |
+  Lower Q4K GEMV parallel threshold from 8M to 2M elements.
+  Q4K per-element work is ~3× more than FP32 GEMM (dequant+scale+FMA),
+  so parallelism benefits at smaller sizes.
+
+evidence:
+  current_threshold: 8000000
+  proposed_threshold: 2000000
+  measurement:
+    - size: "1536x1536"
+      total_work: 2359296
+      current_path: "single-threaded AVX2"
+      current_gflops: 17.0
+      predicted_parallel_gflops: 65.0
+      predicted_speedup: "3.8x"
+    - size: "4096x4096"
+      total_work: 16777216
+      current_path: "parallel AVX2"
+      current_gflops: 81.2
+      change: "none (already above threshold)"
+
+bounds:
+  - claim: "1536x1536 Q4K GEMV improves with lower threshold"
+    check: "gflops_1536_after >= gflops_1536_before * 2.0"
+  - claim: "4096x4096 Q4K GEMV does not regress"
+    check: "gflops_4096_after >= gflops_4096_before * 0.95"
+
+falsification:
+  - name: FALSIFY-Q4K-THRESH-001
+    description: "1536x1536 improves by at least 2x with lower threshold"
+    check: "gflops_after / gflops_before >= 2.0"
+  - name: FALSIFY-Q4K-THRESH-002
+    description: "4096x4096 does not regress more than 5%"
+    check: "gflops_4096_after >= gflops_4096_before * 0.95"

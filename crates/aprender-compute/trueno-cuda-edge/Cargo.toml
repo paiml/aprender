@@ -1,0 +1,39 @@
+[package]
+name = "trueno-cuda-edge"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+description = "GPU edge-case test framework — null fuzzing, shared memory probing, lifecycle chaos, quantization parity, PTX poison trapping"
+repository = "https://github.com/paiml/trueno"
+keywords = ["cuda", "gpu", "testing", "edge-case", "fuzzing"]
+categories = ["development-tools::testing"]
+
+[dependencies]
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+trueno-gpu = { version = "0.4.12", path = "../trueno-gpu", optional = true }
+
+[dev-dependencies]
+proptest = "1.6"
+serde_json = "1.0"
+
+[features]
+default = []
+cuda = ["dep:trueno-gpu", "trueno-gpu/cuda"]
+full = ["cuda"]
+
+[lints]
+workspace = true
+
+[[example]]
+name = "null_fuzzer_demo"
+
+[[example]]
+name = "quant_oracle_demo"
+
+[[example]]
+name = "ptx_verifier_demo"
+
+[[example]]
+name = "falsification_report_demo"

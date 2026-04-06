@@ -1,0 +1,74 @@
+# CPU vecmat (vector-matrix) parallel GEMV contract
+# POSITIVE RESULT: +480% at 4096×4096 via threshold fix + parallel K-split
+#
+# Experiment (2026-04-05): cgp dogfood profiling revealed vecmat at 4096×4096
+# achieving only 9.3 GFLOPS. Root cause: tiled GEMV kernel used at N>4096
+# has strided B access pattern (stride=N*4 bytes) which is TLB-unfriendly.
+#
+# Two fixes applied:
+# 1. Tile threshold raised 4096 → 8192: keeps axpy path at 4096-8192
+# 2. K-split parallelization (Rayon): 8-thread partial sums + reduction
+#
+# Grounding:
+#   [44] Goto-van de Geijn, "Anatomy of High-Performance Matrix Multiplication," 2008
+kind: PerformanceContract
+name: cgp-vecmat-parallel
+version: "1.0.0"
+kernel: vecmat_avx2_parallel
+
+description: |
+  Vector-matrix multiply (v × M) uses axpy-pattern GEMV with Rayon
+  parallelization along K dimension for large matrices. Each thread
+  computes partial c, then reduce sums. Approaches DRAM multi-channel
+  bandwidth on 4-channel DDR5.
+
+hardware:
+  cpu: "AMD Threadripper 7960X (24C/48T, AVX-512, 4-channel DDR5)"
+  dram_bw_gb_s: 100
+  l1d_kb: 32
+  l2_kb: 1024
+  l3_kb: 32768
+
+bounds:
+  - size: [1024, 1024]
+    current_gflops: 54.8
+    note: "Below parallel threshold — single-threaded"
+  - size: [2048, 2048]
+    before_gflops: 30.8
+    current_gflops: 52.5
+    speedup: 1.70
+    note: "Parallel enabled (threshold lowered to 4M)"
+  - size: [4096, 4096]
+    before_gflops: 9.3
+    current_gflops: 53.9
+    speedup: 5.79
+    note: "Tile threshold fix + parallel K-split"
+  - size: [8192, 8192]
+    before_gflops: 9.0
+    current_gflops: 50.4
+    speedup: 5.60
+    note: "Largest tested; approaches DRAM BW saturation"
+
+design:
+  approach: |
+    1. For N > 8192: use tiled kernel (strided B but c[] in registers)
+    2. For N <= 8192: use axpy kernel (sequential B reads, c[] in L1)
+    3. For K*N >= 4M: parallelize across 8 threads along K dimension
+       - Each thread: partial_c += v[k_slice] * B[k_slice, :]
+       - Reduce T partials to final c
+    4. Thread cap at 8 avoids DRAM BW saturation / CCD contention
+  rationale: |
+    - Axpy: sequential B reads maximize DRAM prefetcher efficiency
+    - c[] up to 32KB fits L1d → negligible c[] memory traffic
+    - K-split: each thread reads different rows → parallel DRAM channels
+
+falsification:
+  - name: FALSIFY-VECMAT-001
+    description: "vecmat 4096×4096 must achieve >= 35 GFLOPS"
+    check: "gflops >= 35.0"
+  - name: FALSIFY-VECMAT-002
+    description: "vecmat 8192×8192 must achieve >= 30 GFLOPS"
+    check: "gflops >= 30.0"
+  - name: FALSIFY-VECMAT-003
+    description: "No regression at 1024×1024 (single-threaded path)"
+    check: "gflops >= 45.0"

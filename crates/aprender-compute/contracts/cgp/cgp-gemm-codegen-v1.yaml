@@ -1,0 +1,50 @@
+# Microkernel Codegen Contract (P1a, Appendix E)
+# Sovereign: proc-macro generates shape-specialized GEMM microkernels at compile time.
+# Contract-first: this YAML defines the behavior BEFORE implementation.
+kind: PerformanceContract
+name: cgp-gemm-codegen
+version: "1.0.0"
+kernel: trueno_gemm_codegen
+
+specification:
+  description: |
+    A proc-macro crate that generates AVX-512 GEMM microkernels at compile time.
+    Input: #[microkernel(mr=M, nr=N, k_unroll=U, isa=avx512)]
+    Output: fully-unrolled FMA code with optimal register allocation.
+
+    The generated code must be equivalent to hand-written microkernels but
+    with shape-specific optimizations that LLVM cannot derive from generic loops.
+
+  invariants:
+    - name: C-CODEGEN-001
+      description: "Generated kernel produces same output as scalar reference (1e-5 tolerance)"
+      check: "max_abs_diff(generated, reference) < 1e-5"
+
+    - name: C-CODEGEN-002
+      description: "Generated kernel must not be slower than hand-written equivalent"
+      check: "generated_time <= 1.05 * handwritten_time"
+
+    - name: C-CODEGEN-003
+      description: "FMA count per K-step = MR/16 * NR (for row-major, NR-wide B)"
+      check: "fma_count == (mr / 16) * nr"
+
+    - name: C-CODEGEN-004
+      description: "Register count: (MR/16)*NR accumulators + 2 B loads + headroom <= 32 zmm"
+      check: "(mr / 16) * nr + ceil(nr / 16) + 4 <= 32"
+
+  initial_shapes:
+    # Start with the existing hand-written shapes for validation
+    - { mr: 8, nr: 32, k_unroll: 1, isa: avx512 }  # Current 8x32 (16 acc)
+    - { mr: 8, nr: 16, k_unroll: 1, isa: avx512 }  # Current 8x16 (8 acc)
+    # New shapes to explore
+    - { mr: 16, nr: 16, k_unroll: 1, isa: avx512 }  # 16x16 (16 acc, column-major A)
+    - { mr: 8, nr: 48, k_unroll: 1, isa: avx512 }  # 8x48 (24 acc, if fits)
+
+falsification:
+  - name: FALSIFY-CODEGEN-001
+    description: "8x32 generated matches hand-written output"
+    check: "generated_8x32 == handwritten_8x32 (within 1e-5)"
+
+  - name: FALSIFY-CODEGEN-002
+    description: "8x32 generated is within 5% of hand-written speed"
+    check: "generated_time / handwritten_time <= 1.05"

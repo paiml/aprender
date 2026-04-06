@@ -1,0 +1,151 @@
+# batuta orchestration manifest for trueno
+# See: docs/specifications/compute-block-tui-cbtop.md §21.2
+version: "1.0"
+
+packages:
+  # Core trueno library
+  - name: trueno
+    type: library
+    path: .
+    crates:
+      - trueno
+    features:
+      - simd
+      - wgpu
+
+  # CUDA parity crates (CPU implementations)
+  - name: trueno-sparse
+    type: library
+    path: crates/trueno-sparse
+    crates:
+      - trueno-sparse
+    depends_on:
+      - trueno
+    features:
+      - simd
+
+  - name: trueno-fft
+    type: library
+    path: crates/trueno-fft
+    crates:
+      - trueno-fft
+    depends_on:
+      - trueno
+
+  - name: trueno-solve
+    type: library
+    path: crates/trueno-solve
+    crates:
+      - trueno-solve
+    depends_on:
+      - trueno
+
+  - name: trueno-image
+    type: library
+    path: crates/trueno-image
+    crates:
+      - trueno-image
+    depends_on:
+      - trueno
+
+  - name: trueno-rand
+    type: library
+    path: crates/trueno-rand
+    crates:
+      - trueno-rand
+    depends_on:
+      - trueno
+
+  - name: trueno-tensor
+    type: library
+    path: crates/trueno-tensor
+    crates:
+      - trueno-tensor
+    depends_on:
+      - trueno
+
+  # GPU sub-crate
+  - name: trueno-gpu
+    type: library
+    path: trueno-gpu
+    depends_on:
+      - trueno
+    features:
+      - cuda
+    optional_deps:
+      - libcuda.so
+
+  # CUPTI profiling sub-crate
+  - name: trueno-cupti
+    type: library
+    path: trueno-cupti
+    depends_on:
+      - trueno-gpu
+    optional_deps:
+      - libcupti.so
+
+  # cbtop TUI binary
+  - name: cbtop
+    type: binary
+    path: crates/cbtop
+    depends_on:
+      - trueno
+      - trueno-gpu
+      - trueno-cupti
+      - presentar-terminal
+    monitors:
+      - simular
+      - whisper.apr
+      - realizar
+    features:
+      - cuda
+      - wos-kernel
+    notify_on_release: "true"
+
+  # PTX debugging tool
+  - name: trueno-ptx-debug
+    type: binary
+    path: trueno-ptx-debug
+    depends_on:
+      - trueno-gpu
+    features:
+      - falsify
+
+build_order:
+  - trueno
+  - trueno-sparse
+  - trueno-fft
+  - trueno-solve
+  - trueno-image
+  - trueno-rand
+  - trueno-tensor
+  - trueno-gpu
+  - trueno-cupti
+  - cbtop
+  - trueno-ptx-debug
+
+notifications:
+  # ComputeBrick API change triggers full rebuild
+  on_api_change:
+    - pattern: "src/brick.rs"
+      notify:
+        - all
+    - pattern: "trueno-gpu/src/kernels/*"
+      notify:
+        - cbtop
+        - trueno-ptx-debug
+
+    - pattern: "crates/trueno-sparse/src/*"
+      notify:
+        - trueno-gpu
+    - pattern: "crates/trueno-solve/src/*"
+      notify:
+        - trueno-gpu
+
+  # Spec changes notify downstream
+  on_spec_change:
+    - pattern: "docs/specifications/compute-block-tui-cbtop.md"
+      notify:
+        - presentar
+        - wos
+        - pepita

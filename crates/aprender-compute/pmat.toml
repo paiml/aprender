@@ -1,0 +1,317 @@
+# PMAT Configuration for Trueno
+# High-performance SIMD library with EXTREME TDD standards
+# paiml-mcp-agent-toolkit v2.200.0+
+
+[project]
+name = "trueno"
+version = "0.4.1"
+language = "rust"
+description = "High-performance SIMD compute library with GPU support"
+
+# Quality Gate Thresholds (aligned with CLAUDE.md requirements)
+[quality_gate]
+# Coverage (CRITICAL: 90% minimum per CLAUDE.md)
+min_test_coverage = 90.0
+target_test_coverage = 95.0
+
+# Complexity (Sprint 84 targets from PMAT)
+max_cyclomatic_complexity = 22
+max_cognitive_complexity = 17
+
+# Technical Debt
+max_satd_comments = 0  # Zero tolerance for TODO/FIXME/HACK
+max_code_duplication_percentage = 5.0
+
+# Mutation Testing
+min_mutation_score = 80.0  # 80% kill rate minimum
+
+# Repository Health
+min_repo_score = 90  # 90/110 minimum
+target_repo_score = 100
+
+# Rust Project Score (new in v2.171.0)
+min_rust_project_score = 150  # 150/211 minimum (71% - good quality)
+target_rust_project_score = 180  # 180/211 target (85% - excellent)
+
+# Known Defects (v2.200.0)
+[known_defects]
+# Cloudflare outage 2025-11-18: .unwrap() panic in production
+detect_unwrap_calls = true
+fail_on_unwrap = true  # Block commits with .unwrap() in src/
+
+# Detect other panic-inducing patterns
+detect_expect_calls = true
+detect_unreachable_calls = true
+detect_panic_calls = true
+
+# TDG (Technical Debt Grading)
+[tdg]
+min_grade = "B+"  # Minimum B+ (85/100) per CLAUDE.md
+target_grade = "A-"  # Target A- (92/100)
+include_components = true
+enforce_on_commit = true
+auto_fail_on_critical_defects = true  # v2.200.0 feature
+
+# Baseline tracking for regression detection
+[tdg.baseline]
+path = ".pmat/baseline.json"
+auto_update = false  # Manual updates only for intentional changes
+track_history = true
+history_path = ".pmat/history/"
+
+# Mutation Testing Configuration
+[mutation]
+enabled = true
+timeout_seconds = 120
+parallel = true
+operators = [
+    "arithmetic",
+    "logical",
+    "relational",
+    "boundary",
+    "statement",
+    "loop",
+    "assignment",
+    "return"
+]
+
+# Target paths
+include_paths = ["src/"]
+exclude_paths = ["src/bin/", "xtask/"]
+
+# Test command
+test_command = "cargo test --all-features"
+
+# Semantic Search Configuration
+[semantic_search]
+enabled = true
+embedding_model = "all-MiniLM-L6-v2"  # Fast, lightweight
+index_path = ".pmat/embeddings/"
+auto_sync = true  # Keep embeddings up to date
+
+# Index these paths
+include_paths = ["src/", "tests/", "benches/", "examples/"]
+exclude_paths = ["target/", "xtask/"]
+
+# Documentation Validation (Sprint 38 - v2.195.0+)
+[documentation]
+validate_readme = true
+validate_claude_md = true
+detect_hallucinations = true
+detect_broken_references = true
+detect_404_links = true
+fail_on_contradiction = true
+
+# Deep context for validation
+deep_context_path = "deep_context.md"
+
+# Target documents
+targets = ["README.md", "CLAUDE.md", "book/src/**/*.md"]
+
+# Quality Gates (EXTREME TDD enforcement)
+[quality_gates]
+# Pre-commit hooks
+run_on_commit = true
+block_on_failure = true
+
+# Gates to run
+[quality_gates.gates]
+clippy = { enabled = true, strict = true }
+rustfmt = { enabled = true }
+tests = { enabled = true, timeout = 300 }
+coverage = { enabled = true, min = 90.0 }
+complexity = { enabled = true, max_cyclomatic = 22, max_cognitive = 17 }
+satd = { enabled = true, max = 0 }
+mutation = { enabled = false }  # Too slow for pre-commit (use in CI)
+tdg = { enabled = true, min_grade = "B+" }
+defects = { enabled = true, fail_on_unwrap = true }
+
+# Workflow Management (v2.198.0 - Issue #75)
+[workflow]
+enabled = true
+backend = "hybrid"  # GitHub Issues + YAML
+github_repo = "paiml/trueno"
+local_storage = ".pmat/work/"
+
+# Pre-commit hook for commit messages
+enforce_commit_format = true
+commit_format = "^(feat|fix|docs|style|refactor|perf|test|chore)(\(.+\))?: .{10,}"
+
+# Automatic CHANGELOG.md updates
+auto_changelog = true
+changelog_path = "CHANGELOG.md"
+changelog_format = "keep-a-changelog"
+
+# Rust-Specific Configuration
+[rust]
+# Cargo features to test
+default_features = ["parallel", "gpu"]
+all_features = true
+
+# MSRV (Minimum Supported Rust Version)
+msrv = "1.70.0"
+
+# Lints (workspace-level in Cargo.toml)
+enforce_workspace_lints = true
+
+# Documentation
+require_rustdoc = true
+rustdoc_coverage_min = 100.0  # 100% public API documentation
+
+# Benchmarking
+require_benchmarks = true
+benchmark_framework = "criterion"
+
+# Toyota Way Principles (PMAT dogfooding)
+[toyota_way]
+enable_kaizen = true  # Continuous improvement
+enable_jidoka = true  # Built-in quality (automated gates)
+enable_genchi_genbutsu = true  # Go and see (direct AST analysis)
+enable_mcp_first_dogfooding = true  # MCP tools for Claude integration
+
+# Kaizen cycle enforcement
+kaizen_cycle_days = 7  # Weekly quality reviews
+kaizen_metrics = ["coverage", "mutation_score", "tdg_grade", "repo_score"]
+
+# Jidoka automation
+jidoka_pre_commit = true
+jidoka_pre_push = false  # Too slow
+jidoka_ci = true
+
+# MCP Integration (19 tools available)
+[mcp]
+enabled = true
+server_port = 3000
+tools = [
+    "validate_documentation",
+    "check_claim",
+    "analyze_technical_debt",
+    "get_quality_recommendations",
+    "analyze",
+    "transform",
+    "validate",
+    "orchestrate",
+    "quality_gate",
+    "semantic_search",
+    "find_similar_code",
+    "cluster_code",
+    "analyze_topics",
+    "mutation_test"
+]
+
+# Paths Configuration
+[paths]
+root = "."
+source = "src/"
+tests = "tests/"
+benches = "benches/"
+docs = "book/"
+examples = "examples/"
+xtask = "xtask/"
+
+# Exclusions
+exclude = [
+    "target/",
+    ".git/",
+    "node_modules/",
+    ".kaizen/",
+    ".pmat/",
+    "*.rlib",
+    "*.so",
+    "*.dylib",
+    "*.dll"
+]
+
+# Reporting Configuration
+[reporting]
+format = "markdown"  # markdown | json | junit | html
+output_dir = "target/pmat-reports/"
+verbose = true
+include_recommendations = true
+include_trends = true
+
+# CI/CD Integration
+[ci]
+enabled = true
+platform = "github_actions"
+fail_fast = false  # Run all checks even if one fails
+
+# Quality gates for CI (stricter than pre-commit)
+[ci.gates]
+clippy = { enabled = true, strict = true }
+rustfmt = { enabled = true }
+tests = { enabled = true, timeout = 600 }
+coverage = { enabled = true, min = 90.0 }
+mutation = { enabled = true, min_score = 80.0 }
+tdg = { enabled = true, min_grade = "B+" }
+repo_score = { enabled = true, min_score = 90 }
+rust_project_score = { enabled = true, min_score = 150 }
+security_audit = { enabled = true }
+defects = { enabled = true, fail_on_unwrap = true }
+documentation = { enabled = true, fail_on_contradiction = true }
+
+# Performance tracking
+benchmark_regression_check = true
+max_regression_percentage = 5.0  # Block >5% slowdown
+
+# Certeza Framework Integration (Tiered TDD-X)
+[certeza]
+enabled = true
+tiered_workflow = true
+
+# Tier 1: ON-SAVE (sub-second feedback)
+[certeza.tier1]
+targets = ["check", "lint-fast", "test-lib"]
+max_duration_seconds = 5
+
+# Tier 2: ON-COMMIT (1-5 minutes)
+[certeza.tier2]
+targets = ["fmt", "clippy-full", "test-all", "coverage", "pmat-tdg", "satd-check"]
+max_duration_seconds = 300
+
+# Tier 3: ON-MERGE/NIGHTLY (hours)
+[certeza.tier3]
+targets = ["tier2", "mutation", "security-audit", "bench", "pmat-repo-score"]
+max_duration_seconds = 7200
+
+# Renacer Integration (Profiling & Tracing)
+[renacer]
+enabled = true
+version = "0.5.0"
+
+# Profiling targets
+profile_benchmarks = true
+profile_tests = false  # Too noisy
+
+# OpenTelemetry (OTLP)
+otlp_enabled = true
+otlp_endpoint = "http://localhost:4317"
+otlp_service_name = "trueno"
+
+# Flamegraph generation
+flamegraph_enabled = true
+flamegraph_output = "target/profiling/flame.svg"
+
+# Advanced Features (v2.200.0+)
+[advanced]
+# Red team hallucination detection
+red_team_enabled = true
+
+# Time-travel debugging (Sprint 74)
+time_travel_debug = false  # Experimental
+
+# Organizational intelligence
+org_patterns = false  # Not applicable for single repo
+
+# Deep WASM analysis
+deep_wasm = false  # Future feature for WASM backend
+
+# Self-diagnostics
+[diagnostics]
+enabled = true
+log_level = "info"  # error | warn | info | debug | trace
+log_path = "target/pmat.log"
+
+# Version tracking
+pmat_version = "2.200.0"
+last_updated = "2025-11-21"

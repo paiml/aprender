@@ -1,0 +1,56 @@
+# O(1) Quality Gate Metric Thresholds for Trueno
+# Spec: Phase 2 O(1) Quality Gates with hash-based caching
+# Pattern: Toyota Way - Jidoka (MEAN mode: warnings = errors)
+
+[thresholds]
+# Hard limits (block commits) - based on Trueno's Makefile tier targets
+lint_max_ms = 30_000              # 30s (Tier 1 target: sub-second lint-fast)
+lint_full_max_ms = 60_000         # 60s (Tier 2 target: full clippy)
+test_tier1_max_ms = 5_000         # 5s (Tier 1 target: sub-second focused tests)
+test_tier2_max_ms = 300_000       # 5min (Tier 2 target: 1-5min full tests)
+coverage_max_ms = 600_000         # 10min (Tier 2 coverage analysis)
+bench_max_ms = 600_000            # 10min (Tier 3 benchmarks)
+binary_max_bytes = 5_000_000      # 5MB (Trueno is a lean SIMD library)
+
+# Soft limits (warnings only) - Tier 3 targets
+build_release_max_ms = 180_000    # 3min (typical Rust build time)
+mutation_test_max_ms = 3_600_000  # 60min (Tier 3 mutation testing)
+fuzz_test_max_ms = 600_000        # 10min (Tier 3 fuzzing)
+
+# SIMD-specific thresholds
+avx512_bench_max_ms = 120_000     # 2min (AVX512 benchmarks)
+python_compare_max_ms = 180_000   # 3min (Python framework comparison)
+
+[staleness]
+# Metrics older than this trigger warnings
+max_age_days = 7
+
+[enforcement]
+# Pre-commit behavior (MEAN mode = strict)
+fail_on_stale_metrics = false     # Warn, don't block
+fail_on_missing_metrics = false   # Allow commits if no cache
+fail_on_threshold_violation = true # Block commits on violations (MEAN mode)
+
+[trend_analysis]
+# Track metrics for Kaizen (continuous improvement)
+enabled = true
+retention_days = 90
+alert_on_regression = true
+regression_threshold_pct = 10.0   # Alert if >10% slower
+
+# Trueno-specific quality gates
+[quality_gates]
+# EXTREME TDD targets (certeza-inspired, 97.7% mutation score)
+min_coverage_pct = 85.0           # Target: ≥85% line coverage
+min_mutation_score_pct = 80.0     # Target: ≥80% mutation score (currently 97.7%!)
+max_cyclomatic_complexity = 15    # Target: ≤15 per function (SIMD code can be complex)
+min_tdg_grade = "B+"              # Target: B+ or better (≥85)
+max_unsafe_blocks = 350           # Current: 334 (SIMD safety-critical)
+max_unwrap_calls = 30             # Current: 25 (nearly unwrap-free!)
+
+# Performance budgets (SIMD targets)
+[performance]
+# PyTorch/NumPy parity targets (from specification)
+min_avx512_speedup = 2.0          # 2x faster than baseline
+min_python_speedup = 10.0         # 10x faster than NumPy
+max_regression_pct = 5.0          # ≤5% performance regression allowed

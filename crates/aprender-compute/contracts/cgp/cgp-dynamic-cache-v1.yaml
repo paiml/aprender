@@ -1,0 +1,78 @@
+# Dynamic Cache Blocking Contract (P1c, Appendix E)
+# Sovereign: reads /sys/ CPU topology, computes MC/KC/NC at runtime.
+# Contract-first: this YAML defines the behavior BEFORE implementation.
+kind: PerformanceContract
+name: cgp-dynamic-cache-blocking
+version: "1.0.0"
+kernel: gemm_blis_avx512
+
+# Specification
+specification:
+  description: |
+    GEMM BLIS blocking parameters (MC, KC, NC) must be computed from
+    actual CPU cache topology at runtime, not hardcoded. This adapts
+    trueno to any x86_64 CPU without recompilation.
+
+  source: "/sys/devices/system/cpu/cpu0/cache/index{0,2,3}/{size,type,ways_of_associativity}"
+
+  invariants:
+    - name: C-CACHE-001
+      description: "MC * KC * sizeof(f32) must fit in L2 cache"
+      check: "mc * kc * 4 <= l2_size_bytes"
+
+    - name: C-CACHE-002
+      description: "KC * NR * sizeof(f32) must fit in L1 data cache"
+      check: "kc * nr * 4 <= l1d_size_bytes"
+
+    - name: C-CACHE-003
+      description: "KC * NC * sizeof(f32) should fit in L3 (or half L3 for shared)"
+      check: "kc * nc * 4 <= l3_size_bytes / 2"
+
+    - name: C-CACHE-004
+      description: "MC must be a multiple of MR"
+      check: "mc % mr == 0"
+
+    - name: C-CACHE-005
+      description: "NC must be a multiple of NR"
+      check: "nc % nr == 0"
+
+    - name: C-CACHE-006
+      description: "Fallback to hardcoded defaults if /sys/ not readable"
+      check: "on_error_use_defaults(mc=96, kc=256, nc=4096)"
+
+# Validation on Threadripper 7960X (32K L1D, 1MB L2, 32MB L3)
+reference_hardware:
+  cpu: "AMD Ryzen Threadripper 7960X"
+  l1d_bytes: 32768
+  l2_bytes: 1048576
+  l3_bytes: 33554432
+
+expected_blocking:
+  mr: 8
+  nr: 32
+  # KC: L1-constrained. kc * nr * 4 <= 32768 → kc <= 256. Use 256.
+  kc: 256
+  # MC: L2-constrained. mc * kc * 4 <= 1048576 → mc <= 1024. Cap at ~8*MR=64..256.
+  mc_min: 64
+  mc_max: 256
+  # NC: L3-constrained. kc * nc * 4 <= 16777216 → nc <= 16384. Cap at 4096.
+  nc: 4096
+
+bounds:
+  # Must not regress vs hardcoded baseline
+  - size: 1024
+    max_regression_pct: 5
+    note: "Dynamic must be within 5% of hardcoded on reference hardware"
+
+falsification:
+  - name: FALSIFY-CACHE-001
+    description: "detect_cache_topology returns valid sizes on Linux x86_64"
+    check: "l1d > 0 && l2 > 0 && l3 > 0"
+
+  - name: FALSIFY-CACHE-002
+    description: "computed MC * KC * 4 fits in L2"
+    check: "mc * kc * 4 <= l2"
+
+  - name: FALSIFY-CACHE-003
+    description: "GEMM 1024 with dynamic blocking >= 95% of hardcoded"
+    check: "dynamic_gflops >= 0.95 * hardcoded_gflops"

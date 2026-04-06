@@ -1,0 +1,92 @@
+# CPU Fused Attention Contract (FlashAttention-style [64])
+# Contract-first: defines interface and bounds before implementation.
+#
+# For autoregressive decode (M=1): Q(1,D) @ K(S,D)^T → softmax → @ V(S,D)
+# where D=head_dim, S=seq_len.
+#
+# Fused kernel keeps Q in registers, streams K+V in tiles of B_s rows,
+# computes running online softmax [64, Algorithm 1], accumulates output.
+# Eliminates intermediate scores buffer and 3→1 function call overhead.
+#
+# Grounding:
+#   [64] Dao et al., "FlashAttention," NeurIPS 2022, arXiv:2205.14135
+#   [61] Ofenbeck et al., "Applying the Roofline Model," IEEE ISPASS 2014
+#   [4]  Williams et al., "Roofline Model," CACM 2009
+kind: PerformanceContract
+name: cgp-flash-attn-cpu
+version: "1.0.0"
+kernel: fused_attention_decode_avx2
+
+description: |
+  Fused single-query attention for autoregressive decode.
+  Computes: output = softmax(Q @ K^T / sqrt(D)) @ V
+  in a single pass over the KV cache, without materializing
+  the (1, seq_len) attention scores to memory.
+
+interface:
+  function: "fused_attention_decode(q, k_cache, v_cache, head_dim, seq_len, output)"
+  layout: |
+    q:       &[f32; head_dim]           — query vector
+    k_cache: &[f32; seq_len * head_dim] — row-major K cache
+    v_cache: &[f32; seq_len * head_dim] — row-major V cache
+    output:  &mut [f32; head_dim]       — attention output
+
+hardware:
+  cpu: "AMD Ryzen Threadripper 7960X"
+  isa: "AVX2+FMA (not AVX-512 — GEMV is bandwidth-bound [60])"
+
+bounds:
+  # Decode attention: head_dim=128, various seq_len
+  - head_dim: 128
+    seq_len: 512
+    unfused_us: 3.8    # Q@K^T + softmax + scores@V (measured)
+    fused_target_us: 3.0
+    min_speedup: 1.2
+    note: "Small seq_len: function call overhead is ~20% of total."
+
+  - head_dim: 128
+    seq_len: 2048
+    unfused_us: 15.0
+    fused_target_us: 12.0
+    min_speedup: 1.2
+    note: "Medium seq_len: score buffer elimination saves ~24KB traffic."
+
+  - head_dim: 128
+    seq_len: 8192
+    unfused_us: 60.0
+    fused_target_us: 45.0
+    min_speedup: 1.3
+    note: "Long seq_len: score buffer = 32KB → L1 eviction avoidance."
+
+analysis:
+  roofline: |
+    Fused decode attention is bandwidth-bound [61]:
+      FLOPs = 2*D*S (Q@K^T) + 5*S (softmax) + 2*D*S (scores@V) ≈ 4*D*S
+      Bytes = D*S*4 (K) + D*S*4 (V) + D*4 (Q+output) ≈ 8*D*S
+      AI = 4*D*S / 8*D*S = 0.5 FLOP/byte
+    This confirms GEMV-class bandwidth-bound behavior.
+    Speedup comes from eliminating intermediate traffic, not compute.
+  online_softmax: |
+    Uses Milakov & Gimelshein's online softmax algorithm [64, Alg. 1]:
+      For each tile t of K:
+        scores_t = Q @ K_t^T / sqrt(D)
+        m_new = max(m_old, max(scores_t))
+        correction = exp(m_old - m_new)
+        l_new = correction * l_old + sum(exp(scores_t - m_new))
+        output = correction * output + exp(scores_t - m_new) @ V_t
+      Final: output /= l_new
+    No scores array needed — everything in registers.
+
+falsification:
+  - name: FALSIFY-FLASH-ATTN-001
+    description: "Fused output matches unfused reference within f32 tolerance"
+    check: "max_diff(fused, unfused) < 1e-4"
+  - name: FALSIFY-FLASH-ATTN-002
+    description: "Fused kernel must not allocate (no Vec, no Box)"
+    check: "zero heap allocations during fused_attention_decode"
+  - name: FALSIFY-FLASH-ATTN-003
+    description: "Fused must be >= 1.1x faster than unfused at seq_len >= 512"
+    check: "fused_time < unfused_time * 0.91"
+  - name: FALSIFY-FLASH-ATTN-004
+    description: "Numerical stability: softmax sums to 1.0 within tolerance"
+    check: "abs(sum(softmax_weights) - 1.0) < 1e-5"

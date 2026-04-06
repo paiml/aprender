@@ -1,0 +1,102 @@
+# Performance targets contract — shipping blockers (updated 2026-04-05)
+# Target: competitive with best pure-Rust and C BLAS implementations
+#
+# Theory grounding:
+#   [4]  Williams et al. 2009 — Roofline model (compute vs memory bound)
+#   [44] Van Zee & van de Geijn 2015 — BLIS framework
+#   [45] Goto & van de Geijn 2008 — Anatomy of GEMM
+#   [60] Lemire 2018 — AVX-512 frequency throttling
+#   [61] Ofenbeck et al. 2014 — Roofline model application
+#   [62] Low et al. 2016 — BLIS analytical cache blocking model
+#   [63] Van Zee et al. 2016 — BLIS parallel portability
+#   [64] Dao et al. 2022 — FlashAttention (IO-aware attention)
+#   [65] Kim et al. 2024 — SqueezeLLM (FMA dependency chain analysis)
+kind: PerformanceContract
+name: cgp-perf-targets
+version: "3.0.0"
+kernel: all_operations
+
+bounds:
+  # CPU GEMM 1024 1T vs NumPy/OpenBLAS (measured 2026-04-05, post SIMD B-packing)
+  - operation: cpu_gemm_1024_1t
+    competitor: numpy_openblas
+    trueno_ms: 15.39
+    trueno_gflops: 140
+    competitor_ms: 16.65
+    competitor_gflops: 129
+    ratio: 1.09
+    status: PASS
+    note: "trueno AVX-512 beats NumPy/OpenBLAS Haswell AVX2 by 9% at 1T."
+
+  # CPU GEMM 1024 1T vs faer (criterion, 2026-04-05 post SIMD B-packing)
+  - operation: cpu_gemm_1024_1t
+    competitor: faer_024
+    trueno_ms: 15.39
+    trueno_gflops: 140
+    competitor_ms: 15.11
+    competitor_gflops: 142
+    ratio: 0.98
+    status: PASS
+    note: "2% gap (was 12%). SIMD B-packing closed most of the delta."
+
+  # CPU GEMM 1024 1T vs ndarray (criterion, 2026-04-05 post SIMD B-packing)
+  - operation: cpu_gemm_1024_1t
+    competitor: ndarray_017
+    trueno_ms: 15.39
+    competitor_ms: 18.01
+    ratio: 1.17
+    status: PASS
+
+  # CPU GEMM 1024 parallel vs NumPy/OpenBLAS (measured 2026-04-05)
+  # Updated: 8T cap. OpenBLAS 8T measured at 763 GFLOPS (Haswell AVX2 codegen).
+  - operation: cpu_gemm_1024_parallel
+    competitor: numpy_openblas
+    trueno_gflops: 628
+    trueno_threads: 8
+    competitor_gflops: 763
+    competitor_threads: 8
+    ratio: 0.82
+    status: KNOWN_GAP
+    note: "OpenBLAS hand-tuned ASM achieves higher IPC even with AVX2 (256-bit).
+      trueno AVX-512 8T=628 vs OpenBLAS AVX2 8T=763. Gap is per-thread IPC, not width."
+
+  # Q4K GEMV composite tokens/sec (measured 2026-04-05)
+  - operation: q4k_gemv_composite
+    min_tok_per_sec: 10.0
+    measured_tok_per_sec: 14.6
+    status: PASS
+    note: "Llama-7B-like, 192 GEMVs/token, 4 layer sizes averaged."
+
+  # GPU FP32 GEMM — not expected to beat cuBLAS
+  - operation: gpu_gemm_fp32
+    competitor: cublas
+    cublas_tflops: 43.9
+    trueno_ptx_tflops: 11.6
+    ratio: 0.26
+    goal_ratio: 0.50
+    status: KNOWN_GAP
+
+  # Empirical roofline — single-core AVX-512 (measured 2026-04-05)
+  - operation: empirical_roofline_avx512
+    measured_peak_gflops: 152.5
+    theoretical_peak_gflops: 224
+    efficiency_pct: 68
+    measured_bandwidth_gbps: 20.4
+    status: REFERENCE
+
+falsification:
+  - name: FALSIFY-CGP-090
+    description: "CPU GEMM must achieve > 500 GFLOPS parallel at 1024"
+    check: "gemm_1024_parallel_gflops > 500"
+  - name: FALSIFY-CGP-091
+    description: "CPU GEMM must be >= 1.0x ndarray at 1024 1T (currently 1.17x)"
+    check: "gemm_1024_1t_ratio_vs_ndarray >= 1.0"
+  - name: FALSIFY-CGP-092
+    description: "Q4K composite tokens/sec >= 10"
+    check: "q4k_composite_tok_per_sec >= 10"
+  - name: FALSIFY-CGP-093
+    description: "CPU GEMM 1T must achieve >= 120 GFLOPS at 1024 (currently 140)"
+    check: "gemm_1024_1t_gflops >= 120"
+  - name: FALSIFY-CGP-094
+    description: "CPU GEMM 1T must be >= 0.90x faer at 1024 (currently 0.98x)"
+    check: "gemm_1024_1t_ratio_vs_faer >= 0.90"
