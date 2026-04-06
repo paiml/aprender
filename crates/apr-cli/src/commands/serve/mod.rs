@@ -72,7 +72,7 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     println!();
     println!("{}", "Endpoints:".green().bold());
-    println!("  POST /predict        - Model prediction (APR)");
+    println!("  POST /v1/predict     - Model prediction (APR)");
     println!("  POST /generate       - Text generation (GGUF)");
     println!("  GET  /health         - Health check");
     if config.metrics {
