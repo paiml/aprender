@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Distributed matmul partitioning contract for repartir"
+  crate: "repartir"
+  references:
+    - "Cannon, A Cellular Computer to Implement the Kalman Filter Algorithm, 1969"
+
+equations:
+  partition_correctness:
+    formula: "C = sum(C_i) where C_i = A_i × B for partition i"
+    domain: "A ∈ R^{m×k}, B ∈ R^{k×n}"
+    invariants:
+      - "Sum of partial results equals full matmul"
+
+proof_obligations:
+  - type: equivalence
+    property: "Distributed matmul equals sequential"
+    formal: "distributed_matmul(A,B) = sequential_matmul(A,B)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-MATMUL-001
+    rule: "Partition correctness"
+    test: "test_derive_node_name"
+    prediction: "verified"
+    if_fails: "Contract violation — partition sum diverges"
+
+kani_harnesses:
+  - id: KANI-MATMUL-001
+    obligation: PO-MATMUL-001
+    property: "Matmul partition correctness"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_matmul_partition
+
+qa_gate:
+  id: QA-MATMUL
+  name: "matmul partition contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: ["test_derive_node_name"]

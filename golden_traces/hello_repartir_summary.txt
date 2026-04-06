@@ -1,0 +1,63 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[2m2025-11-23T13:55:27.173089Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler initialized with capacity 100
+[2m2025-11-23T13:55:27.173366Z[0m [32m INFO[0m [2mrepartir::executor::cpu[0m[2m:[0m CpuExecutor initialized with 48 cores
+[2m2025-11-23T13:55:27.173386Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Initializing pool with 4 CPU workers
+✓ Pool initialized with 4 workers
+
+Example 1: Running echo command
+✓ Output: Hello from Repartir!
+
+Example 2: Running shell command
+✓ Output:
+  Pure Rust
+  Zero C/C++
+  Iron Lotus Quality
+
+Example 3: Using environment variables
+  ✓ QUALITY_LEVEL=iron-lotus
+  ✓ REPARTIR_MODE=sovereign
+
+Example 4: Handling command failure
+✓ Caught expected failure:
+  Exit code: 42
+
+Example 5: Parallel task execution
+  ✓ Completed 10 tasks in 322.178455ms
+  ✓ Parallel speedup achieved!
+  ✓ 10 / 10 tasks succeeded
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+All examples completed! Shutting down pool...
+[2m2025-11-23T13:55:27.552052Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Shutting down pool
+[2m2025-11-23T13:55:27.552086Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler cleared
+✓ Pool shutdown complete
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 98.58    0.376723        2652       142         1 futex
+  0.19    0.000713           7        97           rt_sigprocmask
+  0.18    0.000670          10        65           mmap
+  0.21    0.000799          14        57           write
+  0.16    0.000622          11        55           mprotect
+  0.29    0.001114          23        48           clone3
+  0.10    0.000370          11        31           munmap
+  0.06    0.000229          13        17           getrandom
+  0.05    0.000180          11        16         7 openat
+  0.06    0.000234          15        15           read
+  0.02    0.000076           7        10           unknown
+  0.02    0.000069           7         9           close
+  0.02    0.000086          14         6           brk
+  0.01    0.000040           6         6           rt_sigaction
+  0.01    0.000036           7         5           newfstatat
+  0.01    0.000028           7         4           pread64
+  0.01    0.000037          12         3           statx
+  0.01    0.000021           7         3           sigaltstack
+  0.00    0.000014           7         2           fcntl
+  0.00    0.000015           7         2         1 arch_prctl
+  0.00    0.000014           7         2           lseek
+  0.00    0.000007           7         1           set_tid_address
+  0.00    0.000008           8         1           poll
+  0.00    0.000007           7         1           set_robust_list
+  0.00    0.000009           9         1         1 access
+  0.00    0.000017          17         1           socketpair
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.382138         636       600        10 total

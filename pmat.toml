@@ -1,0 +1,43 @@
+# PMAT Configuration for Repartir
+# Quality enforcement focused on core library (src/), not examples/binaries
+
+[quality-gate]
+# Complexity thresholds
+max_cyclomatic_complexity = 30
+max_cognitive_complexity = 25
+
+# Test coverage minimum
+min_test_coverage = 80
+
+# SATD (Self-Admitted Technical Debt) threshold
+max_satd_comments = 5
+
+# Task ID pattern for commit messages
+task_id_pattern = "PMAT-[0-9]{4}"
+
+[analysis]
+# Exclude examples and binaries from complexity analysis
+# These are demonstration files and may legitimately have higher complexity
+exclude_paths = [
+    "examples/**",
+    "src/bin/**",
+    "benches/**",
+    "tests/**"
+]
+
+# Focus quality enforcement on core library code
+include_paths = [
+    "src/**"
+]
+
+[complexity]
+# Core library should maintain low complexity
+max_cyclomatic = 15
+max_cognitive = 20
+
+# But exclude demonstration code
+exclude = [
+    "examples/**",
+    "src/bin/**",
+    "benches/**"
+]

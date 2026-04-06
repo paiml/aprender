@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Distributed checkpoint contract for repartir"
+  crate: "repartir"
+  references:
+    - "Chandy & Lamport, Distributed Snapshots, TOCS 1985"
+
+equations:
+  checkpoint_consistency:
+    formula: "restore(checkpoint(state)) = state"
+    domain: "state ∈ JobState"
+    invariants:
+      - "Checkpoint is consistent across all workers"
+
+proof_obligations:
+  - type: roundtrip
+    property: "Checkpoint roundtrip fidelity"
+    formal: "|restore(save(s)) - s| = 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CKPT-001
+    rule: "Checkpoint roundtrip"
+    test: "test_derive_node_name"
+    prediction: "verified"
+    if_fails: "Contract violation — checkpoint data lost"
+
+kani_harnesses:
+  - id: KANI-CKPT-001
+    obligation: PO-CKPT-001
+    property: "Checkpoint fidelity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_checkpoint
+
+qa_gate:
+  id: QA-CKPT
+  name: "checkpoint contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: ["test_derive_node_name"]

@@ -1,0 +1,18 @@
+# Mutation Testing Configuration (Iron Lotus Tier 3)
+# Target: ≥80% mutation score per certeza framework
+
+# Exclude test files from mutation (they're not production code)
+exclude_files = [
+    "tests/**",
+    "benches/**",
+    "examples/**",
+]
+
+# Timeout multiplier (mutants should fail fast)
+timeout_multiplier = 2.0
+
+# Minimum test pass rate to avoid flaky tests
+minimum_test_pass_rate = 0.95
+
+# Run tests in parallel for speed
+jobs = 0  # Use all available CPU cores
