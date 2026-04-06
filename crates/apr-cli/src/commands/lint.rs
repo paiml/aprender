@@ -13,7 +13,8 @@ use colored::Colorize;
 use std::path::Path;
 
 /// Run the lint command
-pub(crate) fn run(file: &Path, json: bool) -> Result<()> {
+// GH-685: added quiet param — suppress WARN/INFO when quiet=true
+pub(crate) fn run(file: &Path, json: bool, quiet: bool) -> Result<()> {
     contract_pre_apr_model_validity!();
     // Validate input exists
     if !file.exists() {
@@ -32,8 +33,8 @@ pub(crate) fn run(file: &Path, json: bool) -> Result<()> {
     println!("  Checking: {}", file.display().to_string().cyan());
     println!();
 
-    // Display results
-    display_report(&report);
+    // Display results (GH-685: quiet filters to errors only)
+    display_report(&report, quiet);
 
     // GH-601: Exit non-zero when report says "Lint failed" — exit code must match display.
     // report.passed() returns false when error_count > 0 OR warn_count > 0.
@@ -121,16 +122,21 @@ fn print_summary(report: &LintReport) {
 }
 
 /// Display lint report
-fn display_report(report: &LintReport) {
+fn display_report(report: &LintReport, quiet: bool) {
     if report.issues.is_empty() {
-        println!("  {}", output::badge_pass("No issues found"));
-        println!();
+        if !quiet {
+            println!("  {}", output::badge_pass("No issues found"));
+            println!();
+        }
         return;
     }
 
-    // Build table of all issues
+    // Build table of issues (GH-685: quiet shows only errors)
     let mut rows: Vec<Vec<String>> = Vec::new();
     for issue in &report.issues {
+        if quiet && issue.level != LintLevel::Error {
+            continue;
+        }
         let badge = level_badge(issue.level);
         let suggestion = issue.suggestion.as_deref().unwrap_or("").to_string();
         rows.push(vec![

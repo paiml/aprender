@@ -278,7 +278,7 @@ fn dispatch_smoke_gate(
         "lint" => {
             let p = path.to_path_buf();
             run_gate(name, display, timeout, verbose, move || {
-                lint::run(&p, false)
+                lint::run(&p, false, false)
             })
         }
         "debug" => {
