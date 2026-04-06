@@ -34,8 +34,8 @@
 #       workflow, containerized, 20/20 repos GREEN.
 kind: MigrationContract
 name: cgp-monorepo-consolidation
-version: "1.1.0"
-scope: "paiml/aprender monorepo (20 repos → 1, 63 workspace crates)"
+version: "1.2.0"
+scope: "paiml/aprender monorepo (20 repos → 1, 68 active workspace crates)"
 
 description: |
   Provable contract for consolidating 20 PAIML repositories into a single

@@ -2,7 +2,7 @@
 
 **Version**: 1.7
 **Date**: 2026-04-06
-**Status**: IN PROGRESS — 63/72 crates active, Phase 3 wiring 90% complete
+**Status**: IN PROGRESS — 68/72 crates active, Phase 3 complete
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
@@ -151,12 +151,12 @@ Every successful large Rust project uses this pattern:
 | Phase 2f: 14 satellites | DONE | 49 active members, 23 sub-crates pending wiring |
 | Phase 3a: Wire zram deps | DONE | 5 zram crates enabled (54 members) |
 | Phase 3b: Wire presentar deps | DONE | 9 presentar crates enabled (63 members) |
-| Phase 3c: Wire test/probar deps | TODO | 8 test crates + viz-ttop + canary remaining |
+| Phase 3c: Wire test/probar deps | DONE | 5 test crates + 12 renamed satellites (68 members) |
 | Phase 4: Publish + shims | TODO | |
 | Phase 5: Archive old repos | TODO | |
 
-**Current count**: 63 active workspace members, 72 total crates in repo.
-**Excluded**: 8 test/probar sub-crates + viz-ttop + train-canary (pending dep wiring).
+**Current count**: 68 active workspace members, 0 with old names.
+**Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).
 
 ---
 
