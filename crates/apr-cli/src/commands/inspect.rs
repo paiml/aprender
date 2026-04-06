@@ -135,7 +135,8 @@ pub(crate) fn run(
         Ok(
             aprender::format::rosetta::FormatType::Gguf
             | aprender::format::rosetta::FormatType::SafeTensors,
-        ) => run_rosetta_inspect(path, show_vocab, json_output),
+        // GH-685: forward show_weights to rosetta path (was dropped like --vocab)
+        ) => run_rosetta_inspect(path, show_vocab, show_weights, json_output),
         _ => {
             // Default: APR v2 inspect (existing path)
             let file = File::open(path)?;
@@ -318,7 +319,12 @@ fn output_rosetta_vocab(report: &aprender::format::rosetta::InspectionReport) {
 }
 
 // Contract: apr-inspect-flags-v1 F-INSPECT-FLAGS-001
-fn run_rosetta_inspect(path: &Path, show_vocab: bool, json_output: bool) -> Result<(), CliError> {
+fn run_rosetta_inspect(
+    path: &Path,
+    show_vocab: bool,
+    show_weights: bool,
+    json_output: bool,
+) -> Result<(), CliError> {
     use aprender::format::rosetta::RosettaStone;
 
     let rosetta = RosettaStone::new();
@@ -337,7 +343,55 @@ fn run_rosetta_inspect(path: &Path, show_vocab: bool, json_output: bool) -> Resu
         output_rosetta_vocab(&report);
     }
 
+    // GH-685: --weights shows per-tensor statistics
+    if show_weights {
+        output_rosetta_weights(&report);
+    }
+
     Ok(())
+}
+
+/// GH-685: Display per-tensor weight statistics from GGUF/SafeTensors.
+fn output_rosetta_weights(report: &aprender::format::rosetta::InspectionReport) {
+    output::subheader("Weight Statistics");
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for t in &report.tensors {
+        let elements: usize = t.shape.iter().product();
+        rows.push(vec![
+            t.name.clone(),
+            format!("{}", output::dtype_color(&t.dtype)),
+            format!("{elements}"),
+            output::format_size(t.size_bytes as u64),
+        ]);
+    }
+    if rows.len() > 12 {
+        let total = rows.len();
+        let mut display_rows: Vec<Vec<String>> = rows[..5].to_vec();
+        display_rows.push(vec![
+            format!("... {} more ...", total - 10),
+            String::new(),
+            String::new(),
+            String::new(),
+        ]);
+        display_rows.extend_from_slice(&rows[total - 5..]);
+        println!(
+            "{}",
+            output::table(&["Tensor", "DType", "Elements", "Size"], &display_rows)
+        );
+    } else {
+        println!(
+            "{}",
+            output::table(&["Tensor", "DType", "Elements", "Size"], &rows)
+        );
+    }
+    let total_elements: usize = report.tensors.iter().map(|t| t.shape.iter().product::<usize>()).sum();
+    let total_bytes: u64 = report.tensors.iter().map(|t| t.size_bytes as u64).sum();
+    println!(
+        "  Total: {} tensors, {} elements, {}",
+        report.tensors.len(),
+        output::count_fmt(total_elements),
+        output::format_size(total_bytes)
+    );
 }
 
 // ============================================================================
