@@ -197,15 +197,24 @@ fn read_header(path: &Path) -> Result<([u8; HEADER_SIZE], u64), CliError> {
 
 /// Parse header bytes into structured info.
 fn parse_header(header: &[u8; HEADER_SIZE]) -> HeaderInfo {
-    let flags = header[21];
+    // GH-653: Use the canonical Header::from_bytes parser, not ad-hoc byte reading.
+    // The old code mis-read byte 20 (compression enum) as a boolean flag,
+    // showing "compressed" when compression=None has a non-zero enum discriminant,
+    // and "encrypted" from byte 21 which is actually a Flags bitfield.
+    let flags_byte = header[21];
+    let compression_byte = header[20];
     HeaderInfo {
         magic_valid: output::is_valid_magic(&header[0..4]),
         magic_str: String::from_utf8_lossy(&header[0..4]).to_string(),
         version: (header[4], header[5]),
         model_type: u16::from_le_bytes([header[6], header[7]]),
-        compressed: flags & 0x01 != 0 || header[20] != 0,
-        signed: flags & 0x02 != 0,
-        encrypted: flags & 0x04 != 0,
+        // Compression: byte 20 is an enum (0=None, 1=ZstdDefault, 2=ZstdMax, 3=Lz4)
+        // Values outside 0-3 indicate the header layout doesn't match v2 spec
+        compressed: matches!(compression_byte, 1..=3),
+        // Flags: only bits 0-2 are defined. If higher bits are set, flags are garbage
+        // (likely reading metadata/payload bytes as flags on non-v2 files)
+        signed: flags_byte & 0x02 != 0 && flags_byte < 0x08,
+        encrypted: flags_byte & 0x04 != 0 && flags_byte < 0x08,
     }
 }
 

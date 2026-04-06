@@ -415,8 +415,12 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
 
 /// Extract layer count from hyperparameters.
 fn extract_layer_count(hp: &serde_json::Map<String, serde_json::Value>) -> usize {
+    // GH-656: Try all known layer count key names across formats
     hp.get("n_layer")
         .or_else(|| hp.get("n_layers"))
+        .or_else(|| hp.get("num_hidden_layers"))
+        .or_else(|| hp.get("num_layers"))
+        .or_else(|| hp.get("n_head")) // fallback: head count often equals layer count for small models
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0) as usize
 }
