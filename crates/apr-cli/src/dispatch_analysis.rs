@@ -83,9 +83,17 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             tensor,
             threshold,
             json,
-        } => crate::error::resolve_model_path(file).and_then(|r| {
-            compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
-        }),
+        } => {
+            // GH-663: Reject compare-hf in --offline mode (requires HuggingFace download)
+            if cli.offline {
+                return Some(Err(crate::error::CliError::NetworkError(
+                    "Cannot run compare-hf in --offline mode (requires HuggingFace download).".to_string(),
+                )));
+            }
+            crate::error::resolve_model_path(file).and_then(|r| {
+                compare_hf::run(&r, hf, tensor.as_deref(), *threshold, *json || cli.json)
+            })
+        }
 
         ExtendedCommands::Hex {
             file,
