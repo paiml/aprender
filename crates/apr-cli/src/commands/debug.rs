@@ -65,10 +65,18 @@ pub(crate) fn run(
         if verbose {
             if let Ok(rosetta) = aprender::format::rosetta::RosettaStone::new().inspect(path) {
                 eprintln!();
-                eprintln!("  [verbose] {} metadata keys, {} tensors, {} bytes",
-                    rosetta.metadata.len(), rosetta.tensors.len(), rosetta.file_size);
+                eprintln!(
+                    "  [verbose] {} metadata keys, {} tensors, {} bytes",
+                    rosetta.metadata.len(),
+                    rosetta.tensors.len(),
+                    rosetta.file_size
+                );
                 for (k, v) in &rosetta.metadata {
-                    let display_v = if v.len() > 80 { format!("{}...", &v[..80]) } else { v.clone() };
+                    let display_v = if v.len() > 80 {
+                        format!("{}...", &v[..80])
+                    } else {
+                        v.clone()
+                    };
                     eprintln!("  [verbose] {k} = {display_v}");
                 }
             }

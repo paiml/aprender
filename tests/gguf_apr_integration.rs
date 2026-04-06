@@ -8,7 +8,12 @@
 fn gguf_magic_bytes_detected() {
     let gguf_header = b"GGUF\x03\x00\x00\x00"; // GGUF v3
     assert_eq!(&gguf_header[0..4], b"GGUF");
-    let version = u32::from_le_bytes([gguf_header[4], gguf_header[5], gguf_header[6], gguf_header[7]]);
+    let version = u32::from_le_bytes([
+        gguf_header[4],
+        gguf_header[5],
+        gguf_header[6],
+        gguf_header[7],
+    ]);
     assert_eq!(version, 3);
 }
 
