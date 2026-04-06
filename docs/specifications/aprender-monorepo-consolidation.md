@@ -2,12 +2,13 @@
 
 **Version**: 1.7
 **Date**: 2026-04-06
-**Status**: IN PROGRESS — 68/72 crates active, Phase 3 complete
+**Status**: IN PROGRESS — 68 crates active, Phase 4 (build verification) complete
 **Layout**: FLAT `crates/aprender-*` (Polars/Burn/Nushell pattern)
 **Priority**: P0 — Unblocks daily apr-cli releases
 **Author**: PAIML Team + Claude
-**Contract**: `contracts/cgp/cgp-monorepo-consolidation-v1.yaml`
-**Falsification**: 10 conditions (FALSIFY-MONO-001 through 010)
+**Contracts**: `contracts/cgp-monorepo-consolidation-v1.yaml`, `contracts/cgp-monorepo-build-v1.yaml`
+**Falsification**: 13 conditions (FALSIFY-MONO-001–013) + 7 build conditions (FALSIFY-BUILD-001–007)
+**Integration Tests**: `tests/monorepo_invariants.rs` (8 tests enforcing build contract)
 
 ---
 
@@ -152,8 +153,11 @@ Every successful large Rust project uses this pattern:
 | Phase 3a: Wire zram deps | DONE | 5 zram crates enabled (54 members) |
 | Phase 3b: Wire presentar deps | DONE | 9 presentar crates enabled (63 members) |
 | Phase 3c: Wire test/probar deps | DONE | 5 test crates + 12 renamed satellites (68 members) |
-| Phase 4: Publish + shims | TODO | |
-| Phase 5: Archive old repos | TODO | |
+| Phase 4a: Compilation verification | DONE | 62/68 compile, 6 pre-existing issues |
+| Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
+| Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
+| Phase 5: Publish + shims | TODO | |
+| Phase 6: Archive old repos | TODO | |
 
 **Current count**: 68 active workspace members, 0 with old names.
 **Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).

@@ -1,0 +1,139 @@
+# APR-MONO: Monorepo Build Verification Provable Contract
+#
+# Verifies that the monorepo workspace compiles correctly and maintains
+# structural invariants after consolidation. This contract is enforced
+# by `tests/monorepo_invariants.rs` integration tests.
+#
+# Grounding:
+#   [1] Potvin & Levenberg, "Why Google Stores Billions of Lines of Code
+#       in a Single Repository," CACM 59(7), July 2016.
+#       DOI: 10.1145/2854146. (Workspace-wide compilation catches breakage.)
+#
+#   [4] Rastogi et al., "Dependency Smells in JavaScript Monorepo Projects,"
+#       ICSME 2023. (Diamond dependency elimination = zero version skew.)
+#
+#   [8] Burn ML framework, tracel-ai/burn, 33 crates at crates/burn-*
+#       (Flat layout for ML monorepo with similar scope.)
+#
+#   [9] Nushell, nushell/nushell, 40+ crates at crates/nu-*
+#       (Flat layout at scale with explicit member list.)
+
+kind: BuildVerificationContract
+name: cgp-monorepo-build
+version: "1.0.0"
+scope: "paiml/aprender monorepo workspace (68 active crates)"
+
+description: |
+  Provable contract for verifying the monorepo workspace builds correctly
+  after consolidation. Defines structural invariants, naming conventions,
+  and dependency hygiene rules enforced by integration tests.
+
+preconditions:
+  - "All 20 source repos have been subtree-merged into crates/"
+  - "All [package] names follow aprender-* convention (except apr-cli)"
+  - "All internal path deps use sibling ../aprender-* paths"
+  - "Root [workspace.dependencies] contains all shared external deps"
+  - "Old Rust identifiers preserved via [lib] name entries"
+
+postconditions:
+  - "cargo metadata --workspace resolves without errors"
+  - "At least 60 workspace members compile (cargo check)"
+  - "No duplicate package names in workspace"
+  - "No nested crates (flat layout invariant)"
+  - "No [patch.crates-io] in root Cargo.toml"
+  - "All crate directories have Cargo.toml files"
+
+# ── Falsification Conditions ──
+# Enforced by: tests/monorepo_invariants.rs
+# Run: cargo test --test monorepo_invariants
+
+falsification:
+  - name: FALSIFY-BUILD-001
+    description: "Duplicate workspace member detected"
+    test: "test_no_duplicate_workspace_members"
+    check: |
+      Every [package] name in the workspace must be unique.
+      Duplicates indicate a merge conflict or misconfigured member list.
+    enforcement: "cargo test --test monorepo_invariants test_no_duplicate_workspace_members"
+
+  - name: FALSIFY-BUILD-002
+    description: "Workspace version inconsistency"
+    test: "test_workspace_version_consistency"
+    check: |
+      All crates using version.workspace = true must resolve to 0.29.0.
+      Crates with pre-existing versions are tracked but not blocked during migration.
+    enforcement: "cargo test --test monorepo_invariants test_workspace_version_consistency"
+
+  - name: FALSIFY-BUILD-003
+    description: "Workspace member count below threshold"
+    test: "test_minimum_workspace_member_count"
+    check: |
+      The workspace must contain at least 60 members (spec target: ~63-68).
+      Fewer indicates crates were accidentally excluded or removed.
+    enforcement: "cargo test --test monorepo_invariants test_minimum_workspace_member_count"
+
+  - name: FALSIFY-BUILD-004
+    description: "Root Cargo.toml contains [patch.crates-io]"
+    test: "test_no_patch_in_root_cargo_toml"
+    check: |
+      The monorepo eliminates the need for [patch.crates-io] in the root
+      Cargo.toml. All cross-crate deps are resolved via workspace paths.
+      Dev overrides may exist in .cargo/config.toml but NOT in Cargo.toml.
+    enforcement: "cargo test --test monorepo_invariants test_no_patch_in_root_cargo_toml"
+
+  - name: FALSIFY-BUILD-005
+    description: "Workspace member has missing Cargo.toml"
+    test: "test_all_workspace_dirs_have_cargo_toml"
+    check: |
+      Every workspace member listed in cargo metadata must have a
+      corresponding Cargo.toml file on disk. Missing files indicate
+      a broken subtree merge or accidental deletion.
+    enforcement: "cargo test --test monorepo_invariants test_all_workspace_dirs_have_cargo_toml"
+
+  - name: FALSIFY-BUILD-006
+    description: "Crate uses non-aprender package name"
+    test: "test_all_crate_names_use_aprender_prefix"
+    check: |
+      All workspace members must use aprender-* naming convention
+      (exception: apr-cli). Old names (trueno, realizatar, entrenar, batuta,
+      etc.) must not appear as [package] names.
+    enforcement: "cargo test --test monorepo_invariants test_all_crate_names_use_aprender_prefix"
+    citation: "[8] Burn uses burn-* prefix for all 33 crates; [9] Nushell uses nu-* for 40+ crates"
+
+  - name: FALSIFY-BUILD-007
+    description: "Nested crate violates flat layout"
+    test: "test_flat_layout_no_nested_crates"
+    check: |
+      All workspace members must be direct children of crates/ directory.
+      No crate may be nested inside another crate's directory tree.
+      Pattern: crates/<name>/Cargo.toml — never crates/<parent>/<child>/Cargo.toml.
+    enforcement: "cargo test --test monorepo_invariants test_flat_layout_no_nested_crates"
+    citation: "[8] Polars, Burn, Nushell: 4/5 major Rust monorepos use strictly flat layout"
+
+# ── Lib Name Preservation Strategy ──
+# Source code uses old Rust identifiers (use trueno::, use realizar::, etc.).
+# Rather than renaming 630+ files, we use [lib] name = "old_identifier" in
+# each Cargo.toml. This preserves source compatibility while the package
+# name follows the aprender-* convention for crates.io.
+#
+# Mapping: aprender-compute → [lib] name = "trueno"
+#          aprender-serve   → [lib] name = "realizar"
+#          aprender-train   → [lib] name = "entrenar"
+#          (see full list in each crate's Cargo.toml)
+
+lib_name_strategy:
+  description: |
+    Old Rust crate identifiers are preserved via [lib] name entries.
+    Package names use aprender-* for crates.io. Source code is NOT
+    mass-renamed to avoid 630+ file changes and git history disruption.
+  rationale: |
+    This is the standard Cargo approach for crate renames. The package
+    name (crates.io identifier) differs from the lib name (Rust import
+    identifier). Users importing via crates.io use the package name;
+    internal source code uses the lib name.
+  example: |
+    # Cargo.toml
+    [package]
+    name = "aprender-compute"  # crates.io name
+    [lib]
+    name = "trueno"            # Rust import: use trueno::*;
