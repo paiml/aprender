@@ -1,0 +1,95 @@
+# PMAT Quality Metrics Configuration
+# Simular: Unified Simulation Engine
+# Version: 0.1.0-draft
+
+[project]
+name = "simular"
+description = "Unified Simulation Engine for the Sovereign AI Stack"
+version = "0.1.0-draft"
+
+[thresholds]
+# Minimum acceptable quality grade (A+, A, A-, B+, B, B-, C+, C, C-, D, F)
+min_grade = "B+"
+
+# Maximum allowed cyclomatic complexity per function
+max_complexity = 15
+
+# Minimum test coverage percentage
+min_coverage = 95
+
+# Maximum lines per function
+max_function_lines = 60
+
+# Maximum nesting depth (JPL Power of 10 Rule 1)
+max_nesting_depth = 4
+
+# Minimum assertions per function (JPL Power of 10 Rule 5)
+min_assertions_per_function = 2
+
+[satd]
+# Self-Admitted Technical Debt detection
+enabled = true
+# Fail on any SATD comments (TODO, FIXME, HACK)
+fail_on_satd = true
+# Patterns to detect
+patterns = ["TODO", "FIXME", "HACK", "XXX", "WORKAROUND"]
+
+[tdg]
+# Technical Debt Grading configuration
+enabled = true
+# Auto-update baseline on successful commits
+auto_baseline = true
+# Maximum score drop before failing (regression detection)
+max_score_drop = 5
+
+[hooks]
+# Pre-commit hooks configuration
+tdg_enforcement = true
+satd_check = true
+format_check = true
+clippy_check = true
+test_check = true
+
+[documentation]
+# Documentation validation
+validate_readme = true
+validate_claude_md = true
+fail_on_hallucination = true
+
+[toyota_way]
+# Toyota Production System principles
+jidoka = true           # Stop-on-error
+poka_yoke = true        # Mistake-proofing via types
+heijunka = true         # Load-balanced execution
+kaizen = true           # Continuous improvement
+muda_elimination = true # Zero-waste paths
+genchi_genbutsu = true  # Direct observation
+
+[jpl_power_of_10]
+# JPL Mission-Critical Verification rules
+simple_control_flow = true
+fixed_loop_bounds = true
+no_heap_after_init = true
+short_functions = true
+assertion_density = true
+minimal_scope = true
+check_return_values = true
+limit_preprocessor = true
+restrict_pointers = true
+warnings_as_errors = true
+
+[falsification]
+# Popperian falsification principles
+require_testable_predictions = true
+null_hypothesis_testing = true
+refutation_over_confirmation = true
+
+[exclude]
+# Generated artifacts - not source code
+paths = [
+    "book/",
+    "pkg/",
+    "web/pkg/",
+    "target/",
+    "*.min.js"
+]

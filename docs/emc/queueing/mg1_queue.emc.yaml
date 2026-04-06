@@ -1,0 +1,159 @@
+# Equation Model Card (EMC) Schema v1.0
+# M/G/1 Queue - Markovian arrivals, General service
+
+emc_version: "1.0"
+emc_id: "EMC-QUEUE-002"
+
+identity:
+  name: "M/G/1 Queue"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    W_q = \frac{\lambda E[S^2]}{2(1-\rho)} = \frac{\rho^2 + \lambda^2 \sigma_S^2}{2\lambda(1-\rho)}
+  plain_text: "Wq = (lambda * E[S^2]) / (2 * (1 - rho))"
+  description: |
+    The Pollaczek-Khinchine formula for M/G/1 queues relates expected waiting
+    time to the second moment of service time distribution. This is a
+    generalization of M/M/1 that allows arbitrary service time distributions.
+
+  variables:
+    - symbol: "W_q"
+      description: "Expected waiting time in queue"
+      units: "time"
+      type: "dependent"
+    - symbol: "lambda"
+      description: "Arrival rate"
+      units: "1/time"
+      type: "parameter"
+    - symbol: "E[S^2]"
+      description: "Second moment of service time"
+      units: "time^2"
+      type: "parameter"
+    - symbol: "rho"
+      description: "Utilization (lambda / mu)"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "sigma_S"
+      description: "Standard deviation of service time"
+      units: "time"
+      type: "parameter"
+
+  equation_type: "algebraic"
+  order: 0
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Pollaczek, F."]
+    title: "Ueber eine Aufgabe der Wahrscheinlichkeitstheorie"
+    journal: "Mathematische Zeitschrift"
+    year: 1930
+    volume: 32
+    pages: "64-100"
+
+  supporting_citations:
+    - authors: ["Khintchine, A.Y."]
+      title: "Mathematical Methods in the Theory of Queueing"
+      year: 1960
+      publisher: "Griffin"
+
+  derivation_method: "Generating functions / z-transform"
+  derivation_summary: |
+    Using the embedded Markov chain at departure instants and
+    z-transform methods, the P-K formula is derived from the
+    balance equations of the queue state probabilities.
+
+domain_of_validity:
+  parameters:
+    lambda:
+      min: 0.0
+      max: null
+      physical_constraint: "lambda < mu for stability"
+    mu:
+      min: 0.0
+      max: null
+      physical_constraint: "mu > 0 (positive service rate)"
+    cv_service:
+      min: 0.0
+      max: null
+      physical_constraint: "cv >= 0 (coefficient of variation)"
+
+  assumptions:
+    - "Poisson arrivals (memoryless)"
+    - "General service time distribution"
+    - "Single server"
+    - "FIFO queue discipline"
+    - "Infinite queue capacity"
+    - "Steady state (rho < 1)"
+
+  limitations:
+    - description: "Requires steady state"
+      reference: "rho = lambda/mu < 1"
+    - description: "Single server only"
+      reference: "Extension to M/G/c is complex"
+
+analytical_solution:
+  general_solution:
+    latex: "W_q = \\frac{\\rho + \\lambda \\mu c_s^2}{2\\mu(1-\\rho)}"
+    parameters:
+      rho: "Utilization = lambda/mu"
+      cs: "Coefficient of variation of service"
+
+  test_cases:
+    - name: "Deterministic service (D/D/1 limit)"
+      parameters:
+        lambda: 4.0
+        mu: 5.0
+        cv_service: 0.0
+      expected:
+        wq: 0.32  # rho/(2*mu*(1-rho)) with cv=0
+      tolerance: 0.01
+
+    - name: "Exponential service (M/M/1)"
+      parameters:
+        lambda: 4.0
+        mu: 5.0
+        cv_service: 1.0
+      expected:
+        wq: 0.8  # rho/(mu-lambda) = 4/(5*(5-4)) = 0.8
+      tolerance: 0.01
+
+verification_tests:
+  tests:
+    - id: "MG1-VT-001"
+      name: "P-K formula validation"
+      type: "numerical_vs_analytical"
+      tolerance: 0.05
+      description: "Verify simulation matches P-K formula"
+
+    - id: "MG1-VT-002"
+      name: "M/M/1 special case"
+      type: "limit_case"
+      tolerance: 0.01
+      description: "With cv=1, should match M/M/1 formula"
+
+falsification_criteria:
+  criteria:
+    - id: "MG1-FC-001"
+      name: "Stability violation"
+      condition: "rho >= 1"
+      threshold: 1.0
+      severity: "critical"
+
+    - id: "MG1-FC-002"
+      name: "Wait time accuracy"
+      condition: "|W_sim - W_pk| / W_pk > tolerance"
+      threshold: 0.10
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/queueing.rs"
+  test_file: "tests/verification/mg1_queue_test.rs"
+  experiment_template: "examples/experiments/mg1_queue.yaml"

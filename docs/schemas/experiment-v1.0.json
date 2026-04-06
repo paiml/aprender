@@ -1,0 +1,244 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://simular.dev/schemas/experiment-v1.0.json",
+  "title": "Experiment Specification Schema",
+  "description": "Schema for EDD experiment specifications",
+  "type": "object",
+  "required": [
+    "experiment_version",
+    "experiment_id",
+    "reproducibility",
+    "equation_model_card",
+    "hypothesis",
+    "simulation",
+    "falsification"
+  ],
+  "properties": {
+    "experiment_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Experiment schema version (e.g., '1.0')"
+    },
+    "experiment_id": {
+      "type": "string",
+      "pattern": "^(EXP|TPS)-[A-Z]*-?\\d{3}$",
+      "description": "Unique experiment identifier"
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable experiment name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed description of the experiment"
+        },
+        "author": {
+          "type": "string",
+          "description": "Author or team"
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Creation date (YYYY-MM-DD)"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for categorization"
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "required": ["seed"],
+      "properties": {
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Master seed for ALL random operations (REQUIRED)"
+        },
+        "ieee_strict": {
+          "type": "boolean",
+          "default": true,
+          "description": "IEEE 754 strict mode for cross-platform reproducibility"
+        },
+        "platforms": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Target platforms for reproducibility verification"
+        }
+      }
+    },
+    "equation_model_card": {
+      "type": "object",
+      "required": ["emc_ref"],
+      "properties": {
+        "emc_ref": {
+          "type": "string",
+          "description": "Reference to EMC (e.g., 'operations/littles_law')"
+        },
+        "emc_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Required EMC version"
+        },
+        "parameter_overrides": {
+          "type": "object",
+          "additionalProperties": { "type": "number" },
+          "description": "Override EMC default parameters"
+        }
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "required": ["null_hypothesis", "expected_outcome"],
+      "properties": {
+        "null_hypothesis": {
+          "type": "string",
+          "minLength": 10,
+          "description": "The null hypothesis being tested (H0)"
+        },
+        "alternative_hypothesis": {
+          "type": "string",
+          "description": "The alternative hypothesis (H1)"
+        },
+        "expected_outcome": {
+          "type": "string",
+          "enum": ["reject", "fail_to_reject"],
+          "description": "Expected outcome of hypothesis test"
+        },
+        "statistical_test": {
+          "type": "string",
+          "description": "Statistical test to use (e.g., 't-test', 'Mann-Whitney')"
+        },
+        "significance_level": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.05,
+          "description": "Alpha level for hypothesis testing"
+        }
+      }
+    },
+    "simulation": {
+      "type": "object",
+      "properties": {
+        "topology": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["single_server", "tandem_line", "job_shop", "network", "custom"]
+            },
+            "stations": { "type": "integer", "minimum": 1 },
+            "servers_per_station": { "type": "integer", "minimum": 1, "default": 1 }
+          }
+        },
+        "duration": {
+          "type": "object",
+          "properties": {
+            "warmup": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Warmup period (time units)"
+            },
+            "simulation": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Main simulation duration"
+            },
+            "replications": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Number of replications"
+            }
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "parameters": { "type": "object" }
+            }
+          },
+          "description": "Multiple scenarios to compare"
+        }
+      }
+    },
+    "falsification": {
+      "type": "object",
+      "required": ["criteria"],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "condition"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Criterion identifier"
+              },
+              "name": {
+                "type": "string",
+                "description": "Human-readable name"
+              },
+              "metric": {
+                "type": "string",
+                "description": "Metric to evaluate"
+              },
+              "condition": {
+                "type": "string",
+                "description": "Condition for falsification"
+              },
+              "tolerance": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Acceptable tolerance"
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Required confidence level"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["informational", "minor", "major", "critical"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Metrics to collect"
+        },
+        "reports": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Reports to generate"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Artifacts to preserve"
+        }
+      }
+    }
+  }
+}

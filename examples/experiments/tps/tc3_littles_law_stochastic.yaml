@@ -1,0 +1,95 @@
+# TPS Test Case 3: Little's Law Under Stochasticity
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-003"
+
+metadata:
+  name: "Little's Law Validation Under High Variability"
+  description: |
+    Validate that Little's Law (L = lambda * W) holds even in complex,
+    high-variability environments. Practitioners often doubt the law
+    applies under stochastic conditions.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "littles-law", "queueing", "stochastic"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: In a high-variability environment, Cycle Time behaves non-linearly
+    or independently of WIP levels due to stochastic effects.
+  alternative_hypothesis: |
+    H₁: Little's Law (L = λW) holds with R² > 0.98 regardless of
+    variability in arrival and service processes.
+  expected_outcome: "reject"  # We expect H₀ to be FALSIFIED
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  queue_type: "G/G/1"
+
+  arrivals:
+    distribution: "gamma"
+    cv: 1.2  # High variability
+
+  service:
+    distribution: "lognormal"
+    cv: 1.1  # High variability
+    mean: 1.0
+
+  wip_levels: [10, 25, 50, 100]
+
+  duration:
+    warmup: 500
+    simulation: 5000
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC3-LINEAR"
+      name: "Linear relationship"
+      condition: "R_squared > 0.95"
+      severity: "critical"
+
+    - id: "TC3-SLOPE"
+      name: "Slope equals 1/TH"
+      condition: "|slope - 1/throughput| / (1/throughput) < 0.05"
+      severity: "major"
+
+    - id: "TC3-INTERCEPT"
+      name: "Intercept near zero"
+      condition: "|intercept| < 0.1 * mean_ct"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  metrics:
+    - name: "r_squared"
+      type: "regression"
+      description: "Coefficient of determination for WIP vs CT*TH"
+
+    - name: "residual_normality"
+      type: "shapiro_wilk"
+      description: "Check residuals are normally distributed"
+
+statistics:
+  regression_model: "linear"
+  confidence_intervals: true
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc3_littles_law.md"
+  include:
+    - "regression_plot"
+    - "residual_analysis"
+    - "confidence_bands"

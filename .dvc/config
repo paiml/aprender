@@ -1,0 +1,5 @@
+[core]
+    remote = storage
+    autostage = true
+[remote "storage"]
+    url = .dvc/cache

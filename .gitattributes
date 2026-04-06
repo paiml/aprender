@@ -1,0 +1,32 @@
+# Git Attributes for Reproducibility
+# Ensures consistent line endings and diff behavior
+
+# Default behavior
+* text=auto
+
+# Rust source files
+*.rs text eol=lf diff=rust
+*.toml text eol=lf
+
+# Lock files (exact content matters)
+Cargo.lock binary
+
+# Scripts
+*.sh text eol=lf
+Makefile text eol=lf
+
+# Documentation
+*.md text eol=lf diff=markdown
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+
+# Binary files
+*.wasm binary
+*.png binary
+*.gif binary
+*.ico binary
+
+# Generated files (don't diff)
+target/** -diff
+pkg/** -diff

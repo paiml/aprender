@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  # Main simulation service
+  simular:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: simular:latest
+    container_name: simular
+    volumes:
+      - ./data:/data:ro
+      - ./params:/params:ro
+      - ./metrics:/metrics
+    environment:
+      - RUST_BACKTRACE=1
+      - RUST_LOG=info
+
+  # WASM development server
+  wasm-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: wasm-builder
+    image: simular-wasm:latest
+    container_name: simular-wasm
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./web:/app/web
+      - ./pkg:/app/pkg
+    command: ["python3", "-m", "http.server", "8080", "-d", "/app/web"]
+
+  # Benchmark runner
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: simular-bench:latest
+    container_name: simular-bench
+    volumes:
+      - ./metrics:/app/metrics
+    command: ["cargo", "bench", "--bench", "simulation_benchmarks", "--", "--save-baseline", "main"]
+    profiles:
+      - benchmark
+
+  # Coverage reporter
+  coverage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    image: simular-coverage:latest
+    container_name: simular-coverage
+    volumes:
+      - ./coverage:/app/coverage
+    command: ["cargo", "tarpaulin", "--out", "Html", "--output-dir", "/app/coverage"]
+    profiles:
+      - test
+
+volumes:
+  cargo-cache:
+    driver: local
+
+networks:
+  default:
+    name: simular-network

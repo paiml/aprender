@@ -1,0 +1,244 @@
+# Equation Model Card: Kingman's Formula (VUT Equation)
+# EMC-OPS-002 - The approximation for queue wait times
+#
+# Reference: Kingman, J.F.C. (1961). "The single server queue in heavy traffic"
+#            Mathematical Proceedings of the Cambridge Philosophical Society, 57(4), 902-904.
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-002"
+
+# ============================================================================
+# SECTION 1: IDENTITY
+# ============================================================================
+identity:
+  name: "Kingman's Formula"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+# ============================================================================
+# SECTION 2: GOVERNING EQUATION
+# ============================================================================
+governing_equation:
+  latex: "W_q \\approx \\left(\\frac{c_a^2 + c_s^2}{2}\\right) \\cdot \\left(\\frac{\\rho}{1-\\rho}\\right) \\cdot t_s"
+  plain_text: "Wait = V × U × T (Variability × Utilization × Time)"
+  description: |
+    Kingman's Formula, also known as the VUT equation, provides an approximation
+    for the expected waiting time in a G/G/1 queue. It captures the exponential
+    relationship between utilization and wait times, explaining the "hockey stick"
+    effect observed in high-utilization systems.
+
+    The formula shows that wait times are driven by three factors:
+    - V (Variability): Average of squared coefficients of variation
+    - U (Utilization): ρ/(1-ρ) which explodes as ρ→1
+    - T (Time): Average service time
+
+    This equation is fundamental to understanding why Lean/TPS focuses on
+    reducing variability (Mura) and avoiding high utilization.
+
+  variables:
+    - symbol: "W_q"
+      description: "Expected waiting time in queue"
+      units: "time"
+      type: "dependent"
+    - symbol: "c_a"
+      description: "Coefficient of variation of inter-arrival times"
+      units: "dimensionless"
+      type: "independent"
+    - symbol: "c_s"
+      description: "Coefficient of variation of service times"
+      units: "dimensionless"
+      type: "independent"
+    - symbol: "ρ"
+      aliases: ["rho", "utilization"]
+      description: "Server utilization (arrival rate / service rate)"
+      units: "dimensionless"
+      type: "independent"
+    - symbol: "t_s"
+      description: "Average service time"
+      units: "time"
+      type: "independent"
+
+  equation_type: "approximation"
+  linearity: "nonlinear"
+  accuracy: "Exact for M/M/1, approximate for G/G/1"
+
+# ============================================================================
+# SECTION 3: ANALYTICAL DERIVATION
+# ============================================================================
+analytical_derivation:
+  primary_citation:
+    authors: ["Kingman, J.F.C."]
+    title: "The single server queue in heavy traffic"
+    journal: "Mathematical Proceedings of the Cambridge Philosophical Society"
+    year: 1961
+    volume: 57
+    issue: 4
+    pages: "902-904"
+    doi: "10.1017/S0305004100036094"
+
+  supporting_citations:
+    - authors: ["Hopp, W.J.", "Spearman, M.L."]
+      title: "Factory Physics"
+      year: 2011
+      chapter: "8: Variability Basics"
+
+  derivation_method: "Heavy traffic approximation"
+  derivation_summary: |
+    Kingman derived this formula using heavy traffic limits where ρ→1.
+
+    For a G/G/1 queue, the Pollaczek-Khinchine formula gives exact results
+    for M/G/1. Kingman's approximation extends this to general arrivals by
+    using the average of the two CVs:
+
+    The V factor (c_a² + c_s²)/2 captures total system variability.
+    The U factor ρ/(1-ρ) captures the utilization effect.
+
+    As utilization approaches 100%, the denominator (1-ρ) approaches zero,
+    causing wait times to explode exponentially - the "hockey stick" curve.
+
+# ============================================================================
+# SECTION 4: DOMAIN OF VALIDITY
+# ============================================================================
+domain_of_validity:
+  parameters:
+    rho:
+      min: 0.0
+      max: 0.999  # Must be < 1 for stability
+      units: "dimensionless"
+      physical_constraint: "0 < ρ < 1 for stable queue"
+    c_a:
+      min: 0.0
+      max: null
+      units: "dimensionless"
+      physical_constraint: "c_a = 1 for Poisson arrivals"
+    c_s:
+      min: 0.0
+      max: null
+      units: "dimensionless"
+      physical_constraint: "c_s = 1 for exponential service"
+    t_s:
+      min: 0.0
+      max: null
+      units: "time"
+      physical_constraint: "t_s > 0"
+
+  assumptions:
+    - "Single server (G/G/1)"
+    - "FIFO discipline"
+    - "Stable system (ρ < 1)"
+    - "Independent arrivals and service times"
+    - "Stationary processes"
+
+  limitations:
+    - description: "Approximation degrades at low utilization (ρ < 0.5)"
+      severity: "minor"
+    - description: "Does not apply to multi-server systems directly"
+      severity: "major"
+    - description: "Assumes CVs capture sufficient variability information"
+      severity: "minor"
+
+# ============================================================================
+# SECTION 5: VERIFICATION TESTS
+# ============================================================================
+verification_tests:
+  tests:
+    - id: "KF-001"
+      name: "M/M/1 exact match"
+      description: "Formula should be exact for M/M/1 (c_a=c_s=1)"
+      parameters:
+        c_a: 1.0
+        c_s: 1.0
+        rho: 0.5
+        t_s: 1.0
+      expected:
+        W_q: 1.0  # (1+1)/2 × 0.5/0.5 × 1 = 1
+      tolerance: 1e-10
+
+    - id: "KF-002"
+      name: "Hockey stick at 50% utilization"
+      description: "Wait time at 50% utilization"
+      parameters:
+        c_a: 1.0
+        c_s: 1.0
+        rho: 0.5
+        t_s: 1.0
+      expected:
+        W_q: 1.0
+      tolerance: 0.01
+
+    - id: "KF-003"
+      name: "Hockey stick at 95% utilization"
+      description: "Wait time should be ~19x higher at 95% vs 50%"
+      parameters:
+        c_a: 1.0
+        c_s: 1.0
+        rho: 0.95
+        t_s: 1.0
+      expected:
+        W_q: 19.0  # (1+1)/2 × 0.95/0.05 × 1 = 19
+      tolerance: 0.1
+
+    - id: "KF-004"
+      name: "Zero variability"
+      description: "D/D/1 queue (no variability)"
+      parameters:
+        c_a: 0.0
+        c_s: 0.0
+        rho: 0.8
+        t_s: 1.0
+      expected:
+        W_q: 0.0  # No waiting in deterministic queue
+      tolerance: 1e-10
+
+    - id: "KF-005"
+      name: "High variability system"
+      description: "High CV arrivals and service"
+      parameters:
+        c_a: 1.5
+        c_s: 1.5
+        rho: 0.8
+        t_s: 1.0
+      expected:
+        W_q: 9.0  # (2.25+2.25)/2 × 0.8/0.2 × 1 = 2.25 × 4 = 9
+      tolerance: 0.1
+
+# ============================================================================
+# SECTION 6: FALSIFICATION CRITERIA
+# ============================================================================
+falsification_criteria:
+  criteria:
+    - id: "KF-FC-001"
+      name: "Exponential relationship check"
+      condition: "Wait time growth is linear not exponential with utilization"
+      severity: "critical"
+      interpretation: "System not behaving as queueing theory predicts"
+
+    - id: "KF-FC-002"
+      name: "Utilization exceeds 1"
+      condition: "ρ ≥ 1"
+      severity: "critical"
+      interpretation: "Unstable system - queue grows without bound"
+
+    - id: "KF-FC-003"
+      name: "Negative wait time"
+      condition: "W_q < 0"
+      severity: "critical"
+      interpretation: "Invalid result - bug in implementation"
+
+# ============================================================================
+# SECTION 7: IMPLEMENTATION
+# ============================================================================
+implementation:
+  source_file: "src/edd/operations.rs"
+  struct_name: "KingmanFormula"
+  test_file: "src/edd/operations.rs (inline tests)"
+
+  notes: |
+    - Critical for validating TPS Test Case TC-8 (exponential wait times)
+    - Used to demonstrate why Lean focuses on variability reduction
+    - Explains the "hockey stick" effect in factory physics

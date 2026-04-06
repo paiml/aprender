@@ -1,0 +1,218 @@
+# Equation Model Card: Little's Law
+# EMC-OPS-001 - The fundamental theorem of queueing theory
+#
+# Reference: Little, J.D.C. (1961). "A Proof for the Queuing Formula: L = λW"
+#            Operations Research, 9(3), 383-387.
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-001"
+
+# ============================================================================
+# SECTION 1: IDENTITY
+# ============================================================================
+identity:
+  name: "Little's Law"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+# ============================================================================
+# SECTION 2: GOVERNING EQUATION
+# ============================================================================
+governing_equation:
+  latex: "L = \\lambda W"
+  plain_text: "WIP = Throughput × Cycle Time"
+  description: |
+    Little's Law is the fundamental theorem of queueing theory. It states
+    that the long-term average number of items in a stable system (L) equals
+    the long-term average arrival rate (λ) multiplied by the average time
+    an item spends in the system (W).
+
+    This law holds for ANY stable system regardless of arrival distribution,
+    service distribution, or number of servers. It is distribution-free and
+    applies to open and closed systems alike.
+
+  variables:
+    - symbol: "L"
+      description: "Average number of items in the system (WIP)"
+      units: "items"
+      type: "dependent"
+    - symbol: "λ"
+      aliases: ["lambda", "TH", "throughput"]
+      description: "Average arrival rate (Throughput)"
+      units: "items/time"
+      type: "independent"
+    - symbol: "W"
+      aliases: ["CT", "cycle_time"]
+      description: "Average time in system (Cycle Time)"
+      units: "time"
+      type: "independent"
+
+  equation_type: "algebraic"
+  linearity: "linear"
+
+# ============================================================================
+# SECTION 3: ANALYTICAL DERIVATION
+# ============================================================================
+analytical_derivation:
+  primary_citation:
+    authors: ["Little, J.D.C."]
+    title: "A Proof for the Queuing Formula: L = λW"
+    journal: "Operations Research"
+    year: 1961
+    volume: 9
+    issue: 3
+    pages: "383-387"
+    doi: "10.1287/opre.9.3.383"
+
+  supporting_citations:
+    - authors: ["Hopp, W.J.", "Spearman, M.L."]
+      title: "Factory Physics"
+      year: 2011
+      edition: "3rd"
+      publisher: "Waveland Press"
+      isbn: "978-1577667391"
+
+  derivation_method: "Probabilistic proof via sample path analysis"
+  derivation_summary: |
+    Little's original proof uses a sample path argument:
+
+    Let A(t) = cumulative arrivals by time t
+    Let D(t) = cumulative departures by time t
+
+    The time-average number in system:
+      L = lim_{T→∞} (1/T) ∫₀ᵀ [A(t) - D(t)] dt
+
+    The average arrival rate:
+      λ = lim_{T→∞} A(T)/T
+
+    The average time in system:
+      W = lim_{T→∞} (1/A(T)) Σᵢ Wᵢ
+
+    Under stability (A(T) ~ D(T) as T→∞), these three quantities
+    satisfy L = λW.
+
+# ============================================================================
+# SECTION 4: DOMAIN OF VALIDITY
+# ============================================================================
+domain_of_validity:
+  parameters:
+    lambda:
+      min: 0.0
+      max: null  # No upper bound in theory
+      units: "items/time"
+      physical_constraint: "λ > 0 for meaningful interpretation"
+    W:
+      min: 0.0
+      max: null
+      units: "time"
+      physical_constraint: "W > 0 for meaningful interpretation"
+    L:
+      min: 0.0
+      max: null
+      units: "items"
+      physical_constraint: "L ≥ 0"
+
+  assumptions:
+    - "System is in steady state (stable)"
+    - "Long-term averages exist (ergodicity)"
+    - "First-in-first-out not required"
+    - "Single or multiple servers allowed"
+    - "Any arrival distribution allowed"
+    - "Any service distribution allowed"
+
+  limitations:
+    - description: "Does not hold during transient periods"
+      severity: "major"
+    - description: "Requires ergodicity for sample path averages"
+      severity: "minor"
+    - description: "Instantaneous values may violate the relationship"
+      severity: "informational"
+
+# ============================================================================
+# SECTION 5: VERIFICATION TESTS
+# ============================================================================
+verification_tests:
+  tests:
+    - id: "LL-001"
+      name: "Basic identity"
+      description: "L = λW for known values"
+      parameters:
+        lambda: 5.0
+        W: 2.0
+      expected:
+        L: 10.0
+      tolerance: 1e-10
+
+    - id: "LL-002"
+      name: "M/M/1 Queue validation"
+      description: "Verify against M/M/1 analytical results"
+      parameters:
+        arrival_rate: 4.0
+        service_rate: 5.0
+      expected:
+        utilization: 0.8
+        L: 4.0  # ρ/(1-ρ) = 0.8/0.2
+        W: 1.0  # 1/(μ-λ) = 1/1
+      tolerance: 0.05
+
+    - id: "LL-003"
+      name: "High utilization stress test"
+      description: "Verify at 95% utilization"
+      parameters:
+        arrival_rate: 9.5
+        service_rate: 10.0
+      expected:
+        utilization: 0.95
+        L: 19.0  # ρ/(1-ρ) = 0.95/0.05
+      tolerance: 0.1
+
+    - id: "LL-004"
+      name: "Zero arrival rate"
+      description: "Empty system should have L=0"
+      parameters:
+        lambda: 0.0
+        W: 100.0
+      expected:
+        L: 0.0
+      tolerance: 1e-10
+
+# ============================================================================
+# SECTION 6: FALSIFICATION CRITERIA
+# ============================================================================
+falsification_criteria:
+  criteria:
+    - id: "LL-FC-001"
+      name: "Linear relationship check"
+      condition: "R² of WIP vs TH×CT regression < 0.95"
+      severity: "critical"
+      interpretation: "System may not be in steady state"
+
+    - id: "LL-FC-002"
+      name: "Negative WIP detection"
+      condition: "L < 0"
+      severity: "critical"
+      interpretation: "Invalid state - bug in simulation"
+
+    - id: "LL-FC-003"
+      name: "Conservation violation"
+      condition: "arrivals - departures diverges from WIP"
+      severity: "critical"
+      interpretation: "Items being created or destroyed"
+
+# ============================================================================
+# SECTION 7: IMPLEMENTATION
+# ============================================================================
+implementation:
+  source_file: "src/edd/operations.rs"
+  struct_name: "LittlesLaw"
+  test_file: "src/edd/operations.rs (inline tests)"
+
+  notes: |
+    - Implemented as part of operations science module
+    - Provides both evaluation (L = λW) and validation methods
+    - Used as foundation for TPS test cases TC-1 and TC-3

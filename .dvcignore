@@ -1,0 +1,27 @@
+# DVC ignore patterns
+# See: https://dvc.org/doc/user-guide/dvcignore
+
+# Build artifacts
+target/
+pkg/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Large generated files
+book/
+
+# Node modules
+node_modules/

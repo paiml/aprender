@@ -1,0 +1,119 @@
+emc_version: "1.0"
+emc_id: "EMC-OPT-002"
+
+identity:
+  name: "Gradient Descent"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "x_{k+1} = x_k - \\alpha \\nabla f(x_k)"
+  plain_text: "x_{k+1} = x_k - α∇f(x_k)"
+  description: |
+    Gradient descent is an iterative optimization algorithm that minimizes
+    a differentiable function by moving in the direction of steepest descent
+    (negative gradient). It is the foundation of most modern machine learning
+    optimization methods.
+  equation_type: "iterative"
+  variables:
+    - symbol: "x_k"
+      description: "Parameter vector at iteration k"
+      units: "varies"
+      type: "state"
+    - symbol: "α"
+      description: "Learning rate (step size)"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "∇f"
+      description: "Gradient of objective function"
+      units: "varies"
+      type: "derived"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Cauchy, A."]
+    title: "Méthode générale pour la résolution des systèmes d'équations simultanées"
+    journal: "Comptes Rendus de l'Académie des Sciences"
+    year: 1847
+    volume: 25
+    pages: "536-538"
+  supporting_citations:
+    - authors: ["Boyd, S.", "Vandenberghe, L."]
+      title: "Convex Optimization"
+      year: 2004
+      publisher: "Cambridge University Press"
+  derivation_method: "Taylor expansion"
+  derivation_summary: |
+    Taylor expansion: f(x + Δx) ≈ f(x) + ∇f(x)ᵀΔx + O(||Δx||²)
+
+    To minimize, choose Δx in direction of steepest descent:
+    Δx = -α∇f(x)
+
+    For convex f with L-Lipschitz gradient, convergence rate:
+    f(x_k) - f* ≤ O(1/k)  [sublinear]
+
+    For strongly convex f (μ-strongly convex):
+    ||x_k - x*||² ≤ (1 - μ/L)^k ||x_0 - x*||²  [linear]
+
+domain_of_validity:
+  parameters:
+    alpha:
+      min: 0.0
+      max: null
+      units: "dimensionless"
+      physical_constraint: "0 < α < 2/L for convergence"
+  assumptions:
+    - "f is differentiable"
+    - "∇f is L-Lipschitz continuous"
+    - "For global convergence: f is convex"
+    - "Step size satisfies 0 < α < 2/L"
+
+convergence_analysis:
+  convex:
+    rate: "O(1/k)"
+    condition: "f convex, ∇f L-Lipschitz"
+  strongly_convex:
+    rate: "O((1 - μ/L)^k)"
+    condition: "f μ-strongly convex"
+    condition_number: "κ = L/μ"
+  nonconvex:
+    guarantee: "Converges to stationary point"
+    rate: "O(1/√k) to ||∇f|| < ε"
+
+verification_tests:
+  tests:
+    - id: "GD-001"
+      name: "Quadratic minimization"
+      objective: "f(x) = 0.5 x^T A x - b^T x"
+      expected: "x* = A^{-1}b"
+      tolerance: 1.0e-6
+    - id: "GD-002"
+      name: "Rosenbrock convergence"
+      objective: "f(x,y) = (1-x)² + 100(y-x²)²"
+      expected_minimum: [1.0, 1.0]
+      tolerance: 0.01
+    - id: "GD-003"
+      name: "Convergence rate"
+      condition: "Error decreases at expected rate"
+      tolerance: 0.1
+
+falsification_criteria:
+  criteria:
+    - id: "GD-FC-001"
+      name: "Divergence"
+      condition: "f(x_k) increases or goes to infinity"
+      threshold: null
+      severity: "critical"
+    - id: "GD-FC-002"
+      name: "Wrong convergence rate"
+      condition: "Rate slower than O(1/k) for convex"
+      threshold: null
+      severity: "major"
+    - id: "GD-FC-003"
+      name: "Gradient not decreasing"
+      condition: "||∇f(x_k)|| not decreasing on average"
+      threshold: null
+      severity: "major"

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simular Orbit Demo - WASM</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #333;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            color: #4ecdc4;
+        }
+
+        .subtitle {
+            font-size: 0.875rem;
+            color: #888;
+            margin-top: 0.25rem;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            padding: 1rem;
+            gap: 1rem;
+        }
+
+        .canvas-container {
+            flex: 1;
+            background: #0f0f23;
+            border-radius: 8px;
+            border: 1px solid #333;
+            position: relative;
+            overflow: hidden;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .sidebar {
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel {
+            background: #1a1a2e;
+            border-radius: 8px;
+            border: 1px solid #333;
+            padding: 1rem;
+        }
+
+        .panel h2 {
+            font-size: 0.875rem;
+            color: #4ecdc4;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .stat-label {
+            color: #888;
+        }
+
+        .stat-value {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .stat-value.ok {
+            color: #4ecdc4;
+        }
+
+        .stat-value.warning {
+            color: #ffd93d;
+        }
+
+        .stat-value.error {
+            color: #ff6b6b;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        button {
+            background: #16213e;
+            color: #4ecdc4;
+            border: 1px solid #4ecdc4;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #4ecdc4;
+            color: #0a0a1a;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .speed-control input {
+            flex: 1;
+            accent-color: #4ecdc4;
+        }
+
+        .jidoka-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0;
+        }
+
+        .indicator-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4ecdc4;
+        }
+
+        .indicator-dot.warning {
+            background: #ffd93d;
+        }
+
+        .indicator-dot.error {
+            background: #ff6b6b;
+        }
+
+        footer {
+            background: #1a1a2e;
+            padding: 0.5rem 2rem;
+            border-top: 1px solid #333;
+            font-size: 0.75rem;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        footer a {
+            color: #4ecdc4;
+            text-decoration: none;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #333;
+            border-top-color: #4ecdc4;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Simular Orbit Demo</h1>
+        <div class="subtitle">Toyota Way Principles: Poka-Yoke | Jidoka | Heijunka | Mieruka</div>
+    </header>
+
+    <main>
+        <div class="canvas-container">
+            <canvas id="orbit-canvas"></canvas>
+            <div id="loading" class="loading">
+                <div class="loading-spinner"></div>
+                <div>Loading WASM module...</div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <h2>Simulation</h2>
+                <div class="stat">
+                    <span class="stat-label">Time</span>
+                    <span class="stat-value" id="sim-time">0.0 days</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Frame</span>
+                    <span class="stat-value" id="frame-count">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Bodies</span>
+                    <span class="stat-value" id="body-count">2</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Physics Invariants</h2>
+                <div class="stat">
+                    <span class="stat-label">Total Energy</span>
+                    <span class="stat-value" id="energy">-2.65e33 J</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Angular Momentum</span>
+                    <span class="stat-value" id="angular-momentum">2.66e40 kg*m2/s</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Jidoka Status</h2>
+                <div class="jidoka-indicator">
+                    <span class="indicator-dot" id="energy-indicator"></span>
+                    <span class="stat-label">Energy Conservation</span>
+                </div>
+                <div class="jidoka-indicator">
+                    <span class="indicator-dot" id="angular-indicator"></span>
+                    <span class="stat-label">Angular Momentum</span>
+                </div>
+                <div class="jidoka-indicator">
+                    <span class="indicator-dot" id="finite-indicator"></span>
+                    <span class="stat-label">Finite Values</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Controls</h2>
+                <div class="controls">
+                    <button id="pause-btn">Pause</button>
+                    <button id="reset-btn">Reset</button>
+                    <button id="step-btn">Step</button>
+                </div>
+                <div class="speed-control">
+                    <span class="stat-label">Speed</span>
+                    <input type="range" id="speed-slider" min="1" max="100" value="10">
+                    <span id="speed-value">10x</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>Earth Position</h2>
+                <div class="stat">
+                    <span class="stat-label">X</span>
+                    <span class="stat-value" id="earth-x">0.983 AU</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Y</span>
+                    <span class="stat-value" id="earth-y">0.000 AU</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Distance</span>
+                    <span class="stat-value" id="earth-r">0.983 AU</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <span>Simular v0.2.0 | Zero-JS Architecture | 37KB gzipped WASM</span>
+        <a href="https://github.com/paiml/simular" target="_blank">GitHub</a>
+    </footer>
+
+    <!-- ONE LINE OF JAVASCRIPT - All logic in Rust/WASM -->
+    <script type="module">import init, { initOrbitApp } from './pkg/simular.js'; init().then(initOrbitApp);</script>
+</body>
+</html>

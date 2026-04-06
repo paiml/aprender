@@ -1,0 +1,141 @@
+emc_version: "1.0"
+emc_id: "EMC-STAT-002"
+
+identity:
+  name: "Brownian Motion (Wiener Process)"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "dW_t = \\sigma dB_t, \\quad W_t \\sim N(0, \\sigma^2 t)"
+  plain_text: "dW_t = σ·dB_t, W_t ~ N(0, σ²t)"
+  description: |
+    Brownian motion (Wiener process) is a continuous-time stochastic process
+    with independent, normally distributed increments. It is the limit of
+    random walks and serves as the foundation for stochastic calculus,
+    option pricing, and diffusion processes.
+  equation_type: "SDE"
+  variables:
+    - symbol: "W_t"
+      description: "Position at time t"
+      units: "varies"
+      type: "dependent"
+    - symbol: "t"
+      description: "Time"
+      units: "s"
+      type: "independent"
+    - symbol: "σ"
+      description: "Volatility (diffusion coefficient)"
+      units: "varies/√time"
+      type: "parameter"
+    - symbol: "B_t"
+      description: "Standard Brownian motion"
+      units: "dimensionless"
+      type: "driving_process"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Einstein, A."]
+    title: "Über die von der molekularkinetischen Theorie der Wärme geforderte Bewegung von in ruhenden Flüssigkeiten suspendierten Teilchen"
+    journal: "Annalen der Physik"
+    year: 1905
+    volume: 322
+    pages: "549-560"
+  supporting_citations:
+    - authors: ["Wiener, N."]
+      title: "Differential Space"
+      journal: "Journal of Mathematics and Physics"
+      year: 1923
+      volume: 2
+      pages: "131-174"
+  derivation_method: "Limit of random walk"
+  derivation_summary: |
+    Properties of standard Brownian motion B_t:
+    1. B_0 = 0 (starts at origin)
+    2. Independent increments: B_t - B_s ⊥ B_u - B_v for disjoint intervals
+    3. Normal increments: B_t - B_s ~ N(0, t-s)
+    4. Continuous sample paths (a.s.)
+
+    Scaling: W_t = σB_t has variance σ²t
+
+domain_of_validity:
+  parameters:
+    sigma:
+      min: 0.0
+      max: null
+      units: "varies/√time"
+      physical_constraint: "σ ≥ 0"
+  assumptions:
+    - "Continuous time"
+    - "Independent increments (Markov property)"
+    - "Stationary increments"
+    - "Normal distribution"
+
+analytical_solution:
+  distribution: "W_t ~ N(0, σ²t)"
+  properties:
+    - name: "Mean"
+      value: "E[W_t] = 0"
+    - name: "Variance"
+      value: "Var[W_t] = σ²t"
+    - name: "Covariance"
+      value: "Cov[W_s, W_t] = σ²min(s,t)"
+    - name: "Quadratic variation"
+      value: "[W,W]_t = σ²t"
+  test_cases:
+    - name: "Mean is zero"
+      simulation_runs: 10000
+      expected_mean: 0.0
+      tolerance: 0.1
+    - name: "Variance grows linearly"
+      times: [1.0, 2.0, 4.0, 8.0]
+      expected_variance_ratios: [1.0, 2.0, 4.0, 8.0]
+      tolerance: 0.1
+
+numerical_stability:
+  recommended_methods:
+    - name: "Euler-Maruyama"
+      order: 0.5
+      description: "W_{n+1} = W_n + σ√Δt × Z_n, Z_n ~ N(0,1)"
+    - name: "Exact simulation"
+      description: "Generate increments directly from N(0, σ²Δt)"
+  stability_conditions:
+    - condition: "Δt small enough for path accuracy"
+      description: "Smaller Δt gives finer resolution but more computation"
+
+verification_tests:
+  tests:
+    - id: "BM-001"
+      name: "Increment distribution"
+      condition: "W_{t+Δt} - W_t ~ N(0, σ²Δt)"
+      test_type: "Kolmogorov-Smirnov"
+      tolerance: 0.05
+    - id: "BM-002"
+      name: "Variance scaling"
+      condition: "Var[W_t] = σ²t"
+      tolerance: 0.05
+    - id: "BM-003"
+      name: "Independence of increments"
+      condition: "Correlation of non-overlapping increments ≈ 0"
+      tolerance: 0.1
+
+falsification_criteria:
+  criteria:
+    - id: "BM-FC-001"
+      name: "Non-normal increments"
+      condition: "K-S test rejects normality"
+      threshold: 0.05
+      severity: "critical"
+    - id: "BM-FC-002"
+      name: "Correlated increments"
+      condition: "|Corr[ΔW_1, ΔW_2]| > threshold for disjoint intervals"
+      threshold: 0.1
+      severity: "major"
+    - id: "BM-FC-003"
+      name: "Wrong variance scaling"
+      condition: "Var[W_t] ≠ σ²t within tolerance"
+      threshold: 0.1
+      severity: "major"

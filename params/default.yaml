@@ -1,0 +1,48 @@
+# Default Simulation Parameters
+# Version: 1.0.0
+
+tsp:
+  # GRASP algorithm parameters
+  rcl_size: 5
+  max_iterations: 100
+  seed: 42
+
+  # Problem size
+  n_cities: 25
+
+  # Thresholds
+  optimality_gap_threshold: 0.25
+
+orbit:
+  # Integrator parameters
+  integrator: yoshida4
+  dt: 3600  # seconds (1 hour)
+
+  # Conservation thresholds
+  energy_threshold: 1.0e-9
+  momentum_threshold: 1.0e-12
+
+  # Simulation duration
+  n_orbits: 100
+
+monte_carlo:
+  # Pi estimation
+  n_samples: 100000
+  seed: 42
+
+  # Variance reduction
+  use_antithetic: true
+  use_control_variate: false
+
+reproducibility:
+  # IEEE 754 strict mode
+  ieee_strict: true
+
+  # Deterministic ordering
+  deterministic_order: true
+
+  # Cross-platform verification
+  verify_platforms:
+    - linux
+    - macos
+    - windows

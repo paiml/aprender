@@ -1,0 +1,88 @@
+# California Cities TSP Dataset
+# Version: 1.0
+# License: Public Domain
+# Source: US Census Bureau, Wikipedia
+
+cities:
+  - name: "San Francisco"
+    lat: 37.7749
+    lon: -122.4194
+  - name: "Los Angeles"
+    lat: 34.0522
+    lon: -118.2437
+  - name: "San Diego"
+    lat: 32.7157
+    lon: -117.1611
+  - name: "San Jose"
+    lat: 37.3382
+    lon: -121.8863
+  - name: "Sacramento"
+    lat: 38.5816
+    lon: -121.4944
+  - name: "Fresno"
+    lat: 36.7378
+    lon: -119.7871
+  - name: "Oakland"
+    lat: 37.8044
+    lon: -122.2712
+  - name: "Long Beach"
+    lat: 33.7701
+    lon: -118.1937
+  - name: "Bakersfield"
+    lat: 35.3733
+    lon: -119.0187
+  - name: "Anaheim"
+    lat: 33.8366
+    lon: -117.9143
+  - name: "Santa Ana"
+    lat: 33.7455
+    lon: -117.8677
+  - name: "Riverside"
+    lat: 33.9806
+    lon: -117.3755
+  - name: "Stockton"
+    lat: 37.9577
+    lon: -121.2908
+  - name: "Irvine"
+    lat: 33.6846
+    lon: -117.8265
+  - name: "Chula Vista"
+    lat: 32.6401
+    lon: -117.0842
+  - name: "Fremont"
+    lat: 37.5485
+    lon: -121.9886
+  - name: "San Bernardino"
+    lat: 34.1083
+    lon: -117.2898
+  - name: "Modesto"
+    lat: 37.6391
+    lon: -120.9969
+  - name: "Fontana"
+    lat: 34.0922
+    lon: -117.4350
+  - name: "Santa Clarita"
+    lat: 34.3917
+    lon: -118.5426
+  - name: "Oxnard"
+    lat: 34.1975
+    lon: -119.1771
+  - name: "Moreno Valley"
+    lat: 33.9425
+    lon: -117.2297
+  - name: "Glendale"
+    lat: 34.1425
+    lon: -118.2551
+  - name: "Huntington Beach"
+    lat: 33.6595
+    lon: -117.9988
+  - name: "Santa Rosa"
+    lat: 38.4404
+    lon: -122.7141
+
+metadata:
+  version: "1.0"
+  created: "2024-12-12"
+  source: "US Census Bureau"
+  coordinate_system: "WGS84"
+  precision: 4  # decimal places

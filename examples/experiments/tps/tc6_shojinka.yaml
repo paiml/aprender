@@ -1,0 +1,103 @@
+# TPS Test Case 6: Cross-Training (Shojinka) vs Specialization
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-006"
+
+metadata:
+  name: "Shojinka Cross-Training vs Specialization"
+  description: |
+    Validate that cross-trained workers (Shojinka) outperform specialists
+    under variability. Taylorist management emphasizes specialization,
+    but TPS shows flexible workforce substitutes for inventory buffers.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "shojinka", "cross-training", "pooling"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Specialist workers with dedicated stations are more efficient than
+    cross-trained workers who can move between stations.
+  alternative_hypothesis: |
+    H₁: Under variability, cross-trained workers achieve higher throughput
+    by balancing workload dynamically (pooling effect).
+  expected_outcome: "reject"  # Cross-training wins under variability
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  stations: 5
+  workers: 5
+
+  workforce_models:
+    - name: "specialized"
+      assignment: "dedicated"
+      skill_matrix: "identity"
+      description: "Each worker handles one station only"
+
+    - name: "cross_trained"
+      assignment: "dynamic"
+      skill_matrix: "full"
+      description: "Workers can move to any station"
+
+  variability_levels:
+    - name: "low"
+      cv: 0.2
+    - name: "medium"
+      cv: 0.5
+    - name: "high"
+      cv: 1.0
+
+  processing:
+    mean: 10  # minutes
+    distribution: "lognormal"
+
+  arrivals:
+    rate: 4.0  # units/hour
+    distribution: "poisson"
+
+  duration:
+    warmup: 200
+    simulation: 2000
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC6-LOW-VAR"
+      name: "Low variability comparison"
+      condition: "|th_flex - th_spec| / th_spec < 0.05"
+      severity: "minor"
+      interpretation: "At low variability, little difference expected"
+
+    - id: "TC6-HIGH-VAR"
+      name: "High variability comparison"
+      condition: "th_flex / th_spec > 1.5"
+      severity: "major"
+      interpretation: "At high variability, cross-training wins"
+
+    - id: "TC6-WAIT"
+      name: "Wait time reduction"
+      condition: "wait_flex < wait_spec * 0.6"
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  interaction_test: "two_way_anova"
+  factors: ["workforce_model", "variability_level"]
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc6_shojinka.md"
+  include:
+    - "interaction_plot"
+    - "throughput_by_variability"

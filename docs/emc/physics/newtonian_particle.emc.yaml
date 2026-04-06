@@ -1,0 +1,108 @@
+emc_version: "1.0"
+emc_id: "EMC-PHY-003"
+
+identity:
+  name: "Newtonian Particle Dynamics"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "\\vec{F} = m\\vec{a} = m\\frac{d^2\\vec{r}}{dt^2}"
+  plain_text: "F = ma = m·d²r/dt²"
+  description: |
+    Newton's Second Law of Motion states that the acceleration of an object
+    is directly proportional to the net force acting on it and inversely
+    proportional to its mass. This is the foundation of classical mechanics.
+  equation_type: "ODE"
+  variables:
+    - symbol: "F"
+      description: "Net force vector"
+      units: "N"
+      type: "input"
+    - symbol: "m"
+      description: "Mass"
+      units: "kg"
+      type: "parameter"
+    - symbol: "a"
+      description: "Acceleration vector"
+      units: "m/s²"
+      type: "dependent"
+    - symbol: "r"
+      description: "Position vector"
+      units: "m"
+      type: "dependent"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Newton, I."]
+    title: "Philosophiæ Naturalis Principia Mathematica"
+    year: 1687
+    publisher: "Royal Society"
+  supporting_citations:
+    - authors: ["Feynman, R.P.", "Leighton, R.B.", "Sands, M."]
+      title: "The Feynman Lectures on Physics"
+      year: 2011
+      publisher: "Basic Books"
+  derivation_method: "First principles"
+  derivation_summary: |
+    Newton's laws are empirical observations elevated to axioms:
+    1. Law of Inertia: A body at rest stays at rest unless acted upon
+    2. F = ma: Force causes acceleration proportional to mass
+    3. Action-Reaction: Forces come in equal and opposite pairs
+
+domain_of_validity:
+  parameters:
+    mass:
+      min: 0.0
+      max: null
+      units: "kg"
+      physical_constraint: "m > 0"
+  assumptions:
+    - "Non-relativistic velocities (v << c)"
+    - "Classical regime (not quantum scale)"
+    - "Inertial reference frame"
+    - "Point particle (no rotation)"
+
+verification_tests:
+  tests:
+    - id: "NPD-001"
+      name: "Free fall under gravity"
+      parameters:
+        g: 9.80665
+        y0: 100.0
+        v0: 0.0
+      expected:
+        y_at_t: "y0 - 0.5*g*t²"
+        v_at_t: "-g*t"
+      tolerance: 1.0e-10
+    - id: "NPD-002"
+      name: "Projectile motion"
+      parameters:
+        v0: 20.0
+        theta: 45.0
+        g: 9.80665
+      expected:
+        range: "v0²*sin(2θ)/g"
+        max_height: "v0²*sin²(θ)/(2g)"
+      tolerance: 1.0e-8
+    - id: "NPD-003"
+      name: "Momentum conservation"
+      type: "conservation_law"
+      condition: "p = m*v = const (no external force)"
+      tolerance: 1.0e-12
+
+falsification_criteria:
+  criteria:
+    - id: "NPD-FC-001"
+      name: "Momentum violation"
+      condition: "|p(t) - p(0)| > tolerance (isolated system)"
+      threshold: 1.0e-10
+      severity: "critical"
+    - id: "NPD-FC-002"
+      name: "Energy violation"
+      condition: "|E(t) - E(0)| > tolerance (conservative force)"
+      threshold: 1.0e-10
+      severity: "critical"

@@ -1,0 +1,172 @@
+# Equation Model Card (EMC) Schema v1.0
+# Heijunka (Production Leveling)
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-007"
+
+identity:
+  name: "Heijunka (Production Leveling)"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \text{Heijunka: } P(t) = \bar{D} \quad (\text{constant production})
+    \text{Chase: } P(t) = D(t) \quad (\text{follow demand})
+    \text{Bullwhip: } \frac{Var(Orders)}{Var(Demand)} > 1 \quad (\text{amplification})
+  plain_text: "Heijunka produces at constant rate; Chase matches demand; Bullwhip measures amplification"
+  description: |
+    Heijunka (production leveling) acts as a low-pass filter against demand
+    variability. By producing at a constant rate regardless of demand
+    fluctuations, variance is absorbed by finished goods inventory rather
+    than propagated upstream as the Bullwhip Effect.
+
+  variables:
+    - symbol: "P(t)"
+      description: "Production rate at time t"
+      units: "units/time"
+      type: "control"
+    - symbol: "D(t)"
+      description: "Demand rate at time t"
+      units: "units/time"
+      type: "input"
+    - symbol: "D_bar"
+      description: "Average demand rate"
+      units: "units/time"
+      type: "parameter"
+    - symbol: "Var_orders"
+      description: "Variance of orders to supplier"
+      units: "(units/time)^2"
+      type: "output"
+    - symbol: "Var_demand"
+      description: "Variance of customer demand"
+      units: "(units/time)^2"
+      type: "input"
+
+  equation_type: "control"
+  order: 0
+  linearity: "linear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Lee, H.L.", "Padmanabhan, V.", "Whang, S."]
+    title: "The Bullwhip Effect in Supply Chains"
+    journal: "Sloan Management Review"
+    year: 1997
+    volume: 38
+    issue: 3
+    pages: "93-102"
+
+  supporting_citations:
+    - authors: ["Coleman, B.J.", "Vaghefi, M.R."]
+      title: "Heijunka: A key to the Toyota production system"
+      journal: "Production and Inventory Management Journal"
+      year: 1994
+      volume: 35
+      issue: 4
+      pages: "31-35"
+
+  derivation_method: "Variance analysis with smoothing"
+  derivation_summary: |
+    Chase strategy: Orders(t) = Demand(t) + adjustment
+    This amplifies variance through the order-up-to policy.
+
+    Heijunka: Orders(t) = D_bar (constant)
+    Variance of orders = 0, completely dampening bullwhip.
+
+    Trade-off: Heijunka requires finished goods buffer.
+
+domain_of_validity:
+  parameters:
+    demand_mean:
+      min: 0.0
+      max: null
+      physical_constraint: "D_bar > 0"
+    demand_variance:
+      min: 0.0
+      max: null
+      physical_constraint: "Var(D) >= 0"
+    smoothing_window:
+      min: 1
+      max: null
+      physical_constraint: "Window >= 1 period"
+
+  assumptions:
+    - "Demand is stationary (constant mean)"
+    - "Lead times are constant"
+    - "No capacity constraints"
+    - "Perfect demand visibility"
+
+  limitations:
+    - description: "Requires finished goods inventory"
+      reference: "Buffer absorbs demand variability"
+    - description: "Doesn't help with trend or seasonality"
+      reference: "Need demand management for level shifts"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \text{Bullwhip with chase: } BWE = 1 + \frac{2L}{p} + \frac{2L^2}{p^2}
+      \text{Bullwhip with heijunka: } BWE \approx 1
+    parameters:
+      L: "Lead time (periods)"
+      p: "Forecast smoothing periods"
+      BWE: "Bullwhip effect ratio"
+
+  test_cases:
+    - name: "TPS TC-4: Heijunka vs Chase"
+      parameters:
+        demand_mean: 100
+        demand_variance: 10
+        lead_time: 1
+        forecast_periods: 1
+        supply_chain_stages: 4
+      expected:
+        chase_variance_factory: 450  # 45x demand variance
+        heijunka_variance_factory: 23  # 2.3x demand variance
+        variance_reduction: ">90%"
+      tolerance: 0.20
+
+verification_tests:
+  tests:
+    - id: "HEI-VT-001"
+      name: "Bullwhip formula"
+      type: "numerical_vs_analytical"
+      tolerance: 0.10
+      description: "Simulated BWE matches formula"
+
+    - id: "HEI-VT-002"
+      name: "Heijunka dampening"
+      type: "variance_comparison"
+      tolerance: 0.20
+      description: "Heijunka reduces upstream variance"
+
+    - id: "HEI-VT-003"
+      name: "Inventory increase"
+      type: "trade_off"
+      description: "Heijunka increases finished goods inventory"
+
+falsification_criteria:
+  criteria:
+    - id: "HEI-FC-001"
+      name: "Heijunka amplifies variance"
+      condition: "Var_orders(heijunka) > Var_orders(chase)"
+      threshold: null
+      severity: "critical"
+      interpretation: "Heijunka should always reduce variance"
+
+    - id: "HEI-FC-002"
+      name: "No stockouts with heijunka"
+      condition: "stockouts(heijunka) > stockouts(chase)"
+      threshold: null
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/operations/heijunka.rs"
+  test_file: "tests/verification/heijunka_test.rs"
+  experiment_template: "examples/experiments/heijunka.yaml"

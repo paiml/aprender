@@ -1,0 +1,143 @@
+emc_version: "1.0"
+emc_id: "EMC-OPT-001"
+
+identity:
+  name: "Bayesian Optimization"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "x_{n+1} = \\arg\\max_x \\alpha(x; \\mathcal{D}_n)"
+  plain_text: "x_{n+1} = argmax_x α(x; D_n)"
+  description: |
+    Bayesian Optimization is a sequential design strategy for global optimization
+    of expensive black-box functions. It uses a probabilistic surrogate model
+    (typically a Gaussian Process) to model the unknown function and an
+    acquisition function to decide where to sample next, balancing exploration
+    and exploitation.
+  equation_type: "optimization"
+  variables:
+    - symbol: "f"
+      description: "Unknown objective function to minimize"
+      units: "varies"
+      type: "target"
+    - symbol: "x"
+      description: "Input point in search space"
+      units: "varies"
+      type: "input"
+    - symbol: "α"
+      description: "Acquisition function (e.g., Expected Improvement)"
+      units: "varies"
+      type: "derived"
+    - symbol: "D_n"
+      description: "Observed data {(x_i, y_i)}_{i=1}^n"
+      units: "varies"
+      type: "state"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Jones, D.R.", "Schonlau, M.", "Welch, W.J."]
+    title: "Efficient Global Optimization of Expensive Black-Box Functions"
+    journal: "Journal of Global Optimization"
+    year: 1998
+    volume: 13
+    issue: 4
+    pages: "455-492"
+  supporting_citations:
+    - authors: ["Rasmussen, C.E.", "Williams, C.K.I."]
+      title: "Gaussian Processes for Machine Learning"
+      year: 2006
+      publisher: "MIT Press"
+    - authors: ["Mockus, J."]
+      title: "Bayesian Approach to Global Optimization"
+      year: 1989
+      publisher: "Kluwer"
+  derivation_method: "Probabilistic modeling"
+  derivation_summary: |
+    1. Place GP prior over f: f ~ GP(m, k)
+    2. Condition on observations: p(f|D_n) is posterior GP
+    3. Compute acquisition function α(x) at each candidate
+    4. Select next point: x_{n+1} = argmax α(x)
+    5. Evaluate f(x_{n+1}), update D_n, repeat
+
+    Expected Improvement (EI):
+    EI(x) = E[max(f* - f(x), 0)]
+          = (f* - μ(x))Φ(Z) + σ(x)φ(Z)
+    where Z = (f* - μ(x))/σ(x), f* is best observed
+
+domain_of_validity:
+  parameters:
+    budget:
+      min: 1
+      max: null
+      units: "evaluations"
+      physical_constraint: "budget ≥ initial_points"
+  assumptions:
+    - "Function is continuous"
+    - "Function evaluations are expensive"
+    - "Function is deterministic (or noise is known)"
+    - "Search space is bounded"
+    - "GP kernel is appropriate for function smoothness"
+
+acquisition_functions:
+  - name: "Expected Improvement (EI)"
+    formula: "EI(x) = (f* - μ(x))Φ(Z) + σ(x)φ(Z)"
+    properties: "Balances exploitation and exploration"
+  - name: "Probability of Improvement (PI)"
+    formula: "PI(x) = Φ((f* - μ(x))/σ(x))"
+    properties: "Pure exploitation"
+  - name: "Upper Confidence Bound (UCB)"
+    formula: "UCB(x) = μ(x) - β·σ(x)"
+    properties: "Tunable exploration via β"
+
+analytical_solution:
+  test_functions:
+    - name: "Branin"
+      formula: "f(x,y) = a(y - bx² + cx - r)² + s(1-t)cos(x) + s"
+      bounds: "[[-5, 10], [0, 15]]"
+      global_minimum: 0.397887
+      global_minimizers:
+        - [-3.14159, 12.275]
+        - [3.14159, 2.275]
+        - [9.42478, 2.475]
+    - name: "Rosenbrock"
+      formula: "f(x,y) = (a-x)² + b(y-x²)²"
+      bounds: "[[-5, 5], [-5, 5]]"
+      global_minimum: 0.0
+      global_minimizer: [1.0, 1.0]
+
+verification_tests:
+  tests:
+    - id: "BO-001"
+      name: "Branin optimization"
+      condition: "Find global minimum within 50 evaluations"
+      tolerance: 0.01
+    - id: "BO-002"
+      name: "EI decreases"
+      condition: "max(EI) → 0 as optimization progresses"
+      tolerance: null
+    - id: "BO-003"
+      name: "Convergence to optimum"
+      condition: "|f_best - f_global| < tolerance after budget"
+      tolerance: 0.1
+
+falsification_criteria:
+  criteria:
+    - id: "BO-FC-001"
+      name: "Optimization failure"
+      condition: "best_observed - global_minimum > tolerance after budget"
+      threshold: 0.1
+      severity: "major"
+    - id: "BO-FC-002"
+      name: "GP prediction error"
+      condition: "Leave-one-out error exceeds tolerance"
+      threshold: 0.2
+      severity: "major"
+    - id: "BO-FC-003"
+      name: "Acquisition collapse"
+      condition: "EI = 0 but optimum not found"
+      threshold: null
+      severity: "critical"

@@ -1,0 +1,95 @@
+# Monte Carlo Pi Estimation Experiment
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "EXP-MC-PI-001"
+
+metadata:
+  name: "Monte Carlo Pi Estimation"
+  description: |
+    Verify Monte Carlo convergence rate O(n^{-1/2}) per CLT.
+    Estimate π via unit circle inscribed in unit square.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["statistical", "monte-carlo", "verification", "convergence"]
+
+equation_model_card:
+  emc_ref: "statistical/monte_carlo_integration"
+  emc_version: "1.0.0"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Monte Carlo estimator does NOT converge as O(n^{-1/2}) per CLT.
+    Standard error does not decrease predictably with sample size.
+  alternative_hypothesis: |
+    H₁: Monte Carlo estimator converges as O(n^{-1/2}).
+    log(error) vs log(n) has slope ≈ -0.5.
+  expected_outcome: "reject"  # CLT should hold
+
+reproducibility:
+  seed: 314159265
+  ieee_strict: true
+
+simulation:
+  domain:
+    type: "unit_square"
+    bounds: [[0, 1], [0, 1]]
+
+  integrand:
+    expression: "4 * (x^2 + y^2 <= 1)"
+    expected_value: 3.14159265358979
+    description: "Indicator function for quarter circle, scaled by 4"
+
+  variance_reduction:
+    method: "antithetic"
+    description: "Use (u, 1-u) pairs for variance reduction"
+
+  sample_sizes: [100, 1000, 10000, 100000, 1000000]
+  replications: 100
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "MC-CONV"
+      name: "Convergence rate"
+      condition: "slope of log(error) vs log(n) in [-0.6, -0.4]"
+      tolerance: 0.1
+      severity: "major"
+
+    - id: "MC-UNBIASED"
+      name: "Unbiasedness"
+      condition: "mean(estimates) - pi < 3 * stderr"
+      severity: "critical"
+
+    - id: "MC-VARIANCE"
+      name: "Variance reduction"
+      condition: "var(antithetic) < var(naive) * 0.9"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  convergence_analysis:
+    model: "log_log_regression"
+    expected_slope: -0.5
+    tolerance: 0.1
+
+  clt_verification:
+    normality_test: "shapiro_wilk"
+    alpha: 0.05
+
+statistics:
+  confidence_intervals:
+    method: "bootstrap"
+    n_bootstrap: 1000
+    confidence_level: 0.95
+
+reporting:
+  format: "markdown"
+  output: "reports/monte_carlo_pi.md"
+  include:
+    - "convergence_plot"
+    - "error_distribution"
+    - "variance_reduction_comparison"

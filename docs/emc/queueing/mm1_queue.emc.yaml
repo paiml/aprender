@@ -1,0 +1,169 @@
+emc_version: "1.0"
+emc_id: "EMC-QUE-001"
+
+identity:
+  name: "M/M/1 Queue"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "L = \\frac{\\rho}{1-\\rho}, \\quad W = \\frac{1}{\\mu - \\lambda}"
+  plain_text: "L = ρ/(1-ρ), W = 1/(μ-λ)"
+  description: |
+    The M/M/1 queue is the simplest queueing model with Markovian (Poisson)
+    arrivals, Markovian (exponential) service times, and a single server.
+    It provides closed-form solutions for all performance metrics and serves
+    as the foundation for queueing theory.
+  equation_type: "algebraic"
+  variables:
+    - symbol: "λ"
+      description: "Arrival rate"
+      units: "arrivals/time"
+      type: "parameter"
+    - symbol: "μ"
+      description: "Service rate"
+      units: "services/time"
+      type: "parameter"
+    - symbol: "ρ"
+      description: "Utilization (λ/μ)"
+      units: "dimensionless"
+      type: "derived"
+    - symbol: "L"
+      description: "Average number in system"
+      units: "customers"
+      type: "output"
+    - symbol: "W"
+      description: "Average time in system"
+      units: "time"
+      type: "output"
+    - symbol: "Lq"
+      description: "Average number in queue"
+      units: "customers"
+      type: "output"
+    - symbol: "Wq"
+      description: "Average waiting time in queue"
+      units: "time"
+      type: "output"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Erlang, A.K."]
+    title: "The Theory of Probabilities and Telephone Conversations"
+    journal: "Nyt Tidsskrift for Matematik B"
+    year: 1909
+    volume: 20
+  supporting_citations:
+    - authors: ["Gross, D.", "Shortle, J.F.", "Thompson, J.M.", "Harris, C.M."]
+      title: "Fundamentals of Queueing Theory"
+      year: 2008
+      publisher: "Wiley"
+      edition: "4th"
+  derivation_method: "Birth-death process"
+  derivation_summary: |
+    Using balance equations for steady-state probabilities:
+    λ·π_n = μ·π_{n+1} for n ≥ 0
+
+    Solving recursively: π_n = ρⁿ·π_0 where ρ = λ/μ
+    Normalization: Σπ_n = 1 gives π_0 = 1-ρ
+
+    Performance metrics:
+    L = Σn·π_n = ρ/(1-ρ)
+    W = L/λ = 1/(μ-λ) [Little's Law]
+    Lq = L - ρ = ρ²/(1-ρ)
+    Wq = Lq/λ = ρ/(μ(1-ρ))
+
+domain_of_validity:
+  parameters:
+    lambda:
+      min: 0.0
+      max: null
+      units: "arrivals/time"
+      physical_constraint: "λ ≥ 0"
+    mu:
+      min: 0.0
+      max: null
+      units: "services/time"
+      physical_constraint: "μ > 0"
+  assumptions:
+    - "Poisson arrival process (memoryless)"
+    - "Exponential service times (memoryless)"
+    - "Single server"
+    - "Infinite queue capacity"
+    - "FIFO discipline"
+    - "Steady state (λ < μ)"
+  stability_condition: "ρ = λ/μ < 1"
+
+analytical_solution:
+  formulas:
+    utilization: "ρ = λ/μ"
+    avg_in_system: "L = ρ/(1-ρ)"
+    avg_in_queue: "Lq = ρ²/(1-ρ)"
+    avg_time_in_system: "W = 1/(μ-λ)"
+    avg_wait_in_queue: "Wq = ρ/(μ(1-ρ))"
+    prob_empty: "π_0 = 1-ρ"
+    prob_n_customers: "π_n = (1-ρ)ρⁿ"
+  test_cases:
+    - name: "Light load"
+      parameters:
+        lambda: 2.0
+        mu: 5.0
+      expected:
+        rho: 0.4
+        L: 0.667
+        W: 0.333
+        Lq: 0.267
+        Wq: 0.133
+      tolerance: 0.01
+    - name: "Moderate load"
+      parameters:
+        lambda: 4.0
+        mu: 5.0
+      expected:
+        rho: 0.8
+        L: 4.0
+        W: 1.0
+        Lq: 3.2
+        Wq: 0.8
+      tolerance: 0.01
+    - name: "Heavy load"
+      parameters:
+        lambda: 4.5
+        mu: 5.0
+      expected:
+        rho: 0.9
+        L: 9.0
+        W: 2.0
+        Lq: 8.1
+        Wq: 1.8
+      tolerance: 0.01
+
+verification_tests:
+  tests:
+    - id: "MM1-001"
+      name: "Little's Law validation"
+      condition: "L = λW"
+      tolerance: 0.01
+    - id: "MM1-002"
+      name: "Queue length formula"
+      condition: "L_sim ≈ ρ/(1-ρ)"
+      tolerance: 0.05
+    - id: "MM1-003"
+      name: "Waiting time formula"
+      condition: "W_sim ≈ 1/(μ-λ)"
+      tolerance: 0.05
+
+falsification_criteria:
+  criteria:
+    - id: "MM1-FC-001"
+      name: "Little's Law violation"
+      condition: "|L - λW| / L > tolerance"
+      threshold: 0.05
+      severity: "critical"
+    - id: "MM1-FC-002"
+      name: "Unstable queue"
+      condition: "L grows unboundedly when ρ < 1"
+      threshold: null
+      severity: "critical"

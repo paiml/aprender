@@ -1,0 +1,153 @@
+# Equation Model Card (EMC) Schema v1.0
+# Jackson Network - Open Queueing Network
+
+emc_version: "1.0"
+emc_id: "EMC-QUEUE-004"
+
+identity:
+  name: "Jackson Network"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \pi(n_1, ..., n_K) = \prod_{i=1}^{K} \pi_i(n_i)
+  plain_text: "pi(n1,...,nK) = product of pi_i(n_i) for i=1 to K"
+  description: |
+    Jackson's theorem proves that open queueing networks with Poisson
+    arrivals, exponential service times, and probabilistic routing have
+    a product-form solution. Each queue behaves as an independent M/M/1
+    queue with effective arrival rate.
+
+  variables:
+    - symbol: "pi"
+      description: "Joint steady-state probability distribution"
+      units: "probability"
+      type: "dependent"
+    - symbol: "n_i"
+      description: "Number of customers at queue i"
+      units: "count"
+      type: "state"
+    - symbol: "K"
+      description: "Number of queues in network"
+      units: "count"
+      type: "parameter"
+    - symbol: "lambda_i"
+      description: "Effective arrival rate to queue i"
+      units: "1/time"
+      type: "derived"
+
+  equation_type: "probabilistic"
+  order: 0
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Jackson, J.R."]
+    title: "Networks of Waiting Lines"
+    journal: "Operations Research"
+    year: 1957
+    volume: 5
+    issue: 4
+    pages: "518-521"
+
+  supporting_citations:
+    - authors: ["Gordon, W.J.", "Newell, G.F."]
+      title: "Closed Queuing Systems with Exponential Servers"
+      journal: "Operations Research"
+      year: 1967
+
+  derivation_method: "Balance equations with detailed balance"
+  derivation_summary: |
+    Jackson proved that if the traffic equations have a unique solution
+    and all nodes are stable, the network has product-form solution.
+    Each queue's marginal distribution is M/M/1 with effective rate.
+
+domain_of_validity:
+  parameters:
+    external_arrival_rate:
+      min: 0.0
+      max: null
+      physical_constraint: "lambda_0 >= 0"
+    routing_probabilities:
+      min: 0.0
+      max: 1.0
+      physical_constraint: "sum(p_ij) <= 1 for all i"
+
+  assumptions:
+    - "Poisson external arrivals"
+    - "Exponential service times at each node"
+    - "Markovian routing (state-independent)"
+    - "All queues stable (rho_i < 1)"
+    - "Infinite buffer capacity"
+
+  limitations:
+    - description: "Exponential service only"
+      reference: "BCMP theorem extends to PH distributions"
+    - description: "No blocking or finite buffers"
+      reference: "Requires open network"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \lambda_i = \gamma_i + \sum_{j=1}^{K} \lambda_j p_{ji}
+      L_i = \frac{\rho_i}{1-\rho_i}, \quad \rho_i = \lambda_i / \mu_i
+    parameters:
+      gamma_i: "External arrival rate to node i"
+      p_ji: "Routing probability from j to i"
+      mu_i: "Service rate at node i"
+
+  test_cases:
+    - name: "Two-node tandem"
+      parameters:
+        gamma: [5.0, 0.0]
+        mu: [10.0, 8.0]
+        routing: [[0, 1], [0, 0]]
+      expected:
+        L1: 1.0
+        L2: 1.667
+      tolerance: 0.05
+
+verification_tests:
+  tests:
+    - id: "JN-VT-001"
+      name: "Product form validation"
+      type: "statistical"
+      tolerance: 0.05
+      description: "Verify joint distribution is product of marginals"
+
+    - id: "JN-VT-002"
+      name: "Traffic equation solution"
+      type: "numerical"
+      tolerance: 0.01
+      description: "Verify effective arrival rates match traffic equations"
+
+    - id: "JN-VT-003"
+      name: "Individual queue M/M/1"
+      type: "comparison"
+      tolerance: 0.05
+      description: "Each queue matches independent M/M/1"
+
+falsification_criteria:
+  criteria:
+    - id: "JN-FC-001"
+      name: "Network stability"
+      condition: "any(rho_i >= 1)"
+      threshold: 1.0
+      severity: "critical"
+
+    - id: "JN-FC-002"
+      name: "Product form violation"
+      condition: "correlation(n_i, n_j) > threshold"
+      threshold: 0.05
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/queueing.rs"
+  test_file: "tests/verification/jackson_network_test.rs"
+  experiment_template: "examples/experiments/jackson_network.yaml"

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simular.paiml.com/schemas/emc.schema.json",
+  "title": "Equation Model Card (EMC) Schema",
+  "description": "JSON Schema for simular Equation Model Card definitions",
+  "type": "object",
+  "required": ["emc_version", "emc_id", "identity", "governing_equation"],
+  "additionalProperties": true,
+  "properties": {
+    "emc_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "EMC schema version (e.g., 1.0)"
+    },
+    "emc_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique EMC identifier (e.g., EMC-PHY-001 or optimization/tsp_grasp)"
+    },
+    "identity": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable name"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Semantic version (e.g., 1.0.0)"
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object", "additionalProperties": true }
+            ]
+          },
+          "description": "List of authors (strings or objects with name/affiliation)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of the equation"
+        }
+      }
+    },
+    "governing_equation": {
+      "type": "object",
+      "required": ["latex"],
+      "additionalProperties": true,
+      "properties": {
+        "latex": {
+          "type": "string",
+          "minLength": 1,
+          "description": "LaTeX representation of the equation"
+        },
+        "plain_text": {
+          "type": "string",
+          "description": "Plain text/Unicode representation"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation"
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/variable"
+          },
+          "description": "Variables in the equation"
+        },
+        "citation": {
+          "$ref": "#/$defs/citation"
+        }
+      }
+    },
+    "analytical_solution": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "test_cases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/testCase"
+          },
+          "description": "Analytical test cases with known solutions"
+        }
+      }
+    },
+    "analytical_derivation": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Analytical derivation of the equation"
+    },
+    "domain_of_validity": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Parameter constraints"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Assumptions for the equation to hold"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the validity domain"
+        }
+      }
+    },
+    "falsification": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/emcCriterion"
+          },
+          "description": "Falsification criteria"
+        }
+      }
+    },
+    "falsification_criteria": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/emcCriterion"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "criteria": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/emcCriterion"
+              }
+            }
+          }
+        }
+      ],
+      "description": "Falsification criteria (array or object with criteria key)"
+    },
+    "verification_tests": {
+      "oneOf": [
+        { "type": "array" },
+        { "type": "object", "additionalProperties": true }
+      ],
+      "description": "Verification test cases (array or object)"
+    }
+  },
+  "$defs": {
+    "variable": {
+      "type": "object",
+      "required": ["symbol", "description"],
+      "additionalProperties": true,
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "description": "Variable symbol"
+        },
+        "description": {
+          "type": "string",
+          "description": "Variable meaning"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Physical unit"
+        }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "authors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "title": {
+          "type": "string"
+        },
+        "journal": {
+          "type": "string"
+        },
+        "year": {
+          "type": "integer",
+          "minimum": 1800,
+          "maximum": 2100
+        },
+        "doi": {
+          "type": "string"
+        }
+      }
+    },
+    "testCase": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "expected": {
+          "description": "Expected result - can be number, string, or object"
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "parameterConstraint": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "type": { "type": "string" }
+      }
+    },
+    "emcCriterion": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "condition": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

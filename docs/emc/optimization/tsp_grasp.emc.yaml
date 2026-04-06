@@ -1,0 +1,254 @@
+emc_version: "1.0"
+emc_id: "EMC-OPT-003"
+
+identity:
+  name: "TSP GRASP with 2-Opt"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2024-12-11"
+  last_updated: "2024-12-12"
+  status: "production"
+
+governing_equation:
+  latex: "L(\\pi) = \\sum_{i=1}^{n-1} d(\\pi_i, \\pi_{i+1}) + d(\\pi_n, \\pi_1)"
+  plain_text: "L(π) = Σ d(π(i), π(i+1)) + d(π(n), π(1))"
+  description: |
+    The Traveling Salesman Problem (TSP) seeks the minimum-length Hamiltonian
+    cycle through n cities. GRASP (Greedy Randomized Adaptive Search Procedure)
+    constructs solutions using a randomized greedy approach, then improves via
+    2-opt local search. The tour length L is the sum of all edge distances.
+  equation_type: "algebraic"
+  linearity: "nonlinear"
+  variables:
+    - symbol: "L"
+      description: "Total tour length"
+      units: "distance units"
+      type: "dependent"
+    - symbol: "π"
+      description: "Permutation of cities (tour order)"
+      type: "dependent"
+    - symbol: "d(i,j)"
+      description: "Euclidean distance between cities i and j"
+      units: "distance units"
+      type: "parameter"
+    - symbol: "n"
+      description: "Number of cities"
+      units: "count"
+      type: "parameter"
+
+supporting_equations:
+  - name: "2-Opt Delta"
+    latex: "\\Delta = d(i,j) + d(i{+}1,j{+}1) - d(i,i{+}1) - d(j,j{+}1)"
+    description: "Change in tour length when reversing segment [i+1, j]. Apply swap if Δ < 0."
+
+  - name: "BHH Estimate"
+    latex: "E[L] \\approx 0.7124 \\cdot \\sqrt{n \\cdot A}"
+    description: "Beardwood-Halton-Hammersley asymptotic expected tour length for n random points in area A."
+
+  - name: "1-Tree Lower Bound"
+    latex: "LB = MST + \\min_v(e_1(v) + e_2(v))"
+    description: "Held-Karp 1-tree relaxation: MST plus two smallest edges to one node."
+
+  - name: "RCL Construction"
+    latex: "RCL = \\{j : d(i,j) \\leq c_{min} + \\alpha(c_{max} - c_{min})\\}"
+    description: "Restricted Candidate List for randomized greedy construction."
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Feo, T.A.", "Resende, M.G.C."]
+    title: "Greedy Randomized Adaptive Search Procedures"
+    journal: "Journal of Global Optimization"
+    year: 1995
+    volume: 6
+    pages: "109-133"
+    doi: "10.1007/BF01096763"
+  supporting_citations:
+    - authors: ["Lin, S."]
+      title: "Computer solutions of the traveling salesman problem"
+      journal: "Bell System Technical Journal"
+      year: 1965
+      volume: 44
+      pages: "2245-2269"
+    - authors: ["Beardwood, J.", "Halton, J.H.", "Hammersley, J.M."]
+      title: "The shortest path through many points"
+      journal: "Proc. Cambridge Philosophical Society"
+      year: 1959
+      volume: 55
+      pages: "299-327"
+    - authors: ["Held, M.", "Karp, R.M."]
+      title: "The traveling-salesman problem and minimum spanning trees"
+      journal: "Operations Research"
+      year: 1970
+      volume: 18
+      pages: "1138-1162"
+  derivation_method: "Metaheuristic construction"
+  derivation_summary: |
+    GRASP iterates two phases:
+    1. Construction: Build tour greedily with randomization via RCL
+    2. Local Search: Apply 2-opt until local optimum
+
+    2-opt removes two edges and reconnects differently. For edges (i,i+1) and (j,j+1),
+    the move reverses the segment [i+1, j]. This is beneficial when:
+    d(i,j) + d(i+1,j+1) < d(i,i+1) + d(j,j+1)
+
+domain_of_validity:
+  parameters:
+    n:
+      min: 3
+      max: null
+      units: "count"
+      physical_constraint: "n ≥ 3 for non-trivial TSP"
+    rcl_size:
+      min: 1
+      max: null
+      units: "count"
+      physical_constraint: "1 ≤ rcl_size ≤ n"
+  assumptions:
+    - "Symmetric distances: d(i,j) = d(j,i)"
+    - "Triangle inequality: d(i,k) ≤ d(i,j) + d(j,k)"
+    - "Euclidean metric space"
+    - "Complete graph (all cities reachable)"
+  limitations:
+    - description: "NP-hard problem; no polynomial-time exact solution"
+      severity: "informational"
+    - description: "Local optima may not be global optima"
+      severity: "minor"
+    - description: "BHH estimate only asymptotically accurate"
+      severity: "minor"
+
+verification_tests:
+  tests:
+    - id: "TSP-001"
+      name: "Valid Permutation"
+      description: "Tour visits all n cities exactly once"
+      parameters:
+        n: 25
+        seed: 42
+      expected:
+        tour_length: 25
+        unique_cities: 25
+      tolerance: 0.0
+
+    - id: "TSP-002"
+      name: "Above Lower Bound"
+      description: "Best tour length ≥ 1-tree lower bound"
+      parameters:
+        n: 25
+        seed: 42
+        iterations: 100
+      expected:
+        gap_positive: true
+      tolerance: 1.0e-10
+
+    - id: "TSP-003"
+      name: "2-Opt Monotonicity"
+      description: "2-opt never increases tour length"
+      parameters:
+        n: 25
+        seed: 42
+      expected:
+        monotonic_improvement: true
+      tolerance: 1.0e-10
+
+    - id: "TSP-004"
+      name: "Deterministic Replay"
+      description: "Same seed produces identical results"
+      parameters:
+        n: 25
+        seed: 42
+        iterations: 10
+      expected:
+        reproducible: true
+      tolerance: 0.0
+
+    - id: "TSP-005"
+      name: "Greedy vs Random"
+      description: "Randomized greedy outperforms random construction"
+      parameters:
+        n: 25
+        trials: 10
+      expected:
+        greedy_wins_ratio: 0.8
+      tolerance: 0.0
+
+falsification_criteria:
+  criteria:
+    - id: "TSP-FC-001"
+      name: "Invalid Tour"
+      condition: "Tour does not visit all cities exactly once"
+      severity: "critical"
+      interpretation: "Implementation error in tour construction"
+
+    - id: "TSP-FC-002"
+      name: "Below Lower Bound"
+      condition: "best_tour_length < lower_bound - ε"
+      severity: "critical"
+      interpretation: "Lower bound calculation error or impossible tour"
+
+    - id: "TSP-FC-003"
+      name: "2-Opt Increases Length"
+      condition: "tour_length_after > tour_length_before + ε"
+      severity: "critical"
+      interpretation: "2-opt implementation error"
+
+    - id: "TSP-FC-004"
+      name: "Excessive Optimality Gap"
+      condition: "(best - lower_bound) / lower_bound > 0.20"
+      severity: "major"
+      interpretation: "Algorithm not converging; consider more iterations"
+
+    - id: "TSP-FC-005"
+      name: "High Restart Variance"
+      condition: "CV(restart_lengths) > 0.05"
+      severity: "major"
+      interpretation: "Inconsistent algorithm behavior"
+
+    - id: "TSP-FC-006"
+      name: "Non-Deterministic"
+      condition: "Same seed produces different results"
+      severity: "critical"
+      interpretation: "RNG or state management error"
+
+probar_test_suite:
+  invariants:
+    - name: "valid_permutation"
+      check: "tour is valid permutation of [0, n)"
+      frequency: "every_step"
+
+    - name: "triangle_inequality"
+      check: "d(i,k) ≤ d(i,j) + d(j,k) for all i,j,k"
+      frequency: "initialization"
+
+    - name: "positive_distances"
+      check: "all distances > 0"
+      frequency: "initialization"
+
+    - name: "finite_values"
+      check: "tour_length is finite and positive"
+      frequency: "every_step"
+
+    - name: "monotonic_best"
+      check: "best_tour_length never increases"
+      frequency: "every_step"
+
+  fuzz_tests:
+    - name: "random_n"
+      range: [5, 50]
+      iterations: 100
+      check: "all invariants hold"
+
+    - name: "extreme_rcl"
+      values: [1, n]
+      check: "algorithm completes without error"
+
+implementation:
+  source_file: "src/demos/tsp_grasp.rs"
+  struct_name: "TspGraspDemo"
+  wasm_binding: "WasmTspGrasp"
+  test_file: "tests/tsp_grasp_tests.rs"
+  notes: |
+    WASM bindings expose all state for probar testing.
+    Supports three construction methods: RandomizedGreedy, NearestNeighbor, Random.
+    2-opt runs to local optimum after each construction.

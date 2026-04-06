@@ -1,0 +1,168 @@
+# Equation Model Card (EMC) Schema v1.0
+# Rigid Body Euler Equations
+
+emc_version: "1.0"
+emc_id: "EMC-PHYS-007"
+
+identity:
+  name: "Rigid Body Euler Equations"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    I_1 \dot{\omega}_1 = (I_2 - I_3)\omega_2\omega_3 \\
+    I_2 \dot{\omega}_2 = (I_3 - I_1)\omega_3\omega_1 \\
+    I_3 \dot{\omega}_3 = (I_1 - I_2)\omega_1\omega_2
+  plain_text: "Euler's equations for torque-free rigid body rotation"
+  description: |
+    Euler's equations describe the rotational dynamics of a rigid body
+    in a body-fixed frame aligned with the principal axes of inertia.
+    For torque-free motion, the equations are autonomous and conserve
+    both energy and angular momentum magnitude.
+
+  variables:
+    - symbol: "omega_i"
+      description: "Angular velocity about principal axis i"
+      units: "rad/s"
+      type: "dependent"
+    - symbol: "I_i"
+      description: "Principal moment of inertia about axis i"
+      units: "kg*m^2"
+      type: "parameter"
+
+  equation_type: "ODE"
+  order: 1
+  linearity: "nonlinear"
+  homogeneity: "homogeneous"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Goldstein, H.", "Poole, C.", "Safko, J."]
+    title: "Classical Mechanics"
+    year: 2002
+    publisher: "Addison-Wesley"
+    edition: "3rd"
+    pages: "198-232"
+    isbn: "978-0201657029"
+
+  supporting_citations:
+    - authors: ["Landau, L.D.", "Lifshitz, E.M."]
+      title: "Mechanics"
+      year: 1976
+      publisher: "Butterworth-Heinemann"
+
+  derivation_method: "Angular momentum conservation in rotating frame"
+  derivation_summary: |
+    From L = I*omega in body frame and dL/dt + omega x L = torque,
+    with zero torque we get the Euler equations. The nonlinear
+    coupling produces complex motion including nutation.
+
+domain_of_validity:
+  parameters:
+    I1:
+      min: 0.0
+      max: null
+      physical_constraint: "I1 > 0"
+    I2:
+      min: 0.0
+      max: null
+      physical_constraint: "I2 > 0"
+    I3:
+      min: 0.0
+      max: null
+      physical_constraint: "I3 > 0"
+
+  assumptions:
+    - "Rigid body (no deformation)"
+    - "Torque-free motion"
+    - "Principal axes frame"
+    - "Classical mechanics (non-relativistic)"
+
+  limitations:
+    - description: "Gimbal lock in Euler angles"
+      reference: "Use quaternions for numerical stability"
+    - description: "Polhode instability"
+      reference: "Intermediate axis theorem"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \omega_1(t) = \sqrt{\frac{2E - I_2\Omega^2}{I_1(I_1-I_3)}} \text{cn}(t/\tau, k)
+    parameters:
+      cn: "Jacobi elliptic function"
+      E: "Rotational kinetic energy"
+      Omega: "Angular momentum magnitude"
+
+  test_cases:
+    - name: "Symmetric top"
+      parameters:
+        I1: 1.0
+        I2: 1.0
+        I3: 2.0
+      initial_conditions:
+        omega1: 1.0
+        omega2: 0.0
+        omega3: 5.0
+      expected:
+        precession_rate: 2.5
+      tolerance: 0.01
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Lie-group integrator"
+      order: 4
+      symplectic: true
+      energy_drift: "bounded"
+    - name: "Quaternion RK4"
+      order: 4
+      gimbal_free: true
+
+  conserved_quantities:
+    - name: "Kinetic energy"
+      expression: "T = (1/2)*(I1*w1^2 + I2*w2^2 + I3*w3^2)"
+      tolerance: 1e-10
+    - name: "Angular momentum squared"
+      expression: "L^2 = I1^2*w1^2 + I2^2*w2^2 + I3^2*w3^2"
+      tolerance: 1e-10
+
+verification_tests:
+  tests:
+    - id: "RB-VT-001"
+      name: "Energy conservation"
+      type: "conservation_law"
+      tolerance: 1e-10
+
+    - id: "RB-VT-002"
+      name: "Angular momentum conservation"
+      type: "conservation_law"
+      tolerance: 1e-10
+
+    - id: "RB-VT-003"
+      name: "Symmetric top precession"
+      type: "comparison"
+      tolerance: 0.01
+
+falsification_criteria:
+  criteria:
+    - id: "RB-FC-001"
+      name: "Energy drift"
+      condition: "|T(t) - T(0)| / T(0) > tolerance"
+      threshold: 1e-6
+      severity: "critical"
+
+    - id: "RB-FC-002"
+      name: "Momentum drift"
+      condition: "|L^2(t) - L^2(0)| / L^2(0) > tolerance"
+      threshold: 1e-6
+      severity: "critical"
+
+implementation:
+  source_file: "src/domains/physics/rigid_body.rs"
+  test_file: "tests/verification/rigid_body_test.rs"
+  experiment_template: "examples/experiments/rigid_body.yaml"

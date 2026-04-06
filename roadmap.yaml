@@ -1,0 +1,348 @@
+# Simular Roadmap
+# Unified Simulation Engine for the Sovereign AI Stack
+# Version: 0.1.0-draft
+
+metadata:
+  project: simular
+  description: "Falsifiable, reproducible simulation framework"
+  created: 2025-12-10
+  updated: 2025-12-10
+  status: RFC
+
+principles:
+  toyota_way:
+    - jidoka: "Stop-on-error for numerical instability"
+    - poka_yoke: "Type-safe units via uom crate"
+    - heijunka: "Load-balanced parallel execution"
+    - kaizen: "Continuous improvement via Bayesian optimization"
+    - muda: "Zero-copy data paths"
+    - genchi_genbutsu: "Direct observation via replay"
+
+  jpl_power_of_10:
+    - rule_1: "Simple control flow (max nesting 4)"
+    - rule_2: "Fixed loop bounds"
+    - rule_3: "No heap allocation after init"
+    - rule_4: "Short functions (max 60 lines)"
+    - rule_5: "Min 2 assertions per function"
+    - rule_6: "Minimal variable scope"
+    - rule_7: "Check all return values"
+    - rule_8: "Limit preprocessor usage"
+    - rule_9: "Restrict pointers (Safe Rust)"
+    - rule_10: "Warnings as errors"
+
+  popperian_falsification:
+    - testable_predictions: true
+    - null_hypothesis_testing: true
+    - refutation_over_confirmation: true
+
+milestones:
+  - id: M1
+    name: "Foundation"
+    status: in_progress
+    description: "Core infrastructure and reproducibility subsystem"
+    epics:
+      - E1.1
+      - E1.2
+      - E1.3
+
+  - id: M2
+    name: "Domain Engines"
+    status: planned
+    description: "Physics, Monte Carlo, ML, and optimization engines"
+    epics:
+      - E2.1
+      - E2.2
+      - E2.3
+      - E2.4
+
+  - id: M3
+    name: "Replay System"
+    status: planned
+    description: "Time-travel debugging and checkpoint/restore"
+    epics:
+      - E3.1
+      - E3.2
+
+  - id: M4
+    name: "Visualization"
+    status: planned
+    description: "TUI, WebGL, and export capabilities"
+    epics:
+      - E4.1
+      - E4.2
+      - E4.3
+
+  - id: M5
+    name: "Integration"
+    status: planned
+    description: "Sovereign AI Stack integration"
+    epics:
+      - E5.1
+      - E5.2
+
+epics:
+  - id: E1.1
+    name: "Project Scaffolding"
+    milestone: M1
+    status: in_progress
+    tasks:
+      - id: T1.1.1
+        name: "Cargo workspace setup"
+        status: pending
+        priority: critical
+      - id: T1.1.2
+        name: "CI/CD pipeline (GitHub Actions)"
+        status: pending
+        priority: critical
+      - id: T1.1.3
+        name: "PMAT compliance integration"
+        status: in_progress
+        priority: critical
+
+  - id: E1.2
+    name: "Reproducibility Subsystem"
+    milestone: M1
+    status: planned
+    tasks:
+      - id: T1.2.1
+        name: "PCG RNG with partitioned seeds"
+        status: pending
+        priority: high
+      - id: T1.2.2
+        name: "IEEE 754 strict mode toggle"
+        status: pending
+        priority: high
+      - id: T1.2.3
+        name: "Deterministic hashmaps (IndexMap)"
+        status: pending
+        priority: high
+
+  - id: E1.3
+    name: "Configuration System"
+    milestone: M1
+    status: planned
+    tasks:
+      - id: T1.3.1
+        name: "YAML schema definition"
+        status: pending
+        priority: high
+      - id: T1.3.2
+        name: "Serde deserializers"
+        status: pending
+        priority: medium
+      - id: T1.3.3
+        name: "Semantic validation"
+        status: pending
+        priority: medium
+
+  - id: E2.1
+    name: "Physics Engine"
+    milestone: M2
+    status: planned
+    tasks:
+      - id: T2.1.1
+        name: "Rigid body dynamics"
+        status: pending
+        priority: high
+      - id: T2.1.2
+        name: "Orbital mechanics (Kepler, n-body)"
+        status: pending
+        priority: medium
+      - id: T2.1.3
+        name: "Lattice Boltzmann fluid"
+        status: pending
+        priority: medium
+
+  - id: E2.2
+    name: "Monte Carlo Engine"
+    milestone: M2
+    status: planned
+    tasks:
+      - id: T2.2.1
+        name: "MCMC samplers (Metropolis-Hastings)"
+        status: pending
+        priority: high
+      - id: T2.2.2
+        name: "Variance reduction (importance sampling)"
+        status: pending
+        priority: medium
+      - id: T2.2.3
+        name: "GPU acceleration via trueno"
+        status: pending
+        priority: medium
+
+  - id: E2.3
+    name: "ML Integration"
+    milestone: M2
+    status: planned
+    tasks:
+      - id: T2.3.1
+        name: "Gaussian Process surrogate (aprender)"
+        status: pending
+        priority: medium
+      - id: T2.3.2
+        name: "Graph Neural Network state evolution"
+        status: pending
+        priority: low
+      - id: T2.3.3
+        name: "RL agent interface (entrenar)"
+        status: pending
+        priority: low
+
+  - id: E2.4
+    name: "Optimization Engine"
+    milestone: M2
+    status: planned
+    tasks:
+      - id: T2.4.1
+        name: "Bayesian optimization (GP-UCB)"
+        status: pending
+        priority: medium
+      - id: T2.4.2
+        name: "CMA-ES evolutionary strategy"
+        status: pending
+        priority: medium
+      - id: T2.4.3
+        name: "Gradient-free methods"
+        status: pending
+        priority: low
+
+  - id: E3.1
+    name: "Checkpoint System"
+    milestone: M3
+    status: planned
+    tasks:
+      - id: T3.1.1
+        name: "Copy-on-write snapshots"
+        status: pending
+        priority: high
+      - id: T3.1.2
+        name: "Bincode serialization"
+        status: pending
+        priority: high
+      - id: T3.1.3
+        name: "Compression (zstd)"
+        status: pending
+        priority: medium
+
+  - id: E3.2
+    name: "Event Journal"
+    milestone: M3
+    status: planned
+    tasks:
+      - id: T3.2.1
+        name: "Command pattern event log"
+        status: pending
+        priority: high
+      - id: T3.2.2
+        name: "Replay controller"
+        status: pending
+        priority: high
+      - id: T3.2.3
+        name: "Time-travel debugger TUI"
+        status: pending
+        priority: medium
+
+  - id: E4.1
+    name: "TUI Visualization"
+    milestone: M4
+    status: planned
+    tasks:
+      - id: T4.1.1
+        name: "ratatui dashboard"
+        status: pending
+        priority: medium
+      - id: T4.1.2
+        name: "Real-time plots"
+        status: pending
+        priority: medium
+      - id: T4.1.3
+        name: "Parameter control widgets"
+        status: pending
+        priority: low
+
+  - id: E4.2
+    name: "Web Visualization"
+    milestone: M4
+    status: planned
+    tasks:
+      - id: T4.2.1
+        name: "wgpu WebGL backend"
+        status: pending
+        priority: low
+      - id: T4.2.2
+        name: "WASM compilation"
+        status: pending
+        priority: low
+
+  - id: E4.3
+    name: "Export System"
+    milestone: M4
+    status: planned
+    tasks:
+      - id: T4.3.1
+        name: "Parquet time series"
+        status: pending
+        priority: medium
+      - id: T4.3.2
+        name: "MP4 video encoding"
+        status: pending
+        priority: low
+      - id: T4.3.3
+        name: "SVG/PNG plots"
+        status: pending
+        priority: low
+
+  - id: E5.1
+    name: "Stack Integration"
+    milestone: M5
+    status: planned
+    tasks:
+      - id: T5.1.1
+        name: "trueno SIMD backend"
+        status: pending
+        priority: high
+      - id: T5.1.2
+        name: "alimentar data loading"
+        status: pending
+        priority: medium
+      - id: T5.1.3
+        name: "pacha model registry"
+        status: pending
+        priority: low
+
+  - id: E5.2
+    name: "Orchestration"
+    milestone: M5
+    status: planned
+    tasks:
+      - id: T5.2.1
+        name: "batuta pipeline integration"
+        status: pending
+        priority: medium
+      - id: T5.2.2
+        name: "renacer tracing integration"
+        status: pending
+        priority: low
+
+quality_gates:
+  - name: "PMAT Compliance"
+    checks:
+      - tdg_enforcement
+      - satd_check
+      - min_grade_B+
+      - test_coverage_95%
+
+  - name: "JPL Power of 10"
+    checks:
+      - max_complexity_15
+      - max_nesting_4
+      - max_function_lines_60
+      - min_assertions_2
+
+  - name: "CI/CD"
+    checks:
+      - cargo_fmt
+      - cargo_clippy
+      - cargo_test
+      - cargo_doc

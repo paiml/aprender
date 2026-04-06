@@ -1,0 +1,36 @@
+# Docker ignore for reproducible builds
+
+# Build artifacts
+target/
+pkg/
+*.wasm
+
+# IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test artifacts
+coverage/
+*.profraw
+*.profdata
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# DVC
+.dvc/
+
+# Node
+node_modules/

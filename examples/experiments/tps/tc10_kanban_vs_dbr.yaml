@@ -1,0 +1,109 @@
+# TPS Test Case 10: Kanban vs Drum-Buffer-Rope (DBR)
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-010"
+
+metadata:
+  name: "Kanban vs Drum-Buffer-Rope (DBR)"
+  description: |
+    Validate that Kanban and DBR are NOT equivalent - they have different
+    strengths. DBR focuses WIP protection on the constraint (drum) while
+    Kanban distributes WIP limits across all stations.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "kanban", "dbr", "toc", "constraints"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Kanban and Drum-Buffer-Rope (DBR) produce equivalent performance
+    in all production environments.
+  alternative_hypothesis: |
+    H₁: DBR outperforms Kanban on unbalanced lines (bottleneck-dominant),
+    while Kanban is suitable for balanced lines.
+  expected_outcome: "reject"  # They differ based on line balance
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  stations: 5
+
+  line_configurations:
+    - name: "balanced"
+      balance_ratio: 1.0
+      processing_times: [10, 10, 10, 10, 10]
+      description: "Perfectly balanced line"
+
+    - name: "unbalanced_middle"
+      balance_ratio: 1.5
+      processing_times: [10, 10, 15, 10, 10]  # Station 3 is bottleneck
+      description: "Bottleneck in middle"
+
+    - name: "unbalanced_end"
+      balance_ratio: 2.0
+      processing_times: [10, 10, 10, 10, 20]  # Station 5 is bottleneck
+      description: "Bottleneck at end"
+
+  control_systems:
+    - name: "kanban"
+      type: "station_wip_limit"
+      wip_per_station: 3
+      total_wip: 15
+      description: "Traditional Kanban with per-station limits"
+
+    - name: "dbr"
+      type: "constraint_focused"
+      buffer_before_constraint: 5
+      rope_release: "constraint_paced"
+      total_wip: 12
+      description: "TOC Drum-Buffer-Rope"
+
+  arrivals:
+    rate: 5.0  # units/hour
+    distribution: "poisson"
+
+  duration:
+    warmup: 200
+    simulation: 2000
+    replications: 30
+
+falsification:
+  criteria:
+    - id: "TC10-BALANCED"
+      name: "Balanced line comparison"
+      condition: "|th_kanban - th_dbr| / th_kanban < 0.05"
+      severity: "minor"
+      interpretation: "Similar performance on balanced lines"
+
+    - id: "TC10-UNBALANCED"
+      name: "Unbalanced line - DBR wins"
+      condition: "th_dbr > th_kanban * 1.05 when balance_ratio > 1.3"
+      severity: "major"
+
+    - id: "TC10-WIP-EFF"
+      name: "WIP efficiency"
+      condition: "wip_dbr < wip_kanban when th_dbr >= th_kanban"
+      severity: "major"
+      interpretation: "DBR achieves same TH with less WIP"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  interaction_test: "two_way_anova"
+  factors: ["control_system", "line_configuration"]
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc10_kanban_vs_dbr.md"
+  include:
+    - "interaction_plot"
+    - "throughput_comparison"
+    - "wip_efficiency"

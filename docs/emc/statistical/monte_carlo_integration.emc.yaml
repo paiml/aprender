@@ -1,0 +1,140 @@
+emc_version: "1.0"
+emc_id: "EMC-STAT-001"
+
+identity:
+  name: "Monte Carlo Integration"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "\\hat{I}_n = \\frac{1}{n}\\sum_{i=1}^{n} f(X_i), \\quad \\text{where } X_i \\sim p(x)"
+  plain_text: "Î_n = (1/n) Σ f(X_i), where X_i ~ p(x)"
+  description: |
+    Monte Carlo integration estimates integrals by sampling random points
+    and averaging function values. By the Strong Law of Large Numbers,
+    the estimate converges to the true integral. The Central Limit Theorem
+    guarantees the error decreases as O(n^{-1/2}).
+  equation_type: "statistical"
+  variables:
+    - symbol: "I"
+      description: "True integral ∫f(x)dx"
+      units: "varies"
+      type: "target"
+    - symbol: "Î_n"
+      description: "Monte Carlo estimate from n samples"
+      units: "varies"
+      type: "output"
+    - symbol: "n"
+      description: "Number of samples"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "σ"
+      description: "Standard deviation of f(X)"
+      units: "varies"
+      type: "derived"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Metropolis, N.", "Ulam, S."]
+    title: "The Monte Carlo Method"
+    journal: "Journal of the American Statistical Association"
+    year: 1949
+    volume: 44
+    pages: "335-341"
+  supporting_citations:
+    - authors: ["Robert, C.P.", "Casella, G."]
+      title: "Monte Carlo Statistical Methods"
+      year: 2004
+      publisher: "Springer"
+    - authors: ["Glasserman, P."]
+      title: "Monte Carlo Methods in Financial Engineering"
+      year: 2003
+      publisher: "Springer"
+  derivation_method: "Law of Large Numbers + Central Limit Theorem"
+  derivation_summary: |
+    For i.i.d. samples X_1, ..., X_n from p(x):
+
+    E[Î_n] = E[f(X)] = ∫f(x)p(x)dx = I  (unbiased)
+
+    Var[Î_n] = Var[f(X)]/n = σ²/n
+
+    By CLT: √n(Î_n - I) →_d N(0, σ²)
+
+    Standard error: SE = σ/√n = O(n^{-1/2})
+
+    This O(n^{-1/2}) rate is dimension-independent, making MC superior
+    to quadrature in high dimensions (curse of dimensionality).
+
+domain_of_validity:
+  parameters:
+    n:
+      min: 1
+      max: null
+      units: "samples"
+      physical_constraint: "n ≥ 1"
+  assumptions:
+    - "f(X) has finite variance"
+    - "Samples are i.i.d. from p(x)"
+    - "n is sufficiently large for CLT approximation"
+  variance_reduction_methods:
+    - "Antithetic variates"
+    - "Control variates"
+    - "Importance sampling"
+    - "Stratified sampling"
+
+analytical_solution:
+  convergence_rate: "O(n^{-1/2})"
+  confidence_interval: "Î_n ± z_{α/2} × σ/√n"
+  test_cases:
+    - name: "Pi estimation"
+      description: "Estimate π via unit circle in unit square"
+      domain: "[0,1] × [0,1]"
+      integrand: "4 × I(x² + y² ≤ 1)"
+      expected: 3.14159265358979
+      convergence_check:
+        - n: 1000
+          expected_se: 0.052
+        - n: 10000
+          expected_se: 0.016
+        - n: 100000
+          expected_se: 0.0052
+    - name: "Exponential integral"
+      description: "∫₀¹ exp(x) dx"
+      expected: 1.71828182845905
+      tolerance: 0.01
+
+verification_tests:
+  tests:
+    - id: "MC-001"
+      name: "Convergence rate"
+      condition: "slope of log(error) vs log(n) ≈ -0.5"
+      tolerance: 0.1
+    - id: "MC-002"
+      name: "Unbiasedness"
+      condition: "E[Î_n] = I within statistical tolerance"
+      confidence: 0.95
+    - id: "MC-003"
+      name: "Confidence interval coverage"
+      condition: "95% CI covers true value ~95% of time"
+      tolerance: 0.05
+
+falsification_criteria:
+  criteria:
+    - id: "MC-FC-001"
+      name: "Wrong convergence rate"
+      condition: "convergence rate ≠ O(n^{-1/2})"
+      threshold: null
+      severity: "critical"
+    - id: "MC-FC-002"
+      name: "Biased estimator"
+      condition: "|E[Î_n] - I| > 3σ/√n for large n"
+      threshold: null
+      severity: "critical"
+    - id: "MC-FC-003"
+      name: "Poor CI coverage"
+      condition: "95% CI coverage < 90%"
+      threshold: 0.90
+      severity: "major"

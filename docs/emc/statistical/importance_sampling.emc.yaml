@@ -1,0 +1,153 @@
+# Equation Model Card (EMC) Schema v1.0
+# Importance Sampling
+
+emc_version: "1.0"
+emc_id: "EMC-STAT-002"
+
+identity:
+  name: "Importance Sampling"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    E_p[f(X)] = E_q\left[\frac{p(X)}{q(X)}f(X)\right] = \frac{1}{N}\sum_{i=1}^N w_i f(X_i)
+  plain_text: "E_p[f(X)] = E_q[w(X)*f(X)] where w(X) = p(X)/q(X)"
+  description: |
+    Importance sampling is a variance reduction technique for Monte Carlo
+    estimation. By sampling from a proposal distribution q instead of the
+    target p, we can reduce variance when q is chosen to oversample
+    important regions of the integrand.
+
+  variables:
+    - symbol: "p"
+      description: "Target probability distribution"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "q"
+      description: "Proposal (importance) distribution"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "w"
+      description: "Importance weight p/q"
+      units: "dimensionless"
+      type: "derived"
+    - symbol: "f"
+      description: "Function to integrate"
+      units: "varies"
+      type: "input"
+
+  equation_type: "integral"
+  order: 0
+  linearity: "linear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Kahn, H.", "Marshall, A.W."]
+    title: "Methods of Reducing Sample Size in Monte Carlo Computations"
+    journal: "Journal of the Operations Research Society of America"
+    year: 1953
+    volume: 1
+    pages: "263-278"
+
+  supporting_citations:
+    - authors: ["Robert, C.P.", "Casella, G."]
+      title: "Monte Carlo Statistical Methods"
+      year: 2004
+      publisher: "Springer"
+      edition: "2nd"
+
+  derivation_method: "Change of measure"
+  derivation_summary: |
+    E_p[f] = integral(f(x)*p(x), dx)
+           = integral(f(x)*(p(x)/q(x))*q(x), dx)
+           = E_q[f(X)*w(X)]
+    where w(x) = p(x)/q(x) is the importance weight.
+
+domain_of_validity:
+  parameters:
+    support_inclusion:
+      physical_constraint: "supp(p) subset of supp(q)"
+
+  assumptions:
+    - "q(x) > 0 whenever p(x)*|f(x)| > 0"
+    - "Weights have finite variance"
+    - "Can evaluate p(x)/q(x) pointwise"
+
+  limitations:
+    - description: "Weight degeneracy in high dimensions"
+      reference: "Effective sample size can collapse"
+    - description: "Optimal proposal unknown in general"
+      reference: "q* proportional to |f(x)|*p(x)"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \text{Optimal } q^*(x) \propto |f(x)| p(x)
+      \text{Var}^* = \left(E_p[|f|]\right)^2 - \left(E_p[f]\right)^2
+    parameters:
+      q_star: "Optimal proposal distribution"
+      Var_star: "Minimum achievable variance"
+
+  test_cases:
+    - name: "Gaussian tail probability"
+      description: "P(X > 4) for standard normal"
+      target:
+        distribution: "N(0,1)"
+        function: "indicator(x > 4)"
+      proposal:
+        distribution: "N(4,1)"
+      expected:
+        value: 3.167e-5
+        variance_reduction: 1000
+      tolerance: 0.10
+
+verification_tests:
+  tests:
+    - id: "IS-VT-001"
+      name: "Unbiasedness"
+      type: "statistical"
+      tolerance: 0.05
+      description: "Estimate converges to true value"
+
+    - id: "IS-VT-002"
+      name: "Variance reduction"
+      type: "comparison"
+      tolerance: 0.20
+      description: "Variance lower than naive Monte Carlo"
+
+    - id: "IS-VT-003"
+      name: "Effective sample size"
+      type: "diagnostic"
+      threshold: 0.1
+      description: "ESS / N should remain reasonable"
+
+falsification_criteria:
+  criteria:
+    - id: "IS-FC-001"
+      name: "Support mismatch"
+      condition: "any(p(x) > 0 and q(x) = 0)"
+      threshold: 0.0
+      severity: "critical"
+
+    - id: "IS-FC-002"
+      name: "Weight degeneracy"
+      condition: "ESS / N < threshold"
+      threshold: 0.01
+      severity: "major"
+
+    - id: "IS-FC-003"
+      name: "Infinite variance"
+      condition: "E[w^2] = infinity"
+      threshold: null
+      severity: "critical"
+
+implementation:
+  source_file: "src/domains/monte_carlo/importance_sampling.rs"
+  test_file: "tests/verification/importance_sampling_test.rs"
+  experiment_template: "examples/experiments/importance_sampling.yaml"

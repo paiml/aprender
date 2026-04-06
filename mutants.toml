@@ -1,0 +1,55 @@
+# Mutation Testing Configuration
+# See: https://mutants.rs/configuration.html
+
+# Timeout for each mutant test run (seconds)
+timeout = 300
+
+# Number of parallel jobs
+jobs = 4
+
+# Exclude patterns - don't mutate these
+exclude_globs = [
+    "src/main.rs",           # Entry point
+    "src/bin/**",            # Binary entry points
+    "tests/**",              # Test code
+    "benches/**",            # Benchmark code
+    "examples/**",           # Example code
+]
+
+# Only mutate core logic
+examine_globs = [
+    "src/engine/**",
+    "src/domains/**",
+    "src/orbit/**",
+    "src/demos/**",
+    "src/replay/**",
+]
+
+# Skip slow tests during mutation
+# These will be run but with shorter timeout
+[test_timeout]
+default = 60
+slow_tests = 120
+
+# Mutation operators to apply
+# Comment out operators to disable
+[operators]
+# Arithmetic
+replace_add_sub = true
+replace_mul_div = true
+
+# Comparison
+replace_eq_ne = true
+replace_lt_le = true
+replace_gt_ge = true
+
+# Logical
+replace_and_or = true
+negate_condition = true
+
+# Return values
+replace_return_true_false = true
+replace_return_zero_one = true
+
+# Bounds
+off_by_one = true

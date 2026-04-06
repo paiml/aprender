@@ -1,0 +1,152 @@
+emc_version: "1.0"
+emc_id: "EMC-PHY-001"
+
+identity:
+  name: "Simple Harmonic Oscillator"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "\\frac{d^2x}{dt^2} + \\omega^2 x = 0"
+  plain_text: "d²x/dt² + ω²x = 0"
+  description: |
+    The simple harmonic oscillator describes a system where the restoring
+    force is proportional to displacement from equilibrium. This is the
+    foundational model for oscillatory phenomena in physics, from pendulums
+    to molecular vibrations to electromagnetic waves.
+  equation_type: "ODE"
+  variables:
+    - symbol: "x"
+      description: "Displacement from equilibrium"
+      units: "m"
+      type: "dependent"
+    - symbol: "t"
+      description: "Time"
+      units: "s"
+      type: "independent"
+    - symbol: "ω"
+      description: "Angular frequency"
+      units: "rad/s"
+      type: "parameter"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Goldstein, H.", "Poole, C.", "Safko, J."]
+    title: "Classical Mechanics"
+    year: 2002
+    publisher: "Addison-Wesley"
+    edition: "3rd"
+    pages: "238-242"
+    isbn: "978-0201657029"
+  derivation_method: "Lagrangian mechanics"
+  derivation_summary: |
+    Starting from the Lagrangian L = T - V = ½mẋ² - ½kx²,
+    applying the Euler-Lagrange equation yields:
+    d/dt(∂L/∂ẋ) - ∂L/∂x = 0
+    → mẍ + kx = 0
+    → ẍ + (k/m)x = 0
+    → ẍ + ω²x = 0, where ω = √(k/m)
+
+domain_of_validity:
+  parameters:
+    omega:
+      min: 0.0
+      max: 1.0e6
+      units: "rad/s"
+      physical_constraint: "ω > 0 for oscillatory motion"
+    amplitude:
+      min: 0.0
+      max: null
+      units: "m"
+      physical_constraint: "Small amplitude assumption for linearity"
+  assumptions:
+    - "No damping (conservative system)"
+    - "Small amplitude oscillations (linear restoring force)"
+    - "Single degree of freedom"
+    - "Constant mass"
+    - "No external forcing"
+
+analytical_solution:
+  general_solution:
+    latex: "x(t) = A\\cos(\\omega t + \\phi)"
+    parameters:
+      A: "Amplitude, determined by initial conditions"
+      phi: "Phase, determined by initial conditions"
+  test_cases:
+    - name: "Unit amplitude, zero phase"
+      initial_conditions:
+        x0: 1.0
+        v0: 0.0
+      parameters:
+        omega: 6.283185307
+      expected_solution: "x(t) = cos(2πt)"
+      test_points:
+        - t: 0.0
+          x: 1.0
+        - t: 0.25
+          x: 0.0
+        - t: 0.5
+          x: -1.0
+        - t: 1.0
+          x: 1.0
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Störmer-Verlet"
+      order: 2
+      symplectic: true
+      energy_drift: "bounded"
+    - name: "RK4"
+      order: 4
+      symplectic: false
+      energy_drift: "unbounded (long-term)"
+  stability_conditions:
+    - condition: "dt < 2/ω"
+      description: "Stability limit for explicit methods"
+    - condition: "dt ≪ T = 2π/ω"
+      description: "Accuracy condition: many steps per period"
+  conserved_quantities:
+    - name: "Total energy"
+      expression: "E = ½mẋ² + ½kx² = ½mω²A²"
+      tolerance: 1.0e-10
+
+verification_tests:
+  tests:
+    - id: "SHO-001"
+      name: "Analytical solution match"
+      type: "numerical_vs_analytical"
+      tolerance: 1.0e-6
+      duration: "10 periods"
+      description: "Verify numerical matches analytical solution"
+    - id: "SHO-002"
+      name: "Energy conservation"
+      type: "conservation_law"
+      conserved_quantity: "total_energy"
+      tolerance: 1.0e-10
+      duration: "1000 periods"
+    - id: "SHO-003"
+      name: "Period accuracy"
+      type: "frequency_analysis"
+      expected_period: "2π/ω"
+      tolerance: 1.0e-8
+
+falsification_criteria:
+  criteria:
+    - id: "SHO-FC-001"
+      name: "Energy drift"
+      condition: "|E(t) - E(0)| / E(0) > ε"
+      threshold: 1.0e-6
+      severity: "critical"
+    - id: "SHO-FC-002"
+      name: "Amplitude growth"
+      condition: "max(|x|) > 1.01 * A"
+      threshold: 0.01
+      severity: "major"
+    - id: "SHO-FC-003"
+      name: "Frequency shift"
+      condition: "|ω_measured - ω_expected| / ω_expected > ε"
+      threshold: 1.0e-4
+      severity: "major"

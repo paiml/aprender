@@ -1,0 +1,16 @@
+[book]
+authors = ["PAIML Engineering"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Simular: Extreme TDD with Toyota Way & NASA Quality"
+description = "A comprehensive guide to building reproducible simulations using Popperian falsification, Toyota Production System principles, and NASA/JPL quality standards."
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/paiml/simular"

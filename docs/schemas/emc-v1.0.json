@@ -1,0 +1,321 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://simular.dev/schemas/emc-v1.0.json",
+  "title": "Equation Model Card Schema",
+  "description": "Schema for Equation Model Cards (EMC) in the EDD framework",
+  "type": "object",
+  "required": [
+    "emc_version",
+    "emc_id",
+    "identity",
+    "governing_equation",
+    "analytical_derivation",
+    "domain_of_validity",
+    "verification_tests",
+    "falsification_criteria"
+  ],
+  "properties": {
+    "emc_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "EMC schema version (e.g., '1.0')"
+    },
+    "emc_id": {
+      "type": "string",
+      "pattern": "^EMC-[A-Z]+-\\d{3}$",
+      "description": "Unique EMC identifier (e.g., 'EMC-OPS-001')"
+    },
+    "identity": {
+      "type": "object",
+      "required": ["name", "version", "status"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable name of the equation/model"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Semantic version of this EMC"
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "affiliation": { "type": "string" }
+            }
+          }
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Creation date (YYYY-MM-DD)"
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date",
+          "description": "Last update date (YYYY-MM-DD)"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "review", "production", "deprecated"],
+          "description": "Current status of the EMC"
+        }
+      }
+    },
+    "governing_equation": {
+      "type": "object",
+      "required": ["latex", "description", "variables"],
+      "properties": {
+        "latex": {
+          "type": "string",
+          "minLength": 1,
+          "description": "LaTeX representation of the governing equation"
+        },
+        "plain_text": {
+          "type": "string",
+          "description": "Plain text representation for accessibility"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Detailed description of the equation's meaning"
+        },
+        "variables": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["symbol", "description"],
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Mathematical symbol"
+              },
+              "aliases": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Alternative names/symbols"
+              },
+              "description": {
+                "type": "string",
+                "description": "Physical/mathematical meaning"
+              },
+              "units": {
+                "type": "string",
+                "description": "Units of measurement"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["dependent", "independent", "parameter"],
+                "description": "Variable type in the equation"
+              }
+            }
+          }
+        },
+        "equation_type": {
+          "type": "string",
+          "enum": ["algebraic", "ODE", "PDE", "integral", "approximation", "inequality"],
+          "description": "Classification of equation type"
+        },
+        "linearity": {
+          "type": "string",
+          "enum": ["linear", "nonlinear"],
+          "description": "Whether the equation is linear"
+        }
+      }
+    },
+    "analytical_derivation": {
+      "type": "object",
+      "required": ["primary_citation"],
+      "properties": {
+        "primary_citation": {
+          "$ref": "#/definitions/citation"
+        },
+        "supporting_citations": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/citation" }
+        },
+        "derivation_method": {
+          "type": "string",
+          "description": "Method used to derive the equation"
+        },
+        "derivation_summary": {
+          "type": "string",
+          "description": "Summary of the derivation for auditability"
+        }
+      }
+    },
+    "domain_of_validity": {
+      "type": "object",
+      "required": ["assumptions"],
+      "properties": {
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "min": { "type": ["number", "null"] },
+              "max": { "type": ["number", "null"] },
+              "units": { "type": "string" },
+              "physical_constraint": { "type": "string" }
+            }
+          }
+        },
+        "assumptions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Physical/mathematical assumptions"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["description"],
+            "properties": {
+              "description": { "type": "string" },
+              "severity": {
+                "type": "string",
+                "enum": ["informational", "minor", "major", "critical"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "verification_tests": {
+      "type": "object",
+      "required": ["tests"],
+      "properties": {
+        "tests": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "parameters", "expected"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]+-\\d{3}$",
+                "description": "Unique test identifier"
+              },
+              "name": {
+                "type": "string",
+                "description": "Human-readable test name"
+              },
+              "description": {
+                "type": "string",
+                "description": "What this test validates"
+              },
+              "parameters": {
+                "type": "object",
+                "description": "Input parameters for the test"
+              },
+              "expected": {
+                "type": "object",
+                "description": "Expected output values"
+              },
+              "tolerance": {
+                "type": "number",
+                "minimum": 0,
+                "description": "Acceptable tolerance for comparison"
+              }
+            }
+          }
+        }
+      }
+    },
+    "falsification_criteria": {
+      "type": "object",
+      "required": ["criteria"],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "condition", "severity"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Z]+-FC-\\d{3}$",
+                "description": "Unique criterion identifier"
+              },
+              "name": {
+                "type": "string",
+                "description": "Human-readable criterion name"
+              },
+              "condition": {
+                "type": "string",
+                "description": "Condition that would falsify the model"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["informational", "minor", "major", "critical"]
+              },
+              "interpretation": {
+                "type": "string",
+                "description": "What this criterion violation means"
+              }
+            }
+          }
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "properties": {
+        "source_file": {
+          "type": "string",
+          "description": "Path to implementation source"
+        },
+        "struct_name": {
+          "type": "string",
+          "description": "Rust struct name"
+        },
+        "test_file": {
+          "type": "string",
+          "description": "Path to test file"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Implementation notes"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "citation": {
+      "type": "object",
+      "required": ["authors", "title", "year"],
+      "properties": {
+        "authors": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "title": { "type": "string" },
+        "journal": { "type": "string" },
+        "year": {
+          "type": "integer",
+          "minimum": 1800,
+          "maximum": 2100
+        },
+        "volume": { "type": "integer" },
+        "issue": { "type": "integer" },
+        "pages": { "type": "string" },
+        "doi": { "type": ["string", "null"] },
+        "isbn": { "type": "string" },
+        "publisher": { "type": "string" },
+        "edition": { "type": "string" },
+        "chapter": { "type": "string" }
+      }
+    }
+  }
+}

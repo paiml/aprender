@@ -1,0 +1,99 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Gradient computation contract for simulation backpropagation"
+  crate: "simular"
+  references:
+    - "Rumelhart, Hinton & Williams (1986) Learning Representations by Back-Propagating Errors"
+    - "Baydin et al. (2018) Automatic Differentiation in Machine Learning: a Survey"
+
+equations:
+  numerical_gradient:
+    formula: "grad_num(f, x, i) = (f(x + eps*e_i) - f(x - eps*e_i)) / (2*eps)"
+    domain: "f: R^n -> R, x in R^n, eps > 0 (typically 1e-5)"
+    invariants:
+      - "O(eps^2) approximation error for smooth functions"
+      - "Matches analytical gradient within tolerance"
+  gradient_clipping:
+    formula: "clip(g, max_norm) = g * min(1, max_norm / ||g||_2)"
+    domain: "g in R^n, max_norm > 0"
+    preconditions:
+      - "max_norm > 0.0"
+      - "g.iter().all(|v| v.is_finite())"
+    postconditions:
+      - "result.iter().map(|v| v * v).sum::<f32>().sqrt() <= max_norm + 1e-6"
+    invariants:
+      - "||clip(g, max_norm)||_2 <= max_norm"
+      - "Direction preserved: clip(g) parallel to g"
+      - "No clipping when ||g|| <= max_norm"
+  gradient_accumulation:
+    formula: "g_acc = (1/N) * Sum_{i=0}^{N-1} g_i"
+    domain: "g_i in R^n, N >= 1"
+    invariants:
+      - "Accumulated gradient is unbiased estimator of true gradient"
+      - "Accumulation count N tracked correctly"
+
+proof_obligations:
+  - type: bound
+    property: "Clipped gradient norm bounded"
+    formal: "||clip(g, max_norm)||_2 <= max_norm + epsilon"
+    applies_to: all
+  - type: invariant
+    property: "Clip preserves direction"
+    formal: "cosine_similarity(clip(g), g) == 1.0 when ||g|| > 0"
+    applies_to: all
+  - type: invariant
+    property: "No-op when within norm"
+    formal: "||g|| <= max_norm implies clip(g) == g"
+    applies_to: all
+  - type: invariant
+    property: "Accumulation count correct"
+    formal: "accumulator.count == number of add() calls"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GRAD-001
+    rule: "Clipped norm bounded"
+    test: "test_preflight_gradient_explosion"
+    prediction: "verified"
+    if_fails: "Clipping does not reduce norm to max_norm"
+  - id: FALSIFY-GRAD-002
+    rule: "Direction preserved"
+    test: "test_preflight_gradient_vanishing"
+    prediction: "verified"
+    if_fails: "Clipping changes gradient direction"
+  - id: FALSIFY-GRAD-003
+    rule: "No-op within norm"
+    test: "test_self_healing_gradient_explosion_auto_correct"
+    prediction: "verified"
+    if_fails: "Clipping modifies small gradients"
+  - id: FALSIFY-GRAD-004
+    rule: "Numerical vs analytical gradient"
+    test: "test_anomaly_detector_gradient_explosion"
+    prediction: "verified"
+    if_fails: "Analytical gradient diverges from numerical"
+
+kani_harnesses:
+  - id: KANI-GRAD-001
+    obligation: PO-GRAD-001
+    property: "Clipped norm bound"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_clip_norm_bound
+  - id: KANI-GRAD-002
+    obligation: PO-GRAD-002
+    property: "Direction preservation"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_clip_direction
+
+qa_gate:
+  id: QA-GRADIENT
+  name: "gradient contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_preflight_gradient_explosion
+    - test_preflight_gradient_vanishing
+    - test_gradient_clip_noop
+    - test_gradient_numerical_check

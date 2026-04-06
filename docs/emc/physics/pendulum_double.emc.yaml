@@ -1,0 +1,183 @@
+# Equation Model Card (EMC) Schema v1.0
+# Double Pendulum - Chaotic System
+
+emc_version: "1.0"
+emc_id: "EMC-PHYS-005"
+
+identity:
+  name: "Double Pendulum"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    (m_1+m_2)L_1\ddot{\theta}_1 + m_2 L_2 \ddot{\theta}_2 \cos(\theta_1-\theta_2) +
+    m_2 L_2 \dot{\theta}_2^2 \sin(\theta_1-\theta_2) + (m_1+m_2)g\sin\theta_1 = 0
+  plain_text: "Coupled second-order ODEs for theta1 and theta2"
+  description: |
+    The double pendulum is a canonical example of deterministic chaos.
+    Two coupled nonlinear ODEs govern the motion. Despite being fully
+    deterministic, the system exhibits sensitive dependence on initial
+    conditions (Lyapunov exponent > 0).
+
+  variables:
+    - symbol: "theta_1"
+      description: "Angle of first pendulum from vertical"
+      units: "rad"
+      type: "dependent"
+    - symbol: "theta_2"
+      description: "Angle of second pendulum from first"
+      units: "rad"
+      type: "dependent"
+    - symbol: "m_1"
+      description: "Mass of first bob"
+      units: "kg"
+      type: "parameter"
+    - symbol: "m_2"
+      description: "Mass of second bob"
+      units: "kg"
+      type: "parameter"
+    - symbol: "L_1"
+      description: "Length of first rod"
+      units: "m"
+      type: "parameter"
+    - symbol: "L_2"
+      description: "Length of second rod"
+      units: "m"
+      type: "parameter"
+
+  equation_type: "ODE"
+  order: 2
+  linearity: "nonlinear"
+  chaos: true
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Strogatz, S.H."]
+    title: "Nonlinear Dynamics and Chaos"
+    year: 2015
+    publisher: "Westview Press"
+    edition: "2nd"
+    pages: "313-316"
+    isbn: "978-0813349107"
+
+  derivation_method: "Lagrangian mechanics"
+  derivation_summary: |
+    The Lagrangian L = T - V with kinetic and potential energy for
+    both masses leads to coupled Euler-Lagrange equations. The
+    resulting equations are typically solved numerically.
+
+domain_of_validity:
+  parameters:
+    m1:
+      min: 0.0
+      max: null
+      physical_constraint: "m1 > 0"
+    m2:
+      min: 0.0
+      max: null
+      physical_constraint: "m2 > 0"
+    L1:
+      min: 0.0
+      max: null
+      physical_constraint: "L1 > 0"
+    L2:
+      min: 0.0
+      max: null
+      physical_constraint: "L2 > 0"
+
+  assumptions:
+    - "Point masses"
+    - "Massless rigid rods"
+    - "No friction or damping"
+    - "Uniform gravitational field"
+    - "Planar motion"
+
+  limitations:
+    - description: "Chaotic for most initial conditions"
+      reference: "Positive Lyapunov exponent"
+    - description: "Long-term prediction impossible"
+      reference: "Prediction horizon ~ 1/lambda * ln(1/epsilon)"
+
+analytical_solution:
+  general_solution:
+    latex: "No closed-form solution exists for general case"
+    parameters: {}
+
+  test_cases:
+    - name: "Small oscillations"
+      initial_conditions:
+        theta1_0: 0.1
+        theta2_0: 0.1
+        omega1_0: 0.0
+        omega2_0: 0.0
+      parameters:
+        m1: 1.0
+        m2: 1.0
+        L1: 1.0
+        L2: 1.0
+        g: 9.81
+      expected:
+        normal_mode_frequencies: [2.19, 5.77]
+      tolerance: 0.1
+
+numerical_stability:
+  recommended_integrators:
+    - name: "RK45"
+      order: 5
+      adaptive: true
+      energy_drift: "controllable"
+    - name: "Stormer-Verlet"
+      order: 2
+      symplectic: true
+      energy_drift: "bounded"
+
+  conserved_quantities:
+    - name: "Total energy"
+      expression: "E = T + V"
+      tolerance: 1e-6
+
+verification_tests:
+  tests:
+    - id: "DP-VT-001"
+      name: "Energy conservation"
+      type: "conservation_law"
+      tolerance: 1e-6
+      description: "Total energy conserved"
+
+    - id: "DP-VT-002"
+      name: "Small angle mode frequencies"
+      type: "frequency_analysis"
+      tolerance: 0.1
+      description: "Normal modes match linearized analysis"
+
+    - id: "DP-VT-003"
+      name: "Sensitivity analysis"
+      type: "lyapunov"
+      tolerance: 0.1
+      description: "Positive Lyapunov exponent confirmed"
+
+falsification_criteria:
+  criteria:
+    - id: "DP-FC-001"
+      name: "Energy drift"
+      condition: "|E(t) - E(0)| / |E(0)| > tolerance"
+      threshold: 1e-4
+      severity: "critical"
+
+    - id: "DP-FC-002"
+      name: "Lyapunov exponent sign"
+      condition: "lambda_max < 0"
+      threshold: 0.0
+      severity: "major"
+      interpretation: "Chaotic system should have positive Lyapunov exponent"
+
+implementation:
+  source_file: "src/domains/physics/double_pendulum.rs"
+  test_file: "tests/verification/double_pendulum_test.rs"
+  experiment_template: "examples/experiments/double_pendulum.yaml"

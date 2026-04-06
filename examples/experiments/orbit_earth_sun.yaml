@@ -1,0 +1,87 @@
+# Earth-Sun Orbit Demo Configuration
+# Per SIMULAR-DEMO-002: DemoEngine YAML-first specification
+#
+# This file is THE single source of truth for the Earth-Sun orbit demo.
+# Both TUI and WASM MUST load from this file and produce identical states.
+
+simulation:
+  type: orbit
+  name: "Earth-Sun Two-Body System"
+
+meta:
+  id: "ORBIT-EARTH-SUN-001"
+  version: "2.0.0"
+  demo_type: orbit
+  description: |
+    Two-body orbital mechanics demonstrating Kepler's laws and symplectic integration.
+    Verifies energy conservation, angular momentum conservation, and period accuracy.
+  author: "PAIML Engineering"
+  created: "2025-12-13"
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+scenario:
+  type: kepler
+  central_body:
+    name: "Sun"
+    mass_kg: 1.989e30  # Solar mass
+    position: [0.0, 0.0, 0.0]
+  orbiter:
+    name: "Earth"
+    mass_kg: 5.972e24  # Earth mass
+    semi_major_axis_m: 1.496e11  # 1 AU
+    eccentricity: 0.0167  # Earth's actual eccentricity
+    initial_true_anomaly_rad: 0.0  # Start at perihelion
+
+integrator:
+  type: yoshida4  # 4th order symplectic
+  dt_seconds: 3600.0  # 1 hour timestep
+
+jidoka:
+  enabled: true
+  stop_on_critical: true
+  energy_tolerance: 1e-9
+  angular_momentum_tolerance: 1e-9
+
+falsification:
+  criteria:
+    - id: "ORBIT-ENERGY-001"
+      name: "Energy conservation"
+      metric: "relative_energy_drift"
+      threshold: 1e-9
+      condition: "drift <= threshold"
+      severity: critical
+
+    - id: "ORBIT-ANGULAR-001"
+      name: "Angular momentum conservation"
+      metric: "relative_angular_momentum_drift"
+      threshold: 1e-9
+      condition: "drift <= threshold"
+      severity: critical
+
+    - id: "ORBIT-PERIOD-001"
+      name: "Orbital period accuracy"
+      metric: "period_relative_error"
+      threshold: 0.01  # 1% of year
+      condition: "error <= threshold"
+      severity: major
+
+metamorphic_relations:
+  - id: "MR-TIME-REVERSAL"
+    description: "Time reversal returns to initial state"
+    source_transform: "run_forward_n_steps"
+    expected_relation: "run_backward_returns_to_start"
+    tolerance: 1e-10
+
+  - id: "MR-ENERGY-INVARIANCE"
+    description: "Energy unchanged under coordinate rotation"
+    source_transform: "rotate_coordinate_system"
+    expected_relation: "energy_unchanged"
+    tolerance: 1e-12
+
+visualization:
+  orbit_trail_length: 1000
+  time_scale: 1.0  # Real-time factor
+  show_vectors: true  # velocity, acceleration
