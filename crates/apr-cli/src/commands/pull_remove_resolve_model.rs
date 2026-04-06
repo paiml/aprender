@@ -15,11 +15,12 @@ pub fn remove(model_ref: &str) -> Result<()> {
 
     if removed {
         println!("{} Model removed from cache", "✓".green());
+        Ok(())
     } else {
+        // GH-601: rm of nonexistent model must exit non-zero (like unix rm).
         println!("{} Model not found in cache", "⚠".yellow());
+        Err(CliError::FileNotFound(std::path::PathBuf::from(model_ref)))
     }
-
-    Ok(())
 }
 
 /// Resolve a model reference to a local path (for run/serve commands)
