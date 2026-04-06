@@ -92,7 +92,8 @@ async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
-    let max_tokens = body["max_tokens"].as_u64().unwrap_or(64) as usize;
+    // GH-665: Cap max_tokens to prevent hangs on large values
+    let max_tokens = body["max_tokens"].as_u64().unwrap_or(64).min(4096) as usize;
     let stream = body["stream"].as_bool().unwrap_or(false);
     let messages = body["messages"].as_array();
 
