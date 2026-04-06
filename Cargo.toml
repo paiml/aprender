@@ -63,30 +63,7 @@ members = [
     "crates/aprender-zram-adaptive",
     "crates/aprender-zram-cli",
     "crates/aprender-zram-generator",
-    # Phase 3b/3c: presentar + test sub-crates pending wiring
-    # "crates/aprender-viz-ttop",
-    # "crates/aprender-present",
-    # "crates/aprender-present-core",
-    # "crates/aprender-present-terminal",
-    # "crates/aprender-present-widgets",
-    # "crates/aprender-present-layout",
-    # "crates/aprender-present-yaml",
-    # "crates/aprender-present-cli",
-    # "crates/aprender-present-lib",
-    # "crates/aprender-present-test",
-    # "crates/aprender-present-test-macros",
-    # "crates/aprender-test",
-    # "crates/aprender-test-lib",
-    # "crates/aprender-test-cli",
-    # "crates/aprender-test-derive",
-    # "crates/aprender-test-js-gen",
-    # "crates/aprender-test-showcase",
-]
-exclude = [
-    "fuzz",
-    # Sub-crates pending Phase 3 workspace dep wiring:
-    "crates/aprender-viz-ttop",
-    "crates/aprender-present",
+    # --- APR-MONO Phase 3b: presentar sub-crates (enabled) ---
     "crates/aprender-present-core",
     "crates/aprender-present-terminal",
     "crates/aprender-present-widgets",
@@ -96,6 +73,21 @@ exclude = [
     "crates/aprender-present-lib",
     "crates/aprender-present-test",
     "crates/aprender-present-test-macros",
+    # Phase 3c: test + remaining sub-crates pending
+    # "crates/aprender-viz-ttop",
+    # "crates/aprender-present",
+    # "crates/aprender-test",
+    # "crates/aprender-test-lib",
+    # "crates/aprender-test-cli",
+    # "crates/aprender-test-derive",
+    # "crates/aprender-test-js-gen",
+    # "crates/aprender-test-showcase",
+]
+exclude = [
+    "fuzz",
+    # Phase 3c remaining:
+    "crates/aprender-viz-ttop",
+    "crates/aprender-present",
     "crates/aprender-test",
     "crates/aprender-test-lib",
     "crates/aprender-test-cli",
@@ -222,9 +214,27 @@ tokio-tungstenite = "0.24"
 indicatif = "0.17"
 console = "0.15"
 
+# GPU / WASM
+wgpu = "27.0"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = "0.3"
+console_error_panic_hook = "0.1"
+getrandom = "0.2"
+wasm-bindgen-test = "0.3"
+
 # Old crate name aliases (workspace = true refs in migrated sub-crates)
 trueno-zram-core = { path = "crates/aprender-zram-core", package = "aprender-zram-core" }
 trueno-zram-adaptive = { path = "crates/aprender-zram-adaptive", package = "aprender-zram-adaptive" }
+trueno = { path = "crates/aprender-compute", package = "aprender-compute" }
+presentar-core = { path = "crates/aprender-present-core", package = "aprender-present-core" }
+presentar-terminal = { path = "crates/aprender-present-terminal", package = "aprender-present-terminal" }
+presentar-widgets = { path = "crates/aprender-present-widgets", package = "aprender-present-widgets" }
+presentar-layout = { path = "crates/aprender-present-layout", package = "aprender-present-layout" }
+presentar-yaml = { path = "crates/aprender-present-yaml", package = "aprender-present-yaml" }
+presentar-test = { path = "crates/aprender-present-test", package = "aprender-present-test" }
+presentar-test-macros = { path = "crates/aprender-present-test-macros", package = "aprender-present-test-macros" }
 
 [workspace.lints.rust]
 # Safety

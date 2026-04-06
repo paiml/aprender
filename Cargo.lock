@@ -1188,6 +1188,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-zram"
+version = "0.29.0"
+dependencies = [
+ "aprender-zram-adaptive",
+ "aprender-zram-core",
+ "criterion 0.5.1",
+ "proptest",
+]
+
+[[package]]
+name = "aprender-zram-adaptive"
+version = "0.29.0"
+dependencies = [
+ "aprender-zram-core",
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "aprender-zram-cli"
+version = "0.29.0"
+dependencies = [
+ "aprender-zram-adaptive",
+ "aprender-zram-core",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "aprender-zram-core"
+version = "0.29.0"
+dependencies = [
+ "aprender-gpu",
+ "criterion 0.5.1",
+ "cudarc",
+ "proptest",
+ "rayon",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "aprender-zram-generator"
+version = "0.29.0"
+dependencies = [
+ "aprender-zram-core",
+ "serde",
+ "thiserror 2.0.18",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
