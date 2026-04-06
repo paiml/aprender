@@ -107,9 +107,24 @@ pub(crate) fn load_model_tensors_provenance(path: &Path) -> Result<TensorProvena
 /// - F16, F32 direct loading
 ///
 /// PMAT-187: Validates all tensors after loading to catch corruption early.
+/// GH-692: Shows per-tensor progress on interactive terminals.
 fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
     let reader = GgufReader::from_file(path)?;
-    let tensors = reader.get_all_tensors_f32()?;
+
+    // GH-692: Show dequantization progress on interactive terminals
+    use std::io::{IsTerminal, Write};
+    let is_tty = std::io::stderr().is_terminal();
+    let tensors = reader.get_all_tensors_f32_with_progress(|current, total, name| {
+        if is_tty {
+            eprint!("\r  [{current}/{total}] Dequantizing {name}");
+            let _ = std::io::stderr().flush();
+        }
+    })?;
+    if is_tty {
+        // Clear the progress line
+        eprint!("\r{}\r", " ".repeat(72));
+        let _ = std::io::stderr().flush();
+    }
 
     // PMAT-187: Validate all tensors after loading (Jidoka - stop the line)
     for (name, (data, _shape)) in &tensors {

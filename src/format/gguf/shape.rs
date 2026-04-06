@@ -147,8 +147,21 @@ impl GgufReader {
 
     /// Get all tensors as F32
     pub fn get_all_tensors_f32(&self) -> Result<TensorDataMap> {
+        self.get_all_tensors_f32_with_progress(|_, _, _| {})
+    }
+
+    /// Get all tensors as F32 with per-tensor progress callback.
+    ///
+    /// Contract: GH-692 — progress feedback for large GGUF dequantization.
+    /// Callback receives (current_index, total_count, tensor_name).
+    pub fn get_all_tensors_f32_with_progress(
+        &self,
+        progress: impl Fn(usize, usize, &str),
+    ) -> Result<TensorDataMap> {
+        let total = self.tensors.len();
         let mut result = BTreeMap::new();
-        for meta in &self.tensors {
+        for (i, meta) in self.tensors.iter().enumerate() {
+            progress(i + 1, total, &meta.name);
             let (data, shape) = self.get_tensor_f32(&meta.name)?;
             result.insert(meta.name.clone(), (data, shape));
         }
