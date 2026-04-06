@@ -84,8 +84,12 @@ fn fkr_101_membar_workaround_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== Membar Workaround PTX ===\n{}", ptx);
 
@@ -94,11 +98,17 @@ fn fkr_101_membar_workaround_test() {
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1;
-    let mut args: [*mut c_void; 2] =
-        [debug_buf.as_kernel_arg(), &batch_size as *const u32 as *mut c_void];
+    let mut args: [*mut c_void; 2] = [
+        debug_buf.as_kernel_arg(),
+        &batch_size as *const u32 as *mut c_void,
+    ];
 
     println!("Launching membar workaround kernel...");
     unsafe {
@@ -132,7 +142,10 @@ fn fkr_101_membar_workaround_test() {
         panic!("Membar workaround crashed: {:?}", e);
     }
 
-    assert_eq!(output[0], 5, "Should have 5 markers (membar workaround succeeded!)");
+    assert_eq!(
+        output[0], 5,
+        "Should have 5 markers (membar workaround succeeded!)"
+    );
     println!("LVB-003: membar.cta WORKS! Test PASSED!");
 }
 
@@ -265,8 +278,12 @@ fn fkr_101_fullload_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== FullLoad PTX (first 50 lines) ===");
     for (i, line) in ptx.lines().take(50).enumerate() {
@@ -274,14 +291,20 @@ fn fkr_101_fullload_test() {
     }
 
     let mut input_buf: GpuBuffer<u8> = GpuBuffer::new(&ctx, 4096).unwrap();
-    input_buf.copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>()).unwrap();
+    input_buf
+        .copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>())
+        .unwrap();
 
     let mut debug_buf: GpuBuffer<u32> = GpuBuffer::new(&ctx, 64).unwrap();
     debug_buf.copy_from_host(&vec![0u32; 64]).unwrap();
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1;
     let mut args: [*mut c_void; 3] = [
@@ -292,7 +315,9 @@ fn fkr_101_fullload_test() {
 
     println!("Launching fullload kernel...");
     unsafe {
-        stream.launch_kernel(&mut module, "fullload", &config, &mut args).expect("Launch");
+        stream
+            .launch_kernel(&mut module, "fullload", &config, &mut args)
+            .expect("Launch");
     }
 
     let sync_result = stream.synchronize();

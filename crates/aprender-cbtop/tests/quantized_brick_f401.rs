@@ -47,11 +47,21 @@ fn test_f401_supported_formats() {
 
         // Format must have valid block size
         let block_size = format.block_size();
-        assert!(block_size > 0, "Format {:?} has invalid block_size: {}", format, block_size);
+        assert!(
+            block_size > 0,
+            "Format {:?} has invalid block_size: {}",
+            format,
+            block_size
+        );
 
         // Format must have valid bytes per block
         let bytes = format.bytes_per_block();
-        assert!(bytes > 0, "Format {:?} has invalid bytes_per_block: {}", format, bytes);
+        assert!(
+            bytes > 0,
+            "Format {:?} has invalid bytes_per_block: {}",
+            format,
+            bytes
+        );
     }
 
     // Also verify FP formats
@@ -64,7 +74,10 @@ fn test_f401_supported_formats() {
 #[test]
 fn test_f401_gptq_awq_formats() {
     // GPTQ and AWQ formats should also be supported
-    let gptq = QuantFormat::Gptq { bits: 4, group_size: 128 };
+    let gptq = QuantFormat::Gptq {
+        bits: 4,
+        group_size: 128,
+    };
     let awq = QuantFormat::Awq { bits: 4 };
 
     assert!(gptq.bits_per_weight() > 4.0); // Includes overhead
@@ -77,14 +90,28 @@ fn test_f402_memory_reduction() {
     let q4k_ratio = QuantFormat::Q4_K.memory_ratio();
 
     // Q4_K should use less than 50% of F16 memory (i.e., > 2x reduction)
-    assert!(q4k_ratio < 0.5, "Q4_K memory ratio {} should be < 0.5 for 2x reduction", q4k_ratio);
+    assert!(
+        q4k_ratio < 0.5,
+        "Q4_K memory ratio {} should be < 0.5 for 2x reduction",
+        q4k_ratio
+    );
 
     // In fact, Q4_K should be around 28% of F16
-    assert!(q4k_ratio < 0.35, "Q4_K memory ratio {} should be < 0.35 (~3.5x reduction)", q4k_ratio);
+    assert!(
+        q4k_ratio < 0.35,
+        "Q4_K memory ratio {} should be < 0.35 (~3.5x reduction)",
+        q4k_ratio
+    );
 
     // Verify other formats have appropriate ratios
-    assert!(QuantFormat::Q8_0.memory_ratio() < 0.6, "Q8_0 should use < 60% of F16 memory");
-    assert!(QuantFormat::Q5_K.memory_ratio() < 0.45, "Q5_K should use < 45% of F16 memory");
+    assert!(
+        QuantFormat::Q8_0.memory_ratio() < 0.6,
+        "Q8_0 should use < 60% of F16 memory"
+    );
+    assert!(
+        QuantFormat::Q5_K.memory_ratio() < 0.45,
+        "Q5_K should use < 45% of F16 memory"
+    );
 }
 
 /// F402 negative: Full precision has no reduction.
@@ -97,7 +124,10 @@ fn test_f402_no_reduction_for_fp() {
     );
 
     // F32 should have ratio > 1.0 (uses more memory than F16)
-    assert!(QuantFormat::F32.memory_ratio() > 1.5, "F32 memory ratio should be > 1.5");
+    assert!(
+        QuantFormat::F32.memory_ratio() > 1.5,
+        "F32 memory ratio should be > 1.5"
+    );
 }
 
 /// F403: GGUF header parsing works correctly.
@@ -152,7 +182,9 @@ fn test_f404_dequant_strategies() {
     // Verify all strategies can be constructed
     let strategies = vec![
         DequantStrategy::Fused,
-        DequantStrategy::Prefetch { lookahead_blocks: 4 },
+        DequantStrategy::Prefetch {
+            lookahead_blocks: 4,
+        },
         DequantStrategy::OnDemand,
     ];
 
@@ -183,7 +215,11 @@ fn test_f405_perplexity_delta_documented() {
         "Q4_K perplexity delta {} should be between 0 and 1%",
         q4k_delta
     );
-    assert!((q4k_delta - 0.3).abs() < 0.1, "Q4_K perplexity delta {} should be ~0.3%", q4k_delta);
+    assert!(
+        (q4k_delta - 0.3).abs() < 0.1,
+        "Q4_K perplexity delta {} should be ~0.3%",
+        q4k_delta
+    );
 
     // Higher-bit formats should have lower perplexity delta
     assert!(
@@ -196,7 +232,10 @@ fn test_f405_perplexity_delta_documented() {
     );
 
     // FP formats should have near-zero perplexity delta
-    assert!(QuantFormat::F16.expected_ppl_delta() < 0.01, "F16 should have near-zero PPL delta");
+    assert!(
+        QuantFormat::F16.expected_ppl_delta() < 0.01,
+        "F16 should have near-zero PPL delta"
+    );
 }
 
 /// F406: Compression ratio calculation is accurate.
@@ -216,7 +255,11 @@ fn test_f406_compression_ratio_accuracy() {
 
     // Compression ratio should be 20x for this artificial case
     let ratio = weights.compression_ratio();
-    assert!((ratio - 20.0).abs() < 0.1, "Compression ratio {} should be ~20.0", ratio);
+    assert!(
+        (ratio - 20.0).abs() < 0.1,
+        "Compression ratio {} should be ~20.0",
+        ratio
+    );
 }
 
 /// F406 negative: Zero-size weights don't cause division by zero.

@@ -21,8 +21,9 @@ fn test_gpu_operations_individually() {
     // Test data
     let d = 4u32; // small dimension for testing
     let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0];
-    let weights: Vec<f32> =
-        vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0];
+    let weights: Vec<f32> = vec![
+        1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0,
+    ];
     let bias: Vec<f32> = vec![0.1, 0.2, 0.3, 0.4];
     let gamma: Vec<f32> = vec![1.0, 1.0, 1.0, 1.0];
     let beta: Vec<f32> = vec![0.0, 0.0, 0.0, 0.0];
@@ -113,7 +114,11 @@ fn test_full_encoder_block_gpu() {
     let ffn_dim = d_model * 4; // 256
     let seq_len = 8u32; // Short sequence for testing
 
-    let config = GpuEncoderConfig { d_model, n_heads, ffn_dim };
+    let config = GpuEncoderConfig {
+        d_model,
+        n_heads,
+        ffn_dim,
+    };
 
     // Create dummy weights (random-ish for testing, actual values don't matter for transfer test)
     let weight_size = (d_model * d_model) as usize;
@@ -127,7 +132,9 @@ fn test_full_encoder_block_gpu() {
     let b_proj: Vec<f32> = (0..d_model).map(|_| 0.0).collect();
     let ffn_up_w: Vec<f32> = (0..ffn_up_size).map(|i| (i as f32 * 0.001).sin()).collect();
     let ffn_up_b: Vec<f32> = (0..ffn_dim).map(|_| 0.0).collect();
-    let ffn_down_w: Vec<f32> = (0..ffn_down_size).map(|i| (i as f32 * 0.001).sin()).collect();
+    let ffn_down_w: Vec<f32> = (0..ffn_down_size)
+        .map(|i| (i as f32 * 0.001).sin())
+        .collect();
     let ffn_down_b: Vec<f32> = (0..d_model).map(|_| 0.0).collect();
 
     // Upload weights (this counts as H2D transfers during initialization)
@@ -174,7 +181,10 @@ fn test_full_encoder_block_gpu() {
 
     let h2d_after_forward = total_h2d_transfers();
     let d2h_after_forward = total_d2h_transfers();
-    println!("After forward pass: {} H2D, {} D2H", h2d_after_forward, d2h_after_forward);
+    println!(
+        "After forward pass: {} H2D, {} D2H",
+        h2d_after_forward, d2h_after_forward
+    );
 
     // Download output (1 D2H)
     let result = output.to_host().expect("output download");

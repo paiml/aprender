@@ -41,7 +41,11 @@ pub struct OptimizationValidator {
 
 impl Default for OptimizationValidator {
     fn default() -> Self {
-        Self { min_improvement_percent: 10.0, min_samples: 5, max_cv_percent: 10.0 }
+        Self {
+            min_improvement_percent: 10.0,
+            min_samples: 5,
+            max_cv_percent: 10.0,
+        }
     }
 }
 
@@ -75,8 +79,11 @@ impl OptimizationValidator {
         let before_cv = cv(before);
         let after_cv = cv(after);
 
-        let improvement =
-            if before_mean > 0.0 { (after_mean - before_mean) / before_mean * 100.0 } else { 0.0 };
+        let improvement = if before_mean > 0.0 {
+            (after_mean - before_mean) / before_mean * 100.0
+        } else {
+            0.0
+        };
 
         let p_value = t_test(before, after);
         let statistically_significant = p_value < 0.05;
@@ -129,7 +136,11 @@ impl ValidationResult {
     /// Format as human-readable report
     pub fn format_report(&self) -> String {
         let status = if self.passed { "PASSED" } else { "FAILED" };
-        let significance = if self.statistically_significant { "Yes" } else { "No" };
+        let significance = if self.statistically_significant {
+            "Yes"
+        } else {
+            "No"
+        };
 
         format!(
             "# Optimization Validation Report\n\n\

@@ -147,9 +147,14 @@ fn try_fuse_mul_add(
             continue;
         };
 
-        if let Some(pair) =
-            try_fuse_source(add_instr, src_idx, *mul_result, instructions, use_counts, definitions)
-        {
+        if let Some(pair) = try_fuse_source(
+            add_instr,
+            src_idx,
+            *mul_result,
+            instructions,
+            use_counts,
+            definitions,
+        ) {
             return Some(pair);
         }
     }
@@ -180,7 +185,11 @@ fn try_fuse_source(
     }
 
     // Get the other operand of the add (the 'c' in a*b+c)
-    let other_src = if src_idx == 0 { add_instr.srcs.get(1)? } else { add_instr.srcs.first()? };
+    let other_src = if src_idx == 0 {
+        add_instr.srcs.get(1)?
+    } else {
+        add_instr.srcs.first()?
+    };
 
     // Get mul operands (a and b) — need at least 2 sources
     let a = mul_instr.srcs.first()?;

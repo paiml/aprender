@@ -135,8 +135,10 @@ fn f1284_html_title() {
 /// F1285.1: All fields present
 #[test]
 fn f1285_all_fields_present() {
-    let mut report =
-        BenchmarkReport::new("Test").with_workload("gemm").with_backend("avx2").with_size(1024);
+    let mut report = BenchmarkReport::new("Test")
+        .with_workload("gemm")
+        .with_backend("avx2")
+        .with_size(1024);
     report.add_metric("latency", 10.0, "ms");
 
     let json = ReportExporter::benchmark_to_json(&report);

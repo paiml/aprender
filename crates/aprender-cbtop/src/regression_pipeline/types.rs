@@ -60,7 +60,10 @@ pub enum PipelineStatus {
 impl PipelineStatus {
     /// Check if status is terminal
     pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Passed | Self::Warning | Self::Failed | Self::Cancelled | Self::Error)
+        matches!(
+            self,
+            Self::Passed | Self::Warning | Self::Failed | Self::Cancelled | Self::Error
+        )
     }
 
     /// Get status name for GitHub

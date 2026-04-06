@@ -53,9 +53,11 @@ fn get_intrinsic_patterns(backend: &str) -> Option<IntrinsicPattern> {
         "sse2" => Some(IntrinsicPattern::new(r"_mm_\w+", "sse2", "SSE2")),
         "avx2" => Some(IntrinsicPattern::new(r"_mm256_\w+", "avx2", "AVX2")),
         "avx512" => Some(IntrinsicPattern::new(r"_mm512_\w+", "avx512f", "AVX512")),
-        "neon" => {
-            Some(IntrinsicPattern::new(r"v(?:ld|st|add|sub|mul|div)\w*q_f32", "neon", "NEON"))
-        }
+        "neon" => Some(IntrinsicPattern::new(
+            r"v(?:ld|st|add|sub|mul|div)\w*q_f32",
+            "neon",
+            "NEON",
+        )),
         _ => None,
     }
 }
@@ -285,7 +287,10 @@ fn check_file(filepath: &Path, backend: &str) -> Result<Vec<Violation>> {
     let content = std::fs::read_to_string(filepath)
         .with_context(|| format!("Failed to read {}", filepath.display()))?;
 
-    let lines: Vec<String> = content.lines().map(std::string::ToString::to_string).collect();
+    let lines: Vec<String> = content
+        .lines()
+        .map(std::string::ToString::to_string)
+        .collect();
     let unsafe_fn_re = Regex::new(r"^\s*unsafe\s+fn\s+(\w+)").expect("Invalid regex");
 
     let mut violations = Vec::new();
@@ -327,17 +332,32 @@ fn print_violation_group(violations: &[&Violation], icon: &str, label: &str, col
     let sep = "=".repeat(60);
     if color_red {
         println!("{}", sep.red());
-        println!("{}", format!("{icon} {label} ({})", violations.len()).red().bold());
+        println!(
+            "{}",
+            format!("{icon} {label} ({})", violations.len())
+                .red()
+                .bold()
+        );
         println!("{}", sep.red());
     } else {
         println!("{}", sep.yellow());
-        println!("{}", format!("{icon} {label} ({})", violations.len()).yellow().bold());
+        println!(
+            "{}",
+            format!("{icon} {label} ({})", violations.len())
+                .yellow()
+                .bold()
+        );
         println!("{}", sep.yellow());
     }
     println!();
 
     for v in violations.iter().take(10) {
-        println!("  {}:{} - {}()", v.filepath.display(), v.line_num, v.function_name);
+        println!(
+            "  {}:{} - {}()",
+            v.filepath.display(),
+            v.line_num,
+            v.function_name
+        );
         println!("     Problem: {}", v.message);
         println!("     Fix: {}", v.fix_suggestion);
         println!();
@@ -357,13 +377,22 @@ fn print_summary(critical: &[&Violation], errors: &[&Violation], warnings: &[&Vi
     println!();
 
     if !critical.is_empty() {
-        println!("  {} CRITICAL - Compiler CANNOT emit SIMD instructions", critical.len());
+        println!(
+            "  {} CRITICAL - Compiler CANNOT emit SIMD instructions",
+            critical.len()
+        );
     }
     if !errors.is_empty() {
-        println!("  {} ERRORS - Incorrect or incompatible attributes", errors.len());
+        println!(
+            "  {} ERRORS - Incorrect or incompatible attributes",
+            errors.len()
+        );
     }
     if !warnings.is_empty() {
-        println!("  {} WARNINGS - Best practices not followed", warnings.len());
+        println!(
+            "  {} WARNINGS - Best practices not followed",
+            warnings.len()
+        );
     }
     println!();
 }
@@ -390,17 +419,26 @@ pub fn run() -> Result<()> {
     }
 
     if all_violations.is_empty() {
-        println!("{}", "PASS: All SIMD property checks passed!".green().bold());
+        println!(
+            "{}",
+            "PASS: All SIMD property checks passed!".green().bold()
+        );
         println!();
         return Ok(());
     }
 
-    let critical: Vec<_> =
-        all_violations.iter().filter(|v| v.level == ViolationLevel::Critical).collect();
-    let errors: Vec<_> =
-        all_violations.iter().filter(|v| v.level == ViolationLevel::Error).collect();
-    let warnings: Vec<_> =
-        all_violations.iter().filter(|v| v.level == ViolationLevel::Warning).collect();
+    let critical: Vec<_> = all_violations
+        .iter()
+        .filter(|v| v.level == ViolationLevel::Critical)
+        .collect();
+    let errors: Vec<_> = all_violations
+        .iter()
+        .filter(|v| v.level == ViolationLevel::Error)
+        .collect();
+    let warnings: Vec<_> = all_violations
+        .iter()
+        .filter(|v| v.level == ViolationLevel::Warning)
+        .collect();
 
     print_violation_group(&critical, "CRITICAL", "CRITICAL VIOLATIONS", true);
     print_violation_group(&errors, "ERROR", "ERRORS", true);
@@ -415,7 +453,10 @@ pub fn run() -> Result<()> {
         );
     }
 
-    println!("{}", "COMMIT ALLOWED - Only warnings present".green().bold());
+    println!(
+        "{}",
+        "COMMIT ALLOWED - Only warnings present".green().bold()
+    );
     println!();
     Ok(())
 }

@@ -162,7 +162,10 @@ impl PagedKvCache {
 
             Ok(block_id)
         } else {
-            Err(PagedKvError::OutOfMemory { requested: 1, available: 0 })
+            Err(PagedKvError::OutOfMemory {
+                requested: 1,
+                available: 0,
+            })
         }
     }
 
@@ -220,8 +223,10 @@ impl PagedKvCache {
     pub fn append(&mut self, seq_id: SeqId, num_new_tokens: usize) -> PagedKvResult<()> {
         // First, calculate how many blocks we need (immutably)
         let (old_tokens, additional_blocks) = {
-            let seq_info =
-                self.sequences.get(&seq_id).ok_or(PagedKvError::SequenceNotFound(seq_id))?;
+            let seq_info = self
+                .sequences
+                .get(&seq_id)
+                .ok_or(PagedKvError::SequenceNotFound(seq_id))?;
 
             let old_tokens = seq_info.num_tokens;
             let new_tokens = old_tokens + num_new_tokens;
@@ -247,8 +252,10 @@ impl PagedKvCache {
         }
 
         // Update sequence info
-        let seq_info =
-            self.sequences.get_mut(&seq_id).ok_or(PagedKvError::SequenceNotFound(seq_id))?;
+        let seq_info = self
+            .sequences
+            .get_mut(&seq_id)
+            .ok_or(PagedKvError::SequenceNotFound(seq_id))?;
 
         seq_info.block_ids.extend(new_block_ids);
         seq_info.num_tokens = old_tokens + num_new_tokens;
@@ -258,8 +265,10 @@ impl PagedKvCache {
 
     /// Free all blocks for a sequence.
     pub fn free(&mut self, seq_id: SeqId) -> PagedKvResult<()> {
-        let seq_info =
-            self.sequences.remove(&seq_id).ok_or(PagedKvError::SequenceNotFound(seq_id))?;
+        let seq_info = self
+            .sequences
+            .remove(&seq_id)
+            .ok_or(PagedKvError::SequenceNotFound(seq_id))?;
 
         for block_id in seq_info.block_ids {
             self.free_block(block_id)?;
@@ -280,8 +289,11 @@ impl PagedKvCache {
             )));
         }
 
-        let src_info =
-            self.sequences.get(&src_seq).ok_or(PagedKvError::SequenceNotFound(src_seq))?.clone();
+        let src_info = self
+            .sequences
+            .get(&src_seq)
+            .ok_or(PagedKvError::SequenceNotFound(src_seq))?
+            .clone();
 
         // Increment reference counts for shared blocks
         for block_id in &src_info.block_ids {
@@ -310,24 +322,39 @@ impl PagedKvCache {
         match &self.eviction_strategy {
             EvictionStrategy::LRU => {
                 // Evict least recently used
-                self.sequences.values().min_by_key(|s| s.last_access).map(|s| s.seq_id)
+                self.sequences
+                    .values()
+                    .min_by_key(|s| s.last_access)
+                    .map(|s| s.seq_id)
             }
             EvictionStrategy::LFU => {
                 // Evict least frequently used
-                self.sequences.values().min_by_key(|s| s.access_count).map(|s| s.seq_id)
+                self.sequences
+                    .values()
+                    .min_by_key(|s| s.access_count)
+                    .map(|s| s.seq_id)
             }
             EvictionStrategy::LongestFirst => {
                 // Evict longest sequence (most blocks)
-                self.sequences.values().max_by_key(|s| s.num_tokens).map(|s| s.seq_id)
+                self.sequences
+                    .values()
+                    .max_by_key(|s| s.num_tokens)
+                    .map(|s| s.seq_id)
             }
             EvictionStrategy::Priority { .. } => {
                 // Evict lowest priority
-                self.sequences.values().min_by_key(|s| s.priority).map(|s| s.seq_id)
+                self.sequences
+                    .values()
+                    .min_by_key(|s| s.priority)
+                    .map(|s| s.seq_id)
             }
             EvictionStrategy::StreamingLLM { .. } => {
                 // StreamingLLM doesn't evict sequences, it evicts tokens
                 // For simplicity, fall back to LRU for sequence eviction
-                self.sequences.values().min_by_key(|s| s.last_access).map(|s| s.seq_id)
+                self.sequences
+                    .values()
+                    .min_by_key(|s| s.last_access)
+                    .map(|s| s.seq_id)
             }
         }
     }
@@ -336,7 +363,9 @@ impl PagedKvCache {
     pub fn evict(&mut self) -> PagedKvResult<SeqId> {
         let target = self
             .select_eviction_target()
-            .ok_or(PagedKvError::InvalidOperation("No sequences to evict".to_string()))?;
+            .ok_or(PagedKvError::InvalidOperation(
+                "No sequences to evict".to_string(),
+            ))?;
 
         self.free(target)?;
         self.stats.total_evictions += 1;
@@ -364,8 +393,10 @@ impl PagedKvCache {
     ) -> PagedKvResult<usize> {
         // Get sequence info immutably first to compute values
         let (num_tokens, blocks_to_remove) = {
-            let seq_info =
-                self.sequences.get(&seq_id).ok_or(PagedKvError::SequenceNotFound(seq_id))?;
+            let seq_info = self
+                .sequences
+                .get(&seq_id)
+                .ok_or(PagedKvError::SequenceNotFound(seq_id))?;
 
             let keep_tokens = sink_tokens + window_tokens;
             if seq_info.num_tokens <= keep_tokens {
@@ -416,7 +447,11 @@ impl PagedKvCache {
 impl fmt::Display for PagedKvCache {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "PagedKvCache")?;
-        writeln!(f, "  Strategy: {} (block_size={})", self.eviction_strategy, self.block_size)?;
+        writeln!(
+            f,
+            "  Strategy: {} (block_size={})",
+            self.eviction_strategy, self.block_size
+        )?;
         writeln!(
             f,
             "  Blocks: {}/{} ({:.1}% used)",

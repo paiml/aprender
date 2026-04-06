@@ -28,7 +28,10 @@ fn test_validate_shape_too_many_elements_exact_boundary() {
     // Actually, we need to test elements overflow without dimension overflow
     // Use 4096 * 4096 * 2 = would overflow dimension first
     // Instead test with multiple smaller dimensions
-    assert!(matches!(validate_shape(&[4096, 4096, 2]), Err(TileError::TooManyElements { .. })));
+    assert!(matches!(
+        validate_shape(&[4096, 4096, 2]),
+        Err(TileError::TooManyElements { .. })
+    ));
 }
 
 #[test]
@@ -53,7 +56,10 @@ fn test_validate_shape_dimension_boundary() {
     // Just over MAX_TILE_DIM (but still power of two)
     assert!(matches!(
         validate_shape(&[8192]),
-        Err(TileError::DimensionTooLarge { actual: 8192, max: 4096 })
+        Err(TileError::DimensionTooLarge {
+            actual: 8192,
+            max: 4096
+        })
     ));
 }
 
@@ -77,8 +83,14 @@ fn test_power_of_two_tiles_valid() {
 // cuda-tile-behavior.md: Falsification test #5
 #[test]
 fn test_non_power_of_two_rejected() {
-    assert!(matches!(validate_shape(&[7]), Err(TileError::NonPowerOfTwo { dim: 7 })));
-    assert!(matches!(validate_shape(&[100]), Err(TileError::NonPowerOfTwo { dim: 100 })));
+    assert!(matches!(
+        validate_shape(&[7]),
+        Err(TileError::NonPowerOfTwo { dim: 7 })
+    ));
+    assert!(matches!(
+        validate_shape(&[100]),
+        Err(TileError::NonPowerOfTwo { dim: 100 })
+    ));
     assert!(validate_shape(&[17]).is_err());
     assert!(validate_shape(&[1000]).is_err());
 }
@@ -90,14 +102,20 @@ fn test_max_tile_elements_enforced() {
     assert!(validate_shape(&[4096, 4096]).is_ok()); // 16M elements
 
     // Over limit: rejected
-    assert!(matches!(validate_shape(&[8192, 4096]), Err(TileError::TooManyElements { .. })));
+    assert!(matches!(
+        validate_shape(&[8192, 4096]),
+        Err(TileError::TooManyElements { .. })
+    ));
 }
 
 // cuda-tile-behavior.md: Falsification test #3
 #[test]
 fn test_max_dimension_enforced() {
     assert!(validate_shape(&[4096]).is_ok());
-    assert!(matches!(validate_shape(&[8192]), Err(TileError::DimensionTooLarge { .. })));
+    assert!(matches!(
+        validate_shape(&[8192]),
+        Err(TileError::DimensionTooLarge { .. })
+    ));
 }
 
 // cuda-tile-behavior.md: Falsification test #4

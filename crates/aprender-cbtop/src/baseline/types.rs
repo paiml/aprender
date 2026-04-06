@@ -87,19 +87,31 @@ struct GpuSpec {
 /// and a `from_name` match arm), eliminating the previous 4 separate match blocks.
 const fn gpu_spec(class: &GpuClass) -> GpuSpec {
     match class {
-        GpuClass::A10 => GpuSpec { label: "A10 (24GB)", throughput: (350, 450), vram_gb: 24 },
+        GpuClass::A10 => GpuSpec {
+            label: "A10 (24GB)",
+            throughput: (350, 450),
+            vram_gb: 24,
+        },
         GpuClass::A100 => GpuSpec {
             label: "A100 (40/80GB)",
             throughput: (800, 1200),
             vram_gb: 80, // Using 80GB variant
         },
-        GpuClass::H100 => GpuSpec { label: "H100 (80GB)", throughput: (1800, 2400), vram_gb: 80 },
-        GpuClass::Rtx4090 => {
-            GpuSpec { label: "RTX 4090 (24GB)", throughput: (300, 400), vram_gb: 24 }
-        }
-        GpuClass::Rtx3090 => {
-            GpuSpec { label: "RTX 3090 (24GB)", throughput: (200, 300), vram_gb: 24 }
-        }
+        GpuClass::H100 => GpuSpec {
+            label: "H100 (80GB)",
+            throughput: (1800, 2400),
+            vram_gb: 80,
+        },
+        GpuClass::Rtx4090 => GpuSpec {
+            label: "RTX 4090 (24GB)",
+            throughput: (300, 400),
+            vram_gb: 24,
+        },
+        GpuClass::Rtx3090 => GpuSpec {
+            label: "RTX 3090 (24GB)",
+            throughput: (200, 300),
+            vram_gb: 24,
+        },
         GpuClass::Unknown => GpuSpec {
             label: "Unknown GPU",
             throughput: (100, 500), // Conservative estimate
@@ -189,25 +201,45 @@ const GRADE_SPECS: [(ThroughputGrade, GradeSpec); 5] = [
     ),
     (
         ThroughputGrade::B,
-        GradeSpec { threshold: 80.0, label: "B", description: "Good - 80%+ of baseline" },
+        GradeSpec {
+            threshold: 80.0,
+            label: "B",
+            description: "Good - 80%+ of baseline",
+        },
     ),
     (
         ThroughputGrade::C,
-        GradeSpec { threshold: 60.0, label: "C", description: "Fair - 60%+ of baseline" },
+        GradeSpec {
+            threshold: 60.0,
+            label: "C",
+            description: "Fair - 60%+ of baseline",
+        },
     ),
     (
         ThroughputGrade::D,
-        GradeSpec { threshold: 40.0, label: "D", description: "Poor - 40%+ of baseline" },
+        GradeSpec {
+            threshold: 40.0,
+            label: "D",
+            description: "Poor - 40%+ of baseline",
+        },
     ),
     (
         ThroughputGrade::F,
-        GradeSpec { threshold: 0.0, label: "F", description: "Failing - below 40% of baseline" },
+        GradeSpec {
+            threshold: 0.0,
+            label: "F",
+            description: "Failing - below 40% of baseline",
+        },
     ),
 ];
 
 /// Look up the spec for a given grade variant.
 fn grade_spec(grade: &ThroughputGrade) -> &'static GradeSpec {
-    &GRADE_SPECS.iter().find(|(g, _)| g == grade).expect("all variants present in GRADE_SPECS").1
+    &GRADE_SPECS
+        .iter()
+        .find(|(g, _)| g == grade)
+        .expect("all variants present in GRADE_SPECS")
+        .1
 }
 
 impl ThroughputGrade {
@@ -262,14 +294,36 @@ struct SmHealthSpec {
 const SM_HEALTH_SPECS: [(SmHealth, SmHealthSpec); 4] = [
     (
         SmHealth::Saturated,
-        SmHealthSpec { min_util: 95, exclusive: true, label: "SATURATED (>95%)" },
+        SmHealthSpec {
+            min_util: 95,
+            exclusive: true,
+            label: "SATURATED (>95%)",
+        },
     ),
-    (SmHealth::Optimal, SmHealthSpec { min_util: 80, exclusive: false, label: "OPTIMAL (80-95%)" }),
+    (
+        SmHealth::Optimal,
+        SmHealthSpec {
+            min_util: 80,
+            exclusive: false,
+            label: "OPTIMAL (80-95%)",
+        },
+    ),
     (
         SmHealth::Moderate,
-        SmHealthSpec { min_util: 50, exclusive: false, label: "MODERATE (50-80%)" },
+        SmHealthSpec {
+            min_util: 50,
+            exclusive: false,
+            label: "MODERATE (50-80%)",
+        },
     ),
-    (SmHealth::Critical, SmHealthSpec { min_util: 0, exclusive: false, label: "CRITICAL (<50%)" }),
+    (
+        SmHealth::Critical,
+        SmHealthSpec {
+            min_util: 0,
+            exclusive: false,
+            label: "CRITICAL (<50%)",
+        },
+    ),
 ];
 
 /// Look up the spec for a given SM health variant.
@@ -286,15 +340,13 @@ impl SmHealth {
     pub fn from_utilization(sm_util: u8) -> Self {
         SM_HEALTH_SPECS
             .iter()
-            .find(
-                |(_, spec)| {
-                    if spec.exclusive {
-                        sm_util > spec.min_util
-                    } else {
-                        sm_util >= spec.min_util
-                    }
-                },
-            )
+            .find(|(_, spec)| {
+                if spec.exclusive {
+                    sm_util > spec.min_util
+                } else {
+                    sm_util >= spec.min_util
+                }
+            })
             .map(|(health, _)| *health)
             .unwrap_or(SmHealth::Critical)
     }

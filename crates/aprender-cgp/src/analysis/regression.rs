@@ -148,7 +148,9 @@ impl RegressionDetector {
         // Simple LCG PRNG for reproducibility (no external dependency)
         let mut rng_state: u64 = 42;
         let lcg_next = |state: &mut u64| -> usize {
-            *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            *state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             (*state >> 33) as usize
         };
 
@@ -186,7 +188,9 @@ impl RegressionDetector {
 
         let mut rng_state: u64 = 123;
         let lcg_next = |state: &mut u64| -> usize {
-            *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            *state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             (*state >> 33) as usize
         };
 

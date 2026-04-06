@@ -7,7 +7,11 @@ fn golden_gemm_naive_kernel_structure() {
     let kernel = GemmKernel::naive(64, 64, 64);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains(".entry"), "GOLDEN FAIL: Missing .entry in GEMM naive\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains(".entry"),
+        "GOLDEN FAIL: Missing .entry in GEMM naive\nPTX:\n{}",
+        ptx
+    );
     assert!(
         ptx.contains("ld.global"),
         "GOLDEN FAIL: Missing global loads in GEMM naive\nPTX:\n{}",
@@ -30,7 +34,11 @@ fn golden_gemm_tiled_kernel_structure() {
     let kernel = GemmKernel::tiled(64, 64, 64, 16);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains(".entry"), "GOLDEN FAIL: Missing .entry in GEMM tiled\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains(".entry"),
+        "GOLDEN FAIL: Missing .entry in GEMM tiled\nPTX:\n{}",
+        ptx
+    );
     assert!(
         ptx.contains(".shared") || ptx.contains("ld.shared") || ptx.contains("st.shared"),
         "GOLDEN FAIL: Missing shared memory in GEMM tiled\nPTX:\n{}",
@@ -97,7 +105,11 @@ fn golden_gemm_tiled_unrolled_kernel_structure() {
         "GOLDEN FAIL: Missing barrier in GEMM tiled_unrolled\nPTX:\n{}",
         ptx
     );
-    assert!(ptx.contains("fma"), "GOLDEN FAIL: Missing fma in GEMM tiled_unrolled\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("fma"),
+        "GOLDEN FAIL: Missing fma in GEMM tiled_unrolled\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -120,7 +132,11 @@ fn golden_gemm_tensor_core_kernel_structure() {
         "GOLDEN FAIL: Missing barrier in GEMM tensor_core\nPTX:\n{}",
         ptx
     );
-    assert!(ptx.contains("fma"), "GOLDEN FAIL: Missing fma in GEMM tensor_core\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("fma"),
+        "GOLDEN FAIL: Missing fma in GEMM tensor_core\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -133,7 +149,11 @@ fn golden_gemm_wmma_fp16_kernel_structure() {
         "GOLDEN FAIL: Missing gemm_wmma_fp16 entry\nPTX:\n{}",
         ptx
     );
-    assert!(ptx.contains("wmma"), "GOLDEN FAIL: Missing WMMA ops in GEMM wmma_fp16\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("wmma"),
+        "GOLDEN FAIL: Missing WMMA ops in GEMM wmma_fp16\nPTX:\n{}",
+        ptx
+    );
     assert!(
         ptx.contains("load") && ptx.contains("store"),
         "GOLDEN FAIL: Missing WMMA load/store in GEMM wmma_fp16\nPTX:\n{}",
@@ -212,17 +232,35 @@ fn golden_batched_4d_gemm_with_tile_size() {
 fn golden_gemm_kernel_names_complete() {
     assert_eq!(GemmKernel::naive(64, 64, 64).name(), "gemm_naive");
     assert_eq!(GemmKernel::tiled(64, 64, 64, 16).name(), "gemm_tiled");
-    assert_eq!(GemmKernel::tiled_unrolled(64, 64, 64, 16).name(), "gemm_tiled_unrolled");
-    assert_eq!(GemmKernel::tensor_core(64, 64, 64).name(), "gemm_tensor_core");
+    assert_eq!(
+        GemmKernel::tiled_unrolled(64, 64, 64, 16).name(),
+        "gemm_tiled_unrolled"
+    );
+    assert_eq!(
+        GemmKernel::tensor_core(64, 64, 64).name(),
+        "gemm_tensor_core"
+    );
     assert_eq!(GemmKernel::wmma_fp16(64, 64, 64).name(), "gemm_wmma_fp16");
 
-    assert_eq!(BatchedGemmKernel::naive(4, 64, 64, 64).name(), "batched_gemm_naive");
-    assert_eq!(BatchedGemmKernel::tiled(4, 64, 64, 64, 16).name(), "batched_gemm_tiled");
+    assert_eq!(
+        BatchedGemmKernel::naive(4, 64, 64, 64).name(),
+        "batched_gemm_naive"
+    );
+    assert_eq!(
+        BatchedGemmKernel::tiled(4, 64, 64, 64, 16).name(),
+        "batched_gemm_tiled"
+    );
     assert_eq!(
         BatchedGemmKernel::tiled_unrolled(4, 64, 64, 64, 16).name(),
         "batched_gemm_tiled_unrolled"
     );
-    assert_eq!(BatchedGemmKernel::wmma_fp16(4, 64, 64, 64).name(), "batched_gemm_wmma_fp16");
+    assert_eq!(
+        BatchedGemmKernel::wmma_fp16(4, 64, 64, 64).name(),
+        "batched_gemm_wmma_fp16"
+    );
 
-    assert_eq!(Batched4DGemmKernel::new(2, 8, 32, 32, 64).name(), "batched_4d_gemm");
+    assert_eq!(
+        Batched4DGemmKernel::new(2, 8, 32, 32, 64).name(),
+        "batched_4d_gemm"
+    );
 }

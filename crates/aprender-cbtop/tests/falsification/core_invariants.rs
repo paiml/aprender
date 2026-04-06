@@ -50,7 +50,11 @@ fn f002_brick_names_unique() {
     unique_names.sort();
     unique_names.dedup();
 
-    assert_eq!(names.len(), unique_names.len(), "F002 FALSIFIED: Duplicate brick names detected");
+    assert_eq!(
+        names.len(),
+        unique_names.len(),
+        "F002 FALSIFIED: Duplicate brick names detected"
+    );
 }
 
 /// F003: verify() MUST check ALL assertions
@@ -84,7 +88,11 @@ fn f010_budget_non_zero() {
         let budget = brick.budget();
         // At least one budget component should be non-zero
         let total = budget.collect_ms + budget.layout_ms + budget.render_ms;
-        assert!(total > 0, "F010 FALSIFIED: Brick '{}' has all-zero budget", brick.brick_name());
+        assert!(
+            total > 0,
+            "F010 FALSIFIED: Brick '{}' has all-zero budget",
+            brick.brick_name()
+        );
     }
 }
 

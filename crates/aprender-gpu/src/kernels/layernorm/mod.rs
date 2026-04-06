@@ -39,7 +39,12 @@ impl LayerNormKernel {
     /// Create a new LayerNorm kernel
     #[must_use]
     pub fn new(hidden_size: u32) -> Self {
-        Self { hidden_size, epsilon: 1e-5, affine: true, use_warp_shuffle: true }
+        Self {
+            hidden_size,
+            epsilon: 1e-5,
+            affine: true,
+            use_warp_shuffle: true,
+        }
     }
 
     /// Set custom epsilon value

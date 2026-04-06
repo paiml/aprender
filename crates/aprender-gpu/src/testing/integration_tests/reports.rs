@@ -25,10 +25,17 @@ fn test_demo_sovereign_stack() {
     let png2 = renderer.render_to_png(&output, size as u32, size as u32);
 
     let result = compare_png_bytes(&png1, &png2, 0);
-    println!("│ Diff pixels: {} / {}", result.different_pixels, result.total_pixels);
+    println!(
+        "│ Diff pixels: {} / {}",
+        result.different_pixels, result.total_pixels
+    );
     println!(
         "│ Status: {} │",
-        if result.different_pixels == 0 { "PASS ✓ (Identical)" } else { "FAIL ✗" }
+        if result.different_pixels == 0 {
+            "PASS ✓ (Identical)"
+        } else {
+            "FAIL ✗"
+        }
     );
     println!("└──────────────────────────────────────────────────────────────┘\n");
 
@@ -49,7 +56,11 @@ fn test_demo_sovereign_stack() {
     println!("│ Max diff: {}", result.max_diff);
     println!(
         "│ Status: {} │",
-        if result.different_pixels > 0 { "FAIL ✗ (Bug Detected!)" } else { "PASS" }
+        if result.different_pixels > 0 {
+            "FAIL ✗ (Bug Detected!)"
+        } else {
+            "PASS"
+        }
     );
     println!("└──────────────────────────────────────────────────────────────┘\n");
 
@@ -61,14 +72,20 @@ fn test_demo_sovereign_stack() {
     println!("│ PNG size: {} bytes", png_special.len());
     println!(
         "│ Status: {} │",
-        if result.different_pixels == 0 { "PASS ✓ (Handled)" } else { "FAIL ✗" }
+        if result.different_pixels == 0 {
+            "PASS ✓ (Handled)"
+        } else {
+            "FAIL ✗"
+        }
     );
     println!("└──────────────────────────────────────────────────────────────┘\n");
 
     // Test 4: Deterministic RNG (simular)
     println!("┌─ TEST 4: Deterministic RNG (simular) ─────────────────────────┐");
     let mut rng = SimRng::new(42);
-    let random_input: Vec<f32> = (0..64).map(|_| rng.gen_range_f64(0.0, 1.0) as f32).collect();
+    let random_input: Vec<f32> = (0..64)
+        .map(|_| rng.gen_range_f64(0.0, 1.0) as f32)
+        .collect();
     let png_random = renderer.render_to_png(&random_input, 8, 8);
     println!("│ Seed: 42");
     println!("│ Generated: {} random f32 values", random_input.len());
@@ -110,8 +127,9 @@ fn test_visual_report_sovereign() {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let size = 16;
-    let identity: Vec<f32> =
-        (0..size * size).map(|i| if i / size == i % size { 1.0 } else { 0.0 }).collect();
+    let identity: Vec<f32> = (0..size * size)
+        .map(|i| if i / size == i % size { 1.0 } else { 0.0 })
+        .collect();
 
     let png_identity = renderer.render_to_png(&identity, size as u32, size as u32);
     let identity_path = report_dir.join("01_identity_matrix.png");
@@ -125,7 +143,11 @@ fn test_visual_report_sovereign() {
     println!(
         "  Self-comparison: {} diffs, Status: {}",
         result.different_pixels,
-        if result.different_pixels == 0 { "✓ PASS" } else { "✗ FAIL" }
+        if result.different_pixels == 0 {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        }
     );
     println!();
 
@@ -134,7 +156,9 @@ fn test_visual_report_sovereign() {
     println!("TEST CASE 2: Gradient (FP Precision Test)");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-    let gradient: Vec<f32> = (0..size * size).map(|i| i as f32 / (size * size) as f32).collect();
+    let gradient: Vec<f32> = (0..size * size)
+        .map(|i| i as f32 / (size * size) as f32)
+        .collect();
 
     let png_gradient = renderer.render_to_png(&gradient, size as u32, size as u32);
     let gradient_path = report_dir.join("02_gradient.png");
@@ -148,7 +172,11 @@ fn test_visual_report_sovereign() {
     println!(
         "  Self-comparison: {} diffs, Status: {}",
         result.different_pixels,
-        if result.different_pixels == 0 { "✓ PASS" } else { "✗ FAIL" }
+        if result.different_pixels == 0 {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        }
     );
     println!();
 
@@ -177,13 +205,19 @@ fn test_visual_report_sovereign() {
     println!("  ┌─────────────────────────────────────────────────────────┐");
     println!("  │ DIFF ANALYSIS                                           │");
     println!("  ├─────────────────────────────────────────────────────────┤");
-    println!("  │ Total pixels:     {:>6}                                │", result.total_pixels);
+    println!(
+        "  │ Total pixels:     {:>6}                                │",
+        result.total_pixels
+    );
     println!(
         "  │ Diff pixels:      {:>6} ({:>5.1}%)                      │",
         result.different_pixels,
         result.diff_percentage()
     );
-    println!("  │ Max diff:         {:>6}                                │", result.max_diff);
+    println!(
+        "  │ Max diff:         {:>6}                                │",
+        result.max_diff
+    );
     println!("  ├─────────────────────────────────────────────────────────┤");
     println!("  │ Bug Class: AccumulatorInit                              │");
     println!("  │ Description: Accumulator not initialized to zero        │");
@@ -238,7 +272,11 @@ fn test_visual_report_sovereign() {
     println!(
         "  Self-comparison: {} diffs, Status: {}",
         result.different_pixels,
-        if result.different_pixels == 0 { "✓ PASS" } else { "✗ FAIL" }
+        if result.different_pixels == 0 {
+            "✓ PASS"
+        } else {
+            "✗ FAIL"
+        }
     );
     println!();
 
@@ -248,7 +286,9 @@ fn test_visual_report_sovereign() {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
     let mut rng = SimRng::new(12345);
-    let random_data: Vec<f32> = (0..256).map(|_| rng.gen_range_f64(0.0, 1.0) as f32).collect();
+    let random_data: Vec<f32> = (0..256)
+        .map(|_| rng.gen_range_f64(0.0, 1.0) as f32)
+        .collect();
     let png_random = renderer.render_to_png(&random_data, 16, 16);
     let random_path = report_dir.join("05_deterministic_random.png");
     fs::write(&random_path, &png_random).unwrap();
@@ -283,7 +323,11 @@ fn test_visual_report_sovereign() {
     for entry in fs::read_dir(&report_dir).unwrap() {
         let entry = entry.unwrap();
         let metadata = entry.metadata().unwrap();
-        println!("  {} ({} bytes)", entry.file_name().to_string_lossy(), metadata.len());
+        println!(
+            "  {} ({} bytes)",
+            entry.file_name().to_string_lossy(),
+            metadata.len()
+        );
     }
     println!();
 

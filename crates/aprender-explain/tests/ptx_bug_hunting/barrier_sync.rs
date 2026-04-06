@@ -33,9 +33,13 @@ fn test_barrier_present_valid() {
     let result = PtxBugAnalyzer::strict().analyze(ptx);
     // With barrier present, the specific st/ld bug should not trigger
     let missing_barrier_bugs: Vec<_> = result.bugs_of_class(&PtxBugClass::MissingBarrierSync);
-    let has_st_ld_bug =
-        missing_barrier_bugs.iter().any(|b| b.message.contains("ld.shared follows st.shared"));
-    assert!(!has_st_ld_bug, "Should not flag missing barrier when bar.sync is present");
+    let has_st_ld_bug = missing_barrier_bugs
+        .iter()
+        .any(|b| b.message.contains("ld.shared follows st.shared"));
+    assert!(
+        !has_st_ld_bug,
+        "Should not flag missing barrier when bar.sync is present"
+    );
 }
 
 #[test]
@@ -57,7 +61,9 @@ fn test_multiple_barriers() {
     let missing_barrier_bugs: Vec<_> = result.bugs_of_class(&PtxBugClass::MissingBarrierSync);
     // There should be no st/ld pattern bugs since barriers are correctly placed
     assert!(
-        missing_barrier_bugs.iter().all(|b| !b.message.contains("ld.shared follows st.shared")),
+        missing_barrier_bugs
+            .iter()
+            .all(|b| !b.message.contains("ld.shared follows st.shared")),
         "Should not flag when barriers are correctly placed"
     );
 }

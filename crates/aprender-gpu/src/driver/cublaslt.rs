@@ -55,7 +55,10 @@ impl CublasLtHandle {
         let status = unsafe { (driver.cublasLtCreate)(&mut handle) };
         CublasLtDriver::check(status)?;
 
-        Ok(Self { handle, fp8_plan_cache: std::collections::HashMap::new() })
+        Ok(Self {
+            handle,
+            fp8_plan_cache: std::collections::HashMap::new(),
+        })
     }
 
     /// FP8 E4M3 × FP8 E4M3 → FP16 GEMM via cuBLASLt
@@ -124,8 +127,11 @@ impl CublasLtHandle {
 
             // 2. Create matrix layouts
             // A: FP8 — physical dims depend on transa
-            let (a_rows, a_cols) =
-                if op_a == CUBLAS_OP_T { (k as u64, m as u64) } else { (m as u64, k as u64) };
+            let (a_rows, a_cols) = if op_a == CUBLAS_OP_T {
+                (k as u64, m as u64)
+            } else {
+                (m as u64, k as u64)
+            };
             let mut a_layout: CublasLtMatrixLayout = std::ptr::null_mut();
             CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                 &mut a_layout,
@@ -136,8 +142,11 @@ impl CublasLtHandle {
             ))?;
 
             // B: FP8
-            let (b_rows, b_cols) =
-                if op_b == CUBLAS_OP_T { (n as u64, k as u64) } else { (k as u64, n as u64) };
+            let (b_rows, b_cols) = if op_b == CUBLAS_OP_T {
+                (n as u64, k as u64)
+            } else {
+                (k as u64, n as u64)
+            };
             let mut b_layout: CublasLtMatrixLayout = std::ptr::null_mut();
             CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                 &mut b_layout,
@@ -241,7 +250,10 @@ impl CublasLtHandle {
             (driver.cublasLtMatmulDescDestroy)(matmul_desc);
 
             CublasLtDriver::check(matmul_status).map_err(|e| {
-                GpuError::CudaDriver(format!("cublasLtMatmul_fp8_f16(m={m}, n={n}, k={k}): {e}"), 0)
+                GpuError::CudaDriver(
+                    format!("cublasLtMatmul_fp8_f16(m={m}, n={n}, k={k}): {e}"),
+                    0,
+                )
             })
         }
     }
@@ -325,8 +337,11 @@ impl CublasLtHandle {
             ))?;
 
             // 2. Create matrix layouts (same as unscaled)
-            let (a_rows, a_cols) =
-                if op_a == CUBLAS_OP_T { (k as u64, m as u64) } else { (m as u64, k as u64) };
+            let (a_rows, a_cols) = if op_a == CUBLAS_OP_T {
+                (k as u64, m as u64)
+            } else {
+                (m as u64, k as u64)
+            };
             let mut a_layout: CublasLtMatrixLayout = std::ptr::null_mut();
             CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                 &mut a_layout,
@@ -336,8 +351,11 @@ impl CublasLtHandle {
                 lda as i64,
             ))?;
 
-            let (b_rows, b_cols) =
-                if op_b == CUBLAS_OP_T { (n as u64, k as u64) } else { (k as u64, n as u64) };
+            let (b_rows, b_cols) = if op_b == CUBLAS_OP_T {
+                (n as u64, k as u64)
+            } else {
+                (k as u64, n as u64)
+            };
             let mut b_layout: CublasLtMatrixLayout = std::ptr::null_mut();
             CublasLtDriver::check((driver.cublasLtMatrixLayoutCreate)(
                 &mut b_layout,

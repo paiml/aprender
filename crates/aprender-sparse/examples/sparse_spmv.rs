@@ -40,10 +40,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── SpGEMM ─────────────────────────────────────────────
     println!("\n--- SpGEMM (sparse × sparse) ---");
-    let diag_a = CsrMatrix::new(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![2.0, 3.0, 4.0_f32])?;
-    let diag_b = CsrMatrix::new(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![5.0, 6.0, 7.0_f32])?;
+    let diag_a = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 3],
+        vec![0, 1, 2],
+        vec![2.0, 3.0, 4.0_f32],
+    )?;
+    let diag_b = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 3],
+        vec![0, 1, 2],
+        vec![5.0, 6.0, 7.0_f32],
+    )?;
     let product = trueno_sparse::spgemm(&diag_a, &diag_b)?;
-    println!("diag([2,3,4]) × diag([5,6,7]) = diag({:?})", product.values());
+    println!(
+        "diag([2,3,4]) × diag([5,6,7]) = diag({:?})",
+        product.values()
+    );
 
     // ── BSR ────────────────────────────────────────────────
     println!("\n--- BSR (Block Sparse Row) ---");
@@ -68,7 +83,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("SELL storage: {} elements (padded)", sell.storage_size());
 
     // Verify SELL matches CSR
-    let max_diff: f32 = y.iter().zip(y_sell.iter()).map(|(a, b)| (a - b).abs()).fold(0.0, f32::max);
+    let max_diff: f32 = y
+        .iter()
+        .zip(y_sell.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0, f32::max);
     println!("SELL vs CSR max diff: {max_diff:.2e}");
 
     println!("\n=== Done ===");

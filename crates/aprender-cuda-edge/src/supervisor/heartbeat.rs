@@ -23,7 +23,11 @@ impl GpuHealthMonitor {
     /// Create a new health monitor with the specified thresholds.
     #[must_use]
     pub fn new(max_missed: u32, throttle_temp_c: u32, shutdown_temp_c: u32) -> Self {
-        Self { max_missed, throttle_temp_c, shutdown_temp_c }
+        Self {
+            max_missed,
+            throttle_temp_c,
+            shutdown_temp_c,
+        }
     }
 
     /// Create a builder for configuring a health monitor.
@@ -58,7 +62,11 @@ impl GpuHealthMonitor {
 
 impl Default for GpuHealthMonitor {
     fn default() -> Self {
-        Self { max_missed: 3, throttle_temp_c: 85, shutdown_temp_c: 95 }
+        Self {
+            max_missed: 3,
+            throttle_temp_c: 85,
+            shutdown_temp_c: 95,
+        }
     }
 }
 
@@ -111,13 +119,19 @@ mod tests {
     #[test]
     fn alive_is_healthy() {
         let monitor = GpuHealthMonitor::default();
-        assert_eq!(monitor.check_status(HeartbeatStatus::Alive), HealthAction::Healthy);
+        assert_eq!(
+            monitor.check_status(HeartbeatStatus::Alive),
+            HealthAction::Healthy
+        );
     }
 
     #[test]
     fn missed_below_threshold_is_healthy() {
         let monitor = GpuHealthMonitor::new(3, 85, 95);
-        assert_eq!(monitor.check_status(HeartbeatStatus::MissedBeats(2)), HealthAction::Healthy);
+        assert_eq!(
+            monitor.check_status(HeartbeatStatus::MissedBeats(2)),
+            HealthAction::Healthy
+        );
     }
 
     #[test]
@@ -141,7 +155,10 @@ mod tests {
     #[test]
     fn dead_triggers_shutdown() {
         let monitor = GpuHealthMonitor::default();
-        assert_eq!(monitor.check_status(HeartbeatStatus::Dead), HealthAction::Shutdown);
+        assert_eq!(
+            monitor.check_status(HeartbeatStatus::Dead),
+            HealthAction::Shutdown
+        );
     }
 
     #[test]
@@ -164,8 +181,11 @@ mod tests {
 
     #[test]
     fn builder_applies_custom_values() {
-        let monitor =
-            GpuHealthMonitor::builder().max_missed(5).throttle_temp(80).shutdown_temp(90).build();
+        let monitor = GpuHealthMonitor::builder()
+            .max_missed(5)
+            .throttle_temp(80)
+            .shutdown_temp(90)
+            .build();
         assert_eq!(monitor.max_missed, 5);
         assert_eq!(monitor.throttle_temp_c, 80);
         assert_eq!(monitor.shutdown_temp_c, 90);

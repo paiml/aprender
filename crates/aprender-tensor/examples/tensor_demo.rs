@@ -26,7 +26,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  shape={:?}, data={:?}\n", op.shape(), op.data());
 
     // Trace
-    let eye = Tensor::new(vec![3, 3], vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0])?;
+    let eye = Tensor::new(
+        vec![3, 3],
+        vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
+    )?;
     let tr = trace(&eye)?;
     println!("Trace of diag(1,2,3) = {tr}\n");
 
@@ -45,8 +48,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // N-ary einsum: chain of 3 matmuls
     let ma = Tensor::new(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])?;
-    let mb =
-        Tensor::new(vec![3, 4], vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0])?;
+    let mb = Tensor::new(
+        vec![3, 4],
+        vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+    )?;
     let mc = Tensor::new(vec![4, 2], vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0])?;
     let chain = einsum_nary("ij,jk,kl->il", &[&ma, &mb, &mc])?;
     println!("N-ary einsum (3 matmuls, 2×3 × 3×4 × 4×2 → 2×2):");

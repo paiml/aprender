@@ -320,25 +320,37 @@ fn main() -> Result<()> {
     match cli.command {
         Commands::Doctor => doctor::run_doctor(json),
         Commands::Profile { target } => dispatch_profile(target, json),
-        Commands::Roofline { target, kernels, export, empirical } => {
-            analysis::roofline::run_roofline(
-                &target,
-                kernels.as_deref(),
-                export.as_deref(),
-                empirical,
-                json,
-            )
-        }
-        Commands::Bench { bench, counters, check_regression, threshold, roofline } => {
-            analysis::bench::run_bench(
-                &bench,
-                counters.as_deref(),
-                check_regression,
-                threshold,
-                roofline,
-            )
-        }
-        Commands::Diff { baseline, current, before, after } => analysis::diff::run_diff(
+        Commands::Roofline {
+            target,
+            kernels,
+            export,
+            empirical,
+        } => analysis::roofline::run_roofline(
+            &target,
+            kernels.as_deref(),
+            export.as_deref(),
+            empirical,
+            json,
+        ),
+        Commands::Bench {
+            bench,
+            counters,
+            check_regression,
+            threshold,
+            roofline,
+        } => analysis::bench::run_bench(
+            &bench,
+            counters.as_deref(),
+            check_regression,
+            threshold,
+            roofline,
+        ),
+        Commands::Diff {
+            baseline,
+            current,
+            before,
+            after,
+        } => analysis::diff::run_diff(
             baseline.as_deref(),
             current.as_deref(),
             before.as_deref(),
@@ -360,19 +372,29 @@ fn main() -> Result<()> {
         Commands::Baseline { save, load } => {
             analysis::baseline::run_baseline(save.as_deref(), load.as_deref())
         }
-        Commands::Compete { workload, ours, theirs, label } => {
-            analysis::compete::run_compete(&workload, &ours, &theirs, label.as_deref(), json)
-        }
+        Commands::Compete {
+            workload,
+            ours,
+            theirs,
+            label,
+        } => analysis::compete::run_compete(&workload, &ours, &theirs, label.as_deref(), json),
     }
 }
 
 fn dispatch_profile(target: ProfileTarget, json: bool) -> Result<()> {
     match target {
-        ProfileTarget::Kernel { name, size, roofline, metrics } => {
-            profilers::cuda::profile_kernel(&name, size, roofline, metrics.as_deref())
-        }
+        ProfileTarget::Kernel {
+            name,
+            size,
+            roofline,
+            metrics,
+        } => profilers::cuda::profile_kernel(&name, size, roofline, metrics.as_deref()),
         ProfileTarget::Cublas { op, size } => profilers::cuda::profile_cublas(&op, size),
-        ProfileTarget::Wgpu { shader, dispatch, target } => {
+        ProfileTarget::Wgpu {
+            shader,
+            dispatch,
+            target,
+        } => {
             profilers::wgpu_profiler::profile_wgpu(&shader, dispatch.as_deref(), target.as_deref())
         }
         ProfileTarget::Metal { shader, dispatch } => {
@@ -387,9 +409,11 @@ fn dispatch_profile(target: ProfileTarget, json: bool) -> Result<()> {
                 anyhow::bail!("Metal backend requires macOS -- use --backend wgpu for Vulkan")
             }
         }
-        ProfileTarget::Simd { function, size, arch } => {
-            profilers::simd::profile_simd(&function, size, &arch)
-        }
+        ProfileTarget::Simd {
+            function,
+            size,
+            arch,
+        } => profilers::simd::profile_simd(&function, size, &arch),
         ProfileTarget::Wasm { function, size } => profilers::wasm::profile_wasm(&function, size),
         ProfileTarget::Quant { kernel, size, all } => {
             if all {
@@ -404,23 +428,32 @@ fn dispatch_profile(target: ProfileTarget, json: bool) -> Result<()> {
         ProfileTarget::Scalar { function, size } => {
             profilers::scalar::profile_scalar(&function, size)
         }
-        ProfileTarget::Parallel { function, size, threads } => {
-            profilers::rayon_parallel::profile_parallel(&function, size, threads.as_deref())
-        }
-        ProfileTarget::Compare { kernel, size, backends } => {
-            analysis::compare::run_compare(&kernel, size, &backends, json)
-        }
-        ProfileTarget::Scaling { size, max_threads, runs } => {
-            profilers::rayon_parallel::profile_scaling(size, max_threads, runs, json)
-        }
-        ProfileTarget::Binary { path, kernel_filter, trace, duration } => {
-            profilers::cuda::profile_binary(
-                &path,
-                kernel_filter.as_deref(),
-                trace,
-                duration.as_deref(),
-            )
-        }
+        ProfileTarget::Parallel {
+            function,
+            size,
+            threads,
+        } => profilers::rayon_parallel::profile_parallel(&function, size, threads.as_deref()),
+        ProfileTarget::Compare {
+            kernel,
+            size,
+            backends,
+        } => analysis::compare::run_compare(&kernel, size, &backends, json),
+        ProfileTarget::Scaling {
+            size,
+            max_threads,
+            runs,
+        } => profilers::rayon_parallel::profile_scaling(size, max_threads, runs, json),
+        ProfileTarget::Binary {
+            path,
+            kernel_filter,
+            trace,
+            duration,
+        } => profilers::cuda::profile_binary(
+            &path,
+            kernel_filter.as_deref(),
+            trace,
+            duration.as_deref(),
+        ),
         ProfileTarget::Python { args } => profilers::cuda::profile_python(&args),
         ProfileTarget::Library { so, symbol, args } => {
             println!("cgp profile library: {so}::{symbol} args={args:?}");
@@ -431,16 +464,21 @@ fn dispatch_profile(target: ProfileTarget, json: bool) -> Result<()> {
 
 fn dispatch_contract(action: ContractAction) -> Result<()> {
     match action {
-        ContractAction::Verify { contracts_dir, contract, fail_on_regression, self_verify } => {
-            analysis::contracts::run_verify(
-                contracts_dir.as_deref(),
-                contract.as_deref(),
-                self_verify,
-                fail_on_regression,
-            )
-        }
-        ContractAction::Generate { kernel, size, tolerance } => {
-            analysis::contracts::run_generate(&kernel, size, tolerance)
-        }
+        ContractAction::Verify {
+            contracts_dir,
+            contract,
+            fail_on_regression,
+            self_verify,
+        } => analysis::contracts::run_verify(
+            contracts_dir.as_deref(),
+            contract.as_deref(),
+            self_verify,
+            fail_on_regression,
+        ),
+        ContractAction::Generate {
+            kernel,
+            size,
+            tolerance,
+        } => analysis::contracts::run_generate(&kernel, size, tolerance),
     }
 }

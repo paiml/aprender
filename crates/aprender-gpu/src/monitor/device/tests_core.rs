@@ -279,7 +279,10 @@ fn h010_throttle_reason_all_variants() {
     assert_eq!(format!("{}", ThrottleReason::None), "None");
     assert_eq!(format!("{}", ThrottleReason::Thermal), "Thermal");
     assert_eq!(format!("{}", ThrottleReason::Power), "Power");
-    assert_eq!(format!("{}", ThrottleReason::ApplicationClocks), "AppClocks");
+    assert_eq!(
+        format!("{}", ThrottleReason::ApplicationClocks),
+        "AppClocks"
+    );
     assert_eq!(format!("{}", ThrottleReason::SwPowerCap), "SwPowerCap");
     assert_eq!(format!("{}", ThrottleReason::HwSlowdown), "HwSlowdown");
     assert_eq!(format!("{}", ThrottleReason::SyncBoost), "SyncBoost");
@@ -306,7 +309,13 @@ impl MockDevice {
         power_limit: f64,
         temperature: f64,
     ) -> Self {
-        Self { mem_used, mem_total, power_current, power_limit, temperature }
+        Self {
+            mem_used,
+            mem_total,
+            power_current,
+            power_limit,
+            temperature,
+        }
     }
 }
 
@@ -376,14 +385,26 @@ fn h011_memory_usage_percent_zero_total() {
 
 #[test]
 fn h011_memory_usage_percent_normal() {
-    let mock = MockDevice::new(50 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024, 0.0, 0.0, 0.0);
+    let mock = MockDevice::new(
+        50 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+        0.0,
+        0.0,
+        0.0,
+    );
     // 50% usage
     assert!((mock.memory_usage_percent().expect("test") - 50.0).abs() < 0.01);
 }
 
 #[test]
 fn h011_memory_available_bytes() {
-    let mock = MockDevice::new(30 * 1024 * 1024 * 1024, 100 * 1024 * 1024 * 1024, 0.0, 0.0, 0.0);
+    let mock = MockDevice::new(
+        30 * 1024 * 1024 * 1024,
+        100 * 1024 * 1024 * 1024,
+        0.0,
+        0.0,
+        0.0,
+    );
     // 70GB available
     let available = mock.memory_available_bytes().expect("test");
     assert_eq!(available, 70 * 1024 * 1024 * 1024);
@@ -448,7 +469,13 @@ fn h011_power_throttling_above_threshold() {
 
 #[test]
 fn h012_device_snapshot_from_mock() {
-    let mock = MockDevice::new(8 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024, 150.0, 300.0, 65.0);
+    let mock = MockDevice::new(
+        8 * 1024 * 1024 * 1024,
+        16 * 1024 * 1024 * 1024,
+        150.0,
+        300.0,
+        65.0,
+    );
     let snapshot = DeviceSnapshot::capture(&mock).expect("test");
 
     assert_eq!(snapshot.device_id, DeviceId::cpu());

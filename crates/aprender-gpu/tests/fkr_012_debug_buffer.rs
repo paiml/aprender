@@ -21,8 +21,9 @@ mod fkr_012_tests {
             eprintln!("FKR-012a SKIPPED: No CUDA device available");
             return;
         }
-        let kernel =
-            PtxKernel::new("debug_buffer_test").param(PtxType::U64, "debug_buf").build(|ctx| {
+        let kernel = PtxKernel::new("debug_buffer_test")
+            .param(PtxType::U64, "debug_buf")
+            .build(|ctx| {
                 let tid = ctx.special_reg(PtxReg::TidX);
                 let debug_ptr = ctx.load_param_u64("debug_buf");
 
@@ -46,7 +47,10 @@ mod fkr_012_tests {
         println!("=== Debug Buffer PTX ===\n{}", ptx);
 
         // Verify PTX contains atom.global.add
-        assert!(ptx.contains("atom.global.add"), "PTX should contain atomic add");
+        assert!(
+            ptx.contains("atom.global.add"),
+            "PTX should contain atomic add"
+        );
 
         let ctx = CudaContext::new(0).expect("CUDA context");
         let stream = CudaStream::new(&ctx).expect("CUDA stream");
@@ -59,7 +63,11 @@ mod fkr_012_tests {
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX compilation");
 
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [debug_buf.as_kernel_arg()];
 
@@ -105,27 +113,29 @@ mod fkr_012_tests {
         const MARKER_MIDDLE: u32 = 0x22222222;
         const MARKER_EXIT: u32 = 0x33333333;
 
-        let kernel = PtxKernel::new("marker_test").param(PtxType::U64, "debug_buf").build(|ctx| {
-            let tid = ctx.special_reg(PtxReg::TidX);
-            let debug_ptr = ctx.load_param_u64("debug_buf");
+        let kernel = PtxKernel::new("marker_test")
+            .param(PtxType::U64, "debug_buf")
+            .build(|ctx| {
+                let tid = ctx.special_reg(PtxReg::TidX);
+                let debug_ptr = ctx.load_param_u64("debug_buf");
 
-            // Only thread 0 writes markers
-            let zero = ctx.mov_u32_imm(0);
-            let is_thread0 = ctx.setp_eq_u32(tid, zero);
-            ctx.branch_if_not(is_thread0, "L_skip");
+                // Only thread 0 writes markers
+                let zero = ctx.mov_u32_imm(0);
+                let is_thread0 = ctx.setp_eq_u32(tid, zero);
+                ctx.branch_if_not(is_thread0, "L_skip");
 
-            // Emit entry marker
-            ctx.emit_debug_marker(debug_ptr, MARKER_ENTRY);
+                // Emit entry marker
+                ctx.emit_debug_marker(debug_ptr, MARKER_ENTRY);
 
-            // Emit middle marker
-            ctx.emit_debug_marker(debug_ptr, MARKER_MIDDLE);
+                // Emit middle marker
+                ctx.emit_debug_marker(debug_ptr, MARKER_MIDDLE);
 
-            // Emit exit marker
-            ctx.emit_debug_marker(debug_ptr, MARKER_EXIT);
+                // Emit exit marker
+                ctx.emit_debug_marker(debug_ptr, MARKER_EXIT);
 
-            ctx.label("L_skip");
-            ctx.ret();
-        });
+                ctx.label("L_skip");
+                ctx.ret();
+            });
 
         let ptx = PtxModule::new()
             .version(8, 0)
@@ -145,7 +155,11 @@ mod fkr_012_tests {
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX compilation");
 
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 4 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 4,
+        };
 
         let mut args: [*mut c_void; 1] = [debug_buf.as_kernel_arg()];
 

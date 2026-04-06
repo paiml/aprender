@@ -39,8 +39,10 @@ impl Kernel for HashStoreTestKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        PtxKernel::new(self.name()).param(PtxType::U64, "output").shared_memory(SMEM_SIZE).build(
-            |ctx| {
+        PtxKernel::new(self.name())
+            .param(PtxType::U64, "output")
+            .shared_memory(SMEM_SIZE)
+            .build(|ctx| {
                 let output_ptr = ctx.load_param_u64("output");
 
                 // Get lane ID = threadIdx.x % 32
@@ -86,8 +88,7 @@ impl Kernel for HashStoreTestKernel {
 
                 ctx.label("L_done");
                 ctx.ret();
-            },
-        )
+            })
     }
 }
 
@@ -102,14 +103,20 @@ mod tests {
         let ptx = kernel.emit_ptx();
 
         // PTX must contain entry point
-        assert!(ptx.contains(".entry hash_store_test"), "Missing entry point");
+        assert!(
+            ptx.contains(".entry hash_store_test"),
+            "Missing entry point"
+        );
 
         // PTX must contain shared memory declaration
         assert!(ptx.contains(".shared"), "Missing shared memory");
 
         // PTX must contain generic address conversion
         // cvta.shared converts shared → generic (not cvta.to.shared which is generic → shared)
-        assert!(ptx.contains("cvta.shared"), "Missing cvta.shared for shared→generic conversion");
+        assert!(
+            ptx.contains("cvta.shared"),
+            "Missing cvta.shared for shared→generic conversion"
+        );
 
         // PTX must contain store operations
         assert!(ptx.contains("st.u32"), "Missing st.u32 instructions");
@@ -163,7 +170,9 @@ mod tests {
         assert_eq!(max_entry_off, 8188);
 
         // Total offset from smem_base: PAGE_SIZE + max_entry_off = 4096 + 8188 = 12284
-        let total_offset = PAGE_SIZE.checked_add(max_entry_off).expect("should not overflow");
+        let total_offset = PAGE_SIZE
+            .checked_add(max_entry_off)
+            .expect("should not overflow");
         assert_eq!(total_offset, 12284);
     }
 }

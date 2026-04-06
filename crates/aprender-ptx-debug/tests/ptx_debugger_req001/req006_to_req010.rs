@@ -39,7 +39,10 @@ fn req006_control_flow_analysis() {
         let cfg = analyzer.build_cfg(kernel);
 
         // CFG should have nodes and at least one exit
-        assert!(!cfg.nodes.is_empty(), "REQ-006 FALSIFIED: CFG should have nodes");
+        assert!(
+            !cfg.nodes.is_empty(),
+            "REQ-006 FALSIFIED: CFG should have nodes"
+        );
     }
 
     println!("REQ-006 PASSED: Control flow analysis builds valid CFG");
@@ -119,7 +122,10 @@ fn req008_score_consistency() {
         report3.score
     );
 
-    println!("REQ-008 PASSED: Score consistency verified (score={})", report1.score);
+    println!(
+        "REQ-008 PASSED: Score consistency verified (score={})",
+        report1.score
+    );
 }
 
 /// REQ-009: Report includes all categories
@@ -160,7 +166,10 @@ fn req009_category_coverage() {
         );
     }
 
-    println!("REQ-009 PASSED: All {} categories covered in report", expected_categories.len());
+    println!(
+        "REQ-009 PASSED: All {} categories covered in report",
+        expected_categories.len()
+    );
 }
 
 /// REQ-010: Confidence calculation is bounded
@@ -227,7 +236,10 @@ fn test_result_enum() {
     assert!(pass.is_pass());
     assert!(!pass.is_fail());
 
-    let fail = TestResult::Fail { evidence: "Test".into(), location: None };
+    let fail = TestResult::Fail {
+        evidence: "Test".into(),
+        location: None,
+    };
     assert!(fail.is_fail());
     assert!(!fail.is_pass());
 
@@ -257,7 +269,10 @@ fn test_report_methods() {
     // Test report methods
     let passed_categories = report.categories_with_all_tests_passed();
     // passed_categories is usize, always non-negative; verify it is within expected range
-    assert!(passed_categories <= 10, "Should have at most 10 passed categories");
+    assert!(
+        passed_categories <= 10,
+        "Should have at most 10 passed categories"
+    );
 
     let critical_absent = report.critical_bugs_absent();
     // Should be true for clean PTX

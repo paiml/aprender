@@ -107,7 +107,10 @@ pub(crate) fn emit_instruction(instr: &PtxInstruction) -> String {
     }
 
     // cp.async ops format themselves entirely (no type suffix or operand append)
-    if matches!(instr.op, PtxOp::CpAsync | PtxOp::CpAsyncCommitGroup | PtxOp::CpAsyncWaitGroup) {
+    if matches!(
+        instr.op,
+        PtxOp::CpAsync | PtxOp::CpAsyncCommitGroup | PtxOp::CpAsyncWaitGroup
+    ) {
         memory::emit_memory_opcode(instr, &mut s);
         s.push_str(";\n");
         return s;
@@ -179,8 +182,10 @@ fn write_destinations(instr: &PtxInstruction, out: &mut String) {
 
 /// Write source operands with proper memory addressing
 fn write_sources(instr: &PtxInstruction, out: &mut String) {
-    let is_memory_op =
-        matches!(instr.op, PtxOp::Ld | PtxOp::LdVolatile | PtxOp::St | PtxOp::Prefetch);
+    let is_memory_op = matches!(
+        instr.op,
+        PtxOp::Ld | PtxOp::LdVolatile | PtxOp::St | PtxOp::Prefetch
+    );
     let is_atomic_op = matches!(
         instr.op,
         PtxOp::AtomAdd | PtxOp::AtomMin | PtxOp::AtomMax | PtxOp::AtomExch | PtxOp::AtomCas
@@ -273,7 +278,10 @@ pub(super) fn write_instruction(instr: &PtxInstruction, out: &mut String) {
     }
 
     // cp.async ops format themselves entirely
-    if matches!(instr.op, PtxOp::CpAsync | PtxOp::CpAsyncCommitGroup | PtxOp::CpAsyncWaitGroup) {
+    if matches!(
+        instr.op,
+        PtxOp::CpAsync | PtxOp::CpAsyncCommitGroup | PtxOp::CpAsyncWaitGroup
+    ) {
         memory::emit_memory_opcode(instr, out);
         out.push_str(";\n");
         return;

@@ -224,7 +224,10 @@ mod tests {
 
     #[test]
     fn test_allocation() {
-        let config = PoolConfig { total_bytes: 1024 * 1024, page_size: 4096 };
+        let config = PoolConfig {
+            total_bytes: 1024 * 1024,
+            page_size: 4096,
+        };
         let mut pool = MemoryPool::new(config);
 
         let id = pool.allocate(8192); // 2 pages
@@ -237,7 +240,10 @@ mod tests {
 
     #[test]
     fn test_free() {
-        let config = PoolConfig { total_bytes: 1024 * 1024, page_size: 4096 };
+        let config = PoolConfig {
+            total_bytes: 1024 * 1024,
+            page_size: 4096,
+        };
         let mut pool = MemoryPool::new(config);
 
         let id = pool.allocate(8192).expect("test");

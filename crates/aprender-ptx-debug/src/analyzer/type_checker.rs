@@ -25,7 +25,10 @@ pub struct TypeChecker {
 impl TypeChecker {
     /// Create a new type checker
     pub fn new() -> Self {
-        Self { register_types: HashMap::new(), errors: Vec::new() }
+        Self {
+            register_types: HashMap::new(),
+            errors: Vec::new(),
+        }
     }
 
     /// Analyze a module for type errors
@@ -266,7 +269,11 @@ mod tests {
         let errors = checker.analyze(&module);
 
         // Should have no errors - u32 register with u32 load
-        assert!(errors.is_empty(), "F011: Type mismatch errors: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "F011: Type mismatch errors: {:?}",
+            errors
+        );
     }
 
     // F017: Predicate registers used correctly
@@ -292,6 +299,10 @@ mod tests {
         let mut checker = TypeChecker::new();
         let errors = checker.analyze(&module);
 
-        assert!(errors.is_empty(), "F017: Predicate usage errors: {:?}", errors);
+        assert!(
+            errors.is_empty(),
+            "F017: Predicate usage errors: {:?}",
+            errors
+        );
     }
 }

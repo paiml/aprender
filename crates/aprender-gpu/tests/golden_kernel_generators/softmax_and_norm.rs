@@ -14,7 +14,11 @@ fn golden_softmax_kernel_structure() {
     let kernel = SoftmaxKernel::new(1024);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains(".entry"), "GOLDEN FAIL: Missing .entry in softmax\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains(".entry"),
+        "GOLDEN FAIL: Missing .entry in softmax\nPTX:\n{}",
+        ptx
+    );
     assert!(
         ptx.contains("max") || ptx.contains("shfl"),
         "GOLDEN FAIL: Missing max/reduction in softmax\nPTX:\n{}",
@@ -68,8 +72,16 @@ fn golden_layernorm_warp_shuffle_kernel() {
         "GOLDEN FAIL: Missing warp shuffle in LayerNorm warp_shuffle\nPTX:\n{}",
         ptx
     );
-    assert!(ptx.contains("rsqrt"), "GOLDEN FAIL: Missing rsqrt in LayerNorm\nPTX:\n{}", ptx);
-    assert!(ptx.contains("div"), "GOLDEN FAIL: Missing division in LayerNorm\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("rsqrt"),
+        "GOLDEN FAIL: Missing rsqrt in LayerNorm\nPTX:\n{}",
+        ptx
+    );
+    assert!(
+        ptx.contains("div"),
+        "GOLDEN FAIL: Missing division in LayerNorm\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -127,10 +139,26 @@ fn golden_rmsnorm_kernel_structure() {
     let kernel = RmsNormKernel::new(2048);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains(".entry rmsnorm"), "GOLDEN FAIL: Missing rmsnorm entry\nPTX:\n{}", ptx);
-    assert!(ptx.contains("shfl"), "GOLDEN FAIL: Missing warp shuffle in RMSNorm\nPTX:\n{}", ptx);
-    assert!(ptx.contains("rsqrt"), "GOLDEN FAIL: Missing rsqrt in RMSNorm\nPTX:\n{}", ptx);
-    assert!(ptx.contains("mul"), "GOLDEN FAIL: Missing multiplication in RMSNorm\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains(".entry rmsnorm"),
+        "GOLDEN FAIL: Missing rmsnorm entry\nPTX:\n{}",
+        ptx
+    );
+    assert!(
+        ptx.contains("shfl"),
+        "GOLDEN FAIL: Missing warp shuffle in RMSNorm\nPTX:\n{}",
+        ptx
+    );
+    assert!(
+        ptx.contains("rsqrt"),
+        "GOLDEN FAIL: Missing rsqrt in RMSNorm\nPTX:\n{}",
+        ptx
+    );
+    assert!(
+        ptx.contains("mul"),
+        "GOLDEN FAIL: Missing multiplication in RMSNorm\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]

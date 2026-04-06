@@ -25,7 +25,11 @@ pub enum WasmTarget {
 
 impl Default for WasmProfilingConfig {
     fn default() -> Self {
-        Self { fuel_metering: true, jitdump: false, target: WasmTarget::Wasmtime }
+        Self {
+            fuel_metering: true,
+            jitdump: false,
+            target: WasmTarget::Wasmtime,
+        }
     }
 }
 
@@ -34,7 +38,10 @@ impl Default for WasmProfilingConfig {
 pub fn detect_simd128(wasm_path: &str) -> bool {
     // wasmtime can inspect with --invoke and fuel metering
     // For a quick check, look for SIMD128 in wasm-tools dump or wasmtime output
-    let output = Command::new("wasm-tools").args(["dump", wasm_path]).output().ok();
+    let output = Command::new("wasm-tools")
+        .args(["dump", wasm_path])
+        .output()
+        .ok();
 
     if let Some(out) = output {
         let stdout = String::from_utf8_lossy(&out.stdout);
@@ -76,8 +83,9 @@ pub fn profile_wasm(function: &str, size: u32) -> Result<()> {
 
             // Run with fuel metering for instruction counting
             println!("  Running wasmtime with fuel metering...");
-            let output =
-                Command::new("wasmtime").args(["run", "--fuel", "1000000000", &path]).output();
+            let output = Command::new("wasmtime")
+                .args(["run", "--fuel", "1000000000", &path])
+                .output();
 
             match output {
                 Ok(out) => {

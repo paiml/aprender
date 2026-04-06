@@ -189,5 +189,8 @@ fn test_batched_4d_gemm_attention_pattern() {
     let kernel = Batched4DGemmKernel::new(2, 8, 512, 512, 64);
     let ptx = kernel.emit_ptx();
     assert!(ptx.contains(".entry"), "Should handle attention pattern");
-    assert!(ptx.contains("bar.sync"), "Should have barriers for tiled compute");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Should have barriers for tiled compute"
+    );
 }

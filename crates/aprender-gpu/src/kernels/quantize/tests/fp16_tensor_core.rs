@@ -137,7 +137,11 @@ fn test_tensor_core_q4k_gemm_barrier_safety() {
     let kernel = TensorCoreQ4KGemmKernel::new(16, 3584, 4096);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Tensor Core Q4K GEMM should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Tensor Core Q4K GEMM should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 // =========================================================================

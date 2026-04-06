@@ -73,10 +73,17 @@ fn f082_test1_global_to_global_computed_addr() {
         }
     };
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (1, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (1, 1, 1),
+        shared_mem: 0,
+    };
 
-    let mut args: [*mut c_void; 3] =
-        [input_buf.as_kernel_arg(), output_buf.as_kernel_arg(), offset_buf.as_kernel_arg()];
+    let mut args: [*mut c_void; 3] = [
+        input_buf.as_kernel_arg(),
+        output_buf.as_kernel_arg(),
+        offset_buf.as_kernel_arg(),
+    ];
 
     let result = unsafe { stream.launch_kernel(&mut module, "f082_test1", &config, &mut args) };
 
@@ -175,7 +182,11 @@ L_skip:
         }
     };
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 64 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 64,
+    };
 
     let mut args: [*mut c_void; 1] = [output_buf.as_kernel_arg()];
 

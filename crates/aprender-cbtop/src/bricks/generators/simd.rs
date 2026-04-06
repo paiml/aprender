@@ -92,9 +92,12 @@ pub struct SimdLoadBrick {
 impl SimdLoadBrick {
     pub fn new(problem_size: usize) -> Self {
         // Pre-allocate vectors with deterministic data for reproducibility
-        let input_a: Vec<f32> = (0..problem_size).map(|i| (i % 1000) as f32 / 1000.0).collect();
-        let input_b: Vec<f32> =
-            (0..problem_size).map(|i| ((i + 500) % 1000) as f32 / 1000.0).collect();
+        let input_a: Vec<f32> = (0..problem_size)
+            .map(|i| (i % 1000) as f32 / 1000.0)
+            .collect();
+        let input_b: Vec<f32> = (0..problem_size)
+            .map(|i| ((i + 500) % 1000) as f32 / 1000.0)
+            .collect();
 
         // PERF-001: Calculate optimal tile size for cache-aware processing
         let tile_size = optimal_tile_size();
@@ -105,7 +108,10 @@ impl SimdLoadBrick {
             .map(|i| {
                 let start = i * tile_size;
                 let end = (start + tile_size).min(problem_size);
-                (Vector::from_slice(&input_a[start..end]), Vector::from_slice(&input_b[start..end]))
+                (
+                    Vector::from_slice(&input_a[start..end]),
+                    Vector::from_slice(&input_b[start..end]),
+                )
             })
             .collect();
 
@@ -278,8 +284,9 @@ impl SimdLoadBrick {
     fn tiled_elementwise_mul(&self) {
         for (tile_a, tile_b) in &self.tile_vectors {
             // SAFETY: tile vectors are pre-allocated with matching sizes in new()
-            let result =
-                tile_a.mul(tile_b).expect("pre-allocated tile vectors have matching sizes");
+            let result = tile_a
+                .mul(tile_b)
+                .expect("pre-allocated tile vectors have matching sizes");
             std::hint::black_box(&result);
         }
     }
@@ -288,8 +295,9 @@ impl SimdLoadBrick {
     fn tiled_elementwise_add(&self) {
         for (tile_a, tile_b) in &self.tile_vectors {
             // SAFETY: tile vectors are pre-allocated with matching sizes in new()
-            let result =
-                tile_a.add(tile_b).expect("pre-allocated tile vectors have matching sizes");
+            let result = tile_a
+                .add(tile_b)
+                .expect("pre-allocated tile vectors have matching sizes");
             std::hint::black_box(&result);
         }
     }
@@ -331,7 +339,11 @@ impl SimdLoadBrick {
             return 0.0;
         }
 
-        let variance: f64 = self.latency_history.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
+        let variance: f64 = self
+            .latency_history
+            .iter()
+            .map(|x| (x - mean).powi(2))
+            .sum::<f64>()
             / self.latency_history.len() as f64;
 
         let std_dev = variance.sqrt();
@@ -359,7 +371,11 @@ impl Brick for SimdLoadBrick {
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 16, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 16,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {
@@ -409,8 +425,11 @@ impl Scorable for SimdLoadBrick {
 
         // Correctness: All assertions passing
         let verification = self.verify();
-        let correctness_score =
-            if verification.is_valid() { 20 } else { (verification.score() * 20.0) as u8 };
+        let correctness_score = if verification.is_valid() {
+            20
+        } else {
+            (verification.score() * 20.0) as u8
+        };
 
         // Stability: CV of latency history
         let cv = self.latency_cv();
@@ -425,6 +444,11 @@ impl Scorable for SimdLoadBrick {
         }
         .min(15);
 
-        BrickScore::new(perf_score, efficiency_score, correctness_score, stability_total)
+        BrickScore::new(
+            perf_score,
+            efficiency_score,
+            correctness_score,
+            stability_total,
+        )
     }
 }

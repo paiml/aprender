@@ -29,7 +29,11 @@ impl<T> GpuBuffer<T> {
     /// Create a new uninitialized buffer
     #[must_use]
     pub fn new(len: usize) -> Self {
-        Self { ptr: DevicePtr::null(), len, capacity: len }
+        Self {
+            ptr: DevicePtr::null(),
+            len,
+            capacity: len,
+        }
     }
 
     /// Get buffer length

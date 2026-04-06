@@ -30,7 +30,10 @@ impl RayonProfile {
         if mean == 0.0 {
             return 0.0;
         }
-        let variance = per_thread_times.iter().map(|t| (t - mean).powi(2)).sum::<f64>()
+        let variance = per_thread_times
+            .iter()
+            .map(|t| (t - mean).powi(2))
+            .sum::<f64>()
             / per_thread_times.len() as f64;
         let cv = variance.sqrt() / mean;
         cv.min(1.0) // Cap at 1.0
@@ -64,7 +67,9 @@ const TIMING_RUNS: usize = 3;
 pub fn profile_parallel(function: &str, size: u32, threads: Option<&str>) -> Result<()> {
     let thread_count = match threads {
         Some("auto") | None => num_cpus::get(),
-        Some(n) => n.parse().map_err(|_| anyhow::anyhow!("Invalid thread count: {n}"))?,
+        Some(n) => n
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid thread count: {n}"))?,
     };
 
     println!("\n=== CGP Parallel Profile: {function} (size={size}, threads={thread_count}) ===\n");
@@ -98,7 +103,11 @@ pub fn profile_parallel(function: &str, size: u32, threads: Option<&str>) -> Res
 
                     // Estimate spawn overhead (~40us per thread::scope call)
                     let overhead_estimate = 40.0; // us, from memory feedback
-                    let overhead_pct = if pt > 0.0 { overhead_estimate / pt * 100.0 } else { 0.0 };
+                    let overhead_pct = if pt > 0.0 {
+                        overhead_estimate / pt * 100.0
+                    } else {
+                        0.0
+                    };
                     println!(
                         "    Thread overhead:     ~{overhead_estimate:.0} us ({overhead_pct:.1}% of total)"
                     );
@@ -127,8 +136,14 @@ pub fn profile_parallel(function: &str, size: u32, threads: Option<&str>) -> Res
                 "    Amdahl's law: if 95% parallelizable, max speedup = {:.1}x",
                 amdahl(0.95, thread_count)
             );
-            println!("    If 90% parallelizable, max speedup = {:.1}x", amdahl(0.90, thread_count));
-            println!("    If 80% parallelizable, max speedup = {:.1}x", amdahl(0.80, thread_count));
+            println!(
+                "    If 90% parallelizable, max speedup = {:.1}x",
+                amdahl(0.90, thread_count)
+            );
+            println!(
+                "    If 80% parallelizable, max speedup = {:.1}x",
+                amdahl(0.80, thread_count)
+            );
         }
     }
 
@@ -215,10 +230,11 @@ pub fn profile_scaling(
     }
 
     // Find peak
-    if let Some(peak) = results
-        .iter()
-        .max_by(|a, b| a.gflops.partial_cmp(&b.gflops).unwrap_or(std::cmp::Ordering::Equal))
-    {
+    if let Some(peak) = results.iter().max_by(|a, b| {
+        a.gflops
+            .partial_cmp(&b.gflops)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
         if !json {
             println!(
                 "\n  Peak: {:.1} GFLOPS at {}T ({:.1}x scaling)",
@@ -329,7 +345,9 @@ fn find_parallel_binary() -> Option<String> {
     let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_default();
     let mut candidates: Vec<String> = Vec::new();
     if !target_dir.is_empty() {
-        candidates.push(format!("{target_dir}/release/examples/benchmark_matrix_suite"));
+        candidates.push(format!(
+            "{target_dir}/release/examples/benchmark_matrix_suite"
+        ));
     }
     candidates.extend_from_slice(&[
         "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite".to_string(),
@@ -360,7 +378,10 @@ mod tests {
     fn test_heijunka_severe_imbalance() {
         let times = vec![100.0, 1.0, 1.0, 1.0];
         let score = RayonProfile::compute_heijunka_score(&times);
-        assert!(score > 0.5, "Heijunka score {score} should be > 0.5 for severe imbalance");
+        assert!(
+            score > 0.5,
+            "Heijunka score {score} should be > 0.5 for severe imbalance"
+        );
     }
 
     /// FALSIFY-CGP-081: Intentionally imbalanced workload should have high score.
@@ -377,7 +398,10 @@ mod tests {
             100.0 / 7.0,
         ];
         let score = RayonProfile::compute_heijunka_score(&times);
-        assert!(score > 0.5, "Score {score} for 90% imbalance should be > 0.5");
+        assert!(
+            score > 0.5,
+            "Score {score} for 90% imbalance should be > 0.5"
+        );
     }
 
     #[test]
@@ -425,7 +449,12 @@ mod tests {
 
     #[test]
     fn test_scaling_point_serialization() {
-        let point = ScalingPoint { threads: 8, time_us: 5000.0, gflops: 420.0, scaling: 5.1 };
+        let point = ScalingPoint {
+            threads: 8,
+            time_us: 5000.0,
+            gflops: 420.0,
+            scaling: 5.1,
+        };
         let json = serde_json::to_string(&point).unwrap();
         assert!(json.contains("\"threads\":8"));
         assert!(json.contains("\"gflops\":420.0"));

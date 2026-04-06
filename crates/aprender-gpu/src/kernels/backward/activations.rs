@@ -394,20 +394,32 @@ mod tests {
     fn test_relu_backward_barrier_safety() {
         let kernel = ReluBackwardKernel::new(1024);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "ReLU backward should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "ReLU backward should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     #[test]
     fn test_gelu_backward_barrier_safety() {
         let kernel = GeluBackwardKernel::new(1024);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "GELU backward should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "GELU backward should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     #[test]
     fn test_silu_backward_barrier_safety() {
         let kernel = SiluBackwardKernel::new(1024);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "SiLU backward should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "SiLU backward should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 }

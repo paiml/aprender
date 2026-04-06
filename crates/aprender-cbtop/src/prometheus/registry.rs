@@ -47,20 +47,28 @@ impl MetricsRegistry {
 
     /// Register gauge metric
     pub fn register_gauge(&mut self, name: &str, help: &str) {
-        self.definitions.insert(name.to_string(), MetricDef::new(name, help, MetricType::Gauge));
+        self.definitions.insert(
+            name.to_string(),
+            MetricDef::new(name, help, MetricType::Gauge),
+        );
         self.gauges.entry(name.to_string()).or_default();
     }
 
     /// Register counter metric
     pub fn register_counter(&mut self, name: &str, help: &str) {
-        self.definitions.insert(name.to_string(), MetricDef::new(name, help, MetricType::Counter));
+        self.definitions.insert(
+            name.to_string(),
+            MetricDef::new(name, help, MetricType::Counter),
+        );
         self.counters.entry(name.to_string()).or_default();
     }
 
     /// Register histogram metric
     pub fn register_histogram(&mut self, name: &str, help: &str) {
-        self.definitions
-            .insert(name.to_string(), MetricDef::new(name, help, MetricType::Histogram));
+        self.definitions.insert(
+            name.to_string(),
+            MetricDef::new(name, help, MetricType::Histogram),
+        );
         self.histograms.entry(name.to_string()).or_default();
     }
 

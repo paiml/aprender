@@ -46,7 +46,8 @@ impl CbtopApp {
         self.load_metrics.bytes_per_second =
             self.load_metrics.bricks_per_second * (work_size * 3 * 4) as f64;
 
-        self.bricks_history.push(self.load_metrics.bricks_per_second);
+        self.bricks_history
+            .push(self.load_metrics.bricks_per_second);
     }
 
     /// Collect real system metrics

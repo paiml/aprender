@@ -174,7 +174,13 @@ impl WorkloadFeatures {
         features
             .iter()
             .enumerate()
-            .map(|(i, &v)| if stds[i] > 1e-10 { (v - means[i]) / stds[i] } else { 0.0 })
+            .map(|(i, &v)| {
+                if stds[i] > 1e-10 {
+                    (v - means[i]) / stds[i]
+                } else {
+                    0.0
+                }
+            })
             .collect()
     }
 
@@ -195,7 +201,11 @@ impl WorkloadFeatures {
     pub fn distance(&self, other: &Self) -> f64 {
         let a = self.to_vec();
         let b = other.to_vec();
-        a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt()
+        a.iter()
+            .zip(b.iter())
+            .map(|(x, y)| (x - y).powi(2))
+            .sum::<f64>()
+            .sqrt()
     }
 
     /// Compute cosine similarity
@@ -327,7 +337,10 @@ impl WorkloadCharacterizer {
             (WorkloadCategory::Reduction, 100_000),   // GPU wins at 100K elements
         ];
 
-        Self { prototypes, gpu_thresholds }
+        Self {
+            prototypes,
+            gpu_thresholds,
+        }
     }
 
     /// Extract features from workload metrics
@@ -338,9 +351,15 @@ impl WorkloadCharacterizer {
         memory_footprint: usize,
         working_set: usize,
     ) -> WorkloadFeatures {
-        let intensity = if bytes_accessed > 0.0 { flops / bytes_accessed } else { 0.0 };
+        let intensity = if bytes_accessed > 0.0 {
+            flops / bytes_accessed
+        } else {
+            0.0
+        };
 
-        WorkloadFeatures::new().with_intensity(intensity).with_memory(memory_footprint, working_set)
+        WorkloadFeatures::new()
+            .with_intensity(intensity)
+            .with_memory(memory_footprint, working_set)
     }
 
     /// Classify workload based on features
@@ -371,8 +390,11 @@ impl WorkloadCharacterizer {
         let recommended_backend = self.recommend_backend(best_category, features.memory_footprint);
 
         // Get GPU crossover threshold
-        let gpu_crossover_size =
-            self.gpu_thresholds.iter().find(|(c, _)| *c == best_category).map(|(_, t)| *t);
+        let gpu_crossover_size = self
+            .gpu_thresholds
+            .iter()
+            .find(|(c, _)| *c == best_category)
+            .map(|(_, t)| *t);
 
         ClassificationResult {
             category: best_category,
@@ -409,7 +431,10 @@ impl WorkloadCharacterizer {
 
     /// Predict GPU crossover size
     pub fn predict_crossover(&self, category: WorkloadCategory) -> Option<usize> {
-        self.gpu_thresholds.iter().find(|(c, _)| *c == category).map(|(_, t)| *t)
+        self.gpu_thresholds
+            .iter()
+            .find(|(c, _)| *c == category)
+            .map(|(_, t)| *t)
     }
 
     /// Add custom prototype

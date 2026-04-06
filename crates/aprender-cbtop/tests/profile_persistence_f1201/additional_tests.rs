@@ -17,7 +17,9 @@ fn f1208_export_creates_file() {
     let mut manager = ProfileManager::new(temp_dir.path().join("profiles"));
 
     // Save a profile
-    let profile = ProfileConfig::new("exportable").unwrap().backend(BackendConfig::Cuda);
+    let profile = ProfileConfig::new("exportable")
+        .unwrap()
+        .backend(BackendConfig::Cuda);
     manager.save_profile(&profile).unwrap();
 
     // Export to different location
@@ -65,7 +67,9 @@ fn f1209_named_default_profile() {
     let mut manager = ProfileManager::new(temp_dir.path().to_path_buf());
 
     // Save and set as default
-    let profile = ProfileConfig::new("my_default").unwrap().backend(BackendConfig::Cuda);
+    let profile = ProfileConfig::new("my_default")
+        .unwrap()
+        .backend(BackendConfig::Cuda);
     manager.save_profile(&profile).unwrap();
     manager.set_default("my_default");
 
@@ -89,7 +93,10 @@ fn f1210_description_stored() {
     assert!(toml.contains("description = \"This is a test profile"));
 
     let parsed = ProfileConfig::from_toml(&toml).unwrap();
-    assert_eq!(parsed.description, "This is a test profile for stress testing");
+    assert_eq!(
+        parsed.description,
+        "This is a test profile for stress testing"
+    );
 }
 
 /// F1210.2: Metadata preserved through save/load
@@ -106,7 +113,10 @@ fn f1210_metadata_preserved() {
     manager.save_profile(&profile).unwrap();
 
     let loaded = manager.load_profile("with_meta").unwrap();
-    assert_eq!(loaded.metadata.get("author"), Some(&"test_user".to_string()));
+    assert_eq!(
+        loaded.metadata.get("author"),
+        Some(&"test_user".to_string())
+    );
     assert_eq!(loaded.metadata.get("version"), Some(&"2.0".to_string()));
 }
 
@@ -120,7 +130,9 @@ fn test_profile_deletion() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = ProfileManager::new(temp_dir.path().to_path_buf());
 
-    manager.save_profile(&ProfileConfig::new("deletable").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("deletable").unwrap())
+        .unwrap();
     assert!(manager.profile_exists("deletable"));
 
     manager.delete_profile("deletable").unwrap();
@@ -176,7 +188,9 @@ fn test_profile_import() {
 
     // Create an external profile file
     let external_path = temp_dir.path().join("external.toml");
-    let profile = ProfileConfig::new("imported").unwrap().backend(BackendConfig::Wgpu);
+    let profile = ProfileConfig::new("imported")
+        .unwrap()
+        .backend(BackendConfig::Wgpu);
     std::fs::write(&external_path, profile.to_toml().unwrap()).unwrap();
 
     // Import it
@@ -196,10 +210,14 @@ fn test_profile_count() {
 
     assert_eq!(manager.profile_count().unwrap(), 0);
 
-    manager.save_profile(&ProfileConfig::new("one").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("one").unwrap())
+        .unwrap();
     assert_eq!(manager.profile_count().unwrap(), 1);
 
-    manager.save_profile(&ProfileConfig::new("two").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("two").unwrap())
+        .unwrap();
     assert_eq!(manager.profile_count().unwrap(), 2);
 }
 
@@ -224,9 +242,13 @@ fn test_builder_pattern() {
 /// Test load intensity clamping
 #[test]
 fn test_load_intensity_clamping() {
-    let profile = ProfileConfig::new("clamp_test").unwrap().load_intensity(1.5); // Should be clamped to 1.0
+    let profile = ProfileConfig::new("clamp_test")
+        .unwrap()
+        .load_intensity(1.5); // Should be clamped to 1.0
     assert_eq!(profile.load_intensity, 1.0);
 
-    let profile2 = ProfileConfig::new("clamp_test2").unwrap().load_intensity(-0.5); // Should be clamped to 0.0
+    let profile2 = ProfileConfig::new("clamp_test2")
+        .unwrap()
+        .load_intensity(-0.5); // Should be clamped to 0.0
     assert_eq!(profile2.load_intensity, 0.0);
 }

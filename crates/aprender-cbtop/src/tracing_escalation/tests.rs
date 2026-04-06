@@ -52,8 +52,17 @@ fn test_should_trace_efficiency() {
 fn test_escalation_reason() {
     let escalation = TracingEscalation::default();
 
-    assert_eq!(escalation.escalation_reason(16.0, 20.0), Some(EscalationReason::Both));
-    assert_eq!(escalation.escalation_reason(16.0, 50.0), Some(EscalationReason::CvExceeded));
-    assert_eq!(escalation.escalation_reason(10.0, 20.0), Some(EscalationReason::EfficiencyLow));
+    assert_eq!(
+        escalation.escalation_reason(16.0, 20.0),
+        Some(EscalationReason::Both)
+    );
+    assert_eq!(
+        escalation.escalation_reason(16.0, 50.0),
+        Some(EscalationReason::CvExceeded)
+    );
+    assert_eq!(
+        escalation.escalation_reason(10.0, 20.0),
+        Some(EscalationReason::EfficiencyLow)
+    );
     assert_eq!(escalation.escalation_reason(10.0, 50.0), None);
 }

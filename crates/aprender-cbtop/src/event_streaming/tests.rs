@@ -145,8 +145,11 @@ fn test_graceful_shutdown() {
 
 #[test]
 fn test_event_from_sample() {
-    let event =
-        event_from_sample("latency_ms", 42.5, &[("host", "server1"), ("region", "us-west")]);
+    let event = event_from_sample(
+        "latency_ms",
+        42.5,
+        &[("host", "server1"), ("region", "us-west")],
+    );
 
     assert_eq!(event.measurement, "latency_ms");
     assert_eq!(event.fields.get("value"), Some(&42.5));

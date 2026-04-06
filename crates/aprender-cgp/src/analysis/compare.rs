@@ -35,7 +35,9 @@ fn get_actual_gemm_timing(size: u32) -> Option<(f64, f64)> {
         "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite",
         "./target/release/examples/benchmark_matrix_suite",
     ];
-    let binary_path = candidates.iter().find(|p| std::path::Path::new(p).exists())?;
+    let binary_path = candidates
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())?;
     let output = std::process::Command::new(*binary_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -229,7 +231,12 @@ fn measure_ptx_gemm(size: u32) -> Option<(f64, f64)> {
     for _ in 0..5 {
         unsafe {
             stream
-                .launch_kernel(&mut module, "gemm_cta64x128_mma_pipeline_fp16", &cfg, &mut args)
+                .launch_kernel(
+                    &mut module,
+                    "gemm_cta64x128_mma_pipeline_fp16",
+                    &cfg,
+                    &mut args,
+                )
                 .ok()?;
         }
     }
@@ -246,7 +253,12 @@ fn measure_ptx_gemm(size: u32) -> Option<(f64, f64)> {
     for _ in 0..iters {
         unsafe {
             stream
-                .launch_kernel(&mut module, "gemm_cta64x128_mma_pipeline_fp16", &cfg, &mut args)
+                .launch_kernel(
+                    &mut module,
+                    "gemm_cta64x128_mma_pipeline_fp16",
+                    &cfg,
+                    &mut args,
+                )
                 .ok()?;
         }
     }
@@ -356,7 +368,9 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
 
     // Sort by performance (fastest first)
     results.sort_by(|a, b| {
-        a.wall_time_us.partial_cmp(&b.wall_time_us).unwrap_or(std::cmp::Ordering::Equal)
+        a.wall_time_us
+            .partial_cmp(&b.wall_time_us)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     if json {
@@ -375,7 +389,11 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
 
     // Get roofline for efficiency
     let model = RooflineModel::rtx_4090();
-    let gpu_peak = model.peak_compute.get(&Precision::Fp16).copied().unwrap_or(330.0e12);
+    let gpu_peak = model
+        .peak_compute
+        .get(&Precision::Fp16)
+        .copied()
+        .unwrap_or(330.0e12);
     let cores = num_cpus::get_physical();
     let cpu_peak = 2.0 * 8.0 * 2.0 * 3.5e9 * cores as f64; // AVX2 peak
 
@@ -385,7 +403,11 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
         } else {
             cpu_peak / 1e12
         };
-        let efficiency = if peak > 0.0 { r.tflops / peak * 100.0 } else { 0.0 };
+        let efficiency = if peak > 0.0 {
+            r.tflops / peak * 100.0
+        } else {
+            0.0
+        };
         let ratio = format!("{:.2}x", r.wall_time_us / best_time);
         let avail = if r.available { "yes" } else { "no" };
 
@@ -419,13 +441,20 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
     if let Some(best) = results.first() {
         if let Some(worst) = results.last() {
             let speedup = worst.wall_time_us / best.wall_time_us;
-            println!("\n  Best: {} ({:.1}x faster than {})", best.name, speedup, worst.name);
+            println!(
+                "\n  Best: {} ({:.1}x faster than {})",
+                best.name, speedup, worst.name
+            );
         }
     }
 
     // Show CPU vs GPU gap if both present
-    let has_cpu = results.iter().any(|r| matches!(r.name.as_str(), "scalar" | "avx2" | "avx512"));
-    let has_gpu = results.iter().any(|r| matches!(r.name.as_str(), "cuda" | "cublas" | "wgpu"));
+    let has_cpu = results
+        .iter()
+        .any(|r| matches!(r.name.as_str(), "scalar" | "avx2" | "avx512"));
+    let has_gpu = results
+        .iter()
+        .any(|r| matches!(r.name.as_str(), "cuda" | "cublas" | "wgpu"));
     if has_cpu && has_gpu {
         let best_cpu = results
             .iter()
@@ -438,7 +467,10 @@ pub fn run_compare(kernel: &str, size: u32, backends_str: &str, json: bool) -> R
             .map(|r| r.wall_time_us)
             .fold(f64::INFINITY, f64::min);
         if best_gpu > 0.0 {
-            println!("  CPU→GPU gap: {:.0}x (expected for large GEMM)", best_cpu / best_gpu);
+            println!(
+                "  CPU→GPU gap: {:.0}x (expected for large GEMM)",
+                best_cpu / best_gpu
+            );
         }
     }
 
@@ -454,7 +486,10 @@ mod tests {
     fn test_gemm_tflops() {
         // 512^3 GEMM at 23.2us = 2*512^3 / 23.2e-6 / 1e12
         let tflops = gemm_tflops(512, 23.2);
-        assert!((tflops - 11.56).abs() < 0.1, "Expected ~11.6 TFLOP/s, got {tflops:.2}");
+        assert!(
+            (tflops - 11.56).abs() < 0.1,
+            "Expected ~11.6 TFLOP/s, got {tflops:.2}"
+        );
     }
 
     #[test]
@@ -468,7 +503,10 @@ mod tests {
     fn test_cuda_faster_than_cpu() {
         let cpu = estimate_avx2_time_us(4096);
         let cuda = estimate_cuda_time_us(4096);
-        assert!(cpu > cuda * 10.0, "CPU should be >10x slower than CUDA for 4096");
+        assert!(
+            cpu > cuda * 10.0,
+            "CPU should be >10x slower than CUDA for 4096"
+        );
     }
 
     /// FALSIFY-CGP-040: CUDA must be faster than scalar for GEMM >= 256.
@@ -484,7 +522,11 @@ mod tests {
     fn test_simd_faster_than_scalar() {
         let scalar = estimate_scalar_time_us(1024);
         let avx2 = estimate_avx2_time_us(1024);
-        assert!(scalar / avx2 >= 3.0, "AVX2 speedup {:.1}x should be >= 3x", scalar / avx2);
+        assert!(
+            scalar / avx2 >= 3.0,
+            "AVX2 speedup {:.1}x should be >= 3x",
+            scalar / avx2
+        );
     }
 
     /// FALSIFY-CGP-042: cuBLAS must be faster than pure PTX for large GEMM.
@@ -514,7 +556,10 @@ mod tests {
             assert!(time_us > 0.0, "time should be positive");
             assert!(gflops > 10.0, "GFLOPS should be > 10 for 1024 GEMM");
             assert!(gflops < 2000.0, "GFLOPS should be < 2000");
-            eprintln!("Actual GEMM 1024: {:.1} us = {:.0} GFLOPS [MEASURED]", time_us, gflops);
+            eprintln!(
+                "Actual GEMM 1024: {:.1} us = {:.0} GFLOPS [MEASURED]",
+                time_us, gflops
+            );
         } else {
             eprintln!("benchmark_matrix_suite binary not found — actual data unavailable");
         }

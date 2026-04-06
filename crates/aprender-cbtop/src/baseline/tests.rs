@@ -5,8 +5,14 @@ fn test_gpu_class_detection() {
     assert_eq!(GpuClass::from_name("NVIDIA A10"), GpuClass::A10);
     assert_eq!(GpuClass::from_name("NVIDIA A100-SXM4-80GB"), GpuClass::A100);
     assert_eq!(GpuClass::from_name("NVIDIA H100 PCIe"), GpuClass::H100);
-    assert_eq!(GpuClass::from_name("NVIDIA GeForce RTX 4090"), GpuClass::Rtx4090);
-    assert_eq!(GpuClass::from_name("NVIDIA GeForce RTX 3090"), GpuClass::Rtx3090);
+    assert_eq!(
+        GpuClass::from_name("NVIDIA GeForce RTX 4090"),
+        GpuClass::Rtx4090
+    );
+    assert_eq!(
+        GpuClass::from_name("NVIDIA GeForce RTX 3090"),
+        GpuClass::Rtx3090
+    );
     assert_eq!(GpuClass::from_name("Unknown GPU"), GpuClass::Unknown);
 }
 

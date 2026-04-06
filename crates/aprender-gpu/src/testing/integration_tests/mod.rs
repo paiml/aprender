@@ -69,7 +69,10 @@ fn test_sovereign_determinism() {
     let png2 = renderer.render_to_png(&output, size as u32, size as u32);
 
     let result = compare_png_bytes(&png1, &png2, 0);
-    assert!(result.matches(0.0), "Same input should produce identical output");
+    assert!(
+        result.matches(0.0),
+        "Same input should produce identical output"
+    );
     assert_eq!(result.different_pixels, 0, "Should be pixel-perfect match");
 }
 
@@ -136,11 +139,15 @@ fn test_sovereign_deterministic_rng() {
     // Use simular for deterministic RNG
     let mut rng = SimRng::new(42);
 
-    let input1: Vec<f32> = (0..64).map(|_| rng.gen_range_f64(0.0, 1.0) as f32).collect();
+    let input1: Vec<f32> = (0..64)
+        .map(|_| rng.gen_range_f64(0.0, 1.0) as f32)
+        .collect();
 
     // Reset RNG with same seed
     let mut rng2 = SimRng::new(42);
-    let input2: Vec<f32> = (0..64).map(|_| rng2.gen_range_f64(0.0, 1.0) as f32).collect();
+    let input2: Vec<f32> = (0..64)
+        .map(|_| rng2.gen_range_f64(0.0, 1.0) as f32)
+        .collect();
 
     assert_eq!(input1, input2, "Same seed should produce same sequence");
 

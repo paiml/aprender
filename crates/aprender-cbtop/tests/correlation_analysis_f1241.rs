@@ -216,7 +216,9 @@ fn f1248_process_list() {
 /// F1249.1: Custom correlation window works
 #[test]
 fn f1249_custom_window() {
-    let analyzer = CorrelationAnalyzer::new().with_window(30.0).with_spike_threshold(20.0);
+    let analyzer = CorrelationAnalyzer::new()
+        .with_window(30.0)
+        .with_spike_threshold(20.0);
 
     // Analyzer created with custom settings
     assert_eq!(analyzer.perf_sample_count(), 0);
@@ -290,7 +292,10 @@ fn test_interference_category() {
 fn test_isolation_action_names() {
     assert_eq!(IsolationAction::CpuPin.name(), "cpu_pin");
     assert_eq!(IsolationAction::MemoryIsolation.name(), "memory_isolation");
-    assert_eq!(IsolationAction::RealtimePriority.name(), "realtime_priority");
+    assert_eq!(
+        IsolationAction::RealtimePriority.name(),
+        "realtime_priority"
+    );
     assert_eq!(IsolationAction::None.name(), "none");
 }
 

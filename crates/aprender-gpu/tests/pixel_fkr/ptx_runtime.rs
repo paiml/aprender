@@ -28,10 +28,19 @@ fn ptx_pixel_fkr_softmax_runtime() {
     let ptx = kernel.emit_ptx();
 
     assert!(ptx.contains(".entry"), "PTX should have entry point");
-    assert!(ptx.contains(".visible"), "PTX should have visible attribute");
+    assert!(
+        ptx.contains(".visible"),
+        "PTX should have visible attribute"
+    );
 
-    println!("ptx_pixel_fkr_softmax_runtime: PTX generated ({} bytes)", ptx.len());
-    println!("  Scalar baseline sum: {:.6}", scalar_result.iter().sum::<f32>());
+    println!(
+        "ptx_pixel_fkr_softmax_runtime: PTX generated ({} bytes)",
+        ptx.len()
+    );
+    println!(
+        "  Scalar baseline sum: {:.6}",
+        scalar_result.iter().sum::<f32>()
+    );
 }
 
 /// ptx-pixel-fkr: GEMM PTX produces correct results
@@ -60,7 +69,10 @@ fn ptx_pixel_fkr_gemm_runtime() {
     assert!(ptx.contains(".entry"), "GEMM PTX should have entry point");
     assert!(ptx.contains(".shared"), "GEMM PTX should use shared memory");
 
-    println!("ptx_pixel_fkr_gemm_runtime: PTX generated ({} bytes)", ptx.len());
+    println!(
+        "ptx_pixel_fkr_gemm_runtime: PTX generated ({} bytes)",
+        ptx.len()
+    );
     println!("  Scalar result[0]: {:.6}", scalar_result[0]);
 }
 
@@ -85,8 +97,17 @@ fn ptx_pixel_fkr_layernorm_runtime() {
     let kernel = LayerNormKernel::new(n as u32);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains(".entry"), "LayerNorm PTX should have entry point");
+    assert!(
+        ptx.contains(".entry"),
+        "LayerNorm PTX should have entry point"
+    );
 
-    println!("ptx_pixel_fkr_layernorm_runtime: PTX generated ({} bytes)", ptx.len());
-    println!("  Scalar result mean: {:.6}", scalar_result.iter().sum::<f32>() / n as f32);
+    println!(
+        "ptx_pixel_fkr_layernorm_runtime: PTX generated ({} bytes)",
+        ptx.len()
+    );
+    println!(
+        "  Scalar result mean: {:.6}",
+        scalar_result.iter().sum::<f32>() / n as f32
+    );
 }

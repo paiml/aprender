@@ -37,7 +37,9 @@ pub struct MemoryCollectorBrick {
 
 impl MemoryCollectorBrick {
     pub fn new() -> Self {
-        Self { history: RingBuffer::new(120) }
+        Self {
+            history: RingBuffer::new(120),
+        }
     }
 
     pub fn collect(&mut self) -> MemoryMetrics {
@@ -48,7 +50,10 @@ impl MemoryCollectorBrick {
 
     fn read_meminfo(&self) -> Result<MemoryMetrics, std::io::Error> {
         let content = read_to_string("/proc/meminfo")?;
-        let mut metrics = MemoryMetrics { timestamp: Instant::now(), ..Default::default() };
+        let mut metrics = MemoryMetrics {
+            timestamp: Instant::now(),
+            ..Default::default()
+        };
 
         for line in content.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -92,7 +97,11 @@ impl Brick for MemoryCollectorBrick {
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 2, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 2,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

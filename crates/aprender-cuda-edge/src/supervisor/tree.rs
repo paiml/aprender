@@ -89,7 +89,11 @@ impl SupervisionTree {
     /// Remove restart records older than the time window.
     pub fn prune_old_restarts(&mut self, current_time_secs: u64) {
         let cutoff = current_time_secs.saturating_sub(self.window_secs);
-        while self.restart_history.front().is_some_and(|r| r.timestamp_secs < cutoff) {
+        while self
+            .restart_history
+            .front()
+            .is_some_and(|r| r.timestamp_secs < cutoff)
+        {
             self.restart_history.pop_front();
         }
     }

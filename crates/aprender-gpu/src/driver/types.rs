@@ -27,7 +27,10 @@ impl<T> DevicePtr<T> {
     /// Create a null device pointer
     #[must_use]
     pub const fn null() -> Self {
-        Self { ptr: 0, _marker: PhantomData }
+        Self {
+            ptr: 0,
+            _marker: PhantomData,
+        }
     }
 
     /// Create from raw address
@@ -36,7 +39,10 @@ impl<T> DevicePtr<T> {
     /// The address must be a valid device pointer.
     #[must_use]
     pub const unsafe fn from_raw(ptr: u64) -> Self {
-        Self { ptr, _marker: PhantomData }
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
     }
 
     /// Get raw address
@@ -54,7 +60,10 @@ impl<T> DevicePtr<T> {
     /// Offset by bytes
     #[must_use]
     pub const fn byte_offset(self, bytes: u64) -> Self {
-        Self { ptr: self.ptr + bytes, _marker: PhantomData }
+        Self {
+            ptr: self.ptr + bytes,
+            _marker: PhantomData,
+        }
     }
 }
 
@@ -89,13 +98,21 @@ impl LaunchConfig {
     #[must_use]
     pub const fn linear(num_elements: u32, block_size: u32) -> Self {
         let grid_x = (num_elements + block_size - 1) / block_size;
-        Self { grid: (grid_x, 1, 1), block: (block_size, 1, 1), shared_mem: 0 }
+        Self {
+            grid: (grid_x, 1, 1),
+            block: (block_size, 1, 1),
+            shared_mem: 0,
+        }
     }
 
     /// Create a 2D launch configuration
     #[must_use]
     pub const fn grid_2d(grid_x: u32, grid_y: u32, block_x: u32, block_y: u32) -> Self {
-        Self { grid: (grid_x, grid_y, 1), block: (block_x, block_y, 1), shared_mem: 0 }
+        Self {
+            grid: (grid_x, grid_y, 1),
+            block: (block_x, block_y, 1),
+            shared_mem: 0,
+        }
     }
 
     /// Set shared memory size
@@ -116,7 +133,11 @@ impl LaunchConfig {
 
 impl Default for LaunchConfig {
     fn default() -> Self {
-        Self { grid: (1, 1, 1), block: (256, 1, 1), shared_mem: 0 }
+        Self {
+            grid: (1, 1, 1),
+            block: (256, 1, 1),
+            shared_mem: 0,
+        }
     }
 }
 
@@ -227,7 +248,11 @@ mod tests {
 
     #[test]
     fn test_launch_config_3d() {
-        let config = LaunchConfig { grid: (2, 3, 4), block: (8, 8, 8), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (2, 3, 4),
+            block: (8, 8, 8),
+            shared_mem: 0,
+        };
         assert_eq!(config.total_threads(), 2 * 3 * 4 * 8 * 8 * 8);
     }
 

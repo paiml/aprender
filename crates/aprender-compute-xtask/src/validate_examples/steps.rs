@@ -67,7 +67,10 @@ pub(crate) fn step_check_module_docs(examples: &[std::path::PathBuf]) -> Result<
 
     if !missing_docs.is_empty() {
         let names = extract_file_names(&missing_docs);
-        bail!("Examples missing module documentation (//!):\n  {}", names.join("\n  "));
+        bail!(
+            "Examples missing module documentation (//!):\n  {}",
+            names.join("\n  ")
+        );
     }
 
     Ok(())
@@ -85,7 +88,11 @@ pub(crate) fn step_check_runnable(
         if !has_main_function(example)? {
             errors.push(format!(
                 "{}: missing main() function",
-                example.file_name().unwrap_or_default().to_str().unwrap_or("unknown")
+                example
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or("unknown")
             ));
             continue;
         }
@@ -195,7 +202,10 @@ pub(crate) fn step_check_book_references(
     }
 
     if !invalid_refs.is_empty() {
-        bail!("Book references non-existent examples:\n  {}", invalid_refs.join("\n  "));
+        bail!(
+            "Book references non-existent examples:\n  {}",
+            invalid_refs.join("\n  ")
+        );
     }
 
     Ok(())

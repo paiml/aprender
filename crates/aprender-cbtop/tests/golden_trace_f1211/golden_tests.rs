@@ -60,7 +60,10 @@ fn f1211_capture_with_syscalls() {
 fn f1212_delta_calculation() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     let current = TraceMetrics::new()
@@ -80,8 +83,10 @@ fn f1212_delta_calculation() {
 /// F1212.2: Zero baseline handled correctly
 #[test]
 fn f1212_zero_baseline() {
-    let golden =
-        GoldenTrace::new("zero_baseline", TraceMetrics::new().total_time_us(0.0).throughput(0.0));
+    let golden = GoldenTrace::new(
+        "zero_baseline",
+        TraceMetrics::new().total_time_us(0.0).throughput(0.0),
+    );
 
     let current = TraceMetrics::new().total_time_us(100.0).throughput(1000.0);
 
@@ -101,7 +106,10 @@ fn f1212_zero_baseline() {
 fn f1213_regression_detection() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     // Current is 15% worse
@@ -122,11 +130,17 @@ fn f1213_regression_detection() {
 fn f1213_no_regression_below_threshold() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     // Current is 5% worse (within 10% threshold)
-    let current = TraceMetrics::new().total_time_us(1050.0).p50_latency_us(52.5).throughput(9500.0);
+    let current = TraceMetrics::new()
+        .total_time_us(1050.0)
+        .p50_latency_us(52.5)
+        .throughput(9500.0);
 
     let comparator = GoldenComparator::new().with_threshold(10.0);
     let result = comparator.compare(&current, &golden).unwrap();
@@ -159,8 +173,11 @@ fn f1213_custom_threshold() {
 /// F1214.1: Golden trace versioned
 #[test]
 fn f1214_version_stored() {
-    let trace =
-        GoldenTrace::with_version("versioned", "2.0", TraceMetrics::new().total_time_us(1000.0));
+    let trace = GoldenTrace::with_version(
+        "versioned",
+        "2.0",
+        TraceMetrics::new().total_time_us(1000.0),
+    );
 
     assert_eq!(trace.version, "2.0");
 }

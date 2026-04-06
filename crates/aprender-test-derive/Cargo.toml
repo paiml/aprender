@@ -1,0 +1,23 @@
+[package]
+name = "jugar-probar-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Proc-macro crate for Probar type-safe ECS selectors (Poka-Yoke)"
+keywords = ["probar", "testing", "wasm", "derive", "proc-macro"]
+categories = ["development-tools::testing", "wasm"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full", "extra-traits", "parsing"] }
+
+[dev-dependencies]
+trybuild = "1.0"

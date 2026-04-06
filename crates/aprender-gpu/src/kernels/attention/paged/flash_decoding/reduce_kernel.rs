@@ -34,7 +34,12 @@ impl FlashDecodingReduceKernel {
     /// Create a new Flash Decoding reduce kernel
     #[must_use]
     pub fn new(head_dim: u32, num_heads: u32, batch_size: u32) -> Self {
-        Self { head_dim, num_heads, batch_size, chunk_size: FLASH_DECODE_CHUNK_SIZE }
+        Self {
+            head_dim,
+            num_heads,
+            batch_size,
+            chunk_size: FLASH_DECODE_CHUNK_SIZE,
+        }
     }
 }
 

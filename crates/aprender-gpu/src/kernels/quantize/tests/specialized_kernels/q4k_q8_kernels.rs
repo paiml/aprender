@@ -148,7 +148,10 @@ fn test_mwv_dp4a_q4k_gemv_ptx_generation() {
     assert!(ptx.contains("dp4a"));
     assert!(ptx.contains("ld.global"));
     // GH-176: Low-occupancy/high-ILP strategy — maximize registers per thread
-    assert!(ptx.contains(".maxnreg 255"), "Must emit .maxnreg 255 for max ILP");
+    assert!(
+        ptx.contains(".maxnreg 255"),
+        "Must emit .maxnreg 255 for max ILP"
+    );
 }
 
 #[test]
@@ -232,9 +235,15 @@ fn test_q8_quantize_separate_signed_unsigned_registers() {
     let ptx = kernel.emit_ptx();
 
     // U32 registers use %r prefix
-    assert!(ptx.contains(".reg .u32  %r<"), "Missing .u32 register declaration in PTX");
+    assert!(
+        ptx.contains(".reg .u32  %r<"),
+        "Missing .u32 register declaration in PTX"
+    );
     // S32 registers use %ri prefix (not %r -- that would conflict!)
-    assert!(ptx.contains(".reg .s32  %ri<"), "Missing .s32 register declaration in PTX");
+    assert!(
+        ptx.contains(".reg .s32  %ri<"),
+        "Missing .s32 register declaration in PTX"
+    );
 
     // Verify no duplicate %r declarations (only one .reg line should contain "%r<")
     let r_decl_count = ptx

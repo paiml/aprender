@@ -50,7 +50,12 @@ pub struct FusedNf4GateUpGemmKernel {
 impl FusedNf4GateUpGemmKernel {
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, tile_size: 32 }
+        Self {
+            m,
+            n,
+            k,
+            tile_size: 32,
+        }
     }
 
     #[must_use]

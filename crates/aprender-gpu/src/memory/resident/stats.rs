@@ -165,11 +165,19 @@ mod tests {
 
     #[test]
     fn test_transfer_stats_delta() {
-        let prev =
-            TransferStats { h2d_transfers: 10, d2h_transfers: 5, h2d_bytes: 1000, d2h_bytes: 500 };
+        let prev = TransferStats {
+            h2d_transfers: 10,
+            d2h_transfers: 5,
+            h2d_bytes: 1000,
+            d2h_bytes: 500,
+        };
 
-        let curr =
-            TransferStats { h2d_transfers: 15, d2h_transfers: 8, h2d_bytes: 2500, d2h_bytes: 1200 };
+        let curr = TransferStats {
+            h2d_transfers: 15,
+            d2h_transfers: 8,
+            h2d_bytes: 2500,
+            d2h_bytes: 1200,
+        };
 
         let delta = curr.delta_from(&prev);
         assert_eq!(delta.h2d_transfers, 5);
@@ -180,8 +188,12 @@ mod tests {
 
     #[test]
     fn test_transfer_stats_totals() {
-        let stats =
-            TransferStats { h2d_transfers: 10, d2h_transfers: 5, h2d_bytes: 1000, d2h_bytes: 500 };
+        let stats = TransferStats {
+            h2d_transfers: 10,
+            d2h_transfers: 5,
+            h2d_bytes: 1000,
+            d2h_bytes: 500,
+        };
 
         assert_eq!(stats.total_transfers(), 15);
         assert_eq!(stats.total_bytes(), 1500);

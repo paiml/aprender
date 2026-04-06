@@ -46,11 +46,20 @@ fn test_cpu_softmax_sanity() {
 
     // Sum must be 1.0
     let sum: f32 = output.iter().sum();
-    assert!((sum - 1.0).abs() < 1e-6, "Softmax sum should be 1.0, got {}", sum);
+    assert!(
+        (sum - 1.0).abs() < 1e-6,
+        "Softmax sum should be 1.0, got {}",
+        sum
+    );
 
     // Values should be in (0, 1)
     for (i, &v) in output.iter().enumerate() {
-        assert!(v > 0.0 && v < 1.0, "Softmax[{}] = {} should be in (0, 1)", i, v);
+        assert!(
+            v > 0.0 && v < 1.0,
+            "Softmax[{}] = {} should be in (0, 1)",
+            i,
+            v
+        );
     }
 
     // Larger input should have larger softmax
@@ -83,7 +92,11 @@ fn test_batched_softmax_short_row() {
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("Compile failed");
     let stream = CudaStream::new(&ctx).expect("Stream failed");
 
-    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 72 };
+    let config = LaunchConfig {
+        grid: (total_rows, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 72,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -104,7 +117,9 @@ fn test_batched_softmax_short_row() {
 
     // Download result
     let mut output = vec![0.0f32; row_size as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     // Verify sum = 1.0
     let sum: f32 = output.iter().sum();
@@ -118,7 +133,14 @@ fn test_batched_softmax_short_row() {
     // Verify individual values match CPU reference
     for (i, (&gpu, &cpu)) in output.iter().zip(expected.iter()).enumerate() {
         let delta: f32 = (gpu - cpu).abs();
-        assert!(delta < 1e-5, "Short row [{}]: GPU={} vs CPU={}, delta={}", i, gpu, cpu, delta);
+        assert!(
+            delta < 1e-5,
+            "Short row [{}]: GPU={} vs CPU={}, delta={}",
+            i,
+            gpu,
+            cpu,
+            delta
+        );
     }
 
     eprintln!("✓ Short row (32 elements) softmax PASSED");
@@ -138,11 +160,16 @@ fn test_batched_softmax_long_row_1500() {
 
     // Create input: use small values to avoid overflow
     // Values from -5 to +5 spread across 1500 elements
-    let input: Vec<f32> =
-        (0..row_size).map(|i| -5.0 + 10.0 * (i as f32 / (row_size - 1) as f32)).collect();
+    let input: Vec<f32> = (0..row_size)
+        .map(|i| -5.0 + 10.0 * (i as f32 / (row_size - 1) as f32))
+        .collect();
     let expected = cpu_softmax(&input);
 
-    eprintln!("Input: first 5 = {:?}, last 5 = {:?}", &input[..5], &input[row_size as usize - 5..]);
+    eprintln!(
+        "Input: first 5 = {:?}, last 5 = {:?}",
+        &input[..5],
+        &input[row_size as usize - 5..]
+    );
     eprintln!(
         "CPU expected: first 5 = {:?}, last 5 = {:?}",
         &expected[..5],
@@ -167,7 +194,11 @@ fn test_batched_softmax_long_row_1500() {
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("Compile failed");
     let stream = CudaStream::new(&ctx).expect("Stream failed");
 
-    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 72 };
+    let config = LaunchConfig {
+        grid: (total_rows, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 72,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -188,7 +219,9 @@ fn test_batched_softmax_long_row_1500() {
 
     // Download result
     let mut output = vec![0.0f32; row_size as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     eprintln!(
         "GPU output: first 5 = {:?}, last 5 = {:?}",
@@ -209,26 +242,50 @@ fn test_batched_softmax_long_row_1500() {
 
     // Verify max and min are reasonable
     let gpu_max = output.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let gpu_min = output.iter().cloned().filter(|&x| x > 0.0).fold(f32::INFINITY, f32::min);
+    let gpu_min = output
+        .iter()
+        .cloned()
+        .filter(|&x| x > 0.0)
+        .fold(f32::INFINITY, f32::min);
     let cpu_max = expected.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let cpu_min = expected.iter().cloned().filter(|&x| x > 0.0).fold(f32::INFINITY, f32::min);
+    let cpu_min = expected
+        .iter()
+        .cloned()
+        .filter(|&x| x > 0.0)
+        .fold(f32::INFINITY, f32::min);
 
     eprintln!("GPU max={}, min={}", gpu_max, gpu_min);
     eprintln!("CPU max={}, min={}", cpu_max, cpu_min);
 
     // Verify the distribution shape roughly matches
-    let gpu_argmax =
-        output.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
-    let cpu_argmax =
-        expected.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap().0;
+    let gpu_argmax = output
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .unwrap()
+        .0;
+    let cpu_argmax = expected
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+        .unwrap()
+        .0;
 
-    assert_eq!(gpu_argmax, cpu_argmax, "Argmax mismatch: GPU={} vs CPU={}", gpu_argmax, cpu_argmax);
+    assert_eq!(
+        gpu_argmax, cpu_argmax,
+        "Argmax mismatch: GPU={} vs CPU={}",
+        gpu_argmax, cpu_argmax
+    );
 
     // Sample comparison at specific indices
     let test_indices = [0, 32, 100, 500, 1000, 1499];
     for &i in &test_indices {
         let delta = (output[i] - expected[i]).abs();
-        let rel_delta = if expected[i].abs() > 1e-10 { delta / expected[i].abs() } else { delta };
+        let rel_delta = if expected[i].abs() > 1e-10 {
+            delta / expected[i].abs()
+        } else {
+            delta
+        };
         assert!(
             rel_delta < 0.1 || delta < 1e-6,
             "Long row [{}]: GPU={} vs CPU={}, delta={}, rel_delta={}",
@@ -285,7 +342,11 @@ fn test_batched_softmax_6_rows_of_1500() {
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("Compile failed");
     let stream = CudaStream::new(&ctx).expect("Stream failed");
 
-    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 72 };
+    let config = LaunchConfig {
+        grid: (total_rows, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 72,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -306,7 +367,9 @@ fn test_batched_softmax_6_rows_of_1500() {
 
     // Download result
     let mut output = vec![0.0f32; (total_rows * row_size) as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     // Verify each row sums to 1.0
     for row in 0..total_rows {

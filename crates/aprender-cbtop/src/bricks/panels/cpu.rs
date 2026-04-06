@@ -13,12 +13,22 @@ pub struct CpuPanelBrick {
 
 impl CpuPanelBrick {
     pub fn new() -> Self {
-        Self { cpu_data: Vec::new(), intensity: 0.0, theme: Theme::tokyo_night() }
+        Self {
+            cpu_data: Vec::new(),
+            intensity: 0.0,
+            theme: Theme::tokyo_night(),
+        }
     }
 
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         canvas.draw_text("CPU Monitor", Point::new(2.0, 2.0), &label_style);
 
@@ -34,7 +44,11 @@ impl CpuPanelBrick {
         }
 
         // Simulated per-core meters
-        canvas.draw_text("Per-Core Usage (simulated)", Point::new(2.0, 12.0), &label_style);
+        canvas.draw_text(
+            "Per-Core Usage (simulated)",
+            Point::new(2.0, 12.0),
+            &label_style,
+        );
         for i in 0..8 {
             let y = 13.0 + i as f32;
             let usage = 30.0 + (i as f64 * 7.0) + (self.intensity * 50.0);
@@ -48,7 +62,10 @@ impl CpuPanelBrick {
             meter.paint(canvas);
 
             // Color the percentage based on usage
-            let pct_style = TextStyle { color: self.theme.cpu_color(usage), ..Default::default() };
+            let pct_style = TextStyle {
+                color: self.theme.cpu_color(usage),
+                ..Default::default()
+            };
             canvas.draw_text(&format!("{:5.1}%", usage), Point::new(34.0, y), &pct_style);
         }
     }

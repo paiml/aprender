@@ -45,7 +45,11 @@ fn test_delta_encoding() {
     let mut current = MetricData::new("test");
     for i in 0..100 {
         // Only change a few values
-        let val = if i % 10 == 0 { i as f64 * 2.0 } else { i as f64 };
+        let val = if i % 10 == 0 {
+            i as f64 * 2.0
+        } else {
+            i as f64
+        };
         current.add(val, i as u64 * 1000);
     }
 
@@ -113,7 +117,10 @@ fn test_incremental_store_get() {
 
 #[test]
 fn test_keyframe_interval() {
-    let config = SnapshotConfig { keyframe_interval: 5, ..Default::default() };
+    let config = SnapshotConfig {
+        keyframe_interval: 5,
+        ..Default::default()
+    };
     let mut store = IncrementalSnapshotStore::new(config);
 
     // Add 15 snapshots
@@ -173,7 +180,10 @@ fn test_query_by_fingerprint() {
 
 #[test]
 fn test_compression_ratio() {
-    let config = SnapshotConfig { keyframe_interval: 10, ..Default::default() };
+    let config = SnapshotConfig {
+        keyframe_interval: 10,
+        ..Default::default()
+    };
     let mut store = IncrementalSnapshotStore::new(config);
 
     // Add snapshots with mostly identical data (only timestamp changes)
@@ -201,7 +211,11 @@ fn test_compression_ratio() {
 
     // With delta encoding on similar data, ratio should be <= 1
     // (may be close to 1 for this synthetic data, but shouldn't exceed it)
-    assert!(ratio <= 1.5, "Compression ratio {} should be reasonable", ratio);
+    assert!(
+        ratio <= 1.5,
+        "Compression ratio {} should be reasonable",
+        ratio
+    );
 }
 
 #[test]
@@ -212,12 +226,18 @@ fn test_index_out_of_bounds() {
     store.append(create_test_snapshot(0, 5, 100)).unwrap();
 
     let result = store.get(999);
-    assert!(matches!(result, Err(SnapshotError::IndexOutOfBounds { .. })));
+    assert!(matches!(
+        result,
+        Err(SnapshotError::IndexOutOfBounds { .. })
+    ));
 }
 
 #[test]
 fn test_error_display() {
-    let err = SnapshotError::ChecksumMismatch { expected: 12345, actual: 67890 };
+    let err = SnapshotError::ChecksumMismatch {
+        expected: 12345,
+        actual: 67890,
+    };
     assert!(err.to_string().contains("12345"));
     assert!(err.to_string().contains("67890"));
 }
@@ -231,7 +251,10 @@ fn test_retention_tier_max_age() {
 // FKR-051: Delta-based snapshot storage works correctly
 #[test]
 fn test_fkr_051_compression_ratio() {
-    let config = SnapshotConfig { keyframe_interval: 10, ..Default::default() };
+    let config = SnapshotConfig {
+        keyframe_interval: 10,
+        ..Default::default()
+    };
     let mut store = IncrementalSnapshotStore::new(config);
 
     // Add 100 sequential snapshots with IDENTICAL metric data

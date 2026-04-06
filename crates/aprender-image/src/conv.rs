@@ -210,7 +210,10 @@ pub fn sobel(
 
 /// Gradient magnitude from Sobel output.
 pub fn gradient_magnitude(gx: &[f32], gy: &[f32]) -> Vec<f32> {
-    gx.iter().zip(gy.iter()).map(|(&x, &y)| (x * x + y * y).sqrt()).collect()
+    gx.iter()
+        .zip(gy.iter())
+        .map(|(&x, &y)| (x * x + y * y).sqrt())
+        .collect()
 }
 
 /// Canny edge detection.
@@ -231,7 +234,10 @@ pub fn canny(
     high_threshold: f32,
 ) -> Result<Vec<f32>, ImageError> {
     if low_threshold < 0.0 || high_threshold < low_threshold || high_threshold > 1.0 {
-        return Err(ImageError::InvalidThresholds { low: low_threshold, high: high_threshold });
+        return Err(ImageError::InvalidThresholds {
+            low: low_threshold,
+            high: high_threshold,
+        });
     }
 
     // Step 1: Gaussian blur
@@ -243,14 +249,23 @@ pub fn canny(
 
     // Normalize magnitude to [0, 1]
     let max_mag = mag.iter().copied().fold(0.0f32, f32::max);
-    let mag_norm: Vec<f32> =
-        if max_mag > 0.0 { mag.iter().map(|&m| m / max_mag).collect() } else { mag };
+    let mag_norm: Vec<f32> = if max_mag > 0.0 {
+        mag.iter().map(|&m| m / max_mag).collect()
+    } else {
+        mag
+    };
 
     // Step 3: Non-maximum suppression
     let nms = non_maximum_suppression(&mag_norm, &gx, &gy, width, height);
 
     // Step 4: Hysteresis thresholding
-    Ok(hysteresis_threshold(&nms, width, height, low_threshold, high_threshold))
+    Ok(hysteresis_threshold(
+        &nms,
+        width,
+        height,
+        low_threshold,
+        high_threshold,
+    ))
 }
 
 /// Non-maximum suppression: thin edges to 1-pixel width.
@@ -415,7 +430,12 @@ pub fn canny_rgb(
 ) -> Result<Vec<f32>, ImageError> {
     let expected = width * height * channels;
     if image.len() != expected {
-        return Err(ImageError::BufferLengthMismatch { expected, got: image.len(), width, height });
+        return Err(ImageError::BufferLengthMismatch {
+            expected,
+            got: image.len(),
+            width,
+            height,
+        });
     }
 
     // Convert to grayscale (BT.601 weights: 0.299R + 0.587G + 0.114B)

@@ -49,16 +49,20 @@ impl StressTestRunner {
     /// Create new stress test runner
     #[must_use]
     pub fn new(config: StressConfig) -> Self {
-        Self { rng: StressRng::new(config.seed), config, report: StressReport::default() }
+        Self {
+            rng: StressRng::new(config.seed),
+            config,
+            report: StressReport::default(),
+        }
     }
 
     /// Generate randomized input for a cycle
     pub fn generate_input(&mut self) -> (u64, Vec<f32>) {
         let seed = self.rng.next_u64();
-        let size = self
-            .rng
-            .gen_range_u32(self.config.min_input_size as u32, self.config.max_input_size as u32)
-            as usize;
+        let size = self.rng.gen_range_u32(
+            self.config.min_input_size as u32,
+            self.config.max_input_size as u32,
+        ) as usize;
 
         let mut input_rng = StressRng::new(seed);
         let input: Vec<f32> = (0..size).map(|_| input_rng.gen_f32()).collect();

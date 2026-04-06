@@ -36,20 +36,22 @@ mod f081_tests {
         let ctx = CudaContext::new(0).expect("CUDA context");
         let stream = CudaStream::new(&ctx).expect("CUDA stream");
 
-        let kernel = PtxKernel::new("baseline_imm").param(PtxType::U64, "output").build(|ctx| {
-            let out_ptr = ctx.load_param_u64("output");
-            let tid = ctx.special_reg(PtxReg::TidX);
-            let zero = ctx.mov_u32_imm(0);
-            let is_t0 = ctx.setp_eq_u32(tid, zero);
-            ctx.branch_if_not(is_t0, "L_end");
+        let kernel = PtxKernel::new("baseline_imm")
+            .param(PtxType::U64, "output")
+            .build(|ctx| {
+                let out_ptr = ctx.load_param_u64("output");
+                let tid = ctx.special_reg(PtxReg::TidX);
+                let zero = ctx.mov_u32_imm(0);
+                let is_t0 = ctx.setp_eq_u32(tid, zero);
+                ctx.branch_if_not(is_t0, "L_end");
 
-            // Write immediate value to global - NOT using loaded value
-            let val = ctx.mov_u32_imm(0xCAFEBABE);
-            ctx.st_global_u32(out_ptr, val);
+                // Write immediate value to global - NOT using loaded value
+                let val = ctx.mov_u32_imm(0xCAFEBABE);
+                ctx.st_global_u32(out_ptr, val);
 
-            ctx.label("L_end");
-            ctx.ret();
-        });
+                ctx.label("L_end");
+                ctx.ret();
+            });
 
         let ptx = PtxModule::new()
             .version(8, 0)
@@ -65,7 +67,11 @@ mod f081_tests {
         output.copy_from_host(&[0u32]).unwrap();
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output.as_kernel_arg()];
 
@@ -128,7 +134,11 @@ mod f081_tests {
         output.copy_from_host(&[0u32]).unwrap();
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 2] = [input.as_kernel_arg(), output.as_kernel_arg()];
 
@@ -205,7 +215,11 @@ mod f081_tests {
         output.copy_from_host(&[0u32]).unwrap();
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output.as_kernel_arg()];
 
@@ -224,13 +238,19 @@ mod f081_tests {
                 println!("╔══════════════════════════════════════════════════════════════╗");
                 println!("║  F081 HYPOTHESIS FALSIFIED!                                   ║");
                 println!("║                                                              ║");
-                println!("║  Kernel SUCCEEDED with value 0x{:08X}                     ║", out[0]);
+                println!(
+                    "║  Kernel SUCCEEDED with value 0x{:08X}                     ║",
+                    out[0]
+                );
                 println!("║  Pattern ld.shared → st.global does NOT crash!               ║");
                 println!("║                                                              ║");
                 println!("║  Original LZ4 bug was F082 or F021, not F081.                ║");
                 println!("╚══════════════════════════════════════════════════════════════╝");
                 // F081 is falsified - this test now EXPECTS success
-                assert_eq!(out[0], 0xBEEFCAFE, "F081 falsified: pattern works correctly");
+                assert_eq!(
+                    out[0], 0xBEEFCAFE,
+                    "F081 falsified: pattern works correctly"
+                );
             }
             Err(e) => {
                 // If this crashes, F081 hypothesis would be confirmed - but it doesn't!
@@ -297,7 +317,11 @@ mod f081_tests {
         output.copy_from_host(&[0u32]).unwrap();
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output.as_kernel_arg()];
 

@@ -7,7 +7,11 @@ fn test_data_256() -> Vec<f32> {
 
 /// Compute max absolute error between original and dequantized data.
 fn max_abs_error(original: &[f32], dequantized: &[f32]) -> f32 {
-    original.iter().zip(dequantized.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max)
+    original
+        .iter()
+        .zip(dequantized.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max)
 }
 
 /// Compute data range (max - min).
@@ -24,7 +28,10 @@ fn assert_roundtrip_within_range(
 ) {
     let error = max_abs_error(original, dequantized);
     let threshold = data_range(original) * fraction;
-    assert!(error < threshold, "{label} roundtrip error {error} exceeds threshold {threshold}");
+    assert!(
+        error < threshold,
+        "{label} roundtrip error {error} exceeds threshold {threshold}"
+    );
 }
 
 #[test]
@@ -51,7 +58,10 @@ fn test_q6k_roundtrip() {
     let quantized = quantize_q6_k(&data);
     assert_eq!(quantized.len(), 210);
     let dequantized = dequantize_q6_k_to_f32(&quantized, 256);
-    assert!(max_abs_error(&data, &dequantized) < 1.0, "Q6K roundtrip error too high");
+    assert!(
+        max_abs_error(&data, &dequantized) < 1.0,
+        "Q6K roundtrip error too high"
+    );
 }
 
 #[test]
@@ -78,7 +88,10 @@ fn test_transpose_q4k() {
 fn test_f16_min_normal() {
     let f16_val = half::f16::from_f32(F16_MIN_NORMAL);
     let roundtrip = f16_val.to_f32();
-    assert!(roundtrip > 0.0, "F16_MIN_NORMAL should be positive after f16 roundtrip");
+    assert!(
+        roundtrip > 0.0,
+        "F16_MIN_NORMAL should be positive after f16 roundtrip"
+    );
     assert!(roundtrip < 1e-4, "F16_MIN_NORMAL should be small");
 }
 
@@ -120,7 +133,12 @@ fn test_q6k_dequantize_subnormal_scale() {
 
     let result = dequantize_q6_k_to_f32(&block, 256);
     for (i, &v) in result.iter().enumerate() {
-        assert!(v.is_finite(), "Q6K dequant produced non-finite value at index {}: {}", i, v);
+        assert!(
+            v.is_finite(),
+            "Q6K dequant produced non-finite value at index {}: {}",
+            i,
+            v
+        );
     }
 }
 
@@ -141,7 +159,12 @@ fn test_q6k_dequantize_nan_scale() {
 
     let result = dequantize_q6_k_to_f32(&block, 256);
     for (i, &v) in result.iter().enumerate() {
-        assert!(v.is_finite(), "Q6K NaN scale propagated to index {}: {}", i, v);
+        assert!(
+            v.is_finite(),
+            "Q6K NaN scale propagated to index {}: {}",
+            i,
+            v
+        );
         assert!(
             v.abs() < f32::EPSILON,
             "Q6K with NaN scale should produce 0.0 at index {}, got {}",
@@ -176,7 +199,12 @@ fn test_q5k_dequantize_subnormal_scale() {
 
     let result = dequantize_q5_k_to_f32(&block, 256);
     for (i, &v) in result.iter().enumerate() {
-        assert!(v.is_finite(), "Q5K dequant produced non-finite value at index {}: {}", i, v);
+        assert!(
+            v.is_finite(),
+            "Q5K dequant produced non-finite value at index {}: {}",
+            i,
+            v
+        );
     }
 }
 
@@ -202,12 +230,20 @@ fn test_q6k_simd_scaling_roundtrip() {
 
     // All values must be finite
     for (i, &v) in dequantized.iter().enumerate() {
-        assert!(v.is_finite(), "Q6K SIMD scaling roundtrip: non-finite at index {}: {}", i, v);
+        assert!(
+            v.is_finite(),
+            "Q6K SIMD scaling roundtrip: non-finite at index {}: {}",
+            i,
+            v
+        );
     }
 
     // Roundtrip error should be bounded
-    let max_err =
-        data.iter().zip(dequantized.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    let max_err = data
+        .iter()
+        .zip(dequantized.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
     let range = data.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
         - data.iter().fold(f32::INFINITY, |a, &b| a.min(b));
     assert!(

@@ -61,7 +61,10 @@ impl ContinuousBatcher {
             waiting: VecDeque::new(),
             swapped: Vec::new(),
             policy: SchedulingPolicy::default(),
-            stats: BatcherStats { start_time: Some(Instant::now()), ..Default::default() },
+            stats: BatcherStats {
+                start_time: Some(Instant::now()),
+                ..Default::default()
+            },
             memory_threshold: 0.9,
         }
     }
@@ -206,7 +209,10 @@ impl ContinuousBatcher {
     pub fn process_outputs(&mut self, outputs: Vec<TokenOutput>) {
         for output in outputs {
             // Find the sequence and add the token
-            if let Some(seq_group) = self.running.iter_mut().find(|s| s.request.id == output.seq_id)
+            if let Some(seq_group) = self
+                .running
+                .iter_mut()
+                .find(|s| s.request.id == output.seq_id)
             {
                 seq_group.add_token(output.token);
                 self.stats.total_tokens += 1;
@@ -253,7 +259,12 @@ impl ContinuousBatcher {
     pub fn needs_preemption(&self, current_utilization: f64) -> bool {
         current_utilization >= self.memory_threshold
             && !self.running.is_empty()
-            && matches!(self.policy, SchedulingPolicy::Priority { preempt_enabled: true })
+            && matches!(
+                self.policy,
+                SchedulingPolicy::Priority {
+                    preempt_enabled: true
+                }
+            )
     }
 
     /// Get sequence by ID.

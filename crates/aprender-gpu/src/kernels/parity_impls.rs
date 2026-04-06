@@ -153,7 +153,11 @@ mod tests {
     fn test_parity_rmsnorm_7b() {
         let kernel = BatchedVectorizedRmsNormKernel::new(HIDDEN_3584, 1);
         let result = kernel.validate_batch_dispatch();
-        assert!(result.is_compatible, "7B BatchedRmsNorm parity: {:?}", result.violations);
+        assert!(
+            result.is_compatible,
+            "7B BatchedRmsNorm parity: {:?}",
+            result.violations
+        );
     }
 
     /// GH-219: BatchedQ4KGemvKernel uses register-unrolled dispatch (m_dim param)
@@ -209,7 +213,11 @@ mod tests {
     fn test_parity_rope_batch_dispatch() {
         let kernel = BatchedRopeKernel::new(NUM_HEADS_12, HEAD_DIM_128, 1, ROPE_THETA);
         let result = kernel.validate_batch_dispatch();
-        assert!(result.is_compatible, "BatchedRopeKernel missing ctaid.y: {:?}", result.violations);
+        assert!(
+            result.is_compatible,
+            "BatchedRopeKernel missing ctaid.y: {:?}",
+            result.violations
+        );
     }
 
     /// GH-219: BatchedSwigluKernel must use ctaid.y for row dispatch
@@ -250,7 +258,12 @@ mod tests {
             ),
             (
                 "BatchedRopeKernel",
-                Box::new(BatchedRopeKernel::new(NUM_HEADS_12, HEAD_DIM_128, 1, ROPE_THETA)),
+                Box::new(BatchedRopeKernel::new(
+                    NUM_HEADS_12,
+                    HEAD_DIM_128,
+                    1,
+                    ROPE_THETA,
+                )),
                 "grid_y",
             ),
             (
@@ -268,21 +281,28 @@ mod tests {
             let has_any = has_grid_y || has_m_dim;
 
             if !has_any {
-                failures.push(format!("{} missing batch dispatch (no ctaid.y or m_dim)", name));
+                failures.push(format!(
+                    "{} missing batch dispatch (no ctaid.y or m_dim)",
+                    name
+                ));
             }
 
             // Verify correct strategy
             match *expected_strategy {
                 "grid_y" => {
                     if !has_grid_y {
-                        failures
-                            .push(format!("{} expected grid_y dispatch but missing ctaid.y", name));
+                        failures.push(format!(
+                            "{} expected grid_y dispatch but missing ctaid.y",
+                            name
+                        ));
                     }
                 }
                 "register_unroll" => {
                     if !has_m_dim {
-                        failures
-                            .push(format!("{} expected register_unroll but missing m_dim", name));
+                        failures.push(format!(
+                            "{} expected register_unroll but missing m_dim",
+                            name
+                        ));
                     }
                 }
                 _ => {}
@@ -322,7 +342,11 @@ mod tests {
                 if (trimmed.contains("st.shared") || trimmed.contains("ld.shared"))
                     && trimmed.contains("[%rd")
                 {
-                    failures.push(format!("{}: u64 shared mem address: {}", name, trimmed.trim()));
+                    failures.push(format!(
+                        "{}: u64 shared mem address: {}",
+                        name,
+                        trimmed.trim()
+                    ));
                 }
             }
         }

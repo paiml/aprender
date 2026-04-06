@@ -52,7 +52,11 @@ impl BiasActivationKernel {
     /// * `bias_size` - Size of bias vector (typically output dimension)
     #[must_use]
     pub fn new(n: u32, bias_size: u32) -> Self {
-        Self { n, bias_size, activation: Activation::None }
+        Self {
+            n,
+            bias_size,
+            activation: Activation::None,
+        }
     }
 
     /// Add ReLU activation

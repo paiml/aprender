@@ -4,7 +4,9 @@ use std::hint::black_box;
 use trueno_tensor::{einsum, matmul, Tensor};
 
 fn make_matrix(m: usize, n: usize) -> Tensor {
-    let data: Vec<f32> = (0..m * n).map(|i| ((i * 7 + 3) % 97) as f32 / 97.0).collect();
+    let data: Vec<f32> = (0..m * n)
+        .map(|i| ((i * 7 + 3) % 97) as f32 / 97.0)
+        .collect();
     Tensor::new(vec![m, n], data).expect("valid tensor")
 }
 
@@ -62,5 +64,10 @@ fn bench_einsum_trace(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_matmul, bench_einsum_transpose, bench_einsum_trace);
+criterion_group!(
+    benches,
+    bench_matmul,
+    bench_einsum_transpose,
+    bench_einsum_trace
+);
 criterion_main!(benches);

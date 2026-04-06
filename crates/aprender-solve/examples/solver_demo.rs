@@ -29,7 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── SVD ────────────────────────────────────────────────
     println!("\n--- SVD ---");
     let result = svd(&[3.0, 2.0, 2.0, 3.0_f32], 2, 2)?;
-    println!("Singular values: [{:.4}, {:.4}]", result.sigma[0], result.sigma[1]);
+    println!(
+        "Singular values: [{:.4}, {:.4}]",
+        result.sigma[0], result.sigma[1]
+    );
 
     // ── Cholesky ───────────────────────────────────────────
     println!("\n--- Cholesky ---");
@@ -40,8 +43,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── TRSM ───────────────────────────────────────────────
     println!("\n--- TRSM (triangular solve) ---");
     let tri = [2.0, 0.0, 3.0, 4.0_f32]; // lower triangular
-    let result = trsm(&tri, &[2.0, 11.0], 2, 1, TriangularSide::Lower, DiagonalType::NonUnit)?;
-    println!("Lower triangular solve: x = [{:.4}, {:.4}]", result.x[0], result.x[1]);
+    let result = trsm(
+        &tri,
+        &[2.0, 11.0],
+        2,
+        1,
+        TriangularSide::Lower,
+        DiagonalType::NonUnit,
+    )?;
+    println!(
+        "Lower triangular solve: x = [{:.4}, {:.4}]",
+        result.x[0], result.x[1]
+    );
 
     // ── BLAS Level-3 ───────────────────────────────────────
     println!("\n--- BLAS Level-3 ---");
@@ -59,7 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let b_syr2k = [5.0, 6.0, 7.0, 8.0_f32];
     let mut c_syr2k = [0.0_f32; 4];
     syr2k(&a_syrk, &b_syr2k, &mut c_syr2k, 2, 2, 1.0, 0.0)?;
-    println!("syr2k: [{:.1}, {:.1}; {:.1}, {:.1}]", c_syr2k[0], c_syr2k[1], c_syr2k[2], c_syr2k[3]);
+    println!(
+        "syr2k: [{:.1}, {:.1}; {:.1}, {:.1}]",
+        c_syr2k[0], c_syr2k[1], c_syr2k[2], c_syr2k[3]
+    );
 
     // trmm: B = A·B (lower triangular)
     let a_tri = [2.0, 0.0, 3.0, 4.0_f32];
@@ -72,22 +88,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let b_sym = [1.0, 0.0, 0.0, 1.0_f32];
     let mut c_sym = [0.0_f32; 4];
     symm(&a_sym, &b_sym, &mut c_sym, 2, 2, 1.0, 0.0)?;
-    println!("symm: [{:.1}, {:.1}; {:.1}, {:.1}]", c_sym[0], c_sym[1], c_sym[2], c_sym[3]);
+    println!(
+        "symm: [{:.1}, {:.1}; {:.1}, {:.1}]",
+        c_sym[0], c_sym[1], c_sym[2], c_sym[3]
+    );
 
     // ── gemmEx (mixed-precision f16→f32) ───────────────────
     println!("\n--- gemmEx (mixed-precision) ---");
-    let a_f16: Vec<u16> = [1.0, 2.0, 3.0, 4.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b_f16: Vec<u16> = [5.0, 6.0, 7.0, 8.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a_f16: Vec<u16> = [1.0, 2.0, 3.0, 4.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b_f16: Vec<u16> = [5.0, 6.0, 7.0, 8.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c_ex = [0.0_f32; 4];
     gemm_ex(&a_f16, &b_f16, &mut c_ex, 2, 2, 2, 1.0, 0.0)?;
-    println!("f16 matmul: [{:.1}, {:.1}; {:.1}, {:.1}]", c_ex[0], c_ex[1], c_ex[2], c_ex[3]);
+    println!(
+        "f16 matmul: [{:.1}, {:.1}; {:.1}, {:.1}]",
+        c_ex[0], c_ex[1], c_ex[2], c_ex[3]
+    );
 
     // ── gemmStridedBatched ───────────────────────────────
     println!("\n--- gemmStridedBatched ---");
     let a_batch = [1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0_f32]; // 2 batches of 2×2
     let b_batch = [3.0, 4.0, 5.0, 6.0, 1.0, 1.0, 1.0, 1.0_f32];
     let mut c_batch = [0.0_f32; 8];
-    gemm_strided_batched(&a_batch, 4, &b_batch, 4, &mut c_batch, 4, 2, 2, 2, 2, 1.0, 0.0)?;
+    gemm_strided_batched(
+        &a_batch,
+        4,
+        &b_batch,
+        4,
+        &mut c_batch,
+        4,
+        2,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+    )?;
     println!(
         "Batch 0: [{:.1}, {:.1}; {:.1}, {:.1}]",
         c_batch[0], c_batch[1], c_batch[2], c_batch[3]
@@ -102,7 +143,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let lu2 = lu_factorize(&[4.0, 1.0, 1.0, 3.0_f32], 2)?;
     let solver: &dyn Solver = &lu2;
     let x_dyn = solver.solve(&[5.0, 7.0])?;
-    println!("dyn Solver (LU): dim={}, x=[{:.4}, {:.4}]", solver.dimension(), x_dyn[0], x_dyn[1]);
+    println!(
+        "dyn Solver (LU): dim={}, x=[{:.4}, {:.4}]",
+        solver.dimension(),
+        x_dyn[0],
+        x_dyn[1]
+    );
 
     let chol2 = cholesky(&[4.0, 2.0, 2.0, 3.0_f32], 2)?;
     let solver2: &dyn Solver = &chol2;
@@ -116,10 +162,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ── gemmEx with epilogue fusion ─────────────────────────
     println!("\n--- gemmEx with epilogue fusion ---");
-    let a_ep: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b_ep: Vec<u16> = [-3.0, 4.0, 5.0, -6.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a_ep: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b_ep: Vec<u16> = [-3.0, 4.0, 5.0, -6.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c_relu = [0.0_f32; 4];
-    gemm_ex_epilogue(&a_ep, &b_ep, &mut c_relu, 2, 2, 2, 1.0, 0.0, Epilogue::Relu, None)?;
+    gemm_ex_epilogue(
+        &a_ep,
+        &b_ep,
+        &mut c_relu,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+        Epilogue::Relu,
+        None,
+    )?;
     println!(
         "ReLU epilogue: [{:.1}, {:.1}; {:.1}, {:.1}]",
         c_relu[0], c_relu[1], c_relu[2], c_relu[3]
@@ -127,7 +190,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut c_bias = [0.0_f32; 4];
     let bias = [100.0, 200.0_f32];
-    gemm_ex_epilogue(&a_ep, &b_ep, &mut c_bias, 2, 2, 2, 1.0, 0.0, Epilogue::Bias, Some(&bias))?;
+    gemm_ex_epilogue(
+        &a_ep,
+        &b_ep,
+        &mut c_bias,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+        Epilogue::Bias,
+        Some(&bias),
+    )?;
     println!(
         "Bias epilogue: [{:.1}, {:.1}; {:.1}, {:.1}]",
         c_bias[0], c_bias[1], c_bias[2], c_bias[3]

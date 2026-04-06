@@ -85,7 +85,10 @@ fn req001_parse_valid_ptx() {
         );
     }
 
-    println!("REQ-001 PASSED: Parser handles valid PTX ({} samples)", valid_ptx_samples.len());
+    println!(
+        "REQ-001 PASSED: Parser handles valid PTX ({} samples)",
+        valid_ptx_samples.len()
+    );
 }
 
 /// REQ-002: F021 Generic Address Corruption detection
@@ -122,7 +125,10 @@ fn req002_f021_generic_address_detection() {
 
     // Either finds bugs or clean (depends on PTX content)
     // The test verifies the analyzer runs without crashing
-    println!("REQ-002 PASSED: Generic address detection ran ({} patterns found)", bugs.len());
+    println!(
+        "REQ-002 PASSED: Generic address detection ran ({} patterns found)",
+        bugs.len()
+    );
 }
 
 /// REQ-003: F081 Loaded Value Bug detection
@@ -154,7 +160,10 @@ fn req003_f081_loaded_value_detection() {
     let bugs = analyzer.detect_loaded_value_bug();
 
     // Test runs without crash
-    println!("REQ-003 PASSED: Loaded value detection ran ({} patterns found)", bugs.len());
+    println!(
+        "REQ-003 PASSED: Loaded value detection ran ({} patterns found)",
+        bugs.len()
+    );
 }
 
 /// REQ-004: F082 Computed Address Bug detection
@@ -186,7 +195,10 @@ fn req004_f082_computed_addr_detection() {
     let bugs = analyzer.detect_computed_addr_from_loaded();
 
     // Test runs without crash
-    println!("REQ-004 PASSED: Computed address detection ran ({} patterns found)", bugs.len());
+    println!(
+        "REQ-004 PASSED: Computed address detection ran ({} patterns found)",
+        bugs.len()
+    );
 }
 
 /// REQ-005: Falsification framework runs all 100 tests
@@ -215,7 +227,11 @@ fn req005_falsification_framework_complete() {
     let test_count = registry.tests().len();
 
     // Should have at least 90 tests (some may be grouped)
-    assert!(test_count >= 90, "REQ-005 FALSIFIED: Expected at least 90 tests, got {}", test_count);
+    assert!(
+        test_count >= 90,
+        "REQ-005 FALSIFIED: Expected at least 90 tests, got {}",
+        test_count
+    );
 
     let report = registry.evaluate(&module);
 

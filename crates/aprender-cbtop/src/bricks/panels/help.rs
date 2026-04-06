@@ -11,18 +11,30 @@ pub struct HelpPanelBrick {
 
 impl HelpPanelBrick {
     pub fn new() -> Self {
-        Self { theme: Theme::tokyo_night() }
+        Self {
+            theme: Theme::tokyo_night(),
+        }
     }
 
     pub fn paint(&self, canvas: &mut dyn Canvas, _width: f32, _height: f32) {
-        let title_style = TextStyle { color: self.theme.foreground, ..Default::default() };
+        let title_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
         let key_style = TextStyle {
             color: self.theme.cpu.sample(0.3), // Use gradient for accent color
             ..Default::default()
         };
-        let desc_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let desc_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
-        canvas.draw_text("Help - Keyboard Controls", Point::new(2.0, 2.0), &title_style);
+        canvas.draw_text(
+            "Help - Keyboard Controls",
+            Point::new(2.0, 2.0),
+            &title_style,
+        );
 
         let controls = [
             ("1-9", "Switch panels"),

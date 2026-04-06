@@ -186,7 +186,11 @@ fn assemble_sorted_result(
     min_mn: usize,
 ) -> SvdResult {
     let mut indices: Vec<usize> = (0..min_mn).collect();
-    indices.sort_by(|&a, &b| sigma[b].partial_cmp(&sigma[a]).unwrap_or(std::cmp::Ordering::Equal));
+    indices.sort_by(|&a, &b| {
+        sigma[b]
+            .partial_cmp(&sigma[a])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut sigma_sorted = vec![0.0f32; min_mn];
     let mut u_sorted = vec![0.0f32; m * m];
@@ -217,5 +221,11 @@ fn assemble_sorted_result(
         }
     }
 
-    SvdResult { u: u_sorted, sigma: sigma_sorted, vt, m, n }
+    SvdResult {
+        u: u_sorted,
+        sigma: sigma_sorted,
+        vt,
+        m,
+        n,
+    }
 }

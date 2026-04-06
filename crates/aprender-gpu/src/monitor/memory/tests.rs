@@ -6,30 +6,66 @@ use super::*;
 
 #[test]
 fn h011_pressure_level_from_percent_ok() {
-    assert_eq!(PressureLevel::from_available_percent(100.0), PressureLevel::Ok);
-    assert_eq!(PressureLevel::from_available_percent(75.0), PressureLevel::Ok);
-    assert_eq!(PressureLevel::from_available_percent(50.0), PressureLevel::Ok);
+    assert_eq!(
+        PressureLevel::from_available_percent(100.0),
+        PressureLevel::Ok
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(75.0),
+        PressureLevel::Ok
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(50.0),
+        PressureLevel::Ok
+    );
 }
 
 #[test]
 fn h011_pressure_level_from_percent_elevated() {
-    assert_eq!(PressureLevel::from_available_percent(49.9), PressureLevel::Elevated);
-    assert_eq!(PressureLevel::from_available_percent(40.0), PressureLevel::Elevated);
-    assert_eq!(PressureLevel::from_available_percent(30.0), PressureLevel::Elevated);
+    assert_eq!(
+        PressureLevel::from_available_percent(49.9),
+        PressureLevel::Elevated
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(40.0),
+        PressureLevel::Elevated
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(30.0),
+        PressureLevel::Elevated
+    );
 }
 
 #[test]
 fn h011_pressure_level_from_percent_warning() {
-    assert_eq!(PressureLevel::from_available_percent(29.9), PressureLevel::Warning);
-    assert_eq!(PressureLevel::from_available_percent(20.0), PressureLevel::Warning);
-    assert_eq!(PressureLevel::from_available_percent(15.0), PressureLevel::Warning);
+    assert_eq!(
+        PressureLevel::from_available_percent(29.9),
+        PressureLevel::Warning
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(20.0),
+        PressureLevel::Warning
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(15.0),
+        PressureLevel::Warning
+    );
 }
 
 #[test]
 fn h011_pressure_level_from_percent_critical() {
-    assert_eq!(PressureLevel::from_available_percent(14.9), PressureLevel::Critical);
-    assert_eq!(PressureLevel::from_available_percent(5.0), PressureLevel::Critical);
-    assert_eq!(PressureLevel::from_available_percent(0.0), PressureLevel::Critical);
+    assert_eq!(
+        PressureLevel::from_available_percent(14.9),
+        PressureLevel::Critical
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(5.0),
+        PressureLevel::Critical
+    );
+    assert_eq!(
+        PressureLevel::from_available_percent(0.0),
+        PressureLevel::Critical
+    );
 }
 
 #[test]
@@ -163,7 +199,10 @@ fn h013_memory_metrics_history_max() {
     }
 
     assert_eq!(metrics.ram_history.len(), MemoryMetrics::MAX_HISTORY_POINTS);
-    assert_eq!(metrics.swap_history.len(), MemoryMetrics::MAX_HISTORY_POINTS);
+    assert_eq!(
+        metrics.swap_history.len(),
+        MemoryMetrics::MAX_HISTORY_POINTS
+    );
 }
 
 // =========================================================================
@@ -172,8 +211,11 @@ fn h013_memory_metrics_history_max() {
 
 #[test]
 fn h014_gpu_vram_new() {
-    let vram =
-        GpuVramMetrics::new(DeviceId::nvidia(0), 8 * 1024 * 1024 * 1024, 24 * 1024 * 1024 * 1024);
+    let vram = GpuVramMetrics::new(
+        DeviceId::nvidia(0),
+        8 * 1024 * 1024 * 1024,
+        24 * 1024 * 1024 * 1024,
+    );
     assert_eq!(vram.device_id, DeviceId::nvidia(0));
     assert_eq!(vram.used_bytes, 8 * 1024 * 1024 * 1024);
     assert_eq!(vram.total_bytes, 24 * 1024 * 1024 * 1024);
@@ -181,8 +223,11 @@ fn h014_gpu_vram_new() {
 
 #[test]
 fn h014_gpu_vram_usage_percent() {
-    let vram =
-        GpuVramMetrics::new(DeviceId::nvidia(0), 6 * 1024 * 1024 * 1024, 24 * 1024 * 1024 * 1024);
+    let vram = GpuVramMetrics::new(
+        DeviceId::nvidia(0),
+        6 * 1024 * 1024 * 1024,
+        24 * 1024 * 1024 * 1024,
+    );
     assert!((vram.usage_percent() - 25.0).abs() < 0.01);
 }
 
@@ -194,15 +239,21 @@ fn h014_gpu_vram_usage_percent_zero() {
 
 #[test]
 fn h014_gpu_vram_available() {
-    let vram =
-        GpuVramMetrics::new(DeviceId::nvidia(0), 8 * 1024 * 1024 * 1024, 24 * 1024 * 1024 * 1024);
+    let vram = GpuVramMetrics::new(
+        DeviceId::nvidia(0),
+        8 * 1024 * 1024 * 1024,
+        24 * 1024 * 1024 * 1024,
+    );
     assert_eq!(vram.available_bytes(), 16 * 1024 * 1024 * 1024);
 }
 
 #[test]
 fn h014_gpu_vram_gb_helpers() {
-    let vram =
-        GpuVramMetrics::new(DeviceId::nvidia(0), 8 * 1024 * 1024 * 1024, 24 * 1024 * 1024 * 1024);
+    let vram = GpuVramMetrics::new(
+        DeviceId::nvidia(0),
+        8 * 1024 * 1024 * 1024,
+        24 * 1024 * 1024 * 1024,
+    );
     assert!((vram.used_gb() - 8.0).abs() < 0.01);
     assert!((vram.total_gb() - 24.0).abs() < 0.01);
 }

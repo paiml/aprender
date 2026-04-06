@@ -43,7 +43,10 @@ impl std::fmt::Display for ToolStatus {
             ToolStatus::Ok => write!(f, "\x1b[32m[OK]\x1b[0m"),
             ToolStatus::Missing => write!(f, "\x1b[31m[MISSING]\x1b[0m"),
             ToolStatus::VersionMismatch { expected, found } => {
-                write!(f, "\x1b[33m[VERSION] expected {expected}, found {found}\x1b[0m")
+                write!(
+                    f,
+                    "\x1b[33m[VERSION] expected {expected}, found {found}\x1b[0m"
+                )
             }
             ToolStatus::Error(msg) => write!(f, "\x1b[31m[ERROR: {msg}]\x1b[0m"),
         }
@@ -61,12 +64,16 @@ fn check_binary(
             let version = if version_args.is_empty() {
                 None
             } else {
-                Command::new(name).args(version_args).output().ok().and_then(|out| {
-                    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                    let combined = format!("{stdout}{stderr}");
-                    version_parser(&combined)
-                })
+                Command::new(name)
+                    .args(version_args)
+                    .output()
+                    .ok()
+                    .and_then(|out| {
+                        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                        let combined = format!("{stdout}{stderr}");
+                        version_parser(&combined)
+                    })
             };
             ToolCheck {
                 name: name.to_string(),
@@ -94,22 +101,28 @@ fn parse_ncu_version(output: &str) -> Option<String> {
 
 /// Parse version from nsys output
 fn parse_nsys_version(output: &str) -> Option<String> {
-    output.lines().find(|l| l.contains("version") || l.contains("Nsight Systems")).and_then(|l| {
-        l.split_whitespace()
-            .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
-            .map(String::from)
-    })
+    output
+        .lines()
+        .find(|l| l.contains("version") || l.contains("Nsight Systems"))
+        .and_then(|l| {
+            l.split_whitespace()
+                .find(|w| w.chars().next().is_some_and(|c| c.is_ascii_digit()))
+                .map(String::from)
+        })
 }
 
 /// Parse nvidia-smi driver version
 #[allow(dead_code)]
 fn parse_nvidia_smi_version(output: &str) -> Option<String> {
-    output.lines().find(|l| l.contains("Driver Version")).and_then(|l| {
-        l.split("Driver Version:")
-            .nth(1)
-            .and_then(|s| s.split_whitespace().next())
-            .map(String::from)
-    })
+    output
+        .lines()
+        .find(|l| l.contains("Driver Version"))
+        .and_then(|l| {
+            l.split("Driver Version:")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(String::from)
+        })
 }
 
 /// Parse perf version
@@ -219,9 +232,11 @@ fn check_perf_paranoid() -> Option<i32> {
 /// Collect all doctor checks (pure data, no I/O to stdout).
 pub fn collect_checks() -> Vec<ToolCheck> {
     vec![
-        check_binary("nvidia-smi", &["--query-gpu=driver_version", "--format=csv,noheader"], |s| {
-            Some(s.trim().to_string())
-        }),
+        check_binary(
+            "nvidia-smi",
+            &["--query-gpu=driver_version", "--format=csv,noheader"],
+            |s| Some(s.trim().to_string()),
+        ),
         {
             // CUDA runtime version from nvcc or nvidia-smi
             let mut check = check_binary("nvcc", &["--version"], |s| {
@@ -238,13 +253,21 @@ pub fn collect_checks() -> Vec<ToolCheck> {
         check_binary("nsys", &["--version"], parse_nsys_version),
         {
             // CUPTI check: look for libcupti.so
-            let cupti_paths =
-                ["/usr/local/cuda/lib64/libcupti.so", "/usr/lib/x86_64-linux-gnu/libcupti.so"];
-            let found = cupti_paths.iter().find(|p| std::path::Path::new(p).exists());
+            let cupti_paths = [
+                "/usr/local/cuda/lib64/libcupti.so",
+                "/usr/lib/x86_64-linux-gnu/libcupti.so",
+            ];
+            let found = cupti_paths
+                .iter()
+                .find(|p| std::path::Path::new(p).exists());
             ToolCheck {
                 name: "CUPTI".to_string(),
                 version: found.map(|p| p.to_string()),
-                status: if found.is_some() { ToolStatus::Ok } else { ToolStatus::Missing },
+                status: if found.is_some() {
+                    ToolStatus::Ok
+                } else {
+                    ToolStatus::Missing
+                },
                 path: found.map(|p| p.to_string()),
             }
         },
@@ -359,7 +382,11 @@ mod tests {
     /// FALSIFY-CGP-011: doctor must handle missing tools gracefully
     #[test]
     fn test_missing_tool_graceful() {
-        let check = check_binary("nonexistent-tool-xyz", &["--version"], parse_generic_version);
+        let check = check_binary(
+            "nonexistent-tool-xyz",
+            &["--version"],
+            parse_generic_version,
+        );
         assert_eq!(check.status, ToolStatus::Missing);
         assert!(check.path.is_none());
     }

@@ -53,8 +53,12 @@ fn test_profile_manager_list() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = ProfileManager::new(temp_dir.path().to_path_buf());
 
-    manager.save_profile(&ProfileConfig::new("profile_a").unwrap()).unwrap();
-    manager.save_profile(&ProfileConfig::new("profile_b").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("profile_a").unwrap())
+        .unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("profile_b").unwrap())
+        .unwrap();
 
     let profiles = manager.list_profiles().unwrap();
     assert_eq!(profiles.len(), 2);
@@ -65,7 +69,9 @@ fn test_profile_manager_list() {
 #[test]
 fn test_profile_overlay() {
     let profile = ProfileConfig::default();
-    let overlay = ProfileOverlay::new().refresh_ms(200).backend(BackendConfig::Cuda);
+    let overlay = ProfileOverlay::new()
+        .refresh_ms(200)
+        .backend(BackendConfig::Cuda);
 
     let merged = overlay.apply(profile);
     assert_eq!(merged.refresh_ms, 200);

@@ -73,7 +73,12 @@ impl CbtopApp {
 
                 self.last_network_stat = Some((total_rx, total_tx, now));
 
-                return NetworkMetrics { rx_bytes: total_rx, tx_bytes: total_tx, rx_rate, tx_rate };
+                return NetworkMetrics {
+                    rx_bytes: total_rx,
+                    tx_bytes: total_tx,
+                    rx_rate,
+                    tx_rate,
+                };
             }
         }
         NetworkMetrics::default()

@@ -11,8 +11,11 @@ fn main() {
     println!("=== Incremental Profile Snapshots Demo ===\n");
 
     // Create snapshot store with keyframe every 5 snapshots
-    let config =
-        SnapshotConfig { keyframe_interval: 5, verify_checksums: true, ..Default::default() };
+    let config = SnapshotConfig {
+        keyframe_interval: 5,
+        verify_checksums: true,
+        ..Default::default()
+    };
     let mut store = IncrementalSnapshotStore::new(config);
 
     // Create 20 sequential snapshots
@@ -41,7 +44,10 @@ fn main() {
     println!("Snapshots stored: {}", store.count());
     println!("Raw size: {} bytes", store.total_raw_size());
     println!("Compressed size: {} bytes", store.total_compressed_size());
-    println!("Compression ratio: {:.1}%", store.compression_ratio() * 100.0);
+    println!(
+        "Compression ratio: {:.1}%",
+        store.compression_ratio() * 100.0
+    );
 
     // Query by fingerprint
     println!("\n=== Query by Workload Fingerprint ===");

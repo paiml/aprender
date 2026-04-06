@@ -75,7 +75,11 @@ impl<'a> Pipeline<'a> {
         // Stage 3: Export student checkpoint
         let output_path = self.export(&student_weights, &student_shapes, &metrics)?;
 
-        Ok(PipelineResult { output_path, metrics, duration_seconds: start.elapsed().as_secs_f64() })
+        Ok(PipelineResult {
+            output_path,
+            metrics,
+            duration_seconds: start.elapsed().as_secs_f64(),
+        })
     }
 
     /// Estimate memory requirements for this configuration.
@@ -120,7 +124,11 @@ impl<'a> Pipeline<'a> {
         &self,
         teacher_path: &Path,
         student_path: &Path,
-    ) -> Result<(TrainingMetrics, HashMap<String, Vec<f32>>, HashMap<String, Vec<usize>>)> {
+    ) -> Result<(
+        TrainingMetrics,
+        HashMap<String, Vec<f32>>,
+        HashMap<String, Vec<usize>>,
+    )> {
         // Load weights from both models
         let (teacher_weights, _teacher_shapes) = load_safetensors_weights(teacher_path)?;
         let (mut student_weights, student_shapes) = load_safetensors_weights(student_path)?;
@@ -165,8 +173,13 @@ impl<'a> Pipeline<'a> {
                 best_loss = best_loss.min(loss);
 
                 // Compute KD gradient: d(loss)/d(student_logits)
-                let grad =
-                    kd_gradient(&student_logits, &teacher_logits, &labels, temperature, alpha);
+                let grad = kd_gradient(
+                    &student_logits,
+                    &teacher_logits,
+                    &labels,
+                    temperature,
+                    alpha,
+                );
 
                 // SGD update in logit space
                 student_logits = &student_logits - &(grad * lr);
@@ -186,7 +199,12 @@ impl<'a> Pipeline<'a> {
         metrics.throughput = (step as f32 * batch_size as f32) / elapsed;
 
         // Write trained logits back into student weight tensor
-        write_logits_to_weights(&mut student_weights, &student_logits, batch_size, num_classes);
+        write_logits_to_weights(
+            &mut student_weights,
+            &student_logits,
+            batch_size,
+            num_classes,
+        );
 
         Ok((metrics, student_weights, student_shapes))
     }
@@ -199,7 +217,10 @@ impl<'a> Pipeline<'a> {
         metrics: &TrainingMetrics,
     ) -> Result<PathBuf> {
         std::fs::create_dir_all(&self.config.output.dir).map_err(|e| EntrenarError::Io {
-            context: format!("creating output directory: {}", self.config.output.dir.display()),
+            context: format!(
+                "creating output directory: {}",
+                self.config.output.dir.display()
+            ),
             source: e,
         })?;
 
@@ -238,9 +259,11 @@ impl<'a> Pipeline<'a> {
             let exporter = entrenar::hf_pipeline::Exporter::new()
                 .output_dir(&self.config.output.dir)
                 .gguf_quantization(entrenar::hf_pipeline::GgufQuantization::Q8_0);
-            exporter.export(&mw, entrenar::hf_pipeline::ExportFormat::GGUF, filename).map_err(
-                |e| EntrenarError::Internal { message: format!("GGUF export failed: {e}") },
-            )?;
+            exporter
+                .export(&mw, entrenar::hf_pipeline::ExportFormat::GGUF, filename)
+                .map_err(|e| EntrenarError::Internal {
+                    message: format!("GGUF export failed: {e}"),
+                })?;
         }
 
         Ok(output_path)
@@ -268,14 +291,18 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
         || model_id.ends_with(".safetensors")
         || model_id.ends_with(".gguf")
     {
-        return Err(EntrenarError::ModelNotFound { path: path.to_path_buf() });
+        return Err(EntrenarError::ModelNotFound {
+            path: path.to_path_buf(),
+        });
     }
 
     // Looks like a HuggingFace model ID (org/model)
     #[cfg(feature = "hub")]
     {
         let fetcher = entrenar::hf_pipeline::HfModelFetcher::new().map_err(|e| {
-            EntrenarError::HuggingFace { message: format!("failed to initialize HF fetcher: {e}") }
+            EntrenarError::HuggingFace {
+                message: format!("failed to initialize HF fetcher: {e}"),
+            }
         })?;
 
         let artifact = fetcher
@@ -298,7 +325,9 @@ fn resolve_model_path(model_id: &str) -> Result<PathBuf> {
             });
         }
 
-        Err(EntrenarError::ModelNotFound { path: path.to_path_buf() })
+        Err(EntrenarError::ModelNotFound {
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -439,9 +468,18 @@ mod tests {
 
     #[test]
     fn test_estimate_params_from_model_id() {
-        assert_eq!(estimate_params_from_model_id("meta-llama/Llama-2-7b"), 7_000_000_000);
-        assert_eq!(estimate_params_from_model_id("TinyLlama/TinyLlama-1.1B"), 1_100_000_000);
-        assert_eq!(estimate_params_from_model_id("microsoft/codebert-base"), 350_000_000);
+        assert_eq!(
+            estimate_params_from_model_id("meta-llama/Llama-2-7b"),
+            7_000_000_000
+        );
+        assert_eq!(
+            estimate_params_from_model_id("TinyLlama/TinyLlama-1.1B"),
+            1_100_000_000
+        );
+        assert_eq!(
+            estimate_params_from_model_id("microsoft/codebert-base"),
+            350_000_000
+        );
     }
 
     #[test]
@@ -775,7 +813,10 @@ mod tests {
         let pipeline = Pipeline::new(&config);
         let result = pipeline.execute();
         // This should succeed - gradient step just won't match any names
-        assert!(result.is_ok(), "Pipeline panicked on mismatched tensors: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Pipeline panicked on mismatched tensors: {result:?}"
+        );
     }
 
     /// Falsification: single-element tensor edge case
@@ -811,6 +852,9 @@ mod tests {
         let pipeline = Pipeline::new(&config);
         // Should NOT panic - should fall back to synthetic logits
         let result = pipeline.execute();
-        assert!(result.is_ok(), "Pipeline panicked on tiny tensor: {result:?}");
+        assert!(
+            result.is_ok(),
+            "Pipeline panicked on tiny tensor: {result:?}"
+        );
     }
 }

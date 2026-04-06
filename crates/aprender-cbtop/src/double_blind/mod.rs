@@ -139,7 +139,10 @@ impl VerificationSession {
 
     /// Get all attempts for an artifact
     pub fn get_attempts(&self, artifact_id: &str) -> Vec<&VerificationAttempt> {
-        self.attempts.iter().filter(|a| a.artifact_id == artifact_id).collect()
+        self.attempts
+            .iter()
+            .filter(|a| a.artifact_id == artifact_id)
+            .collect()
     }
 
     /// Make release decision (System role only)
@@ -155,14 +158,21 @@ impl VerificationSession {
         }
 
         // Check if any attempt successfully falsified
-        let falsified = self.attempts.iter().any(|a| a.result == VerificationResult::Falsified);
+        let falsified = self
+            .attempts
+            .iter()
+            .any(|a| a.result == VerificationResult::Falsified);
 
         // Check if all attempts are inconclusive
-        let all_inconclusive =
-            self.attempts.iter().all(|a| a.result == VerificationResult::Inconclusive);
+        let all_inconclusive = self
+            .attempts
+            .iter()
+            .all(|a| a.result == VerificationResult::Inconclusive);
 
         let decision = if falsified {
-            ReleaseDecision::Rejected { reason: "QA successfully falsified the claim".to_string() }
+            ReleaseDecision::Rejected {
+                reason: "QA successfully falsified the claim".to_string(),
+            }
         } else if all_inconclusive {
             ReleaseDecision::Pending {
                 reason: "All verification attempts were inconclusive".to_string(),

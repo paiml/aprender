@@ -77,24 +77,47 @@ pub struct Dimensions {
 
 impl Default for Dimensions {
     fn default() -> Self {
-        Self { batch: 1, seq_len: 1, num_heads: 1, head_dim: 64, hidden_dim: 1, m: 1, n: 1, k: 1 }
+        Self {
+            batch: 1,
+            seq_len: 1,
+            num_heads: 1,
+            head_dim: 64,
+            hidden_dim: 1,
+            m: 1,
+            n: 1,
+            k: 1,
+        }
     }
 }
 
 impl Dimensions {
     /// Create dimensions for vector operation
     pub fn vector(size: usize) -> Self {
-        Self { n: size, ..Default::default() }
+        Self {
+            n: size,
+            ..Default::default()
+        }
     }
 
     /// Create dimensions for matrix multiplication
     pub fn matmul(m: usize, n: usize, k: usize) -> Self {
-        Self { m, n, k, ..Default::default() }
+        Self {
+            m,
+            n,
+            k,
+            ..Default::default()
+        }
     }
 
     /// Create dimensions for attention
     pub fn attention(batch: usize, seq_len: usize, num_heads: usize, head_dim: usize) -> Self {
-        Self { batch, seq_len, num_heads, head_dim, ..Default::default() }
+        Self {
+            batch,
+            seq_len,
+            num_heads,
+            head_dim,
+            ..Default::default()
+        }
     }
 }
 
@@ -114,7 +137,12 @@ pub struct TensorSpec {
 impl TensorSpec {
     /// Create a new tensor spec
     pub fn new(name: impl Into<String>, shape: Vec<usize>, dtype: DataType) -> Self {
-        Self { name: name.into(), shape, dtype, stride: None }
+        Self {
+            name: name.into(),
+            shape,
+            dtype,
+            stride: None,
+        }
     }
 
     /// Total number of elements
@@ -184,7 +212,11 @@ impl WorkloadSpec {
                 TensorSpec::new("k", vec![batch, seq_len, embed_dim], DataType::F32),
                 TensorSpec::new("v", vec![batch, seq_len, embed_dim], DataType::F32),
             ],
-            outputs: vec![TensorSpec::new("out", vec![batch, seq_len, embed_dim], DataType::F32)],
+            outputs: vec![TensorSpec::new(
+                "out",
+                vec![batch, seq_len, embed_dim],
+                DataType::F32,
+            )],
         }
     }
 

@@ -65,8 +65,11 @@ impl PoisonTrapReport {
     #[must_use]
     #[allow(clippy::cast_precision_loss)]
     pub fn mutation_score(&self) -> f64 {
-        let applicable: Vec<_> =
-            self.results.iter().filter(|(_, r)| !matches!(r, MutantResult::CompileError)).collect();
+        let applicable: Vec<_> = self
+            .results
+            .iter()
+            .filter(|(_, r)| !matches!(r, MutantResult::CompileError))
+            .collect();
 
         if applicable.is_empty() {
             return 1.0;
@@ -191,7 +194,10 @@ mod tests {
 
     #[test]
     fn mutation_score_empty_results() {
-        let report = PoisonTrapReport { results: vec![], sources_processed: 0 };
+        let report = PoisonTrapReport {
+            results: vec![],
+            sources_processed: 0,
+        };
         // Empty is 100% by definition
         assert!((report.mutation_score() - 1.0).abs() < f64::EPSILON);
     }

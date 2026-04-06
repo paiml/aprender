@@ -205,8 +205,11 @@ impl RegisterAllocator {
         // Look up existing counter by matching register prefix
         // (find any existing type that shares this prefix)
         let prefix = ty.register_prefix();
-        let existing_ty_with_prefix =
-            self.type_counters.keys().find(|t| t.register_prefix() == prefix).copied();
+        let existing_ty_with_prefix = self
+            .type_counters
+            .keys()
+            .find(|t| t.register_prefix() == prefix)
+            .copied();
 
         let lookup_ty = existing_ty_with_prefix.unwrap_or(ty);
         let id = *self.type_counters.get(&lookup_ty).unwrap_or(&0);
@@ -264,7 +267,11 @@ impl RegisterAllocator {
         let mut by_prefix: HashMap<&'static str, (PtxType, Vec<&VirtualReg>)> = HashMap::new();
         for vreg in &self.allocated {
             let prefix = vreg.ty().register_prefix();
-            by_prefix.entry(prefix).or_insert_with(|| (vreg.ty(), Vec::new())).1.push(vreg);
+            by_prefix
+                .entry(prefix)
+                .or_insert_with(|| (vreg.ty(), Vec::new()))
+                .1
+                .push(vreg);
         }
 
         // Emit declarations

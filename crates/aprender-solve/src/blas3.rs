@@ -453,11 +453,16 @@ fn validate_bias_if_needed(
     bias: Option<&[f32]>,
     n: usize,
 ) -> Result<Option<&[f32]>, SolverError> {
-    let needs_bias = matches!(epilogue, Epilogue::Bias | Epilogue::BiasRelu | Epilogue::BiasGelu);
+    let needs_bias = matches!(
+        epilogue,
+        Epilogue::Bias | Epilogue::BiasRelu | Epilogue::BiasGelu
+    );
     if !needs_bias {
         return Ok(None);
     }
-    let bv = bias.ok_or(SolverError::InvalidInput { reason: "epilogue requires bias vector" })?;
+    let bv = bias.ok_or(SolverError::InvalidInput {
+        reason: "epilogue requires bias vector",
+    })?;
     if bv.len() != n {
         return Err(SolverError::BufferLengthMismatch {
             expected: n,
@@ -509,7 +514,12 @@ fn validate_buffer(
     cols: usize,
 ) -> Result<(), SolverError> {
     if buf.len() != expected {
-        return Err(SolverError::BufferLengthMismatch { expected, got: buf.len(), rows, cols });
+        return Err(SolverError::BufferLengthMismatch {
+            expected,
+            got: buf.len(),
+            rows,
+            cols,
+        });
     }
     Ok(())
 }

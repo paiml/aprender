@@ -62,7 +62,9 @@ pub(super) fn default_problem_size() -> usize {
 }
 
 pub(super) fn default_threads() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }
 
 /// Backend configuration
@@ -175,15 +177,22 @@ impl ProfileConfig {
 /// Validate profile name
 pub(super) fn validate_profile_name(name: &str) -> ProfileResult<()> {
     if name.is_empty() {
-        return Err(ProfileError::InvalidName("name cannot be empty".to_string()));
+        return Err(ProfileError::InvalidName(
+            "name cannot be empty".to_string(),
+        ));
     }
 
     if name.len() > 64 {
-        return Err(ProfileError::InvalidName("name cannot exceed 64 characters".to_string()));
+        return Err(ProfileError::InvalidName(
+            "name cannot exceed 64 characters".to_string(),
+        ));
     }
 
     // Only allow alphanumeric, underscore, hyphen
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(ProfileError::InvalidName(
             "name can only contain alphanumeric, underscore, or hyphen".to_string(),
         ));

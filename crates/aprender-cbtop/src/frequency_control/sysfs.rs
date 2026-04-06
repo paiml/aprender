@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 /// Read and trim a sysfs file. Returns None on I/O error.
 fn read_sysfs_trimmed(path: &std::path::Path) -> Option<String> {
-    std::fs::read_to_string(path).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 /// Read u64 value from sysfs

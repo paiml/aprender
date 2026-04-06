@@ -442,8 +442,15 @@ fn test_category_coverage() {
     ];
 
     for category in categories {
-        let gates_in_category = IRONMAN_GATES.iter().filter(|g| g.category == category).count();
-        assert!(gates_in_category > 0, "Category {:?} has no gates", category);
+        let gates_in_category = IRONMAN_GATES
+            .iter()
+            .filter(|g| g.category == category)
+            .count();
+        assert!(
+            gates_in_category > 0,
+            "Category {:?} has no gates",
+            category
+        );
     }
 }
 
@@ -451,6 +458,14 @@ fn test_category_coverage() {
 fn test_total_weight_reasonable() {
     // Integration: Total weight is reasonable (100-200 points)
     let total_weight: u32 = IRONMAN_GATES.iter().map(|g| g.weight).sum();
-    assert!(total_weight >= 100, "Total weight too low: {}", total_weight);
-    assert!(total_weight <= 200, "Total weight too high: {}", total_weight);
+    assert!(
+        total_weight >= 100,
+        "Total weight too low: {}",
+        total_weight
+    );
+    assert!(
+        total_weight <= 200,
+        "Total weight too high: {}",
+        total_weight
+    );
 }

@@ -87,7 +87,10 @@ fn test_coalesced_gemv_has_shared_memory() {
     let ptx = kernel.emit_ptx();
 
     // Must declare shared memory for x vector caching
-    assert!(ptx.contains(".shared"), "Coalesced GEMV must use shared memory for x caching");
+    assert!(
+        ptx.contains(".shared"),
+        "Coalesced GEMV must use shared memory for x caching"
+    );
 }
 
 #[test]
@@ -96,7 +99,10 @@ fn test_coalesced_gemv_has_barrier() {
     let ptx = kernel.emit_ptx();
 
     // Must have barrier sync for cooperative loading
-    assert!(ptx.contains("bar.sync"), "Coalesced GEMV must have barrier for cooperative loading");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Coalesced GEMV must have barrier for cooperative loading"
+    );
 }
 
 #[test]
@@ -105,7 +111,10 @@ fn test_coalesced_gemv_has_predicated_load() {
     let ptx = kernel.emit_ptx();
 
     // Must have predicated load for bounds checking
-    assert!(ptx.contains("@%p"), "Coalesced GEMV must use predicated loads for bounds checking");
+    assert!(
+        ptx.contains("@%p"),
+        "Coalesced GEMV must use predicated loads for bounds checking"
+    );
 }
 
 #[test]
@@ -114,5 +123,8 @@ fn test_coalesced_gemv_has_fma() {
     let ptx = kernel.emit_ptx();
 
     // Must use FMA for accumulation
-    assert!(ptx.contains("fma.rn.f32"), "Coalesced GEMV must use FMA for accumulation");
+    assert!(
+        ptx.contains("fma.rn.f32"),
+        "Coalesced GEMV must use FMA for accumulation"
+    );
 }

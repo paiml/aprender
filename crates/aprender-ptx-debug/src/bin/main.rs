@@ -125,7 +125,9 @@ fn apply_analyze_flag(
         }
         "--min-score" => {
             let (next, val) = consume_valued_option(args, i, "--min-score")?;
-            *min_score = val.parse().map_err(|_| "Invalid min-score value".to_string())?;
+            *min_score = val
+                .parse()
+                .map_err(|_| "Invalid min-score value".to_string())?;
             Ok(next)
         }
         "--html" => {
@@ -187,7 +189,10 @@ fn print_json_report(
     println!("  \"confidence\": {:.2},", result.confidence);
     println!("  \"earned_points\": {},", report.earned_points);
     println!("  \"total_points\": {},", report.total_points);
-    println!("  \"critical_bugs_absent\": {}", report.critical_bugs_absent());
+    println!(
+        "  \"critical_bugs_absent\": {}",
+        report.critical_bugs_absent()
+    );
     println!("}}");
 }
 
@@ -247,7 +252,11 @@ fn cmd_analyze(args: &[String]) -> Result<(), String> {
         println!("\nHTML report written to: {}", html_path);
     }
 
-    exit_for_score(&result.falsification_report, result.falsification_score, opts.min_score);
+    exit_for_score(
+        &result.falsification_report,
+        result.falsification_score,
+        opts.min_score,
+    );
 
     Ok(())
 }
@@ -295,7 +304,10 @@ fn parse_gen_fkr_args(args: &[String]) -> Result<GenFkrArgs, String> {
         i += 1;
     }
 
-    Ok(GenFkrArgs { file_path: file_path.ok_or("Missing PTX file argument")?, output_file })
+    Ok(GenFkrArgs {
+        file_path: file_path.ok_or("Missing PTX file argument")?,
+        output_file,
+    })
 }
 
 /// Read a PTX file, parse it, run analysis, and return the result.

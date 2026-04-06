@@ -75,7 +75,10 @@ impl PropagationTracker {
 
     /// Begin tracking a new propagation chain.
     pub fn enter(&mut self, function: String, arg_index: u32) {
-        self.current_path.frames.push(PropagationFrame { function, arg_index });
+        self.current_path.frames.push(PropagationFrame {
+            function,
+            arg_index,
+        });
     }
 
     /// Exit the current frame (pop from the path).
@@ -103,7 +106,12 @@ impl PropagationTracker {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::disallowed_methods)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::disallowed_methods
+)]
 mod tests {
     use super::*;
 
@@ -111,7 +119,10 @@ mod tests {
     fn propagation_path_depth() {
         let mut path = PropagationPath::default();
         assert_eq!(path.depth(), 0);
-        path.frames.push(PropagationFrame { function: "kernel_a".into(), arg_index: 0 });
+        path.frames.push(PropagationFrame {
+            function: "kernel_a".into(),
+            arg_index: 0,
+        });
         assert_eq!(path.depth(), 1);
     }
 
@@ -145,8 +156,14 @@ mod tests {
     fn injection_and_final_use_points() {
         let path = PropagationPath {
             frames: vec![
-                PropagationFrame { function: "entry".into(), arg_index: 0 },
-                PropagationFrame { function: "deep".into(), arg_index: 2 },
+                PropagationFrame {
+                    function: "entry".into(),
+                    arg_index: 0,
+                },
+                PropagationFrame {
+                    function: "deep".into(),
+                    arg_index: 2,
+                },
             ],
         };
         assert_eq!(path.injection_point().unwrap().function, "entry");

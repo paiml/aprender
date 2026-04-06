@@ -23,7 +23,11 @@ fn test_rounding_mode_rn_matches_none() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 1, "Explicit Rn should be compatible with None (default)");
+    assert_eq!(
+        result.len(),
+        1,
+        "Explicit Rn should be compatible with None (default)"
+    );
 }
 
 // Test rounding mode compatibility - None matches explicit Rn
@@ -46,7 +50,11 @@ fn test_rounding_mode_none_matches_rn() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 1, "None should be compatible with explicit Rn");
+    assert_eq!(
+        result.len(),
+        1,
+        "None should be compatible with explicit Rn"
+    );
 }
 
 // Test rounding mode compatibility - same explicit non-Rn modes
@@ -73,7 +81,11 @@ fn test_rounding_mode_same_explicit_mode() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 1, "Same explicit rounding modes should be compatible");
+    assert_eq!(
+        result.len(),
+        1,
+        "Same explicit rounding modes should be compatible"
+    );
 }
 
 // Test incompatible rounding modes prevent fusion
@@ -100,7 +112,11 @@ fn test_incompatible_rounding_modes_prevent_fusion() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Incompatible rounding modes should prevent fusion");
+    assert_eq!(
+        result.len(),
+        2,
+        "Incompatible rounding modes should prevent fusion"
+    );
 }
 
 // Test non-Rn mode with None is incompatible
@@ -123,7 +139,11 @@ fn test_non_rn_with_none_incompatible() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Non-Rn mode with implicit None should be incompatible");
+    assert_eq!(
+        result.len(),
+        2,
+        "Non-Rn mode with implicit None should be incompatible"
+    );
 }
 
 // Test rounding_modes_compatible directly
@@ -137,16 +157,34 @@ fn test_rounding_modes_compatible_direct() {
     assert!(rounding_modes_compatible(Some(&RoundingMode::Rn), None));
 
     // Both Rn
-    assert!(rounding_modes_compatible(Some(&RoundingMode::Rn), Some(&RoundingMode::Rn)));
+    assert!(rounding_modes_compatible(
+        Some(&RoundingMode::Rn),
+        Some(&RoundingMode::Rn)
+    ));
 
     // Same non-default modes
-    assert!(rounding_modes_compatible(Some(&RoundingMode::Rz), Some(&RoundingMode::Rz)));
-    assert!(rounding_modes_compatible(Some(&RoundingMode::Rp), Some(&RoundingMode::Rp)));
-    assert!(rounding_modes_compatible(Some(&RoundingMode::Rm), Some(&RoundingMode::Rm)));
+    assert!(rounding_modes_compatible(
+        Some(&RoundingMode::Rz),
+        Some(&RoundingMode::Rz)
+    ));
+    assert!(rounding_modes_compatible(
+        Some(&RoundingMode::Rp),
+        Some(&RoundingMode::Rp)
+    ));
+    assert!(rounding_modes_compatible(
+        Some(&RoundingMode::Rm),
+        Some(&RoundingMode::Rm)
+    ));
 
     // Different explicit modes
-    assert!(!rounding_modes_compatible(Some(&RoundingMode::Rn), Some(&RoundingMode::Rz)));
-    assert!(!rounding_modes_compatible(Some(&RoundingMode::Rp), Some(&RoundingMode::Rm)));
+    assert!(!rounding_modes_compatible(
+        Some(&RoundingMode::Rn),
+        Some(&RoundingMode::Rz)
+    ));
+    assert!(!rounding_modes_compatible(
+        Some(&RoundingMode::Rp),
+        Some(&RoundingMode::Rm)
+    ));
 
     // Non-Rn with None is incompatible
     assert!(!rounding_modes_compatible(Some(&RoundingMode::Rz), None));
@@ -194,7 +232,9 @@ fn test_add_no_destination() {
     let instructions = vec![
         make_mul(r2, r0, r1),
         // add without destination
-        PtxInstruction::new(PtxOp::Add, PtxType::F32).src(Operand::Reg(r2)).src(Operand::Reg(r0)),
+        PtxInstruction::new(PtxOp::Add, PtxType::F32)
+            .src(Operand::Reg(r2))
+            .src(Operand::Reg(r0)),
     ];
 
     let result = pass(instructions);
@@ -256,7 +296,9 @@ fn test_add_single_source() {
     let instructions = vec![
         make_mul(r1, r0, r0),
         // Malformed add with only 1 source
-        PtxInstruction::new(PtxOp::Add, PtxType::F32).dst(Operand::Reg(r2)).src(Operand::Reg(r1)),
+        PtxInstruction::new(PtxOp::Add, PtxType::F32)
+            .dst(Operand::Reg(r2))
+            .src(Operand::Reg(r1)),
     ];
 
     let result = pass(instructions);

@@ -30,7 +30,9 @@ mod tests {
 
     #[test]
     fn test_error_has_actionable_message() {
-        let err = EntrenarError::ConfigNotFound { path: "/path/to/config.yaml".into() };
+        let err = EntrenarError::ConfigNotFound {
+            path: "/path/to/config.yaml".into(),
+        };
         let msg = err.to_string();
         assert!(msg.contains("config.yaml"));
         assert!(msg.contains("not found"));
@@ -38,8 +40,10 @@ mod tests {
 
     #[test]
     fn test_table_builder_creates_valid_table() {
-        let table =
-            TableBuilder::new().headers(vec!["Name", "Value"]).row(vec!["test", "123"]).build();
+        let table = TableBuilder::new()
+            .headers(vec!["Name", "Value"])
+            .row(vec!["test", "123"])
+            .build();
 
         assert_eq!(table.headers().len(), 2);
         assert_eq!(table.rows().len(), 1);
@@ -47,8 +51,14 @@ mod tests {
 
     #[test]
     fn test_output_format_parsing() {
-        assert!(matches!("json".parse::<OutputFormat>(), Ok(OutputFormat::Json)));
-        assert!(matches!("table".parse::<OutputFormat>(), Ok(OutputFormat::Table)));
+        assert!(matches!(
+            "json".parse::<OutputFormat>(),
+            Ok(OutputFormat::Json)
+        ));
+        assert!(matches!(
+            "table".parse::<OutputFormat>(),
+            Ok(OutputFormat::Table)
+        ));
         assert!("invalid".parse::<OutputFormat>().is_err());
     }
 }

@@ -112,7 +112,10 @@ impl CublasHandle {
             ));
         }
 
-        Ok(Self { handle, tensor_cores: false })
+        Ok(Self {
+            handle,
+            tensor_cores: false,
+        })
     }
 
     /// Create a cuBLAS handle with TF32 tensor cores enabled.
@@ -140,7 +143,10 @@ impl CublasHandle {
             ));
         }
 
-        Ok(Self { handle, tensor_cores: true })
+        Ok(Self {
+            handle,
+            tensor_cores: true,
+        })
     }
 
     /// Bind this handle to a CUDA stream
@@ -395,7 +401,10 @@ impl CublasHandle {
         };
 
         CublasDriver::check(result).map_err(|e| {
-            GpuError::CudaDriver(format!("cublasGemmEx_f8e4m3_f32(m={m}, n={n}, k={k}): {e}"), 0)
+            GpuError::CudaDriver(
+                format!("cublasGemmEx_f8e4m3_f32(m={m}, n={n}, k={k}): {e}"),
+                0,
+            )
         })
     }
 

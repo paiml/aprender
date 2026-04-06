@@ -243,7 +243,10 @@ fn f1130_bandwidth_cliff() {
     let analysis = WorkingSetAnalysis::analyze(4_000_000, 8, 1.0, &config);
 
     // Should trigger L3/RAM boundary
-    assert!(matches!(analysis.cache_level, CacheLevel::L3 | CacheLevel::Ram));
+    assert!(matches!(
+        analysis.cache_level,
+        CacheLevel::L3 | CacheLevel::Ram
+    ));
     assert!(analysis.tiling_recommended);
 }
 

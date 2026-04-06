@@ -31,10 +31,16 @@ impl std::fmt::Display for MlThresholdError {
             Self::FeatureExtractionFailed { reason } => {
                 write!(f, "Feature extraction failed: {}", reason)
             }
-            Self::LowConfidence { confidence, threshold } => {
+            Self::LowConfidence {
+                confidence,
+                threshold,
+            } => {
                 write!(f, "Low confidence {} < {}", confidence, threshold)
             }
-            Self::DriftDetected { metric, drift_score } => {
+            Self::DriftDetected {
+                metric,
+                drift_score,
+            } => {
                 write!(f, "Drift detected in {}: score {:.2}", metric, drift_score)
             }
         }
@@ -137,11 +143,19 @@ impl TimeSeriesFeatures {
         let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
         let std_dev = variance.sqrt();
 
-        let cv = if mean.abs() > 1e-10 { (std_dev / mean) * 100.0 } else { 0.0 };
+        let cv = if mean.abs() > 1e-10 {
+            (std_dev / mean) * 100.0
+        } else {
+            0.0
+        };
 
         // Skewness
         let skewness = if std_dev > 1e-10 {
-            let m3 = values.iter().map(|x| ((x - mean) / std_dev).powi(3)).sum::<f64>() / n;
+            let m3 = values
+                .iter()
+                .map(|x| ((x - mean) / std_dev).powi(3))
+                .sum::<f64>()
+                / n;
             m3
         } else {
             0.0
@@ -149,7 +163,11 @@ impl TimeSeriesFeatures {
 
         // Kurtosis
         let kurtosis = if std_dev > 1e-10 {
-            let m4 = values.iter().map(|x| ((x - mean) / std_dev).powi(4)).sum::<f64>() / n;
+            let m4 = values
+                .iter()
+                .map(|x| ((x - mean) / std_dev).powi(4))
+                .sum::<f64>()
+                / n;
             m4 - 3.0 // Excess kurtosis
         } else {
             0.0
@@ -197,7 +215,13 @@ impl TimeSeriesFeatures {
 
     /// Convert features to vector for model input
     pub fn to_vec(&self) -> Vec<f64> {
-        vec![self.cv, self.skewness, self.kurtosis, self.autocorr_lag1, self.trend_slope]
+        vec![
+            self.cv,
+            self.skewness,
+            self.kurtosis,
+            self.autocorr_lag1,
+            self.trend_slope,
+        ]
     }
 }
 

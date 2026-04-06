@@ -67,7 +67,10 @@ fn f1302_governor_names() {
     assert_eq!(CpuGovernor::parse("performance"), CpuGovernor::Performance);
     assert_eq!(CpuGovernor::parse("powersave"), CpuGovernor::Powersave);
     assert_eq!(CpuGovernor::parse("ondemand"), CpuGovernor::Ondemand);
-    assert_eq!(CpuGovernor::parse("conservative"), CpuGovernor::Conservative);
+    assert_eq!(
+        CpuGovernor::parse("conservative"),
+        CpuGovernor::Conservative
+    );
     assert_eq!(CpuGovernor::parse("schedutil"), CpuGovernor::Schedutil);
     assert_eq!(CpuGovernor::parse("userspace"), CpuGovernor::Userspace);
     assert_eq!(CpuGovernor::parse("unknown_gov"), CpuGovernor::Unknown);
@@ -335,7 +338,10 @@ fn test_default_variance() {
 /// Test empty reading stats
 #[test]
 fn test_empty_reading() {
-    let reading = FrequencyReading { cpus: vec![], timestamp_ns: 0 };
+    let reading = FrequencyReading {
+        cpus: vec![],
+        timestamp_ns: 0,
+    };
 
     assert_eq!(reading.average_mhz(), 0.0);
     assert_eq!(reading.min_mhz(), 0.0);

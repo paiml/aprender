@@ -82,7 +82,9 @@ impl ContextLeakDetector {
     /// Create a new leak detector with the default tolerance (1 MB).
     #[must_use]
     pub fn new() -> Self {
-        Self { tolerance: LEAK_TOLERANCE_BYTES }
+        Self {
+            tolerance: LEAK_TOLERANCE_BYTES,
+        }
     }
 
     /// Create a leak detector with a custom tolerance.
@@ -110,7 +112,12 @@ impl ContextLeakDetector {
             leaks.push(Leak::Memory { bytes: leaked });
         }
 
-        LeakReport { leaks, memory_before, memory_after, tolerance: self.tolerance }
+        LeakReport {
+            leaks,
+            memory_before,
+            memory_after,
+            tolerance: self.tolerance,
+        }
     }
 
     /// Analyze memory snapshots with additional context tracking.
@@ -183,7 +190,10 @@ mod tests {
             &[1, 2, 3], // context 3 is new → leaked
         );
         assert!(report.has_leaks());
-        assert!(report.leaks.iter().any(|l| matches!(l, Leak::Context { context_id: 3 })));
+        assert!(report
+            .leaks
+            .iter()
+            .any(|l| matches!(l, Leak::Context { context_id: 3 })));
     }
 
     #[test]
@@ -238,7 +248,10 @@ mod tests {
     #[test]
     fn total_leaked_bytes_no_memory_leaks() {
         let report = LeakReport {
-            leaks: vec![Leak::Context { context_id: 1 }, Leak::Stream { stream_id: 2 }],
+            leaks: vec![
+                Leak::Context { context_id: 1 },
+                Leak::Stream { stream_id: 2 },
+            ],
             memory_before: 0,
             memory_after: 0,
             tolerance: LEAK_TOLERANCE_BYTES,

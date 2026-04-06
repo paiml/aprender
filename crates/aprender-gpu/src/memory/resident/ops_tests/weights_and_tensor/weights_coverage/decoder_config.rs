@@ -105,7 +105,10 @@ fn test_gpu_conv_frontend_weights_tensor_sizes() {
     };
 
     // Verify tensor sizes match expected dimensions
-    assert_eq!(weights.conv1_weight.len(), hidden * in_channels * kernel_size);
+    assert_eq!(
+        weights.conv1_weight.len(),
+        hidden * in_channels * kernel_size
+    );
     assert_eq!(weights.conv1_bias.len(), hidden);
     assert_eq!(weights.conv2_weight.len(), hidden * hidden * kernel_size);
     assert_eq!(weights.conv2_bias.len(), hidden);
@@ -119,7 +122,11 @@ fn test_gpu_conv_frontend_weights_tensor_sizes() {
 fn test_gpu_encoder_config_copy_trait() {
     use crate::memory::resident::GpuEncoderConfig;
 
-    let config1 = GpuEncoderConfig { d_model: 256, n_heads: 4, ffn_dim: 1024 };
+    let config1 = GpuEncoderConfig {
+        d_model: 256,
+        n_heads: 4,
+        ffn_dim: 1024,
+    };
 
     // Test Copy trait - should work without move
     let config2 = config1;

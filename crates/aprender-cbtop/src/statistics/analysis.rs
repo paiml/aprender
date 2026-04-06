@@ -99,9 +99,22 @@ impl StatisticalAnalysis {
         // Bootstrap confidence interval
         let (ci_lower, ci_upper) = bootstrap_ci(&valid, confidence_level, 10000);
 
-        let cv_percent = if mean != 0.0 { (std_dev / mean.abs()) * 100.0 } else { 0.0 };
+        let cv_percent = if mean != 0.0 {
+            (std_dev / mean.abs()) * 100.0
+        } else {
+            0.0
+        };
 
-        Some(Self { mean, std_dev, std_error, ci_lower, ci_upper, confidence_level, n, cv_percent })
+        Some(Self {
+            mean,
+            std_dev,
+            std_error,
+            ci_lower,
+            ci_upper,
+            confidence_level,
+            n,
+            cv_percent,
+        })
     }
 
     /// Compute with default 95% confidence level
@@ -173,7 +186,12 @@ impl EffectSize {
         let ci_lower = d - 1.96 * se_d;
         let ci_upper = d + 1.96 * se_d;
 
-        Some(Self { cohens_d: d, category, ci_lower, ci_upper })
+        Some(Self {
+            cohens_d: d,
+            category,
+            ci_lower,
+            ci_upper,
+        })
     }
 
     /// Check if effect is practically significant

@@ -23,7 +23,10 @@ use crate::error::SparseError;
 /// Returns error if A.cols() != B.rows().
 pub fn spgemm(a: &CsrMatrix<f32>, b: &CsrMatrix<f32>) -> Result<CsrMatrix<f32>, SparseError> {
     if a.cols() != b.rows() {
-        return Err(SparseError::SpMVDimensionMismatch { matrix_cols: a.cols(), x_len: b.rows() });
+        return Err(SparseError::SpMVDimensionMismatch {
+            matrix_cols: a.cols(),
+            x_len: b.rows(),
+        });
     }
 
     let m = a.rows();

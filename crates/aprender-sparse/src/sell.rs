@@ -62,7 +62,15 @@ impl SellMatrix {
             slice_widths.push(max_len as u32);
 
             // Store in column-major order within the slice
-            fill_slice_data(csr, row_start, actual_rows, c, max_len, &mut col_indices, &mut values);
+            fill_slice_data(
+                csr,
+                row_start,
+                actual_rows,
+                c,
+                max_len,
+                &mut col_indices,
+                &mut values,
+            );
 
             let slice_elements = c * max_len;
             let offset = slice_offsets.last().copied().unwrap_or(0);

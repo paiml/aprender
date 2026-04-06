@@ -16,7 +16,11 @@ fn test_identity_kernel() {
     let out = conv2d(&image, 3, 3, &delta, 3, 3, BorderMode::Zero).expect("ok");
 
     // Interior pixel should be exactly preserved
-    assert!((out[4] - 5.0).abs() < 1e-6, "Identity kernel failed at center: {}", out[4]);
+    assert!(
+        (out[4] - 5.0).abs() < 1e-6,
+        "Identity kernel failed at center: {}",
+        out[4]
+    );
 }
 
 #[test]
@@ -90,7 +94,10 @@ fn test_gaussian_blur_constant_image() {
 
     // Blurring a constant image should give the same constant
     for (i, &v) in blurred.iter().enumerate() {
-        assert!((v - 5.0).abs() < 1e-3, "Gaussian blur changed constant at {i}: {v}");
+        assert!(
+            (v - 5.0).abs() < 1e-3,
+            "Gaussian blur changed constant at {i}: {v}"
+        );
     }
 }
 
@@ -105,7 +112,10 @@ fn test_gaussian_blur_reduces_range() {
     let max_blurred = blurred.iter().copied().fold(0.0f32, f32::max);
 
     // Blurring should reduce the peak
-    assert!(max_blurred < 100.0, "Gaussian blur didn't reduce peak: {max_blurred}");
+    assert!(
+        max_blurred < 100.0,
+        "Gaussian blur didn't reduce peak: {max_blurred}"
+    );
     // Total energy should be approximately conserved
     let sum_orig: f32 = image.iter().sum();
     let sum_blurred: f32 = blurred.iter().sum();
@@ -159,7 +169,11 @@ fn test_sobel_horizontal_edge() {
     let edge_y = h / 2;
     let center_x = w / 2;
     let idx = edge_y * w + center_x;
-    assert!(gy[idx].abs() > 0.1, "Expected vertical gradient at edge: gy={}", gy[idx]);
+    assert!(
+        gy[idx].abs() > 0.1,
+        "Expected vertical gradient at edge: gy={}",
+        gy[idx]
+    );
 }
 
 // ============================================================================
@@ -595,7 +609,11 @@ fn test_resize_bicubic_identity() -> Result<(), Box<dyn std::error::Error>> {
     let image = vec![1.0, 2.0, 3.0, 4.0f32];
     let result = resize(&image, 2, 2, 2, 2, Interpolation::Bicubic)?;
     for i in 0..4 {
-        assert!((result[i] - image[i]).abs() < 0.2, "Bicubic identity at {i}: {}", result[i]);
+        assert!(
+            (result[i] - image[i]).abs() < 0.2,
+            "Bicubic identity at {i}: {}",
+            result[i]
+        );
     }
     Ok(())
 }
@@ -605,7 +623,11 @@ fn test_resize_lanczos_identity() -> Result<(), Box<dyn std::error::Error>> {
     let image = vec![1.0, 2.0, 3.0, 4.0f32];
     let result = resize(&image, 2, 2, 2, 2, Interpolation::Lanczos)?;
     for i in 0..4 {
-        assert!((result[i] - image[i]).abs() < 0.2, "Lanczos identity at {i}: {}", result[i]);
+        assert!(
+            (result[i] - image[i]).abs() < 0.2,
+            "Lanczos identity at {i}: {}",
+            result[i]
+        );
     }
     Ok(())
 }
@@ -941,7 +963,11 @@ fn test_falsify_conv2d_1x1_image() {
     let image = vec![42.0_f32];
     let kernel = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0_f32];
     let out = conv2d(&image, 1, 1, &kernel, 3, 3, BorderMode::Zero).expect("ok");
-    assert!((out[0] - 42.0).abs() < 1e-5, "1×1 identity conv: {}", out[0]);
+    assert!(
+        (out[0] - 42.0).abs() < 1e-5,
+        "1×1 identity conv: {}",
+        out[0]
+    );
 }
 
 #[test]
@@ -950,7 +976,11 @@ fn test_falsify_conv2d_large_kernel() {
     let kernel = vec![1.0 / 25.0; 25]; // 5×5 averaging
     let out = conv2d(&image, 5, 5, &kernel, 5, 5, BorderMode::Clamp).expect("ok");
     // Interior pixel: constant image → same value regardless of kernel
-    assert!((out[12] - 1.0).abs() < 1e-3, "Large kernel on constant: {}", out[12]);
+    assert!(
+        (out[12] - 1.0).abs() < 1e-3,
+        "Large kernel on constant: {}",
+        out[12]
+    );
 }
 
 #[test]
@@ -980,7 +1010,10 @@ fn test_falsify_canny_binary_output() {
     }
     let edges = canny(&image, w, h, 1.0, 0.05, 0.15).expect("ok");
     for (i, &v) in edges.iter().enumerate() {
-        assert!(v.abs() < 1e-5 || (v - 1.0).abs() < 1e-5, "Canny output not binary at {i}: {v}");
+        assert!(
+            v.abs() < 1e-5 || (v - 1.0).abs() < 1e-5,
+            "Canny output not binary at {i}: {v}"
+        );
     }
 }
 
@@ -1011,7 +1044,11 @@ fn test_falsify_resize_1x1() -> Result<(), Box<dyn std::error::Error>> {
         Interpolation::Lanczos,
     ] {
         let result = resize(&image, 1, 1, 1, 1, interp)?;
-        assert!((result[0] - 0.42).abs() < 0.01, "1×1 resize ({interp:?}): {}", result[0]);
+        assert!(
+            (result[0] - 0.42).abs() < 0.01,
+            "1×1 resize ({interp:?}): {}",
+            result[0]
+        );
     }
     Ok(())
 }

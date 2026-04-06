@@ -28,8 +28,12 @@ fn test_interleaved_to_batched_small() {
     let total = seq_len * d_model;
 
     let input: Vec<f32> = (0..total).map(|i| i as f32).collect();
-    let expected =
-        cpu_interleaved_to_batched(&input, seq_len as usize, n_heads as usize, head_dim as usize);
+    let expected = cpu_interleaved_to_batched(
+        &input,
+        seq_len as usize,
+        n_heads as usize,
+        head_dim as usize,
+    );
 
     let input_buf = GpuBuffer::from_host(&ctx, &input).expect("Upload failed");
     let output_buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, total as usize).expect("Alloc failed");
@@ -41,13 +45,19 @@ fn test_interleaved_to_batched_small() {
 
     let threads = 256u32;
     let blocks = (total + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
 
-    let mut args: Vec<*mut std::ffi::c_void> =
-        vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+    let mut args: Vec<*mut std::ffi::c_void> = vec![
+        std::ptr::addr_of!(input_ptr) as *mut _,
+        std::ptr::addr_of!(output_ptr) as *mut _,
+    ];
 
     unsafe {
         stream
@@ -57,7 +67,9 @@ fn test_interleaved_to_batched_small() {
     stream.synchronize().expect("Sync failed");
 
     let mut output = vec![0.0f32; total as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     for i in 0..total as usize {
         assert!(
@@ -100,7 +112,11 @@ fn test_batched_transpose_small() {
     let threads = 256u32;
     let elems_per_batch = rows * cols;
     let blocks_x = (elems_per_batch + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks_x, 1, batch), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks_x, 1, batch),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -121,7 +137,9 @@ fn test_batched_transpose_small() {
     stream.synchronize().expect("Sync failed");
 
     let mut output = vec![0.0f32; total as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     for i in 0..total as usize {
         assert!(
@@ -228,8 +246,12 @@ fn test_batched_to_interleaved_small() {
     let total = seq_len * d_model;
 
     let input: Vec<f32> = (0..total).map(|i| i as f32).collect();
-    let expected =
-        cpu_batched_to_interleaved(&input, seq_len as usize, n_heads as usize, head_dim as usize);
+    let expected = cpu_batched_to_interleaved(
+        &input,
+        seq_len as usize,
+        n_heads as usize,
+        head_dim as usize,
+    );
 
     let input_buf = GpuBuffer::from_host(&ctx, &input).expect("Upload failed");
     let output_buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, total as usize).expect("Alloc failed");
@@ -241,13 +263,19 @@ fn test_batched_to_interleaved_small() {
 
     let threads = 256u32;
     let blocks = (total + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
 
-    let mut args: Vec<*mut std::ffi::c_void> =
-        vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+    let mut args: Vec<*mut std::ffi::c_void> = vec![
+        std::ptr::addr_of!(input_ptr) as *mut _,
+        std::ptr::addr_of!(output_ptr) as *mut _,
+    ];
 
     unsafe {
         stream
@@ -257,7 +285,9 @@ fn test_batched_to_interleaved_small() {
     stream.synchronize().expect("Sync failed");
 
     let mut output = vec![0.0f32; total as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     for i in 0..total as usize {
         assert!(
@@ -305,13 +335,19 @@ fn test_layout_roundtrip() {
 
         let threads = 256u32;
         let blocks = (total + threads - 1) / threads;
-        let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (blocks, 1, 1),
+            block: (threads, 1, 1),
+            shared_mem: 0,
+        };
 
         let input_ptr = orig_buf.as_ptr();
         let output_ptr = batched_buf.as_ptr();
 
-        let mut args: Vec<*mut std::ffi::c_void> =
-            vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+        let mut args: Vec<*mut std::ffi::c_void> = vec![
+            std::ptr::addr_of!(input_ptr) as *mut _,
+            std::ptr::addr_of!(output_ptr) as *mut _,
+        ];
 
         unsafe {
             stream
@@ -328,13 +364,19 @@ fn test_layout_roundtrip() {
 
         let threads = 256u32;
         let blocks = (total + threads - 1) / threads;
-        let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (blocks, 1, 1),
+            block: (threads, 1, 1),
+            shared_mem: 0,
+        };
 
         let input_ptr = batched_buf.as_ptr();
         let output_ptr = result_buf.as_ptr();
 
-        let mut args: Vec<*mut std::ffi::c_void> =
-            vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+        let mut args: Vec<*mut std::ffi::c_void> = vec![
+            std::ptr::addr_of!(input_ptr) as *mut _,
+            std::ptr::addr_of!(output_ptr) as *mut _,
+        ];
 
         unsafe {
             stream
@@ -346,7 +388,9 @@ fn test_layout_roundtrip() {
     stream.synchronize().expect("Sync failed");
 
     let mut result = vec![0.0f32; total as usize];
-    result_buf.copy_to_host(&mut result).expect("Download failed");
+    result_buf
+        .copy_to_host(&mut result)
+        .expect("Download failed");
 
     for i in 0..total as usize {
         assert!(
@@ -376,20 +420,40 @@ fn test_full_attention_pipeline_small() {
     let _d_model = n_heads * head_dim;
 
     let q: Vec<f32> = (0..seq_len * _d_model).map(|i| (i as f32) * 0.1).collect();
-    let k: Vec<f32> = (0..seq_len * _d_model).map(|i| (i as f32) * 0.1 + 0.5).collect();
-    let _v: Vec<f32> = (0..seq_len * _d_model).map(|i| (i as f32) * 0.1 - 0.3).collect();
+    let k: Vec<f32> = (0..seq_len * _d_model)
+        .map(|i| (i as f32) * 0.1 + 0.5)
+        .collect();
+    let _v: Vec<f32> = (0..seq_len * _d_model)
+        .map(|i| (i as f32) * 0.1 - 0.3)
+        .collect();
 
     let q_batched = cpu_interleaved_to_batched(&q, seq_len, n_heads, head_dim);
     let k_batched = cpu_interleaved_to_batched(&k, seq_len, n_heads, head_dim);
     let _v_batched = cpu_interleaved_to_batched(&_v, seq_len, n_heads, head_dim);
 
-    eprintln!("CPU Q batched (head 0, first row): {:?}", &q_batched[..head_dim]);
-    eprintln!("CPU K batched (head 0, first row): {:?}", &k_batched[..head_dim]);
+    eprintln!(
+        "CPU Q batched (head 0, first row): {:?}",
+        &q_batched[..head_dim]
+    );
+    eprintln!(
+        "CPU K batched (head 0, first row): {:?}",
+        &k_batched[..head_dim]
+    );
 
     let k_transposed = cpu_batched_transpose(&k_batched, n_heads, seq_len, head_dim);
-    eprintln!("CPU K transposed (head 0, first row): {:?}", &k_transposed[..seq_len]);
+    eprintln!(
+        "CPU K transposed (head 0, first row): {:?}",
+        &k_transposed[..seq_len]
+    );
 
-    let scores = cpu_batched_gemm(&q_batched, &k_transposed, n_heads, seq_len, seq_len, head_dim);
+    let scores = cpu_batched_gemm(
+        &q_batched,
+        &k_transposed,
+        n_heads,
+        seq_len,
+        seq_len,
+        head_dim,
+    );
     eprintln!("CPU scores (head 0, first row): {:?}", &scores[..seq_len]);
 
     let _ = ctx; // use ctx to avoid unused warning

@@ -99,7 +99,10 @@ pub struct ComputeGraph {
 impl ComputeGraph {
     /// Create an empty compute graph.
     pub fn new() -> Self {
-        Self { nodes: Vec::new(), n_leafs: 0 }
+        Self {
+            nodes: Vec::new(),
+            n_leafs: 0,
+        }
     }
 
     /// Add a leaf node (input tensor, no operation).
@@ -126,7 +129,13 @@ impl ComputeGraph {
         params: OpParams,
     ) -> usize {
         let idx = self.nodes.len();
-        self.nodes.push(TensorNode { op, data_ptr, shape, inputs, params });
+        self.nodes.push(TensorNode {
+            op,
+            data_ptr,
+            shape,
+            inputs,
+            params,
+        });
         idx
     }
 
@@ -167,7 +176,11 @@ mod tests {
             0x2000,
             [1536, 1, 1, 0],
             vec![input],
-            OpParams { gamma_ptr: 0x3000, scalar: 1e-6, ..Default::default() },
+            OpParams {
+                gamma_ptr: 0x3000,
+                scalar: 1e-6,
+                ..Default::default()
+            },
         );
 
         // MulMat (Q projection)
@@ -176,7 +189,10 @@ mod tests {
             0x4000,
             [1536, 1, 1, 0],
             vec![normed],
-            OpParams { weight_ptr: 0x5000, ..Default::default() },
+            OpParams {
+                weight_ptr: 0x5000,
+                ..Default::default()
+            },
         );
 
         assert_eq!(g.nodes.len(), 3);

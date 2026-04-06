@@ -92,7 +92,10 @@ fn bias_activation_ptx_structure_none() {
     assert!(ptx.contains("add.f32"));
 
     // None activation should NOT have max or ex2
-    assert!(!ptx.contains("max.f32"), "None activation should not have max");
+    assert!(
+        !ptx.contains("max.f32"),
+        "None activation should not have max"
+    );
 }
 
 #[test]
@@ -107,7 +110,10 @@ fn bias_activation_ptx_structure_relu() {
     assert!(ptx.contains("max.f32"), "ReLU requires max.f32 instruction");
 
     // ReLU should NOT have ex2 (GELU instruction)
-    assert!(!ptx.contains("ex2.approx"), "ReLU should not have GELU ex2 instruction");
+    assert!(
+        !ptx.contains("ex2.approx"),
+        "ReLU should not have GELU ex2 instruction"
+    );
 }
 
 #[test]
@@ -144,9 +150,21 @@ fn bias_activation_all_variants_valid_ptx() {
         let ptx = kernel.emit_ptx();
 
         // All variants must have valid PTX
-        assert!(ptx.contains(".version"), "{:?} missing PTX version", activation);
-        assert!(ptx.contains(".entry"), "{:?} missing entry point", activation);
-        assert!(ptx.contains("ret;"), "{:?} missing return statement", activation);
+        assert!(
+            ptx.contains(".version"),
+            "{:?} missing PTX version",
+            activation
+        );
+        assert!(
+            ptx.contains(".entry"),
+            "{:?} missing entry point",
+            activation
+        );
+        assert!(
+            ptx.contains("ret;"),
+            "{:?} missing return statement",
+            activation
+        );
     }
 }
 
@@ -166,8 +184,18 @@ fn bias_activation_various_sizes() {
         let kernel = BiasActivationKernel::new(n, bias_size).with_gelu();
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains(".entry"), "Failed for n={}, bias_size={}", n, bias_size);
-        assert!(ptx.contains("rem.u32"), "Missing modulo for n={}, bias_size={}", n, bias_size);
+        assert!(
+            ptx.contains(".entry"),
+            "Failed for n={}, bias_size={}",
+            n,
+            bias_size
+        );
+        assert!(
+            ptx.contains("rem.u32"),
+            "Missing modulo for n={}, bias_size={}",
+            n,
+            bias_size
+        );
     }
 }
 
@@ -198,7 +226,10 @@ fn gemv_ptx_structure() {
     );
 
     // Must use FMA for dot product
-    assert!(ptx.contains("fma.rn.f32") || ptx.contains("mad.f32"), "GEMV should use FMA");
+    assert!(
+        ptx.contains("fma.rn.f32") || ptx.contains("mad.f32"),
+        "GEMV should use FMA"
+    );
 }
 
 #[test]
@@ -216,7 +247,12 @@ fn gemv_various_dimensions() {
         let ptx = kernel.emit_ptx();
 
         assert!(ptx.contains(".entry"), "Failed for k={}, n={}", k, n);
-        assert!(ptx.contains("shfl"), "Missing warp shuffle for k={}, n={}", k, n);
+        assert!(
+            ptx.contains("shfl"),
+            "Missing warp shuffle for k={}, n={}",
+            k,
+            n
+        );
     }
 }
 
@@ -226,9 +262,18 @@ fn gemv_various_dimensions() {
 
 #[test]
 fn kernel_names_correct() {
-    assert_eq!(BiasActivationKernel::new(1024, 64).name(), "bias_activation");
-    assert_eq!(BiasActivationKernel::new(1024, 64).with_relu().name(), "bias_activation");
-    assert_eq!(BiasActivationKernel::new(1024, 64).with_gelu().name(), "bias_activation");
+    assert_eq!(
+        BiasActivationKernel::new(1024, 64).name(),
+        "bias_activation"
+    );
+    assert_eq!(
+        BiasActivationKernel::new(1024, 64).with_relu().name(),
+        "bias_activation"
+    );
+    assert_eq!(
+        BiasActivationKernel::new(1024, 64).with_gelu().name(),
+        "bias_activation"
+    );
     assert_eq!(GemvKernel::new(4096, 4096).name(), "gemv_warp_reduce");
 }
 
@@ -256,10 +301,22 @@ fn tensor_core_attention_ptx_structure() {
     assert!(ptx.contains(".shared"));
 
     // Must have WMMA instructions
-    assert!(ptx.contains("wmma.load.a"), "Tensor Core kernel should have wmma.load.a");
-    assert!(ptx.contains("wmma.load.b"), "Tensor Core kernel should have wmma.load.b");
-    assert!(ptx.contains("wmma.mma"), "Tensor Core kernel should have wmma.mma");
-    assert!(ptx.contains("wmma.store"), "Tensor Core kernel should have wmma.store");
+    assert!(
+        ptx.contains("wmma.load.a"),
+        "Tensor Core kernel should have wmma.load.a"
+    );
+    assert!(
+        ptx.contains("wmma.load.b"),
+        "Tensor Core kernel should have wmma.load.b"
+    );
+    assert!(
+        ptx.contains("wmma.mma"),
+        "Tensor Core kernel should have wmma.mma"
+    );
+    assert!(
+        ptx.contains("wmma.store"),
+        "Tensor Core kernel should have wmma.store"
+    );
 
     // Must have cvta.shared for generic address conversion (required for WMMA)
     // Note: cvta.shared (without .to) converts shared→generic
@@ -272,7 +329,11 @@ fn tensor_core_attention_ptx_structure() {
 #[test]
 fn tensor_core_attention_ptx_validate_with_ptxas() {
     // Skip if ptxas is not available
-    if std::process::Command::new("ptxas").arg("--version").output().is_err() {
+    if std::process::Command::new("ptxas")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
         println!("Skipping ptxas validation - ptxas not found");
         return;
     }

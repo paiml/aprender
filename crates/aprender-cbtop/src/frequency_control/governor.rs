@@ -30,13 +30,21 @@ const GOVERNOR_SPECS: &[(CpuGovernor, &str)] = &[
 impl CpuGovernor {
     /// Get governor name
     pub fn name(&self) -> &'static str {
-        GOVERNOR_SPECS.iter().find(|(v, _)| v == self).map(|(_, n)| *n).unwrap_or("unknown")
+        GOVERNOR_SPECS
+            .iter()
+            .find(|(v, _)| v == self)
+            .map(|(_, n)| *n)
+            .unwrap_or("unknown")
     }
 
     /// Parse from string
     pub fn parse(s: &str) -> Self {
         let lower = s.trim().to_lowercase();
-        GOVERNOR_SPECS.iter().find(|(_, n)| *n == lower).map(|(v, _)| *v).unwrap_or(Self::Unknown)
+        GOVERNOR_SPECS
+            .iter()
+            .find(|(_, n)| *n == lower)
+            .map(|(v, _)| *v)
+            .unwrap_or(Self::Unknown)
     }
 
     /// Check if deterministic (fixed frequency)

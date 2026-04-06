@@ -69,7 +69,11 @@ mod fkr_011_tests {
 
         let mut module = CudaModule::from_ptx(&cuda_ctx, &ptx).expect("PTX compilation");
 
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output_buf.as_kernel_arg()];
 
@@ -257,7 +261,11 @@ mod fkr_011_tests {
 
         let mut module = CudaModule::from_ptx(&cuda_ctx, &ptx).expect("PTX compilation");
 
-        let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (96, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output_buf.as_kernel_arg()];
 
@@ -273,15 +281,31 @@ mod fkr_011_tests {
         output_buf.copy_to_host(&mut output).unwrap();
 
         println!("=== LZ4 State Pattern Results ===");
-        println!("state[0] (in_pos):   0x{:08X} (expected 0xDEADBEEF)", output[0]);
-        println!("state[1] (out_pos):  0x{:08X} (expected 0xCAFEBABE)", output[1]);
-        println!("state[2] (anchor):   0x{:08X} (expected 0x12345678)", output[2]);
-        println!("state_offset:        {} (expected {})", output[3], STATE_OFFSET);
+        println!(
+            "state[0] (in_pos):   0x{:08X} (expected 0xDEADBEEF)",
+            output[0]
+        );
+        println!(
+            "state[1] (out_pos):  0x{:08X} (expected 0xCAFEBABE)",
+            output[1]
+        );
+        println!(
+            "state[2] (anchor):   0x{:08X} (expected 0x12345678)",
+            output[2]
+        );
+        println!(
+            "state_offset:        {} (expected {})",
+            output[3], STATE_OFFSET
+        );
 
         assert_eq!(output[0], 0xDEADBEEF, "in_pos should be 0xDEADBEEF");
         assert_eq!(output[1], 0xCAFEBABE, "out_pos should be 0xCAFEBABE");
         assert_eq!(output[2], 0x12345678, "anchor should be 0x12345678");
-        assert_eq!(output[3], STATE_OFFSET, "state_offset should be {}", STATE_OFFSET);
+        assert_eq!(
+            output[3], STATE_OFFSET,
+            "state_offset should be {}",
+            STATE_OFFSET
+        );
 
         println!("FKR-011c: LZ4 state pattern PASSED!");
     }

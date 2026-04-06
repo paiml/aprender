@@ -24,7 +24,13 @@ impl MockDevice {
         power_limit: f64,
         temperature: f64,
     ) -> Self {
-        Self { mem_used, mem_total, power_current, power_limit, temperature }
+        Self {
+            mem_used,
+            mem_total,
+            power_current,
+            power_limit,
+            temperature,
+        }
     }
 }
 
@@ -171,7 +177,13 @@ fn h014_mock_device_derived_metrics() {
 
 #[test]
 fn h014_mock_device_mb_gb_helpers() {
-    let mock = MockDevice::new(1024 * 1024 * 1024, 2 * 1024 * 1024 * 1024, 10.0, 100.0, 30.0);
+    let mock = MockDevice::new(
+        1024 * 1024 * 1024,
+        2 * 1024 * 1024 * 1024,
+        10.0,
+        100.0,
+        30.0,
+    );
 
     let used_mb = mock.memory_used_mb().expect("test");
     assert_eq!(used_mb, 1024); // 1 GB = 1024 MB
@@ -290,7 +302,11 @@ fn h019_cpu_active_compute_units() {
     assert!(active.is_ok());
     let count = active.expect("test");
     assert!(count > 0, "Should have at least one active compute unit");
-    assert_eq!(count, cpu.compute_unit_count(), "Active should equal total cores");
+    assert_eq!(
+        count,
+        cpu.compute_unit_count(),
+        "Active should equal total cores"
+    );
 }
 
 // =========================================================================
@@ -302,8 +318,14 @@ fn h020_mock_device_pcie_metrics() {
     let mock = MockDevice::new(0, 0, 0.0, 0.0, 0.0);
 
     // PCIe metrics should return NotSupported
-    assert!(matches!(mock.pcie_tx_bytes_per_sec(), Err(GpuError::NotSupported(_))));
-    assert!(matches!(mock.pcie_rx_bytes_per_sec(), Err(GpuError::NotSupported(_))));
+    assert!(matches!(
+        mock.pcie_tx_bytes_per_sec(),
+        Err(GpuError::NotSupported(_))
+    ));
+    assert!(matches!(
+        mock.pcie_rx_bytes_per_sec(),
+        Err(GpuError::NotSupported(_))
+    ));
     assert_eq!(mock.pcie_generation(), 0);
     assert_eq!(mock.pcie_width(), 0);
 }
@@ -321,7 +343,10 @@ fn h020_mock_device_active_compute_units() {
 fn h020_mock_device_memory_bandwidth() {
     let mock = MockDevice::new(0, 0, 0.0, 0.0, 0.0);
 
-    assert!(matches!(mock.memory_bandwidth_gbps(), Err(GpuError::NotSupported(_))));
+    assert!(matches!(
+        mock.memory_bandwidth_gbps(),
+        Err(GpuError::NotSupported(_))
+    ));
 }
 
 #[test]

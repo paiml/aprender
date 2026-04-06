@@ -62,8 +62,14 @@ impl LayerNormBackwardKernel {
     /// Panics if `hidden_dim` > 32
     #[must_use]
     pub fn new(num_rows: u32, hidden_dim: u32) -> Self {
-        assert!(hidden_dim <= 32, "hidden_dim must be ≤ 32 for warp reduction");
-        Self { num_rows, hidden_dim }
+        assert!(
+            hidden_dim <= 32,
+            "hidden_dim must be ≤ 32 for warp reduction"
+        );
+        Self {
+            num_rows,
+            hidden_dim,
+        }
     }
 }
 

@@ -38,7 +38,9 @@ fn test_ops_linear_without_bias() {
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
 
-    let output = input.linear(&ctx, &weight, None, batch_size, in_features, out_features).unwrap();
+    let output = input
+        .linear(&ctx, &weight, None, batch_size, in_features, out_features)
+        .unwrap();
     assert_eq!(output.len(), (batch_size * out_features) as usize);
 }
 
@@ -58,8 +60,16 @@ fn test_ops_linear_with_bias() {
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
     let bias = GpuResidentTensor::from_host(&ctx, &bias_data).unwrap();
 
-    let output =
-        input.linear(&ctx, &weight, Some(&bias), batch_size, in_features, out_features).unwrap();
+    let output = input
+        .linear(
+            &ctx,
+            &weight,
+            Some(&bias),
+            batch_size,
+            in_features,
+            out_features,
+        )
+        .unwrap();
     assert_eq!(output.len(), (batch_size * out_features) as usize);
 }
 
@@ -155,8 +165,17 @@ fn test_ops_conv1d_dimension_error() {
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
 
-    let result =
-        input.conv1d(&ctx, &weight, None, in_channels, out_channels, kernel_size, 1, 0, seq_len);
+    let result = input.conv1d(
+        &ctx,
+        &weight,
+        None,
+        in_channels,
+        out_channels,
+        kernel_size,
+        1,
+        0,
+        seq_len,
+    );
     assert!(result.is_err());
 }
 
@@ -182,8 +201,9 @@ fn test_ops_interleaved_to_head_first() {
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
     let stream = CudaStream::new(&ctx).unwrap();
 
-    let output =
-        input.interleaved_to_head_first(&ctx, seq_len, n_heads, head_dim, &stream).unwrap();
+    let output = input
+        .interleaved_to_head_first(&ctx, seq_len, n_heads, head_dim, &stream)
+        .unwrap();
     stream.synchronize().unwrap();
 
     // Output shape: [n_heads, seq_len, head_dim] flattened
@@ -266,8 +286,17 @@ fn test_ops_conv1d_weight_dimension_error() {
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
 
-    let result =
-        input.conv1d(&ctx, &weight, None, in_channels, out_channels, kernel_size, 1, 0, seq_len);
+    let result = input.conv1d(
+        &ctx,
+        &weight,
+        None,
+        in_channels,
+        out_channels,
+        kernel_size,
+        1,
+        0,
+        seq_len,
+    );
     assert!(result.is_err());
 }
 
@@ -292,8 +321,16 @@ fn test_ops_linear_with_debug() {
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
     let bias = GpuResidentTensor::from_host(&ctx, &bias_data).unwrap();
 
-    let output =
-        input.linear(&ctx, &weight, Some(&bias), batch_size, in_features, out_features).unwrap();
+    let output = input
+        .linear(
+            &ctx,
+            &weight,
+            Some(&bias),
+            batch_size,
+            in_features,
+            out_features,
+        )
+        .unwrap();
     assert_eq!(output.len(), (batch_size * out_features) as usize);
 
     std::env::remove_var("WHISPER_DEBUG_LINEAR");
@@ -319,7 +356,9 @@ fn test_ops_linear_without_bias_and_debug() {
     let weight = GpuResidentTensor::from_host(&ctx, &weight_data).unwrap();
 
     // Call without bias to exercise that code path
-    let output = input.linear(&ctx, &weight, None, batch_size, in_features, out_features).unwrap();
+    let output = input
+        .linear(&ctx, &weight, None, batch_size, in_features, out_features)
+        .unwrap();
     assert_eq!(output.len(), (batch_size * out_features) as usize);
 
     std::env::remove_var("WHISPER_DEBUG_LINEAR");
@@ -364,13 +403,16 @@ fn test_ops_interleaved_to_head_first_larger() {
     let head_dim = 64u32;
 
     let d_model = n_heads * head_dim;
-    let input_data: Vec<f32> = (0..(seq_len * d_model)).map(|i| i as f32 * 0.0001).collect();
+    let input_data: Vec<f32> = (0..(seq_len * d_model))
+        .map(|i| i as f32 * 0.0001)
+        .collect();
 
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
     let stream = CudaStream::new(&ctx).unwrap();
 
-    let output =
-        input.interleaved_to_head_first(&ctx, seq_len, n_heads, head_dim, &stream).unwrap();
+    let output = input
+        .interleaved_to_head_first(&ctx, seq_len, n_heads, head_dim, &stream)
+        .unwrap();
     stream.synchronize().unwrap();
 
     assert_eq!(output.len(), (seq_len * d_model) as usize);

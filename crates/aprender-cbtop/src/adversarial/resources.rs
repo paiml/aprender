@@ -15,7 +15,10 @@ pub struct BitFlipInjector {
 
 impl Default for BitFlipInjector {
     fn default() -> Self {
-        Self { seed: 42, flip_count: 1 }
+        Self {
+            seed: 42,
+            flip_count: 1,
+        }
     }
 }
 
@@ -36,8 +39,9 @@ impl BitFlipInjector {
         let mut rng_state = self.seed;
         for _ in 0..self.flip_count {
             // LCG: next = (a * state + c) mod m
-            rng_state =
-                rng_state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            rng_state = rng_state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
 
             let byte_idx = (rng_state as usize) % result.len();
             let bit_idx = ((rng_state >> 32) as usize) % 8;
@@ -210,12 +214,15 @@ impl Default for CancellationToken {
 impl CancellationToken {
     /// Create a new cancellation token
     pub fn new() -> Self {
-        Self { cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)) }
+        Self {
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
     }
 
     /// Request cancellation
     pub fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Check if cancelled
@@ -226,14 +233,18 @@ impl CancellationToken {
     /// Return error if cancelled
     pub fn check(&self, operation: &str) -> AdversarialResult<()> {
         if self.is_cancelled() {
-            return Err(AdversarialError::Cancelled { operation: operation.to_string() });
+            return Err(AdversarialError::Cancelled {
+                operation: operation.to_string(),
+            });
         }
         Ok(())
     }
 
     /// Clone the token (same underlying state)
     pub fn clone_token(&self) -> Self {
-        Self { cancelled: std::sync::Arc::clone(&self.cancelled) }
+        Self {
+            cancelled: std::sync::Arc::clone(&self.cancelled),
+        }
     }
 }
 
@@ -263,10 +274,12 @@ impl<S: Clone> RecoveryHandler<S> {
 
     /// Recover from error using checkpoint
     pub fn recover(&self) -> AdversarialResult<S> {
-        self.checkpoint.clone().ok_or_else(|| AdversarialError::RecoveryFailed {
-            original_error: "unknown".to_string(),
-            recovery_error: "no checkpoint available".to_string(),
-        })
+        self.checkpoint
+            .clone()
+            .ok_or_else(|| AdversarialError::RecoveryFailed {
+                original_error: "unknown".to_string(),
+                recovery_error: "no checkpoint available".to_string(),
+            })
     }
 
     /// Try operation with automatic recovery on failure

@@ -51,7 +51,11 @@ impl GpuResidentTensor<f32> {
 
         let threads = 256u32;
         let blocks = ((n as u32) + threads - 1) / threads;
-        let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (blocks, 1, 1),
+            block: (threads, 1, 1),
+            shared_mem: 0,
+        };
 
         let output_ptr = output_buffer.as_ptr();
         let bias_ptr = bias.as_ptr();
@@ -64,7 +68,15 @@ impl GpuResidentTensor<f32> {
             std::ptr::addr_of!(n_val) as *mut _,
         ];
 
-        compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            &stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
         stream.synchronize()?;
 
         Ok(GpuResidentTensor::from_buffer_internal(output_buffer, 1))
@@ -89,7 +101,11 @@ impl GpuResidentTensor<f32> {
 
         let threads = 256u32;
         let blocks = ((n as u32) + threads - 1) / threads;
-        let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (blocks, 1, 1),
+            block: (threads, 1, 1),
+            shared_mem: 0,
+        };
 
         let output_ptr = output_buffer.as_ptr();
         let bias_ptr = bias.as_ptr();
@@ -101,7 +117,15 @@ impl GpuResidentTensor<f32> {
             std::ptr::addr_of!(n_val) as *mut _,
         ];
 
-        compile_lock_launch(ctx, stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
         // NO SYNC - caller controls synchronization
 
         Ok(GpuResidentTensor::from_buffer_internal(output_buffer, 1))
@@ -207,8 +231,10 @@ impl GpuResidentTensor<f32> {
         // Build and compile fused kernel (cached)
         let kernel = FusedGemmBiasGeluKernel::new(batch_size, out_features, in_features);
         let ptx = kernel.emit_ptx();
-        let cache_key =
-            format!("fused_gemm_bias_gelu:{}x{}x{}", batch_size, out_features, in_features);
+        let cache_key = format!(
+            "fused_gemm_bias_gelu:{}x{}x{}",
+            batch_size, out_features, in_features
+        );
         let stream = CudaStream::new(ctx)?;
 
         // Configure launch: 16x16 block, grid covers output matrix
@@ -241,7 +267,15 @@ impl GpuResidentTensor<f32> {
         ];
 
         // Launch fused kernel
-        compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            &stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
         stream.synchronize()?;
 
         Ok(GpuResidentTensor::from_buffer_internal(output_buffer, 1))
@@ -327,8 +361,11 @@ impl GpuResidentTensor<f32> {
         let grid_x = (out_seq_len + block_x - 1) / block_x;
         let grid_y = (out_channels + block_y - 1) / block_y;
 
-        let config =
-            LaunchConfig { grid: (grid_x, grid_y, 1), block: (block_x, block_y, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (grid_x, grid_y, 1),
+            block: (block_x, block_y, 1),
+            shared_mem: 0,
+        };
 
         // Prepare arguments
         let input_ptr = self.as_ptr();
@@ -346,7 +383,15 @@ impl GpuResidentTensor<f32> {
         ];
 
         // Launch kernel
-        compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            &stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
         stream.synchronize()?;
 
         Ok(GpuResidentTensor::from_buffer_internal(output_buffer, 1))

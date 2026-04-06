@@ -19,7 +19,10 @@ pub struct BankConflictInjector {
 
 impl Default for BankConflictInjector {
     fn default() -> Self {
-        Self { num_banks: 32, bank_width_bytes: 4 }
+        Self {
+            num_banks: 32,
+            bank_width_bytes: 4,
+        }
     }
 }
 
@@ -96,13 +99,19 @@ mod tests {
     #[test]
     fn sequential_has_no_serialization() {
         let injector = BankConflictInjector::new();
-        assert_eq!(injector.expected_serialization(AccessPattern::Sequential), 1);
+        assert_eq!(
+            injector.expected_serialization(AccessPattern::Sequential),
+            1
+        );
     }
 
     #[test]
     fn full_conflict_has_32x_serialization() {
         let injector = BankConflictInjector::new();
-        assert_eq!(injector.expected_serialization(AccessPattern::FullConflict), 32);
+        assert_eq!(
+            injector.expected_serialization(AccessPattern::FullConflict),
+            32
+        );
     }
 
     #[test]

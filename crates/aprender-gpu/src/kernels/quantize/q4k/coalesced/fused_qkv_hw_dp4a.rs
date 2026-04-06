@@ -46,7 +46,12 @@ impl FusedQKVHwDp4aQ4KGemvKernel {
     /// Create a new fused K+V DP4A kernel.
     #[must_use]
     pub fn new(hidden_dim: u32, head_dim: u32, num_q_heads: u32, num_kv_heads: u32) -> Self {
-        Self { hidden_dim, head_dim, num_q_heads, num_kv_heads }
+        Self {
+            hidden_dim,
+            head_dim,
+            num_q_heads,
+            num_kv_heads,
+        }
     }
 
     /// KV output dimension (num_kv_heads × head_dim)

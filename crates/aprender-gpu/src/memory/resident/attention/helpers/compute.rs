@@ -130,7 +130,11 @@ pub(in super::super) fn batched_scale_all(
 
     let threads = CUDA_WORKGROUP_SIZE;
     let blocks = (n + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
@@ -165,7 +169,11 @@ pub(in super::super) fn batched_softmax_all(
     let cache_key = format!("batched_softmax:{}:{}", total_rows, row_size);
 
     // One warp (32 threads) per row
-    let config = LaunchConfig { grid: (total_rows, 1, 1), block: (32, 1, 1), shared_mem: 72 };
+    let config = LaunchConfig {
+        grid: (total_rows, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 72,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
@@ -201,7 +209,11 @@ pub(in super::super) fn transpose_matrix(
     let threads = CUDA_WORKGROUP_SIZE;
     let total = rows * cols;
     let blocks = (total + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
@@ -238,7 +250,11 @@ pub(in super::super) fn extract_single_head(
 
     let threads = CUDA_WORKGROUP_SIZE;
     let blocks = (output_size as u32 + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output_buffer.as_ptr();
@@ -273,7 +289,11 @@ pub(in super::super) fn copy_head_to_output(
     let input_size = (seq_len * head_dim) as usize;
     let threads = CUDA_WORKGROUP_SIZE;
     let blocks = (input_size as u32 + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = head_output.as_ptr();
     let output_ptr = output.as_ptr();

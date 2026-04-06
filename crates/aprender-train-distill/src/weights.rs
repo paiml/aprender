@@ -30,9 +30,11 @@ pub fn load_safetensors_weights(
     let mut shapes = HashMap::new();
 
     for name in tensors.names() {
-        let tensor = tensors.tensor(name).map_err(|e| EntrenarError::Serialization {
-            message: format!("failed to read tensor '{name}': {e}"),
-        })?;
+        let tensor = tensors
+            .tensor(name)
+            .map_err(|e| EntrenarError::Serialization {
+                message: format!("failed to read tensor '{name}': {e}"),
+            })?;
 
         let shape: Vec<usize> = tensor.shape().to_vec();
         let float_data: Vec<f32> = match tensor.dtype() {
@@ -40,11 +42,16 @@ pub fn load_safetensors_weights(
             safetensors::Dtype::F16 => {
                 // Convert f16 → f32
                 let halfs: &[u16] = bytemuck::cast_slice(tensor.data());
-                halfs.iter().map(|&h| half::f16::from_bits(h).to_f32()).collect()
+                halfs
+                    .iter()
+                    .map(|&h| half::f16::from_bits(h).to_f32())
+                    .collect()
             }
             safetensors::Dtype::BF16 => {
                 let bits: &[u16] = bytemuck::cast_slice(tensor.data());
-                bits.iter().map(|&b| half::bf16::from_bits(b).to_f32()).collect()
+                bits.iter()
+                    .map(|&b| half::bf16::from_bits(b).to_f32())
+                    .collect()
             }
             other => {
                 return Err(EntrenarError::UnsupportedFormat {
@@ -69,7 +76,10 @@ pub fn weights_to_model_weights(
 ) -> entrenar::hf_pipeline::ModelWeights {
     let mut mw = entrenar::hf_pipeline::ModelWeights::new();
     for (name, data) in weights {
-        let shape = shapes.get(&name).cloned().unwrap_or_else(|| vec![data.len()]);
+        let shape = shapes
+            .get(&name)
+            .cloned()
+            .unwrap_or_else(|| vec![data.len()]);
         mw.add_tensor(name, data, shape);
     }
     mw

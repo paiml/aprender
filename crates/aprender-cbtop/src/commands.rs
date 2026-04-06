@@ -162,15 +162,22 @@ pub(crate) fn run_bench(
 /// Run optimization subcommands (OPT-005)
 pub(crate) fn run_optimize(action: OptimizeAction) -> Result<(), CbtopError> {
     match action {
-        OptimizeAction::Baseline { output, quick, duration } => {
-            run_optimize_baseline(output, quick, duration)
-        }
-        OptimizeAction::Analyze { baseline, format, output } => {
-            run_optimize_analyze(baseline, &format, output)
-        }
-        OptimizeAction::Check { baseline, threshold, quick, format } => {
-            run_optimize_check(baseline, threshold, quick, &format)
-        }
+        OptimizeAction::Baseline {
+            output,
+            quick,
+            duration,
+        } => run_optimize_baseline(output, quick, duration),
+        OptimizeAction::Analyze {
+            baseline,
+            format,
+            output,
+        } => run_optimize_analyze(baseline, &format, output),
+        OptimizeAction::Check {
+            baseline,
+            threshold,
+            quick,
+            format,
+        } => run_optimize_check(baseline, threshold, quick, &format),
     }
 }
 
@@ -181,7 +188,11 @@ fn run_optimize_baseline(
 ) -> Result<(), CbtopError> {
     eprintln!("Collecting baseline measurements...");
 
-    let mut suite = if quick { OptimizationSuite::quick() } else { OptimizationSuite::standard() };
+    let mut suite = if quick {
+        OptimizationSuite::quick()
+    } else {
+        OptimizationSuite::standard()
+    };
     suite.duration = std::time::Duration::from_secs(duration);
 
     let total_configs = suite.workloads.len() * suite.sizes.len() * suite.backends.len();
@@ -266,7 +277,11 @@ fn run_optimize_check(
     let baseline = BaselineReport::load(&baseline_path)?;
 
     // Collect current measurements
-    let suite = if quick { OptimizationSuite::quick() } else { OptimizationSuite::standard() };
+    let suite = if quick {
+        OptimizationSuite::quick()
+    } else {
+        OptimizationSuite::standard()
+    };
     let current = suite.collect_baseline()?;
 
     // Check for regressions

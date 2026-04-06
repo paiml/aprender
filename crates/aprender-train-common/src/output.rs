@@ -145,7 +145,11 @@ impl TableBuilder {
             }
         }
 
-        Table { headers: self.headers, rows: self.rows, column_widths }
+        Table {
+            headers: self.headers,
+            rows: self.rows,
+            column_widths,
+        }
     }
 }
 
@@ -211,7 +215,11 @@ pub struct StructuredOutput<T: Serialize> {
 impl<T: Serialize> StructuredOutput<T> {
     /// Create new structured output.
     pub fn new(data: T) -> Self {
-        Self { data, table_headers: vec![], row_fn: None }
+        Self {
+            data,
+            table_headers: vec![],
+            row_fn: None,
+        }
     }
 
     /// Render as JSON.
@@ -238,7 +246,10 @@ mod tests {
 
     #[test]
     fn test_table_render() {
-        let table = TableBuilder::new().headers(vec!["A", "B"]).row(vec!["1", "2"]).build();
+        let table = TableBuilder::new()
+            .headers(vec!["A", "B"])
+            .row(vec!["1", "2"])
+            .build();
 
         let rendered = table.render();
         assert!(rendered.contains('┌'));
@@ -250,8 +261,10 @@ mod tests {
 
     #[test]
     fn test_table_to_json() {
-        let table =
-            TableBuilder::new().headers(vec!["name", "value"]).row(vec!["test", "123"]).build();
+        let table = TableBuilder::new()
+            .headers(vec!["name", "value"])
+            .row(vec!["test", "123"])
+            .build();
 
         let json = table.to_json();
         assert!(json.contains("\"name\""));
@@ -363,7 +376,10 @@ mod tests {
             value: i32,
         }
 
-        let output = StructuredOutput::new(TestData { name: "test".into(), value: 42 });
+        let output = StructuredOutput::new(TestData {
+            name: "test".into(),
+            value: 42,
+        });
 
         let json = output.to_json();
         assert!(json.contains("\"name\""));

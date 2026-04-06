@@ -14,7 +14,10 @@ fn test_async_d2d_copy_size_mismatch() {
     let mut dst = GpuBuffer::<f32>::new(&ctx, 200).expect("Alloc dst");
 
     let result = unsafe { dst.copy_from_buffer_async(&src, &stream) };
-    assert!(result.is_err(), "Async D2D copy should fail when buffer sizes don't match");
+    assert!(
+        result.is_err(),
+        "Async D2D copy should fail when buffer sizes don't match"
+    );
 }
 
 /// Falsification Test 11: Async partial copy out of bounds
@@ -30,11 +33,17 @@ fn test_async_d2d_copy_at_out_of_bounds() {
 
     // dst out of bounds
     let result = unsafe { dst.copy_from_buffer_at_async(&src, 60, 0, 50, &stream) };
-    assert!(result.is_err(), "Async D2D copy_at should fail when dst out of bounds");
+    assert!(
+        result.is_err(),
+        "Async D2D copy_at should fail when dst out of bounds"
+    );
 
     // src out of bounds
     let result = unsafe { dst.copy_from_buffer_at_async(&src, 0, 30, 50, &stream) };
-    assert!(result.is_err(), "Async D2D copy_at should fail when src out of bounds");
+    assert!(
+        result.is_err(),
+        "Async D2D copy_at should fail when src out of bounds"
+    );
 }
 
 /// Falsification Test 12: Async H2D copy size mismatch
@@ -49,7 +58,10 @@ fn test_async_h2d_copy_size_mismatch() {
     let small_data = vec![1.0f32; 50];
 
     let result = unsafe { buf.copy_from_host_async(&small_data, &stream) };
-    assert!(result.is_err(), "Async H2D copy should fail when host buffer size doesn't match");
+    assert!(
+        result.is_err(),
+        "Async H2D copy should fail when host buffer size doesn't match"
+    );
 }
 
 /// Falsification Test 13: Async D2H copy size mismatch
@@ -64,7 +76,10 @@ fn test_async_d2h_copy_size_mismatch() {
     let mut large_data = vec![0.0f32; 200];
 
     let result = unsafe { buf.copy_to_host_async(&mut large_data, &stream) };
-    assert!(result.is_err(), "Async D2H copy should fail when host buffer size doesn't match");
+    assert!(
+        result.is_err(),
+        "Async D2H copy should fail when host buffer size doesn't match"
+    );
 }
 
 /// Falsification Test 14: Empty buffer operations
@@ -79,14 +94,20 @@ fn test_empty_buffer_operations() {
 
     // All these should succeed as no-ops
     let empty_data: Vec<f32> = vec![];
-    empty_buf.copy_from_host(&empty_data).expect("Empty H2D should succeed");
+    empty_buf
+        .copy_from_host(&empty_data)
+        .expect("Empty H2D should succeed");
 
     let mut empty_out: Vec<f32> = vec![];
-    empty_buf.copy_to_host(&mut empty_out).expect("Empty D2H should succeed");
+    empty_buf
+        .copy_to_host(&mut empty_out)
+        .expect("Empty D2H should succeed");
 
     // D2D with empty buffers
     let mut empty_dst = GpuBuffer::<f32>::new(&ctx, 0).expect("Alloc empty dst");
-    empty_dst.copy_from_buffer(&empty_buf).expect("Empty D2D should succeed");
+    empty_dst
+        .copy_from_buffer(&empty_buf)
+        .expect("Empty D2D should succeed");
 }
 
 /// Falsification Test 15: Partial copy with zero count
@@ -98,8 +119,10 @@ fn test_partial_copy_zero_count() {
     let mut dst = GpuBuffer::<f32>::new(&ctx, 100).expect("Alloc dst");
 
     // Zero count should be a no-op, regardless of offsets
-    dst.copy_from_buffer_at(&src, 0, 0, 0).expect("Zero count D2D should succeed");
-    dst.copy_from_buffer_at(&src, 50, 50, 0).expect("Zero count D2D with offsets should succeed");
+    dst.copy_from_buffer_at(&src, 0, 0, 0)
+        .expect("Zero count D2D should succeed");
+    dst.copy_from_buffer_at(&src, 50, 50, 0)
+        .expect("Zero count D2D with offsets should succeed");
 }
 
 /// Falsification Test 16: Async raw copy bounds check
@@ -118,11 +141,17 @@ fn test_async_raw_copy_bounds_check() {
 
     // dst out of bounds
     let result = unsafe { dst.copy_from_buffer_at_async_raw(&src, 60, 0, 50, stream_handle) };
-    assert!(result.is_err(), "Async raw D2D should fail when dst out of bounds");
+    assert!(
+        result.is_err(),
+        "Async raw D2D should fail when dst out of bounds"
+    );
 
     // src out of bounds
     let result = unsafe { dst.copy_from_buffer_at_async_raw(&src, 0, 30, 50, stream_handle) };
-    assert!(result.is_err(), "Async raw D2D should fail when src out of bounds");
+    assert!(
+        result.is_err(),
+        "Async raw D2D should fail when src out of bounds"
+    );
 
     // Zero count should succeed
     unsafe {

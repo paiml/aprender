@@ -41,9 +41,15 @@ fn inspect_ptx(name: &str, ptx: &str) {
     let result = PtxBugAnalyzer::strict().analyze(ptx);
     println!("\nBug Analyzer Results:");
     println!("  Total bugs: {}", result.bugs.len());
-    println!("  P0 Critical: {}", result.count_by_severity(BugSeverity::Critical));
+    println!(
+        "  P0 Critical: {}",
+        result.count_by_severity(BugSeverity::Critical)
+    );
     println!("  P1 High: {}", result.count_by_severity(BugSeverity::High));
-    println!("  P2 Medium: {}", result.count_by_severity(BugSeverity::Medium));
+    println!(
+        "  P2 Medium: {}",
+        result.count_by_severity(BugSeverity::Medium)
+    );
 
     for bug in &result.bugs {
         println!("  - [{}] {}", bug.class.code(), bug.message);
@@ -67,9 +73,18 @@ fn main() {
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
 
     // Inspect kernels that use shared memory
-    inspect_ptx("gemm_tiled_64", &GemmKernel::tiled(64, 64, 64, 16).emit_ptx());
-    inspect_ptx("gemm_tensor_core", &GemmKernel::tensor_core(64, 64, 64).emit_ptx());
-    inspect_ptx("gemm_wmma_fp16", &GemmKernel::wmma_fp16(64, 64, 64).emit_ptx());
+    inspect_ptx(
+        "gemm_tiled_64",
+        &GemmKernel::tiled(64, 64, 64, 16).emit_ptx(),
+    );
+    inspect_ptx(
+        "gemm_tensor_core",
+        &GemmKernel::tensor_core(64, 64, 64).emit_ptx(),
+    );
+    inspect_ptx(
+        "gemm_wmma_fp16",
+        &GemmKernel::wmma_fp16(64, 64, 64).emit_ptx(),
+    );
     inspect_ptx("softmax_1024", &SoftmaxKernel::new(1024).emit_ptx());
     inspect_ptx("layernorm_256", &LayerNormKernel::new(256).emit_ptx());
     inspect_ptx("attention_64_32", &AttentionKernel::new(64, 32).emit_ptx());

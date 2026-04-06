@@ -50,7 +50,10 @@ impl PrefillAttentionKernel {
     pub fn new(head_dim: u32, heads_per_kv: u32) -> Self {
         assert!(head_dim % 32 == 0, "head_dim must be multiple of 32");
         assert!(heads_per_kv > 0, "heads_per_kv must be > 0");
-        Self { head_dim, heads_per_kv }
+        Self {
+            head_dim,
+            heads_per_kv,
+        }
     }
 }
 

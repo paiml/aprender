@@ -32,7 +32,11 @@ impl CbtopApp {
             return " ".repeat(width);
         }
 
-        let max = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max).max(1.0);
+        let max = data
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(1.0);
         let min = data.iter().cloned().fold(f64::INFINITY, f64::min).min(0.0);
         let range = (max - min).max(1.0);
 
@@ -61,7 +65,11 @@ impl CbtopApp {
             return " ".repeat(width);
         }
 
-        let max = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max).max(1.0);
+        let max = data
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(1.0);
         let min = data.iter().cloned().fold(f64::INFINITY, f64::min).min(0.0);
         let range = (max - min).max(1.0);
 
@@ -132,15 +140,25 @@ impl CbtopApp {
         theme: &Theme,
     ) {
         let y = height as f32 - 1.0;
-        let dim_style = TextStyle { color: theme.dim, ..Default::default() };
+        let dim_style = TextStyle {
+            color: theme.dim,
+            ..Default::default()
+        };
 
         // Load status
         let status = if is_running { "●RUN" } else { "○OFF" };
-        let status_color = if is_running { theme.cpu.sample(0.0) } else { theme.dim };
+        let status_color = if is_running {
+            theme.cpu.sample(0.0)
+        } else {
+            theme.dim
+        };
         canvas.draw_text(
             &format!(" {} ", status),
             Point::new(0.0, y),
-            &TextStyle { color: status_color, ..Default::default() },
+            &TextStyle {
+                color: status_color,
+                ..Default::default()
+            },
         );
 
         // Backend
@@ -160,7 +178,10 @@ impl CbtopApp {
                 metrics.bricks_per_second, metrics.avg_latency_us
             ),
             Point::new(28.0, y),
-            &TextStyle { color: theme.foreground, ..Default::default() },
+            &TextStyle {
+                color: theme.foreground,
+                ..Default::default()
+            },
         );
 
         // PMAT-012 UI-06: GFLOP/s in status bar
@@ -168,12 +189,19 @@ impl CbtopApp {
         canvas.draw_text(
             &format!("│ {:.2} GFLOP/s ", gflops),
             Point::new(55.0, y),
-            &TextStyle { color: theme.cpu.sample(0.3), ..Default::default() },
+            &TextStyle {
+                color: theme.cpu.sample(0.3),
+                ..Default::default()
+            },
         );
 
         // FPS
         if show_fps || frame_avg > 0.0 {
-            let fps = if frame_avg > 0.0 { 1000.0 / frame_avg } else { 0.0 };
+            let fps = if frame_avg > 0.0 {
+                1000.0 / frame_avg
+            } else {
+                0.0
+            };
             canvas.draw_text(
                 &format!("│ {:.0} FPS", fps),
                 Point::new(width as f32 - 10.0, y),

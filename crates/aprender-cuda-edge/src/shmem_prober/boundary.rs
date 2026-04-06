@@ -91,7 +91,10 @@ impl BoundaryProbeReport {
 /// Returns pairs of (`before_offset`, `after_offset`) for each region.
 #[must_use]
 pub fn compute_sentinel_offsets(regions: &[SharedMemoryRegion]) -> Vec<(u64, u64)> {
-    regions.iter().map(|r| (r.sentinel_before_offset(), r.sentinel_after_offset())).collect()
+    regions
+        .iter()
+        .map(|r| (r.sentinel_before_offset(), r.sentinel_after_offset()))
+        .collect()
 }
 
 /// Check sentinel values against expected constants.
@@ -152,7 +155,10 @@ mod tests {
     fn check_sentinels_underflow_corrupted() {
         let violations = check_sentinels(0xBAAD_F00D, SENTINEL_AFTER);
         assert_eq!(violations.len(), 1);
-        assert!(matches!(violations[0], BoundaryViolation::UnderflowCorrupted { .. }));
+        assert!(matches!(
+            violations[0],
+            BoundaryViolation::UnderflowCorrupted { .. }
+        ));
     }
 
     #[test]

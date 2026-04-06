@@ -4,8 +4,9 @@
 pub const DEFAULT_MAX_LABELS: usize = 10;
 
 /// Default histogram buckets
-pub const DEFAULT_BUCKETS: [f64; 11] =
-    [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0];
+pub const DEFAULT_BUCKETS: [f64; 11] = [
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
 
 /// Metric type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +76,9 @@ impl Labels {
 
 /// Escape label value for Prometheus format
 pub fn escape_label_value(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 /// Histogram buckets
@@ -132,7 +135,11 @@ impl HistogramBuckets {
             let bucket_label = if label_str.is_empty() {
                 format!("{{le=\"{}\"}}", boundary)
             } else {
-                format!("{{le=\"{}\",{}}}", boundary, &label_str[1..label_str.len() - 1])
+                format!(
+                    "{{le=\"{}\",{}}}",
+                    boundary,
+                    &label_str[1..label_str.len() - 1]
+                )
             };
             lines.push(format!("{}_bucket{} {}", name, bucket_label, cumulative));
         }
@@ -167,7 +174,11 @@ pub struct MetricDef {
 impl MetricDef {
     /// Create new metric definition
     pub fn new(name: &str, help: &str, metric_type: MetricType) -> Self {
-        Self { name: name.to_string(), help: help.to_string(), metric_type }
+        Self {
+            name: name.to_string(),
+            help: help.to_string(),
+            metric_type,
+        }
     }
 
     /// Format HELP line
@@ -195,7 +206,11 @@ pub struct GaugeValue {
 impl GaugeValue {
     /// Create new gauge value
     pub fn new(value: f64) -> Self {
-        Self { value, labels: Labels::new(), timestamp: None }
+        Self {
+            value,
+            labels: Labels::new(),
+            timestamp: None,
+        }
     }
 
     /// With labels
@@ -213,7 +228,10 @@ impl GaugeValue {
     /// Format as Prometheus line
     pub fn format(&self, name: &str) -> String {
         let label_str = self.labels.format();
-        let ts_str = self.timestamp.map(|t| format!(" {}", t)).unwrap_or_default();
+        let ts_str = self
+            .timestamp
+            .map(|t| format!(" {}", t))
+            .unwrap_or_default();
         format!("{}{} {}{}", name, label_str, self.value, ts_str)
     }
 }
@@ -230,7 +248,10 @@ pub struct CounterValue {
 impl CounterValue {
     /// Create new counter
     pub fn new(value: u64) -> Self {
-        Self { value, labels: Labels::new() }
+        Self {
+            value,
+            labels: Labels::new(),
+        }
     }
 
     /// With labels
@@ -258,12 +279,18 @@ pub struct HistogramValue {
 impl HistogramValue {
     /// Create new histogram
     pub fn new() -> Self {
-        Self { buckets: HistogramBuckets::default(), labels: Labels::new() }
+        Self {
+            buckets: HistogramBuckets::default(),
+            labels: Labels::new(),
+        }
     }
 
     /// With custom buckets
     pub fn with_buckets(boundaries: &[f64]) -> Self {
-        Self { buckets: HistogramBuckets::with_buckets(boundaries), labels: Labels::new() }
+        Self {
+            buckets: HistogramBuckets::with_buckets(boundaries),
+            labels: Labels::new(),
+        }
     }
 
     /// With labels
@@ -300,5 +327,6 @@ pub fn validate_metric_name(name: &str) -> bool {
         return false;
     }
 
-    name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    name.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }

@@ -121,8 +121,14 @@ fn test_u32_s32_separate_prefixes() {
 
     // Declarations: separate .u32 %r<3> and .s32 %ri<2>
     let decls = alloc.emit_declarations();
-    assert!(decls.contains(".reg .u32  %r<3>"), "Missing u32 decl in:\n{decls}");
-    assert!(decls.contains(".reg .s32  %ri<2>"), "Missing s32 decl in:\n{decls}");
+    assert!(
+        decls.contains(".reg .u32  %r<3>"),
+        "Missing u32 decl in:\n{decls}"
+    );
+    assert!(
+        decls.contains(".reg .s32  %ri<2>"),
+        "Missing s32 decl in:\n{decls}"
+    );
 }
 
 #[test]
@@ -204,7 +210,11 @@ fn test_physical_reg() {
 
 #[test]
 fn test_register_pressure_fields() {
-    let pressure = RegisterPressure { max_live: 10, spill_count: 0, utilization: 0.039 };
+    let pressure = RegisterPressure {
+        max_live: 10,
+        spill_count: 0,
+        utilization: 0.039,
+    };
     assert_eq!(pressure.max_live, 10);
     assert_eq!(pressure.spill_count, 0);
     assert!((pressure.utilization - 0.039).abs() < f64::EPSILON);

@@ -28,7 +28,11 @@ impl RopeNeoxKernel {
     /// Create a new NEOX-style RoPE kernel
     #[must_use]
     pub fn new(num_heads: u32, head_dim: u32, theta: f32) -> Self {
-        Self { num_heads, head_dim, theta }
+        Self {
+            num_heads,
+            head_dim,
+            theta,
+        }
     }
 }
 
@@ -128,7 +132,11 @@ impl RopeNeoxIndirectKernel {
     /// Create a new indirect NEOX-style RoPE kernel
     #[must_use]
     pub fn new(num_heads: u32, head_dim: u32, theta: f32) -> Self {
-        Self { num_heads, head_dim, theta }
+        Self {
+            num_heads,
+            head_dim,
+            theta,
+        }
     }
 }
 

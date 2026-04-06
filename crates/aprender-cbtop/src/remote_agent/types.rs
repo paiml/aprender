@@ -14,7 +14,11 @@ pub enum RemoteError {
     /// Authentication failed
     AuthenticationFailed { host: String },
     /// Command execution failed
-    CommandFailed { host: String, exit_code: i32, stderr: String },
+    CommandFailed {
+        host: String,
+        exit_code: i32,
+        stderr: String,
+    },
     /// Timeout waiting for response
     Timeout { host: String, timeout_ms: u64 },
     /// Host not found in pool
@@ -36,8 +40,16 @@ impl std::fmt::Display for RemoteError {
             Self::AuthenticationFailed { host } => {
                 write!(f, "Authentication failed for {}", host)
             }
-            Self::CommandFailed { host, exit_code, stderr } => {
-                write!(f, "Command failed on {} (exit {}): {}", host, exit_code, stderr)
+            Self::CommandFailed {
+                host,
+                exit_code,
+                stderr,
+            } => {
+                write!(
+                    f,
+                    "Command failed on {} (exit {}): {}",
+                    host, exit_code, stderr
+                )
             }
             Self::Timeout { host, timeout_ms } => {
                 write!(f, "Timeout after {}ms waiting for {}", timeout_ms, host)
@@ -237,7 +249,9 @@ impl HostState {
     pub fn record_failure(&mut self, error: &str) {
         self.failure_count += 1;
         if self.failure_count >= 3 {
-            self.health = HostHealth::Unreachable { last_error: error.to_string() };
+            self.health = HostHealth::Unreachable {
+                last_error: error.to_string(),
+            };
         }
     }
 }

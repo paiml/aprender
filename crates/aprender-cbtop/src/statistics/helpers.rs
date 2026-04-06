@@ -36,7 +36,10 @@ pub fn bootstrap_ci(samples: &[f64], confidence_level: f64, iterations: usize) -
     let lower_idx = ((alpha / 2.0) * iterations as f64) as usize;
     let upper_idx = ((1.0 - alpha / 2.0) * iterations as f64) as usize;
 
-    let ci_lower = bootstrap_means.get(lower_idx).copied().unwrap_or(bootstrap_means[0]);
+    let ci_lower = bootstrap_means
+        .get(lower_idx)
+        .copied()
+        .unwrap_or(bootstrap_means[0]);
     let ci_upper = bootstrap_means
         .get(upper_idx.min(iterations - 1))
         .copied()

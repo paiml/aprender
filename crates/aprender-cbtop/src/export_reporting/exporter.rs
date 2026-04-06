@@ -15,11 +15,19 @@ impl ReportExporter {
         let metrics_json: Vec<String> = report
             .metrics
             .iter()
-            .map(|m| format!(r#"{{"name":"{}","value":{},"unit":"{}"}}"#, m.name, m.value, m.unit))
+            .map(|m| {
+                format!(
+                    r#"{{"name":"{}","value":{},"unit":"{}"}}"#,
+                    m.name, m.value, m.unit
+                )
+            })
             .collect();
 
-        let metadata_json: Vec<String> =
-            report.metadata.iter().map(|(k, v)| format!(r#""{}":"{}""#, k, v)).collect();
+        let metadata_json: Vec<String> = report
+            .metadata
+            .iter()
+            .map(|(k, v)| format!(r#""{}":"{}""#, k, v))
+            .collect();
 
         format!(
             r#"{{"title":"{}","timestamp":"{}","workload":"{}","backend":"{}","size":{},"metrics":[{}],"metadata":{{{}}}}}"#,
@@ -66,8 +74,14 @@ impl ReportExporter {
         html.push_str("<style>table{border-collapse:collapse;}th,td{border:1px solid #ccc;padding:8px;}</style>\n");
         html.push_str("</head>\n<body>\n");
         html.push_str(&format!("<h1>{}</h1>\n", report.title));
-        html.push_str(&format!("<p><strong>Workload:</strong> {}</p>\n", report.workload));
-        html.push_str(&format!("<p><strong>Backend:</strong> {}</p>\n", report.backend));
+        html.push_str(&format!(
+            "<p><strong>Workload:</strong> {}</p>\n",
+            report.workload
+        ));
+        html.push_str(&format!(
+            "<p><strong>Backend:</strong> {}</p>\n",
+            report.backend
+        ));
         html.push_str(&format!("<p><strong>Size:</strong> {}</p>\n", report.size));
 
         html.push_str("<h2>Metrics</h2>\n");
@@ -136,7 +150,11 @@ impl ReportExporter {
         if report.has_regressions() {
             md.push_str("\n## Regressions Detected\n\n");
             for e in report.get_regressions() {
-                md.push_str(&format!("- **{}**: {:.2}% change\n", e.metric, e.percent_change()));
+                md.push_str(&format!(
+                    "- **{}**: {:.2}% change\n",
+                    e.metric,
+                    e.percent_change()
+                ));
             }
         }
 

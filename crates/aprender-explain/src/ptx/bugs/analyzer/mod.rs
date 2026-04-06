@@ -32,7 +32,10 @@ impl PtxBugAnalyzer {
     /// Create analyzer with strict mode enabled
     #[must_use]
     pub fn strict() -> Self {
-        Self { strict: true, whitelist: Vec::new() }
+        Self {
+            strict: true,
+            whitelist: Vec::new(),
+        }
     }
 
     /// Add a whitelist entry to suppress warnings
@@ -197,16 +200,24 @@ impl PtxBugAnalyzer {
         // Filter out whitelisted bugs
         bugs.retain(|bug| !self.is_whitelisted(kernel_name.as_ref(), &bug.class));
 
-        PtxBugReport { kernel_name, bugs, lines_analyzed: lines.len(), strict_mode: self.strict }
+        PtxBugReport {
+            kernel_name,
+            bugs,
+            lines_analyzed: lines.len(),
+            strict_mode: self.strict,
+        }
     }
 
     /// Extract kernel name from PTX
     fn extract_kernel_name(&self, ptx: &str) -> Option<String> {
         let entry_pattern = Regex::new(r"\.(?:visible\s+)?\.entry\s+(\w+)")
             .expect("invariant: regex pattern is valid");
-        entry_pattern
-            .captures(ptx)
-            .map(|c| c.get(1).expect("invariant: capture group 1 exists").as_str().to_string())
+        entry_pattern.captures(ptx).map(|c| {
+            c.get(1)
+                .expect("invariant: capture group 1 exists")
+                .as_str()
+                .to_string()
+        })
     }
 }
 

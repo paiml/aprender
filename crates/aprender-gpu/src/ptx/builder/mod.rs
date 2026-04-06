@@ -99,7 +99,11 @@ impl<'a> core::KernelBuilderCore for KernelBuilder<'a> {
 
 impl<'a> KernelBuilder<'a> {
     pub(crate) fn new(registers: &'a mut RegisterAllocator) -> Self {
-        Self { registers, instructions: Vec::new(), labels: Vec::new() }
+        Self {
+            registers,
+            instructions: Vec::new(),
+            labels: Vec::new(),
+        }
     }
 
     // ===== Special Registers =====

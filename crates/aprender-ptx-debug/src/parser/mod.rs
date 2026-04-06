@@ -62,7 +62,11 @@ impl<'a> Parser<'a> {
         let mut lexer = Lexer::new(source);
         let current = lexer.next_token()?;
         let peek = lexer.next_token()?;
-        Ok(Self { lexer, current, peek })
+        Ok(Self {
+            lexer,
+            current,
+            peek,
+        })
     }
 
     /// Parse the PTX source into a module
@@ -237,8 +241,11 @@ impl<'a> Parser<'a> {
         self.advance()?;
 
         // Parse shared memory declaration
-        let name =
-            text.split_whitespace().find(|s| !s.starts_with('.')).unwrap_or("unknown").to_string();
+        let name = text
+            .split_whitespace()
+            .find(|s| !s.starts_with('.'))
+            .unwrap_or("unknown")
+            .to_string();
 
         let size = text
             .split('[')
@@ -247,7 +254,11 @@ impl<'a> Parser<'a> {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        Ok(SharedMemDecl { name, size, ty: PtxType::B8 })
+        Ok(SharedMemDecl {
+            name,
+            size,
+            ty: PtxType::B8,
+        })
     }
 
     fn parse_instruction(&mut self) -> Result<Instruction, ParseError> {
@@ -258,11 +269,22 @@ impl<'a> Parser<'a> {
         let (opcode, modifiers) = self.parse_opcode(&text);
         let operands = self.parse_operands(&text);
 
-        Ok(Instruction { opcode, modifiers, operands, predicate: None, location })
+        Ok(Instruction {
+            opcode,
+            modifiers,
+            operands,
+            predicate: None,
+            location,
+        })
     }
 
     fn parse_opcode(&self, text: &str) -> (Opcode, Vec<Modifier>) {
-        let parts: Vec<&str> = text.split_whitespace().next().unwrap_or("").split('.').collect();
+        let parts: Vec<&str> = text
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .collect();
 
         let opcode = match parts.first().copied() {
             Some(s) => match_str_lookup!(s, Opcode::Unknown,
@@ -292,7 +314,11 @@ impl<'a> Parser<'a> {
             None => Opcode::Unknown,
         };
 
-        let modifiers = parts.iter().skip(1).map(|&m| self.parse_modifier(m)).collect();
+        let modifiers = parts
+            .iter()
+            .skip(1)
+            .map(|&m| self.parse_modifier(m))
+            .collect();
 
         (opcode, modifiers)
     }
@@ -325,7 +351,11 @@ impl<'a> Parser<'a> {
         let mut operands = Vec::new();
 
         // Skip the opcode part
-        let operand_part = text.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
+        let operand_part = text
+            .split_whitespace()
+            .skip(1)
+            .collect::<Vec<_>>()
+            .join(" ");
 
         for part in operand_part.split(',') {
             let trimmed = part.trim();
@@ -388,7 +418,11 @@ mod tests {
         "#;
         let mut parser = Parser::new(ptx).expect("parser creation should succeed");
         let module = parser.parse().expect("parsing should succeed");
-        assert_ne!(module.target, SmTarget::Unknown, "F002: Missing .target directive");
+        assert_ne!(
+            module.target,
+            SmTarget::Unknown,
+            "F002: Missing .target directive"
+        );
     }
 
     // F003: address_size is 32 or 64
@@ -432,7 +466,10 @@ mod tests {
         assert_eq!(module.version, (8, 0));
         assert_eq!(module.target, SmTarget::Sm70);
         assert_eq!(module.address_size, 64);
-        assert!(!module.kernels.is_empty(), "Should have at least one kernel");
+        assert!(
+            !module.kernels.is_empty(),
+            "Should have at least one kernel"
+        );
     }
 
     // Test parsing instructions

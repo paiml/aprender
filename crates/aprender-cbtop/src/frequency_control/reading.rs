@@ -37,7 +37,11 @@ impl FrequencyReading {
 
     /// Shared extremum helper (min or max across core frequencies).
     fn extremum_mhz(&self, cmp: fn(f64, f64) -> f64) -> f64 {
-        self.cpus.iter().map(|c| c.current_mhz()).reduce(cmp).unwrap_or(0.0)
+        self.cpus
+            .iter()
+            .map(|c| c.current_mhz())
+            .reduce(cmp)
+            .unwrap_or(0.0)
     }
 
     /// Check if all cores have same governor
@@ -51,6 +55,9 @@ impl FrequencyReading {
 
     /// Get most common governor
     pub fn common_governor(&self) -> CpuGovernor {
-        self.cpus.first().map(|c| c.governor).unwrap_or(CpuGovernor::Unknown)
+        self.cpus
+            .first()
+            .map(|c| c.governor)
+            .unwrap_or(CpuGovernor::Unknown)
     }
 }

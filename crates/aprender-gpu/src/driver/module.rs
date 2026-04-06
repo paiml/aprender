@@ -89,7 +89,12 @@ fn compile_ptx_to_cubin(
 
     // SAFETY: option arrays are valid for the specified count
     let result = unsafe {
-        (driver.cuLinkCreate)(1, opt_keys.as_mut_ptr(), opt_vals.as_mut_ptr(), &mut link_state)
+        (driver.cuLinkCreate)(
+            1,
+            opt_keys.as_mut_ptr(),
+            opt_vals.as_mut_ptr(),
+            &mut link_state,
+        )
     };
     CudaDriver::check(result)
         .map_err(|e| GpuError::ModuleLoad(format!("cuLinkCreate failed: {e}")))?;
@@ -121,7 +126,9 @@ fn compile_ptx_to_cubin(
     if CudaDriver::check(result).is_err() {
         // Clean up on failure
         unsafe { (driver.cuLinkDestroy)(link_state) };
-        return Err(GpuError::ModuleLoad(format!("cuLinkAddData failed: result={result}")));
+        return Err(GpuError::ModuleLoad(format!(
+            "cuLinkAddData failed: result={result}"
+        )));
     }
 
     // Complete the link and extract cubin
@@ -132,7 +139,9 @@ fn compile_ptx_to_cubin(
     let result = unsafe { (driver.cuLinkComplete)(link_state, &mut cubin_ptr, &mut cubin_size) };
     if CudaDriver::check(result).is_err() {
         unsafe { (driver.cuLinkDestroy)(link_state) };
-        return Err(GpuError::ModuleLoad(format!("cuLinkComplete failed: result={result}")));
+        return Err(GpuError::ModuleLoad(format!(
+            "cuLinkComplete failed: result={result}"
+        )));
     }
 
     // Copy the cubin bytes -- the pointer is owned by link_state and freed on destroy
@@ -142,7 +151,9 @@ fn compile_ptx_to_cubin(
         slice.to_vec()
     } else {
         unsafe { (driver.cuLinkDestroy)(link_state) };
-        return Err(GpuError::ModuleLoad("cuLinkComplete returned null cubin".to_string()));
+        return Err(GpuError::ModuleLoad(
+            "cuLinkComplete returned null cubin".to_string(),
+        ));
     };
 
     // Destroy the link state (frees cubin_ptr)
@@ -192,7 +203,11 @@ impl CudaModule {
         ctx.make_current()?;
 
         let (major, _) = ctx.compute_capability()?;
-        let ptx_patched = if major >= 12 { patch_backward_branches_sm121(ptx) } else { None };
+        let ptx_patched = if major >= 12 {
+            patch_backward_branches_sm121(ptx)
+        } else {
+            None
+        };
         let ptx = ptx_patched.as_deref().unwrap_or(ptx);
 
         let ptx_cstring = CString::new(ptx.as_bytes().to_vec())
@@ -203,17 +218,26 @@ impl CudaModule {
             unsafe { (driver.cuModuleLoadData)(&mut module, ptx_cstring.as_ptr() as *const _) };
 
         CudaDriver::check(result).map_err(|e| {
-            let kernel_name = ptx.lines().find(|l| l.contains(".entry")).unwrap_or("unknown");
+            let kernel_name = ptx
+                .lines()
+                .find(|l| l.contains(".entry"))
+                .unwrap_or("unknown");
             // GH-561: Dump PTX on compilation failure for debugging
             let dump_path = format!("/tmp/ptx-fail-{}.ptx", std::process::id());
             let _ = std::fs::write(&dump_path, ptx);
-            eprintln!("[PTX-FAIL] Invalid PTX dumped to {dump_path} ({} bytes)", ptx.len());
+            eprintln!(
+                "[PTX-FAIL] Invalid PTX dumped to {dump_path} ({} bytes)",
+                ptx.len()
+            );
             GpuError::ModuleLoad(format!(
                 "cuModuleLoadData failed: result={result} (kernel: {kernel_name}), error: {e}"
             ))
         })?;
 
-        Ok(Self { module, functions: HashMap::new() })
+        Ok(Self {
+            module,
+            functions: HashMap::new(),
+        })
     }
 }
 
@@ -266,7 +290,11 @@ impl CudaModule {
         //
         // NOTE: Patching happens BEFORE cache key computation so the cached
         // cubin matches the patched PTX that was actually compiled.
-        let ptx_patched = if major >= 12 { patch_backward_branches_sm121(ptx) } else { None };
+        let ptx_patched = if major >= 12 {
+            patch_backward_branches_sm121(ptx)
+        } else {
+            None
+        };
         let ptx: &str = ptx_patched.as_deref().unwrap_or(ptx);
 
         // Query driver version for cache key
@@ -284,7 +312,10 @@ impl CudaModule {
             let result =
                 unsafe { (driver.cuModuleLoadData)(&mut module, cubin.as_ptr() as *const c_void) };
             if CudaDriver::check(result).is_ok() {
-                return Ok(Self { module, functions: HashMap::new() });
+                return Ok(Self {
+                    module,
+                    functions: HashMap::new(),
+                });
             }
             // Cache corruption or stale cubin -- fall through to JIT compilation.
             // Remove the corrupt cache entry so we don't keep failing.
@@ -321,7 +352,10 @@ impl CudaModule {
             let result =
                 unsafe { (driver.cuModuleLoadData)(&mut module, cubin.as_ptr() as *const c_void) };
             if CudaDriver::check(result).is_ok() {
-                return Ok(Self { module, functions: HashMap::new() });
+                return Ok(Self {
+                    module,
+                    functions: HashMap::new(),
+                });
             }
             // cubin compiled but wouldn't load -- fall through to legacy path
             eprintln!(
@@ -390,14 +424,24 @@ impl CudaModule {
         };
 
         if CudaDriver::check(result).is_ok() {
-            return Ok(Self { module, functions: HashMap::new() });
+            return Ok(Self {
+                module,
+                functions: HashMap::new(),
+            });
         }
 
         // Try 1 failed -- capture diagnostics
-        let kernel_name =
-            ptx.lines().find(|l| l.contains(".entry")).map(|l| l.trim()).unwrap_or("<unknown>");
-        let jit_info = String::from_utf8_lossy(&info_log).trim_end_matches('\0').to_string();
-        let jit_err = String::from_utf8_lossy(&error_log).trim_end_matches('\0').to_string();
+        let kernel_name = ptx
+            .lines()
+            .find(|l| l.contains(".entry"))
+            .map(|l| l.trim())
+            .unwrap_or("<unknown>");
+        let jit_info = String::from_utf8_lossy(&info_log)
+            .trim_end_matches('\0')
+            .to_string();
+        let jit_err = String::from_utf8_lossy(&error_log)
+            .trim_end_matches('\0')
+            .to_string();
 
         eprintln!(
             "[PTX-JIT] Try 1 failed: {kernel_name}, target: sm_{major}{minor}, \
@@ -428,7 +472,10 @@ impl CudaModule {
 
         if CudaDriver::check(result2).is_ok() {
             eprintln!("[PTX-JIT] Fallback succeeded for {kernel_name}");
-            return Ok(Self { module: module2, functions: HashMap::new() });
+            return Ok(Self {
+                module: module2,
+                functions: HashMap::new(),
+            });
         }
 
         // Both attempts failed

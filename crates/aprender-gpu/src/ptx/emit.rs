@@ -19,7 +19,11 @@ impl EmitConfig {
     /// Create a new emit configuration
     #[must_use]
     pub(crate) const fn new() -> Self {
-        Self { include_comments: true, pretty_print: true, debug_info: false }
+        Self {
+            include_comments: true,
+            pretty_print: true,
+            debug_info: false,
+        }
     }
 
     /// Enable debug information
@@ -63,7 +67,10 @@ pub(crate) fn validate_ptx(ptx: &str) -> Result<(), Vec<String>> {
     let open_braces = ptx.matches('{').count();
     let close_braces = ptx.matches('}').count();
     if open_braces != close_braces {
-        errors.push(format!("Unbalanced braces: {} open, {} close", open_braces, close_braces));
+        errors.push(format!(
+            "Unbalanced braces: {} open, {} close",
+            open_braces, close_braces
+        ));
     }
 
     if errors.is_empty() {
@@ -137,7 +144,10 @@ mod tests {
     fn test_emit_ptx_with_config() {
         use crate::ptx::PtxModule;
 
-        let module = PtxModule::new().version(8, 0).target("sm_70").address_size(64);
+        let module = PtxModule::new()
+            .version(8, 0)
+            .target("sm_70")
+            .address_size(64);
 
         let config = EmitConfig::new();
         let ptx = emit_ptx(&module, &config);

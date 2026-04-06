@@ -269,7 +269,11 @@ impl ThresholdLearner {
 
         let mean = Self::mean(&filtered);
         let std_dev = Self::std_dev(&filtered, mean);
-        let cv = if mean.abs() > 1e-10 { (std_dev / mean.abs()) * 100.0 } else { 0.0 };
+        let cv = if mean.abs() > 1e-10 {
+            (std_dev / mean.abs()) * 100.0
+        } else {
+            0.0
+        };
 
         // Compute bounds
         let (lower_bound, upper_bound) = match self.direction {
@@ -277,9 +281,10 @@ impl ThresholdLearner {
                 (f64::NEG_INFINITY, mean + self.warning_multiplier * std_dev)
             }
             ThresholdDirection::Lower => (mean - self.warning_multiplier * std_dev, f64::INFINITY),
-            ThresholdDirection::Both => {
-                (mean - self.warning_multiplier * std_dev, mean + self.warning_multiplier * std_dev)
-            }
+            ThresholdDirection::Both => (
+                mean - self.warning_multiplier * std_dev,
+                mean + self.warning_multiplier * std_dev,
+            ),
         };
 
         let (lower_critical, upper_critical) = match self.direction {

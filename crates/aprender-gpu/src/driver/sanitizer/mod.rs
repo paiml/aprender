@@ -55,7 +55,9 @@ impl SanitizerReport {
             return "✅ No memory violations detected".to_string();
         }
 
-        let registry = AddressRegistry::global().lock().expect("address registry lock poisoned");
+        let registry = AddressRegistry::global()
+            .lock()
+            .expect("address registry lock poisoned");
         let mut output = String::new();
 
         output.push_str(&format!(
@@ -78,7 +80,9 @@ impl SanitizerReport {
             return "✅ No memory violations detected".to_string();
         }
 
-        let registry = AddressRegistry::global().lock().expect("address registry lock poisoned");
+        let registry = AddressRegistry::global()
+            .lock()
+            .expect("address registry lock poisoned");
         let mut output = String::new();
 
         output.push_str(&format!(
@@ -140,7 +144,11 @@ pub fn run_with_sanitizer(args: &[&str]) -> Result<SanitizerReport, std::io::Err
     let violations = SanitizerParser::parse(&combined);
     let success = violations.is_empty() && output.status.success();
 
-    Ok(SanitizerReport { violations, success, raw_output: combined })
+    Ok(SanitizerReport {
+        violations,
+        success,
+        raw_output: combined,
+    })
 }
 
 #[cfg(test)]

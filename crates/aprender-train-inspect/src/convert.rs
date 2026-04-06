@@ -66,7 +66,9 @@ impl FormatConverter {
     ) -> Result<ConversionResult> {
         // Verify input exists
         if !input.exists() {
-            return Err(EntrenarError::ModelNotFound { path: input.to_path_buf() });
+            return Err(EntrenarError::ModelNotFound {
+                path: input.to_path_buf(),
+            });
         }
 
         let start = std::time::Instant::now();
@@ -160,7 +162,9 @@ mod tests {
     fn test_converter_with_quantization() {
         let mut input =
             NamedTempFile::with_suffix(".safetensors").expect("temp file creation should succeed");
-        input.write_all(&[0u8; 100_000]).expect("file write should succeed");
+        input
+            .write_all(&[0u8; 100_000])
+            .expect("file write should succeed");
 
         let temp_dir = TempDir::new().expect("temp file creation should succeed");
         let output = temp_dir.path().join("out.gguf");
@@ -191,15 +195,20 @@ mod tests {
     #[test]
     fn test_quantization_parsing() {
         assert_eq!(
-            "q4_0".parse::<Quantization>().expect("parsing should succeed"),
+            "q4_0"
+                .parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::Q4_0
         );
         assert_eq!(
-            "Q8".parse::<Quantization>().expect("parsing should succeed"),
+            "Q8".parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::Q8_0
         );
         assert_eq!(
-            "fp16".parse::<Quantization>().expect("parsing should succeed"),
+            "fp16"
+                .parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::F16
         );
     }
@@ -207,19 +216,26 @@ mod tests {
     #[test]
     fn test_quantization_parsing_aliases() {
         assert_eq!(
-            "q4".parse::<Quantization>().expect("parsing should succeed"),
+            "q4".parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::Q4_0
         );
         assert_eq!(
-            "4bit".parse::<Quantization>().expect("parsing should succeed"),
+            "4bit"
+                .parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::Q4_0
         );
         assert_eq!(
-            "8bit".parse::<Quantization>().expect("parsing should succeed"),
+            "8bit"
+                .parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::Q8_0
         );
         assert_eq!(
-            "half".parse::<Quantization>().expect("parsing should succeed"),
+            "half"
+                .parse::<Quantization>()
+                .expect("parsing should succeed"),
             Quantization::F16
         );
     }
@@ -284,7 +300,9 @@ mod tests {
     fn test_converter_q8_quantization() {
         let mut input =
             NamedTempFile::with_suffix(".safetensors").expect("temp file creation should succeed");
-        input.write_all(&[0u8; 100_000]).expect("file write should succeed");
+        input
+            .write_all(&[0u8; 100_000])
+            .expect("file write should succeed");
 
         let temp_dir = TempDir::new().expect("temp file creation should succeed");
         let output = temp_dir.path().join("out.gguf");
@@ -303,7 +321,9 @@ mod tests {
     fn test_converter_no_quantization() {
         let mut input =
             NamedTempFile::with_suffix(".safetensors").expect("temp file creation should succeed");
-        input.write_all(&[0u8; 100_000]).expect("file write should succeed");
+        input
+            .write_all(&[0u8; 100_000])
+            .expect("file write should succeed");
 
         let temp_dir = TempDir::new().expect("temp file creation should succeed");
         let output = temp_dir.path().join("out.safetensors");

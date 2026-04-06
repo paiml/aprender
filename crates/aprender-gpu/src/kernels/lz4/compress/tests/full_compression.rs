@@ -51,7 +51,10 @@ fn test_gpu_lz4_ptx_has_output_buffer_management() {
     // For now, check that there's some form of dynamic size tracking
     let has_dynamic_size =
         ptx.contains("out_pos") || ptx.contains("L_compress") || ptx.contains("compressed_len");
-    assert!(has_dynamic_size, "PTX must track output buffer position dynamically for compression");
+    assert!(
+        has_dynamic_size,
+        "PTX must track output buffer position dynamically for compression"
+    );
 }
 
 #[test]

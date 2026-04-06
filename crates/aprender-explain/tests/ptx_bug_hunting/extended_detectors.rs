@@ -22,11 +22,26 @@ fn test_extended_bug_hunt_all_kernels() {
     // Generate all kernels
     let kernels: Vec<(&str, String)> = vec![
         ("gemm_naive_64", GemmKernel::naive(64, 64, 64).emit_ptx()),
-        ("gemm_naive_128", GemmKernel::naive(128, 128, 128).emit_ptx()),
-        ("gemm_tiled_64", GemmKernel::tiled(64, 64, 64, 16).emit_ptx()),
-        ("gemm_tiled_128", GemmKernel::tiled(128, 128, 128, 32).emit_ptx()),
-        ("gemm_tensor_core", GemmKernel::tensor_core(64, 64, 64).emit_ptx()),
-        ("gemm_wmma_fp16", GemmKernel::wmma_fp16(64, 64, 64).emit_ptx()),
+        (
+            "gemm_naive_128",
+            GemmKernel::naive(128, 128, 128).emit_ptx(),
+        ),
+        (
+            "gemm_tiled_64",
+            GemmKernel::tiled(64, 64, 64, 16).emit_ptx(),
+        ),
+        (
+            "gemm_tiled_128",
+            GemmKernel::tiled(128, 128, 128, 32).emit_ptx(),
+        ),
+        (
+            "gemm_tensor_core",
+            GemmKernel::tensor_core(64, 64, 64).emit_ptx(),
+        ),
+        (
+            "gemm_wmma_fp16",
+            GemmKernel::wmma_fp16(64, 64, 64).emit_ptx(),
+        ),
         ("softmax_1024", SoftmaxKernel::new(1024).emit_ptx()),
         ("softmax_4096", SoftmaxKernel::new(4096).emit_ptx()),
         ("layernorm_256", LayerNormKernel::new(256).emit_ptx()),
@@ -83,7 +98,10 @@ fn test_extended_bug_hunt_all_kernels() {
     println!("  P2 Medium: {}", p2_bugs);
 
     // All trueno kernels should pass (no P0 critical bugs)
-    assert_eq!(p0_bugs, 0, "CRITICAL: No P0 bugs allowed in trueno kernels!");
+    assert_eq!(
+        p0_bugs, 0,
+        "CRITICAL: No P0 bugs allowed in trueno kernels!"
+    );
 }
 
 /// Test: New detectors don't produce false positives on clean kernels
@@ -137,8 +155,14 @@ DONE:
         !result.has_bug(&PtxBugClass::EmptyLoopBody),
         "Clean kernel should not have EmptyLoopBody"
     );
-    assert!(!result.has_bug(&PtxBugClass::MissingBoundsCheck), "Clean kernel has bounds check");
-    assert!(!result.has_bug(&PtxBugClass::DeadCode), "Clean kernel has no dead code");
+    assert!(
+        !result.has_bug(&PtxBugClass::MissingBoundsCheck),
+        "Clean kernel has bounds check"
+    );
+    assert!(
+        !result.has_bug(&PtxBugClass::DeadCode),
+        "Clean kernel has no dead code"
+    );
     assert!(
         !result.has_bug(&PtxBugClass::PlaceholderCode),
         "Clean kernel has no placeholder comments"
@@ -189,7 +213,10 @@ empty_loop:
 ";
 
     let result = PtxBugAnalyzer::new().analyze(ptx_with_empty_loop);
-    assert!(result.has_bug(&PtxBugClass::EmptyLoopBody), "Should detect empty loop body");
+    assert!(
+        result.has_bug(&PtxBugClass::EmptyLoopBody),
+        "Should detect empty loop body"
+    );
 }
 
 /// Test: `DeadCode` detection works
@@ -205,16 +232,25 @@ fn test_dead_code_detection() {
 ";
 
     let result = PtxBugAnalyzer::new().analyze(ptx_with_dead_code);
-    assert!(result.has_bug(&PtxBugClass::DeadCode), "Should detect dead code after ret");
+    assert!(
+        result.has_bug(&PtxBugClass::DeadCode),
+        "Should detect dead code after ret"
+    );
 }
 
 /// Test: Extended bug class severities
 #[test]
 fn test_extended_bug_severities() {
     assert_eq!(PtxBugClass::EmptyLoopBody.severity(), BugSeverity::High);
-    assert_eq!(PtxBugClass::MissingBoundsCheck.severity(), BugSeverity::High);
+    assert_eq!(
+        PtxBugClass::MissingBoundsCheck.severity(),
+        BugSeverity::High
+    );
     assert_eq!(PtxBugClass::DeadCode.severity(), BugSeverity::Medium);
-    assert_eq!(PtxBugClass::HighRegisterPressure.severity(), BugSeverity::High);
+    assert_eq!(
+        PtxBugClass::HighRegisterPressure.severity(),
+        BugSeverity::High
+    );
     assert_eq!(PtxBugClass::PredicateOverflow.severity(), BugSeverity::High);
     assert_eq!(PtxBugClass::PlaceholderCode.severity(), BugSeverity::High);
 }

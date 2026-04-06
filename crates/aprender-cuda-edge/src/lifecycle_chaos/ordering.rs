@@ -27,7 +27,10 @@ impl DestructionOrdering {
             return true;
         }
         let n = self.order.len();
-        self.order.iter().enumerate().all(|(i, &idx)| idx == n - 1 - i)
+        self.order
+            .iter()
+            .enumerate()
+            .all(|(i, &idx)| idx == n - 1 - i)
     }
 
     /// Returns true if this is forward creation order (FIFO).
@@ -97,10 +100,14 @@ pub fn validate_ordering(ordering: &DestructionOrdering, n: usize) -> OrderingVa
     let mut seen = vec![false; n];
     for &idx in &ordering.order {
         if idx >= n {
-            return OrderingValidation::Invalid { reason: format!("index {idx} >= n={n}") };
+            return OrderingValidation::Invalid {
+                reason: format!("index {idx} >= n={n}"),
+            };
         }
         if seen[idx] {
-            return OrderingValidation::Invalid { reason: format!("duplicate index {idx}") };
+            return OrderingValidation::Invalid {
+                reason: format!("duplicate index {idx}"),
+            };
         }
         seen[idx] = true;
     }

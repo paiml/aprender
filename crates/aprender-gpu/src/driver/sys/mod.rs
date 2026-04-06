@@ -685,7 +685,10 @@ mod loading {
             if result == CUDA_SUCCESS {
                 Ok(())
             } else {
-                Err(GpuError::CudaDriver(cuda_error_string(result).to_string(), result))
+                Err(GpuError::CudaDriver(
+                    cuda_error_string(result).to_string(),
+                    result,
+                ))
             }
         }
     }
@@ -704,7 +707,9 @@ mod loading {
 
         /// Check is a no-op without CUDA
         pub fn check(_result: CUresult) -> Result<(), GpuError> {
-            Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+            Err(GpuError::CudaNotAvailable(
+                "cuda feature not enabled".to_string(),
+            ))
         }
     }
 }

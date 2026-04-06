@@ -24,8 +24,10 @@ impl CbtopApp {
         theme: &Theme,
         dim_style: &TextStyle,
     ) {
-        let core_box_top =
-            format!("┌─ Per-Core CPU {}┐", "─".repeat(inner_width.saturating_sub(15)));
+        let core_box_top = format!(
+            "┌─ Per-Core CPU {}┐",
+            "─".repeat(inner_width.saturating_sub(15))
+        );
         canvas.draw_text(&core_box_top, Point::new(1.0, *current_y), dim_style);
         *current_y += 1.0;
 
@@ -54,7 +56,10 @@ impl CbtopApp {
                 canvas.draw_text(
                     &bar_str,
                     Point::new(x_pos + 4.0, *current_y),
-                    &TextStyle { color: theme.cpu_color(usage), ..Default::default() },
+                    &TextStyle {
+                        color: theme.cpu_color(usage),
+                        ..Default::default()
+                    },
                 );
                 x_pos += (mini_bar_width + 10) as f32;
             }
@@ -81,20 +86,30 @@ impl CbtopApp {
         _theme: &Theme,
         dim_style: &TextStyle,
     ) {
-        let hw_box_top = format!("┌─ Hardware {}┐", "─".repeat(inner_width.saturating_sub(12)));
+        let hw_box_top = format!(
+            "┌─ Hardware {}┐",
+            "─".repeat(inner_width.saturating_sub(12))
+        );
         canvas.draw_text(&hw_box_top, Point::new(1.0, *current_y), dim_style);
         *current_y += 1.0;
 
         let cpu_info = format!(
             "│ CPU:  {:width$} │",
-            hardware.cpu_model.chars().take(inner_width.saturating_sub(10)).collect::<String>(),
+            hardware
+                .cpu_model
+                .chars()
+                .take(inner_width.saturating_sub(10))
+                .collect::<String>(),
             width = inner_width.saturating_sub(8)
         );
         canvas.draw_text(&cpu_info, Point::new(1.0, *current_y), dim_style);
         *current_y += 1.0;
 
         canvas.draw_text(
-            &format!("│ Cores: {} │ SIMD: {} ", hardware.cpu_cores, hardware.simd_type),
+            &format!(
+                "│ Cores: {} │ SIMD: {} ",
+                hardware.cpu_cores, hardware.simd_type
+            ),
             Point::new(1.0, *current_y),
             dim_style,
         );
@@ -104,12 +119,18 @@ impl CbtopApp {
         if let Some(ref gpu) = hardware.gpu_name {
             let gpu_str = format!(
                 "│ GPU:  {:width$} │",
-                gpu.chars().take(inner_width.saturating_sub(10)).collect::<String>(),
+                gpu.chars()
+                    .take(inner_width.saturating_sub(10))
+                    .collect::<String>(),
                 width = inner_width.saturating_sub(8)
             );
             canvas.draw_text(&gpu_str, Point::new(1.0, *current_y), dim_style);
         } else {
-            canvas.draw_text("│ GPU:  Not detected ", Point::new(1.0, *current_y), dim_style);
+            canvas.draw_text(
+                "│ GPU:  Not detected ",
+                Point::new(1.0, *current_y),
+                dim_style,
+            );
             canvas.draw_text("│", Point::new(box_width as f32, *current_y), dim_style);
         }
         *current_y += 1.0;
@@ -150,7 +171,10 @@ impl CbtopApp {
         canvas.draw_text(
             &mem_bar,
             Point::new(11.0, *current_y),
-            &TextStyle { color: theme.memory_color(mem_pct), ..Default::default() },
+            &TextStyle {
+                color: theme.memory_color(mem_pct),
+                ..Default::default()
+            },
         );
         let mem_val_x = 11.0 + bar_width as f32 + 1.0;
         canvas.draw_text(
@@ -201,13 +225,18 @@ impl CbtopApp {
         if let Some(ref gpu) = hardware.gpu_name {
             let gpu_str = format!(
                 "│ {:width$} │",
-                gpu.chars().take(inner_width.saturating_sub(4)).collect::<String>(),
+                gpu.chars()
+                    .take(inner_width.saturating_sub(4))
+                    .collect::<String>(),
                 width = inner_width.saturating_sub(2)
             );
             canvas.draw_text(
                 &gpu_str,
                 Point::new(1.0, *current_y),
-                &TextStyle { color: theme.gpu_color(50.0), ..Default::default() },
+                &TextStyle {
+                    color: theme.gpu_color(50.0),
+                    ..Default::default()
+                },
             );
         }
         *current_y += 1.0;
@@ -282,10 +311,16 @@ impl CbtopApp {
             canvas.draw_text(
                 &disk_bar,
                 Point::new(18.0, *current_y),
-                &TextStyle { color: theme.memory_color(disk.usage_percent), ..Default::default() },
+                &TextStyle {
+                    color: theme.memory_color(disk.usage_percent),
+                    ..Default::default()
+                },
             );
             canvas.draw_text(
-                &format!(" {:>6}/{:>6} ({:.0}%)", used_str, total_str, disk.usage_percent),
+                &format!(
+                    " {:>6}/{:>6} ({:.0}%)",
+                    used_str, total_str, disk.usage_percent
+                ),
                 Point::new(29.0, *current_y),
                 dim_style,
             );
@@ -318,8 +353,10 @@ impl CbtopApp {
     ) {
         // PMAT-012 UI-05: Braille graphs for higher resolution sparklines
         if !cpu_data.is_empty() && *current_y < height as f32 - 8.0 {
-            let spark_box_top =
-                format!("┌─ CPU History (braille) {}┐", "─".repeat(inner_width.saturating_sub(23)));
+            let spark_box_top = format!(
+                "┌─ CPU History (braille) {}┐",
+                "─".repeat(inner_width.saturating_sub(23))
+            );
             canvas.draw_text(&spark_box_top, Point::new(1.0, *current_y), dim_style);
             *current_y += 1.0;
 
@@ -329,7 +366,10 @@ impl CbtopApp {
             canvas.draw_text(
                 &braille_line,
                 Point::new(3.0, *current_y),
-                &TextStyle { color: theme.cpu.sample(0.3), ..Default::default() },
+                &TextStyle {
+                    color: theme.cpu.sample(0.3),
+                    ..Default::default()
+                },
             );
             canvas.draw_text(" │", Point::new(box_width as f32, *current_y), dim_style);
             *current_y += 1.0;
@@ -341,8 +381,10 @@ impl CbtopApp {
 
         // Bricks/sec braille sparkline
         if !bricks_data.is_empty() && *current_y < height as f32 - 5.0 {
-            let brick_box_top =
-                format!("┌─ Bricks/sec (braille) {}┐", "─".repeat(inner_width.saturating_sub(24)));
+            let brick_box_top = format!(
+                "┌─ Bricks/sec (braille) {}┐",
+                "─".repeat(inner_width.saturating_sub(24))
+            );
             canvas.draw_text(&brick_box_top, Point::new(1.0, *current_y), dim_style);
             *current_y += 1.0;
 

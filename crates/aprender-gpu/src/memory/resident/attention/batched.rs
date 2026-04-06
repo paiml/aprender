@@ -194,7 +194,10 @@ fn maybe_debug_scores(debug_attn: bool, h: u32, scores_h: &GpuResidentTensor<f32
     eprintln!(
         "[DEBUG-ATTN] head 0: scores mean={:.6}, max={:.6}",
         scores_host.iter().sum::<f32>() / scores_host.len() as f32,
-        scores_host.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+        scores_host
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max)
     );
     Ok(())
 }
@@ -280,7 +283,15 @@ pub fn batched_multihead_attention_optimized(
 
     // Step 3: Q @ K^T for all heads using BatchedGemmKernel
     // [n_heads, seq_len, head_dim] @ [n_heads, head_dim, seq_len] -> [n_heads, seq_len, seq_len]
-    let scores = batched_gemm(ctx, &q_batched, &kt_batched, batch, seq_len, seq_len, head_dim)?;
+    let scores = batched_gemm(
+        ctx,
+        &q_batched,
+        &kt_batched,
+        batch,
+        seq_len,
+        seq_len,
+        head_dim,
+    )?;
 
     // Step 4: Scale all scores
     let total_scores = batch * seq_len * seq_len;

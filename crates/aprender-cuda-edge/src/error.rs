@@ -117,14 +117,19 @@ mod tests {
 
     #[test]
     fn null_pointer_error_display() {
-        let err = EdgeError::NullPointer { context: "kernel arg 0".into() };
+        let err = EdgeError::NullPointer {
+            context: "kernel arg 0".into(),
+        };
         assert!(err.to_string().contains("null device pointer"));
         assert!(err.to_string().contains("kernel arg 0"));
     }
 
     #[test]
     fn shared_memory_overflow_display() {
-        let err = EdgeError::SharedMemoryOverflow { requested: 65536, limit: 49152 };
+        let err = EdgeError::SharedMemoryOverflow {
+            requested: 65536,
+            limit: 49152,
+        };
         let msg = err.to_string();
         assert!(msg.contains("65536"));
         assert!(msg.contains("49152"));
@@ -132,19 +137,25 @@ mod tests {
 
     #[test]
     fn quantization_parity_display() {
-        let err = EdgeError::QuantizationParity { message: "Q4_K drift exceeds 0.01".into() };
+        let err = EdgeError::QuantizationParity {
+            message: "Q4_K drift exceeds 0.01".into(),
+        };
         assert!(err.to_string().contains("Q4_K drift"));
     }
 
     #[test]
     fn ptx_verification_display() {
-        let err = EdgeError::PtxVerification { reason: "missing .version directive".into() };
+        let err = EdgeError::PtxVerification {
+            reason: "missing .version directive".into(),
+        };
         assert!(err.to_string().contains("missing .version"));
     }
 
     #[test]
     fn lifecycle_fault_display() {
-        let err = EdgeError::LifecycleFault { scenario: "double destroy".into() };
+        let err = EdgeError::LifecycleFault {
+            scenario: "double destroy".into(),
+        };
         assert!(err.to_string().contains("double destroy"));
     }
 
@@ -162,13 +173,18 @@ mod tests {
 
     #[test]
     fn bank_conflict_display() {
-        let err = EdgeError::BankConflict { detail: "32-way conflict on bank 0".into() };
+        let err = EdgeError::BankConflict {
+            detail: "32-way conflict on bank 0".into(),
+        };
         assert!(err.to_string().contains("32-way"));
     }
 
     #[test]
     fn context_leak_display() {
-        let err = EdgeError::ContextLeak { leaked_bytes: 1_048_576, context_count: 2 };
+        let err = EdgeError::ContextLeak {
+            leaked_bytes: 1_048_576,
+            context_count: 2,
+        };
         let msg = err.to_string();
         assert!(msg.contains("1048576"));
         assert!(msg.contains("2 context(s)"));
@@ -176,7 +192,9 @@ mod tests {
 
     #[test]
     fn mutation_survived_display() {
-        let err = EdgeError::MutationSurvived { mutation: "flipped add→sub".into() };
+        let err = EdgeError::MutationSurvived {
+            mutation: "flipped add→sub".into(),
+        };
         assert!(err.to_string().contains("flipped add"));
     }
 

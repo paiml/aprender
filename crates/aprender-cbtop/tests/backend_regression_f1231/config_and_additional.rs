@@ -15,8 +15,22 @@ fn f1236_custom_threshold() {
     let mut detector = BackendRegressionDetector::new().with_threshold(5.0);
 
     // 3% slower - within 5% threshold
-    detector.add(Backend::Scalar, BackendWorkload::Gemm, 1024, 1000.0, 1000.0, 50.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 1030.0, 970.0, 48.0);
+    detector.add(
+        Backend::Scalar,
+        BackendWorkload::Gemm,
+        1024,
+        1000.0,
+        1000.0,
+        50.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        1030.0,
+        970.0,
+        48.0,
+    );
 
     let cmp = detector
         .compare_backends(Backend::Scalar, Backend::Avx2, BackendWorkload::Gemm, 1024)
@@ -35,8 +49,22 @@ fn f1236_default_threshold() {
     let mut detector = BackendRegressionDetector::new();
 
     // 15% slower - exceeds 10% default threshold
-    detector.add(Backend::Scalar, BackendWorkload::Gemm, 1024, 1000.0, 1000.0, 50.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 1200.0, 833.0, 42.0);
+    detector.add(
+        Backend::Scalar,
+        BackendWorkload::Gemm,
+        1024,
+        1000.0,
+        1000.0,
+        50.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        1200.0,
+        833.0,
+        42.0,
+    );
 
     let cmp = detector
         .compare_backends(Backend::Scalar, Backend::Avx2, BackendWorkload::Gemm, 1024)
@@ -82,8 +110,22 @@ fn f1237_custom_backends() {
 fn f1238_summary_generated() {
     let mut detector = BackendRegressionDetector::new();
 
-    detector.add(Backend::Scalar, BackendWorkload::Gemm, 1024, 1000.0, 1000.0, 50.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 250.0, 4000.0, 80.0);
+    detector.add(
+        Backend::Scalar,
+        BackendWorkload::Gemm,
+        1024,
+        1000.0,
+        1000.0,
+        50.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        250.0,
+        4000.0,
+        80.0,
+    );
 
     let summary = detector.summary();
 
@@ -112,9 +154,30 @@ fn f1239_historical_comparison() {
     let mut detector = BackendRegressionDetector::new();
 
     // Add measurements at different times/runs
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 250.0, 4000.0, 80.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 2048, 500.0, 4000.0, 78.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 4096, 1000.0, 4000.0, 75.0);
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        250.0,
+        4000.0,
+        80.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        2048,
+        500.0,
+        4000.0,
+        78.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        4096,
+        1000.0,
+        4000.0,
+        75.0,
+    );
 
     // Can detect trends
     let cliffs = detector.detect_size_cliffs(Backend::Avx2, BackendWorkload::Gemm);
@@ -132,13 +195,34 @@ fn f1240_multiple_workloads() {
     let mut detector = BackendRegressionDetector::new();
 
     // GEMM workload
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 250.0, 4000.0, 80.0);
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        250.0,
+        4000.0,
+        80.0,
+    );
 
     // Elementwise workload (different characteristics)
-    detector.add(Backend::Avx2, BackendWorkload::Elementwise, 1024, 50.0, 20000.0, 95.0);
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Elementwise,
+        1024,
+        50.0,
+        20000.0,
+        95.0,
+    );
 
     // Reduction workload
-    detector.add(Backend::Avx2, BackendWorkload::Reduction, 1024, 100.0, 10000.0, 90.0);
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Reduction,
+        1024,
+        100.0,
+        10000.0,
+        90.0,
+    );
 
     let summary = detector.summary();
     assert_eq!(summary.workload_count, 3);
@@ -236,8 +320,9 @@ fn test_transfer_analysis_summary() {
 
     detector.add_measurement(m);
 
-    let analysis =
-        detector.analyze_transfer_overhead(Backend::Cuda, BackendWorkload::Gemm).unwrap();
+    let analysis = detector
+        .analyze_transfer_overhead(Backend::Cuda, BackendWorkload::Gemm)
+        .unwrap();
 
     assert!(analysis.transfer_dominated());
     let summary = analysis.summary();
@@ -249,7 +334,14 @@ fn test_transfer_analysis_summary() {
 fn test_detector_clear() {
     let mut detector = BackendRegressionDetector::new();
 
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 250.0, 4000.0, 80.0);
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        250.0,
+        4000.0,
+        80.0,
+    );
     assert_eq!(detector.measurement_count(), 1);
 
     detector.clear();
@@ -262,8 +354,22 @@ fn test_detect_all_regressions() {
     let mut detector = BackendRegressionDetector::new();
 
     // Good comparison
-    detector.add(Backend::Scalar, BackendWorkload::Gemm, 1024, 1000.0, 1000.0, 50.0);
-    detector.add(Backend::Avx2, BackendWorkload::Gemm, 1024, 250.0, 4000.0, 80.0);
+    detector.add(
+        Backend::Scalar,
+        BackendWorkload::Gemm,
+        1024,
+        1000.0,
+        1000.0,
+        50.0,
+    );
+    detector.add(
+        Backend::Avx2,
+        BackendWorkload::Gemm,
+        1024,
+        250.0,
+        4000.0,
+        80.0,
+    );
 
     let regressions = detector.detect_regressions();
     assert!(regressions.is_empty());

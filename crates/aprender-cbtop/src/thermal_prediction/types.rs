@@ -14,12 +14,20 @@ pub struct ThermalSample {
 impl ThermalSample {
     /// Create new sample
     pub fn new(temperature_c: f64, timestamp_sec: f64) -> Self {
-        Self { temperature_c, timestamp_sec, latency_us: None }
+        Self {
+            temperature_c,
+            timestamp_sec,
+            latency_us: None,
+        }
     }
 
     /// Create sample with latency
     pub fn with_latency(temperature_c: f64, timestamp_sec: f64, latency_us: f64) -> Self {
-        Self { temperature_c, timestamp_sec, latency_us: Some(latency_us) }
+        Self {
+            temperature_c,
+            timestamp_sec,
+            latency_us: Some(latency_us),
+        }
     }
 }
 
@@ -85,8 +93,11 @@ impl ThrottleRisk {
         // 2. Whether we're trending toward it
         // 3. How fast we're approaching it
 
-        let proximity_risk =
-            if margin <= 0.0 { 1.0 } else { 1.0 - (margin / threshold).clamp(0.0, 1.0) };
+        let proximity_risk = if margin <= 0.0 {
+            1.0
+        } else {
+            1.0 - (margin / threshold).clamp(0.0, 1.0)
+        };
 
         let trend_risk = if trend_slope > 0.0 {
             // Approaching threshold
@@ -170,8 +181,11 @@ impl CooldownRecommendation {
     /// Calculate cooldown time needed
     pub fn calculate(current_temp: f64, target_temp: f64, cooling_rate: f64) -> Self {
         let temp_delta = current_temp - target_temp;
-        let duration =
-            if temp_delta > 0.0 && cooling_rate > 0.0 { temp_delta / cooling_rate } else { 0.0 };
+        let duration = if temp_delta > 0.0 && cooling_rate > 0.0 {
+            temp_delta / cooling_rate
+        } else {
+            0.0
+        };
 
         Self {
             duration_sec: duration.max(0.0),

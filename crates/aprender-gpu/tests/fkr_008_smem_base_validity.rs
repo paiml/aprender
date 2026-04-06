@@ -124,8 +124,10 @@ L_not_leader:
 
         let test_in_pos: u32 = 0; // Start position
 
-        let mut args: [*mut c_void; 2] =
-            [output_buf.as_kernel_arg(), &test_in_pos as *const u32 as *mut c_void];
+        let mut args: [*mut c_void; 2] = [
+            output_buf.as_kernel_arg(),
+            &test_in_pos as *const u32 as *mut c_void,
+        ];
 
         unsafe {
             stream
@@ -150,8 +152,14 @@ L_not_leader:
         println!("  cvta_result     = 0x{:016X}", cvta_result);
         println!("  curr_addr       = 0x{:016X} (smem_base + 0)", curr_addr);
         println!("  loaded_val      = 0x{:016X}", loaded_val);
-        println!("  hash_table_base = 0x{:016X} (smem_base + 4096)", hash_table_base);
-        println!("  state_base      = 0x{:016X} (smem_base + 12420)", state_base);
+        println!(
+            "  hash_table_base = 0x{:016X} (smem_base + 4096)",
+            hash_table_base
+        );
+        println!(
+            "  state_base      = 0x{:016X} (smem_base + 12420)",
+            state_base
+        );
         println!("  success_marker  = 0x{:016X}", success_marker);
 
         // Falsification checks
@@ -160,7 +168,11 @@ L_not_leader:
             "FALSIFIED: cvta.shared returned invalid address 0x{:X}",
             cvta_result
         );
-        assert!(smem_base > 0x1000, "FALSIFIED: smem_base is invalid 0x{:X}", smem_base);
+        assert!(
+            smem_base > 0x1000,
+            "FALSIFIED: smem_base is invalid 0x{:X}",
+            smem_base
+        );
         assert!(
             curr_addr > 0x1000,
             "FALSIFIED: curr_addr (smem_base + in_pos) is invalid 0x{:X}",
@@ -234,8 +246,11 @@ L_not_leader:
 
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-        let config =
-            LaunchConfig { grid: kernel.grid_dim(), block: kernel.block_dim(), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: kernel.grid_dim(),
+            block: kernel.block_dim(),
+            shared_mem: 0,
+        };
 
         let num_pages = NUM_PAGES;
         let mut args: [*mut c_void; 4] = [
@@ -261,7 +276,10 @@ L_not_leader:
                 let mut sizes = vec![0u32; 1];
                 sizes_buf.copy_to_host(&mut sizes).unwrap();
                 println!("FKR-008b: PASSED - kernel completed, size = {}", sizes[0]);
-                assert!(sizes[0] > 0 && sizes[0] <= 4352, "Output size should be valid");
+                assert!(
+                    sizes[0] > 0 && sizes[0] <= 4352,
+                    "Output size should be valid"
+                );
             }
             Err(e) => {
                 panic!(
@@ -347,10 +365,16 @@ L_not_leader:
         // The PTX assembler handles register allocation, so we allow high counts
         // but warn about potential performance implications
         if max_rd > 200 {
-            println!("WARNING: High u64 register count ({}) may impact performance", max_rd);
+            println!(
+                "WARNING: High u64 register count ({}) may impact performance",
+                max_rd
+            );
         }
         if max_r > 400 {
-            println!("WARNING: High u32 register count ({}) may impact performance", max_r);
+            println!(
+                "WARNING: High u32 register count ({}) may impact performance",
+                max_r
+            );
         }
         // The assertion is informational, not a hard failure
         // Actual spilling depends on SM register file size and occupancy

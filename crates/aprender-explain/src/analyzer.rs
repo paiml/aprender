@@ -141,8 +141,13 @@ mod tests {
 
     #[test]
     fn test_register_usage_total() {
-        let usage =
-            RegisterUsage { f32_regs: 10, f64_regs: 5, b32_regs: 8, b64_regs: 4, pred_regs: 2 };
+        let usage = RegisterUsage {
+            f32_regs: 10,
+            f64_regs: 5,
+            b32_regs: 8,
+            b64_regs: 4,
+            pred_regs: 2,
+        };
         assert_eq!(usage.total(), 29);
     }
 
@@ -154,14 +159,20 @@ mod tests {
 
     #[test]
     fn test_occupancy_low_registers() {
-        let usage = RegisterUsage { f32_regs: 16, ..Default::default() };
+        let usage = RegisterUsage {
+            f32_regs: 16,
+            ..Default::default()
+        };
         // 16 registers -> 65536/16 = 4096, capped at 2048 -> 100%
         assert!((usage.estimated_occupancy() - 1.0).abs() < 0.01);
     }
 
     #[test]
     fn test_occupancy_high_registers() {
-        let usage = RegisterUsage { f32_regs: 128, ..Default::default() };
+        let usage = RegisterUsage {
+            f32_regs: 128,
+            ..Default::default()
+        };
         // 128 registers -> 65536/128 = 512 threads -> 512/2048 = 25%
         assert!((usage.estimated_occupancy() - 0.25).abs() < 0.01);
     }
@@ -192,7 +203,11 @@ mod tests {
         let report = AnalysisReport {
             name: "test_kernel".to_string(),
             target: "PTX".to_string(),
-            registers: RegisterUsage { f32_regs: 24, b32_regs: 18, ..Default::default() },
+            registers: RegisterUsage {
+                f32_regs: 24,
+                b32_regs: 18,
+                ..Default::default()
+            },
             memory: MemoryPattern {
                 global_loads: 100,
                 coalesced_ratio: 0.95,

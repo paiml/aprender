@@ -90,25 +90,44 @@ fn test_tensor_spec_byte_size() {
 #[test]
 fn test_strategy_simd_auto() {
     let strategy = ExecutionStrategy::simd_auto();
-    assert!(matches!(strategy, ExecutionStrategy::Simd { width: SimdWidth::Auto }));
+    assert!(matches!(
+        strategy,
+        ExecutionStrategy::Simd {
+            width: SimdWidth::Auto
+        }
+    ));
 }
 
 #[test]
 fn test_strategy_simd_avx2() {
     let strategy = ExecutionStrategy::simd(SimdWidth::Avx2);
-    assert!(matches!(strategy, ExecutionStrategy::Simd { width: SimdWidth::Avx2 }));
+    assert!(matches!(
+        strategy,
+        ExecutionStrategy::Simd {
+            width: SimdWidth::Avx2
+        }
+    ));
 }
 
 #[test]
 fn test_strategy_parallel() {
     let strategy = ExecutionStrategy::parallel(8);
-    assert!(matches!(strategy, ExecutionStrategy::Parallel { threads: 8, .. }));
+    assert!(matches!(
+        strategy,
+        ExecutionStrategy::Parallel { threads: 8, .. }
+    ));
 }
 
 #[test]
 fn test_strategy_gpu_auto() {
     let strategy = ExecutionStrategy::gpu_auto();
-    assert!(matches!(strategy, ExecutionStrategy::Gpu { device: GpuDevice::Auto, .. }));
+    assert!(matches!(
+        strategy,
+        ExecutionStrategy::Gpu {
+            device: GpuDevice::Auto,
+            ..
+        }
+    ));
 }
 
 // ============================================================================
@@ -266,6 +285,9 @@ fn test_error_display() {
     let err = GrammarError::InvalidDimensions("test".to_string());
     assert!(err.to_string().contains("test"));
 
-    let err = GrammarError::InvalidScaleDomain { min: 10.0, max: 0.0 };
+    let err = GrammarError::InvalidScaleDomain {
+        min: 10.0,
+        max: 0.0,
+    };
     assert!(err.to_string().contains("10"));
 }

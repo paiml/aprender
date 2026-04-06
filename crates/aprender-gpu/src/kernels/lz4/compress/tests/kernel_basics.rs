@@ -65,7 +65,11 @@ fn test_f053_ptx_has_shared_memory() {
 fn test_f054_barrier_safety() {
     let kernel = Lz4WarpCompressKernel::new(100);
     let result = kernel.analyze_barrier_safety();
-    assert!(result.is_safe, "LZ4 kernel should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "LZ4 kernel should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -126,7 +130,12 @@ fn test_f061_ptx_validates_with_ptxas() {
 
     // Validate with ptxas
     let output = Command::new("ptxas")
-        .args(["-arch=sm_89", tmpfile.to_str().expect("test"), "-o", "/dev/null"])
+        .args([
+            "-arch=sm_89",
+            tmpfile.to_str().expect("test"),
+            "-o",
+            "/dev/null",
+        ])
         .output()
         .expect("Failed to run ptxas");
 

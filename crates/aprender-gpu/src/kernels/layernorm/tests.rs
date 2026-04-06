@@ -231,12 +231,24 @@ fn test_vectorized_rmsnorm_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel entry point
-    assert!(ptx.contains(".entry rmsnorm_vectorized"), "Should have rmsnorm_vectorized entry");
+    assert!(
+        ptx.contains(".entry rmsnorm_vectorized"),
+        "Should have rmsnorm_vectorized entry"
+    );
 
     // Verify parameters
-    assert!(ptx.contains(".param .u64 input_ptr"), "Should have input_ptr");
-    assert!(ptx.contains(".param .u64 output_ptr"), "Should have output_ptr");
-    assert!(ptx.contains(".param .u64 gamma_ptr"), "Should have gamma_ptr");
+    assert!(
+        ptx.contains(".param .u64 input_ptr"),
+        "Should have input_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 output_ptr"),
+        "Should have output_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 gamma_ptr"),
+        "Should have gamma_ptr"
+    );
 }
 
 #[test]
@@ -251,7 +263,10 @@ fn test_vectorized_rmsnorm_warp_operations() {
     );
 
     // Verify rsqrt for 1/sqrt(rms)
-    assert!(ptx.contains("rsqrt.f32") || ptx.contains("rsqrt"), "Should have rsqrt for RMSNorm");
+    assert!(
+        ptx.contains("rsqrt.f32") || ptx.contains("rsqrt"),
+        "Should have rsqrt for RMSNorm"
+    );
 }
 
 #[test]
@@ -260,7 +275,10 @@ fn test_vectorized_rmsnorm_shared_memory() {
     let ptx_kernel = kernel.build_ptx();
 
     // Vectorized kernel uses shared memory for inter-warp reduction
-    assert!(ptx_kernel.shared_memory_bytes() > 0, "Vectorized RMSNorm should use shared memory");
+    assert!(
+        ptx_kernel.shared_memory_bytes() > 0,
+        "Vectorized RMSNorm should use shared memory"
+    );
 }
 
 #[test]
@@ -321,9 +339,18 @@ fn test_batched_vectorized_rmsnorm_ptx_generation() {
     );
 
     // Verify parameters
-    assert!(ptx.contains(".param .u64 input_ptr"), "Should have input_ptr");
-    assert!(ptx.contains(".param .u64 output_ptr"), "Should have output_ptr");
-    assert!(ptx.contains(".param .u64 gamma_ptr"), "Should have gamma_ptr");
+    assert!(
+        ptx.contains(".param .u64 input_ptr"),
+        "Should have input_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 output_ptr"),
+        "Should have output_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 gamma_ptr"),
+        "Should have gamma_ptr"
+    );
 }
 
 #[test]
@@ -364,7 +391,10 @@ fn test_batched_vectorized_rmsnorm_warp_operations() {
     );
 
     // Verify rsqrt for normalization
-    assert!(ptx.contains("rsqrt.f32") || ptx.contains("rsqrt"), "Should have rsqrt");
+    assert!(
+        ptx.contains("rsqrt.f32") || ptx.contains("rsqrt"),
+        "Should have rsqrt"
+    );
 }
 
 #[test]
@@ -373,7 +403,10 @@ fn test_batched_vectorized_rmsnorm_shared_memory() {
     let ptx_kernel = kernel.build_ptx();
 
     // Batched kernel uses shared memory
-    assert!(ptx_kernel.shared_memory_bytes() > 0, "Batched RMSNorm should use shared memory");
+    assert!(
+        ptx_kernel.shared_memory_bytes() > 0,
+        "Batched RMSNorm should use shared memory"
+    );
 }
 
 #[test]
@@ -392,7 +425,10 @@ fn test_batched_vectorized_rmsnorm_barrier_sync() {
     let ptx = kernel.emit_ptx();
 
     // Verify barrier synchronization for shared memory
-    assert!(ptx.contains("bar.sync"), "Should have barrier synchronization");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Should have barrier synchronization"
+    );
 }
 
 // =========================================================================
@@ -425,12 +461,24 @@ fn test_per_head_rmsnorm_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel entry point
-    assert!(ptx.contains(".entry per_head_rmsnorm"), "Should have per_head_rmsnorm entry");
+    assert!(
+        ptx.contains(".entry per_head_rmsnorm"),
+        "Should have per_head_rmsnorm entry"
+    );
 
     // Verify parameters
-    assert!(ptx.contains(".param .u64 input_ptr"), "Should have input_ptr");
-    assert!(ptx.contains(".param .u64 output_ptr"), "Should have output_ptr");
-    assert!(ptx.contains(".param .u64 gamma_ptr"), "Should have gamma_ptr");
+    assert!(
+        ptx.contains(".param .u64 input_ptr"),
+        "Should have input_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 output_ptr"),
+        "Should have output_ptr"
+    );
+    assert!(
+        ptx.contains(".param .u64 gamma_ptr"),
+        "Should have gamma_ptr"
+    );
 
     // Verify per-head dispatch via blockIdx.x
     assert!(ptx.contains("ctaid.x"), "Should use ctaid.x for head index");

@@ -71,7 +71,11 @@ pub struct Token {
 
 impl Default for Token {
     fn default() -> Self {
-        Self { kind: TokenKind::Eof, text: String::new(), location: SourceLocation::default() }
+        Self {
+            kind: TokenKind::Eof,
+            text: String::new(),
+            location: SourceLocation::default(),
+        }
     }
 }
 
@@ -86,7 +90,12 @@ pub struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     /// Create a new lexer for the given source
     pub fn new(source: &'a str) -> Self {
-        Self { source, pos: 0, line: 1, column: 1 }
+        Self {
+            source,
+            pos: 0,
+            line: 1,
+            column: 1,
+        }
     }
 
     fn peek(&self) -> Option<char> {
@@ -161,44 +170,84 @@ impl<'a> Lexer<'a> {
     pub fn next_token(&mut self) -> Result<Token, ParseError> {
         self.skip_whitespace();
 
-        let location = SourceLocation { line: self.line, column: self.column, file: None };
+        let location = SourceLocation {
+            line: self.line,
+            column: self.column,
+            file: None,
+        };
 
         let Some(c) = self.peek() else {
-            return Ok(Token { kind: TokenKind::Eof, text: String::new(), location });
+            return Ok(Token {
+                kind: TokenKind::Eof,
+                text: String::new(),
+                location,
+            });
         };
 
         match c {
             '{' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::LBrace, text: "{".into(), location })
+                Ok(Token {
+                    kind: TokenKind::LBrace,
+                    text: "{".into(),
+                    location,
+                })
             }
             '}' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::RBrace, text: "}".into(), location })
+                Ok(Token {
+                    kind: TokenKind::RBrace,
+                    text: "}".into(),
+                    location,
+                })
             }
             '(' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::LParen, text: "(".into(), location })
+                Ok(Token {
+                    kind: TokenKind::LParen,
+                    text: "(".into(),
+                    location,
+                })
             }
             ')' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::RParen, text: ")".into(), location })
+                Ok(Token {
+                    kind: TokenKind::RParen,
+                    text: ")".into(),
+                    location,
+                })
             }
             '[' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::LBracket, text: "[".into(), location })
+                Ok(Token {
+                    kind: TokenKind::LBracket,
+                    text: "[".into(),
+                    location,
+                })
             }
             ']' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::RBracket, text: "]".into(), location })
+                Ok(Token {
+                    kind: TokenKind::RBracket,
+                    text: "]".into(),
+                    location,
+                })
             }
             ',' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::Comma, text: ",".into(), location })
+                Ok(Token {
+                    kind: TokenKind::Comma,
+                    text: ",".into(),
+                    location,
+                })
             }
             ';' => {
                 self.advance();
-                Ok(Token { kind: TokenKind::Semicolon, text: ";".into(), location })
+                Ok(Token {
+                    kind: TokenKind::Semicolon,
+                    text: ";".into(),
+                    location,
+                })
             }
             '.' => self.read_directive(location),
             '%' => self.read_register(location),
@@ -207,7 +256,11 @@ impl<'a> Lexer<'a> {
             _ if c.is_alphabetic() || c == '_' => self.read_identifier_or_instruction(location),
             _ => {
                 self.advance();
-                Ok(Token { kind: TokenKind::Unknown, text: c.to_string(), location })
+                Ok(Token {
+                    kind: TokenKind::Unknown,
+                    text: c.to_string(),
+                    location,
+                })
             }
         }
     }
@@ -240,13 +293,21 @@ impl<'a> Lexer<'a> {
                 }
                 self.advance();
             }
-            format!("{} {}", directive_name, self.source[value_start..self.pos].trim())
+            format!(
+                "{} {}",
+                directive_name,
+                self.source[value_start..self.pos].trim()
+            )
         } else {
             directive_name.to_string()
         };
 
         let kind = self.classify_directive(&text);
-        Ok(Token { kind, text, location })
+        Ok(Token {
+            kind,
+            text,
+            location,
+        })
     }
 
     fn classify_directive(&self, text: &str) -> TokenKind {
@@ -326,7 +387,11 @@ impl<'a> Lexer<'a> {
         let is_float = self.read_fractional_part() | self.read_exponent_part();
 
         Ok(Token {
-            kind: if is_float { TokenKind::Float } else { TokenKind::Integer },
+            kind: if is_float {
+                TokenKind::Float
+            } else {
+                TokenKind::Integer
+            },
             text: self.source[start..self.pos].to_string(),
             location,
         })
@@ -431,10 +496,18 @@ impl<'a> Lexer<'a> {
                 self.source[start..instr_end].to_string()
             };
 
-            return Ok(Token { kind: TokenKind::Instruction, text: full_text, location });
+            return Ok(Token {
+                kind: TokenKind::Instruction,
+                text: full_text,
+                location,
+            });
         }
 
-        Ok(Token { kind: TokenKind::Identifier, text: text.to_string(), location })
+        Ok(Token {
+            kind: TokenKind::Identifier,
+            text: text.to_string(),
+            location,
+        })
     }
 
     fn is_instruction(&self, text: &str) -> bool {

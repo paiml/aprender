@@ -81,7 +81,10 @@ fn test_matmul_2x3_3x2() -> R {
 
 #[test]
 fn test_matmul_identity() -> R {
-    let eye = Tensor::new(vec![3, 3], vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])?;
+    let eye = Tensor::new(
+        vec![3, 3],
+        vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    )?;
     let a = Tensor::new(vec![3, 2], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])?;
     let c = matmul(&eye, &a)?;
     assert_eq!(c.shape(), &[3, 2]);
@@ -117,7 +120,10 @@ fn test_einsum_dot_product() -> R {
 
 #[test]
 fn test_einsum_trace() -> R {
-    let a = Tensor::new(vec![3, 3], vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0])?;
+    let a = Tensor::new(
+        vec![3, 3],
+        vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
+    )?;
     let t = trace(&a)?;
     assert!((t - 6.0).abs() < 1e-6);
     Ok(())
@@ -272,8 +278,10 @@ fn test_einsum_nary_three_inputs() -> R {
     // (A @ B) @ C = A @ (B @ C) for matmul chain
     // A=2×3, B=3×4, C=4×2
     let a = Tensor::new(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])?;
-    let b =
-        Tensor::new(vec![3, 4], vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0])?;
+    let b = Tensor::new(
+        vec![3, 4],
+        vec![1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+    )?;
     let c = Tensor::new(vec![4, 2], vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0])?;
 
     let result = einsum_nary("ij,jk,kl->il", &[&a, &b, &c])?;
@@ -291,7 +299,10 @@ fn test_einsum_nary_three_inputs() -> R {
 #[test]
 fn test_einsum_nary_single_input() -> R {
     // Single input: trace-like operation "ii->"
-    let a = Tensor::new(vec![3, 3], vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0])?;
+    let a = Tensor::new(
+        vec![3, 3],
+        vec![1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0],
+    )?;
     let result = einsum_nary("ij->ij", &[&a])?;
     assert_eq!(result.shape(), &[3, 3]);
     assert!((result.get(&[0, 0]) - 1.0).abs() < 1e-5);
@@ -394,7 +405,10 @@ fn test_falsify_outer_single_elements() -> R {
 #[test]
 fn test_falsify_einsum_identity_contraction() -> R {
     // "ij,jk->ik" with identity matrices should give identity
-    let eye = Tensor::new(vec![3, 3], vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])?;
+    let eye = Tensor::new(
+        vec![3, 3],
+        vec![1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+    )?;
     let c = einsum("ij,jk->ik", &eye, &eye)?;
     assert_eq!(c.shape(), &[3, 3]);
     for i in 0..3 {

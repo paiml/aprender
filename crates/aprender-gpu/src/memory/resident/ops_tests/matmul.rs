@@ -31,7 +31,9 @@ fn test_ops_matmul_naive_small() {
     let k = 4u32;
 
     // A: 4x4 identity-like matrix
-    let a_data: Vec<f32> = (0..16).map(|i| if i % 5 == 0 { 1.0 } else { 0.0 }).collect();
+    let a_data: Vec<f32> = (0..16)
+        .map(|i| if i % 5 == 0 { 1.0 } else { 0.0 })
+        .collect();
     // B: 4x4 matrix with values 1-16
     let b_data: Vec<f32> = (1..=16).map(|i| i as f32).collect();
 

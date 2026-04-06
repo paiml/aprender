@@ -95,13 +95,18 @@ fn main() {
     let result = match cli.command {
         Commands::Info { path } => info_command(&path, &config),
         Commands::Layers { path, verbose } => layers_command(&path, verbose, &config),
-        Commands::Memory { path, batch_size, seq_len } => {
-            memory_command(&path, batch_size, seq_len, &config)
-        }
+        Commands::Memory {
+            path,
+            batch_size,
+            seq_len,
+        } => memory_command(&path, batch_size, seq_len, &config),
         Commands::Validate { path, strict } => validate_command(&path, strict, &config),
-        Commands::Convert { input, to, output, quantize } => {
-            convert_command(&input, &to, &output, &quantize, &config)
-        }
+        Commands::Convert {
+            input,
+            to,
+            output,
+            quantize,
+        } => convert_command(&input, &to, &output, &quantize, &config),
         Commands::Compare { model1, model2 } => compare_command(&model1, &model2, &config),
     };
 
@@ -140,9 +145,15 @@ fn info_command(path: &PathBuf, cli: &entrenar_common::Cli) -> entrenar_common::
             .row(vec!["Format", &format!("{:?}", info.format)])
             .row(vec!["Size", &info.size_human()])
             .row(vec!["Architecture", info.architecture.architecture.name()])
-            .row(vec!["Hidden Dimension", &info.architecture.hidden_dim.to_string()])
+            .row(vec![
+                "Hidden Dimension",
+                &info.architecture.hidden_dim.to_string(),
+            ])
             .row(vec!["Layers", &info.architecture.num_layers.to_string()])
-            .row(vec!["Vocab Size", &format_number(info.architecture.vocab_size as u64)])
+            .row(vec![
+                "Vocab Size",
+                &format_number(info.architecture.vocab_size as u64),
+            ])
             .row(vec!["Parameters", &format!("{:.2}B", info.params_b())])
             .row(vec!["Tensors", &info.tensors.len().to_string()])
             .build();
@@ -221,7 +232,9 @@ fn memory_command(
         if !cli.is_quiet() {
             println!(
                 "{}",
-                styles::header(&format!("Memory Estimate (batch={batch_size}, seq={seq_len})"))
+                styles::header(&format!(
+                    "Memory Estimate (batch={batch_size}, seq={seq_len})"
+                ))
             );
         }
 
@@ -281,21 +294,24 @@ fn convert_command(
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     let format: OutputFormat =
-        to.parse().map_err(|e| entrenar_common::EntrenarError::ConfigValue {
-            field: "to".into(),
-            message: e,
-            suggestion: "Use: safetensors, gguf, apr".into(),
-        })?;
+        to.parse()
+            .map_err(|e| entrenar_common::EntrenarError::ConfigValue {
+                field: "to".into(),
+                message: e,
+                suggestion: "Use: safetensors, gguf, apr".into(),
+            })?;
 
     let mut converter = entrenar_inspect::convert::FormatConverter::new();
 
     if quantize != "none" {
         let quant: entrenar_inspect::convert::Quantization =
-            quantize.parse().map_err(|e| entrenar_common::EntrenarError::ConfigValue {
-                field: "quantize".into(),
-                message: e,
-                suggestion: "Use: q4_0, q8_0, f16, none".into(),
-            })?;
+            quantize
+                .parse()
+                .map_err(|e| entrenar_common::EntrenarError::ConfigValue {
+                    field: "quantize".into(),
+                    message: e,
+                    suggestion: "Use: q4_0, q8_0, f16, none".into(),
+                })?;
         converter = converter.with_quantization(quant);
     }
 
@@ -332,8 +348,16 @@ fn compare_command(
     }
 
     let table = TableBuilder::new()
-        .headers(vec!["Property", &model1.display().to_string(), &model2.display().to_string()])
-        .row(vec!["Format", &format!("{:?}", info1.format), &format!("{:?}", info2.format)])
+        .headers(vec![
+            "Property",
+            &model1.display().to_string(),
+            &model2.display().to_string(),
+        ])
+        .row(vec![
+            "Format",
+            &format!("{:?}", info1.format),
+            &format!("{:?}", info2.format),
+        ])
         .row(vec!["Size", &info1.size_human(), &info2.size_human()])
         .row(vec![
             "Parameters",

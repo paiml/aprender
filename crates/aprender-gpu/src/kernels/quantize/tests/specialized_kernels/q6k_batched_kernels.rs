@@ -45,7 +45,10 @@ fn test_coalesced_q6k_gemv_has_warp_shuffle() {
     let ptx = kernel.emit_ptx();
 
     // Should use shfl.sync.idx for broadcasting scales from lane 0-15
-    assert!(ptx.contains("shfl.sync"), "Should use warp shuffle for scale broadcast");
+    assert!(
+        ptx.contains("shfl.sync"),
+        "Should use warp shuffle for scale broadcast"
+    );
 }
 
 #[test]
@@ -155,7 +158,10 @@ fn test_batched_q6k_gemv_has_m_param() {
     let ptx = kernel.emit_ptx();
 
     // Batched kernel should have m_dim parameter
-    assert!(ptx.contains(".param .u32 m_dim"), "Should have m_dim parameter for batch size");
+    assert!(
+        ptx.contains(".param .u32 m_dim"),
+        "Should have m_dim parameter for batch size"
+    );
 }
 
 #[test]
@@ -164,7 +170,10 @@ fn test_batched_q6k_gemv_has_warp_shuffle() {
     let ptx = kernel.emit_ptx();
 
     // Uses warp shuffle for reduction
-    assert!(ptx.contains("shfl.sync.down"), "Should use warp shuffle down for reduction");
+    assert!(
+        ptx.contains("shfl.sync.down"),
+        "Should use warp shuffle down for reduction"
+    );
 }
 
 #[test]
@@ -182,7 +191,11 @@ fn test_batched_q6k_gemv_barrier_safety() {
     let kernel = BatchedQ6KGemvKernel::new(4096, 4096, 4);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Batched Q6K GEMV should pass barrier safety: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Batched Q6K GEMV should pass barrier safety: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -226,7 +239,10 @@ fn test_batched_q6k_gemv_vs_non_batched_different() {
         ptx_batched, ptx_non_batched,
         "Batched and non-batched kernels should produce different PTX"
     );
-    assert!(ptx_batched.contains("batched"), "Batched PTX should contain 'batched' in entry name");
+    assert!(
+        ptx_batched.contains("batched"),
+        "Batched PTX should contain 'batched' in entry name"
+    );
 }
 
 proptest! {

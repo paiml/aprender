@@ -57,10 +57,26 @@ fn test_cublas_gemm_f32_small() {
     c_buf.copy_to_host(&mut result).expect("D2H");
 
     // C = [[19, 22], [43, 50]]
-    assert!((result[0] - 19.0).abs() < 1e-3, "C[0,0] = {} expected 19.0", result[0]);
-    assert!((result[1] - 22.0).abs() < 1e-3, "C[0,1] = {} expected 22.0", result[1]);
-    assert!((result[2] - 43.0).abs() < 1e-3, "C[1,0] = {} expected 43.0", result[2]);
-    assert!((result[3] - 50.0).abs() < 1e-3, "C[1,1] = {} expected 50.0", result[3]);
+    assert!(
+        (result[0] - 19.0).abs() < 1e-3,
+        "C[0,0] = {} expected 19.0",
+        result[0]
+    );
+    assert!(
+        (result[1] - 22.0).abs() < 1e-3,
+        "C[0,1] = {} expected 22.0",
+        result[1]
+    );
+    assert!(
+        (result[2] - 43.0).abs() < 1e-3,
+        "C[1,0] = {} expected 43.0",
+        result[2]
+    );
+    assert!(
+        (result[3] - 50.0).abs() < 1e-3,
+        "C[1,1] = {} expected 50.0",
+        result[3]
+    );
 }
 
 /// FP16 GEMM on training-relevant shape: [4096, 1024] x [1024, 4096]
@@ -155,7 +171,10 @@ fn test_cublas_gemm_f16_training_shape() {
         elapsed.as_millis()
     );
 
-    assert!(tflops > 50.0, "cuBLAS FP16 GEMM must exceed 50 TFLOP/s, got {tflops:.1} TFLOP/s");
+    assert!(
+        tflops > 50.0,
+        "cuBLAS FP16 GEMM must exceed 50 TFLOP/s, got {tflops:.1} TFLOP/s"
+    );
 }
 
 /// All 6 training shapes from cublas-gemm-v1.yaml must work
@@ -227,7 +246,10 @@ fn cublas_bench_gemm_fp16_throughput() {
 
     eprintln!();
     eprintln!("=== cuBLAS FP16 GEMM Throughput (RTX 4090) ===");
-    eprintln!("{:<10} {:>12} {:>12} {:>10}", "Size", "Time(µs)", "TFLOP/s", "Efficiency");
+    eprintln!(
+        "{:<10} {:>12} {:>12} {:>10}",
+        "Size", "Time(µs)", "TFLOP/s", "Efficiency"
+    );
     eprintln!("{}", "-".repeat(48));
 
     for &n in &[256_usize, 512, 1024, 2048, 4096] {
@@ -318,7 +340,10 @@ fn ptx_vs_cublas_gemm_f32() {
 
     eprintln!();
     eprintln!("=== PTX GEMM (pure Rust) vs cuBLAS (NVIDIA) — FP32 ===");
-    eprintln!("{:<10} {:>12} {:>12} {:>10}", "Size", "PTX(µs)", "cuBLAS(µs)", "Ratio");
+    eprintln!(
+        "{:<10} {:>12} {:>12} {:>10}",
+        "Size", "PTX(µs)", "cuBLAS(µs)", "Ratio"
+    );
     eprintln!("{}", "-".repeat(48));
 
     // FP32 tiled GEMM — test small sizes where PTX launch overhead matters
@@ -373,7 +398,9 @@ fn ptx_vs_cublas_gemm_f32() {
         // Warmup PTX
         for _ in 0..3 {
             unsafe {
-                stream.launch_kernel(&mut module, kernel.name(), &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, kernel.name(), &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -383,7 +410,9 @@ fn ptx_vs_cublas_gemm_f32() {
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut module, kernel.name(), &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, kernel.name(), &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -437,7 +466,11 @@ fn ptx_vs_cublas_gemm_f32() {
         stream.synchronize().ok();
         let cublas_us = start.elapsed().as_micros() as f64 / iters as f64;
 
-        let ratio = if cublas_us > 0.0 { ptx_us / cublas_us } else { 0.0 };
+        let ratio = if cublas_us > 0.0 {
+            ptx_us / cublas_us
+        } else {
+            0.0
+        };
         let status = if ratio < 2.0 {
             "competitive"
         } else if ratio < 5.0 {
@@ -538,7 +571,9 @@ fn wmma_vs_cublas_fp16() {
         // Warmup WMMA
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut module, kernel.name(), &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, kernel.name(), &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -547,7 +582,9 @@ fn wmma_vs_cublas_fp16() {
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut module, kernel.name(), &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, kernel.name(), &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -596,7 +633,11 @@ fn wmma_vs_cublas_fp16() {
         stream.synchronize().ok();
         let cublas_us = start.elapsed().as_micros() as f64 / iters as f64;
 
-        let ratio = if cublas_us > 0.0 { wmma_us / cublas_us } else { 0.0 };
+        let ratio = if cublas_us > 0.0 {
+            wmma_us / cublas_us
+        } else {
+            0.0
+        };
 
         eprintln!(
             "{:<10} {:>10.1}µs {:>10.1}µs {:>10.1} {:>8.1}x",
@@ -659,8 +700,11 @@ fn cta_wmma_vs_cublas_fp16() {
 
         let grid_x = ((n + 31) / 32) as u32;
         let grid_y = ((m + 31) / 32) as u32;
-        let config =
-            LaunchConfig { grid: (grid_x, grid_y, 1), block: (128, 1, 1), shared_mem: 2048 };
+        let config = LaunchConfig {
+            grid: (grid_x, grid_y, 1),
+            block: (128, 1, 1),
+            shared_mem: 2048,
+        };
 
         let mut a_ptr = a_buf.as_ptr();
         let mut b_ptr = b_buf.as_ptr();
@@ -679,7 +723,9 @@ fn cta_wmma_vs_cublas_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut module, "gemm_cta_wmma_fp16", &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, "gemm_cta_wmma_fp16", &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -688,7 +734,9 @@ fn cta_wmma_vs_cublas_fp16() {
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut module, "gemm_cta_wmma_fp16", &config, &mut args).ok();
+                stream
+                    .launch_kernel(&mut module, "gemm_cta_wmma_fp16", &config, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -729,7 +777,11 @@ fn cta_wmma_vs_cublas_fp16() {
         }
         stream.synchronize().ok();
         let cublas_us = start.elapsed().as_micros() as f64 / iters as f64;
-        let ratio = if cublas_us > 0.0 { cta_us / cublas_us } else { 0.0 };
+        let ratio = if cublas_us > 0.0 {
+            cta_us / cublas_us
+        } else {
+            0.0
+        };
 
         eprintln!(
             "{:<10} {:>10.1}us {:>10.1}us {:>10.1} {:>8.1}x",
@@ -798,8 +850,11 @@ fn cta_wmma_dbuf_bench_fp16() {
                 continue;
             }
         };
-        let cfg_s =
-            LaunchConfig { grid: (grid_x, grid_y, 1), block: (128, 1, 1), shared_mem: 2048 };
+        let cfg_s = LaunchConfig {
+            grid: (grid_x, grid_y, 1),
+            block: (128, 1, 1),
+            shared_mem: 2048,
+        };
 
         let mut a_ptr = a_buf.as_ptr();
         let mut b_ptr = b_buf.as_ptr();
@@ -818,7 +873,9 @@ fn cta_wmma_dbuf_bench_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut mod_s, "gemm_cta_wmma_fp16", &cfg_s, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_s, "gemm_cta_wmma_fp16", &cfg_s, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -826,7 +883,9 @@ fn cta_wmma_dbuf_bench_fp16() {
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut mod_s, "gemm_cta_wmma_fp16", &cfg_s, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_s, "gemm_cta_wmma_fp16", &cfg_s, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -842,8 +901,11 @@ fn cta_wmma_dbuf_bench_fp16() {
                 continue;
             }
         };
-        let cfg_d =
-            LaunchConfig { grid: (grid_x, grid_y, 1), block: (128, 1, 1), shared_mem: 4096 };
+        let cfg_d = LaunchConfig {
+            grid: (grid_x, grid_y, 1),
+            block: (128, 1, 1),
+            shared_mem: 4096,
+        };
 
         // Reset args
         a_ptr = a_buf.as_ptr();
@@ -855,14 +917,18 @@ fn cta_wmma_dbuf_bench_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut mod_d, "gemm_cta_wmma_fp16", &cfg_d, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_d, "gemm_cta_wmma_fp16", &cfg_d, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut mod_d, "gemm_cta_wmma_fp16", &cfg_d, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_d, "gemm_cta_wmma_fp16", &cfg_d, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -1008,14 +1074,18 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -1046,14 +1116,18 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -1084,14 +1158,18 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
 
         for _ in 0..5 {
             unsafe {
-                stream.launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
         let start = Instant::now();
         for _ in 0..iters {
             unsafe {
-                stream.launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args).ok();
+                stream
+                    .launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args)
+                    .ok();
             }
         }
         stream.synchronize().ok();
@@ -1101,7 +1179,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
         // ─── 64×64 cp.async (SM 8.0+) ───
         let kernel_cp = build_cta64_wmma_fp16_cpasync(m as u32, n as u32, k as u32);
         // cp.async requires sm_80+ target
-        let ptx_cp = PtxModule::new().target("sm_80").add_kernel(kernel_cp).emit();
+        let ptx_cp = PtxModule::new()
+            .target("sm_80")
+            .add_kernel(kernel_cp)
+            .emit();
         let cpasync_us = match CudaModule::from_ptx(&ctx, &ptx_cp) {
             Ok(mut mod_cp) => {
                 let cfg_cp = LaunchConfig {
@@ -1193,7 +1274,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
             crate::kernels::gemm::basic::tensor_core::cta128_wmma::build_cta128_wmma_fp16_cpasync(
                 m as u32, n as u32, k as u32,
             );
-        let ptx_128 = PtxModule::new().target("sm_80").add_kernel(kernel_128).emit();
+        let ptx_128 = PtxModule::new()
+            .target("sm_80")
+            .add_kernel(kernel_128)
+            .emit();
         let cta128_us = match CudaModule::from_ptx(&ctx, &ptx_128) {
             Ok(mut mod_128) => {
                 let cfg_128 = LaunchConfig {
@@ -1246,7 +1330,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
 
         // ─── 64×64 mma.sync (Phase 1 bridge plan) ───
         let kernel_mma = build_cta64_mma_fp16_cpasync(m as u32, n as u32, k as u32);
-        let ptx_mma = PtxModule::new().target("sm_80").add_kernel(kernel_mma).emit();
+        let ptx_mma = PtxModule::new()
+            .target("sm_80")
+            .add_kernel(kernel_mma)
+            .emit();
         let mma_us = match CudaModule::from_ptx(&ctx, &ptx_mma) {
             Ok(mut mod_mma) => {
                 let cfg_mma = LaunchConfig {
@@ -1289,7 +1376,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
         // ─── 64×128 mma.sync (wider tile, +33% AI) ───
         let mma128_us = if n >= 256 {
             let kernel_128 = build_cta64x128_mma_fp16_cpasync(m as u32, n as u32, k as u32);
-            let ptx_128 = PtxModule::new().target("sm_80").add_kernel(kernel_128).emit();
+            let ptx_128 = PtxModule::new()
+                .target("sm_80")
+                .add_kernel(kernel_128)
+                .emit();
             match CudaModule::from_ptx(&ctx, &ptx_128) {
                 Ok(mut mod_128) => {
                     let cfg_128 = LaunchConfig {
@@ -1336,8 +1426,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
                         let mut result = vec![0.0f32; m * n];
                         c_buf.copy_to_host(&mut result).expect("D2H");
                         let expected = k as f32;
-                        let max_err =
-                            result.iter().map(|&v| (v - expected).abs()).fold(0.0f32, f32::max);
+                        let max_err = result
+                            .iter()
+                            .map(|&v| (v - expected).abs())
+                            .fold(0.0f32, f32::max);
                         assert!(
                             max_err < 1.0,
                             "64x128 correctness FAILED at {n}: max_err={max_err}, expected={expected}"
@@ -1364,7 +1456,10 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
         // ─── 64×128 pipelined mma.sync (3-stage sw pipeline) ───
         let pipe_us = if n >= 256 {
             let kernel_pipe = build_cta64x128_mma_pipeline_fp16(m as u32, n as u32, k as u32);
-            let ptx_pipe = PtxModule::new().target("sm_80").add_kernel(kernel_pipe).emit();
+            let ptx_pipe = PtxModule::new()
+                .target("sm_80")
+                .add_kernel(kernel_pipe)
+                .emit();
             match CudaModule::from_ptx(&ctx, &ptx_pipe) {
                 Ok(mut mod_pipe) => {
                     let cfg_pipe = LaunchConfig {

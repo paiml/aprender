@@ -1,0 +1,197 @@
+[package]
+name = "jugar-probar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Probar: Rust-native testing framework with pixel coverage, TUI snapshots, and visual regression"
+license.workspace = true
+repository.workspace = true
+keywords = ["testing", "pixel-coverage", "visual-regression", "tui", "snapshot"]
+categories = ["development-tools::testing", "wasm"]
+
+[features]
+default = ["tui", "media", "watch"]
+# Enable real browser control (requires chromium)
+browser = ["chromiumoxide", "tokio", "futures", "async-trait"]
+# Enable WASM runtime for logic testing (Phase 1)
+runtime = ["wasmtime", "async-trait"]
+# Enable derive macros for type-safe selectors (Phase 4)
+derive = ["jugar-probar-derive"]
+# TUI testing support (included by default)
+# Note: For wasm32-unknown-unknown target, use --no-default-features
+# Uses custom TextGrid instead of ratatui for zero external dependencies
+tui = ["crossterm"]
+# GPU compute support via trueno (RTX 4090 etc.)
+gpu = ["trueno"]
+# ComputeBlock testing (PROBAR-SPEC-009 Brick Architecture)
+# Enables testing of presentar-terminal widgets and ComputeBlocks
+compute-blocks = ["presentar-terminal", "presentar-core"]
+# Docker-based cross-browser WASM testing (PROBAR-SPEC-014)
+docker = ["bollard", "tokio", "futures", "async-trait"]
+# Property-based testing strategies (PROBAR-SPEC-WASM-001)
+proptest = ["dep:proptest"]
+# Media capture: screenshots, GIF recording, video, visual regression
+media = ["dep:image", "dep:gif", "dep:png", "dep:mp4"]
+# File watching for dev mode
+watch = ["dep:notify"]
+# LLM types and assertions (no HTTP dependencies)
+llm-types = []
+# LLM/API testing and load testing (includes llm-types + HTTP client)
+llm = ["llm-types", "dep:reqwest", "tokio", "futures"]
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+image = { workspace = true, optional = true }
+base64 = { workspace = true }
+
+# Media generation
+gif = { workspace = true, optional = true }
+png = { workspace = true, optional = true }
+mp4 = { workspace = true, optional = true }
+
+# TUI testing (EDD compliance) - optional, not available on WASM
+# Uses custom TextGrid instead of ratatui for zero external dependencies
+crossterm = { workspace = true, optional = true }
+regex = { workspace = true }
+sha2 = { workspace = true }
+serde_yaml_ng = { workspace = true }
+
+# Tracing and UUID (available on all targets)
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+# Optional derive macros for type-safe selectors (Phase 4)
+jugar-probar-derive = { version = "=1.0.3", optional = true }
+
+# Optional GPU compute via trueno
+trueno = { workspace = true, optional = true }
+
+# Optional ComputeBlock testing (presentar-terminal integration)
+presentar-terminal = { workspace = true, optional = true }
+presentar-core = { workspace = true, optional = true }
+
+# Optional Docker SDK for container-based testing
+bollard = { workspace = true, optional = true }
+
+# Optional property-based testing (PROBAR-SPEC-WASM-001)
+proptest = { workspace = true, optional = true }
+
+# LLM testing (OpenAI-compatible API client)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+
+# AST analysis for state sync linter (PROBAR-WASM-003)
+syn = { workspace = true }
+proc-macro2 = { version = "1.0", features = ["span-locations"] }
+
+# Binary serialization for mock fidelity (PROBAR-WASM-003)
+bincode = { workspace = true }
+
+# Native-only dependencies (not available on WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Watch mode (Phase 6)
+notify = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+# Optional CDP browser control
+chromiumoxide = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+# Optional WASM runtime for logic testing
+wasmtime = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+
+# WASM-specific dependencies
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "Performance", "Response"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true }
+async-trait = { workspace = true }
+proptest = { workspace = true }
+tempfile = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[[bench]]
+name = "locator_ops"
+harness = false
+
+[[bench]]
+name = "playbook_ops"
+harness = false
+
+[[bench]]
+name = "coverage_ops"
+harness = false
+
+[[bench]]
+name = "image_ops"
+harness = false
+required-features = ["media"]
+
+[[example]]
+name = "locator_demo"
+path = "examples/locator_demo.rs"
+
+[[example]]
+name = "accessibility_demo"
+path = "examples/accessibility_demo.rs"
+
+[[example]]
+name = "coverage_demo"
+path = "examples/coverage_demo.rs"
+required-features = ["media"]
+
+[[example]]
+name = "pong_simulation"
+path = "examples/pong_simulation.rs"
+required-features = ["media"]
+
+[[example]]
+name = "gui_coverage"
+path = "examples/gui_coverage.rs"
+required-features = ["media"]
+
+[[example]]
+name = "pixel_coverage_heatmap"
+path = "examples/pixel_coverage_heatmap.rs"
+required-features = ["media"]
+
+[[example]]
+name = "visual_regression_demo"
+path = "examples/visual_regression_demo.rs"
+required-features = ["media"]
+
+[[example]]
+name = "wasm_pixel_gui_demo"
+path = "examples/wasm_pixel_gui_demo.rs"
+required-features = ["media"]
+
+[[example]]
+name = "docker_demo"
+path = "examples/docker_demo.rs"
+required-features = ["docker"]
+
+[[example]]
+name = "zero_js_demo"
+path = "examples/zero_js_demo.rs"
+
+[[example]]
+name = "worker_harness_demo"
+path = "examples/worker_harness_demo.rs"
+
+[[example]]
+name = "watch_mode"
+path = "examples/watch_mode.rs"
+required-features = ["watch"]
+
+[lints]
+workspace = true

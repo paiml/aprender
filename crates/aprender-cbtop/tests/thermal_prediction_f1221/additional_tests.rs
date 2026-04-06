@@ -216,7 +216,13 @@ fn test_custom_cooling_rate() {
 /// Test analyze_thermal convenience function
 #[test]
 fn test_analyze_thermal_function() {
-    let samples = vec![(60.0, 0.0), (65.0, 1.0), (70.0, 2.0), (75.0, 3.0), (80.0, 4.0)];
+    let samples = vec![
+        (60.0, 0.0),
+        (65.0, 1.0),
+        (70.0, 2.0),
+        (75.0, 3.0),
+        (80.0, 4.0),
+    ];
 
     let prediction = analyze_thermal(&samples, 5.0).unwrap();
 

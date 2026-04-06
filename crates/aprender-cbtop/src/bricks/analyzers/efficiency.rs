@@ -132,8 +132,11 @@ impl EfficiencyMetrics {
         operations: u64,
         bytes_transferred: u64,
     ) -> Self {
-        let compute_efficiency =
-            if peak_flops > 0.0 { (actual_flops / peak_flops * 100.0).min(100.0) } else { 0.0 };
+        let compute_efficiency = if peak_flops > 0.0 {
+            (actual_flops / peak_flops * 100.0).min(100.0)
+        } else {
+            0.0
+        };
 
         let memory_efficiency = if peak_bandwidth > 0.0 {
             (actual_bandwidth / peak_bandwidth * 100.0).min(100.0)
@@ -141,8 +144,11 @@ impl EfficiencyMetrics {
             0.0
         };
 
-        let arithmetic_intensity =
-            if bytes_transferred > 0 { operations as f64 / bytes_transferred as f64 } else { 0.0 };
+        let arithmetic_intensity = if bytes_transferred > 0 {
+            operations as f64 / bytes_transferred as f64
+        } else {
+            0.0
+        };
 
         // Determine bottleneck based on relative efficiencies
         let bottleneck = if compute_efficiency < 30.0 && memory_efficiency < 30.0 {
@@ -220,7 +226,8 @@ impl EfficiencyAnalyzerBrick {
         );
 
         // Track history
-        self.efficiency_history.push(self.metrics.overall_efficiency);
+        self.efficiency_history
+            .push(self.metrics.overall_efficiency);
         if self.efficiency_history.len() > self.history_limit {
             self.efficiency_history.remove(0);
         }
@@ -254,7 +261,14 @@ impl EfficiencyAnalyzerBrick {
             return 0.0;
         }
         let recent: f64 = self.efficiency_history.iter().rev().take(5).sum::<f64>() / 5.0;
-        let older: f64 = self.efficiency_history.iter().rev().skip(5).take(5).sum::<f64>() / 5.0;
+        let older: f64 = self
+            .efficiency_history
+            .iter()
+            .rev()
+            .skip(5)
+            .take(5)
+            .sum::<f64>()
+            / 5.0;
         recent - older
     }
 }
@@ -303,7 +317,10 @@ mod tests {
 
     #[test]
     fn test_efficiency_class_from_percent() {
-        assert_eq!(EfficiencyClass::from_percent(95.0), EfficiencyClass::Excellent);
+        assert_eq!(
+            EfficiencyClass::from_percent(95.0),
+            EfficiencyClass::Excellent
+        );
         assert_eq!(EfficiencyClass::from_percent(80.0), EfficiencyClass::Good);
         assert_eq!(EfficiencyClass::from_percent(60.0), EfficiencyClass::Fair);
         assert_eq!(EfficiencyClass::from_percent(30.0), EfficiencyClass::Poor);
@@ -384,7 +401,10 @@ mod tests {
         }
 
         let trend = analyzer.efficiency_trend();
-        assert!(trend > 0.0, "Trend should be positive for improving efficiency");
+        assert!(
+            trend > 0.0,
+            "Trend should be positive for improving efficiency"
+        );
     }
 
     #[test]

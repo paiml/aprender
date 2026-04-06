@@ -19,7 +19,11 @@ pub struct ThermalMetrics {
 
 impl Default for ThermalMetrics {
     fn default() -> Self {
-        Self { timestamp: Instant::now(), max_temp_c: 0.0, avg_temp_c: 0.0 }
+        Self {
+            timestamp: Instant::now(),
+            max_temp_c: 0.0,
+            avg_temp_c: 0.0,
+        }
     }
 }
 
@@ -29,7 +33,9 @@ pub struct ThermalCollectorBrick {
 
 impl ThermalCollectorBrick {
     pub fn new() -> Self {
-        Self { history: RingBuffer::new(120) }
+        Self {
+            history: RingBuffer::new(120),
+        }
     }
 
     pub fn collect(&mut self) -> ThermalMetrics {
@@ -69,7 +75,11 @@ impl ThermalCollectorBrick {
         Ok(ThermalMetrics {
             timestamp: Instant::now(),
             max_temp_c: max_temp,
-            avg_temp_c: if count > 0 { total_temp / count as f64 } else { 0.0 },
+            avg_temp_c: if count > 0 {
+                total_temp / count as f64
+            } else {
+                0.0
+            },
         })
     }
 
@@ -85,13 +95,20 @@ impl Brick for ThermalCollectorBrick {
 
     fn assertions(&self) -> Vec<BrickAssertion> {
         vec![
-            BrickAssertion::ValueInRange { min: 0.0, max: 200.0 }, // Temp range
+            BrickAssertion::ValueInRange {
+                min: 0.0,
+                max: 200.0,
+            }, // Temp range
             BrickAssertion::max_latency_ms(5),
         ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 5, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 5,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

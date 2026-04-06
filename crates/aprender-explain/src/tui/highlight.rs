@@ -12,13 +12,48 @@ const PTX_ARITH_PREFIXES: &[&str] = &["add", "sub", "mul", "mad", "fma"];
 const PTX_CONTROL_PREFIXES: &[&str] = &["bra", "ret", "setp"];
 
 /// Color constants for PTX syntax categories (f32 RGBA).
-const COLOR_COMMENT: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 }; // DarkGray
-const COLOR_DIRECTIVE: Color = Color { r: 1.0, g: 0.3, b: 1.0, a: 1.0 }; // Magenta
-const COLOR_LABEL: Color = Color { r: 0.3, g: 1.0, b: 1.0, a: 1.0 }; // Cyan
-const COLOR_MEMORY: Color = Color { r: 1.0, g: 1.0, b: 0.3, a: 1.0 }; // Yellow
-const COLOR_ARITH: Color = Color { r: 0.3, g: 1.0, b: 0.3, a: 1.0 }; // Green
-const COLOR_CONTROL: Color = Color { r: 1.0, g: 0.3, b: 0.3, a: 1.0 }; // Red
-const COLOR_DEFAULT: Color = Color { r: 0.8, g: 0.8, b: 0.8, a: 1.0 }; // Light gray
+const COLOR_COMMENT: Color = Color {
+    r: 0.5,
+    g: 0.5,
+    b: 0.5,
+    a: 1.0,
+}; // DarkGray
+const COLOR_DIRECTIVE: Color = Color {
+    r: 1.0,
+    g: 0.3,
+    b: 1.0,
+    a: 1.0,
+}; // Magenta
+const COLOR_LABEL: Color = Color {
+    r: 0.3,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+}; // Cyan
+const COLOR_MEMORY: Color = Color {
+    r: 1.0,
+    g: 1.0,
+    b: 0.3,
+    a: 1.0,
+}; // Yellow
+const COLOR_ARITH: Color = Color {
+    r: 0.3,
+    g: 1.0,
+    b: 0.3,
+    a: 1.0,
+}; // Green
+const COLOR_CONTROL: Color = Color {
+    r: 1.0,
+    g: 0.3,
+    b: 0.3,
+    a: 1.0,
+}; // Red
+const COLOR_DEFAULT: Color = Color {
+    r: 0.8,
+    g: 0.8,
+    b: 0.8,
+    a: 1.0,
+}; // Light gray
 
 /// Classify a PTX instruction's syntax category for color highlighting.
 fn ptx_instruction_color(trimmed: &str) -> Option<Color> {

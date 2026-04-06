@@ -36,7 +36,10 @@ pub enum EvictionStrategy {
     /// Evict by priority (preempt low-priority requests)
     Priority { levels: usize },
     /// StreamingLLM: keep sink tokens + recent window
-    StreamingLLM { sink_tokens: usize, window_tokens: usize },
+    StreamingLLM {
+        sink_tokens: usize,
+        window_tokens: usize,
+    },
 }
 
 impl Default for EvictionStrategy {
@@ -52,8 +55,15 @@ impl fmt::Display for EvictionStrategy {
             EvictionStrategy::LFU => write!(f, "LFU"),
             EvictionStrategy::LongestFirst => write!(f, "LongestFirst"),
             EvictionStrategy::Priority { levels } => write!(f, "Priority({})", levels),
-            EvictionStrategy::StreamingLLM { sink_tokens, window_tokens } => {
-                write!(f, "StreamingLLM(sink={}, window={})", sink_tokens, window_tokens)
+            EvictionStrategy::StreamingLLM {
+                sink_tokens,
+                window_tokens,
+            } => {
+                write!(
+                    f,
+                    "StreamingLLM(sink={}, window={})",
+                    sink_tokens, window_tokens
+                )
             }
         }
     }
@@ -81,7 +91,12 @@ pub struct KvBlock {
 impl KvBlock {
     /// Create a new empty block.
     pub fn new(id: BlockId, capacity: usize) -> Self {
-        Self { id, num_tokens: 0, ref_count: AtomicU32::new(1), capacity }
+        Self {
+            id,
+            num_tokens: 0,
+            ref_count: AtomicU32::new(1),
+            capacity,
+        }
     }
 
     /// Check if block is full.
@@ -168,8 +183,15 @@ pub enum PagedKvError {
 impl fmt::Display for PagedKvError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PagedKvError::OutOfMemory { requested, available } => {
-                write!(f, "Out of memory: requested {} blocks, {} available", requested, available)
+            PagedKvError::OutOfMemory {
+                requested,
+                available,
+            } => {
+                write!(
+                    f,
+                    "Out of memory: requested {} blocks, {} available",
+                    requested, available
+                )
             }
             PagedKvError::SequenceNotFound(seq_id) => {
                 write!(f, "Sequence not found: {}", seq_id)

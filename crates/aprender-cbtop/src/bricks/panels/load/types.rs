@@ -24,8 +24,13 @@ impl ComputeBackend {
     }
 
     /// All available backends
-    pub const ALL: [ComputeBackend; 5] =
-        [Self::Auto, Self::CpuScalar, Self::CpuSimd, Self::GpuCuda, Self::GpuWgpu];
+    pub const ALL: [ComputeBackend; 5] = [
+        Self::Auto,
+        Self::CpuScalar,
+        Self::CpuSimd,
+        Self::GpuCuda,
+        Self::GpuWgpu,
+    ];
 }
 
 /// Workload type for load testing

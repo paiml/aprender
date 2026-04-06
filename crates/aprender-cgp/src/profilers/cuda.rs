@@ -65,7 +65,8 @@ impl NcuProfiler {
         cmd.arg("--kernel-name-base").arg("demangled");
 
         if !kernel_regex.is_empty() {
-            cmd.arg("--kernel-id").arg(format!("::regex:{kernel_regex}:"));
+            cmd.arg("--kernel-id")
+                .arg(format!("::regex:{kernel_regex}:"));
         }
 
         for section in &self.sections {
@@ -119,18 +120,27 @@ pub fn parse_ncu_csv(csv: &str) -> Result<HashMap<String, String>> {
 
 /// Extract a float metric, returning 0.0 if not found.
 fn get_f64(metrics: &HashMap<String, String>, key: &str) -> f64 {
-    metrics.get(key).and_then(|v| v.replace(',', "").parse::<f64>().ok()).unwrap_or(0.0)
+    metrics
+        .get(key)
+        .and_then(|v| v.replace(',', "").parse::<f64>().ok())
+        .unwrap_or(0.0)
 }
 
 /// Extract a u64 metric.
 #[allow(dead_code)]
 fn get_u64(metrics: &HashMap<String, String>, key: &str) -> u64 {
-    metrics.get(key).and_then(|v| v.replace(',', "").parse::<u64>().ok()).unwrap_or(0)
+    metrics
+        .get(key)
+        .and_then(|v| v.replace(',', "").parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 /// Extract a u32 metric.
 fn get_u32(metrics: &HashMap<String, String>, key: &str) -> u32 {
-    metrics.get(key).and_then(|v| v.replace(',', "").parse::<u32>().ok()).unwrap_or(0)
+    metrics
+        .get(key)
+        .and_then(|v| v.replace(',', "").parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 /// Build a FullProfile from ncu metrics.
@@ -142,19 +152,33 @@ pub fn ncu_metrics_to_profile(
 ) -> FullProfile {
     let duration_us = get_f64(metrics, "gpu__time_duration.sum") / 1000.0; // ns → us
     let flops = 2.0 * (size as f64).powi(3); // GEMM: 2*M*N*K
-    let tflops = if duration_us > 0.0 { flops / (duration_us * 1e-6) / 1e12 } else { 0.0 };
+    let tflops = if duration_us > 0.0 {
+        flops / (duration_us * 1e-6) / 1e12
+    } else {
+        0.0
+    };
 
     let sm_pct = get_f64(metrics, "sm__throughput.avg.pct_of_peak_sustained_elapsed");
-    let dram_pct = get_f64(metrics, "dram__throughput.avg.pct_of_peak_sustained_elapsed");
-    let occupancy_pct = get_f64(metrics, "sm__warps_active.avg.pct_of_peak_sustained_elapsed");
+    let dram_pct = get_f64(
+        metrics,
+        "dram__throughput.avg.pct_of_peak_sustained_elapsed",
+    );
+    let occupancy_pct = get_f64(
+        metrics,
+        "sm__warps_active.avg.pct_of_peak_sustained_elapsed",
+    );
     let warp_eff = get_f64(metrics, "smsp__thread_inst_executed_per_inst_executed.pct");
-    let tc_pct =
-        get_f64(metrics, "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed");
+    let tc_pct = get_f64(
+        metrics,
+        "sm__pipe_tensor_cycles_active.avg.pct_of_peak_sustained_elapsed",
+    );
     let regs = get_u32(metrics, "launch__registers_per_thread");
     let smem = get_u32(metrics, "launch__shared_mem_per_block_driver");
     let l2_hit = get_f64(metrics, "lts__t_sector_hit_rate.pct");
-    let global_load_eff =
-        get_f64(metrics, "smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct");
+    let global_load_eff = get_f64(
+        metrics,
+        "smsp__sass_average_data_bytes_per_sector_mem_global_op_ld.pct",
+    );
 
     // Roofline analysis
     let model = RooflineModel::rtx_4090();
@@ -172,8 +196,9 @@ pub fn ncu_metrics_to_profile(
         0.0
     };
 
-    let roofline =
-        model.classify(ai, tflops * 1e12, Precision::Fp16, MemoryLevel::Dram).map(|point| {
+    let roofline = model
+        .classify(ai, tflops * 1e12, Precision::Fp16, MemoryLevel::Dram)
+        .map(|point| {
             let bound_str = match &point.bound {
                 Bound::Memory { .. } => "memory".to_string(),
                 Bound::Compute { .. } => "compute".to_string(),
@@ -207,7 +232,11 @@ pub fn ncu_metrics_to_profile(
             registers_per_thread: Some(regs),
             ..Default::default()
         }),
-        timing: TimingMetrics { wall_clock_time_us: duration_us, samples: 1, ..Default::default() },
+        timing: TimingMetrics {
+            wall_clock_time_us: duration_us,
+            samples: 1,
+            ..Default::default()
+        },
         throughput: ThroughputMetrics {
             tflops,
             bandwidth_gbps: 1008.0 * dram_pct / 100.0,
@@ -244,7 +273,13 @@ fn render_profile(profile: &FullProfile) {
     let dims = profile
         .kernel
         .as_ref()
-        .map(|k| k.dimensions.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x"))
+        .map(|k| {
+            k.dimensions
+                .iter()
+                .map(|d| d.to_string())
+                .collect::<Vec<_>>()
+                .join("x")
+        })
         .unwrap_or_default();
 
     let gpu_name = profile.hardware.gpu.as_deref().unwrap_or("Unknown GPU");
@@ -258,7 +293,11 @@ fn render_profile(profile: &FullProfile) {
 
     let t = &profile.timing;
     let tp = &profile.throughput;
-    let peak_pct = if tp.tflops > 0.0 { tp.tflops / 330.0 * 100.0 } else { 0.0 };
+    let peak_pct = if tp.tflops > 0.0 {
+        tp.tflops / 330.0 * 100.0
+    } else {
+        0.0
+    };
     println!(
         "Execution: {:.1} us  |  {:.1} TFLOP/s  |  {:.1}% of peak",
         t.wall_clock_time_us, tp.tflops, peak_pct
@@ -267,7 +306,10 @@ fn render_profile(profile: &FullProfile) {
     // Roofline
     if let Some(roof) = &profile.roofline {
         println!("\n  Roofline Position:");
-        println!("    Arithmetic Intensity: {:.1} FLOP/byte", tp.arithmetic_intensity);
+        println!(
+            "    Arithmetic Intensity: {:.1} FLOP/byte",
+            tp.arithmetic_intensity
+        );
         println!("    Ridge Point: {:.1} FLOP/byte", roof.ridge_point);
         let status = if roof.bound == "memory" {
             format!("MEMORY-BOUND ({:.1}x below ridge)", roof.distance_to_ridge)
@@ -293,10 +335,19 @@ fn render_profile(profile: &FullProfile) {
             quality_badge(gc.warp_execution_efficiency_pct, 95.0)
         );
         println!("    SM utilization:         {:5.1}%", gc.sm_utilization_pct);
-        println!("    Achieved occupancy:     {:5.1}%", gc.achieved_occupancy_pct);
-        println!("    Register usage:          {:3}/255", gc.register_usage_per_thread);
+        println!(
+            "    Achieved occupancy:     {:5.1}%",
+            gc.achieved_occupancy_pct
+        );
+        println!(
+            "    Register usage:          {:3}/255",
+            gc.register_usage_per_thread
+        );
         if gc.shared_memory_per_block > 0 {
-            println!("    Shared memory/block:   {:5} bytes", gc.shared_memory_per_block);
+            println!(
+                "    Shared memory/block:   {:5} bytes",
+                gc.shared_memory_per_block
+            );
         }
     }
 
@@ -346,8 +397,14 @@ fn render_profile(profile: &FullProfile) {
     // Energy efficiency
     if let Some(energy) = &profile.energy {
         println!("\n  Energy:");
-        println!("    Efficiency: {:.4} TFLOP/s per watt", energy.tflops_per_watt);
-        println!("    Energy:     {:.6} J per inference", energy.joules_per_inference);
+        println!(
+            "    Efficiency: {:.4} TFLOP/s per watt",
+            energy.tflops_per_watt
+        );
+        println!(
+            "    Energy:     {:.6} J per inference",
+            energy.joules_per_inference
+        );
     }
 
     println!();
@@ -438,7 +495,10 @@ pub fn profile_kernel(name: &str, size: u32, roofline: bool, _metrics: Option<&s
             // No binary found — run ncu with a placeholder message
             println!("\n=== CGP Kernel Profile: {name} ({size}x{size}x{size}) ===\n");
             println!("  Backend: CUDA (ncu at {})", profiler.ncu_path.display());
-            println!("  GPU: {}", detect_gpu_name().unwrap_or_else(|| "Unknown".to_string()));
+            println!(
+                "  GPU: {}",
+                detect_gpu_name().unwrap_or_else(|| "Unknown".to_string())
+            );
             println!(
                 "  Driver: {}",
                 detect_driver_version().unwrap_or_else(|| "Unknown".to_string())
@@ -600,7 +660,9 @@ pub struct NsysKernelStat {
 
 impl NsysProfiler {
     pub fn detect() -> Option<Self> {
-        which::which("nsys").ok().map(|path| Self { nsys_path: path })
+        which::which("nsys")
+            .ok()
+            .map(|path| Self { nsys_path: path })
     }
 
     /// Run nsys profile and capture stats.
@@ -728,8 +790,11 @@ pub fn profile_binary(
                 &stat.name
             };
 
-            let display_name =
-                if name.len() > 40 { format!("{}...", &name[..37]) } else { name.to_string() };
+            let display_name = if name.len() > 40 {
+                format!("{}...", &name[..37])
+            } else {
+                name.to_string()
+            };
 
             println!(
                 "  {:40} {:>8} {:>12.1} {:>12.1} {:>12.1}",
@@ -773,7 +838,10 @@ pub fn profile_python(args: &[String]) -> Result<()> {
         } else {
             println!("  CUDA kernels captured via nsys:");
             for stat in &stats {
-                println!("    {} — {} calls, avg {:.1}us", stat.name, stat.calls, stat.avg_us);
+                println!(
+                    "    {} — {} calls, avg {:.1}us",
+                    stat.name, stat.calls, stat.avg_us
+                );
             }
         }
     } else {
@@ -893,7 +961,10 @@ mod tests {
 "0","gpu__time_duration.sum","nsecond","23200"
 "#;
         let metrics = parse_ncu_csv(csv).unwrap();
-        assert_eq!(get_f64(&metrics, "sm__throughput.avg.pct_of_peak_sustained_elapsed"), 42.3);
+        assert_eq!(
+            get_f64(&metrics, "sm__throughput.avg.pct_of_peak_sustained_elapsed"),
+            42.3
+        );
         assert_eq!(get_u32(&metrics, "launch__registers_per_thread"), 48);
         assert_eq!(get_f64(&metrics, "gpu__time_duration.sum"), 23200.0);
     }
@@ -946,8 +1017,15 @@ mod tests {
                 dimensions: vec![256, 256, 256],
                 ..Default::default()
             }),
-            timing: TimingMetrics { wall_clock_time_us: 10.0, samples: 1, ..Default::default() },
-            throughput: ThroughputMetrics { tflops: 5.0, ..Default::default() },
+            timing: TimingMetrics {
+                wall_clock_time_us: 10.0,
+                samples: 1,
+                ..Default::default()
+            },
+            throughput: ThroughputMetrics {
+                tflops: 5.0,
+                ..Default::default()
+            },
             gpu_compute: Some(GpuComputeMetrics {
                 sm_utilization_pct: 40.0,
                 warp_execution_efficiency_pct: 100.0,

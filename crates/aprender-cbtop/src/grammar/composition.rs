@@ -24,11 +24,17 @@ impl CompositionMode {
 
     /// Create batch mode
     pub fn batch(size: usize) -> Self {
-        CompositionMode::Batch { batch_size: size, prefetch: 2 }
+        CompositionMode::Batch {
+            batch_size: size,
+            prefetch: 2,
+        }
     }
 
     /// Create pipeline mode
     pub fn pipeline(depth: usize) -> Self {
-        CompositionMode::Pipeline { depth, overlap: true }
+        CompositionMode::Pipeline {
+            depth,
+            overlap: true,
+        }
     }
 }

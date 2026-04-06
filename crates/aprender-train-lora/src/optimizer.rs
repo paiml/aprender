@@ -80,7 +80,11 @@ impl LoraOptimizer {
 
     /// Find optimal configuration for the given method.
     pub fn optimize(&self, method: Method) -> Result<OptimalConfig> {
-        let method = if method == Method::Auto { self.select_method() } else { method };
+        let method = if method == Method::Auto {
+            self.select_method()
+        } else {
+            method
+        };
 
         let rank = self.find_optimal_rank(method)?;
         let planner = MemoryPlanner::new(self.model_params);
@@ -210,14 +214,17 @@ pub fn compare_methods(model_params: u64, available_vram_gb: f64) -> Vec<MethodC
     methods
         .iter()
         .filter_map(|&method| {
-            optimizer.optimize(method).ok().map(|config| MethodComparison {
-                method,
-                fits: config.utilization_percent <= 100.0,
-                memory_gb: config.memory_gb,
-                trainable_params: config.trainable_params,
-                speedup: config.speedup,
-                rank: config.rank,
-            })
+            optimizer
+                .optimize(method)
+                .ok()
+                .map(|config| MethodComparison {
+                    method,
+                    fits: config.utilization_percent <= 100.0,
+                    memory_gb: config.memory_gb,
+                    trainable_params: config.trainable_params,
+                    speedup: config.speedup,
+                    rank: config.rank,
+                })
         })
         .collect()
 }
@@ -240,7 +247,9 @@ mod tests {
     #[test]
     fn test_optimizer_selects_qlora_for_small_vram() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 8.0);
-        let config = optimizer.optimize(Method::Auto).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::Auto)
+            .expect("config should be valid");
 
         // With only 8GB, should select QLoRA
         assert_eq!(config.method, Method::QLoRA);
@@ -249,16 +258,23 @@ mod tests {
     #[test]
     fn test_optimizer_selects_lora_for_medium_vram() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 24.0);
-        let config = optimizer.optimize(Method::Auto).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::Auto)
+            .expect("config should be valid");
 
         // With 24GB for 7B model, optimizer may select LoRA, QLoRA, or Full
-        assert!(matches!(config.method, Method::LoRA | Method::QLoRA | Method::Full));
+        assert!(matches!(
+            config.method,
+            Method::LoRA | Method::QLoRA | Method::Full
+        ));
     }
 
     #[test]
     fn test_optimal_rank_is_positive() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
 
         assert!(config.rank >= 8);
         assert!(config.rank <= 256);
@@ -267,7 +283,9 @@ mod tests {
     #[test]
     fn test_trainable_params_less_than_total() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
 
         assert!(config.trainable_params < 7_000_000_000);
         assert!(config.trainable_percent < 10.0);
@@ -284,7 +302,9 @@ mod tests {
     #[test]
     fn test_alpha_is_rank_over_4() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
 
         assert!((config.alpha - config.rank as f32 / 4.0).abs() < 0.01);
     }
@@ -292,7 +312,9 @@ mod tests {
     #[test]
     fn test_target_modules_populated() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
 
         assert!(!config.target_modules.is_empty());
         assert!(config.target_modules.contains(&"q_proj".to_string()));
@@ -301,7 +323,9 @@ mod tests {
     #[test]
     fn test_with_target_utilization() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0).with_target_utilization(0.75);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
 
         // Lower target utilization should give smaller rank
         let high_util = LoraOptimizer::new(7_000_000_000, 16.0)
@@ -343,7 +367,9 @@ mod tests {
     #[test]
     fn test_to_comparison_table() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 16.0);
-        let config = optimizer.optimize(Method::LoRA).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::LoRA)
+            .expect("config should be valid");
         let table = config.to_comparison_table();
 
         assert!(table.contains("Optimal Configuration"));
@@ -356,14 +382,18 @@ mod tests {
     #[test]
     fn test_full_method_rank_zero() {
         let optimizer = LoraOptimizer::new(1_000_000_000, 100.0);
-        let config = optimizer.optimize(Method::Full).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::Full)
+            .expect("config should be valid");
         assert_eq!(config.rank, 0);
     }
 
     #[test]
     fn test_full_method_all_params_trainable() {
         let optimizer = LoraOptimizer::new(1_000_000_000, 100.0);
-        let config = optimizer.optimize(Method::Full).expect("config should be valid");
+        let config = optimizer
+            .optimize(Method::Full)
+            .expect("config should be valid");
         assert_eq!(config.trainable_params, 1_000_000_000);
         assert_eq!(config.trainable_percent, 100.0);
     }
@@ -372,13 +402,19 @@ mod tests {
     fn test_speedup_values() {
         let optimizer = LoraOptimizer::new(7_000_000_000, 100.0);
 
-        let full = optimizer.optimize(Method::Full).expect("operation should succeed");
+        let full = optimizer
+            .optimize(Method::Full)
+            .expect("operation should succeed");
         assert_eq!(full.speedup, 1.0);
 
-        let lora = optimizer.optimize(Method::LoRA).expect("operation should succeed");
+        let lora = optimizer
+            .optimize(Method::LoRA)
+            .expect("operation should succeed");
         assert_eq!(lora.speedup, 2.5);
 
-        let qlora = optimizer.optimize(Method::QLoRA).expect("operation should succeed");
+        let qlora = optimizer
+            .optimize(Method::QLoRA)
+            .expect("operation should succeed");
         assert_eq!(qlora.speedup, 1.8);
     }
 

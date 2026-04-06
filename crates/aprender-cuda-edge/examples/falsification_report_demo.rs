@@ -52,7 +52,10 @@ fn demo_sample_claims() {
     for fw in &FRAMEWORKS {
         println!("\n   {}:", fw);
         for claim in claims_for_framework(*fw).iter().take(3) {
-            println!("   │ {} [P{}]: {}", claim.id, claim.priority, claim.description);
+            println!(
+                "   │ {} [P{}]: {}",
+                claim.id, claim.priority, claim.description
+            );
         }
     }
 
@@ -85,7 +88,11 @@ fn demo_report_tracking() -> FalsificationReport {
     );
 
     report.mark_violated("SP-001");
-    print_report_status(&report, "After finding bug in SP-001", &[ClaimStatus::Violated]);
+    print_report_status(
+        &report,
+        "After finding bug in SP-001",
+        &[ClaimStatus::Violated],
+    );
 
     for claim in ["LC-005", "LC-006", "LC-007", "LC-008"] {
         report.mark_skipped(claim);
@@ -103,7 +110,10 @@ fn demo_report_tracking() -> FalsificationReport {
     println!("   ──────────────────");
 
     println!("   Is complete: {}", report.is_complete());
-    println!("   Remaining pending: {}", report.count_by_status(ClaimStatus::Pending));
+    println!(
+        "   Remaining pending: {}",
+        report.count_by_status(ClaimStatus::Pending)
+    );
 
     for claim in all_claims() {
         if report.status(claim.id) == Some(ClaimStatus::Pending) {
@@ -144,9 +154,18 @@ fn demo_framework_summary(report: &FalsificationReport) {
     let grouped = report.by_framework();
     for fw in &FRAMEWORKS {
         if let Some(claims) = grouped.get(fw) {
-            let verified = claims.iter().filter(|(_, s)| *s == ClaimStatus::Verified).count();
-            let violated = claims.iter().filter(|(_, s)| *s == ClaimStatus::Violated).count();
-            let skipped = claims.iter().filter(|(_, s)| *s == ClaimStatus::Skipped).count();
+            let verified = claims
+                .iter()
+                .filter(|(_, s)| *s == ClaimStatus::Verified)
+                .count();
+            let violated = claims
+                .iter()
+                .filter(|(_, s)| *s == ClaimStatus::Violated)
+                .count();
+            let skipped = claims
+                .iter()
+                .filter(|(_, s)| *s == ClaimStatus::Skipped)
+                .count();
 
             println!(
                 "   │ {:<20} ✓{:>2} verified  ✗{:>2} violated  ○{:>2} skipped",

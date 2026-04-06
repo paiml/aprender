@@ -181,10 +181,7 @@ pub fn dijkstra(graph: &CsrGraph, source: NodeId) -> HashMap<NodeId, f32> {
 /// ```
 #[must_use]
 /// Reconstruct the shortest path from predecessors map
-fn reconstruct_path(
-    predecessors: &HashMap<NodeId, NodeId>,
-    target: NodeId,
-) -> Vec<NodeId> {
+fn reconstruct_path(predecessors: &HashMap<NodeId, NodeId>, target: NodeId) -> Vec<NodeId> {
     let mut path = vec![target];
     let mut current = target;
     while let Some(&pred) = predecessors.get(&current) {

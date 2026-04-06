@@ -16,7 +16,10 @@ fn test_q4k_ggml_barrier_safety() {
         println!("Q4K GGML barrier_count: {}", result.barrier_count);
         println!("Q4K GGML exit_count: {}", result.exit_count);
         for v in &result.violations {
-            println!("Violation at line {}: {:?} - {}", v.line, v.kind, v.instruction);
+            println!(
+                "Violation at line {}: {:?} - {}",
+                v.line, v.kind, v.instruction
+            );
         }
         // Print PTX around the violation
         for (i, line) in ptx.lines().enumerate() {
@@ -31,7 +34,11 @@ fn test_q4k_ggml_barrier_safety() {
         }
     }
 
-    assert!(result.is_safe, "Q4K GGML should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q4K GGML should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -40,7 +47,11 @@ fn test_q5k_barrier_safety() {
     let kernel = Q5KKernel::new(32, 32, 256);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Q5K should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q5K should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -49,5 +60,9 @@ fn test_q6k_barrier_safety() {
     let kernel = Q6KKernel::new(32, 32, 256);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Q6K should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q6K should be barrier-safe: {:?}",
+        result.violations
+    );
 }

@@ -234,7 +234,11 @@ mod tui_report {
                 for result in suite.failures() {
                     println!("│      └─ \x1b[31m{:<55}\x1b[0m │", result.name);
                     if let Some(err) = &result.error {
-                        let truncated = if err.len() > 50 { &err[..50] } else { err.as_str() };
+                        let truncated = if err.len() > 50 {
+                            &err[..50]
+                        } else {
+                            err.as_str()
+                        };
                         println!("│         └─ {:52} │", truncated);
                     }
                 }
@@ -343,7 +347,10 @@ fn pixel_attention_barrier_sync() {
     let kernel = AttentionKernel::new(64, 64);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("bar.sync"), "Attention kernel must have barrier synchronization");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Attention kernel must have barrier synchronization"
+    );
 }
 
 #[test]
@@ -352,7 +359,10 @@ fn pixel_gemm_barrier_sync() {
     let kernel = GemmKernel::tiled(32, 32, 64, 32);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("bar.sync"), "Tiled GEMM must have barrier synchronization");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Tiled GEMM must have barrier synchronization"
+    );
 }
 
 #[test]
@@ -393,11 +403,23 @@ fn gpu_pixel_suite_all_kernels() {
 
     // Test all kernel types
     let kernels: Vec<(&str, String)> = vec![
-        ("gemm_tiled_32x32x64", GemmKernel::tiled(32, 32, 64, 32).emit_ptx()),
-        ("gemm_tiled_64x64x128", GemmKernel::tiled(64, 64, 128, 32).emit_ptx()),
-        ("gemm_tensor_core", GemmKernel::tensor_core(32, 32, 64).emit_ptx()),
+        (
+            "gemm_tiled_32x32x64",
+            GemmKernel::tiled(32, 32, 64, 32).emit_ptx(),
+        ),
+        (
+            "gemm_tiled_64x64x128",
+            GemmKernel::tiled(64, 64, 128, 32).emit_ptx(),
+        ),
+        (
+            "gemm_tensor_core",
+            GemmKernel::tensor_core(32, 32, 64).emit_ptx(),
+        ),
         ("attention_64x64", AttentionKernel::new(64, 64).emit_ptx()),
-        ("attention_causal", AttentionKernel::new(64, 64).with_causal().emit_ptx()),
+        (
+            "attention_causal",
+            AttentionKernel::new(64, 64).with_causal().emit_ptx(),
+        ),
         ("softmax_128", SoftmaxKernel::new(128).emit_ptx()),
         ("layernorm_256", LayerNormKernel::new(256).emit_ptx()),
     ];

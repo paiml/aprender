@@ -64,7 +64,10 @@ fn f101_assertions_no_panic() {
         BrickAssertion::MinWidth(40),
         BrickAssertion::MinHeight(15),
         BrickAssertion::max_latency_ms(16),
-        BrickAssertion::ValueInRange { min: 0.0, max: 100.0 },
+        BrickAssertion::ValueInRange {
+            min: 0.0,
+            max: 100.0,
+        },
     ];
 
     for assertion in assertions {
@@ -85,7 +88,10 @@ fn f102_verification_starts_valid() {
 fn f103_verification_can_fail() {
     let mut v = BrickVerification::new();
     v.add_fail(BrickAssertion::MinWidth(100), "test failure");
-    assert!(!v.is_valid(), "F103 FALSIFIED: Verification with failure still valid");
+    assert!(
+        !v.is_valid(),
+        "F103 FALSIFIED: Verification with failure still valid"
+    );
 }
 
 // ============================================================================
@@ -105,10 +111,18 @@ fn f121_ring_buffer_memory_bounded() {
     }
 
     // Should only contain 10 items
-    assert_eq!(buf.len(), 10, "F121 FALSIFIED: Ring buffer grew beyond capacity");
+    assert_eq!(
+        buf.len(),
+        10,
+        "F121 FALSIFIED: Ring buffer grew beyond capacity"
+    );
 
     // Last item should be 999
-    assert_eq!(buf.back(), Some(&999u64), "F121 FALSIFIED: Ring buffer lost newest item");
+    assert_eq!(
+        buf.back(),
+        Some(&999u64),
+        "F121 FALSIFIED: Ring buffer lost newest item"
+    );
 }
 
 /// F122: Statistics calculation handles empty buffer
@@ -119,8 +133,16 @@ fn f122_statistics_empty_buffer() {
     let buf: RingBuffer<f64> = RingBuffer::new(10);
 
     // Empty buffer should return 0.0 for mean
-    assert_eq!(buf.mean(), 0.0, "F122 FALSIFIED: Empty buffer has non-zero mean");
-    assert_eq!(buf.len(), 0, "F122 FALSIFIED: Empty buffer has non-zero count");
+    assert_eq!(
+        buf.mean(),
+        0.0,
+        "F122 FALSIFIED: Empty buffer has non-zero mean"
+    );
+    assert_eq!(
+        buf.len(),
+        0,
+        "F122 FALSIFIED: Empty buffer has non-zero count"
+    );
 }
 
 // ============================================================================
@@ -168,7 +190,10 @@ fn f161_gpu_panel_collector_integration() {
     let metrics = collector.collect();
     panel.update_from_metrics(&metrics);
 
-    assert!(panel.current_metrics.is_some(), "F161 FALSIFIED: Panel did not receive metrics");
+    assert!(
+        panel.current_metrics.is_some(),
+        "F161 FALSIFIED: Panel did not receive metrics"
+    );
 }
 
 /// F162: All collector bricks implement Brick trait correctly
@@ -192,7 +217,11 @@ fn f162_collectors_implement_brick() {
         let verification = brick.verify();
 
         assert!(!name.is_empty(), "F162 FALSIFIED: Empty brick name");
-        assert!(!assertions.is_empty(), "F162 FALSIFIED: No assertions for {}", name);
+        assert!(
+            !assertions.is_empty(),
+            "F162 FALSIFIED: No assertions for {}",
+            name
+        );
         let _ = budget;
         let _ = verification;
     }
@@ -210,7 +239,10 @@ fn f181_verification_explicit_failures() {
 
     let failure_count = v.failure_count();
     assert!(failure_count > 0, "F181 FALSIFIED: Failure not recorded");
-    assert!(!v.is_valid(), "F181 FALSIFIED: Verification with failure is still valid");
+    assert!(
+        !v.is_valid(),
+        "F181 FALSIFIED: Verification with failure is still valid"
+    );
 }
 
 /// F182: Collectors provide meaningful history
@@ -224,7 +256,10 @@ fn f182_collectors_provide_history() {
     collector.collect();
 
     let history = collector.history();
-    assert!(history.len() >= 3, "F182 FALSIFIED: History does not retain samples");
+    assert!(
+        history.len() >= 3,
+        "F182 FALSIFIED: History does not retain samples"
+    );
 }
 
 /// F183: Metrics have timestamps
@@ -235,7 +270,10 @@ fn f183_metrics_have_timestamps() {
 
     // Timestamp should be recent (within last second)
     let elapsed = metrics.timestamp.elapsed();
-    assert!(elapsed.as_secs() < 1, "F183 FALSIFIED: Metrics timestamp too old");
+    assert!(
+        elapsed.as_secs() < 1,
+        "F183 FALSIFIED: Metrics timestamp too old"
+    );
 }
 
 /// F184: ZRAM compression metrics are consistent
@@ -281,7 +319,10 @@ fn f186_wos_jidoka_summary() {
     let summary = collector.jidoka_summary();
 
     // checks_passed should be 0-100
-    assert!(summary.checks_passed <= 100, "F186 FALSIFIED: checks_passed > 100");
+    assert!(
+        summary.checks_passed <= 100,
+        "F186 FALSIFIED: checks_passed > 100"
+    );
 }
 
 /// F187: ZRAM throughput summary available
@@ -293,8 +334,14 @@ fn f187_zram_throughput_summary() {
     let summary = collector.throughput_summary();
 
     // Throughput should be non-negative
-    assert!(summary.compression_gbps >= 0.0, "F187 FALSIFIED: Negative compression throughput");
-    assert!(summary.decompression_gbps >= 0.0, "F187 FALSIFIED: Negative decompression throughput");
+    assert!(
+        summary.compression_gbps >= 0.0,
+        "F187 FALSIFIED: Negative compression throughput"
+    );
+    assert!(
+        summary.decompression_gbps >= 0.0,
+        "F187 FALSIFIED: Negative decompression throughput"
+    );
 }
 
 /// F188: GPU panel displays data source correctly
@@ -322,7 +369,10 @@ fn f188_gpu_panel_data_source() {
 fn f189_verification_score() {
     let v = BrickVerification::new();
     // Empty verification = 100% score
-    assert!((v.score() - 1.0).abs() < 0.001, "F189 FALSIFIED: Empty verification score not 1.0");
+    assert!(
+        (v.score() - 1.0).abs() < 0.001,
+        "F189 FALSIFIED: Empty verification score not 1.0"
+    );
 
     let mut v2 = BrickVerification::new();
     v2.add_pass(BrickAssertion::MinWidth(40));
@@ -346,7 +396,11 @@ fn f190_ring_buffer_last_n() {
     }
 
     let last_3: Vec<_> = buf.last_n(3).copied().collect();
-    assert_eq!(last_3, vec![7, 8, 9], "F190 FALSIFIED: last_n returned wrong values");
+    assert_eq!(
+        last_3,
+        vec![7, 8, 9],
+        "F190 FALSIFIED: last_n returned wrong values"
+    );
 }
 
 // ============================================================================

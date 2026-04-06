@@ -233,13 +233,20 @@ impl Brick for PepitaCollectorBrick {
 
     fn assertions(&self) -> Vec<BrickAssertion> {
         vec![
-            BrickAssertion::ValueInRange { min: 0.0, max: 1_000_000.0 }, // IOPS
-            BrickAssertion::max_latency_ms(1),                           // Low latency for io_uring
+            BrickAssertion::ValueInRange {
+                min: 0.0,
+                max: 1_000_000.0,
+            }, // IOPS
+            BrickAssertion::max_latency_ms(1), // Low latency for io_uring
         ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 1, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 1,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

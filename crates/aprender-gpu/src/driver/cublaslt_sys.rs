@@ -374,7 +374,10 @@ mod loading {
             if result == CUBLASLT_STATUS_SUCCESS {
                 Ok(())
             } else {
-                Err(GpuError::CudaDriver(format!("cuBLASLt error (code {result})"), result))
+                Err(GpuError::CudaDriver(
+                    format!("cuBLASLt error (code {result})"),
+                    result,
+                ))
             }
         }
     }
@@ -393,7 +396,9 @@ mod loading {
 
         /// Check a cuBLASLt status code (stub, always errors without cuda feature).
         pub fn check(_result: CublasLtStatus) -> Result<(), GpuError> {
-            Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+            Err(GpuError::CudaNotAvailable(
+                "cuda feature not enabled".to_string(),
+            ))
         }
     }
 }

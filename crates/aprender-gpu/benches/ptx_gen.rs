@@ -19,7 +19,11 @@ fn bench_module_emit(c: &mut Criterion) {
         .param(PtxType::U64, "c_ptr")
         .param(PtxType::U32, "n");
 
-    let module = PtxModule::new().version(8, 0).target("sm_70").address_size(64).add_kernel(kernel);
+    let module = PtxModule::new()
+        .version(8, 0)
+        .target("sm_70")
+        .address_size(64)
+        .add_kernel(kernel);
 
     c.bench_function("ptx_module_emit", |b| b.iter(|| black_box(module.emit())));
 }
@@ -40,7 +44,14 @@ fn bench_kernel_builder(c: &mut Criterion) {
 
 fn bench_module_builder(c: &mut Criterion) {
     c.bench_function("ptx_module_build", |b| {
-        b.iter(|| black_box(PtxModule::new().version(8, 0).target("sm_70").address_size(64)))
+        b.iter(|| {
+            black_box(
+                PtxModule::new()
+                    .version(8, 0)
+                    .target("sm_70")
+                    .address_size(64),
+            )
+        })
     });
 }
 
@@ -79,7 +90,11 @@ fn bench_launch_config_total_threads(c: &mut Criterion) {
     let configs = [
         LaunchConfig::linear(1024, 256),
         LaunchConfig::grid_2d(16, 16, 16, 16),
-        LaunchConfig { grid: (32, 32, 32), block: (8, 8, 8), shared_mem: 0 },
+        LaunchConfig {
+            grid: (32, 32, 32),
+            block: (8, 8, 8),
+            shared_mem: 0,
+        },
     ];
 
     c.bench_function("launch_config_total_threads", |b| {

@@ -27,7 +27,9 @@ pub struct AddressSpaceValidator {
 impl AddressSpaceValidator {
     /// Create a new address space validator
     pub fn new() -> Self {
-        Self { shared_base_regs: HashSet::new() }
+        Self {
+            shared_base_regs: HashSet::new(),
+        }
     }
 
     /// Detect generic addressing of shared memory (F021)
@@ -153,15 +155,24 @@ impl AddressSpaceValidator {
     }
 
     fn has_shared_modifier(&self, instr: &Instruction) -> bool {
-        instr.modifiers.iter().any(|m| matches!(m, Modifier::Shared))
+        instr
+            .modifiers
+            .iter()
+            .any(|m| matches!(m, Modifier::Shared))
     }
 
     fn has_space_modifier(&self, instr: &Instruction) -> bool {
-        instr.modifiers.iter().any(|m| m.as_address_space().is_some())
+        instr
+            .modifiers
+            .iter()
+            .any(|m| m.as_address_space().is_some())
     }
 
     fn has_u64_modifier(&self, instr: &Instruction) -> bool {
-        instr.modifiers.iter().any(|m| matches!(m, Modifier::U64 | Modifier::B64))
+        instr
+            .modifiers
+            .iter()
+            .any(|m| matches!(m, Modifier::U64 | Modifier::B64))
     }
 
     fn uses_generic_shared_reg(&self, operand: &Operand) -> bool {
@@ -208,7 +219,10 @@ mod tests {
         let mut validator = AddressSpaceValidator::new();
         let bugs = validator.detect_generic_shared_access(&module);
 
-        assert!(bugs.is_empty(), "F021: Should have no generic shared access bugs");
+        assert!(
+            bugs.is_empty(),
+            "F021: Should have no generic shared access bugs"
+        );
     }
 
     // F023: Direct .shared addressing preferred
@@ -233,6 +247,9 @@ mod tests {
         let mut validator = AddressSpaceValidator::new();
         let bugs = validator.detect_generic_shared_access(&module);
 
-        assert!(bugs.is_empty(), "F023: Direct shared addressing should not trigger bugs");
+        assert!(
+            bugs.is_empty(),
+            "F023: Direct shared addressing should not trigger bugs"
+        );
     }
 }

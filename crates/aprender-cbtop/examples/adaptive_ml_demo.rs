@@ -11,8 +11,9 @@ use cbtop::{AdaptiveThresholdMl, MlThresholdConfig, TimeSeriesFeatures, Workload
 fn train_learner(ml: &mut AdaptiveThresholdMl) {
     // Create FFN workload samples (high variance pattern)
     println!("Training on FFN workload samples (high variance)...");
-    let ffn_samples: Vec<f64> =
-        (0..50).map(|i| 10.0 + (i as f64 * 0.5) + (i % 7) as f64 * 2.0).collect();
+    let ffn_samples: Vec<f64> = (0..50)
+        .map(|i| 10.0 + (i as f64 * 0.5) + (i % 7) as f64 * 2.0)
+        .collect();
     for chunk in ffn_samples.chunks(10) {
         if chunk.len() >= 10 {
             ml.train(chunk, false).ok();
@@ -32,7 +33,11 @@ fn train_learner(ml: &mut AdaptiveThresholdMl) {
 /// Display per-workload thresholds.
 fn show_thresholds(ml: &AdaptiveThresholdMl) {
     println!("\n=== Learned Per-Workload Thresholds ===");
-    for class in [WorkloadClass::Ffn, WorkloadClass::Matmul, WorkloadClass::Attention] {
+    for class in [
+        WorkloadClass::Ffn,
+        WorkloadClass::Matmul,
+        WorkloadClass::Attention,
+    ] {
         let threshold = ml.get_threshold(class);
         println!("{:?}: CV threshold = {:.2}%", class, threshold);
     }
@@ -41,8 +46,9 @@ fn show_thresholds(ml: &AdaptiveThresholdMl) {
 /// Demonstrate anomaly detection with normal and anomalous samples.
 fn demo_anomaly_detection(ml: &mut AdaptiveThresholdMl) {
     println!("\n=== Anomaly Detection ===");
-    let ffn_samples: Vec<f64> =
-        (0..50).map(|i| 10.0 + (i as f64 * 0.5) + (i % 7) as f64 * 2.0).collect();
+    let ffn_samples: Vec<f64> = (0..50)
+        .map(|i| 10.0 + (i as f64 * 0.5) + (i % 7) as f64 * 2.0)
+        .collect();
 
     let normal_chunk = &ffn_samples[20..30];
     if let Ok(result) = ml.detect_anomaly(normal_chunk) {
@@ -114,7 +120,11 @@ fn show_metrics_and_classes(ml: &AdaptiveThresholdMl) {
         WorkloadClass::Unknown,
     ];
     for class in classes {
-        println!("  {:?} (default CV threshold: {:.1}%)", class, class.default_cv_threshold());
+        println!(
+            "  {:?} (default CV threshold: {:.1}%)",
+            class,
+            class.default_cv_threshold()
+        );
     }
 }
 

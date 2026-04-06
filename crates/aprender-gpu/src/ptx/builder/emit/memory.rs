@@ -36,7 +36,10 @@ pub(crate) fn emit_memory_opcode(instr: &PtxInstruction, s: &mut String) {
         }
         PtxOp::Cvt => emit_cvt_opcode(instr, s),
         PtxOp::Cvta => {
-            let space = instr.state_space.map(|ss| ss.to_ptx_string()).unwrap_or(".shared");
+            let space = instr
+                .state_space
+                .map(|ss| ss.to_ptx_string())
+                .unwrap_or(".shared");
             let ty = instr.ty.to_ptx_string();
             s.push_str("cvta");
             s.push_str(space);
@@ -61,8 +64,16 @@ pub(crate) fn emit_memory_opcode(instr: &PtxInstruction, s: &mut String) {
                     }
                 })
                 .unwrap_or(16);
-            let dst = instr.srcs.first().map(super::operand::emit_operand).unwrap_or_default();
-            let src = instr.srcs.get(1).map(super::operand::emit_operand).unwrap_or_default();
+            let dst = instr
+                .srcs
+                .first()
+                .map(super::operand::emit_operand)
+                .unwrap_or_default();
+            let src = instr
+                .srcs
+                .get(1)
+                .map(super::operand::emit_operand)
+                .unwrap_or_default();
             let _ = write!(s, "cp.async.ca.shared.global [{dst}], [{src}], {size}");
         }
         PtxOp::CpAsyncCommitGroup => {
@@ -108,7 +119,13 @@ fn emit_cvt_opcode(instr: &PtxInstruction, s: &mut String) {
         instr
             .srcs
             .first()
-            .and_then(|src| if let Operand::Reg(vreg) = src { Some(vreg.ty()) } else { None })
+            .and_then(|src| {
+                if let Operand::Reg(vreg) = src {
+                    Some(vreg.ty())
+                } else {
+                    None
+                }
+            })
             .unwrap_or(PtxType::U32)
     });
 
@@ -144,7 +161,10 @@ fn emit_cvt_opcode(instr: &PtxInstruction, s: &mut String) {
 
 /// Emit atomic operation opcode
 fn emit_atomic_opcode(instr: &PtxInstruction, s: &mut String, op: &str) {
-    let space = instr.state_space.map(|ss| ss.to_ptx_string()).unwrap_or(".global");
+    let space = instr
+        .state_space
+        .map(|ss| ss.to_ptx_string())
+        .unwrap_or(".global");
     let _ = write!(s, "atom{}.{}", space, op);
 }
 
@@ -510,7 +530,10 @@ mod tests {
         let mut s = String::new();
         emit_memory_opcode(&instr, &mut s);
         assert!(s.contains("cp.async.ca.shared.global"), "got: {s}");
-        assert!(s.contains("], ["), "must have [dst], [src] syntax, got: {s}");
+        assert!(
+            s.contains("], ["),
+            "must have [dst], [src] syntax, got: {s}"
+        );
         assert!(s.contains(", 16"), "must have size 16, got: {s}");
     }
 

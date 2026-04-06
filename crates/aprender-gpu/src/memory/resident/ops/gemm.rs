@@ -139,7 +139,15 @@ impl GpuResidentTensor<f32> {
             std::ptr::addr_of!(k_val) as *mut _,
         ];
 
-        compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            &stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
         stream.synchronize()?;
 
         // Return result as GPU-resident tensor (no host transfer!)
@@ -211,8 +219,11 @@ impl GpuResidentTensor<f32> {
             let key = format!("gemm_wmma_fp16:{}x{}x{}", m, n, k);
             let grid_x = (n + 15) / 16;
             let grid_y = (m + 15) / 16;
-            let cfg =
-                LaunchConfig { grid: (grid_x, grid_y, 1), block: (32, 1, 1), shared_mem: 1024 };
+            let cfg = LaunchConfig {
+                grid: (grid_x, grid_y, 1),
+                block: (32, 1, 1),
+                shared_mem: 1024,
+            };
             (kernel, key, cfg)
         } else if use_tiled {
             let kernel = GemmKernel::tiled_unrolled(m, n, k, tile_size);
@@ -259,7 +270,15 @@ impl GpuResidentTensor<f32> {
         ];
 
         // Launch kernel using caller's stream
-        compile_lock_launch(ctx, stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+        compile_lock_launch(
+            ctx,
+            stream,
+            &cache_key,
+            &ptx,
+            kernel.name(),
+            &config,
+            &mut args,
+        )?;
 
         // NO SYNC - caller controls synchronization for pipelining
         Ok(GpuResidentTensor::from_buffer_internal(output_buffer, 1))

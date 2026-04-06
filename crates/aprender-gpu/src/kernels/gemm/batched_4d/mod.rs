@@ -28,7 +28,14 @@ pub struct Batched4DGemmConfig {
 
 impl Default for Batched4DGemmConfig {
     fn default() -> Self {
-        Self { batch: 1, heads: 8, m: 512, n: 512, k: 64, tile_size: 16 }
+        Self {
+            batch: 1,
+            heads: 8,
+            m: 512,
+            n: 512,
+            k: 64,
+            tile_size: 16,
+        }
     }
 }
 
@@ -45,13 +52,31 @@ impl Batched4DGemmKernel {
     /// Pattern: [batch, heads, m, k] @ [batch, heads, k, n] -> [batch, heads, m, n]
     #[must_use]
     pub fn new(batch: u32, heads: u32, m: u32, n: u32, k: u32) -> Self {
-        Self { config: Batched4DGemmConfig { batch, heads, m, n, k, ..Default::default() } }
+        Self {
+            config: Batched4DGemmConfig {
+                batch,
+                heads,
+                m,
+                n,
+                k,
+                ..Default::default()
+            },
+        }
     }
 
     /// Create with custom tile size
     #[must_use]
     pub fn with_tile_size(batch: u32, heads: u32, m: u32, n: u32, k: u32, tile_size: u32) -> Self {
-        Self { config: Batched4DGemmConfig { batch, heads, m, n, k, tile_size } }
+        Self {
+            config: Batched4DGemmConfig {
+                batch,
+                heads,
+                m,
+                n,
+                k,
+                tile_size,
+            },
+        }
     }
 
     fn build_kernel(&self) -> PtxKernel {

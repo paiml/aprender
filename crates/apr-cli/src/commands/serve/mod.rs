@@ -93,9 +93,7 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     // Try to start real server with realizar
     #[cfg(feature = "inference")]
-    let result = {
-        handlers::start_realizar_server(model_path, config)
-    };
+    let result = { handlers::start_realizar_server(model_path, config) };
 
     // Fallback: stub mode
     #[cfg(not(feature = "inference"))]

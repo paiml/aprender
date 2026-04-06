@@ -125,7 +125,9 @@ impl Token {
     /// - Section 3.1: make_token creates dependency tracking
     #[must_use]
     pub fn new() -> Self {
-        Self { id: NEXT_TOKEN_ID.fetch_add(1, Ordering::Relaxed) }
+        Self {
+            id: NEXT_TOKEN_ID.fetch_add(1, Ordering::Relaxed),
+        }
     }
 
     /// Get the token ID
@@ -193,10 +195,15 @@ impl TokenGraph {
     /// Record a token dependency
     pub fn add_dependency(&mut self, dependent: Token, dependency: Token) {
         // Find or create entry for dependent
-        if let Some((_, deps)) = self.dependencies.iter_mut().find(|(d, _)| *d == dependent.id()) {
+        if let Some((_, deps)) = self
+            .dependencies
+            .iter_mut()
+            .find(|(d, _)| *d == dependent.id())
+        {
             deps.push(dependency.id());
         } else {
-            self.dependencies.push((dependent.id(), vec![dependency.id()]));
+            self.dependencies
+                .push((dependent.id(), vec![dependency.id()]));
         }
     }
 
@@ -299,7 +306,10 @@ impl TkoAnalysis {
     /// Create a new TKO analysis
     #[must_use]
     pub fn new() -> Self {
-        Self { graph: TokenGraph::new(), eliminable_barriers: Vec::new() }
+        Self {
+            graph: TokenGraph::new(),
+            eliminable_barriers: Vec::new(),
+        }
     }
 
     /// Check if token-based ordering is sound (no data races)

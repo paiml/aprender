@@ -187,8 +187,11 @@ impl PtxBugAnalyzer {
 
         for (line_num, line) in lines.iter().enumerate() {
             if let Some(caps) = strided_pattern.captures(line) {
-                if let Ok(stride) =
-                    caps.get(1).expect("invariant: capture group exists").as_str().parse::<u32>()
+                if let Ok(stride) = caps
+                    .get(1)
+                    .expect("invariant: capture group exists")
+                    .as_str()
+                    .parse::<u32>()
                 {
                     // Suspicious if stride is not standard and not a known quantization block size
                     // Standard: 4 (f32), 8 (f64), 2 (f16), 1 (byte), or multiple of 4
@@ -231,8 +234,9 @@ impl PtxBugAnalyzer {
         // Check for common bounds check patterns
         let has_tid = ptx.contains("%tid.") || ptx.contains("%ntid.");
         let has_setp_lt = ptx.contains("setp.lt") || ptx.contains("setp.ge");
-        let has_predicated_branch =
-            Regex::new(r"@%p\d+\s+bra").expect("invariant: regex pattern is valid").is_match(ptx);
+        let has_predicated_branch = Regex::new(r"@%p\d+\s+bra")
+            .expect("invariant: regex pattern is valid")
+            .is_match(ptx);
 
         // If kernel uses tid and global memory but has no bounds check
         if has_tid && !has_setp_lt && !has_predicated_branch {

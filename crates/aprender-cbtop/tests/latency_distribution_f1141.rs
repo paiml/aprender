@@ -53,7 +53,9 @@ fn f1141_single_sample_jitter() {
 fn f1142_tail_ratio_problem() {
     // Create samples with heavy tail
     let mut samples: Vec<f64> = (1..=90).map(|x| x as f64).collect();
-    samples.extend(vec![500.0, 600.0, 700.0, 800.0, 900.0, 1000.0, 1100.0, 1200.0, 1300.0, 1400.0]);
+    samples.extend(vec![
+        500.0, 600.0, 700.0, 800.0, 900.0, 1000.0, 1100.0, 1200.0, 1300.0, 1400.0,
+    ]);
 
     let dist = LatencyDistribution::analyze(&samples).unwrap();
     assert!(dist.tail_ratio > 3.0);

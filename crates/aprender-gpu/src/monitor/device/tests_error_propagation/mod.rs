@@ -23,7 +23,13 @@ impl MockDevice {
         power_limit: f64,
         temperature: f64,
     ) -> Self {
-        Self { mem_used, mem_total, power_current, power_limit, temperature }
+        Self {
+            mem_used,
+            mem_total,
+            power_current,
+            power_limit,
+            temperature,
+        }
     }
 }
 
@@ -197,11 +203,17 @@ struct PartialErrorMockDevice {
 
 impl PartialErrorMockDevice {
     fn with_total_error() -> Self {
-        Self { error_on_total: true, error_on_limit: false }
+        Self {
+            error_on_total: true,
+            error_on_limit: false,
+        }
     }
 
     fn with_limit_error() -> Self {
-        Self { error_on_total: false, error_on_limit: true }
+        Self {
+            error_on_total: false,
+            error_on_limit: true,
+        }
     }
 }
 

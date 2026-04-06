@@ -36,7 +36,11 @@ impl FusedRmsNormQ4KGemvKernel {
     /// Create a new fused RMSNorm + Q4_K GEMV kernel
     #[must_use]
     pub fn new(k: u32, n: u32) -> Self {
-        Self { k, n, epsilon: 1e-5 }
+        Self {
+            k,
+            n,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon value for RMSNorm

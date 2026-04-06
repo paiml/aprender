@@ -28,8 +28,15 @@ mod tests {
         let profile = FullProfile {
             version: "2.0".to_string(),
             timestamp: "2026-04-04T12:00:00Z".to_string(),
-            timing: TimingMetrics { wall_clock_time_us: 23.2, samples: 50, ..Default::default() },
-            throughput: ThroughputMetrics { tflops: 11.6, ..Default::default() },
+            timing: TimingMetrics {
+                wall_clock_time_us: 23.2,
+                samples: 50,
+                ..Default::default()
+            },
+            throughput: ThroughputMetrics {
+                tflops: 11.6,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
@@ -45,7 +52,10 @@ mod tests {
     /// Loading two saved JSONs should be < 100ms.
     #[test]
     fn test_json_load_speed() {
-        let profile = FullProfile { version: "2.0".to_string(), ..Default::default() };
+        let profile = FullProfile {
+            version: "2.0".to_string(),
+            ..Default::default()
+        };
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("speed_test.json");
         export_json(&profile, &path).unwrap();

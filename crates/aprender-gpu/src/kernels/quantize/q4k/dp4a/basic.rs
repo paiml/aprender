@@ -268,8 +268,16 @@ impl Kernel for Dp4aQ4KGemvKernel {
                 // Process 8 values per thread across 8 blocks
                 // Each thread processes different offsets based on lane_id
                 // Using DP4A: process 4 values at a time
-                let offsets_and_blocks: [(u32, u32); 8] =
-                    [(0, 0), (32, 1), (64, 2), (96, 3), (128, 4), (160, 5), (192, 6), (224, 7)];
+                let offsets_and_blocks: [(u32, u32); 8] = [
+                    (0, 0),
+                    (32, 1),
+                    (64, 2),
+                    (96, 3),
+                    (128, 4),
+                    (160, 5),
+                    (192, 6),
+                    (224, 7),
+                ];
 
                 for (offset, block_idx) in offsets_and_blocks {
                     let (ds, dm) = match block_idx {

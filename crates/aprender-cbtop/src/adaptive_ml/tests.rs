@@ -2,7 +2,9 @@ use super::*;
 
 /// Generate sinusoidal samples around a mean with given amplitude.
 fn sine_samples(mean: f64, amplitude: f64, count: usize, freq: f64) -> Vec<f64> {
-    (0..count).map(|i| mean + (i as f64 * freq).sin() * amplitude).collect()
+    (0..count)
+        .map(|i| mean + (i as f64 * freq).sin() * amplitude)
+        .collect()
 }
 
 /// Generate low-variance "normal" samples (near-linear ramp).
@@ -116,9 +118,15 @@ fn test_workload_classification() {
     let ml = AdaptiveThresholdMl::new(MlThresholdConfig::default());
 
     // Low CV, high autocorrelation -> ComputeBound
-    assert_eq!(ml.classify_workload(&features(5.0, 0.8)), WorkloadClass::ComputeBound);
+    assert_eq!(
+        ml.classify_workload(&features(5.0, 0.8)),
+        WorkloadClass::ComputeBound
+    );
     // High CV, low autocorrelation -> MemoryBound
-    assert_eq!(ml.classify_workload(&features(25.0, 0.1)), WorkloadClass::MemoryBound);
+    assert_eq!(
+        ml.classify_workload(&features(25.0, 0.1)),
+        WorkloadClass::MemoryBound
+    );
 }
 
 #[test]
@@ -178,7 +186,10 @@ fn test_cold_start_conservative() {
 
     let threshold = ml.get_threshold(WorkloadClass::Matmul);
     let default = WorkloadClass::Matmul.default_cv_threshold();
-    assert!(threshold > default, "Cold start threshold {threshold} should be > default {default}");
+    assert!(
+        threshold > default,
+        "Cold start threshold {threshold} should be > default {default}"
+    );
 }
 
 #[test]
@@ -187,7 +198,10 @@ fn test_error_display() {
     assert!(err.to_string().contains("5"));
     assert!(err.to_string().contains("10"));
 
-    let err = MlThresholdError::DriftDetected { metric: "latency".to_string(), drift_score: 4.5 };
+    let err = MlThresholdError::DriftDetected {
+        metric: "latency".to_string(),
+        drift_score: 4.5,
+    };
     assert!(err.to_string().contains("latency"));
     assert!(err.to_string().contains("4.5"));
 }
@@ -199,20 +213,31 @@ fn test_fkr_050_precision_improvement() {
 
     // FFN workload: naturally high CV (~18%)
     for _ in 0..50 {
-        ml.train(&sine_samples(100.0, 18.0, 100, 0.2), false).unwrap();
+        ml.train(&sine_samples(100.0, 18.0, 100, 0.2), false)
+            .unwrap();
     }
 
     // Matmul workload: naturally low CV (~8%)
     for _ in 0..50 {
-        ml.train(&sine_samples(100.0, 8.0, 100, 0.1), false).unwrap();
+        ml.train(&sine_samples(100.0, 8.0, 100, 0.1), false)
+            .unwrap();
     }
 
     // Verify workload-specific thresholds differ
-    let ffn_t = ml.thresholds.get(&WorkloadClass::Ffn).map(|t| t.cv_threshold);
-    let matmul_t = ml.thresholds.get(&WorkloadClass::Matmul).map(|t| t.cv_threshold);
+    let ffn_t = ml
+        .thresholds
+        .get(&WorkloadClass::Ffn)
+        .map(|t| t.cv_threshold);
+    let matmul_t = ml
+        .thresholds
+        .get(&WorkloadClass::Matmul)
+        .map(|t| t.cv_threshold);
 
     if let (Some(ft), Some(mt)) = (ffn_t, matmul_t) {
-        assert!(ft != mt, "Workload thresholds should differ: FFN={ft}, Matmul={mt}");
+        assert!(
+            ft != mt,
+            "Workload thresholds should differ: FFN={ft}, Matmul={mt}"
+        );
     }
 
     let fpr = ml.get_metrics().false_positive_rate();

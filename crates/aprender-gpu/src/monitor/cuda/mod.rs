@@ -76,13 +76,19 @@ impl CudaDeviceInfo {
         let name = ctx.device_name()?;
         let total_memory = ctx.total_memory()? as u64;
 
-        Ok(Self { index: device_index, name, total_memory })
+        Ok(Self {
+            index: device_index,
+            name,
+            total_memory,
+        })
     }
 
     /// Query device information (non-CUDA stub)
     #[cfg(not(feature = "cuda"))]
     pub fn query(_device_index: u32) -> Result<Self, GpuError> {
-        Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+        Err(GpuError::CudaNotAvailable(
+            "cuda feature not enabled".to_string(),
+        ))
     }
 
     /// Enumerate all available CUDA devices
@@ -105,7 +111,9 @@ impl CudaDeviceInfo {
     /// Enumerate devices (non-CUDA stub)
     #[cfg(not(feature = "cuda"))]
     pub fn enumerate() -> Result<Vec<Self>, GpuError> {
-        Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+        Err(GpuError::CudaNotAvailable(
+            "cuda feature not enabled".to_string(),
+        ))
     }
 
     /// Get total memory in megabytes
@@ -123,7 +131,13 @@ impl CudaDeviceInfo {
 
 impl std::fmt::Display for CudaDeviceInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {} ({:.1} GB)", self.index, self.name, self.total_memory_gb())
+        write!(
+            f,
+            "[{}] {} ({:.1} GB)",
+            self.index,
+            self.name,
+            self.total_memory_gb()
+        )
     }
 }
 
@@ -153,7 +167,10 @@ impl CudaMemoryInfo {
     #[cfg(feature = "cuda")]
     pub fn query(ctx: &CudaContext) -> Result<Self, GpuError> {
         let (free, total) = ctx.memory_info()?;
-        Ok(Self { free: free as u64, total: total as u64 })
+        Ok(Self {
+            free: free as u64,
+            total: total as u64,
+        })
     }
 
     /// Get used memory in bytes
@@ -193,7 +210,13 @@ impl CudaMemoryInfo {
 
 impl std::fmt::Display for CudaMemoryInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} / {} MB ({:.1}% used)", self.used_mb(), self.total_mb(), self.usage_percent())
+        write!(
+            f,
+            "{} / {} MB ({:.1}% used)",
+            self.used_mb(),
+            self.total_mb(),
+            self.usage_percent()
+        )
     }
 }
 
@@ -228,7 +251,9 @@ pub fn cuda_device_count() -> Result<usize, GpuError> {
     }
     #[cfg(not(feature = "cuda"))]
     {
-        Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+        Err(GpuError::CudaNotAvailable(
+            "cuda feature not enabled".to_string(),
+        ))
     }
 }
 

@@ -96,7 +96,10 @@ pub struct DataFlowAnalyzer {
 impl DataFlowAnalyzer {
     /// Create a new data flow analyzer
     pub fn new() -> Self {
-        Self { def_use_chains: HashMap::new(), value_sources: HashMap::new() }
+        Self {
+            def_use_chains: HashMap::new(),
+            value_sources: HashMap::new(),
+        }
     }
 
     /// Create from a PTX module (analyzes first kernel)
@@ -128,7 +131,10 @@ impl DataFlowAnalyzer {
                     let space = self.get_address_space(instr);
                     self.value_sources.insert(
                         dest.clone(),
-                        ValueSource::Load { space, location: instr.location.clone() },
+                        ValueSource::Load {
+                            space,
+                            location: instr.location.clone(),
+                        },
                     );
                 }
             }
@@ -138,9 +144,11 @@ impl DataFlowAnalyzer {
                     (instr.operands.first(), instr.operands.get(1))
                 {
                     let source = match src {
-                        Operand::Register(src_reg) => {
-                            self.value_sources.get(src_reg).cloned().unwrap_or(ValueSource::Unknown)
-                        }
+                        Operand::Register(src_reg) => self
+                            .value_sources
+                            .get(src_reg)
+                            .cloned()
+                            .unwrap_or(ValueSource::Unknown),
                         Operand::Immediate(val) => ValueSource::Constant(*val),
                         _ => ValueSource::Unknown,
                     };
@@ -169,7 +177,8 @@ impl DataFlowAnalyzer {
                         })
                         .collect();
 
-                    self.value_sources.insert(dest.clone(), ValueSource::Computed { inputs });
+                    self.value_sources
+                        .insert(dest.clone(), ValueSource::Computed { inputs });
                 }
             }
             Opcode::St => {
@@ -181,24 +190,30 @@ impl DataFlowAnalyzer {
                     // Extract register from memory operand like [%r0] or [%r0+offset]
                     let addr_reg = self.extract_register_from_memory(addr_str);
                     if let Some(reg) = addr_reg {
-                        self.def_use_chains.entry(reg.clone()).or_default().push(UsePoint {
-                            instruction: instr.clone(),
-                            operand_index: 0,
-                            location: instr.location.clone(),
-                            is_store_data: false,
-                            is_store_addr: true,
-                        });
+                        self.def_use_chains
+                            .entry(reg.clone())
+                            .or_default()
+                            .push(UsePoint {
+                                instruction: instr.clone(),
+                                operand_index: 0,
+                                location: instr.location.clone(),
+                                is_store_data: false,
+                                is_store_addr: true,
+                            });
                     }
                 }
 
                 if let Some(Operand::Register(val_reg)) = instr.operands.get(1) {
-                    self.def_use_chains.entry(val_reg.clone()).or_default().push(UsePoint {
-                        instruction: instr.clone(),
-                        operand_index: 1,
-                        location: instr.location.clone(),
-                        is_store_data: true,
-                        is_store_addr: false,
-                    });
+                    self.def_use_chains
+                        .entry(val_reg.clone())
+                        .or_default()
+                        .push(UsePoint {
+                            instruction: instr.clone(),
+                            operand_index: 1,
+                            location: instr.location.clone(),
+                            is_store_data: true,
+                            is_store_addr: false,
+                        });
                 }
             }
             _ => {}
@@ -231,7 +246,11 @@ impl DataFlowAnalyzer {
         let mut bugs = Vec::new();
 
         for (reg, source) in &self.value_sources {
-            if let ValueSource::Load { space: AddressSpace::Shared, location } = source {
+            if let ValueSource::Load {
+                space: AddressSpace::Shared,
+                location,
+            } = source
+            {
                 // Find all stores that use this register as data operand
                 for use_point in self.def_use_chains.get(reg).unwrap_or(&vec![]) {
                     if use_point.is_store_data_operand() {
@@ -261,7 +280,13 @@ impl DataFlowAnalyzer {
         // Track which registers come from ld.shared
         let mut shared_loaded_regs: HashSet<String> = HashSet::new();
         for (reg, source) in &self.value_sources {
-            if matches!(source, ValueSource::Load { space: AddressSpace::Shared, .. }) {
+            if matches!(
+                source,
+                ValueSource::Load {
+                    space: AddressSpace::Shared,
+                    ..
+                }
+            ) {
                 shared_loaded_regs.insert(reg.clone());
             }
         }
@@ -360,7 +385,10 @@ mod tests {
         let analyzer = DataFlowAnalyzer::from_module(&module);
         let bugs = analyzer.detect_loaded_value_bug();
 
-        assert!(bugs.is_empty(), "F081: Should have no loaded value bugs when using constant");
+        assert!(
+            bugs.is_empty(),
+            "F081: Should have no loaded value bugs when using constant"
+        );
     }
 
     // F082: No computed-address-from-loaded pattern
@@ -387,7 +415,10 @@ mod tests {
         let analyzer = DataFlowAnalyzer::from_module(&module);
         let bugs = analyzer.detect_computed_addr_from_loaded();
 
-        assert!(bugs.is_empty(), "F082: Should have no computed-addr bugs when using constant");
+        assert!(
+            bugs.is_empty(),
+            "F082: Should have no computed-addr bugs when using constant"
+        );
     }
 
     // F071: No use before def

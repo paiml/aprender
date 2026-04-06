@@ -28,8 +28,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ── Convolution ────────────────────────────────────────
     let delta = [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0_f32];
     let id_out = conv2d(&image, w, h, &delta, 3, 3, BorderMode::Zero)?;
-    let conv_err: f32 =
-        image.iter().zip(id_out.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    let conv_err: f32 = image
+        .iter()
+        .zip(id_out.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
     println!("Identity conv max error: {conv_err:.2e}");
 
     // ── Gaussian blur ──────────────────────────────────────
@@ -93,8 +96,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hsv = rgb_to_hsv(&rgb, 4, 1)?;
     let recovered = hsv_to_rgb(&hsv, 4, 1)?;
-    let hsv_err: f32 =
-        rgb.iter().zip(recovered.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    let hsv_err: f32 = rgb
+        .iter()
+        .zip(recovered.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
     println!("RGB→HSV→RGB roundtrip error: {hsv_err:.2e}");
 
     // ── Connected components ───────────────────────────────
@@ -162,11 +168,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ImageOps expanded trait: sobel, dilate, resize, histogram, components
     let (gx_buf, _gy_buf) = buf.sobel_gradients()?;
-    println!("ImageBuf.sobel_gradients(): {}×{}", gx_buf.width(), gx_buf.height());
+    println!(
+        "ImageBuf.sobel_gradients(): {}×{}",
+        gx_buf.width(),
+        gx_buf.height()
+    );
 
     let se = [1.0f32; 9];
     let dilated = gray_buf.apply_dilate(&se, 3, 3)?;
-    println!("ImageBuf.apply_dilate(): {}×{}", dilated.width(), dilated.height());
+    println!(
+        "ImageBuf.apply_dilate(): {}×{}",
+        dilated.width(),
+        dilated.height()
+    );
 
     let resized = buf.apply_resize(8, 8, Interpolation::Bilinear)?;
     println!(

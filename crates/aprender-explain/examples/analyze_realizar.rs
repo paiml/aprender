@@ -21,7 +21,12 @@ fn severity_icon(p0: usize, p1: usize, p2: usize) -> &'static str {
 /// Print detailed bug information for an analysis result.
 fn print_bug_details(result: &trueno_explain::PtxBugReport) {
     for bug in &result.bugs {
-        println!("   └─ [{}] {}: {}", bug.class.severity(), bug.class.code(), bug.message);
+        println!(
+            "   └─ [{}] {}: {}",
+            bug.class.severity(),
+            bug.class.code(),
+            bug.message
+        );
         if bug.line > 0 {
             println!("      Line {}: {}", bug.line, bug.instruction);
         }

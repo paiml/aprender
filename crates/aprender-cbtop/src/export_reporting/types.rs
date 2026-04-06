@@ -87,7 +87,11 @@ pub struct BenchmarkMetric {
 impl BenchmarkMetric {
     /// Create new metric
     pub fn new(name: &str, value: f64, unit: &str) -> Self {
-        Self { name: name.to_string(), value, unit: unit.to_string() }
+        Self {
+            name: name.to_string(),
+            value,
+            unit: unit.to_string(),
+        }
     }
 }
 
@@ -127,7 +131,10 @@ impl Default for BenchmarkReport {
 impl BenchmarkReport {
     /// Create new benchmark report
     pub fn new(title: &str) -> Self {
-        Self { title: title.to_string(), ..Default::default() }
+        Self {
+            title: title.to_string(),
+            ..Default::default()
+        }
     }
 
     /// Set timestamp
@@ -181,7 +188,12 @@ pub struct ComparisonEntry {
 impl ComparisonEntry {
     /// Create new comparison entry
     pub fn new(metric: &str, baseline: f64, current: f64, unit: &str) -> Self {
-        Self { metric: metric.to_string(), baseline, current, unit: unit.to_string() }
+        Self {
+            metric: metric.to_string(),
+            baseline,
+            current,
+            unit: unit.to_string(),
+        }
     }
 
     /// Calculate percent change
@@ -233,7 +245,10 @@ impl Default for ComparisonReport {
 impl ComparisonReport {
     /// Create new comparison report
     pub fn new(title: &str) -> Self {
-        Self { title: title.to_string(), ..Default::default() }
+        Self {
+            title: title.to_string(),
+            ..Default::default()
+        }
     }
 
     /// Set labels
@@ -251,12 +266,16 @@ impl ComparisonReport {
 
     /// Add comparison entry
     pub fn add_entry(&mut self, metric: &str, baseline: f64, current: f64, unit: &str) {
-        self.entries.push(ComparisonEntry::new(metric, baseline, current, unit));
+        self.entries
+            .push(ComparisonEntry::new(metric, baseline, current, unit));
     }
 
     /// Get regressions
     pub fn get_regressions(&self) -> Vec<&ComparisonEntry> {
-        self.entries.iter().filter(|e| e.is_regression(self.regression_threshold)).collect()
+        self.entries
+            .iter()
+            .filter(|e| e.is_regression(self.regression_threshold))
+            .collect()
     }
 
     /// Check if any regressions exist

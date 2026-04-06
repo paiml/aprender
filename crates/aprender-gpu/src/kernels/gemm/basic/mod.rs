@@ -31,7 +31,13 @@ pub struct GemmConfig {
 
 impl Default for GemmConfig {
     fn default() -> Self {
-        Self { m: 1024, n: 1024, k: 1024, tile_size: 32, use_tensor_cores: false }
+        Self {
+            m: 1024,
+            n: 1024,
+            k: 1024,
+            tile_size: 32,
+            use_tensor_cores: false,
+        }
     }
 }
 
@@ -58,14 +64,28 @@ impl GemmKernel {
     /// Create naive GEMM kernel (for correctness testing)
     #[must_use]
     pub fn naive(m: u32, n: u32, k: u32) -> Self {
-        Self { config: GemmConfig { m, n, k, ..Default::default() }, variant: GemmVariant::Naive }
+        Self {
+            config: GemmConfig {
+                m,
+                n,
+                k,
+                ..Default::default()
+            },
+            variant: GemmVariant::Naive,
+        }
     }
 
     /// Create tiled GEMM kernel (for performance)
     #[must_use]
     pub fn tiled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
         Self {
-            config: GemmConfig { m, n, k, tile_size, ..Default::default() },
+            config: GemmConfig {
+                m,
+                n,
+                k,
+                tile_size,
+                ..Default::default()
+            },
             variant: GemmVariant::Tiled,
         }
     }
@@ -75,7 +95,13 @@ impl GemmKernel {
     #[must_use]
     pub fn tiled_unrolled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
         Self {
-            config: GemmConfig { m, n, k, tile_size, ..Default::default() },
+            config: GemmConfig {
+                m,
+                n,
+                k,
+                tile_size,
+                ..Default::default()
+            },
             variant: GemmVariant::TiledUnrolled,
         }
     }
@@ -84,7 +110,13 @@ impl GemmKernel {
     #[must_use]
     pub fn tensor_core(m: u32, n: u32, k: u32) -> Self {
         Self {
-            config: GemmConfig { m, n, k, use_tensor_cores: true, ..Default::default() },
+            config: GemmConfig {
+                m,
+                n,
+                k,
+                use_tensor_cores: true,
+                ..Default::default()
+            },
             variant: GemmVariant::TensorCore,
         }
     }

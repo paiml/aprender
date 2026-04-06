@@ -252,8 +252,11 @@ impl Kernel for Dp4aQ6KGemvKernel {
                 // === Process 2 halves: n_idx=0 (elements 0-127), n_idx=1 (128-255) ===
                 for n_idx in 0..2u32 {
                     // ql byte offset = 64*n_idx + ql_base_in_half
-                    let ql_full_offset =
-                        if n_idx == 0 { ql_base_in_half } else { ctx.add_u32(ql_base_in_half, 64) };
+                    let ql_full_offset = if n_idx == 0 {
+                        ql_base_in_half
+                    } else {
+                        ctx.add_u32(ql_base_in_half, 64)
+                    };
                     let ql_off_64 = ctx.cvt_u64_u32(ql_full_offset);
                     let ql_addr = ctx.add_u64(sb_addr, ql_off_64);
                     // GH-129: Use unaligned load — Q6K super-blocks are 210 bytes
@@ -403,11 +406,20 @@ mod tests {
         let ptx = kernel.emit_ptx();
         assert!(ptx.contains(".visible .entry dp4a_q6k_gemv"));
         assert!(ptx.contains("dp4a.u32.s32"), "Must use dp4a instructions");
-        assert!(ptx.contains("bar.sync"), "Must have barrier for cross-warp safety");
+        assert!(
+            ptx.contains("bar.sync"),
+            "Must have barrier for cross-warp safety"
+        );
         // GH-175: Prefetch next row's data in grid-stride loop
-        assert!(ptx.contains("prefetch.global.L2"), "Must prefetch next row data");
+        assert!(
+            ptx.contains("prefetch.global.L2"),
+            "Must prefetch next row data"
+        );
         // GH-131: bfi.b32 used for unaligned Q6K loads (replaces shl+or assembly)
-        assert!(ptx.contains("bfi.b32"), "Must use bfi.b32 for unaligned byte packing");
+        assert!(
+            ptx.contains("bfi.b32"),
+            "Must use bfi.b32 for unaligned byte packing"
+        );
     }
 
     #[test]
@@ -447,7 +459,10 @@ mod tests {
         for warps in [1, 2, 3, 4, 6, 8] {
             let kernel = Dp4aQ6KGemvKernel::with_warps(1536, 1536, warps);
             let ptx = kernel.emit_ptx();
-            assert!(ptx.contains(".visible .entry"), "Must produce valid PTX for {warps} warps");
+            assert!(
+                ptx.contains(".visible .entry"),
+                "Must produce valid PTX for {warps} warps"
+            );
         }
     }
 

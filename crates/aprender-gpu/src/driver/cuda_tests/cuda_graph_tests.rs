@@ -30,7 +30,9 @@ fn test_cuda_graph_capture_and_replay() {
     let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
 
     // Begin capture
-    stream.begin_capture(CaptureMode::Global).expect("Begin capture MUST succeed");
+    stream
+        .begin_capture(CaptureMode::Global)
+        .expect("Begin capture MUST succeed");
 
     // Simulate some work (empty capture is valid)
     // In a real scenario, we'd launch kernels here
@@ -45,7 +47,9 @@ fn test_cuda_graph_capture_and_replay() {
 
     // Launch the graph 10 times to verify replay works
     for _ in 0..10 {
-        stream.launch_graph(&exec).expect("Graph launch MUST succeed");
+        stream
+            .launch_graph(&exec)
+            .expect("Graph launch MUST succeed");
     }
 
     stream.synchronize().expect("Final sync MUST succeed");
@@ -57,8 +61,14 @@ fn test_cuda_graph_capture_modes() {
     let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
 
     // Test each capture mode
-    for mode in [CaptureMode::Global, CaptureMode::ThreadLocal, CaptureMode::Relaxed] {
-        stream.begin_capture(mode).expect("Begin capture MUST succeed");
+    for mode in [
+        CaptureMode::Global,
+        CaptureMode::ThreadLocal,
+        CaptureMode::Relaxed,
+    ] {
+        stream
+            .begin_capture(mode)
+            .expect("Begin capture MUST succeed");
         let graph = stream.end_capture().expect("End capture MUST succeed");
         let exec = graph.instantiate().expect("Instantiate MUST succeed");
         stream.launch_graph(&exec).expect("Launch MUST succeed");
@@ -117,7 +127,9 @@ $done:
     let config = LaunchConfig::linear(256, 256);
 
     // Begin capture
-    stream.begin_capture(CaptureMode::Global).expect("Begin capture MUST succeed");
+    stream
+        .begin_capture(CaptureMode::Global)
+        .expect("Begin capture MUST succeed");
 
     // Launch kernel (will be captured)
     let mut ptr_arg = buffer.as_ptr() as *mut c_void;
@@ -139,7 +151,9 @@ $done:
 
     // Replay the graph 100 times
     for _ in 0..100 {
-        stream.launch_graph(&exec).expect("Graph launch MUST succeed");
+        stream
+            .launch_graph(&exec)
+            .expect("Graph launch MUST succeed");
     }
 
     stream.synchronize().expect("Sync MUST succeed");
@@ -148,9 +162,16 @@ $done:
     // Note: Graph capture does NOT execute the kernel - it only records it
     // So: initial 1.0 + (100 replays * 1.0) = 101.0
     let mut result = vec![0.0f32; 256];
-    buffer.copy_to_host(&mut result).expect("copy_to_host MUST succeed");
+    buffer
+        .copy_to_host(&mut result)
+        .expect("copy_to_host MUST succeed");
     for (i, &val) in result.iter().enumerate() {
-        assert!((val - 101.0).abs() < 0.01, "Element {} should be 101.0, got {}", i, val);
+        assert!(
+            (val - 101.0).abs() < 0.01,
+            "Element {} should be 101.0, got {}",
+            i,
+            val
+        );
     }
 }
 

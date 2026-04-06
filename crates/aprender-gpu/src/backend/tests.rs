@@ -19,7 +19,10 @@ fn test_metal_backend_available() {
     let backend = MetalBackend;
     // On macOS with metal feature, should detect GPUs
     assert!(backend.is_available(), "Metal should be available on macOS");
-    assert!(backend.device_count() > 0, "Should have at least one Metal device");
+    assert!(
+        backend.device_count() > 0,
+        "Should have at least one Metal device"
+    );
 }
 
 #[test]
@@ -68,7 +71,10 @@ fn test_metal_backend_device_count() {
 fn test_metal_backend_device_count_macos() {
     let backend = MetalBackend;
     // On macOS with metal feature, should have at least 1 GPU
-    assert!(backend.device_count() >= 1, "Should have at least one Metal device");
+    assert!(
+        backend.device_count() >= 1,
+        "Should have at least one Metal device"
+    );
 }
 
 #[test]
@@ -317,7 +323,11 @@ fn test_detect_backend_default_fallback_is_cuda_for_ptx() {
     let backend = detect_backend();
 
     if !cuda_avail && !wgpu_avail && !metal_avail && !vulkan_avail {
-        assert_eq!(backend.name(), "CUDA", "Fallback should be CUDA for PTX generation");
+        assert_eq!(
+            backend.name(),
+            "CUDA",
+            "Fallback should be CUDA for PTX generation"
+        );
         // Fallback CUDA backend is still not available for execution
         // but its name is "CUDA" for PTX codegen purposes
     }
@@ -328,7 +338,10 @@ fn test_backend_availability_mutual_exclusion() {
     // On any given platform, certain backends should be mutually exclusive.
     // Metal is only available on macOS, Vulkan is never available (placeholder).
     let vulkan = VulkanBackend;
-    assert!(!vulkan.is_available(), "Vulkan placeholder is never available");
+    assert!(
+        !vulkan.is_available(),
+        "Vulkan placeholder is never available"
+    );
 
     #[cfg(not(target_os = "macos"))]
     {
@@ -351,8 +364,15 @@ fn test_wgpu_device_count_matches_availability() {
 fn test_cuda_device_count_matches_availability() {
     let cuda = CudaBackend;
     if !cuda.is_available() {
-        assert_eq!(cuda.device_count(), 0, "CUDA device_count must be 0 when unavailable");
+        assert_eq!(
+            cuda.device_count(),
+            0,
+            "CUDA device_count must be 0 when unavailable"
+        );
     } else {
-        assert!(cuda.device_count() > 0, "CUDA device_count must be >0 when available");
+        assert!(
+            cuda.device_count() > 0,
+            "CUDA device_count must be >0 when available"
+        );
     }
 }

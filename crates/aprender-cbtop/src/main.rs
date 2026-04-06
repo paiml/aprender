@@ -274,9 +274,11 @@ fn main() -> Result<(), CbtopError> {
         load_profile: parse_load_profile(&cli.load),
         workload: parse_workload(&cli.workload),
         problem_size: cli.size,
-        threads: cli
-            .threads
-            .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)),
+        threads: cli.threads.unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        }),
         deterministic: cli.deterministic,
         show_fps: cli.show_fps,
         config_path: cli.config,

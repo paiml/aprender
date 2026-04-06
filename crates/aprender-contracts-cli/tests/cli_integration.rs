@@ -314,12 +314,10 @@ mod audit {
         let report = audit_binding(&[("softmax-kernel-v1.yaml", &contract)], &binding);
         assert_eq!(report.total_equations, 1);
         assert_eq!(report.implemented, 1);
-        assert!(
-            report
-                .violations
-                .iter()
-                .all(|v| v.severity != Severity::Error)
-        );
+        assert!(report
+            .violations
+            .iter()
+            .all(|v| v.severity != Severity::Error));
     }
 
     #[test]

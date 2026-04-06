@@ -98,7 +98,12 @@ impl CostModel {
 
     /// Create a custom cost model
     pub fn custom(gpu_type: &str, cost_per_hour: f64, memory_gb: f64) -> Self {
-        Self { gpu_type: gpu_type.to_string(), cost_per_hour, memory_gb, performance_factor: 1.0 }
+        Self {
+            gpu_type: gpu_type.to_string(),
+            cost_per_hour,
+            memory_gb,
+            performance_factor: 1.0,
+        }
     }
 }
 
@@ -211,7 +216,11 @@ impl CostPerformanceAnalysis {
 
         let best_accuracy = points
             .iter()
-            .max_by(|a, b| a.accuracy.partial_cmp(&b.accuracy).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.accuracy
+                    .partial_cmp(&b.accuracy)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .cloned();
 
         let best_efficiency = points
@@ -220,16 +229,28 @@ impl CostPerformanceAnalysis {
             .max_by(|a, b| {
                 let eff_a = a.accuracy / a.cost_usd;
                 let eff_b = b.accuracy / b.cost_usd;
-                eff_a.partial_cmp(&eff_b).unwrap_or(std::cmp::Ordering::Equal)
+                eff_a
+                    .partial_cmp(&eff_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             })
             .cloned();
 
         let lowest_cost = points
             .iter()
-            .min_by(|a, b| a.cost_usd.partial_cmp(&b.cost_usd).unwrap_or(std::cmp::Ordering::Equal))
+            .min_by(|a, b| {
+                a.cost_usd
+                    .partial_cmp(&b.cost_usd)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .cloned();
 
-        Self { points, pareto_frontier, best_accuracy, best_efficiency, lowest_cost }
+        Self {
+            points,
+            pareto_frontier,
+            best_accuracy,
+            best_efficiency,
+            lowest_cost,
+        }
     }
 
     /// Get recommendations based on constraints
@@ -237,18 +258,22 @@ impl CostPerformanceAnalysis {
         let mut recommendations = Vec::new();
 
         // Filter points that satisfy constraints
-        let valid_points: Vec<_> =
-            self.points.iter().filter(|p| constraints.is_satisfied(p)).collect();
+        let valid_points: Vec<_> = self
+            .points
+            .iter()
+            .filter(|p| constraints.is_satisfied(p))
+            .collect();
 
         if valid_points.is_empty() {
             return recommendations;
         }
 
         // Best accuracy within constraints
-        if let Some(best_acc) = valid_points
-            .iter()
-            .max_by(|a, b| a.accuracy.partial_cmp(&b.accuracy).unwrap_or(std::cmp::Ordering::Equal))
-        {
+        if let Some(best_acc) = valid_points.iter().max_by(|a, b| {
+            a.accuracy
+                .partial_cmp(&b.accuracy)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             recommendations.push(Recommendation {
                 reason: "Best accuracy within constraints".to_string(),
                 point: (*best_acc).clone(),
@@ -256,12 +281,21 @@ impl CostPerformanceAnalysis {
         }
 
         // Best efficiency within constraints
-        if let Some(best_eff) = valid_points.iter().filter(|p| p.cost_usd > 0.0).max_by(|a, b| {
-            let eff_a = a.accuracy / a.cost_usd;
-            let eff_b = b.accuracy / b.cost_usd;
-            eff_a.partial_cmp(&eff_b).unwrap_or(std::cmp::Ordering::Equal)
-        }) {
-            if recommendations.iter().all(|r| r.point.name != best_eff.name) {
+        if let Some(best_eff) = valid_points
+            .iter()
+            .filter(|p| p.cost_usd > 0.0)
+            .max_by(|a, b| {
+                let eff_a = a.accuracy / a.cost_usd;
+                let eff_b = b.accuracy / b.cost_usd;
+                eff_a
+                    .partial_cmp(&eff_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        {
+            if recommendations
+                .iter()
+                .all(|r| r.point.name != best_eff.name)
+            {
                 recommendations.push(Recommendation {
                     reason: "Best accuracy per dollar within constraints".to_string(),
                     point: (*best_eff).clone(),
@@ -352,8 +386,11 @@ fn compute_pareto_frontier(points: &[CostPerformancePoint]) -> Vec<CostPerforman
     }
 
     // Sort by cost
-    frontier
-        .sort_by(|a, b| a.cost_usd.partial_cmp(&b.cost_usd).unwrap_or(std::cmp::Ordering::Equal));
+    frontier.sort_by(|a, b| {
+        a.cost_usd
+            .partial_cmp(&b.cost_usd)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     frontier
 }
 
@@ -558,7 +595,9 @@ mod tests {
 
     #[test]
     fn test_constraints() {
-        let constraints = Constraints::new().with_max_cost(50.0).with_min_accuracy(0.85);
+        let constraints = Constraints::new()
+            .with_max_cost(50.0)
+            .with_min_accuracy(0.85);
 
         let point_good = CostPerformancePoint {
             name: "Good".to_string(),

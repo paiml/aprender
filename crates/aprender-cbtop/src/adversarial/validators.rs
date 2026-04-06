@@ -47,7 +47,10 @@ impl InputValidator {
 
         // F1005: Maximum-size inputs handled
         if data.len() > self.max_size {
-            return Err(AdversarialError::MaxSizeExceeded { size: data.len(), max: self.max_size });
+            return Err(AdversarialError::MaxSizeExceeded {
+                size: data.len(),
+                max: self.max_size,
+            });
         }
 
         Ok(())
@@ -63,7 +66,10 @@ impl InputValidator {
         // F1005: Maximum-size inputs handled
         let byte_size = std::mem::size_of_val(data);
         if byte_size > self.max_size {
-            return Err(AdversarialError::MaxSizeExceeded { size: byte_size, max: self.max_size });
+            return Err(AdversarialError::MaxSizeExceeded {
+                size: byte_size,
+                max: self.max_size,
+            });
         }
 
         // F1014: NaN propagation controlled
@@ -131,7 +137,10 @@ pub struct ConfigValidator {
 
 impl Default for ConfigValidator {
     fn default() -> Self {
-        Self { mins: std::collections::HashMap::new(), maxs: std::collections::HashMap::new() }
+        Self {
+            mins: std::collections::HashMap::new(),
+            maxs: std::collections::HashMap::new(),
+        }
     }
 }
 
@@ -165,7 +174,10 @@ impl ConfigValidator {
                     field: field.to_string(),
                     value: value.to_string(),
                     min: min.to_string(),
-                    max: self.maxs.get(field).map_or("unbounded".to_string(), |m| m.to_string()),
+                    max: self
+                        .maxs
+                        .get(field)
+                        .map_or("unbounded".to_string(), |m| m.to_string()),
                 });
             }
         }
@@ -175,7 +187,10 @@ impl ConfigValidator {
                 return Err(AdversarialError::ConfigOutOfBounds {
                     field: field.to_string(),
                     value: value.to_string(),
-                    min: self.mins.get(field).map_or("unbounded".to_string(), |m| m.to_string()),
+                    min: self
+                        .mins
+                        .get(field)
+                        .map_or("unbounded".to_string(), |m| m.to_string()),
                     max: max.to_string(),
                 });
             }

@@ -108,8 +108,10 @@ fn test_detect_spills() {
 
     // No spills in sample PTX
     let warnings = analyzer.detect_muda(SAMPLE_PTX);
-    let spill_warnings: Vec<_> =
-        warnings.iter().filter(|w| matches!(w.muda_type, MudaType::Transport)).collect();
+    let spill_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| matches!(w.muda_type, MudaType::Transport))
+        .collect();
     assert!(spill_warnings.is_empty());
 
     // PTX with spills
@@ -134,8 +136,10 @@ fn test_detect_high_register_pressure() {
     ";
 
     let warnings = analyzer.detect_muda(high_reg_ptx);
-    let reg_warnings: Vec<_> =
-        warnings.iter().filter(|w| matches!(w.muda_type, MudaType::Overprocessing)).collect();
+    let reg_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| matches!(w.muda_type, MudaType::Overprocessing))
+        .collect();
     assert!(!reg_warnings.is_empty());
 }
 
@@ -169,7 +173,10 @@ fn test_roofline_estimation() {
     let report = analyzer.analyze(SAMPLE_PTX).unwrap();
 
     // Vector add is memory-bound
-    assert!(report.roofline.memory_bound, "Vector add should be memory-bound");
+    assert!(
+        report.roofline.memory_bound,
+        "Vector add should be memory-bound"
+    );
 }
 
 /// F030 (Memory): Identifies coalesced pattern (tid*4 detected)
@@ -196,7 +203,10 @@ fn f030_memory_identifies_coalesced_pattern() {
     let memory = analyzer.parse_memory_ops(coalesced_ptx);
 
     // Should detect tid references indicating coalesced access
-    assert!(memory.coalesced_ratio > 0.0, "Should detect tid-based coalesced pattern");
+    assert!(
+        memory.coalesced_ratio > 0.0,
+        "Should detect tid-based coalesced pattern"
+    );
     assert!(memory.global_loads > 0, "Should detect global loads");
     assert!(memory.global_stores > 0, "Should detect global stores");
 }
@@ -232,5 +242,8 @@ fn f034_warn_low_coalescing() {
         .filter(|w| w.description.contains("coalescing"))
         .collect();
 
-    assert!(!coalescing_warnings.is_empty(), "Should warn on <80% coalescing ratio");
+    assert!(
+        !coalescing_warnings.is_empty(),
+        "Should warn on <80% coalescing ratio"
+    );
 }

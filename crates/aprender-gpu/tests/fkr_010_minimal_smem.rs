@@ -40,7 +40,12 @@ mod fkr_010_tests {
             });
 
         // Use PtxModule to add proper headers
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit()
+        PtxModule::new()
+            .version(8, 0)
+            .target("sm_89")
+            .address_size(64)
+            .add_kernel(kernel)
+            .emit()
     }
 
     #[test]
@@ -60,7 +65,11 @@ mod fkr_010_tests {
             }
         };
 
-        let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: (1, 1, 1),
+            block: (32, 1, 1),
+            shared_mem: 0,
+        };
 
         let mut args: [*mut c_void; 1] = [output_buf.as_kernel_arg()];
 
@@ -163,8 +172,12 @@ fn fkr_010b_debug_smem_base() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     let cuda_ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&cuda_ctx).expect("CUDA stream");
@@ -200,9 +213,15 @@ fn fkr_010b_debug_smem_base() {
     // state_base should be smem_base + 12420
     assert!(output[0] > 0, "raw_smem should not be 0");
     assert_eq!(output[1], 0, "warp 0 should have offset 0");
-    assert_eq!(output[2], output[0], "smem_base should equal raw_smem for warp 0");
+    assert_eq!(
+        output[2], output[0],
+        "smem_base should equal raw_smem for warp 0"
+    );
     let expected_state = output[0].wrapping_add(12420);
-    assert_eq!(output[3], expected_state, "state_base should be smem_base + 12420");
+    assert_eq!(
+        output[3], expected_state,
+        "state_base should be smem_base + 12420"
+    );
 
     println!("✅ smem_base debug test PASSED!");
 }

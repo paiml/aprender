@@ -336,8 +336,9 @@ fn test_percentile_threshold() {
 /// Test warning vs critical
 #[test]
 fn test_warning_vs_critical() {
-    let mut learner =
-        ThresholdLearner::new("test").with_warning_multiplier(2.0).with_critical_multiplier(3.0);
+    let mut learner = ThresholdLearner::new("test")
+        .with_warning_multiplier(2.0)
+        .with_critical_multiplier(3.0);
 
     for _ in 0..20 {
         learner.add_sample(100.0);

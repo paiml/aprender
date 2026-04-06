@@ -130,8 +130,12 @@ fn test_verify_performance_fail_slow() {
 
 #[test]
 fn test_stress_runner_generate_input() {
-    let config =
-        StressConfig { min_input_size: 100, max_input_size: 200, seed: 42, ..Default::default() };
+    let config = StressConfig {
+        min_input_size: 100,
+        max_input_size: 200,
+        seed: 42,
+        ..Default::default()
+    };
 
     let mut runner = StressTestRunner::new(config);
     let (seed1, input1) = runner.generate_input();
@@ -145,7 +149,11 @@ fn test_stress_runner_generate_input() {
 
 #[test]
 fn test_stress_runner_run_cycle() {
-    let config = StressConfig { cycles: 1, seed: 42, ..Default::default() };
+    let config = StressConfig {
+        cycles: 1,
+        seed: 42,
+        ..Default::default()
+    };
 
     let mut runner = StressTestRunner::new(config);
     let profile = runner.run_cycle(0, |input| {
@@ -279,7 +287,11 @@ fn test_stress_rng_gen_range_edge_cases() {
 #[test]
 fn test_test_failure_anomaly_detection() {
     // Coverage for test failure anomaly (lines 370-376)
-    let config = StressConfig { cycles: 1, seed: 42, ..Default::default() };
+    let config = StressConfig {
+        cycles: 1,
+        seed: 42,
+        ..Default::default()
+    };
 
     let mut runner = StressTestRunner::new(config);
 
@@ -293,8 +305,11 @@ fn test_test_failure_anomaly_detection() {
     assert_eq!(report.total_failed, 2);
 
     // Should have a TestFailure anomaly
-    let failure_anomalies: Vec<_> =
-        report.anomalies.iter().filter(|a| a.kind == AnomalyKind::TestFailure).collect();
+    let failure_anomalies: Vec<_> = report
+        .anomalies
+        .iter()
+        .filter(|a| a.kind == AnomalyKind::TestFailure)
+        .collect();
     assert_eq!(failure_anomalies.len(), 1);
     assert!(failure_anomalies[0].description.contains("2 tests failed"));
 }

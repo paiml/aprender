@@ -39,7 +39,10 @@ pub struct LuFactorization {
 #[allow(clippy::cast_precision_loss)]
 pub fn lu_factorize(a: &[f32], n: usize) -> Result<LuFactorization, SolverError> {
     if a.len() != n * n {
-        return Err(SolverError::NotSquare { rows: n, cols: a.len() / n.max(1) });
+        return Err(SolverError::NotSquare {
+            rows: n,
+            cols: a.len() / n.max(1),
+        });
     }
 
     let mut lu = a.to_vec();
@@ -94,7 +97,10 @@ impl LuFactorization {
     /// Returns error on dimension mismatch.
     pub fn solve(&self, b: &[f32]) -> Result<Vec<f32>, SolverError> {
         if b.len() != self.n {
-            return Err(SolverError::DimensionMismatch { matrix_n: self.n, rhs_len: b.len() });
+            return Err(SolverError::DimensionMismatch {
+                matrix_n: self.n,
+                rhs_len: b.len(),
+            });
         }
 
         let n = self.n;

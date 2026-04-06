@@ -49,7 +49,10 @@ fn hip_01_backend_compiles() {
     // Stub: Check ROCm version requirements
     let rocm_version = std::env::var("ROCM_VERSION").unwrap_or_else(|_| "unknown".to_string());
 
-    println!("HIP-01 PASSED: ROCm backend detected (version: {})", rocm_version);
+    println!(
+        "HIP-01 PASSED: ROCm backend detected (version: {})",
+        rocm_version
+    );
 }
 
 /// HIP-02: All backend equivalence tests pass (<1e-5 tolerance)
@@ -196,7 +199,13 @@ fn test_hip_gemm_equivalence() {
     let result = expected.clone();
 
     for (i, (r, e)) in result.iter().zip(&expected).enumerate() {
-        assert!((r - e).abs() < 1e-5, "GEMM mismatch at {}: {} vs {}", i, r, e);
+        assert!(
+            (r - e).abs() < 1e-5,
+            "GEMM mismatch at {}: {} vs {}",
+            i,
+            r,
+            e
+        );
     }
 
     println!("HIP GEMM equivalence verified");
@@ -232,14 +241,21 @@ fn test_hip_quantize_equivalence() {
     let input = vec![0.5f32, -0.25, 0.75, -0.5, 0.125, -0.875, 0.0, 0.333];
 
     // Stub: Simulate quantization (round to 4-bit range)
-    let quantized: Vec<i8> =
-        input.iter().map(|x| (x * 7.0).round().clamp(-8.0, 7.0) as i8).collect();
+    let quantized: Vec<i8> = input
+        .iter()
+        .map(|x| (x * 7.0).round().clamp(-8.0, 7.0) as i8)
+        .collect();
 
     // Verify quantization is deterministic
-    let quantized2: Vec<i8> =
-        input.iter().map(|x| (x * 7.0).round().clamp(-8.0, 7.0) as i8).collect();
+    let quantized2: Vec<i8> = input
+        .iter()
+        .map(|x| (x * 7.0).round().clamp(-8.0, 7.0) as i8)
+        .collect();
 
-    assert_eq!(quantized, quantized2, "HIP quantize should be deterministic");
+    assert_eq!(
+        quantized, quantized2,
+        "HIP quantize should be deterministic"
+    );
 
     println!("HIP quantize equivalence verified");
 }
@@ -277,7 +293,11 @@ fn test_hip_memory_patterns() {
     let allocation_size: usize = 1024;
 
     let aligned_size = allocation_size.div_ceil(LDS_ALIGNMENT) * LDS_ALIGNMENT;
-    assert_eq!(aligned_size % LDS_ALIGNMENT, 0, "Memory allocation should be LDS-aligned");
+    assert_eq!(
+        aligned_size % LDS_ALIGNMENT,
+        0,
+        "Memory allocation should be LDS-aligned"
+    );
 
     println!("HIP memory patterns verified (alignment={})", LDS_ALIGNMENT);
 }
@@ -302,7 +322,10 @@ fn test_hip_stream_sync() {
     // Simulate stream operations
     std::thread::sleep(Duration::from_millis(10));
 
-    assert!(start.elapsed() < timeout, "HIP stream operations should complete within timeout");
+    assert!(
+        start.elapsed() < timeout,
+        "HIP stream operations should complete within timeout"
+    );
 
     println!("HIP stream synchronization verified");
 }
@@ -323,11 +346,18 @@ fn test_hip_architecture_optimizations() {
 
     // Verify tile sizes align with architecture
     let tile_size = 16;
-    assert_eq!(tile_size % SIMD_WIDTH, 0, "Tile size should align with SIMD width");
+    assert_eq!(
+        tile_size % SIMD_WIDTH,
+        0,
+        "Tile size should align with SIMD width"
+    );
 
     // Verify shared memory usage fits LDS
     let smem_per_block = tile_size * tile_size * 4; // f32 elements
-    assert!(smem_per_block <= LDS_SIZE_KB * 1024, "Shared memory should fit in LDS");
+    assert!(
+        smem_per_block <= LDS_SIZE_KB * 1024,
+        "Shared memory should fit in LDS"
+    );
 
     println!(
         "HIP architecture optimizations verified (SIMD={}, Wave={}, LDS={}KB, VGPR={})",

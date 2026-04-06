@@ -51,7 +51,11 @@ impl FftPlan {
             }
         }
 
-        Ok(Self { n, log2_n, twiddles })
+        Ok(Self {
+            n,
+            log2_n,
+            twiddles,
+        })
     }
 
     /// Transform size.
@@ -98,7 +102,10 @@ impl FftPlan {
     /// Returns error on dimension mismatch.
     pub fn forward_r2c(&self, input: &[f32], output: &mut [Complex]) -> Result<(), FftError> {
         if input.len() != self.n {
-            return Err(FftError::OutputLengthMismatch { expected: self.n, got: input.len() });
+            return Err(FftError::OutputLengthMismatch {
+                expected: self.n,
+                got: input.len(),
+            });
         }
         let expected_out = self.n / 2 + 1;
         if output.len() != expected_out {
@@ -133,7 +140,10 @@ impl FftPlan {
             });
         }
         if output.len() != self.n {
-            return Err(FftError::OutputLengthMismatch { expected: self.n, got: output.len() });
+            return Err(FftError::OutputLengthMismatch {
+                expected: self.n,
+                got: output.len(),
+            });
         }
 
         // Reconstruct full N-point spectrum from Hermitian symmetry: X[N-k] = conj(X[k])
@@ -157,10 +167,16 @@ impl FftPlan {
 
     fn validate_buffers(&self, in_len: usize, out_len: usize) -> Result<(), FftError> {
         if in_len != self.n {
-            return Err(FftError::OutputLengthMismatch { expected: self.n, got: in_len });
+            return Err(FftError::OutputLengthMismatch {
+                expected: self.n,
+                got: in_len,
+            });
         }
         if out_len != self.n {
-            return Err(FftError::OutputLengthMismatch { expected: self.n, got: out_len });
+            return Err(FftError::OutputLengthMismatch {
+                expected: self.n,
+                got: out_len,
+            });
         }
         Ok(())
     }
@@ -191,8 +207,11 @@ impl FftPlan {
             while group_start < n {
                 for k in 0..half_size {
                     let tw_idx = k * tw_step;
-                    let tw =
-                        if inverse { self.twiddles[tw_idx].conj() } else { self.twiddles[tw_idx] };
+                    let tw = if inverse {
+                        self.twiddles[tw_idx].conj()
+                    } else {
+                        self.twiddles[tw_idx]
+                    };
 
                     let even_idx = group_start + k;
                     let odd_idx = even_idx + half_size;
@@ -254,10 +273,18 @@ pub fn fft_2d(
     ny: usize,
 ) -> Result<(), FftError> {
     if input.len() != nx * ny {
-        return Err(FftError::DimensionMismatch2d { len: input.len(), nx, ny });
+        return Err(FftError::DimensionMismatch2d {
+            len: input.len(),
+            nx,
+            ny,
+        });
     }
     if output.len() != nx * ny {
-        return Err(FftError::DimensionMismatch2d { len: output.len(), nx, ny });
+        return Err(FftError::DimensionMismatch2d {
+            len: output.len(),
+            nx,
+            ny,
+        });
     }
 
     let plan_x = FftPlan::new(nx)?;

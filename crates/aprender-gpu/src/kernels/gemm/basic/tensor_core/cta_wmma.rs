@@ -37,7 +37,11 @@ pub fn build_cta_wmma_fp16_dbuf(_m: u32, n: u32, k: u32) -> PtxKernel {
 
 fn build_cta_wmma_fp16_impl(_m: u32, n: u32, k: u32, double_buffer: bool) -> PtxKernel {
     let smem_single = 32 * 16 * 2 + 16 * 32 * 2; // A[32×16] + B[16×32] in FP16
-    let smem_bytes = if double_buffer { smem_single * 2 } else { smem_single };
+    let smem_bytes = if double_buffer {
+        smem_single * 2
+    } else {
+        smem_single
+    };
     let n_k_tiles = (k + 15) / 16;
 
     PtxKernel::new("gemm_cta_wmma_fp16")
@@ -587,7 +591,10 @@ mod tests {
         let kernel = build_cta_wmma_fp16(256, 256, 256);
         let module = PtxModule::new().add_kernel(kernel);
         let ptx = module.emit();
-        assert!(ptx.contains("fast_load"), "must have interior tile fast path");
+        assert!(
+            ptx.contains("fast_load"),
+            "must have interior tile fast path"
+        );
         assert!(ptx.contains("slow_b"), "must have edge tile slow path");
     }
 
@@ -598,7 +605,10 @@ mod tests {
         let kernel = build_cta_wmma_fp16_dbuf(128, 128, 128);
         let module = PtxModule::new().add_kernel(kernel);
         let ptx = module.emit();
-        assert!(ptx.contains(".entry gemm_cta_wmma_fp16"), "must emit valid kernel entry");
+        assert!(
+            ptx.contains(".entry gemm_cta_wmma_fp16"),
+            "must emit valid kernel entry"
+        );
         assert!(ptx.contains("bar.sync"), "must have barrier sync");
     }
 
@@ -638,10 +648,16 @@ mod tests {
             ptx.contains("pro_fast_load") || ptx.contains("pro_slow_b"),
             "double-buffer must have prologue load labels"
         );
-        assert!(ptx.contains("pro_load_done"), "double-buffer must have prologue load_done");
+        assert!(
+            ptx.contains("pro_load_done"),
+            "double-buffer must have prologue load_done"
+        );
 
         // Epilogue label
-        assert!(ptx.contains("dbuf_epilogue"), "double-buffer must have epilogue label");
+        assert!(
+            ptx.contains("dbuf_epilogue"),
+            "double-buffer must have epilogue label"
+        );
     }
 
     #[test]
@@ -664,7 +680,9 @@ mod tests {
         let kernel = build_cta_wmma_fp16_dbuf(256, 256, 256);
         let ptx = PtxModule::new().add_kernel(kernel).emit();
 
-        let mma_count = ptx.matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32").count();
+        let mma_count = ptx
+            .matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32")
+            .count();
         assert_eq!(
             mma_count, 4,
             "double-buffer must have 4 WMMA MMA ops (fast_a + fast_b + slow + epilogue), got {mma_count}"
@@ -679,7 +697,9 @@ mod tests {
         let ptx = module.emit();
         assert!(ptx.contains(".entry gemm_cta_wmma_fp16"));
         // Must have WMMA ops in code (fast_a, fast_b, slow, epilogue)
-        let mma_count = ptx.matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32").count();
+        let mma_count = ptx
+            .matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32")
+            .count();
         assert_eq!(mma_count, 4);
     }
 

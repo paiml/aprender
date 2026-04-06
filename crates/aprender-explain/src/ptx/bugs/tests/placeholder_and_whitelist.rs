@@ -62,7 +62,10 @@ fn test_no_placeholder_code() {
 /// Test new bug class severities
 #[test]
 fn test_new_bug_severities() {
-    assert_eq!(PtxBugClass::HighRegisterPressure.severity(), BugSeverity::High);
+    assert_eq!(
+        PtxBugClass::HighRegisterPressure.severity(),
+        BugSeverity::High
+    );
     assert_eq!(PtxBugClass::PredicateOverflow.severity(), BugSeverity::High);
     assert_eq!(PtxBugClass::PlaceholderCode.severity(), BugSeverity::High);
 }
@@ -70,7 +73,10 @@ fn test_new_bug_severities() {
 /// Test new bug class codes
 #[test]
 fn test_new_bug_codes() {
-    assert_eq!(PtxBugClass::HighRegisterPressure.code(), "HIGH_REG_PRESSURE");
+    assert_eq!(
+        PtxBugClass::HighRegisterPressure.code(),
+        "HIGH_REG_PRESSURE"
+    );
     assert_eq!(PtxBugClass::PredicateOverflow.code(), "PRED_OVERFLOW");
     assert_eq!(PtxBugClass::PlaceholderCode.code(), "PLACEHOLDER_CODE");
 }

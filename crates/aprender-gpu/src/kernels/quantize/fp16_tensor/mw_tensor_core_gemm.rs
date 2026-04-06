@@ -427,7 +427,10 @@ mod tests {
         let k = MultiWarpTensorCoreQ4KGemmKernel::new(125, 1536, 1536);
         let ptx = k.emit_ptx();
         // 2048 bytes = 32×16×2 (A) + 16×32×2 (B)
-        assert!(ptx.contains("smem[2048]"), "SHMEM should be 2048 bytes for 32×32 tile");
+        assert!(
+            ptx.contains("smem[2048]"),
+            "SHMEM should be 2048 bytes for 32×32 tile"
+        );
     }
 
     #[test]

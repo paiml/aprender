@@ -45,7 +45,10 @@ fn h0_cuda_mon_10_memory_info_used() {
 
 #[test]
 fn h0_cuda_mon_11_memory_info_mb_helpers() {
-    let mem = CudaMemoryInfo { free: 16 * 1024 * 1024 * 1024, total: 24 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 16 * 1024 * 1024 * 1024,
+        total: 24 * 1024 * 1024 * 1024,
+    };
 
     assert_eq!(mem.free_mb(), 16 * 1024);
     assert_eq!(mem.total_mb(), 24 * 1024);
@@ -72,7 +75,10 @@ fn h0_cuda_mon_13_memory_info_usage_percent_zero_total() {
 
 #[test]
 fn h0_cuda_mon_14_memory_info_display() {
-    let mem = CudaMemoryInfo { free: 16 * 1024 * 1024 * 1024, total: 24 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 16 * 1024 * 1024 * 1024,
+        total: 24 * 1024 * 1024 * 1024,
+    };
 
     let display = format!("{}", mem);
     assert!(display.contains("8192")); // 8 GB used
@@ -160,7 +166,10 @@ fn h0_cuda_mon_40_cuda_monitoring_available() {
     let available = cuda_monitoring_available();
     // Without the cuda feature, this should be false
     #[cfg(not(feature = "cuda"))]
-    assert!(!available, "Without CUDA feature, monitoring should not be available");
+    assert!(
+        !available,
+        "Without CUDA feature, monitoring should not be available"
+    );
     // With cuda feature but possibly no hardware, it might be true or false
     #[cfg(feature = "cuda")]
     {
@@ -175,7 +184,10 @@ fn h0_cuda_mon_41_cuda_device_count() {
     let result = cuda_device_count();
     #[cfg(not(feature = "cuda"))]
     {
-        assert!(result.is_err(), "Without CUDA feature, device count should error");
+        assert!(
+            result.is_err(),
+            "Without CUDA feature, device count should error"
+        );
         if let Err(e) = result {
             let err_msg = format!("{:?}", e);
             assert!(
@@ -234,7 +246,10 @@ fn h0_cuda_mon_51_device_info_debug() {
 
 #[test]
 fn h0_cuda_mon_52_memory_info_clone() {
-    let mem = CudaMemoryInfo { free: 4 * 1024 * 1024 * 1024, total: 8 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 4 * 1024 * 1024 * 1024,
+        total: 8 * 1024 * 1024 * 1024,
+    };
 
     let cloned = mem.clone();
     assert_eq!(cloned.free, mem.free);
@@ -243,7 +258,10 @@ fn h0_cuda_mon_52_memory_info_clone() {
 
 #[test]
 fn h0_cuda_mon_53_memory_info_copy() {
-    let mem = CudaMemoryInfo { free: 2 * 1024 * 1024 * 1024, total: 4 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 2 * 1024 * 1024 * 1024,
+        total: 4 * 1024 * 1024 * 1024,
+    };
 
     // Test Copy trait by assigning to another variable
     let copied = mem;
@@ -256,7 +274,10 @@ fn h0_cuda_mon_53_memory_info_copy() {
 
 #[test]
 fn h0_cuda_mon_54_memory_info_debug() {
-    let mem = CudaMemoryInfo { free: 1024 * 1024 * 1024, total: 2 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 1024 * 1024 * 1024,
+        total: 2 * 1024 * 1024 * 1024,
+    };
 
     let debug_str = format!("{:?}", mem);
     assert!(debug_str.contains("CudaMemoryInfo"));
@@ -291,7 +312,10 @@ fn h0_cuda_mon_61_device_info_display_index_format() {
     };
 
     let display = format!("{}", info);
-    assert!(display.contains("[7]"), "Display should show index in brackets");
+    assert!(
+        display.contains("[7]"),
+        "Display should show index in brackets"
+    );
     assert!(display.contains("GPU Seven"));
     assert!(display.contains("12.0"));
 }
@@ -326,7 +350,11 @@ fn h0_cuda_mon_63_small_memory_values() {
 #[test]
 fn h0_cuda_mon_64_device_info_empty_name() {
     // Test with empty device name
-    let info = CudaDeviceInfo { index: 0, name: String::new(), total_memory: 1024 };
+    let info = CudaDeviceInfo {
+        index: 0,
+        name: String::new(),
+        total_memory: 1024,
+    };
 
     let display = format!("{}", info);
     assert!(display.contains("[0]"));
@@ -336,7 +364,11 @@ fn h0_cuda_mon_64_device_info_empty_name() {
 #[test]
 fn h0_cuda_mon_65_device_info_zero_memory() {
     // Test with zero total memory
-    let info = CudaDeviceInfo { index: 0, name: "Zero Memory GPU".to_string(), total_memory: 0 };
+    let info = CudaDeviceInfo {
+        index: 0,
+        name: "Zero Memory GPU".to_string(),
+        total_memory: 0,
+    };
 
     assert_eq!(info.total_memory_mb(), 0);
     assert!((info.total_memory_gb() - 0.0).abs() < 0.001);
@@ -348,7 +380,10 @@ fn h0_cuda_mon_65_device_info_zero_memory() {
 #[test]
 fn h0_cuda_mon_66_memory_info_full_usage() {
     // Test with 100% memory usage
-    let mem = CudaMemoryInfo { free: 0, total: 16 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 0,
+        total: 16 * 1024 * 1024 * 1024,
+    };
 
     assert_eq!(mem.used(), 16 * 1024 * 1024 * 1024);
     assert!((mem.usage_percent() - 100.0).abs() < 0.001);
@@ -357,7 +392,10 @@ fn h0_cuda_mon_66_memory_info_full_usage() {
 #[test]
 fn h0_cuda_mon_67_memory_info_no_usage() {
     // Test with 0% memory usage (all free)
-    let mem = CudaMemoryInfo { free: 8 * 1024 * 1024 * 1024, total: 8 * 1024 * 1024 * 1024 };
+    let mem = CudaMemoryInfo {
+        free: 8 * 1024 * 1024 * 1024,
+        total: 8 * 1024 * 1024 * 1024,
+    };
 
     assert_eq!(mem.used(), 0);
     assert!((mem.usage_percent() - 0.0).abs() < 0.001);

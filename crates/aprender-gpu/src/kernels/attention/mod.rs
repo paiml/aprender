@@ -56,7 +56,10 @@ mod tests {
         assert_eq!(kernel_tc.name(), "flash_attention_tensor_core");
 
         let kernel_tc_causal = AttentionKernel::tensor_core(2048, 64).with_causal();
-        assert_eq!(kernel_tc_causal.name(), "flash_attention_tensor_core_causal");
+        assert_eq!(
+            kernel_tc_causal.name(),
+            "flash_attention_tensor_core_causal"
+        );
     }
 
     #[test]
@@ -145,7 +148,10 @@ mod tests {
         // Flash: Uses SRAM tiling (shared_memory_bytes > 0)
         let flash = AttentionKernel::new(512, 64);
         let flash_ptx = flash.build_ptx();
-        assert!(flash_ptx.shared_memory_bytes() > 0, "Flash should use shared memory");
+        assert!(
+            flash_ptx.shared_memory_bytes() > 0,
+            "Flash should use shared memory"
+        );
 
         // Paged: Single-query, no SRAM tiling needed
         let paged = IncrementalAttentionKernel::new(512, 64, 8);

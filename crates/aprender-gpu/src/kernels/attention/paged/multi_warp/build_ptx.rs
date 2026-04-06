@@ -35,8 +35,11 @@ impl Kernel for MultiWarpIncrementalAttentionKernel {
         // - outputs[num_warps * head_dim]: partial outputs per warp (offset num_warps*8+8)
         let smem_size = (num_warps * 2 + 2 + num_warps * head_dim) * 4;
 
-        let kernel_name =
-            if indirect { "multi_warp_attention_indirect" } else { "multi_warp_attention" };
+        let kernel_name = if indirect {
+            "multi_warp_attention_indirect"
+        } else {
+            "multi_warp_attention"
+        };
 
         let mut builder = PtxKernel::new(kernel_name)
             .param(PtxType::U64, "q_ptr")

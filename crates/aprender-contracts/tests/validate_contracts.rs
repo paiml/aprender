@@ -2,7 +2,7 @@ use std::path::Path;
 
 use provable_contracts::error::Severity;
 use provable_contracts::graph::dependency_graph;
-use provable_contracts::schema::{Contract, parse_contract, validate_contract};
+use provable_contracts::schema::{parse_contract, validate_contract, Contract};
 
 fn contracts_dir() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

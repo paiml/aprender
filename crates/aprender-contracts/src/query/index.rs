@@ -5,7 +5,7 @@ use std::path::Path;
 
 use provable_contracts_macros::requires;
 
-use crate::schema::{Contract, parse_contract};
+use crate::schema::{parse_contract, Contract};
 use crate::scoring;
 
 use super::persist::{self, PersistedIndex};

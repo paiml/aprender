@@ -4,7 +4,9 @@ use std::hint::black_box;
 use trueno_image::{canny, conv2d, gaussian_blur, resize, BorderMode, Interpolation};
 
 fn make_image(w: usize, h: usize) -> Vec<f32> {
-    (0..w * h).map(|i| ((i * 13 + 7) % 256) as f32 / 255.0).collect()
+    (0..w * h)
+        .map(|i| ((i * 13 + 7) % 256) as f32 / 255.0)
+        .collect()
 }
 
 fn bench_conv2d(c: &mut Criterion) {
@@ -74,5 +76,11 @@ fn bench_resize(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_conv2d, bench_gaussian_blur, bench_canny, bench_resize);
+criterion_group!(
+    benches,
+    bench_conv2d,
+    bench_gaussian_blur,
+    bench_canny,
+    bench_resize
+);
 criterion_main!(benches);

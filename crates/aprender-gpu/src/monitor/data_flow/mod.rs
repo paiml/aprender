@@ -137,7 +137,11 @@ impl DataFlowMetrics {
 
     /// Complete a transfer and move to history
     pub fn complete_transfer(&mut self, transfer_id: TransferId) {
-        if let Some(idx) = self.active_transfers.iter().position(|t| t.id == transfer_id) {
+        if let Some(idx) = self
+            .active_transfers
+            .iter()
+            .position(|t| t.id == transfer_id)
+        {
             let mut transfer = self.active_transfers.remove(idx);
             transfer.complete();
             self.completed_transfers.push_back(transfer);
@@ -159,7 +163,8 @@ impl DataFlowMetrics {
             self.pcie_rx_history.pop_front();
         }
 
-        self.memory_bus_history.push_back(self.memory_bus_utilization_pct);
+        self.memory_bus_history
+            .push_back(self.memory_bus_utilization_pct);
         if self.memory_bus_history.len() > Self::MAX_HISTORY_POINTS {
             self.memory_bus_history.pop_front();
         }
@@ -168,7 +173,10 @@ impl DataFlowMetrics {
     /// Get total bytes currently being transferred
     #[must_use]
     pub fn bytes_in_flight(&self) -> u64 {
-        self.active_transfers.iter().map(|t| t.size_bytes.saturating_sub(t.transferred_bytes)).sum()
+        self.active_transfers
+            .iter()
+            .map(|t| t.size_bytes.saturating_sub(t.transferred_bytes))
+            .sum()
     }
 
     /// Get pinned memory utilization percentage

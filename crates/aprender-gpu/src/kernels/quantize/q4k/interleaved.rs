@@ -71,7 +71,10 @@ const SB_QS_SIZE: usize = 128;
 /// # Panics
 /// Panics if `k` is not a multiple of 256 or `src` length doesn't match `n * num_sb * 144`.
 pub fn repack_q4k_interleaved(src: &[u8], n: usize, k: usize) -> Vec<u8> {
-    assert!(k % Q4K_SUPER_BLOCK_SIZE as usize == 0, "K must be multiple of 256");
+    assert!(
+        k % Q4K_SUPER_BLOCK_SIZE as usize == 0,
+        "K must be multiple of 256"
+    );
     let num_sb = k / Q4K_SUPER_BLOCK_SIZE as usize;
     let sb_bytes = Q4K_SUPER_BLOCK_BYTES as usize;
     assert_eq!(
@@ -241,7 +244,13 @@ mod tests {
             let d_offset = TILE_D_OFFSET + col * 2;
             let d = f16_bytes_to_f32([dst[d_offset], dst[d_offset + 1]]);
             let expected = col as f32 + 1.0;
-            assert!((d - expected).abs() < 0.1, "col {} d={} expected={}", col, d, expected);
+            assert!(
+                (d - expected).abs() < 0.1,
+                "col {} d={} expected={}",
+                col,
+                d,
+                expected
+            );
         }
     }
 
@@ -283,7 +292,12 @@ mod tests {
 
         for col in 0..16u8 {
             let scales_offset = TILE_SCALES_OFFSET + col as usize * SB_SCALES_SIZE;
-            assert_eq!(dst[scales_offset], col + 100, "scales failed for col {}", col);
+            assert_eq!(
+                dst[scales_offset],
+                col + 100,
+                "scales failed for col {}",
+                col
+            );
         }
     }
 
@@ -324,8 +338,10 @@ mod tests {
         let original_val = d * scale * quant - dmin * min;
 
         // Dequant from interleaved
-        let d_il =
-            f16_bytes_to_f32([dst[TILE_D_OFFSET + col * 2], dst[TILE_D_OFFSET + col * 2 + 1]]);
+        let d_il = f16_bytes_to_f32([
+            dst[TILE_D_OFFSET + col * 2],
+            dst[TILE_D_OFFSET + col * 2 + 1],
+        ]);
         let dmin_il = f16_bytes_to_f32([
             dst[TILE_DMIN_OFFSET + col * 2],
             dst[TILE_DMIN_OFFSET + col * 2 + 1],
@@ -372,7 +388,11 @@ mod tests {
             dst[tile1_offset + TILE_D_OFFSET + 2],
             dst[tile1_offset + TILE_D_OFFSET + 3],
         ]);
-        assert!((d_pad - 1.0).abs() < 0.01, "Padded col should clone: d_pad={}", d_pad);
+        assert!(
+            (d_pad - 1.0).abs() < 0.01,
+            "Padded col should clone: d_pad={}",
+            d_pad
+        );
     }
 
     #[test]

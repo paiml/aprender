@@ -38,7 +38,10 @@ fn test_different_counters_differ() {
     let key = [42u32, 0];
     let c1 = [0, 0, 0, 0];
     let c2 = [1, 0, 0, 0];
-    assert_ne!(Philox4x32::generate_at(key, c1), Philox4x32::generate_at(key, c2));
+    assert_ne!(
+        Philox4x32::generate_at(key, c1),
+        Philox4x32::generate_at(key, c2)
+    );
 }
 
 // ============================================================================
@@ -63,7 +66,10 @@ fn test_uniform_mean() {
     rng.fill_uniform(&mut buf);
 
     let mean: f32 = buf.iter().sum::<f32>() / buf.len() as f32;
-    assert!((mean - 0.5).abs() < 0.01, "Uniform mean {mean} too far from 0.5");
+    assert!(
+        (mean - 0.5).abs() < 0.01,
+        "Uniform mean {mean} too far from 0.5"
+    );
 }
 
 #[test]
@@ -83,7 +89,10 @@ fn test_uniform_variance() {
         / buf.len() as f64;
 
     // Uniform[0,1) variance = 1/12 ≈ 0.0833
-    assert!((var - 1.0 / 12.0).abs() < 0.005, "Uniform variance {var} too far from 1/12");
+    assert!(
+        (var - 1.0 / 12.0).abs() < 0.005,
+        "Uniform variance {var} too far from 1/12"
+    );
 }
 
 // ============================================================================
@@ -107,7 +116,10 @@ fn test_normal_mean_and_variance() {
         / buf.len() as f64;
 
     assert!(mean.abs() < 0.02, "Normal mean {mean} too far from 0");
-    assert!((var - 1.0).abs() < 0.05, "Normal variance {var} too far from 1.0");
+    assert!(
+        (var - 1.0).abs() < 0.05,
+        "Normal variance {var} too far from 1.0"
+    );
 }
 
 #[test]
@@ -161,7 +173,10 @@ fn test_chi_squared_uniformity() {
         .sum();
 
     // Chi-squared critical value for 99 df, p=0.001 ≈ 148.2
-    assert!(chi_sq < 150.0, "Chi-squared {chi_sq} exceeds threshold (poor uniformity)");
+    assert!(
+        chi_sq < 150.0,
+        "Chi-squared {chi_sq} exceeds threshold (poor uniformity)"
+    );
 }
 
 // ============================================================================
@@ -203,7 +218,10 @@ fn test_threefry_different_counters_differ() {
     let key = [42u64, 0, 0, 0];
     let c1 = [0, 0, 0, 0];
     let c2 = [1, 0, 0, 0];
-    assert_ne!(Threefry4x64::generate_at(key, c1), Threefry4x64::generate_at(key, c2));
+    assert_ne!(
+        Threefry4x64::generate_at(key, c1),
+        Threefry4x64::generate_at(key, c2)
+    );
 }
 
 #[test]
@@ -213,7 +231,10 @@ fn test_threefry_uniform_range() {
     rng.fill_uniform(&mut buf);
 
     for &v in &buf {
-        assert!((0.0..1.0).contains(&v), "Threefry uniform out of range: {v}");
+        assert!(
+            (0.0..1.0).contains(&v),
+            "Threefry uniform out of range: {v}"
+        );
     }
 }
 
@@ -224,7 +245,10 @@ fn test_threefry_uniform_mean() {
     rng.fill_uniform(&mut buf);
 
     let mean: f32 = buf.iter().sum::<f32>() / buf.len() as f32;
-    assert!((mean - 0.5).abs() < 0.01, "Threefry uniform mean {mean} too far from 0.5");
+    assert!(
+        (mean - 0.5).abs() < 0.01,
+        "Threefry uniform mean {mean} too far from 0.5"
+    );
 }
 
 #[test]
@@ -243,8 +267,14 @@ fn test_threefry_normal_mean_and_variance() {
         .sum::<f64>()
         / buf.len() as f64;
 
-    assert!(mean.abs() < 0.02, "Threefry normal mean {mean} too far from 0");
-    assert!((var - 1.0).abs() < 0.05, "Threefry normal variance {var} too far from 1.0");
+    assert!(
+        mean.abs() < 0.02,
+        "Threefry normal mean {mean} too far from 0"
+    );
+    assert!(
+        (var - 1.0).abs() < 0.05,
+        "Threefry normal variance {var} too far from 1.0"
+    );
 }
 
 #[test]
@@ -279,7 +309,10 @@ fn test_rng_trait_philox_uniform() {
     let mut buf = vec![0.0f32; 1000];
     rng_trait.fill_uniform(&mut buf);
     for &v in &buf {
-        assert!((0.0..1.0).contains(&v), "Rng trait uniform out of range: {v}");
+        assert!(
+            (0.0..1.0).contains(&v),
+            "Rng trait uniform out of range: {v}"
+        );
     }
 }
 
@@ -301,7 +334,10 @@ fn test_rng_trait_threefry_uniform() {
     let mut buf = vec![0.0f32; 1000];
     rng_trait.fill_uniform(&mut buf);
     for &v in &buf {
-        assert!((0.0..1.0).contains(&v), "Rng trait threefry uniform out of range: {v}");
+        assert!(
+            (0.0..1.0).contains(&v),
+            "Rng trait threefry uniform out of range: {v}"
+        );
     }
 }
 
@@ -381,7 +417,11 @@ fn test_falsify_fill_uniform_single_element() {
     let mut rng = Philox4x32::new(42);
     let mut buf = vec![0.0_f32; 1];
     rng.fill_uniform(&mut buf);
-    assert!((0.0..1.0).contains(&buf[0]), "Single element out of range: {}", buf[0]);
+    assert!(
+        (0.0..1.0).contains(&buf[0]),
+        "Single element out of range: {}",
+        buf[0]
+    );
 }
 
 #[test]
@@ -401,8 +441,15 @@ fn test_falsify_sequential_calls_independent() {
     rng.fill_uniform(&mut buf1);
     rng.fill_uniform(&mut buf2);
     // Very unlikely to be identical
-    let same = buf1.iter().zip(buf2.iter()).filter(|(&a, &b)| (a - b).abs() < 1e-10).count();
-    assert!(same < 5, "Sequential fills too similar: {same}/100 identical");
+    let same = buf1
+        .iter()
+        .zip(buf2.iter())
+        .filter(|(&a, &b)| (a - b).abs() < 1e-10)
+        .count();
+    assert!(
+        same < 5,
+        "Sequential fills too similar: {same}/100 identical"
+    );
 }
 
 #[test]
@@ -448,7 +495,10 @@ fn test_falsify_kolmogorov_smirnov_uniform() {
         }
     }
     // KS critical value at α=0.01 for n=10000 ≈ 1.63/sqrt(n) ≈ 0.0163
-    assert!(max_d < 0.02, "KS statistic {max_d} exceeds threshold (distribution not uniform)");
+    assert!(
+        max_d < 0.02,
+        "KS statistic {max_d} exceeds threshold (distribution not uniform)"
+    );
 }
 
 #[test]
@@ -458,5 +508,8 @@ fn test_falsify_normal_no_extreme_outliers() {
     let mut buf = vec![0.0_f32; 100_000];
     rng.fill_normal(&mut buf);
     let outliers = buf.iter().filter(|&&v| v.abs() > 6.0).count();
-    assert!(outliers == 0, "Got {outliers} values beyond 6σ in 100K samples");
+    assert!(
+        outliers == 0,
+        "Got {outliers} values beyond 6σ in 100K samples"
+    );
 }

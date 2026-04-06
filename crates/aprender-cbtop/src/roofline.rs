@@ -71,9 +71,17 @@ pub struct HardwareProfile {
 impl HardwareProfile {
     /// Create a new hardware profile
     pub fn new(name: &str, peak_gflops: f64, peak_bandwidth_gbps: f64) -> Self {
-        let ridge_point =
-            if peak_bandwidth_gbps > 0.0 { peak_gflops / peak_bandwidth_gbps } else { 0.0 };
-        Self { name: name.to_string(), peak_gflops, peak_bandwidth_gbps, ridge_point }
+        let ridge_point = if peak_bandwidth_gbps > 0.0 {
+            peak_gflops / peak_bandwidth_gbps
+        } else {
+            0.0
+        };
+        Self {
+            name: name.to_string(),
+            peak_gflops,
+            peak_bandwidth_gbps,
+            ridge_point,
+        }
     }
 
     /// Get the ridge point (transition from memory-bound to compute-bound)
@@ -173,9 +181,18 @@ pub struct WorkloadMetrics {
 impl WorkloadMetrics {
     /// Create new workload metrics
     pub fn new(name: &str, total_flops: f64, total_bytes: f64, execution_time_s: f64) -> Self {
-        let measured_gflops =
-            if execution_time_s > 0.0 { total_flops / execution_time_s / 1e9 } else { 0.0 };
-        Self { name: name.to_string(), total_flops, total_bytes, measured_gflops, execution_time_s }
+        let measured_gflops = if execution_time_s > 0.0 {
+            total_flops / execution_time_s / 1e9
+        } else {
+            0.0
+        };
+        Self {
+            name: name.to_string(),
+            total_flops,
+            total_bytes,
+            measured_gflops,
+            execution_time_s,
+        }
     }
 
     /// Calculate operational intensity (FLOP/Byte)
@@ -258,7 +275,13 @@ pub struct RooflinePlotPoint {
 impl RooflinePlotPoint {
     /// Create a plot point
     pub fn new(label: &str, oi: f64, perf: f64) -> Self {
-        Self { log_oi: oi.log2(), log_perf: perf.log2(), oi, perf, label: label.to_string() }
+        Self {
+            log_oi: oi.log2(),
+            log_perf: perf.log2(),
+            oi,
+            perf,
+            label: label.to_string(),
+        }
     }
 }
 
@@ -330,22 +353,40 @@ pub struct BatchRooflineAnalysis {
 impl BatchRooflineAnalysis {
     /// Analyze multiple workloads
     pub fn analyze(hardware: &HardwareProfile, workloads: &[WorkloadMetrics]) -> Self {
-        let analyses = workloads.iter().map(|w| RooflineAnalysis::analyze(hardware, w)).collect();
-        Self { hardware: hardware.clone(), analyses }
+        let analyses = workloads
+            .iter()
+            .map(|w| RooflineAnalysis::analyze(hardware, w))
+            .collect();
+        Self {
+            hardware: hardware.clone(),
+            analyses,
+        }
     }
 
     /// Get summary statistics
     pub fn summary(&self) -> BatchSummary {
-        let memory_bound =
-            self.analyses.iter().filter(|a| a.bottleneck == BottleneckType::MemoryBound).count();
-        let compute_bound =
-            self.analyses.iter().filter(|a| a.bottleneck == BottleneckType::ComputeBound).count();
-        let balanced =
-            self.analyses.iter().filter(|a| a.bottleneck == BottleneckType::Balanced).count();
+        let memory_bound = self
+            .analyses
+            .iter()
+            .filter(|a| a.bottleneck == BottleneckType::MemoryBound)
+            .count();
+        let compute_bound = self
+            .analyses
+            .iter()
+            .filter(|a| a.bottleneck == BottleneckType::ComputeBound)
+            .count();
+        let balanced = self
+            .analyses
+            .iter()
+            .filter(|a| a.bottleneck == BottleneckType::Balanced)
+            .count();
         let avg_efficiency = if self.analyses.is_empty() {
             0.0
         } else {
-            self.analyses.iter().map(|a| a.attained_efficiency).sum::<f64>()
+            self.analyses
+                .iter()
+                .map(|a| a.attained_efficiency)
+                .sum::<f64>()
                 / self.analyses.len() as f64
         };
 
@@ -388,14 +429,20 @@ mod tests {
     fn test_bottleneck_classification_memory_bound() {
         let profile = HardwareProfile::new("Test", 1000.0, 100.0);
         // OI = 5 < Ridge = 10 → memory-bound
-        assert_eq!(profile.classify_bottleneck(5.0), BottleneckType::MemoryBound);
+        assert_eq!(
+            profile.classify_bottleneck(5.0),
+            BottleneckType::MemoryBound
+        );
     }
 
     #[test]
     fn test_bottleneck_classification_compute_bound() {
         let profile = HardwareProfile::new("Test", 1000.0, 100.0);
         // OI = 20 > Ridge = 10 → compute-bound
-        assert_eq!(profile.classify_bottleneck(20.0), BottleneckType::ComputeBound);
+        assert_eq!(
+            profile.classify_bottleneck(20.0),
+            BottleneckType::ComputeBound
+        );
     }
 
     #[test]

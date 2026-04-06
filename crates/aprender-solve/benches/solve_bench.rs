@@ -18,7 +18,9 @@ fn make_spd_matrix(n: usize) -> Vec<f32> {
 }
 
 fn make_general_matrix(m: usize, n: usize) -> Vec<f32> {
-    (0..m * n).map(|i| ((i * 7 + 3) % 97) as f32 / 97.0).collect()
+    (0..m * n)
+        .map(|i| ((i * 7 + 3) % 97) as f32 / 97.0)
+        .collect()
 }
 
 fn bench_lu(c: &mut Criterion) {

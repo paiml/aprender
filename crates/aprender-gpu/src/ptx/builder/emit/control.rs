@@ -35,7 +35,10 @@ pub(crate) fn emit_setp_opcode(instr: &PtxInstruction, s: &mut String) {
 
 /// Check if this is a control flow operation
 pub(crate) fn is_control_op(op: &PtxOp) -> bool {
-    matches!(op, PtxOp::Bra | PtxOp::Ret | PtxOp::Bar | PtxOp::MemBar | PtxOp::Setp)
+    matches!(
+        op,
+        PtxOp::Bra | PtxOp::Ret | PtxOp::Bar | PtxOp::MemBar | PtxOp::Setp
+    )
 }
 
 /// Check if this is an early-return control op

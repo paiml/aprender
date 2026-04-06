@@ -115,8 +115,16 @@ impl MergeEngine {
         for adapter in adapters {
             let scale_factor = adapter.scale * adapter.alpha / adapter.rank as f32;
             for (i, w) in result.iter_mut().enumerate() {
-                let a_val = adapter.lora_a.get(i % adapter.lora_a.len()).copied().unwrap_or(0.0);
-                let b_val = adapter.lora_b.get(i % adapter.lora_b.len()).copied().unwrap_or(0.0);
+                let a_val = adapter
+                    .lora_a
+                    .get(i % adapter.lora_a.len())
+                    .copied()
+                    .unwrap_or(0.0);
+                let b_val = adapter
+                    .lora_b
+                    .get(i % adapter.lora_b.len())
+                    .copied()
+                    .unwrap_or(0.0);
                 *w += scale_factor * a_val * b_val;
             }
         }
@@ -133,10 +141,14 @@ impl MergeEngine {
     ) -> Result<MergeResult> {
         // Verify files exist
         if !base_path.exists() {
-            return Err(EntrenarError::ModelNotFound { path: base_path.to_path_buf() });
+            return Err(EntrenarError::ModelNotFound {
+                path: base_path.to_path_buf(),
+            });
         }
         if !adapter_path.exists() {
-            return Err(EntrenarError::ModelNotFound { path: adapter_path.to_path_buf() });
+            return Err(EntrenarError::ModelNotFound {
+                path: adapter_path.to_path_buf(),
+            });
         }
 
         // In real implementation, would load SafeTensors and perform merge
@@ -163,7 +175,13 @@ pub struct AdapterWeights {
 impl AdapterWeights {
     /// Create new adapter weights.
     pub fn new(lora_a: Vec<f32>, lora_b: Vec<f32>, alpha: f32, rank: u32) -> Self {
-        Self { lora_a, lora_b, alpha, rank, scale: 1.0 }
+        Self {
+            lora_a,
+            lora_b,
+            alpha,
+            rank,
+            scale: 1.0,
+        }
     }
 
     /// Set the scale factor.
@@ -271,8 +289,12 @@ mod tests {
         let lora_a = vec![0.1, 0.2];
         let lora_b = vec![0.5, 0.5];
 
-        let merged_1 = MergeEngine::new().with_scale(1.0).merge(&base, &lora_a, &lora_b, 16.0, 64);
-        let merged_2 = MergeEngine::new().with_scale(2.0).merge(&base, &lora_a, &lora_b, 16.0, 64);
+        let merged_1 = MergeEngine::new()
+            .with_scale(1.0)
+            .merge(&base, &lora_a, &lora_b, 16.0, 64);
+        let merged_2 = MergeEngine::new()
+            .with_scale(2.0)
+            .merge(&base, &lora_a, &lora_b, 16.0, 64);
 
         // Higher scale should produce larger difference from base
         let diff_1: f32 = merged_1.iter().zip(&base).map(|(m, b)| (m - b).abs()).sum();

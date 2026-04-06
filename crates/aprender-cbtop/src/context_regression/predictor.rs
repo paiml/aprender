@@ -117,7 +117,11 @@ fn linear_regression(
         ss_res += (y - y_pred).powi(2);
         ss_tot += (y - mean_y).powi(2);
     }
-    let r_squared = if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 0.0 };
+    let r_squared = if ss_tot > 0.0 {
+        1.0 - ss_res / ss_tot
+    } else {
+        0.0
+    };
 
     Some(LinearFit { slope, r_squared })
 }
@@ -171,7 +175,10 @@ impl ContextRegressionPredictor {
     pub fn add_baseline(&mut self, metric: &str, value: f64, context: SystemContext) {
         let entry = BaselineEntry::new(metric, value, context);
 
-        self.baselines.entry(metric.to_string()).or_default().push(entry);
+        self.baselines
+            .entry(metric.to_string())
+            .or_default()
+            .push(entry);
 
         // Trim old entries
         if let Some(entries) = self.baselines.get_mut(metric) {
@@ -257,8 +264,11 @@ impl ContextRegressionPredictor {
         );
 
         // Cache adjustment: cold cache = expect slower
-        let cache_adjustment =
-            if !current_context.cache_warm { self.cache_cold_penalty } else { 0.0 };
+        let cache_adjustment = if !current_context.cache_warm {
+            self.cache_cold_penalty
+        } else {
+            0.0
+        };
 
         // Final threshold
         let final_percent = (base_percent
@@ -305,7 +315,11 @@ impl ContextRegressionPredictor {
             "stable"
         };
 
-        Some(Trend { slope_per_day: fit.slope, r_squared: fit.r_squared, direction })
+        Some(Trend {
+            slope_per_day: fit.slope,
+            r_squared: fit.r_squared,
+            direction,
+        })
     }
 
     /// Check for regression
@@ -318,7 +332,9 @@ impl ContextRegressionPredictor {
         let threshold = self.compute_threshold(metric, context);
 
         let entries = self.baselines.get(metric);
-        let baseline_mean = entries.map(|e| entries_mean(e, |x| x.value)).unwrap_or(current_value);
+        let baseline_mean = entries
+            .map(|e| entries_mean(e, |x| x.value))
+            .unwrap_or(current_value);
 
         let percent_change = if baseline_mean.abs() > 1e-10 {
             ((current_value - baseline_mean) / baseline_mean) * 100.0
@@ -355,8 +371,18 @@ impl ContextRegressionPredictor {
         let entries = self.baselines.get(metric)?;
         let entries_json: Vec<String> = entries
             .iter()
-            .map(|e| format!(r#"{{"value":{},"context":{}}}"#, e.value, e.context.to_json()))
+            .map(|e| {
+                format!(
+                    r#"{{"value":{},"context":{}}}"#,
+                    e.value,
+                    e.context.to_json()
+                )
+            })
             .collect();
-        Some(format!(r#"{{"metric":"{}","entries":[{}]}}"#, metric, entries_json.join(",")))
+        Some(format!(
+            r#"{{"metric":"{}","entries":[{}]}}"#,
+            metric,
+            entries_json.join(",")
+        ))
     }
 }

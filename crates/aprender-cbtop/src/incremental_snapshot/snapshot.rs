@@ -82,7 +82,9 @@ impl ProfileSnapshot {
                     // Include both halves of f64 bits
                     let bits = val.to_bits();
                     hash = hash.wrapping_mul(31).wrapping_add((bits >> 32) as u32);
-                    hash = hash.wrapping_mul(31).wrapping_add((bits & 0xFFFFFFFF) as u32);
+                    hash = hash
+                        .wrapping_mul(31)
+                        .wrapping_add((bits & 0xFFFFFFFF) as u32);
                 }
             }
         }

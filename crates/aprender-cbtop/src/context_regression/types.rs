@@ -166,7 +166,11 @@ pub struct BaselineEntry {
 impl BaselineEntry {
     /// Create new entry
     pub fn new(metric: &str, value: f64, context: SystemContext) -> Self {
-        Self { metric: metric.to_string(), value, context }
+        Self {
+            metric: metric.to_string(),
+            value,
+            context,
+        }
     }
 }
 

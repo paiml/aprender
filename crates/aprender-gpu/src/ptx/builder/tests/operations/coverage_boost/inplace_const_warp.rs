@@ -16,7 +16,11 @@ fn test_fma_f32_inplace() {
         ctx.ret();
     });
     let ptx = kernel.emit();
-    assert!(ptx.contains("fma") || ptx.contains("mad"), "Expected fma/mad in: {}", ptx);
+    assert!(
+        ptx.contains("fma") || ptx.contains("mad"),
+        "Expected fma/mad in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -98,7 +102,11 @@ fn test_mov_u32_inplace() {
         ctx.ret();
     });
     let ptx = kernel.emit();
-    assert!(ptx.contains("mov") && ptx.contains("999"), "Expected mov with 999 in: {}", ptx);
+    assert!(
+        ptx.contains("mov") && ptx.contains("999"),
+        "Expected mov with 999 in: {}",
+        ptx
+    );
 }
 
 // =========================================================================
@@ -113,7 +121,11 @@ fn test_const_f32_wrapper() {
     });
     let ptx = kernel.emit();
     // Float constants are emitted as hex (0F...) in PTX
-    assert!(ptx.contains("mov.f32") && ptx.contains("0F"), "Expected const in: {}", ptx);
+    assert!(
+        ptx.contains("mov.f32") && ptx.contains("0F"),
+        "Expected const in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -123,15 +135,21 @@ fn test_const_u32_wrapper() {
         ctx.ret();
     });
     let ptx = kernel.emit();
-    assert!(ptx.contains("mov") && ptx.contains("12345"), "Expected const in: {}", ptx);
+    assert!(
+        ptx.contains("mov") && ptx.contains("12345"),
+        "Expected const in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_shared_ptr_alias() {
-    let kernel = PtxKernel::new("test_shared_ptr").shared_memory(256).build(|ctx| {
-        let _ptr = ctx.shared_ptr();
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_shared_ptr")
+        .shared_memory(256)
+        .build(|ctx| {
+            let _ptr = ctx.shared_ptr();
+            ctx.ret();
+        });
     let ptx = kernel.emit();
     assert!(ptx.contains("shared"), "Expected shared in: {}", ptx);
 }

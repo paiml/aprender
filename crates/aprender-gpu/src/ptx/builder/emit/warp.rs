@@ -37,7 +37,10 @@ pub(crate) fn is_warp_op(op: &PtxOp) -> bool {
 
 /// Check if this op requires skipping the type suffix
 pub(crate) fn skip_type_for_warp_op(op: &PtxOp) -> bool {
-    matches!(op, PtxOp::ShflDown | PtxOp::ShflIdx | PtxOp::Vote | PtxOp::VoteBallot)
+    matches!(
+        op,
+        PtxOp::ShflDown | PtxOp::ShflIdx | PtxOp::Vote | PtxOp::VoteBallot
+    )
 }
 
 #[cfg(test)]

@@ -59,7 +59,11 @@ impl ChunkedTiledQ4KGemvKernel {
     /// Create a new chunked tiled Q4_K GEMV kernel
     #[must_use]
     pub fn new(k: u32, n: u32) -> Self {
-        Self { k, n, outputs_per_block: 4 }
+        Self {
+            k,
+            n,
+            outputs_per_block: 4,
+        }
     }
 
     /// Set number of outputs computed per block

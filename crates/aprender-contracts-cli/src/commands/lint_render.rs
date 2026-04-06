@@ -331,7 +331,7 @@ pub fn print_github(report: &LintReport) {
 
 /// Print long-form explanation for a lint rule.
 pub fn print_explain(rule_id: &str) {
-    use provable_contracts::lint::rules::{RuleCategory, find_rule};
+    use provable_contracts::lint::rules::{find_rule, RuleCategory};
 
     let Some(rule) = find_rule(rule_id) else {
         eprintln!("Unknown rule: {rule_id}");

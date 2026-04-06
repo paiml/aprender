@@ -61,7 +61,13 @@ impl Dp4aQ4KGemmKernel {
     ///
     /// Requires pre-quantized Q8_1 activations (use `Q8QuantizeKernel` first).
     pub fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, num_warps: 4, tile_m: 4 }
+        Self {
+            m,
+            n,
+            k,
+            num_warps: 4,
+            tile_m: 4,
+        }
     }
 
     /// Set M-dimension tile size (compile-time unrolled).
@@ -397,7 +403,10 @@ mod tests {
         let ptx = k.emit_ptx();
         assert!(ptx.contains("dp4a_q4k_gemm"), "kernel name present");
         assert!(ptx.contains("dp4a.u32.s32"), "DP4A instruction present");
-        assert!(ptx.contains("shfl.sync.down"), "half-warp shuffle reduction");
+        assert!(
+            ptx.contains("shfl.sync.down"),
+            "half-warp shuffle reduction"
+        );
     }
 
     #[test]
@@ -405,13 +414,17 @@ mod tests {
         let k = Dp4aQ4KGemmKernel::new(100, 1536, 1536);
         let ptx = k.emit_ptx();
         // No shared memory allocation (no bar.sync needed)
-        assert!(!ptx.contains("bar.sync"), "no barriers needed (each HW independent)");
+        assert!(
+            !ptx.contains("bar.sync"),
+            "no barriers needed (each HW independent)"
+        );
     }
 
     #[test]
     fn test_barrier_safety() {
         let k = Dp4aQ4KGemmKernel::new(100, 1536, 1536);
-        k.validate_barrier_safety().expect("barrier safety validation");
+        k.validate_barrier_safety()
+            .expect("barrier safety validation");
     }
 
     #[test]

@@ -45,7 +45,11 @@ pub struct EventSample {
 impl EventSample {
     /// Create new sample
     pub fn new(event_type: EventType, timestamp: f64, value: f64) -> Self {
-        Self { event_type, timestamp, value }
+        Self {
+            event_type,
+            timestamp,
+            value,
+        }
     }
 }
 
@@ -63,7 +67,11 @@ pub struct PerformanceSample {
 impl PerformanceSample {
     /// Create new sample
     pub fn new(timestamp: f64, cv_percent: f64, latency_us: f64) -> Self {
-        Self { timestamp, cv_percent, latency_us }
+        Self {
+            timestamp,
+            cv_percent,
+            latency_us,
+        }
     }
 
     /// Check if this is a CV spike (>15%)
@@ -240,7 +248,10 @@ pub struct SystemSnapshot {
 impl SystemSnapshot {
     /// Create empty snapshot
     pub fn new(timestamp: f64) -> Self {
-        Self { timestamp, ..Default::default() }
+        Self {
+            timestamp,
+            ..Default::default()
+        }
     }
 
     /// Add IRQ count

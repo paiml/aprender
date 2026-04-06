@@ -282,7 +282,8 @@ mod cuda_tests {
         dst.copy_from_host(&zeros).unwrap();
 
         unsafe {
-            dst.copy_from_buffer_at_async(&src, 15, 0, 10, &stream).unwrap();
+            dst.copy_from_buffer_at_async(&src, 15, 0, 10, &stream)
+                .unwrap();
         }
         stream.synchronize().unwrap();
 
@@ -340,7 +341,8 @@ mod cuda_tests {
 
         // zero count
         unsafe {
-            dst.copy_from_buffer_at_async(&src, 0, 0, 0, &stream).unwrap();
+            dst.copy_from_buffer_at_async(&src, 0, 0, 0, &stream)
+                .unwrap();
         }
     }
 
@@ -366,7 +368,8 @@ mod cuda_tests {
             // This thread has NO CUDA context pushed.
             // Before PMAT-420 fix, copy_to_host would read back all zeros.
             let mut result = vec![0.0f32; 256];
-            buf.copy_to_host(&mut result).expect("copy_to_host on foreign thread must succeed");
+            buf.copy_to_host(&mut result)
+                .expect("copy_to_host on foreign thread must succeed");
 
             // The critical assertion: data must NOT be all zeros
             let nonzero = result.iter().filter(|&&v| v != 0.0).count();
@@ -387,7 +390,8 @@ mod cuda_tests {
         // Also test cross-thread upload: write on a different thread
         let handle2 = std::thread::spawn(move || {
             let new_data: Vec<f32> = (0..256).map(|i| -(i as f32)).collect();
-            buf.copy_from_host(&new_data).expect("copy_from_host on foreign thread must succeed");
+            buf.copy_from_host(&new_data)
+                .expect("copy_from_host on foreign thread must succeed");
             (buf, new_data)
         });
 
@@ -415,7 +419,8 @@ mod cuda_tests {
                 .expect("copy_from_host_at on foreign thread must succeed");
 
             let mut result = vec![0.0f32; 100];
-            buf.copy_to_host(&mut result).expect("copy_to_host on foreign thread must succeed");
+            buf.copy_to_host(&mut result)
+                .expect("copy_to_host on foreign thread must succeed");
 
             // Verify the partial write landed correctly
             assert_eq!(result[49], 0.0);

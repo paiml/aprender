@@ -36,8 +36,15 @@ fn test_fma_reduces_instruction_count() {
     let result = pass(instructions);
 
     // Should be fused to single FMA
-    assert_eq!(result.len(), 1, "FMA fusion should reduce 2 instructions to 1");
-    assert!(matches!(result[0].op, PtxOp::Fma), "Result should be FMA instruction");
+    assert_eq!(
+        result.len(),
+        1,
+        "FMA fusion should reduce 2 instructions to 1"
+    );
+    assert!(
+        matches!(result[0].op, PtxOp::Fma),
+        "Result should be FMA instruction"
+    );
 }
 
 // cuda-tile-behavior.md: Falsification test #18
@@ -53,13 +60,24 @@ fn test_single_use_detection_prevents_incorrect_fusion() {
     // mul %r2, %r0, %r1  ; temp = a * b
     // add %r4, %r2, %r3  ; result1 = temp + c
     // add %r5, %r2, %r3  ; result2 = temp + c (uses temp again!)
-    let instructions = vec![make_mul(r2, r0, r1), make_add(r4, r2, r3), make_add(r5, r2, r3)];
+    let instructions = vec![
+        make_mul(r2, r0, r1),
+        make_add(r4, r2, r3),
+        make_add(r5, r2, r3),
+    ];
 
     let result = pass(instructions);
 
     // Should NOT fuse because r2 is used twice
-    assert_eq!(result.len(), 3, "Should not fuse when mul result has multiple uses");
-    assert!(!matches!(result[0].op, PtxOp::Fma), "First instruction should remain mul");
+    assert_eq!(
+        result.len(),
+        3,
+        "Should not fuse when mul result has multiple uses"
+    );
+    assert!(
+        !matches!(result[0].op, PtxOp::Fma),
+        "First instruction should remain mul"
+    );
 }
 
 // cuda-tile-behavior.md: Falsification test #25
@@ -76,7 +94,11 @@ fn test_fma_fusion_is_idempotent() {
     let first_pass = pass(instructions);
     let second_pass = pass(first_pass.clone());
 
-    assert_eq!(first_pass.len(), second_pass.len(), "FMA fusion should be idempotent");
+    assert_eq!(
+        first_pass.len(),
+        second_pass.len(),
+        "FMA fusion should be idempotent"
+    );
 }
 
 // cuda-tile-behavior.md: Falsification test #30
@@ -94,7 +116,11 @@ fn test_fma_pass_linear_complexity() {
     let elapsed = start.elapsed();
 
     // Should complete quickly (< 100ms for 1000 instructions)
-    assert!(elapsed.as_millis() < 100, "FMA pass should have O(n) complexity, took {:?}", elapsed);
+    assert!(
+        elapsed.as_millis() < 100,
+        "FMA pass should have O(n) complexity, took {:?}",
+        elapsed
+    );
 }
 
 #[test]
@@ -112,7 +138,11 @@ fn test_fma_preserves_non_fusible() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Non-fusible instructions should be preserved");
+    assert_eq!(
+        result.len(),
+        2,
+        "Non-fusible instructions should be preserved"
+    );
 }
 
 #[test]
@@ -141,7 +171,11 @@ fn test_integer_ops_not_fused() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Integer ops should not be fused (no integer FMA)");
+    assert_eq!(
+        result.len(),
+        2,
+        "Integer ops should not be fused (no integer FMA)"
+    );
 }
 
 mod rounding_and_advanced;

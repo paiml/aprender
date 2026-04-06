@@ -12,7 +12,11 @@ pub struct ThermalAnalyzerBrick {
 
 impl ThermalAnalyzerBrick {
     pub fn new(throttle_threshold: f64, warning_threshold: f64) -> Self {
-        Self { history: RingBuffer::new(60), throttle_threshold, warning_threshold }
+        Self {
+            history: RingBuffer::new(60),
+            throttle_threshold,
+            warning_threshold,
+        }
     }
 
     pub fn analyze(&mut self, temp_c: f64) -> ThermalResult {
@@ -86,7 +90,11 @@ impl Brick for ThermalAnalyzerBrick {
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 1, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 1,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

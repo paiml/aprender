@@ -38,9 +38,18 @@ fn h052_stress_config_intensity_clamp() {
 
 #[test]
 fn h052_parse_duration() {
-    assert_eq!(StressTestConfig::parse_duration("60s"), Some(Duration::from_secs(60)));
-    assert_eq!(StressTestConfig::parse_duration("5m"), Some(Duration::from_secs(300)));
-    assert_eq!(StressTestConfig::parse_duration("1h"), Some(Duration::from_secs(3600)));
+    assert_eq!(
+        StressTestConfig::parse_duration("60s"),
+        Some(Duration::from_secs(60))
+    );
+    assert_eq!(
+        StressTestConfig::parse_duration("5m"),
+        Some(Duration::from_secs(300))
+    );
+    assert_eq!(
+        StressTestConfig::parse_duration("1h"),
+        Some(Duration::from_secs(3600))
+    );
     assert_eq!(StressTestConfig::parse_duration(""), None);
     assert_eq!(StressTestConfig::parse_duration("invalid"), None);
 }
@@ -56,7 +65,10 @@ fn h053_stress_target_parse() {
     assert_eq!(StressTarget::parse("GPU"), Some(StressTarget::Gpu(None)));
     assert_eq!(StressTarget::parse("memory"), Some(StressTarget::Memory));
     assert_eq!(StressTarget::parse("pcie"), Some(StressTarget::Pcie));
-    assert!(matches!(StressTarget::parse("gpu:0"), Some(StressTarget::Gpu(Some(_)))));
+    assert!(matches!(
+        StressTarget::parse("gpu:0"),
+        Some(StressTarget::Gpu(Some(_)))
+    ));
     assert_eq!(StressTarget::parse("invalid"), None);
 }
 
@@ -92,7 +104,10 @@ fn h053_stress_target_custom() {
 fn h054_chaos_preset_parse() {
     assert_eq!(ChaosPreset::parse("gentle"), Some(ChaosPreset::Gentle));
     assert_eq!(ChaosPreset::parse("MODERATE"), Some(ChaosPreset::Moderate));
-    assert_eq!(ChaosPreset::parse("aggressive"), Some(ChaosPreset::Aggressive));
+    assert_eq!(
+        ChaosPreset::parse("aggressive"),
+        Some(ChaosPreset::Aggressive)
+    );
     assert_eq!(ChaosPreset::parse("extreme"), Some(ChaosPreset::Extreme));
     assert_eq!(ChaosPreset::parse("invalid"), None);
 }
@@ -255,6 +270,9 @@ fn h057_stress_state_display() {
 #[test]
 fn h058_verdict_display() {
     assert_eq!(format!("{}", StressTestVerdict::Pass), "PASS");
-    assert_eq!(format!("{}", StressTestVerdict::PassWithNotes), "PASS_WITH_NOTES");
+    assert_eq!(
+        format!("{}", StressTestVerdict::PassWithNotes),
+        "PASS_WITH_NOTES"
+    );
     assert_eq!(format!("{}", StressTestVerdict::Fail), "FAIL");
 }

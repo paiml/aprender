@@ -10,7 +10,11 @@ struct MockBuilder {
 
 impl MockBuilder {
     fn new() -> Self {
-        Self { registers: RegisterAllocator::new(), instructions: Vec::new(), labels: Vec::new() }
+        Self {
+            registers: RegisterAllocator::new(),
+            instructions: Vec::new(),
+            labels: Vec::new(),
+        }
     }
 }
 

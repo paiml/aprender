@@ -150,7 +150,10 @@ impl QrFactorization {
     /// Returns error on dimension mismatch.
     pub fn solve(&self, b: &[f32]) -> Result<Vec<f32>, SolverError> {
         if b.len() != self.m {
-            return Err(SolverError::DimensionMismatch { matrix_n: self.m, rhs_len: b.len() });
+            return Err(SolverError::DimensionMismatch {
+                matrix_n: self.m,
+                rhs_len: b.len(),
+            });
         }
 
         let m = self.m;

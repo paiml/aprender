@@ -49,24 +49,34 @@ pub fn run() -> Result<()> {
     let mut results = ValidationResults::new();
 
     // Step 1: Verify examples compile
-    results.add_step(1, "Compile examples", || steps::step_compile_examples(&project_root));
+    results.add_step(1, "Compile examples", || {
+        steps::step_compile_examples(&project_root)
+    });
 
     // Step 2: Run clippy on examples
-    results.add_step(2, "Clippy lints", || steps::step_clippy_examples(&project_root));
+    results.add_step(2, "Clippy lints", || {
+        steps::step_clippy_examples(&project_root)
+    });
 
     // Step 3: Verify module documentation
-    results.add_step(3, "Module documentation", || steps::step_check_module_docs(&examples));
+    results.add_step(3, "Module documentation", || {
+        steps::step_check_module_docs(&examples)
+    });
 
     // Step 4: Verify examples are runnable
-    results
-        .add_step(4, "Runnable examples", || steps::step_check_runnable(&examples, &project_root));
+    results.add_step(4, "Runnable examples", || {
+        steps::step_check_runnable(&examples, &project_root)
+    });
 
     // Step 5: Validate book references
-    results
-        .add_step(5, "Book references", || steps::step_check_book_references(&examples, &book_dir));
+    results.add_step(5, "Book references", || {
+        steps::step_check_book_references(&examples, &book_dir)
+    });
 
     // Step 6: Verify naming conventions
-    results.add_step(6, "Naming conventions", || steps::step_check_naming_conventions(&examples));
+    results.add_step(6, "Naming conventions", || {
+        steps::step_check_naming_conventions(&examples)
+    });
 
     // Print summary
     results.print_summary();

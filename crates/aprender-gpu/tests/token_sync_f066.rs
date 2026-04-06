@@ -26,12 +26,18 @@ fn f066_tokens_eliminate_barriers() {
     let analysis = TkoAnalysis::new();
 
     // Empty analysis should be sound (no barriers needed)
-    assert!(analysis.is_sound(), "F066 FALSIFIED: Empty TKO analysis should be sound");
+    assert!(
+        analysis.is_sound(),
+        "F066 FALSIFIED: Empty TKO analysis should be sound"
+    );
 
     // Initial eliminable count should be zero (no barriers analyzed)
     let initial_eliminable = analysis.eliminable_count();
 
-    println!("F066 PASSED: Token analysis initialized (eliminable={})", initial_eliminable);
+    println!(
+        "F066 PASSED: Token analysis initialized (eliminable={})",
+        initial_eliminable
+    );
 }
 
 /// F067: Token dependencies prevent data races
@@ -56,11 +62,20 @@ fn f067_token_dependencies_prevent_races() {
     graph.add_dependency(store_token, compute_token);
 
     // This is a proper DAG (no cycles = no races)
-    assert!(!graph.has_cycle(), "F067 FALSIFIED: Properly chained tokens should not have cycles");
+    assert!(
+        !graph.has_cycle(),
+        "F067 FALSIFIED: Properly chained tokens should not have cycles"
+    );
 
     // Verify dependencies are tracked
-    assert!(graph.has_dependencies(compute_token), "F067 FALSIFIED: Compute should depend on load");
-    assert!(graph.has_dependencies(store_token), "F067 FALSIFIED: Store should depend on compute");
+    assert!(
+        graph.has_dependencies(compute_token),
+        "F067 FALSIFIED: Compute should depend on load"
+    );
+    assert!(
+        graph.has_dependencies(store_token),
+        "F067 FALSIFIED: Store should depend on compute"
+    );
 
     println!("F067 PASSED: Token dependencies prevent data races");
 }
@@ -88,10 +103,22 @@ fn f068_memory_ordering_semantics() {
     }
 
     // Verify acquire/release predicates
-    assert!(MemoryOrdering::Acquire.is_acquire(), "F068 FALSIFIED: Acquire should be acquire");
-    assert!(!MemoryOrdering::Acquire.is_release(), "F068 FALSIFIED: Acquire should not be release");
-    assert!(MemoryOrdering::Release.is_release(), "F068 FALSIFIED: Release should be release");
-    assert!(!MemoryOrdering::Release.is_acquire(), "F068 FALSIFIED: Release should not be acquire");
+    assert!(
+        MemoryOrdering::Acquire.is_acquire(),
+        "F068 FALSIFIED: Acquire should be acquire"
+    );
+    assert!(
+        !MemoryOrdering::Acquire.is_release(),
+        "F068 FALSIFIED: Acquire should not be release"
+    );
+    assert!(
+        MemoryOrdering::Release.is_release(),
+        "F068 FALSIFIED: Release should be release"
+    );
+    assert!(
+        !MemoryOrdering::Release.is_acquire(),
+        "F068 FALSIFIED: Release should not be acquire"
+    );
 
     println!("F068 PASSED: Memory ordering semantics correct");
 }
@@ -131,7 +158,10 @@ fn f071_barrier_elimination_soundness() {
     let analysis = TkoAnalysis::new();
 
     // Soundness check should pass for fresh analysis
-    assert!(analysis.is_sound(), "F071 FALSIFIED: Fresh analysis should be sound");
+    assert!(
+        analysis.is_sound(),
+        "F071 FALSIFIED: Fresh analysis should be sound"
+    );
 
     // Create a graph with no cycles (sound)
     let mut graph = TokenGraph::new();
@@ -147,7 +177,10 @@ fn f071_barrier_elimination_soundness() {
     graph.add_dependency(t2, t1);
     graph.add_dependency(t3, t2);
 
-    assert!(!graph.has_cycle(), "F071 FALSIFIED: Linear chain should be cycle-free");
+    assert!(
+        !graph.has_cycle(),
+        "F071 FALSIFIED: Linear chain should be cycle-free"
+    );
 
     println!("F071 PASSED: Barrier elimination is sound");
 }
@@ -165,9 +198,21 @@ fn f075_token_join_dependencies() {
     let joined = join_tokens(&[t1, t2, t3]);
 
     // Joined token must be unique
-    assert_ne!(joined.id(), t1.id(), "F075 FALSIFIED: Joined token must differ from t1");
-    assert_ne!(joined.id(), t2.id(), "F075 FALSIFIED: Joined token must differ from t2");
-    assert_ne!(joined.id(), t3.id(), "F075 FALSIFIED: Joined token must differ from t3");
+    assert_ne!(
+        joined.id(),
+        t1.id(),
+        "F075 FALSIFIED: Joined token must differ from t1"
+    );
+    assert_ne!(
+        joined.id(),
+        t2.id(),
+        "F075 FALSIFIED: Joined token must differ from t2"
+    );
+    assert_ne!(
+        joined.id(),
+        t3.id(),
+        "F075 FALSIFIED: Joined token must differ from t3"
+    );
 
     // Test with token graph for explicit tracking
     let mut graph = TokenGraph::new();
@@ -178,7 +223,11 @@ fn f075_token_join_dependencies() {
     graph.join(new_joined, &[t1, t2, t3]);
 
     let deps = graph.get_dependencies(new_joined);
-    assert_eq!(deps.len(), 3, "F075 FALSIFIED: Joined token should have 3 dependencies");
+    assert_eq!(
+        deps.len(),
+        3,
+        "F075 FALSIFIED: Joined token should have 3 dependencies"
+    );
 
     println!("F075 PASSED: Token join creates proper dependencies");
 }
@@ -204,7 +253,10 @@ fn f079_cycle_detection() {
     graph.add_dependency(t3, t2);
     graph.add_dependency(t1, t3);
 
-    assert!(graph.has_cycle(), "F079 FALSIFIED: Cycle should be detected (deadlock prevention)");
+    assert!(
+        graph.has_cycle(),
+        "F079 FALSIFIED: Cycle should be detected (deadlock prevention)"
+    );
 
     println!("F079 PASSED: Token cycles detected and rejected");
 }
@@ -223,11 +275,21 @@ fn f080_token_id_uniqueness() {
         let id = token.id();
 
         // Check uniqueness
-        assert!(ids.insert(id), "F080 FALSIFIED: Duplicate token ID {} at iteration {}", id, i);
+        assert!(
+            ids.insert(id),
+            "F080 FALSIFIED: Duplicate token ID {} at iteration {}",
+            id,
+            i
+        );
 
         // Check monotonicity (except for wrap-around which won't happen in practice)
         if prev_id > 0 {
-            assert!(id > prev_id, "F080 FALSIFIED: Token ID not monotonic: {} <= {}", id, prev_id);
+            assert!(
+                id > prev_id,
+                "F080 FALSIFIED: Token ID not monotonic: {} <= {}",
+                id,
+                prev_id
+            );
         }
 
         prev_id = id;
@@ -256,7 +318,10 @@ fn test_token_graph_operations() {
     // Add dependency
     graph.add_dependency(t2, t1);
     assert!(graph.has_dependencies(t2), "t2 should have dependencies");
-    assert!(!graph.has_dependencies(t1), "t1 should not have dependencies");
+    assert!(
+        !graph.has_dependencies(t1),
+        "t1 should not have dependencies"
+    );
 
     let deps = graph.get_dependencies(t2);
     assert_eq!(deps.len(), 1, "t2 should have 1 dependency");
@@ -279,7 +344,10 @@ fn test_tko_analysis_with_cycle() {
     analysis.graph.add_dependency(t1, t2);
 
     // Unsound due to cycle
-    assert!(!analysis.is_sound(), "Analysis with cycle should be unsound");
+    assert!(
+        !analysis.is_sound(),
+        "Analysis with cycle should be unsound"
+    );
 
     println!("TKO analysis cycle detection verified");
 }
@@ -294,13 +362,21 @@ fn test_edge_case_joins() {
     // Single token join
     let single = Token::new();
     let single_join = join_tokens(&[single]);
-    assert_ne!(single_join.id(), single.id(), "Single join should produce new token");
+    assert_ne!(
+        single_join.id(),
+        single.id(),
+        "Single join should produce new token"
+    );
 
     // Large join
     let tokens: Vec<Token> = (0..100).map(|_| Token::new()).collect();
     let large_join = join_tokens(&tokens);
     for t in &tokens {
-        assert_ne!(large_join.id(), t.id(), "Large join should produce new token");
+        assert_ne!(
+            large_join.id(),
+            t.id(),
+            "Large join should produce new token"
+        );
     }
 
     println!("Edge case joins verified");
@@ -314,7 +390,10 @@ fn test_token_from_id() {
 
     let reconstructed = Token::from_id(id);
     assert_eq!(reconstructed.id(), id, "from_id should preserve ID");
-    assert_eq!(original, reconstructed, "Tokens with same ID should be equal");
+    assert_eq!(
+        original, reconstructed,
+        "Tokens with same ID should be equal"
+    );
 
     println!("Token from_id reconstruction verified");
 }
@@ -326,7 +405,11 @@ fn test_defaults() {
     assert!(token.id() > 0, "Default token should have valid ID");
 
     let ordering = MemoryOrdering::default();
-    assert_eq!(ordering, MemoryOrdering::Weak, "Default ordering should be Weak");
+    assert_eq!(
+        ordering,
+        MemoryOrdering::Weak,
+        "Default ordering should be Weak"
+    );
 
     let scope = MemoryScope::default();
     assert_eq!(scope, MemoryScope::Device, "Default scope should be Device");

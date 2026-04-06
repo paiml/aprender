@@ -272,9 +272,13 @@ mod tests {
         let mut profiler = Profiler::default();
         if profiler.is_available() {
             assert!(profiler.enable(ActivityKind::Kernel).is_ok());
-            assert!(profiler.enabled_activities().contains(&ActivityKind::Kernel));
+            assert!(profiler
+                .enabled_activities()
+                .contains(&ActivityKind::Kernel));
             assert!(profiler.disable(ActivityKind::Kernel).is_ok());
-            assert!(!profiler.enabled_activities().contains(&ActivityKind::Kernel));
+            assert!(!profiler
+                .enabled_activities()
+                .contains(&ActivityKind::Kernel));
         }
     }
 

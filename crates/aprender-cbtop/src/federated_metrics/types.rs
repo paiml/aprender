@@ -17,7 +17,10 @@ pub enum FederatedError {
     /// Clock drift too large
     ClockDriftExceeded { drift_ms: i64, max_ms: i64 },
     /// Memory limit exceeded
-    MemoryLimitExceeded { used_bytes: usize, limit_bytes: usize },
+    MemoryLimitExceeded {
+        used_bytes: usize,
+        limit_bytes: usize,
+    },
     /// Invalid configuration
     InvalidConfig { reason: String },
 }
@@ -33,7 +36,10 @@ impl std::fmt::Display for FederatedError {
             Self::ClockDriftExceeded { drift_ms, max_ms } => {
                 write!(f, "Clock drift {}ms exceeds max {}ms", drift_ms, max_ms)
             }
-            Self::MemoryLimitExceeded { used_bytes, limit_bytes } => {
+            Self::MemoryLimitExceeded {
+                used_bytes,
+                limit_bytes,
+            } => {
                 write!(f, "Memory {} exceeds limit {}", used_bytes, limit_bytes)
             }
             Self::InvalidConfig { reason } => write!(f, "Invalid config: {}", reason),
@@ -57,7 +63,11 @@ pub struct SampleId {
 impl SampleId {
     /// Create a new sample ID
     pub fn new(host_id: impl Into<String>, logical_time: u64, sequence: u64) -> Self {
-        Self { host_id: host_id.into(), logical_time, sequence }
+        Self {
+            host_id: host_id.into(),
+            logical_time,
+            sequence,
+        }
     }
 }
 

@@ -109,15 +109,26 @@ impl RooflineModel {
         let peak_compute = *self.peak_compute.get(&precision)?;
 
         let bound = if arithmetic_intensity < ridge {
-            Bound::Memory { bandwidth_utilization: achieved_throughput / peak * 100.0 }
+            Bound::Memory {
+                bandwidth_utilization: achieved_throughput / peak * 100.0,
+            }
         } else {
-            Bound::Compute { compute_utilization: achieved_throughput / peak_compute * 100.0 }
+            Bound::Compute {
+                compute_utilization: achieved_throughput / peak_compute * 100.0,
+            }
         };
 
-        let efficiency = if peak > 0.0 { achieved_throughput / peak * 100.0 } else { 0.0 };
+        let efficiency = if peak > 0.0 {
+            achieved_throughput / peak * 100.0
+        } else {
+            0.0
+        };
 
-        let distance_to_ridge =
-            if arithmetic_intensity > 0.0 { ridge / arithmetic_intensity } else { f64::INFINITY };
+        let distance_to_ridge = if arithmetic_intensity > 0.0 {
+            ridge / arithmetic_intensity
+        } else {
+            f64::INFINITY
+        };
 
         Some(KernelRooflinePoint {
             arithmetic_intensity,
@@ -447,8 +458,16 @@ pub fn measure_empirical(theoretical: &RooflineModel) -> EmpiricalResult {
     let measured_bw = bw_copy.max(bw_triad);
     let measured_flops = measure_peak_flops_single_core();
 
-    let theoretical_bw = theoretical.peak_bandwidth.get(&MemoryLevel::Dram).copied().unwrap_or(1.0);
-    let theoretical_flops = theoretical.peak_compute.get(&Precision::Fp32).copied().unwrap_or(1.0);
+    let theoretical_bw = theoretical
+        .peak_bandwidth
+        .get(&MemoryLevel::Dram)
+        .copied()
+        .unwrap_or(1.0);
+    let theoretical_flops = theoretical
+        .peak_compute
+        .get(&Precision::Fp32)
+        .copied()
+        .unwrap_or(1.0);
 
     // For single-core measurement, divide theoretical by core count
     // The theoretical model includes all cores, so single-core peak = theoretical / cores
@@ -530,7 +549,10 @@ pub fn run_roofline(
             theoretical: &'a RooflineModel,
             empirical: &'a EmpiricalResult,
         }
-        let combined = EmpiricalJson { theoretical: &model, empirical: &emp };
+        let combined = EmpiricalJson {
+            theoretical: &model,
+            empirical: &emp,
+        };
         println!("{}", serde_json::to_string_pretty(&combined)?);
         return Ok(());
     }
@@ -557,7 +579,10 @@ pub fn run_roofline(
             emp.measured_peak_flops / 1e9,
             emp.compute_efficiency
         );
-        println!("    Empirical Ridge: {:8.1} FLOP/byte", emp.measured_ridge_point);
+        println!(
+            "    Empirical Ridge: {:8.1} FLOP/byte",
+            emp.measured_ridge_point
+        );
     } else if empirical {
         println!("\n  (Empirical measurement for GPU targets requires CUDA — use cgp roofline --target avx2 --empirical for CPU)");
     }
@@ -582,7 +607,9 @@ mod tests {
     #[test]
     fn test_ridge_point_rtx4090_fp16() {
         let model = RooflineModel::rtx_4090();
-        let ridge = model.ridge_point(Precision::Fp16, MemoryLevel::Dram).unwrap();
+        let ridge = model
+            .ridge_point(Precision::Fp16, MemoryLevel::Dram)
+            .unwrap();
         let expected = 330_000.0 / 1008.0; // 327.38...
         assert!(
             (ridge - expected).abs() < 0.5,
@@ -618,7 +645,9 @@ mod tests {
     fn test_memory_bound_classification() {
         let model = RooflineModel::rtx_4090();
         // AI = 8.0 FLOP/byte, well below ridge of 327.4
-        let point = model.classify(8.0, 5e12, Precision::Fp16, MemoryLevel::Dram).unwrap();
+        let point = model
+            .classify(8.0, 5e12, Precision::Fp16, MemoryLevel::Dram)
+            .unwrap();
         assert!(matches!(point.bound, Bound::Memory { .. }));
         assert!(point.distance_to_ridge > 1.0);
     }
@@ -628,7 +657,9 @@ mod tests {
     fn test_compute_bound_classification() {
         let model = RooflineModel::rtx_4090();
         // AI = 500.0 FLOP/byte, above ridge of 327.4
-        let point = model.classify(500.0, 300e12, Precision::Fp16, MemoryLevel::Dram).unwrap();
+        let point = model
+            .classify(500.0, 300e12, Precision::Fp16, MemoryLevel::Dram)
+            .unwrap();
         assert!(matches!(point.bound, Bound::Compute { .. }));
         assert!(point.distance_to_ridge < 1.0);
     }
@@ -638,11 +669,15 @@ mod tests {
     fn test_theoretical_peak() {
         let model = RooflineModel::rtx_4090();
         // Memory-bound region: peak = AI * bandwidth
-        let low_ai = model.theoretical_peak(8.0, Precision::Fp16, MemoryLevel::Dram).unwrap();
+        let low_ai = model
+            .theoretical_peak(8.0, Precision::Fp16, MemoryLevel::Dram)
+            .unwrap();
         assert!((low_ai - 8.0 * 1008.0e9).abs() / low_ai < 0.001);
 
         // Compute-bound region: peak = compute peak
-        let high_ai = model.theoretical_peak(500.0, Precision::Fp16, MemoryLevel::Dram).unwrap();
+        let high_ai = model
+            .theoretical_peak(500.0, Precision::Fp16, MemoryLevel::Dram)
+            .unwrap();
         assert!((high_ai - 330.0e12).abs() / high_ai < 0.001);
     }
 
@@ -678,7 +713,11 @@ mod tests {
         let bw = measure_bandwidth();
         assert!(bw > 0.0, "Measured bandwidth must be positive, got {bw}");
         // Single-core bandwidth should be less than full system theoretical
-        assert!(bw < 500.0e9, "Single-core bandwidth {:.1} GB/s suspiciously high", bw / 1e9);
+        assert!(
+            bw < 500.0e9,
+            "Single-core bandwidth {:.1} GB/s suspiciously high",
+            bw / 1e9
+        );
     }
 
     /// FALSIFY-CGP-EMPIRICAL-002: Empirical FLOPS must be > 0.
@@ -687,7 +726,11 @@ mod tests {
         let flops = measure_peak_flops_single_core();
         assert!(flops > 0.0, "Measured FLOPS must be positive, got {flops}");
         // Single-core should be at least 1 GFLOP/s on any modern CPU
-        assert!(flops > 1.0e9, "Single-core FLOPS {:.1} GFLOP/s suspiciously low", flops / 1e9);
+        assert!(
+            flops > 1.0e9,
+            "Single-core FLOPS {:.1} GFLOP/s suspiciously low",
+            flops / 1e9
+        );
     }
 
     /// FALSIFY-CGP-EMPIRICAL-003: Empirical ridge point must be plausible.

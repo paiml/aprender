@@ -10,7 +10,10 @@ use super::*;
 #[test]
 fn test_validate_valid_module() {
     // Test that a valid module passes validation
-    let module = PtxModule::new().version(8, 0).target("sm_70").address_size(64);
+    let module = PtxModule::new()
+        .version(8, 0)
+        .target("sm_70")
+        .address_size(64);
 
     assert!(module.validate().is_ok());
 }
@@ -61,56 +64,84 @@ fn test_fma_f32() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("fma"), "Expected fma instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("fma"),
+        "Expected fma instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_global_u32() {
-    let kernel = PtxKernel::new("test_ld_u32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u32(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_u32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u32(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global"), "Expected ld.global instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("ld.global"),
+        "Expected ld.global instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_global_u64() {
     // PAR-118: Test u64 load for pointer arrays in batched attention
-    let kernel = PtxKernel::new("test_ld_u64").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u64(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_u64")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u64(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global.u64"), "Expected ld.global.u64 instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("ld.global.u64"),
+        "Expected ld.global.u64 instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_global_u8() {
-    let kernel = PtxKernel::new("test_ld_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u8(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u8(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global"), "Expected ld.global instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("ld.global"),
+        "Expected ld.global instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_global_u16() {
-    let kernel = PtxKernel::new("test_ld_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u16(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u16(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global"), "Expected ld.global instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("ld.global"),
+        "Expected ld.global instruction, got: {}",
+        ptx
+    );
 }
 
 // ========================================================================
@@ -128,24 +159,38 @@ fn test_mul_lo_u32() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.lo.u32"), "Expected 'mul.lo.u32' instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("mul.lo.u32"),
+        "Expected 'mul.lo.u32' instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_shared_base_addr() {
     // shared_base_addr: Get pointer to 'smem' shared memory array
-    let kernel = PtxKernel::new("test_smem_addr").shared_memory(1024).build(|ctx| {
-        let smem_ptr = ctx.shared_base_addr();
-        let val = ctx.mov_f32_imm(1.0);
-        ctx.st_shared_f32(smem_ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_smem_addr")
+        .shared_memory(1024)
+        .build(|ctx| {
+            let smem_ptr = ctx.shared_base_addr();
+            let val = ctx.mov_f32_imm(1.0);
+            ctx.st_shared_f32(smem_ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     // Must declare shared memory
-    assert!(ptx.contains(".shared"), "Expected shared memory declaration, got: {}", ptx);
+    assert!(
+        ptx.contains(".shared"),
+        "Expected shared memory declaration, got: {}",
+        ptx
+    );
     // Must reference 'smem' label
-    assert!(ptx.contains("smem"), "Expected 'smem' reference, got: {}", ptx);
+    assert!(
+        ptx.contains("smem"),
+        "Expected 'smem' reference, got: {}",
+        ptx
+    );
 }
 
 #[test]

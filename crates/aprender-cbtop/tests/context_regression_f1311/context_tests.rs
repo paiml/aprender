@@ -48,7 +48,9 @@ fn f1311_multiple_baselines() {
 fn f1312_cold_start_margin() {
     let predictor = ContextRegressionPredictor::new();
 
-    let context_cold = SystemContext::new().with_timestamp(1000).with_cache_warm(false);
+    let context_cold = SystemContext::new()
+        .with_timestamp(1000)
+        .with_cache_warm(false);
 
     let threshold = predictor.compute_threshold("latency", &context_cold);
 
@@ -62,7 +64,9 @@ fn f1312_cold_start_margin() {
 fn f1312_warm_cache() {
     let mut predictor = ContextRegressionPredictor::new();
 
-    let context_warm = SystemContext::new().with_timestamp(1000).with_cache_warm(true);
+    let context_warm = SystemContext::new()
+        .with_timestamp(1000)
+        .with_cache_warm(true);
 
     for i in 0..10 {
         predictor.add_baseline("latency", 10.0 + (i % 2) as f64, context_warm.clone());
@@ -83,15 +87,19 @@ fn f1312_warm_cache() {
 fn f1313_high_temp_threshold() {
     let mut predictor = ContextRegressionPredictor::new();
 
-    let context_normal =
-        SystemContext::new().with_timestamp(1000).with_cpu_temp(50.0).with_cache_warm(true);
+    let context_normal = SystemContext::new()
+        .with_timestamp(1000)
+        .with_cpu_temp(50.0)
+        .with_cache_warm(true);
 
     for i in 0..10 {
         predictor.add_baseline("latency", 10.0 + (i % 2) as f64, context_normal.clone());
     }
 
-    let context_hot =
-        SystemContext::new().with_timestamp(2000).with_cpu_temp(85.0).with_cache_warm(true);
+    let context_hot = SystemContext::new()
+        .with_timestamp(2000)
+        .with_cpu_temp(85.0)
+        .with_cache_warm(true);
 
     let threshold_normal = predictor.compute_threshold("latency", &context_normal);
     let threshold_hot = predictor.compute_threshold("latency", &context_hot);
@@ -139,15 +147,19 @@ fn f1314_frequency_adjustment() {
 fn f1315_memory_pressure() {
     let mut predictor = ContextRegressionPredictor::new();
 
-    let context_low_mem =
-        SystemContext::new().with_timestamp(1000).with_memory(30.0).with_cache_warm(true);
+    let context_low_mem = SystemContext::new()
+        .with_timestamp(1000)
+        .with_memory(30.0)
+        .with_cache_warm(true);
 
     for i in 0..10 {
         predictor.add_baseline("latency", 10.0 + (i % 2) as f64, context_low_mem.clone());
     }
 
-    let context_high_mem =
-        SystemContext::new().with_timestamp(2000).with_memory(95.0).with_cache_warm(true);
+    let context_high_mem = SystemContext::new()
+        .with_timestamp(2000)
+        .with_memory(95.0)
+        .with_cache_warm(true);
 
     let threshold_low = predictor.compute_threshold("latency", &context_low_mem);
     let threshold_high = predictor.compute_threshold("latency", &context_high_mem);
@@ -226,7 +238,9 @@ fn f1316_decreasing_trend() {
 fn f1317_no_regression() {
     let mut predictor = ContextRegressionPredictor::new();
 
-    let context = SystemContext::new().with_timestamp(1000).with_cache_warm(true);
+    let context = SystemContext::new()
+        .with_timestamp(1000)
+        .with_cache_warm(true);
 
     for i in 0..10 {
         predictor.add_baseline("latency", 10.0 + (i % 2) as f64, context.clone());
@@ -242,7 +256,9 @@ fn f1317_no_regression() {
 fn f1317_regression_detected() {
     let mut predictor = ContextRegressionPredictor::new();
 
-    let context = SystemContext::new().with_timestamp(1000).with_cache_warm(true);
+    let context = SystemContext::new()
+        .with_timestamp(1000)
+        .with_cache_warm(true);
 
     for _ in 0..10 {
         predictor.add_baseline("latency", 10.0, context.clone());

@@ -108,15 +108,30 @@ impl ImageOps for ImageBuf {
         border: BorderMode,
     ) -> Result<ImageBuf, ImageError> {
         if self.channels() == 1 {
-            let data = conv2d(self.data(), self.width(), self.height(), kernel, kw, kh, border)?;
+            let data = conv2d(
+                self.data(),
+                self.width(),
+                self.height(),
+                kernel,
+                kw,
+                kh,
+                border,
+            )?;
             ImageBuf::new(data, self.width(), self.height(), 1)
         } else {
             let npix = self.width() * self.height();
             let mut out = vec![0.0_f32; npix * self.channels()];
             for c in 0..self.channels() {
                 let ch = self.channel(c)?;
-                let filtered =
-                    conv2d(ch.data(), self.width(), self.height(), kernel, kw, kh, border)?;
+                let filtered = conv2d(
+                    ch.data(),
+                    self.width(),
+                    self.height(),
+                    kernel,
+                    kw,
+                    kh,
+                    border,
+                )?;
                 for i in 0..npix {
                     out[i * self.channels() + c] = filtered[i];
                 }
@@ -157,8 +172,15 @@ impl ImageOps for ImageBuf {
     }
 
     fn canny_edges(&self, sigma: f32, low: f32, high: f32) -> Result<ImageBuf, ImageError> {
-        let edges =
-            canny_rgb(self.data(), self.width(), self.height(), self.channels(), sigma, low, high)?;
+        let edges = canny_rgb(
+            self.data(),
+            self.width(),
+            self.height(),
+            self.channels(),
+            sigma,
+            low,
+            high,
+        )?;
         ImageBuf::new(edges, self.width(), self.height(), 1)
     }
 
@@ -205,7 +227,14 @@ impl ImageOps for ImageBuf {
         interp: Interpolation,
     ) -> Result<ImageBuf, ImageError> {
         if self.channels() == 1 {
-            let data = resize(self.data(), self.width(), self.height(), new_w, new_h, interp)?;
+            let data = resize(
+                self.data(),
+                self.width(),
+                self.height(),
+                new_w,
+                new_h,
+                interp,
+            )?;
             ImageBuf::new(data, new_w, new_h, 1)
         } else {
             let new_npix = new_w * new_h;

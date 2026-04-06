@@ -20,11 +20,13 @@ fn test_ld_param_emission() {
 
 #[test]
 fn test_u64_multiplication() {
-    let kernel = PtxKernel::new("test_u64_mul").param(PtxType::U64, "ptr").build(|ctx| {
-        let a = ctx.mov_u64_imm(1000000000u64);
-        let _result = ctx.mul_u64(a, 2000000000u64);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_u64_mul")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let a = ctx.mov_u64_imm(1000000000u64);
+            let _result = ctx.mul_u64(a, 2000000000u64);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -36,51 +38,75 @@ fn test_u64_multiplication() {
 
 #[test]
 fn test_u64_reg_multiplication() {
-    let kernel = PtxKernel::new("test_u64_mul_reg").param(PtxType::U64, "ptr").build(|ctx| {
-        let a = ctx.mov_u64_imm(1000000000u64);
-        let b = ctx.mov_u64_imm(2000000000u64);
-        let _result = ctx.mul_u64_reg(a, b);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_u64_mul_reg")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let a = ctx.mov_u64_imm(1000000000u64);
+            let b = ctx.mov_u64_imm(2000000000u64);
+            let _result = ctx.mul_u64_reg(a, b);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.lo.u64"), "Expected mul.lo.u64 in: {}", ptx);
+    assert!(
+        ptx.contains("mul.lo.u64"),
+        "Expected mul.lo.u64 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_global_u32_load() {
-    let kernel = PtxKernel::new("test_ld_global_u32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u32(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u32(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global.u32"), "Expected ld.global.u32 in: {}", ptx);
+    assert!(
+        ptx.contains("ld.global.u32"),
+        "Expected ld.global.u32 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_global_u8_load() {
-    let kernel = PtxKernel::new("test_ld_global_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u8(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u8(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global.u8"), "Expected ld.global.u8 in: {}", ptx);
+    assert!(
+        ptx.contains("ld.global.u8"),
+        "Expected ld.global.u8 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_global_u16_load() {
-    let kernel = PtxKernel::new("test_ld_global_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u16(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u16(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.global.u16"), "Expected ld.global.u16 in: {}", ptx);
+    assert!(
+        ptx.contains("ld.global.u16"),
+        "Expected ld.global.u16 in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -125,33 +151,41 @@ fn test_and_pred_combining_bounds() {
 
 #[test]
 fn test_div_f32_inplace_normalization() {
-    let kernel = PtxKernel::new("test_div_inplace").param(PtxType::U64, "data_ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("data_ptr");
-        let value = ctx.ld_global_f32(ptr);
-        let divisor = ctx.mov_f32_imm(10.0);
-        ctx.div_f32_inplace(value, divisor);
-        ctx.st_global_f32(ptr, value);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_div_inplace")
+        .param(PtxType::U64, "data_ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("data_ptr");
+            let value = ctx.ld_global_f32(ptr);
+            let divisor = ctx.mov_f32_imm(10.0);
+            ctx.div_f32_inplace(value, divisor);
+            ctx.st_global_f32(ptr, value);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("div.rn.f32"), "Expected div.rn.f32 in: {}", ptx);
+    assert!(
+        ptx.contains("div.rn.f32"),
+        "Expected div.rn.f32 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_predicated_instruction_emission() {
-    let kernel = PtxKernel::new("test_predicate").param(PtxType::U64, "ptr").build(|ctx| {
-        let tid = ctx.special_reg(PtxReg::TidX);
-        let limit = ctx.mov_u32_imm(64);
-        let pred = ctx.setp_lt_u32(tid, limit);
-        ctx.branch_if(pred, "store_it");
-        ctx.ret();
-        ctx.label("store_it");
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.mov_f32_imm(1.0);
-        ctx.st_global_f32(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_predicate")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let limit = ctx.mov_u32_imm(64);
+            let pred = ctx.setp_lt_u32(tid, limit);
+            ctx.branch_if(pred, "store_it");
+            ctx.ret();
+            ctx.label("store_it");
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.mov_f32_imm(1.0);
+            ctx.st_global_f32(ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(ptx.contains("setp."), "Expected setp in: {}", ptx);
@@ -179,7 +213,11 @@ fn test_integer_div_emission() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("div.u32") || ptx.contains("div.s32"), "Expected integer div in: {}", ptx);
+    assert!(
+        ptx.contains("div.u32") || ptx.contains("div.s32"),
+        "Expected integer div in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -192,7 +230,11 @@ fn test_mul_wide_u32_emission() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.wide.u32"), "Expected mul.wide.u32 in: {}", ptx);
+    assert!(
+        ptx.contains("mul.wide.u32"),
+        "Expected mul.wide.u32 in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -205,7 +247,11 @@ fn test_mul_wide_u32_reg_emission() {
         ctx.ret();
     });
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.wide.u32"), "Expected mul.wide.u32 in: {}", ptx);
+    assert!(
+        ptx.contains("mul.wide.u32"),
+        "Expected mul.wide.u32 in: {}",
+        ptx
+    );
     assert!(!ptx.contains("mul.lo.u64"), "Found mul.lo.u64 in: {}", ptx);
 }
 
@@ -220,21 +266,27 @@ fn test_mad_lo_emission() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mad.lo.u32"), "Expected mad.lo.u32 in: {}", ptx);
+    assert!(
+        ptx.contains("mad.lo.u32"),
+        "Expected mad.lo.u32 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_shared_memory_operations() {
-    let kernel = PtxKernel::new("test_shared").shared_memory(256 * 4).build(|ctx| {
-        let tid = ctx.special_reg(PtxReg::TidX);
-        let tile_ptr = ctx.shared_base_addr();
-        let offset = ctx.mul_u32(tid, 4);
-        let offset_64 = ctx.cvt_u64_u32(offset);
-        let addr = ctx.add_u64(tile_ptr, offset_64);
-        let val = ctx.ld_shared_f32(addr);
-        ctx.st_shared_f32(addr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_shared")
+        .shared_memory(256 * 4)
+        .build(|ctx| {
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let tile_ptr = ctx.shared_base_addr();
+            let offset = ctx.mul_u32(tid, 4);
+            let offset_64 = ctx.cvt_u64_u32(offset);
+            let addr = ctx.add_u64(tile_ptr, offset_64);
+            let val = ctx.ld_shared_f32(addr);
+            ctx.st_shared_f32(addr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(ptx.contains("ld.shared"), "Expected ld.shared in: {}", ptx);

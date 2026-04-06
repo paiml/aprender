@@ -28,7 +28,11 @@ impl BatchedVectorizedRmsNormKernel {
     /// Create a new batched vectorized RMSNorm kernel
     #[must_use]
     pub fn new(hidden_size: u32, batch_size: u32) -> Self {
-        Self { hidden_size, batch_size, epsilon: 1e-5 }
+        Self {
+            hidden_size,
+            batch_size,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon value
@@ -236,7 +240,10 @@ impl PreciseRmsNormKernel {
     /// Create a new precise RMSNorm kernel
     #[must_use]
     pub fn new(hidden_size: u32) -> Self {
-        Self { hidden_size, epsilon: 1e-5 }
+        Self {
+            hidden_size,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon value

@@ -129,8 +129,10 @@ fn falsify_cgp_031_no_false_positive_on_noise() {
 
     // Must NOT detect regression on timing (noise is within stddev)
     // The timing line should say NO_CHANGE or IMPROVED, not REGRESSION
-    let timing_lines: Vec<&str> =
-        stdout.lines().filter(|l| l.contains("wall_clock_time_us")).collect();
+    let timing_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("wall_clock_time_us"))
+        .collect();
 
     for line in &timing_lines {
         assert!(
@@ -338,7 +340,14 @@ fn falsify_cgp_062_diff_speed() {
 #[test]
 fn falsify_cgp_075_q4k_effective_bandwidth() {
     let output = cgp_cmd()
-        .args(["profile", "quant", "--kernel", "q4k_gemv", "--size", "4096x1x4096"])
+        .args([
+            "profile",
+            "quant",
+            "--kernel",
+            "q4k_gemv",
+            "--size",
+            "4096x1x4096",
+        ])
         .output()
         .expect("Failed to run cgp profile quant");
 
@@ -370,7 +379,10 @@ fn falsify_cgp_061_doctor_speed_real() {
     let _ = cgp_cmd().args(["doctor"]).output();
 
     let start = Instant::now();
-    let output = cgp_cmd().args(["doctor"]).output().expect("Failed to run cgp doctor");
+    let output = cgp_cmd()
+        .args(["doctor"])
+        .output()
+        .expect("Failed to run cgp doctor");
     let elapsed = start.elapsed();
 
     assert!(output.status.success());
@@ -406,7 +418,9 @@ fn falsify_cgp_021_ridge_point_math() {
     if let Some(arr) = ridge_points.as_array() {
         // Find FP16 Tensor ridge point
         let fp16 = arr.iter().find(|r| {
-            r["precision"].as_str().map_or(false, |s| s.contains("FP16") || s.contains("Fp16"))
+            r["precision"]
+                .as_str()
+                .map_or(false, |s| s.contains("FP16") || s.contains("Fp16"))
         });
         if let Some(fp16_ridge) = fp16 {
             let ridge = fp16_ridge["ridge_flop_per_byte"].as_f64().unwrap_or(0.0);
@@ -420,9 +434,15 @@ fn falsify_cgp_021_ridge_point_math() {
     }
 
     // Also verify via text output
-    let text_output = cgp_cmd().args(["roofline", "--target", "cuda"]).output().expect("Failed");
+    let text_output = cgp_cmd()
+        .args(["roofline", "--target", "cuda"])
+        .output()
+        .expect("Failed");
     let text = String::from_utf8_lossy(&text_output.stdout);
-    assert!(text.contains("327"), "FALSIFY-CGP-021: Ridge point 327.x not in output.\n{text}");
+    assert!(
+        text.contains("327"),
+        "FALSIFY-CGP-021: Ridge point 327.x not in output.\n{text}"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -660,9 +680,18 @@ fn falsify_cgp_scaling_001_json_fields() {
     assert!(!arr.is_empty(), "Should have at least 1 data point");
 
     for point in arr {
-        assert!(point.get("threads").is_some(), "FALSIFY-CGP-SCALING-001: missing 'threads' field");
-        assert!(point.get("gflops").is_some(), "FALSIFY-CGP-SCALING-001: missing 'gflops' field");
-        assert!(point.get("scaling").is_some(), "FALSIFY-CGP-SCALING-001: missing 'scaling' field");
+        assert!(
+            point.get("threads").is_some(),
+            "FALSIFY-CGP-SCALING-001: missing 'threads' field"
+        );
+        assert!(
+            point.get("gflops").is_some(),
+            "FALSIFY-CGP-SCALING-001: missing 'gflops' field"
+        );
+        assert!(
+            point.get("scaling").is_some(),
+            "FALSIFY-CGP-SCALING-001: missing 'scaling' field"
+        );
     }
 }
 
@@ -713,7 +742,10 @@ fn falsify_cgp_empirical_010_roofline_output() {
         .output()
         .expect("Failed to run cgp roofline --empirical");
 
-    assert!(output.status.success(), "cgp roofline --empirical must succeed");
+    assert!(
+        output.status.success(),
+        "cgp roofline --empirical must succeed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(
@@ -763,9 +795,18 @@ fn falsify_cgp_empirical_013_json_output() {
 
     // Empirical must have measured values
     let emp = &parsed["empirical"];
-    assert!(emp.get("measured_bandwidth_bps").is_some(), "Must have measured_bandwidth_bps");
-    assert!(emp.get("measured_peak_flops").is_some(), "Must have measured_peak_flops");
-    assert!(emp.get("measured_ridge_point").is_some(), "Must have measured_ridge_point");
+    assert!(
+        emp.get("measured_bandwidth_bps").is_some(),
+        "Must have measured_bandwidth_bps"
+    );
+    assert!(
+        emp.get("measured_peak_flops").is_some(),
+        "Must have measured_peak_flops"
+    );
+    assert!(
+        emp.get("measured_ridge_point").is_some(),
+        "Must have measured_ridge_point"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -846,7 +887,16 @@ fn falsify_cgp_empirical_012_flops_sanity() {
 #[test]
 fn falsify_cgp_compare_050_measured_data() {
     let output = cgp_cmd()
-        .args(["profile", "compare", "--kernel", "gemm", "--size", "1024", "--backends", "avx512"])
+        .args([
+            "profile",
+            "compare",
+            "--kernel",
+            "gemm",
+            "--size",
+            "1024",
+            "--backends",
+            "avx512",
+        ])
         .output()
         .expect("Failed to run cgp profile compare");
 
@@ -874,7 +924,14 @@ fn falsify_cgp_compare_050_measured_data() {
 #[test]
 fn falsify_cgp_quant_076_roofline_analysis() {
     let output = cgp_cmd()
-        .args(["profile", "quant", "--kernel", "q4k_gemv", "--size", "4096x1x4096"])
+        .args([
+            "profile",
+            "quant",
+            "--kernel",
+            "q4k_gemv",
+            "--size",
+            "4096x1x4096",
+        ])
         .output()
         .expect("Failed to run cgp profile quant");
 
@@ -882,8 +939,14 @@ fn falsify_cgp_quant_076_roofline_analysis() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Must always show structural info
-    assert!(stdout.contains("Super-block:"), "Must show super-block info");
-    assert!(stdout.contains("Compression ratio:"), "Must show compression ratio");
+    assert!(
+        stdout.contains("Super-block:"),
+        "Must show super-block info"
+    );
+    assert!(
+        stdout.contains("Compression ratio:"),
+        "Must show compression ratio"
+    );
 
     // If benchmark binary exists, should show roofline
     let bench_exists = std::path::Path::new(
@@ -908,7 +971,14 @@ fn falsify_cgp_quant_076_roofline_analysis() {
 #[test]
 fn falsify_cgp_quant_077_token_estimation() {
     let output = cgp_cmd()
-        .args(["profile", "quant", "--kernel", "q4k_gemv", "--size", "4096x1x4096"])
+        .args([
+            "profile",
+            "quant",
+            "--kernel",
+            "q4k_gemv",
+            "--size",
+            "4096x1x4096",
+        ])
         .output()
         .expect("Failed to run cgp profile quant");
 
@@ -997,7 +1067,16 @@ fn falsify_cgp_091_trueno_vs_ndarray_gemm() {
 fn falsify_cgp_090_trueno_gemm_at_peak() {
     // Use cgp profile compare which runs the benchmark binary
     let output = cgp_cmd()
-        .args(["profile", "compare", "--kernel", "gemm", "--size", "1024", "--backends", "avx512"])
+        .args([
+            "profile",
+            "compare",
+            "--kernel",
+            "gemm",
+            "--size",
+            "1024",
+            "--backends",
+            "avx512",
+        ])
         .output()
         .expect("Failed to run cgp profile compare");
 
@@ -1092,7 +1171,10 @@ fn falsify_cgp_contract_001_self_verify() {
         .output()
         .expect("Failed to run cgp contract verify --self");
 
-    assert!(output.status.success(), "cgp contract verify --self must succeed");
+    assert!(
+        output.status.success(),
+        "cgp contract verify --self must succeed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Should not report any failures
     assert!(
@@ -1107,11 +1189,19 @@ fn falsify_cgp_contract_001_self_verify() {
 #[test]
 fn falsify_cgp_contract_002_contracts_dir() {
     let output = cgp_cmd()
-        .args(["contract", "verify", "--contracts-dir", "../../contracts/cgp/"])
+        .args([
+            "contract",
+            "verify",
+            "--contracts-dir",
+            "../../contracts/cgp/",
+        ])
         .output()
         .expect("Failed to run cgp contract verify");
 
-    assert!(output.status.success(), "cgp contract verify --contracts-dir must succeed");
+    assert!(
+        output.status.success(),
+        "cgp contract verify --contracts-dir must succeed"
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     // Should show verification results (PASS/FAIL) and Total line
     assert!(

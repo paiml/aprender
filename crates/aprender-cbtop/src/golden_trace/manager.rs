@@ -18,7 +18,10 @@ pub struct GoldenTraceManager {
 impl GoldenTraceManager {
     /// Create new manager
     pub fn new(storage_dir: std::path::PathBuf) -> Self {
-        Self { storage_dir, cache: HashMap::new() }
+        Self {
+            storage_dir,
+            cache: HashMap::new(),
+        }
     }
 
     /// Ensure storage directory exists
@@ -90,7 +93,10 @@ impl GoldenTraceManager {
         let mut names = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "toml" || ext == "json") {
+            if path
+                .extension()
+                .map_or(false, |ext| ext == "toml" || ext == "json")
+            {
                 if let Some(stem) = path.file_stem() {
                     if let Some(name) = stem.to_str() {
                         names.push(name.to_string());

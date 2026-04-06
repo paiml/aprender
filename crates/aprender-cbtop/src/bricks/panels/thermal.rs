@@ -20,7 +20,11 @@ pub struct ThermalThresholds {
 
 impl Default for ThermalThresholds {
     fn default() -> Self {
-        Self { warning: 70.0, critical: 85.0, max_safe: 100.0 }
+        Self {
+            warning: 70.0,
+            critical: 85.0,
+            max_safe: 100.0,
+        }
     }
 }
 
@@ -89,8 +93,14 @@ impl ThermalPanelBrick {
 
     /// Paint the thermal panel
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         canvas.draw_text("Thermal Monitor", Point::new(2.0, 2.0), &label_style);
 
@@ -101,7 +111,10 @@ impl ThermalPanelBrick {
         canvas.draw_text(
             &format!("{:.1}°C [{}]", self.cpu_temp, cpu_status),
             Point::new(8.0, 4.0),
-            &TextStyle { color: cpu_color, ..Default::default() },
+            &TextStyle {
+                color: cpu_color,
+                ..Default::default()
+            },
         );
 
         // CPU temperature gauge
@@ -127,7 +140,10 @@ impl ThermalPanelBrick {
         canvas.draw_text(
             &format!("{:.1}°C [{}]", self.gpu_temp, gpu_status),
             Point::new(8.0, 11.0),
-            &TextStyle { color: gpu_color, ..Default::default() },
+            &TextStyle {
+                color: gpu_color,
+                ..Default::default()
+            },
         );
 
         // GPU temperature gauge
@@ -155,7 +171,10 @@ impl ThermalPanelBrick {
                 canvas.draw_text(
                     &format!("{}: {:.1}°C", sensor.name, sensor.temp_c),
                     Point::new(2.0, y),
-                    &TextStyle { color, ..Default::default() },
+                    &TextStyle {
+                        color,
+                        ..Default::default()
+                    },
                 );
             }
         }

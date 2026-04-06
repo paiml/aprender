@@ -1,16 +1,3 @@
-[workspace]
-resolver = "2"
-
-[workspace.package]
-version = "0.3.17"
-edition = "2021"
-authors = ["Pragmatic AI Labs <info@paiml.com>"]
-license = "MIT"
-repository = "https://github.com/paiml/trueno-db"
-rust-version = "1.75"
-
-[workspace.dependencies]
-
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
 name = "trueno-db"
@@ -172,41 +159,6 @@ harness = false
 [[bench]]
 name = "kernel_fusion"
 harness = false
-
-[workspace.lints.rust]
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub = "warn"
-
-[workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "allow"
-expect_used = "allow"
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-cast_precision_loss = "allow"
-cast_sign_loss = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-float_cmp = "allow"
-missing_const_for_fn = "allow"
-significant_drop_tightening = "allow"
-redundant_pub_crate = "allow"
-option_if_let_else = "allow"
-no_effect_underscore_binding = "allow"
-too_many_lines = "allow"
-wildcard_enum_match_arm = "allow"
-match_wildcard_for_single_variants = "allow"
-match_same_arms = "allow"
-enum_glob_use = "allow"
-items_after_statements = "allow"
-redundant_closure_for_method_calls = "allow"
-doc_markdown = "allow"
-uninlined_format_args = "allow"
-unnecessary_wraps = "allow"
 
 [lints]
 workspace = true

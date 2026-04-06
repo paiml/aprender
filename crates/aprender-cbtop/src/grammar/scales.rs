@@ -23,7 +23,10 @@ impl LinearResourceScale {
     /// Create new linear scale
     pub fn new(domain: (f64, f64), range: (f64, f64)) -> GrammarResult<Self> {
         if domain.0 >= domain.1 {
-            return Err(GrammarError::InvalidScaleDomain { min: domain.0, max: domain.1 });
+            return Err(GrammarError::InvalidScaleDomain {
+                min: domain.0,
+                max: domain.1,
+            });
         }
         Ok(Self { domain, range })
     }
@@ -56,9 +59,16 @@ impl LogResourceScale {
     /// Create new log scale
     pub fn new(base: f64, domain: (f64, f64), range: (f64, f64)) -> GrammarResult<Self> {
         if domain.0 >= domain.1 {
-            return Err(GrammarError::InvalidScaleDomain { min: domain.0, max: domain.1 });
+            return Err(GrammarError::InvalidScaleDomain {
+                min: domain.0,
+                max: domain.1,
+            });
         }
-        Ok(Self { base, domain, range })
+        Ok(Self {
+            base,
+            domain,
+            range,
+        })
     }
 }
 

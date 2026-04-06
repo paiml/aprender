@@ -29,7 +29,13 @@ pub struct BatchedGemmConfig {
 
 impl Default for BatchedGemmConfig {
     fn default() -> Self {
-        Self { batch: 1, m: 1024, n: 1024, k: 1024, tile_size: 16 }
+        Self {
+            batch: 1,
+            m: 1024,
+            n: 1024,
+            k: 1024,
+            tile_size: 16,
+        }
     }
 }
 
@@ -59,7 +65,13 @@ impl BatchedGemmKernel {
     #[must_use]
     pub fn naive(batch: u32, m: u32, n: u32, k: u32) -> Self {
         Self {
-            config: BatchedGemmConfig { batch, m, n, k, ..Default::default() },
+            config: BatchedGemmConfig {
+                batch,
+                m,
+                n,
+                k,
+                ..Default::default()
+            },
             variant: BatchedGemmVariant::Naive,
         }
     }
@@ -69,7 +81,13 @@ impl BatchedGemmKernel {
     #[must_use]
     pub fn tiled(batch: u32, m: u32, n: u32, k: u32, tile_size: u32) -> Self {
         Self {
-            config: BatchedGemmConfig { batch, m, n, k, tile_size },
+            config: BatchedGemmConfig {
+                batch,
+                m,
+                n,
+                k,
+                tile_size,
+            },
             variant: BatchedGemmVariant::Tiled,
         }
     }
@@ -80,7 +98,13 @@ impl BatchedGemmKernel {
     #[must_use]
     pub fn tiled_unrolled(batch: u32, m: u32, n: u32, k: u32, tile_size: u32) -> Self {
         Self {
-            config: BatchedGemmConfig { batch, m, n, k, tile_size },
+            config: BatchedGemmConfig {
+                batch,
+                m,
+                n,
+                k,
+                tile_size,
+            },
             variant: BatchedGemmVariant::TiledUnrolled,
         }
     }

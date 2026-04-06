@@ -325,10 +325,7 @@ async fn fallback_handler(State(state): State<Arc<ServerState>>) -> impl IntoRes
     state.metrics.record_client_error();
     let result = ErrorResponse::new("not_found", "Endpoint not found");
     contract_post_error_envelope_preservation!(&result);
-    (
-        StatusCode::NOT_FOUND,
-        Json(result),
-    )
+    (StatusCode::NOT_FOUND, Json(result))
 }
 
 /// Create the inference server router

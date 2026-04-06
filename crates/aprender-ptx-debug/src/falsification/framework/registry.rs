@@ -315,8 +315,18 @@ impl FalsificationRegistry {
         description: &'static str,
     ) {
         for i in range {
-            let id = if i < 100 { format!("F0{}", i) } else { format!("F{}", i) };
-            self.add(FalsificationTest::new(&id, category, description, 1, |_| TestResult::Pass));
+            let id = if i < 100 {
+                format!("F0{}", i)
+            } else {
+                format!("F{}", i)
+            };
+            self.add(FalsificationTest::new(
+                &id,
+                category,
+                description,
+                1,
+                |_| TestResult::Pass,
+            ));
         }
     }
 
@@ -346,7 +356,12 @@ impl FalsificationRegistry {
                 TestResult::Fail { .. } => {}
             }
 
-            results.push((test.id.clone(), test.category, test.description.clone(), result));
+            results.push((
+                test.id.clone(),
+                test.category,
+                test.description.clone(),
+                result,
+            ));
         }
 
         let score = if total_points > 0 {
@@ -357,7 +372,13 @@ impl FalsificationRegistry {
 
         let confidence = calculate_confidence(earned_points, total_points, &results);
 
-        FalsificationReport { results, score, earned_points, total_points, confidence }
+        FalsificationReport {
+            results,
+            score,
+            earned_points,
+            total_points,
+            confidence,
+        }
     }
 }
 
@@ -395,12 +416,15 @@ pub(super) fn calculate_confidence(
     let category_bonus = (categories_passed as f64 / 10.0) * 0.1;
 
     // Critical correctness absence bonus (F082 only)
-    let critical_bonus =
-        if results.iter().filter(|(id, _, _, _)| id == "F082").all(|(_, _, _, r)| r.is_pass()) {
-            0.1
-        } else {
-            0.0
-        };
+    let critical_bonus = if results
+        .iter()
+        .filter(|(id, _, _, _)| id == "F082")
+        .all(|(_, _, _, r)| r.is_pass())
+    {
+        0.1
+    } else {
+        0.0
+    };
 
     // Combined confidence (capped at 0.99 - never certain)
     (base_score + category_bonus + critical_bonus).min(0.99)

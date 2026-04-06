@@ -190,25 +190,52 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
-        Commands::Ptx { kernel, rows, cols, inner, json, .. } => {
-            run_ptx(&kernel, rows, cols, inner, json)
-        }
+        Commands::Ptx {
+            kernel,
+            rows,
+            cols,
+            inner,
+            json,
+            ..
+        } => run_ptx(&kernel, rows, cols, inner, json),
 
-        Commands::Tui { kernel, rows, cols, inner } => run_tui_mode(&kernel, rows, cols, inner),
+        Commands::Tui {
+            kernel,
+            rows,
+            cols,
+            inner,
+        } => run_tui_mode(&kernel, rows, cols, inner),
 
-        Commands::Simd { function, arch, json } => run_simd(&function, &arch, json),
+        Commands::Simd {
+            function,
+            arch,
+            json,
+        } => run_simd(&function, &arch, json),
 
         Commands::Wgpu { shader, json } => run_wgpu(&shader, json),
 
-        Commands::Compare { kernel_a, kernel_b, json } => run_compare(&kernel_a, &kernel_b, json),
+        Commands::Compare {
+            kernel_a,
+            kernel_b,
+            json,
+        } => run_compare(&kernel_a, &kernel_b, json),
 
-        Commands::Diff { kernel, baseline, fail_on_regression, json } => {
-            run_diff(&kernel, &baseline, fail_on_regression, json)
-        }
+        Commands::Diff {
+            kernel,
+            baseline,
+            fail_on_regression,
+            json,
+        } => run_diff(&kernel, &baseline, fail_on_regression, json),
 
-        Commands::Bugs { kernel, rows, cols, inner, strict, fail_on_bugs, json } => {
-            run_bugs(&kernel, rows, cols, inner, strict, fail_on_bugs, json)
-        }
+        Commands::Bugs {
+            kernel,
+            rows,
+            cols,
+            inner,
+            strict,
+            fail_on_bugs,
+            json,
+        } => run_bugs(&kernel, rows, cols, inner, strict, fail_on_bugs, json),
     }
 }
 
@@ -223,7 +250,11 @@ fn run_ptx(
     let analyzer = PtxAnalyzer::new();
     let report = analyzer.analyze(&ptx)?;
 
-    let format = if json { OutputFormat::Json } else { OutputFormat::Text };
+    let format = if json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Text
+    };
     output::write_report(&report, format)?;
     Ok(())
 }
@@ -266,7 +297,11 @@ fn run_simd(function: &str, arch: &str, json: bool) -> Result<(), Box<dyn std::e
     let analyzer = SimdAnalyzer::new(simd_arch);
     let report = analyzer.analyze(&sample_asm)?;
 
-    let format = if json { OutputFormat::Json } else { OutputFormat::Text };
+    let format = if json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Text
+    };
     output::write_report(&report, format)?;
     Ok(())
 }
@@ -278,7 +313,11 @@ fn run_wgpu(shader: &str, json: bool) -> Result<(), Box<dyn std::error::Error>> 
     let analyzer = WgpuAnalyzer::new();
     let report = analyzer.analyze(&wgsl)?;
 
-    let format = if json { OutputFormat::Json } else { OutputFormat::Text };
+    let format = if json {
+        OutputFormat::Json
+    } else {
+        OutputFormat::Text
+    };
     output::write_report(&report, format)?;
     Ok(())
 }
@@ -346,7 +385,11 @@ fn run_bugs(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ptx = generate_kernel_ptx(kernel, rows, cols, inner)?;
 
-    let analyzer = if strict { PtxBugAnalyzer::strict() } else { PtxBugAnalyzer::new() };
+    let analyzer = if strict {
+        PtxBugAnalyzer::strict()
+    } else {
+        PtxBugAnalyzer::new()
+    };
 
     let bug_report = analyzer.analyze(&ptx);
 

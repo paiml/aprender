@@ -223,7 +223,10 @@ fn test_bias_activation_ptx_generation() {
 
     assert!(ptx.contains(".version 8.0"), "Missing PTX version");
     assert!(ptx.contains(".target sm_70"), "Missing target");
-    assert!(ptx.contains(".visible .entry bias_activation"), "Missing entry point");
+    assert!(
+        ptx.contains(".visible .entry bias_activation"),
+        "Missing entry point"
+    );
     assert!(ptx.contains(".param .u64 output"), "Missing output param");
     assert!(ptx.contains(".param .u64 bias"), "Missing bias param");
     assert!(ptx.contains(".param .u32 n"), "Missing n param");
@@ -243,7 +246,10 @@ fn test_bias_activation_gelu_ptx() {
     let kernel = BiasActivationKernel::new(1024, 64).with_gelu();
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("ex2.approx") || ptx.contains("ex2.f32"), "GELU should use ex2 for exp");
+    assert!(
+        ptx.contains("ex2.approx") || ptx.contains("ex2.f32"),
+        "GELU should use ex2 for exp"
+    );
     assert!(
         ptx.contains("div.rn.f32") || ptx.contains("div.f32"),
         "GELU should use div for sigmoid reciprocal"
@@ -256,7 +262,10 @@ fn test_bias_activation_contains_bias_addition() {
     let ptx = kernel.emit_ptx();
 
     assert!(ptx.contains("add.f32"), "Should contain bias addition");
-    assert!(ptx.contains("rem.u32"), "Should contain modulo for bias indexing");
+    assert!(
+        ptx.contains("rem.u32"),
+        "Should contain modulo for bias indexing"
+    );
 }
 
 #[test]
@@ -425,7 +434,10 @@ mod falsification_tests {
 
         // GELU needs: exp (via ex2), division (for 1/(1+exp)), multiply
         assert!(ptx.contains("ex2"), "FALSIFIED: GELU missing exp component");
-        assert!(ptx.contains("div"), "FALSIFIED: GELU missing division for sigmoid");
+        assert!(
+            ptx.contains("div"),
+            "FALSIFIED: GELU missing division for sigmoid"
+        );
     }
 
     /// FALSIFY: None activation should not have ReLU or GELU instructions
@@ -436,10 +448,16 @@ mod falsification_tests {
 
         // None activation should not have max (ReLU) or ex2 (GELU)
         // It should only have add for bias
-        assert!(!ptx.contains("max.f32"), "FALSIFIED: None activation has ReLU max instruction");
+        assert!(
+            !ptx.contains("max.f32"),
+            "FALSIFIED: None activation has ReLU max instruction"
+        );
         // Note: We can't assert no ex2 since the PTX builder might use it elsewhere
         // But we verify the essential add is present
-        assert!(ptx.contains("add.f32"), "FALSIFIED: None activation missing bias addition");
+        assert!(
+            ptx.contains("add.f32"),
+            "FALSIFIED: None activation missing bias addition"
+        );
     }
 
     /// FALSIFY: Kernel without proper parameters would fail at runtime
@@ -448,8 +466,14 @@ mod falsification_tests {
         let kernel = BiasActivationKernel::new(1024, 64);
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains(".param .u64 output"), "Missing output pointer param");
-        assert!(ptx.contains(".param .u64 bias"), "Missing bias pointer param");
+        assert!(
+            ptx.contains(".param .u64 output"),
+            "Missing output pointer param"
+        );
+        assert!(
+            ptx.contains(".param .u64 bias"),
+            "Missing bias pointer param"
+        );
         assert!(ptx.contains(".param .u32 n"), "Missing n param");
     }
 }

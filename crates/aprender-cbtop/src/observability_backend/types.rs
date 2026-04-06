@@ -16,7 +16,10 @@ pub enum ObservabilityError {
     /// Invalid configuration
     InvalidConfig { reason: String },
     /// Rate limited by backend
-    RateLimited { backend: String, retry_after_sec: u64 },
+    RateLimited {
+        backend: String,
+        retry_after_sec: u64,
+    },
     /// Export failed
     ExportFailed { backend: String, reason: String },
     /// Backend not configured
@@ -37,8 +40,15 @@ impl std::fmt::Display for ObservabilityError {
             Self::InvalidConfig { reason } => {
                 write!(f, "Invalid configuration: {}", reason)
             }
-            Self::RateLimited { backend, retry_after_sec } => {
-                write!(f, "{} rate limited, retry after {}s", backend, retry_after_sec)
+            Self::RateLimited {
+                backend,
+                retry_after_sec,
+            } => {
+                write!(
+                    f,
+                    "{} rate limited, retry after {}s",
+                    backend, retry_after_sec
+                )
             }
             Self::ExportFailed { backend, reason } => {
                 write!(f, "Export to {} failed: {}", backend, reason)

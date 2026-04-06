@@ -21,7 +21,12 @@ pub struct QuantizedWeights {
 impl QuantizedWeights {
     /// Create new quantized weights.
     pub fn new(format: QuantFormat, data: Vec<u8>, shape: (usize, usize), name: &str) -> Self {
-        Self { format, data, shape, layer_name: name.to_string() }
+        Self {
+            format,
+            data,
+            shape,
+            layer_name: name.to_string(),
+        }
     }
 
     /// Total number of weights.
@@ -126,7 +131,10 @@ impl QuantStats {
 
     /// Dominant format (most weights).
     pub fn dominant_format(&self) -> Option<QuantFormat> {
-        self.weights_by_format.iter().max_by_key(|(_, count)| *count).map(|(format, _)| *format)
+        self.weights_by_format
+            .iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(format, _)| *format)
     }
 }
 
@@ -140,7 +148,11 @@ impl fmt::Display for QuantStats {
             "Total Memory: {:.2} MB (quantized)",
             self.total_memory_bytes as f64 / 1_000_000.0
         )?;
-        writeln!(f, "F16 Memory: {:.2} MB (baseline)", self.f16_memory_bytes as f64 / 1_000_000.0)?;
+        writeln!(
+            f,
+            "F16 Memory: {:.2} MB (baseline)",
+            self.f16_memory_bytes as f64 / 1_000_000.0
+        )?;
         writeln!(f, "Compression: {:.2}x", self.compression_ratio())?;
         writeln!(f, "Avg Bits/Weight: {:.2}", self.avg_bits_per_weight())?;
 

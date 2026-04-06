@@ -14,7 +14,11 @@ use trueno_cuda_edge::falsification::{
 #[test]
 fn protocol_has_50_claims() {
     let claims = all_claims();
-    assert_eq!(claims.len(), 50, "Specification requires exactly 50 falsification claims");
+    assert_eq!(
+        claims.len(),
+        50,
+        "Specification requires exactly 50 falsification claims"
+    );
 }
 
 /// All claim IDs must be unique.
@@ -57,7 +61,10 @@ fn new_report_all_pending() {
 #[test]
 fn initial_coverage_is_zero() {
     let report = FalsificationReport::new();
-    assert!((report.coverage() - 0.0).abs() < f64::EPSILON, "Initial coverage must be 0%");
+    assert!(
+        (report.coverage() - 0.0).abs() < f64::EPSILON,
+        "Initial coverage must be 0%"
+    );
 }
 
 /// Coverage reaches 100% when all claims are verified.
@@ -132,7 +139,10 @@ fn in_progress_prevents_completion() {
         }
     }
 
-    assert!(!report.is_complete(), "In-progress claims must prevent completion");
+    assert!(
+        !report.is_complete(),
+        "In-progress claims must prevent completion"
+    );
 }
 
 /// Violated claims can be retrieved.
@@ -202,7 +212,11 @@ fn framework_display() {
 #[test]
 fn all_claims_have_descriptions() {
     for claim in all_claims() {
-        assert!(!claim.description.is_empty(), "Claim {} must have a description", claim.id);
+        assert!(
+            !claim.description.is_empty(),
+            "Claim {} must have a description",
+            claim.id
+        );
     }
 }
 

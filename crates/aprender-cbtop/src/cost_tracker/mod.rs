@@ -67,7 +67,12 @@ impl GpuPricing {
         price_per_hour: f64,
         power_watts: f64,
     ) -> Self {
-        Self { provider, gpu_type: gpu_type.to_string(), price_per_hour, power_watts }
+        Self {
+            provider,
+            gpu_type: gpu_type.to_string(),
+            price_per_hour,
+            power_watts,
+        }
     }
 
     /// Price per second
@@ -116,13 +121,25 @@ pub struct EnergyMeasurement {
 impl EnergyMeasurement {
     /// Create from power and duration
     pub fn from_power_duration(power_watts: f64, duration_sec: f64) -> Self {
-        Self { joules: power_watts * duration_sec, duration_sec, power_watts }
+        Self {
+            joules: power_watts * duration_sec,
+            duration_sec,
+            power_watts,
+        }
     }
 
     /// Create from joules and duration
     pub fn from_joules_duration(joules: f64, duration_sec: f64) -> Self {
-        let power_watts = if duration_sec > 0.0 { joules / duration_sec } else { 0.0 };
-        Self { joules, duration_sec, power_watts }
+        let power_watts = if duration_sec > 0.0 {
+            joules / duration_sec
+        } else {
+            0.0
+        };
+        Self {
+            joules,
+            duration_sec,
+            power_watts,
+        }
     }
 
     /// Get kWh
@@ -161,7 +178,11 @@ impl CostResult {
         duration_sec: f64,
         token_count: u64,
     ) -> Self {
-        let cost_per_token = if token_count > 0 { cost / token_count as f64 } else { 0.0 };
+        let cost_per_token = if token_count > 0 {
+            cost / token_count as f64
+        } else {
+            0.0
+        };
 
         Self {
             total_cost: cost,
@@ -353,8 +374,13 @@ impl CostTracker {
         let energy_kwh = energy.kwh();
         let carbon_g = energy_kwh * self.carbon_intensity;
 
-        let result =
-            CostResult::new(cost, energy.joules, carbon_g, energy.duration_sec, token_count);
+        let result = CostResult::new(
+            cost,
+            energy.joules,
+            carbon_g,
+            energy.duration_sec,
+            token_count,
+        );
 
         self.total_spend += cost;
 
@@ -399,9 +425,14 @@ impl CostTracker {
         }
 
         // Compare last 10 to previous 10
-        let recent: f64 =
-            self.history.iter().rev().take(10).map(|r| r.cost_per_million_tokens).sum::<f64>()
-                / 10.0;
+        let recent: f64 = self
+            .history
+            .iter()
+            .rev()
+            .take(10)
+            .map(|r| r.cost_per_million_tokens)
+            .sum::<f64>()
+            / 10.0;
 
         let older_start = self.history.len().saturating_sub(20);
         let older: f64 = self.history[older_start..older_start + 10.min(self.history.len() - 10)]
@@ -427,9 +458,9 @@ impl CostTracker {
 
     /// Export history to CSV
     pub fn export_csv(&self) -> String {
-        let mut lines =
-            vec!["duration_sec,token_count,total_cost,cost_per_million,energy_kwh,carbon_g"
-                .to_string()];
+        let mut lines = vec![
+            "duration_sec,token_count,total_cost,cost_per_million,energy_kwh,carbon_g".to_string(),
+        ];
 
         for result in &self.history {
             lines.push(format!(

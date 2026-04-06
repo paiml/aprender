@@ -36,19 +36,28 @@ impl Complex {
     /// Complex conjugate.
     #[inline]
     pub fn conj(self) -> Self {
-        Self { re: self.re, im: -self.im }
+        Self {
+            re: self.re,
+            im: -self.im,
+        }
     }
 
     /// Create from polar form: r * e^(iθ).
     #[inline]
     pub fn from_polar(r: f32, theta: f32) -> Self {
-        Self { re: r * theta.cos(), im: r * theta.sin() }
+        Self {
+            re: r * theta.cos(),
+            im: r * theta.sin(),
+        }
     }
 
     /// Scale by a real number.
     #[inline]
     pub fn scale(self, s: f32) -> Self {
-        Self { re: self.re * s, im: self.im * s }
+        Self {
+            re: self.re * s,
+            im: self.im * s,
+        }
     }
 }
 
@@ -56,7 +65,10 @@ impl Add for Complex {
     type Output = Self;
     #[inline]
     fn add(self, rhs: Self) -> Self {
-        Self { re: self.re + rhs.re, im: self.im + rhs.im }
+        Self {
+            re: self.re + rhs.re,
+            im: self.im + rhs.im,
+        }
     }
 }
 
@@ -64,7 +76,10 @@ impl Sub for Complex {
     type Output = Self;
     #[inline]
     fn sub(self, rhs: Self) -> Self {
-        Self { re: self.re - rhs.re, im: self.im - rhs.im }
+        Self {
+            re: self.re - rhs.re,
+            im: self.im - rhs.im,
+        }
     }
 }
 
@@ -72,6 +87,9 @@ impl Mul for Complex {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Self) -> Self {
-        Self { re: self.re * rhs.re - self.im * rhs.im, im: self.re * rhs.im + self.im * rhs.re }
+        Self {
+            re: self.re * rhs.re - self.im * rhs.im,
+            im: self.re * rhs.im + self.im * rhs.re,
+        }
     }
 }

@@ -236,10 +236,18 @@ mod tests {
 
     #[test]
     fn test_source_location_display() {
-        let loc = SourceLocation { line: 10, column: 5, file: Some("test.ptx".into()) };
+        let loc = SourceLocation {
+            line: 10,
+            column: 5,
+            file: Some("test.ptx".into()),
+        };
         assert_eq!(format!("{}", loc), "test.ptx:10:5");
 
-        let loc = SourceLocation { line: 10, column: 5, file: None };
+        let loc = SourceLocation {
+            line: 10,
+            column: 5,
+            file: None,
+        };
         assert_eq!(format!("{}", loc), "10:5");
     }
 

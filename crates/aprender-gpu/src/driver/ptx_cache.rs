@@ -129,7 +129,10 @@ pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
             let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
 
         let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
@@ -138,8 +141,11 @@ pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
         for i in 0..64 {
             let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
             let ch = (e & f) ^ ((!e) & g);
-            let temp1 =
-                hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(SHA256_K[i]).wrapping_add(w[i]);
+            let temp1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(SHA256_K[i])
+                .wrapping_add(w[i]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let maj = (a & b) ^ (a & c) ^ (b & c);
             let temp2 = s0.wrapping_add(maj);
@@ -207,7 +213,12 @@ pub(crate) fn ptx_cache_key(ptx: &str, jit_target: c_uint, driver_version: i32) 
 pub(crate) fn ptx_cache_dir() -> Option<PathBuf> {
     // Use $HOME directly (no external deps like `dirs` crate)
     let home = std::env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".cache").join("trueno").join("ptx"))
+    Some(
+        PathBuf::from(home)
+            .join(".cache")
+            .join("trueno")
+            .join("ptx"),
+    )
 }
 
 /// Try to load a cached cubin from disk.
@@ -405,14 +416,20 @@ mod tests {
         let hex = hex_digest(&digest);
         assert_eq!(hex.len(), 64);
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(hex, "0000000000000000000000000000000000000000000000000000000000000000");
+        assert_eq!(
+            hex,
+            "0000000000000000000000000000000000000000000000000000000000000000"
+        );
     }
 
     #[test]
     fn test_hex_digest_ff() {
         let digest = [0xFF; 32];
         let hex = hex_digest(&digest);
-        assert_eq!(hex, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+        assert_eq!(
+            hex,
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
     }
 
     #[test]

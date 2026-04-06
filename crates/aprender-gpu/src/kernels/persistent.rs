@@ -57,7 +57,12 @@ impl PersistentDecoderKernel {
     /// * `max_seq_len` - Maximum sequence length to process
     #[must_use]
     pub fn new(hidden_size: u32, num_layers: u32, max_seq_len: u32) -> Self {
-        Self { hidden_size, num_layers, max_seq_len, block_size: 256 }
+        Self {
+            hidden_size,
+            num_layers,
+            max_seq_len,
+            block_size: 256,
+        }
     }
 
     /// Set custom block size

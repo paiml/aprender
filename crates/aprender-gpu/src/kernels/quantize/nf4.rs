@@ -62,7 +62,12 @@ impl Nf4GemmKernel {
     /// `k` must be divisible by 64 (NF4 block size).
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, tile_size: 32 }
+        Self {
+            m,
+            n,
+            k,
+            tile_size: 32,
+        }
     }
 
     /// Set output tile size.
@@ -414,7 +419,12 @@ impl Nf4GemmTransposeKernel {
     /// Create a new NF4 transposed GEMM kernel.
     #[must_use]
     pub fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, tile_size: 16 }
+        Self {
+            m,
+            n,
+            k,
+            tile_size: 16,
+        }
     }
 
     /// Number of NF4 blocks per column of B (K / 64).
@@ -609,7 +619,10 @@ mod tests {
         // Verify parameters declared
         assert!(ptx.contains("a_ptr"), "PTX missing a_ptr param");
         assert!(ptx.contains("b_nf4_ptr"), "PTX missing b_nf4_ptr param");
-        assert!(ptx.contains("b_scales_ptr"), "PTX missing b_scales_ptr param");
+        assert!(
+            ptx.contains("b_scales_ptr"),
+            "PTX missing b_scales_ptr param"
+        );
         assert!(ptx.contains("c_ptr"), "PTX missing c_ptr param");
 
         // Register-based LUT: no shared memory, codebook is in registers.
@@ -655,7 +668,10 @@ mod tests {
         let kernel = Nf4GemmTransposeKernel::new(128, 896, 896);
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains("nf4_gemm_transpose"), "PTX missing kernel name");
+        assert!(
+            ptx.contains("nf4_gemm_transpose"),
+            "PTX missing kernel name"
+        );
         assert!(ptx.contains("a_ptr"), "PTX missing a_ptr param");
         assert!(ptx.contains("b_nf4_ptr"), "PTX missing b_nf4_ptr param");
         assert!(ptx.contains("c_ptr"), "PTX missing c_ptr param");

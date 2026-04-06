@@ -10,11 +10,13 @@ use trueno_gpu::ptx::{PtxComparison, PtxControl, PtxKernel, PtxType};
 
 #[test]
 fn golden_ld_global_f32_v4_instruction() {
-    let kernel = PtxKernel::new("test_ld_v4").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _vals = ctx.ld_global_f32_v4(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_v4")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _vals = ctx.ld_global_f32_v4(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     // Golden: ld.global.v4.f32 {%f0, %f1, %f2, %f3}, [%rd0]
@@ -43,7 +45,11 @@ fn golden_and_pred_instruction() {
 
     let ptx = kernel.emit();
     // Golden: and.pred %p{dst}, %p{src1}, %p{src2}
-    assert!(ptx.contains("and.pred"), "GOLDEN FAIL: and.pred instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("and.pred"),
+        "GOLDEN FAIL: and.pred instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -79,7 +85,11 @@ fn golden_mov_u64_imm_instruction() {
 
     let ptx = kernel.emit();
     // Golden: mov.u64 %rd{dst}, {immediate}
-    assert!(ptx.contains("mov.u64"), "GOLDEN FAIL: mov.u64 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("mov.u64"),
+        "GOLDEN FAIL: mov.u64 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -128,7 +138,11 @@ fn golden_add_f32_inplace_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("add.f32"), "GOLDEN FAIL: add.f32 inplace not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("add.f32"),
+        "GOLDEN FAIL: add.f32 inplace not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -141,7 +155,11 @@ fn golden_mul_f32_inplace_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.f32"), "GOLDEN FAIL: mul.f32 inplace not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("mul.f32"),
+        "GOLDEN FAIL: mul.f32 inplace not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -153,7 +171,11 @@ fn golden_add_u32_inplace_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("add.u32"), "GOLDEN FAIL: add.u32 inplace not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("add.u32"),
+        "GOLDEN FAIL: add.u32 inplace not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -167,5 +189,9 @@ fn golden_fma_f32_inplace_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("fma"), "GOLDEN FAIL: fma inplace not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("fma"),
+        "GOLDEN FAIL: fma inplace not found\nPTX:\n{}",
+        ptx
+    );
 }

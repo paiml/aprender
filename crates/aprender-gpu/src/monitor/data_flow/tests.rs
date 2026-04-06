@@ -210,9 +210,18 @@ fn h036_history_update() {
         metrics.update_history();
     }
 
-    assert_eq!(metrics.pcie_tx_history.len(), DataFlowMetrics::MAX_HISTORY_POINTS);
-    assert_eq!(metrics.pcie_rx_history.len(), DataFlowMetrics::MAX_HISTORY_POINTS);
-    assert_eq!(metrics.memory_bus_history.len(), DataFlowMetrics::MAX_HISTORY_POINTS);
+    assert_eq!(
+        metrics.pcie_tx_history.len(),
+        DataFlowMetrics::MAX_HISTORY_POINTS
+    );
+    assert_eq!(
+        metrics.pcie_rx_history.len(),
+        DataFlowMetrics::MAX_HISTORY_POINTS
+    );
+    assert_eq!(
+        metrics.memory_bus_history.len(),
+        DataFlowMetrics::MAX_HISTORY_POINTS
+    );
 }
 
 // =========================================================================
@@ -244,7 +253,10 @@ fn h037_completed_transfer_limit() {
         metrics.complete_transfer(id);
     }
 
-    assert_eq!(metrics.completed_transfers.len(), DataFlowMetrics::MAX_COMPLETED_TRANSFERS);
+    assert_eq!(
+        metrics.completed_transfers.len(),
+        DataFlowMetrics::MAX_COMPLETED_TRANSFERS
+    );
 }
 
 #[test]

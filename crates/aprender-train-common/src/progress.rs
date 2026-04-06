@@ -18,7 +18,13 @@ pub struct ProgressBar {
 impl ProgressBar {
     /// Create a new progress bar with the given total.
     pub fn new(total: u64) -> Self {
-        Self { total, current: 0, width: 40, message: String::new(), enabled: true }
+        Self {
+            total,
+            current: 0,
+            width: 40,
+            message: String::new(),
+            enabled: true,
+        }
     }
 
     /// Set the display width.
@@ -170,7 +176,11 @@ pub struct StepTracker {
 impl StepTracker {
     /// Create a new step tracker.
     pub fn new(steps: Vec<impl Into<String>>) -> Self {
-        Self { steps: steps.into_iter().map(Into::into).collect(), current: 0, enabled: true }
+        Self {
+            steps: steps.into_iter().map(Into::into).collect(),
+            current: 0,
+            enabled: true,
+        }
     }
 
     /// Set whether output is enabled.

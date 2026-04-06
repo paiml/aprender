@@ -90,10 +90,20 @@ fn validate_3d(
         return Err(FftError::ZeroLength);
     }
     if in_len != total {
-        return Err(FftError::DimensionMismatch3d { len: in_len, nx, ny, nz });
+        return Err(FftError::DimensionMismatch3d {
+            len: in_len,
+            nx,
+            ny,
+            nz,
+        });
     }
     if out_len != total {
-        return Err(FftError::DimensionMismatch3d { len: out_len, nx, ny, nz });
+        return Err(FftError::DimensionMismatch3d {
+            len: out_len,
+            nx,
+            ny,
+            nz,
+        });
     }
     Ok(())
 }
@@ -206,10 +216,16 @@ pub fn fft_batched(
 ) -> Result<(), FftError> {
     let total = n * batch_count;
     if input.len() != total {
-        return Err(FftError::OutputLengthMismatch { expected: total, got: input.len() });
+        return Err(FftError::OutputLengthMismatch {
+            expected: total,
+            got: input.len(),
+        });
     }
     if output.len() != total {
-        return Err(FftError::OutputLengthMismatch { expected: total, got: output.len() });
+        return Err(FftError::OutputLengthMismatch {
+            expected: total,
+            got: output.len(),
+        });
     }
 
     let plan = FftPlan::new(n)?;

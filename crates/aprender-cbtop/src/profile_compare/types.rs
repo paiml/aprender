@@ -91,7 +91,8 @@ impl BenchmarkProfile {
 
     /// Add a metric with samples
     pub fn add_metric(&mut self, name: impl Into<String>, samples: Vec<f64>) {
-        self.metrics.insert(name.into(), MetricSamples::new(samples));
+        self.metrics
+            .insert(name.into(), MetricSamples::new(samples));
     }
 
     /// Get metric by name
@@ -136,7 +137,12 @@ impl MetricSamples {
             (mean, variance, std_dev)
         };
 
-        Self { values, mean, variance, std_dev }
+        Self {
+            values,
+            mean,
+            variance,
+            std_dev,
+        }
     }
 
     /// Get sample count
@@ -166,7 +172,10 @@ impl MetricSamples {
 
     /// Get maximum value
     pub fn max(&self) -> f64 {
-        self.values.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+        self.values
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max)
     }
 }
 

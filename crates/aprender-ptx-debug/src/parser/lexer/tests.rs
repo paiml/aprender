@@ -7,16 +7,28 @@ fn lex_directives() {
 
     let tok = lexer.next_token().expect("lexer should produce token");
     assert_eq!(tok.kind, TokenKind::Directive);
-    assert!(tok.text.contains(".version"), "Expected .version, got: {}", tok.text);
+    assert!(
+        tok.text.contains(".version"),
+        "Expected .version, got: {}",
+        tok.text
+    );
     assert!(tok.text.contains("8.0"), "Expected 8.0, got: {}", tok.text);
 
     let tok = lexer.next_token().expect("lexer should produce token");
     assert_eq!(tok.kind, TokenKind::Directive);
-    assert!(tok.text.contains(".target"), "Expected .target, got: {}", tok.text);
+    assert!(
+        tok.text.contains(".target"),
+        "Expected .target, got: {}",
+        tok.text
+    );
 
     let tok = lexer.next_token().expect("lexer should produce token");
     assert_eq!(tok.kind, TokenKind::Directive);
-    assert!(tok.text.contains(".address_size"), "Expected .address_size, got: {}", tok.text);
+    assert!(
+        tok.text.contains(".address_size"),
+        "Expected .address_size, got: {}",
+        tok.text
+    );
 }
 
 #[test]

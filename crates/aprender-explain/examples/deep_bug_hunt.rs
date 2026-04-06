@@ -19,7 +19,13 @@ struct BugTally {
 
 impl BugTally {
     fn new() -> Self {
-        Self { total: 0, p0: 0, p1: 0, p2: 0, by_class: HashMap::new() }
+        Self {
+            total: 0,
+            p0: 0,
+            p1: 0,
+            p2: 0,
+            by_class: HashMap::new(),
+        }
     }
 }
 
@@ -41,13 +47,31 @@ fn generate_all_kernels() -> Vec<(&'static str, String)> {
         // GEMM variants
         ("gemm_naive_32", GemmKernel::naive(32, 32, 32).emit_ptx()),
         ("gemm_naive_64", GemmKernel::naive(64, 64, 64).emit_ptx()),
-        ("gemm_naive_128", GemmKernel::naive(128, 128, 128).emit_ptx()),
-        ("gemm_naive_256", GemmKernel::naive(256, 256, 256).emit_ptx()),
+        (
+            "gemm_naive_128",
+            GemmKernel::naive(128, 128, 128).emit_ptx(),
+        ),
+        (
+            "gemm_naive_256",
+            GemmKernel::naive(256, 256, 256).emit_ptx(),
+        ),
         ("gemm_tiled_32", GemmKernel::tiled(32, 32, 32, 8).emit_ptx()),
-        ("gemm_tiled_64", GemmKernel::tiled(64, 64, 64, 16).emit_ptx()),
-        ("gemm_tiled_128", GemmKernel::tiled(128, 128, 128, 32).emit_ptx()),
-        ("gemm_tensor_core", GemmKernel::tensor_core(64, 64, 64).emit_ptx()),
-        ("gemm_wmma_fp16", GemmKernel::wmma_fp16(64, 64, 64).emit_ptx()),
+        (
+            "gemm_tiled_64",
+            GemmKernel::tiled(64, 64, 64, 16).emit_ptx(),
+        ),
+        (
+            "gemm_tiled_128",
+            GemmKernel::tiled(128, 128, 128, 32).emit_ptx(),
+        ),
+        (
+            "gemm_tensor_core",
+            GemmKernel::tensor_core(64, 64, 64).emit_ptx(),
+        ),
+        (
+            "gemm_wmma_fp16",
+            GemmKernel::wmma_fp16(64, 64, 64).emit_ptx(),
+        ),
         // Softmax variants
         ("softmax_256", SoftmaxKernel::new(256).emit_ptx()),
         ("softmax_1024", SoftmaxKernel::new(1024).emit_ptx()),
@@ -74,12 +98,30 @@ fn generate_all_kernels() -> Vec<(&'static str, String)> {
         ("q6k_64", Q6KKernel::new(64, 64, 256).emit_ptx()),
         ("q6k_128", Q6KKernel::new(128, 128, 256).emit_ptx()),
         // BiasActivation variants (epilogue kernels)
-        ("bias_activation_none_1024", BiasActivationKernel::new(1024, 64).emit_ptx()),
-        ("bias_activation_relu_1024", BiasActivationKernel::new(1024, 64).with_relu().emit_ptx()),
-        ("bias_activation_gelu_1024", BiasActivationKernel::new(1024, 64).with_gelu().emit_ptx()),
-        ("bias_activation_none_4096", BiasActivationKernel::new(4096, 256).emit_ptx()),
-        ("bias_activation_relu_4096", BiasActivationKernel::new(4096, 256).with_relu().emit_ptx()),
-        ("bias_activation_gelu_4096", BiasActivationKernel::new(4096, 256).with_gelu().emit_ptx()),
+        (
+            "bias_activation_none_1024",
+            BiasActivationKernel::new(1024, 64).emit_ptx(),
+        ),
+        (
+            "bias_activation_relu_1024",
+            BiasActivationKernel::new(1024, 64).with_relu().emit_ptx(),
+        ),
+        (
+            "bias_activation_gelu_1024",
+            BiasActivationKernel::new(1024, 64).with_gelu().emit_ptx(),
+        ),
+        (
+            "bias_activation_none_4096",
+            BiasActivationKernel::new(4096, 256).emit_ptx(),
+        ),
+        (
+            "bias_activation_relu_4096",
+            BiasActivationKernel::new(4096, 256).with_relu().emit_ptx(),
+        ),
+        (
+            "bias_activation_gelu_4096",
+            BiasActivationKernel::new(4096, 256).with_gelu().emit_ptx(),
+        ),
     ]
 }
 
@@ -101,7 +143,10 @@ fn analyze_and_print_kernel(
     tally.p2 += p2;
 
     for bug in &result.bugs {
-        *tally.by_class.entry(bug.class.code().to_string()).or_insert(0) += 1;
+        *tally
+            .by_class
+            .entry(bug.class.code().to_string())
+            .or_insert(0) += 1;
     }
 
     if result.has_bugs() {
@@ -122,7 +167,12 @@ fn analyze_and_print_kernel(
             p2
         );
         for bug in &result.bugs {
-            println!("   └─ [{}] {}: {}", bug.class.severity(), bug.class.code(), bug.message);
+            println!(
+                "   └─ [{}] {}: {}",
+                bug.class.severity(),
+                bug.class.code(),
+                bug.message
+            );
             if let Some(fix) = &bug.fix {
                 println!("      Fix: {}", fix);
             }
@@ -160,7 +210,10 @@ fn print_strict_summary(tally: &BugTally, kernel_count: usize) {
     }
 
     if tally.p0 > 0 {
-        println!("\n⚠️  CRITICAL: {} P0 bugs found - these need immediate attention!", tally.p0);
+        println!(
+            "\n⚠️  CRITICAL: {} P0 bugs found - these need immediate attention!",
+            tally.p0
+        );
     }
 }
 
@@ -246,6 +299,9 @@ fn run_production_analysis(kernels: &[(&str, String)]) {
     if prod_p0 == 0 && prod_bugs == 0 {
         println!("\n✅ ALL KERNELS PASS PRODUCTION QUALITY GATE");
     } else if prod_p0 == 0 {
-        println!("\n✅ No critical bugs - {} advisory warnings remain", prod_bugs);
+        println!(
+            "\n✅ No critical bugs - {} advisory warnings remain",
+            prod_bugs
+        );
     }
 }

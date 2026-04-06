@@ -74,7 +74,13 @@ impl<T> GpuBuffer<T> {
     /// without triggering the borrow checker.
     #[must_use]
     pub unsafe fn from_raw_parts(ptr: CUdeviceptr, len: usize) -> Self {
-        Self { ptr, len, host_ptr: None, ctx: None, _marker: PhantomData }
+        Self {
+            ptr,
+            len,
+            host_ptr: None,
+            ctx: None,
+            _marker: PhantomData,
+        }
     }
 
     /// Allocate a new GPU buffer
@@ -117,7 +123,13 @@ impl<T> GpuBuffer<T> {
         let result = unsafe { (driver.cuMemAlloc)(&mut ptr, size) };
         CudaDriver::check(result).map_err(|e| GpuError::MemoryAllocation(e.to_string()))?;
 
-        Ok(Self { ptr, len, host_ptr: None, ctx: ctx_handle, _marker: PhantomData })
+        Ok(Self {
+            ptr,
+            len,
+            host_ptr: None,
+            ctx: ctx_handle,
+            _marker: PhantomData,
+        })
     }
 
     /// PMAT-394: Allocate managed (unified) memory for Grace Blackwell.
@@ -143,7 +155,13 @@ impl<T> GpuBuffer<T> {
         CudaDriver::check(result).map_err(|e| {
             GpuError::MemoryAllocation(format!("cuMemAllocManaged({} bytes): {}", size, e))
         })?;
-        Ok(Self { ptr, len, host_ptr: None, ctx: ctx_handle, _marker: PhantomData })
+        Ok(Self {
+            ptr,
+            len,
+            host_ptr: None,
+            ctx: ctx_handle,
+            _marker: PhantomData,
+        })
     }
 
     /// PMAT-396: Register existing host memory for GPU access (zero-copy).
@@ -154,7 +172,13 @@ impl<T> GpuBuffer<T> {
     /// and must outlive this buffer. Drop does NOT free the host memory.
     pub unsafe fn from_host_registered(host_ptr: *mut T, len: usize) -> Result<Self, GpuError> {
         if len == 0 {
-            return Ok(Self { ptr: 0, len: 0, host_ptr: None, ctx: None, _marker: PhantomData });
+            return Ok(Self {
+                ptr: 0,
+                len: 0,
+                host_ptr: None,
+                ctx: None,
+                _marker: PhantomData,
+            });
         }
         let driver = get_driver()?;
         let size = len * mem::size_of::<T>();
@@ -190,7 +214,9 @@ impl<T> GpuBuffer<T> {
         let driver = get_driver()?;
         let result = unsafe { (driver.cuMemsetD32Async)(self.ptr, 0, self.len, stream.raw()) };
         if result != CUDA_SUCCESS {
-            return Err(GpuError::Transfer(format!("cuMemsetD32Async failed: {result}")));
+            return Err(GpuError::Transfer(format!(
+                "cuMemsetD32Async failed: {result}"
+            )));
         }
         Ok(())
     }
@@ -268,7 +294,11 @@ impl<T> GpuBuffer<T> {
     /// `&GpuBuffer<T>` while avoiding borrow checker conflicts.
     #[must_use]
     pub fn clone_metadata(&self) -> GpuBufferView<T> {
-        GpuBufferView { ptr: self.ptr, len: self.len, _marker: PhantomData }
+        GpuBufferView {
+            ptr: self.ptr,
+            len: self.len,
+            _marker: PhantomData,
+        }
     }
 }
 

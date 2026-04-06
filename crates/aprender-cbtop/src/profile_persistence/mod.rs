@@ -70,13 +70,19 @@ pub struct ProfileManager {
 impl ProfileManager {
     /// Create a new profile manager with the given directory
     pub fn new(profile_dir: PathBuf) -> Self {
-        Self { profile_dir, cache: HashMap::new(), default_profile: None }
+        Self {
+            profile_dir,
+            cache: HashMap::new(),
+            default_profile: None,
+        }
     }
 
     /// Create with default profile directory (~/.config/cbtop/profiles)
     pub fn with_default_dir() -> Self {
-        let profile_dir =
-            dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("cbtop").join("profiles");
+        let profile_dir = dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("cbtop")
+            .join("profiles");
         Self::new(profile_dir)
     }
 

@@ -64,7 +64,10 @@ impl NullSentinelFuzzer {
     /// Create a new fuzzer with the given config.
     #[must_use]
     pub fn new(config: NullFuzzerConfig) -> Self {
-        Self { config, call_index: 0 }
+        Self {
+            config,
+            call_index: 0,
+        }
     }
 
     /// Returns the current configuration.
@@ -136,7 +139,12 @@ mod tests {
 
     #[test]
     fn report_catch_rate_all_caught() {
-        let report = NullFuzzerReport { total_calls: 100, injections: 10, caught: 10, crashes: 0 };
+        let report = NullFuzzerReport {
+            total_calls: 100,
+            injections: 10,
+            caught: 10,
+            crashes: 0,
+        };
         assert!((report.catch_rate() - 1.0).abs() < f64::EPSILON);
     }
 
@@ -149,7 +157,10 @@ mod tests {
         };
         let fuzzer = NullSentinelFuzzer::new(config);
         let retrieved = fuzzer.config();
-        assert!(matches!(retrieved.strategy, InjectionStrategy::Periodic { interval: 7 }));
+        assert!(matches!(
+            retrieved.strategy,
+            InjectionStrategy::Periodic { interval: 7 }
+        ));
         assert_eq!(retrieved.total_calls, 500);
         assert!(retrieved.fail_fast);
     }

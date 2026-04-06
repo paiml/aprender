@@ -34,28 +34,40 @@ pub trait PtxControl: KernelBuilderCore {
 
     /// Unconditional branch
     fn branch(&mut self, target: &str) {
-        self.instructions_mut().push(PtxInstruction::new(PtxOp::Bra, PtxType::B32).label(target));
+        self.instructions_mut()
+            .push(PtxInstruction::new(PtxOp::Bra, PtxType::B32).label(target));
     }
 
     /// Conditional branch (if predicate is true)
     fn branch_if(&mut self, pred: VirtualReg, target: &str) {
-        let predicate = Predicate { reg: pred, negated: false };
+        let predicate = Predicate {
+            reg: pred,
+            negated: false,
+        };
         self.instructions_mut().push(
-            PtxInstruction::new(PtxOp::Bra, PtxType::B32).predicated(predicate).label(target),
+            PtxInstruction::new(PtxOp::Bra, PtxType::B32)
+                .predicated(predicate)
+                .label(target),
         );
     }
 
     /// Conditional branch (if predicate is false)
     fn branch_if_not(&mut self, pred: VirtualReg, target: &str) {
-        let predicate = Predicate { reg: pred, negated: true };
+        let predicate = Predicate {
+            reg: pred,
+            negated: true,
+        };
         self.instructions_mut().push(
-            PtxInstruction::new(PtxOp::Bra, PtxType::B32).predicated(predicate).label(target),
+            PtxInstruction::new(PtxOp::Bra, PtxType::B32)
+                .predicated(predicate)
+                .label(target),
         );
     }
 
     /// Return from kernel
     fn ret(&mut self) {
-        self.instructions_mut().push(PtxInstruction::new(PtxOp::Ret, PtxType::Pred));
+        self.instructions_mut()
+            .push(PtxInstruction::new(PtxOp::Ret, PtxType::Pred));
     }
 
     // ===== Immediate Moves =====
@@ -97,7 +109,9 @@ pub trait PtxControl: KernelBuilderCore {
     fn mov_reg(&mut self, src: VirtualReg, ty: PtxType) -> VirtualReg {
         let dst = self.registers_mut().allocate_virtual(ty);
         self.instructions_mut().push(
-            PtxInstruction::new(PtxOp::Mov, ty).dst(Operand::Reg(dst)).src(Operand::Reg(src)),
+            PtxInstruction::new(PtxOp::Mov, ty)
+                .dst(Operand::Reg(dst))
+                .src(Operand::Reg(src)),
         );
         dst
     }
@@ -163,9 +177,21 @@ mod tests {
         assert!(builder.instructions[0].predicate.is_some());
         assert!(builder.instructions[1].predicate.is_some());
         // First one not negated
-        assert!(!builder.instructions[0].predicate.as_ref().expect("test").negated);
+        assert!(
+            !builder.instructions[0]
+                .predicate
+                .as_ref()
+                .expect("test")
+                .negated
+        );
         // Second one negated
-        assert!(builder.instructions[1].predicate.as_ref().expect("test").negated);
+        assert!(
+            builder.instructions[1]
+                .predicate
+                .as_ref()
+                .expect("test")
+                .negated
+        );
     }
 
     #[test]

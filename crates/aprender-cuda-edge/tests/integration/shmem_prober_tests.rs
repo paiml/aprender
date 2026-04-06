@@ -14,7 +14,10 @@ use trueno_cuda_edge::shmem_prober::{
 fn claim_11_sentinel_unchanged_by_correct_code() {
     // Simulate correct behavior: sentinel values remain unchanged
     let violations = check_sentinels(SENTINEL_BEFORE, SENTINEL_AFTER);
-    assert!(violations.is_empty(), "Correct code must not corrupt sentinels");
+    assert!(
+        violations.is_empty(),
+        "Correct code must not corrupt sentinels"
+    );
 }
 
 /// Claim 12: Off-by-one write overwrites sentinel
@@ -31,7 +34,10 @@ fn claim_12_off_by_one_detected() {
 fn claim_13_full_bank_conflict_detected() {
     let injector = BankConflictInjector::default();
     let serialization = injector.expected_serialization(AccessPattern::FullConflict);
-    assert_eq!(serialization, 32, "32-way bank conflict must have serialization factor 32");
+    assert_eq!(
+        serialization, 32,
+        "32-way bank conflict must have serialization factor 32"
+    );
 }
 
 /// Claim 14: Padded access eliminates bank conflicts
@@ -39,7 +45,10 @@ fn claim_13_full_bank_conflict_detected() {
 fn claim_14_padded_access_no_conflicts() {
     let injector = BankConflictInjector::default();
     let serialization = injector.expected_serialization(AccessPattern::Padded);
-    assert_eq!(serialization, 1, "Padded access must have serialization factor 1");
+    assert_eq!(
+        serialization, 1,
+        "Padded access must have serialization factor 1"
+    );
 }
 
 /// Claim 15: Shared memory overflow caught

@@ -82,7 +82,10 @@ impl BatchedSoftmaxKernel {
     /// Create a new batched softmax kernel
     #[must_use]
     pub const fn new(total_rows: u32, row_size: u32) -> Self {
-        Self { total_rows, row_size }
+        Self {
+            total_rows,
+            row_size,
+        }
     }
 }
 

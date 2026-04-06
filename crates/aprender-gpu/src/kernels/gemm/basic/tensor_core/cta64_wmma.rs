@@ -1430,7 +1430,11 @@ fn build_cta64_wmma_fp16_impl(_m: u32, n: u32, k: u32, double_buffer: bool) -> P
     let a_smem_bytes = (tile_m * tile_k * 2) as usize; // 2048
     let b_smem_bytes = (tile_k * tile_n * 2) as usize; // 2048
     let smem_single = a_smem_bytes + b_smem_bytes; // 4096
-    let smem_bytes = if double_buffer { smem_single * 2 } else { smem_single };
+    let smem_bytes = if double_buffer {
+        smem_single * 2
+    } else {
+        smem_single
+    };
     let n_k_tiles = (k + tile_k - 1) / tile_k;
 
     // Cooperative load: 512 threads, 4 elements each = 2048 elements
@@ -1568,10 +1572,14 @@ fn build_cta64_wmma_fp16_impl(_m: u32, n: u32, k: u32, double_buffer: bool) -> P
                 {
                     let k_off = ctx.mov_u32_imm(0);
                     let k_byte_stride = ctx.mov_u64_imm(0);
-                    let pro_a: Vec<_> =
-                        a_smem_addrs.iter().map(|&a| ctx.add_u32_reg(a, store_buf_off)).collect();
-                    let pro_b: Vec<_> =
-                        b_smem_addrs.iter().map(|&b| ctx.add_u32_reg(b, store_buf_off)).collect();
+                    let pro_a: Vec<_> = a_smem_addrs
+                        .iter()
+                        .map(|&a| ctx.add_u32_reg(a, store_buf_off))
+                        .collect();
+                    let pro_b: Vec<_> = b_smem_addrs
+                        .iter()
+                        .map(|&b| ctx.add_u32_reg(b, store_buf_off))
+                        .collect();
 
                     let k_tile_end = ctx.add_u32_reg(k_off, c_15);
                     let k_ok = ctx.setp_lt_u32(k_tile_end, k_param);
@@ -1644,10 +1652,14 @@ fn build_cta64_wmma_fp16_impl(_m: u32, n: u32, k: u32, double_buffer: bool) -> P
                 let k_off = ctx.mul_u32_reg(k_tile, c_16);
                 let k_byte_stride = ctx.mul_wide_u32(k_off, 2);
 
-                let lp_a: Vec<_> =
-                    a_smem_addrs.iter().map(|&a| ctx.add_u32_reg(a, store_buf_off)).collect();
-                let lp_b: Vec<_> =
-                    b_smem_addrs.iter().map(|&b| ctx.add_u32_reg(b, store_buf_off)).collect();
+                let lp_a: Vec<_> = a_smem_addrs
+                    .iter()
+                    .map(|&a| ctx.add_u32_reg(a, store_buf_off))
+                    .collect();
+                let lp_b: Vec<_> = b_smem_addrs
+                    .iter()
+                    .map(|&b| ctx.add_u32_reg(b, store_buf_off))
+                    .collect();
 
                 let k_tile_end = ctx.add_u32_reg(k_off, c_15);
                 let k_ok = ctx.setp_lt_u32(k_tile_end, k_param);
@@ -1928,7 +1940,9 @@ mod tests {
         // 64×64 single-buffer should have exactly 1 WMMA MMA
         let kernel = build_cta64_wmma_fp16(256, 256, 256);
         let ptx = PtxModule::new().add_kernel(kernel).emit();
-        let mma_count = ptx.matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32").count();
+        let mma_count = ptx
+            .matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32")
+            .count();
         assert_eq!(mma_count, 1, "single-buffer 64×64 should have 1 WMMA MMA");
     }
 
@@ -1967,7 +1981,11 @@ mod tests {
             }
             panic!("no .shared smem found");
         };
-        assert_eq!(extract_smem(&ptx), 8192, "64×64 dbuf needs 8192 bytes (2×4096)");
+        assert_eq!(
+            extract_smem(&ptx),
+            8192,
+            "64×64 dbuf needs 8192 bytes (2×4096)"
+        );
     }
 
     #[test]
@@ -1982,7 +2000,9 @@ mod tests {
     fn test_cta64_dbuf_two_wmma_mma() {
         let kernel = build_cta64_wmma_fp16_dbuf(256, 256, 256);
         let ptx = PtxModule::new().add_kernel(kernel).emit();
-        let mma_count = ptx.matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32").count();
+        let mma_count = ptx
+            .matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32")
+            .count();
         assert_eq!(mma_count, 2, "dbuf should have 2 WMMA (loop + epilogue)");
     }
 
@@ -2006,7 +2026,10 @@ mod tests {
         assert!(
             ptx.contains(", 8;") || ptx.contains(", 8\n"),
             "cp.async must use 8-byte copies, got: {}",
-            ptx.lines().filter(|l| l.contains("cp.async.ca")).next().unwrap_or("")
+            ptx.lines()
+                .filter(|l| l.contains("cp.async.ca"))
+                .next()
+                .unwrap_or("")
         );
     }
 
@@ -2031,7 +2054,9 @@ mod tests {
     fn test_cta64_cpasync_two_wmma() {
         let kernel = build_cta64_wmma_fp16_cpasync(256, 256, 256);
         let ptx = PtxModule::new().add_kernel(kernel).emit();
-        let mma_count = ptx.matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32").count();
+        let mma_count = ptx
+            .matches("wmma.mma.sync.aligned.m16n16k16.row.row.f32.f32")
+            .count();
         assert_eq!(mma_count, 2);
     }
 
@@ -2092,7 +2117,10 @@ mod tests {
             .lines()
             .filter(|l| l.contains("st.global.f32") && !l.contains("st.global.v2.f32"))
             .count();
-        assert!(v2_stores > 0, "must have vectorized stores, got 0 v2 and {scalar_stores} scalar");
+        assert!(
+            v2_stores > 0,
+            "must have vectorized stores, got 0 v2 and {scalar_stores} scalar"
+        );
         assert_eq!(
             scalar_stores, 0,
             "should have 0 scalar stores with coalesced v2, got {scalar_stores}"
@@ -2126,7 +2154,11 @@ mod tests {
             }
             panic!("no .shared smem found");
         };
-        assert_eq!(extract_smem(&ptx), 8192, "mma.sync double-buffer needs 8192 bytes");
+        assert_eq!(
+            extract_smem(&ptx),
+            8192,
+            "mma.sync double-buffer needs 8192 bytes"
+        );
     }
 
     /// FALSIFY-COAL-STORE-001f: mma.sync instruction count (2 per K-tile × 2 halves = 4 total min)
@@ -2134,9 +2166,14 @@ mod tests {
     fn test_mma_sync_instruction_count() {
         let kernel = build_cta64_mma_fp16_cpasync(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
-        let mma_count = ptx.matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32").count();
+        let mma_count = ptx
+            .matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32")
+            .count();
         // Loop body: 2 (left + right), epilogue: 2 (left + right) = 4 minimum
-        assert!(mma_count >= 4, "need ≥4 mma.sync (2 loop + 2 epilogue), got {mma_count}");
+        assert!(
+            mma_count >= 4,
+            "need ≥4 mma.sync (2 loop + 2 epilogue), got {mma_count}"
+        );
     }
 
     /// Analyze instruction mix of the cp.async kernel.
@@ -2157,9 +2194,15 @@ mod tests {
         // - 2 wmma.mma (prologue epilogue uses same MMA, main loop has 1)
         // - Multiple wmma.load (2 per MMA: A + B)
         // - cp.async for data loading
-        assert!(wmma_mma >= 2, "need at least 2 wmma.mma (loop + epilogue), got {wmma_mma}");
+        assert!(
+            wmma_mma >= 2,
+            "need at least 2 wmma.mma (loop + epilogue), got {wmma_mma}"
+        );
         assert!(cp_async >= 2, "need at least 2 cp.async, got {cp_async}");
-        assert!(wmma_load >= 4, "need at least 4 wmma.load (2A + 2B), got {wmma_load}");
+        assert!(
+            wmma_load >= 4,
+            "need at least 4 wmma.load (2A + 2B), got {wmma_load}"
+        );
 
         // Report instruction mix for analysis (visible with --nocapture)
         eprintln!("=== CTA64 cp.async PTX Instruction Analysis ===");
@@ -2209,7 +2252,11 @@ mod tests {
             }
             panic!("no .shared smem found");
         };
-        assert_eq!(extract_smem(&ptx), 12288, "64×128 double-buffer needs 12288 bytes (2×6144)");
+        assert_eq!(
+            extract_smem(&ptx),
+            12288,
+            "64×128 double-buffer needs 12288 bytes (2×6144)"
+        );
     }
 
     /// FALSIFY-CTA64x128-003: 4× mma.sync per K-tile (8 total: loop + epilogue)
@@ -2217,8 +2264,13 @@ mod tests {
     fn test_cta64x128_mma_count() {
         let kernel = build_cta64x128_mma_fp16_cpasync(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
-        let mma_count = ptx.matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32").count();
-        assert_eq!(mma_count, 8, "need 8 mma.sync (4 loop + 4 epilogue), got {mma_count}");
+        let mma_count = ptx
+            .matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32")
+            .count();
+        assert_eq!(
+            mma_count, 8,
+            "need 8 mma.sync (4 loop + 4 epilogue), got {mma_count}"
+        );
     }
 
     /// FALSIFY-CTA64x128-004: 8 v2 stores (2× more than 64×64)
@@ -2227,7 +2279,10 @@ mod tests {
         let kernel = build_cta64x128_mma_fp16_cpasync(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
         let v2_count = ptx.matches("st.global.v2.f32").count();
-        assert_eq!(v2_count, 8, "64×128 needs 8 st.global.v2.f32 stores, got {v2_count}");
+        assert_eq!(
+            v2_count, 8,
+            "64×128 needs 8 st.global.v2.f32 stores, got {v2_count}"
+        );
     }
 
     /// FALSIFY-CTA64x128-005: both 8-byte and 16-byte cp.async (A uses 8, B uses 16)
@@ -2235,8 +2290,12 @@ mod tests {
     fn test_cta64x128_mixed_cpasync_sizes() {
         let kernel = build_cta64x128_mma_fp16_cpasync(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
-        let has_8 = ptx.lines().any(|l| l.contains("cp.async") && l.contains(", 8;"));
-        let has_16 = ptx.lines().any(|l| l.contains("cp.async") && l.contains(", 16;"));
+        let has_8 = ptx
+            .lines()
+            .any(|l| l.contains("cp.async") && l.contains(", 8;"));
+        let has_16 = ptx
+            .lines()
+            .any(|l| l.contains("cp.async") && l.contains(", 16;"));
         assert!(has_8, "must have 8-byte cp.async for A tile");
         assert!(has_16, "must have 16-byte cp.async for B tile");
     }
@@ -2268,7 +2327,11 @@ mod tests {
             }
             panic!("no .shared smem found");
         };
-        assert_eq!(extract_smem(&ptx), 18432, "pipeline needs 18432 bytes (3×6144)");
+        assert_eq!(
+            extract_smem(&ptx),
+            18432,
+            "pipeline needs 18432 bytes (3×6144)"
+        );
     }
 
     /// FALSIFY-PIPELINE-003: 12× mma.sync (4 loop + 4 epi_n-2 + 4 epi_n-1)
@@ -2276,7 +2339,9 @@ mod tests {
     fn test_pipeline_mma_count() {
         let kernel = build_cta64x128_mma_pipeline_fp16(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
-        let mma_count = ptx.matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32").count();
+        let mma_count = ptx
+            .matches("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32")
+            .count();
         assert_eq!(
             mma_count, 12,
             "pipeline needs 12 mma.sync (4 loop + 4 epi + 4 last), got {mma_count}"
@@ -2289,7 +2354,10 @@ mod tests {
         let kernel = build_cta64x128_mma_pipeline_fp16(512, 512, 512);
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
         let v2_count = ptx.matches("st.global.v2.f32").count();
-        assert_eq!(v2_count, 8, "pipeline needs 8 st.global.v2.f32, got {v2_count}");
+        assert_eq!(
+            v2_count, 8,
+            "pipeline needs 8 st.global.v2.f32, got {v2_count}"
+        );
     }
 
     /// FALSIFY-PIPELINE-005: uses wait_group(1) for pipelining

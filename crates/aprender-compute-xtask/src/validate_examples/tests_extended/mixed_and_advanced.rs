@@ -262,7 +262,11 @@ fn test_contains_main_function_with_generics() {
 
 #[test]
 fn test_format_error_list_preserves_order() {
-    let errors = vec!["first".to_string(), "second".to_string(), "third".to_string()];
+    let errors = vec![
+        "first".to_string(),
+        "second".to_string(),
+        "third".to_string(),
+    ];
     let result = format_error_list(&errors, "List");
     let first_pos = result.find("first").unwrap();
     let second_pos = result.find("second").unwrap();

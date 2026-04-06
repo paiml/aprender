@@ -370,8 +370,14 @@ mod tests {
         let kernel = MultiWarpQ6KGemvKernel::new(1536, 1536);
         let ptx = kernel.emit_ptx();
         assert!(ptx.contains(".visible .entry mwv_q6k_gemv"));
-        assert!(ptx.contains(".shared"), "Must use shared memory for cross-warp reduction");
-        assert!(ptx.contains("bar.sync"), "Must have barrier for cross-warp safety");
+        assert!(
+            ptx.contains(".shared"),
+            "Must use shared memory for cross-warp reduction"
+        );
+        assert!(
+            ptx.contains("bar.sync"),
+            "Must have barrier for cross-warp safety"
+        );
     }
 
     /// Contract: kernel builds valid PTX for 7B model dimensions
@@ -413,7 +419,11 @@ mod tests {
     fn test_mwv_q6k_barrier_safety() {
         let kernel = MultiWarpQ6KGemvKernel::new(1536, 1536);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "MWV Q6K must be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "MWV Q6K must be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     /// Contract: kernel name is deterministic
@@ -421,7 +431,11 @@ mod tests {
     fn test_mwv_q6k_name_deterministic() {
         let k1 = MultiWarpQ6KGemvKernel::new(1536, 1536);
         let k2 = MultiWarpQ6KGemvKernel::new(4096, 4096);
-        assert_eq!(k1.name(), k2.name(), "Kernel name must be dimension-independent");
+        assert_eq!(
+            k1.name(),
+            k2.name(),
+            "Kernel name must be dimension-independent"
+        );
         assert_eq!(k1.name(), "mwv_q6k_gemv");
     }
 
@@ -431,8 +445,14 @@ mod tests {
         for warps in [1, 2, 3, 4, 6, 8] {
             let kernel = MultiWarpQ6KGemvKernel::with_warps(1536, 1536, warps);
             let ptx = kernel.emit_ptx();
-            assert!(ptx.contains(".visible .entry"), "Must produce valid PTX for {warps} warps");
-            assert!(ptx.contains("bar.sync"), "Must have barrier even for 1 warp (PARITY-114)");
+            assert!(
+                ptx.contains(".visible .entry"),
+                "Must produce valid PTX for {warps} warps"
+            );
+            assert!(
+                ptx.contains("bar.sync"),
+                "Must have barrier even for 1 warp (PARITY-114)"
+            );
         }
     }
 }

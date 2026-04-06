@@ -25,7 +25,9 @@ fn test_gpu_buffer_round_trip() {
     let buffer = GpuBuffer::from_host(&ctx, &data).expect("Buffer creation MUST succeed");
 
     let mut result = vec![0.0f32; 4];
-    buffer.copy_to_host(&mut result).expect("copy_to_host MUST succeed");
+    buffer
+        .copy_to_host(&mut result)
+        .expect("copy_to_host MUST succeed");
     assert_eq!(result, data, "Round-trip data MUST match");
 }
 
@@ -44,10 +46,14 @@ fn test_gpu_buffer_copy_from_host() {
     let mut buffer: GpuBuffer<f32> = GpuBuffer::new(&ctx, 1024).expect("Buffer new MUST succeed");
 
     let data = vec![42.0f32; 1024];
-    buffer.copy_from_host(&data).expect("copy_from_host MUST succeed");
+    buffer
+        .copy_from_host(&data)
+        .expect("copy_from_host MUST succeed");
 
     let mut result = vec![0.0f32; 1024];
-    buffer.copy_to_host(&mut result).expect("copy_to_host MUST succeed");
+    buffer
+        .copy_to_host(&mut result)
+        .expect("copy_to_host MUST succeed");
     assert_eq!(result[0], 42.0);
     assert_eq!(result[1023], 42.0);
 }
@@ -76,7 +82,9 @@ fn test_gpu_buffer_clone() {
     assert_eq!(cloned.len(), original.len());
 
     let mut result = vec![0.0f32; 4];
-    cloned.copy_to_host(&mut result).expect("copy_to_host MUST succeed");
+    cloned
+        .copy_to_host(&mut result)
+        .expect("copy_to_host MUST succeed");
     assert_eq!(result, data);
 }
 

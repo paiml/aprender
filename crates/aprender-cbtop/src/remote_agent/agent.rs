@@ -26,7 +26,12 @@ pub struct RemoteAgent {
 impl RemoteAgent {
     /// Create a new remote agent
     pub fn new(config: RemoteAgentConfig) -> Self {
-        Self { config, hosts: HashMap::new(), history: Vec::new(), max_history: 1000 }
+        Self {
+            config,
+            hosts: HashMap::new(),
+            history: Vec::new(),
+            max_history: 1000,
+        }
     }
 
     /// Add a host to the agent pool
@@ -38,7 +43,9 @@ impl RemoteAgent {
     /// Remove a host from the pool
     pub fn remove_host(&mut self, host: &str) -> Option<HostState> {
         // Try with default port if not specified
-        self.hosts.remove(host).or_else(|| self.hosts.remove(&format!("{}:22", host)))
+        self.hosts
+            .remove(host)
+            .or_else(|| self.hosts.remove(&format!("{}:22", host)))
     }
 
     /// Get all registered hosts
@@ -72,7 +79,9 @@ impl RemoteAgent {
             let state = self
                 .hosts
                 .get(host_key)
-                .ok_or_else(|| RemoteError::HostNotFound { host: host_key.to_string() })?;
+                .ok_or_else(|| RemoteError::HostNotFound {
+                    host: host_key.to_string(),
+                })?;
             state.config.clone()
         };
 
@@ -85,8 +94,13 @@ impl RemoteAgent {
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
-        let result =
-            CommandResult { host: host_key.to_string(), exit_code, stdout, stderr, duration_ms };
+        let result = CommandResult {
+            host: host_key.to_string(),
+            exit_code,
+            stdout,
+            stderr,
+            duration_ms,
+        };
 
         // Update host state
         if let Some(state) = self.hosts.get_mut(host_key) {
@@ -242,7 +256,13 @@ impl RemoteAgent {
         let (throughput, latency_p50, latency_p99) =
             metrics::compute_metrics(benchmarks, self.config.aggregation);
 
-        (throughput, latency_p50, latency_p99, benchmarks.len(), failure_count)
+        (
+            throughput,
+            latency_p50,
+            latency_p99,
+            benchmarks.len(),
+            failure_count,
+        )
     }
 
     /// Add result to history with size limit

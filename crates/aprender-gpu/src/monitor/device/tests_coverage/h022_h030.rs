@@ -46,7 +46,13 @@ fn h022_mock_device_memory_usage_full() {
 
 #[test]
 fn h023_device_snapshot_field_access() {
-    let mock = MockDevice::new(8 * 1024 * 1024 * 1024, 32 * 1024 * 1024 * 1024, 250.0, 350.0, 72.0);
+    let mock = MockDevice::new(
+        8 * 1024 * 1024 * 1024,
+        32 * 1024 * 1024 * 1024,
+        250.0,
+        350.0,
+        72.0,
+    );
     let snapshot = DeviceSnapshot::capture(&mock).expect("test");
 
     // Verify all fields are accessible and have expected values
@@ -110,7 +116,10 @@ fn h025_cpu_device_read_core_count() {
     let cpu = CpuDevice::new();
     let count = cpu.compute_unit_count();
     assert!(count >= 1, "Should have at least 1 core");
-    assert!(count <= 1024, "Sanity check: should have fewer than 1024 cores");
+    assert!(
+        count <= 1024,
+        "Sanity check: should have fewer than 1024 cores"
+    );
 }
 
 #[test]

@@ -87,17 +87,24 @@ pub fn analyze_ptx(source: &str) -> PtxAnalysis {
     }
 
     // Compute/memory ratio (higher = more compute-bound)
-    let compute_memory_ratio =
-        if memory_ops > 0 { compute_ops as f64 / memory_ops as f64 } else { f64::INFINITY };
+    let compute_memory_ratio = if memory_ops > 0 {
+        compute_ops as f64 / memory_ops as f64
+    } else {
+        f64::INFINITY
+    };
 
     // Register pressure warning
     if registers_declared > 128 {
-        warnings.push(format!("High register usage ({registers_declared}) may limit occupancy"));
+        warnings.push(format!(
+            "High register usage ({registers_declared}) may limit occupancy"
+        ));
     }
 
     // Sync overhead
     if sync_ops > 2 {
-        warnings.push(format!("{sync_ops} barrier syncs — review if all are necessary"));
+        warnings.push(format!(
+            "{sync_ops} barrier syncs — review if all are necessary"
+        ));
     }
 
     PtxAnalysis {
@@ -168,7 +175,10 @@ pub fn analyze_wgsl(source: &str) -> WgslAnalysis {
 
     // Workgroup size warnings
     if let Some(ref ws) = workgroup_size {
-        let total: u32 = ws.split(',').filter_map(|s| s.trim().parse::<u32>().ok()).product();
+        let total: u32 = ws
+            .split(',')
+            .filter_map(|s| s.trim().parse::<u32>().ok())
+            .product();
         if total < 64 {
             warnings.push(format!(
                 "Workgroup size ({ws}) = {total} threads — consider >=64 for GPU occupancy"
@@ -181,7 +191,14 @@ pub fn analyze_wgsl(source: &str) -> WgslAnalysis {
         }
     }
 
-    WgslAnalysis { total_lines, workgroup_size, bindings, has_atomics, has_shared, warnings }
+    WgslAnalysis {
+        total_lines,
+        workgroup_size,
+        bindings,
+        has_atomics,
+        has_shared,
+        warnings,
+    }
 }
 
 /// Result of WGSL static analysis.
@@ -264,7 +281,10 @@ fn render_ptx_analysis(analysis: &PtxAnalysis) {
     println!("    Sync barriers:     {}", analysis.sync_ops);
     println!("    Shared memory ops: {}", analysis.shared_ops);
 
-    println!("\n  Compute/Memory Ratio: {:.2}", analysis.compute_memory_ratio);
+    println!(
+        "\n  Compute/Memory Ratio: {:.2}",
+        analysis.compute_memory_ratio
+    );
     if analysis.compute_memory_ratio < 1.0 {
         println!("    Status: MEMORY-INTENSIVE (more loads than compute)");
     } else if analysis.compute_memory_ratio > 4.0 {
@@ -275,8 +295,14 @@ fn render_ptx_analysis(analysis: &PtxAnalysis) {
 
     println!("\n  Features:");
     println!("    Registers declared: {}", analysis.registers_declared);
-    println!("    Tensor cores (WMMA/MMA): {}", if analysis.has_wmma { "YES" } else { "no" });
-    println!("    FMA instructions: {}", if analysis.has_fma { "YES" } else { "no" });
+    println!(
+        "    Tensor cores (WMMA/MMA): {}",
+        if analysis.has_wmma { "YES" } else { "no" }
+    );
+    println!(
+        "    FMA instructions: {}",
+        if analysis.has_fma { "YES" } else { "no" }
+    );
 
     if !analysis.warnings.is_empty() {
         println!("\n  Warnings:");
@@ -292,11 +318,20 @@ fn render_wgsl_analysis(analysis: &WgslAnalysis) {
     println!("    Lines: {}", analysis.total_lines);
     println!(
         "    Workgroup size: {}",
-        analysis.workgroup_size.as_deref().unwrap_or("not specified")
+        analysis
+            .workgroup_size
+            .as_deref()
+            .unwrap_or("not specified")
     );
     println!("    Bindings: {}", analysis.bindings);
-    println!("    Atomics: {}", if analysis.has_atomics { "YES" } else { "no" });
-    println!("    Shared memory: {}", if analysis.has_shared { "YES" } else { "no" });
+    println!(
+        "    Atomics: {}",
+        if analysis.has_atomics { "YES" } else { "no" }
+    );
+    println!(
+        "    Shared memory: {}",
+        if analysis.has_shared { "YES" } else { "no" }
+    );
 
     if !analysis.warnings.is_empty() {
         println!("\n  Warnings:");

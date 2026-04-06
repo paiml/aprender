@@ -45,7 +45,11 @@ impl LatencyHistogram {
         let max = samples.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
         let range = max - min;
-        let bucket_width = if range > 0.0 { range / bucket_count as f64 } else { 1.0 };
+        let bucket_width = if range > 0.0 {
+            range / bucket_count as f64
+        } else {
+            1.0
+        };
 
         let mut buckets: Vec<HistogramBucket> = (0..bucket_count)
             .map(|i| {
@@ -55,13 +59,21 @@ impl LatencyHistogram {
                 } else {
                     min + (i + 1) as f64 * bucket_width
                 };
-                HistogramBucket { lower, upper, count: 0, percentage: 0.0 }
+                HistogramBucket {
+                    lower,
+                    upper,
+                    count: 0,
+                    percentage: 0.0,
+                }
             })
             .collect();
 
         for &sample in samples {
-            let bucket_idx =
-                if range > 0.0 { ((sample - min) / bucket_width).floor() as usize } else { 0 };
+            let bucket_idx = if range > 0.0 {
+                ((sample - min) / bucket_width).floor() as usize
+            } else {
+                0
+            };
             let idx = bucket_idx.min(bucket_count - 1);
             buckets[idx].count += 1;
         }
@@ -71,12 +83,22 @@ impl LatencyHistogram {
             bucket.percentage = bucket.count as f64 / total as f64 * 100.0;
         }
 
-        let mode_bucket =
-            buckets.iter().enumerate().max_by_key(|(_, b)| b.count).map(|(i, _)| i).unwrap_or(0);
+        let mode_bucket = buckets
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, b)| b.count)
+            .map(|(i, _)| i)
+            .unwrap_or(0);
 
         let entropy = shannon_entropy(&buckets, total);
 
-        Self { buckets, total_samples: total, entropy, mode_bucket, bucket_count }
+        Self {
+            buckets,
+            total_samples: total,
+            entropy,
+            mode_bucket,
+            bucket_count,
+        }
     }
 
     /// Get the mode (most frequent) bucket

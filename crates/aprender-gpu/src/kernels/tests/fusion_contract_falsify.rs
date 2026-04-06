@@ -14,8 +14,10 @@ use std::path::Path;
 /// Path to the kernel-fusion-v1.yaml contract in the aprender crate.
 /// CARGO_MANIFEST_DIR for trueno-gpu is trueno/trueno-gpu, so ../../aprender/
 /// reaches the aprender crate root.
-const CONTRACT_PATH: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/../../aprender/contracts/kernel-fusion-v1.yaml");
+const CONTRACT_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../aprender/contracts/kernel-fusion-v1.yaml"
+);
 
 /// Helper: read the contract YAML as a string, panicking with a clear message if missing.
 fn read_contract() -> String {
@@ -33,22 +35,45 @@ fn read_contract() -> String {
 /// both the YAML documentation and the `.name()` output.
 fn all_fused_kernels() -> Vec<(&'static str, String)> {
     vec![
-        ("FusedSwigluKernel", FusedSwigluKernel::new(4096).name().to_string()),
-        ("BatchedSwigluKernel", BatchedSwigluKernel::new(4096, 4).name().to_string()),
-        ("FusedQKVKernel", FusedQKVKernel::new(3584, 512).name().to_string()),
-        ("FusedGateUpKernel", FusedGateUpKernel::new(3584, 18944).name().to_string()),
+        (
+            "FusedSwigluKernel",
+            FusedSwigluKernel::new(4096).name().to_string(),
+        ),
+        (
+            "BatchedSwigluKernel",
+            BatchedSwigluKernel::new(4096, 4).name().to_string(),
+        ),
+        (
+            "FusedQKVKernel",
+            FusedQKVKernel::new(3584, 512).name().to_string(),
+        ),
+        (
+            "FusedGateUpKernel",
+            FusedGateUpKernel::new(3584, 18944).name().to_string(),
+        ),
         (
             "FusedGemmBiasGeluKernel",
-            FusedGemmBiasGeluKernel::new(512, 2048, 512).name().to_string(),
+            FusedGemmBiasGeluKernel::new(512, 2048, 512)
+                .name()
+                .to_string(),
         ),
         (
             "FusedRmsNormQ4KGemvKernel",
-            FusedRmsNormQ4KGemvKernel::new(3584, 3584).name().to_string(),
+            FusedRmsNormQ4KGemvKernel::new(3584, 3584)
+                .name()
+                .to_string(),
         ),
-        ("FusedGateUpQ4KGemvKernel", FusedGateUpQ4KGemvKernel::new(3584, 18944).name().to_string()),
+        (
+            "FusedGateUpQ4KGemvKernel",
+            FusedGateUpQ4KGemvKernel::new(3584, 18944)
+                .name()
+                .to_string(),
+        ),
         (
             "FusedRmsNormGateUpSwigluQ4KKernel",
-            FusedRmsNormGateUpSwigluQ4KKernel::new(3584, 18944).name().to_string(),
+            FusedRmsNormGateUpSwigluQ4KKernel::new(3584, 18944)
+                .name()
+                .to_string(),
         ),
     ]
 }
@@ -168,7 +193,10 @@ fn is_valid_call_site(trimmed: &str) -> Option<bool> {
     if !trimmed.starts_with("call_site:") {
         return None;
     }
-    let value = trimmed.trim_start_matches("call_site:").trim().trim_matches('"');
+    let value = trimmed
+        .trim_start_matches("call_site:")
+        .trim()
+        .trim_matches('"');
     Some(!value.contains("NOT WIRED") && !value.is_empty())
 }
 
@@ -244,7 +272,10 @@ fn falsify_fusion_003_active_entries_have_call_site() {
 fn falsify_fusion_004_no_comment_only_decisions() {
     let kernels_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/kernels");
     let kernels_path = Path::new(kernels_dir);
-    assert!(kernels_path.is_dir(), "Kernels directory not found at {kernels_dir}");
+    assert!(
+        kernels_path.is_dir(),
+        "Kernels directory not found at {kernels_dir}"
+    );
 
     let suspect_patterns: &[&str] = &[
         "fused.*blocked",
@@ -256,8 +287,12 @@ fn falsify_fusion_004_no_comment_only_decisions() {
         "do not use.*fused",
     ];
 
-    let contract_references: &[&str] =
-        &["kernel-fusion-v1", "FUSION-0", "fusion_decisions", "F-FUSION-001"];
+    let contract_references: &[&str] = &[
+        "kernel-fusion-v1",
+        "FUSION-0",
+        "fusion_decisions",
+        "F-FUSION-001",
+    ];
 
     // Self-exclude: this test file contains the suspect patterns as test data,
     // so we skip it during scanning.
@@ -269,7 +304,9 @@ fn falsify_fusion_004_no_comment_only_decisions() {
         kernels_path,
         suspect_patterns,
         contract_references,
-        self_filename.to_str().unwrap_or("fusion_contract_falsify.rs"),
+        self_filename
+            .to_str()
+            .unwrap_or("fusion_contract_falsify.rs"),
         &mut violations,
     );
 
@@ -313,12 +350,19 @@ fn check_file_for_comment_violations(
         }
 
         let lower = trimmed.to_lowercase();
-        let is_suspect = suspect_patterns.iter().any(|pat| matches_suspect_pattern(&lower, pat));
+        let is_suspect = suspect_patterns
+            .iter()
+            .any(|pat| matches_suspect_pattern(&lower, pat));
 
         if is_suspect {
             let has_contract_ref = contract_references.iter().any(|r| trimmed.contains(r));
             if !has_contract_ref {
-                violations.push(format!("  {}:{}: {}", path.display(), line_num + 1, trimmed));
+                violations.push(format!(
+                    "  {}:{}: {}",
+                    path.display(),
+                    line_num + 1,
+                    trimmed
+                ));
             }
         }
     }
@@ -378,7 +422,10 @@ fn falsify_fusion_005_orphan_detection() {
         let trimmed = line.trim();
         if trimmed.starts_with("fused:") {
             // Extract struct name: e.g. 'fused: "FusedSwigluKernel (trueno-gpu/...)"'
-            let value = trimmed.trim_start_matches("fused:").trim().trim_matches('"');
+            let value = trimmed
+                .trim_start_matches("fused:")
+                .trim()
+                .trim_matches('"');
             // The struct name is the first word before any space or parenthesis
             if let Some(struct_name) = value.split_whitespace().next() {
                 yaml_kernel_names.push(struct_name.to_string());

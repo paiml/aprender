@@ -11,7 +11,9 @@ fn run_gemm_workload(size: usize) -> f64 {
 
     // Use trueno SIMD backend for deterministic performance
     let a_data: Vec<f32> = (0..size).map(|i| (i % 1000) as f32 / 1000.0).collect();
-    let b_data: Vec<f32> = (0..size).map(|i| ((i + 500) % 1000) as f32 / 1000.0).collect();
+    let b_data: Vec<f32> = (0..size)
+        .map(|i| ((i + 500) % 1000) as f32 / 1000.0)
+        .collect();
     let a = Vector::from_slice(&a_data);
     let b = Vector::from_slice(&b_data);
 
@@ -88,7 +90,10 @@ fn f206_determinism_cv_under_5_percent() {
     );
 
     // Verify CI is valid (non-zero, low < high)
-    assert!(ci_low > 0.0, "F206 FALSIFIED: Lower CI bound is not positive");
+    assert!(
+        ci_low > 0.0,
+        "F206 FALSIFIED: Lower CI bound is not positive"
+    );
     assert!(ci_high > ci_low, "F206 FALSIFIED: CI bounds are inverted");
 
     println!("✅ F206 PASSED: CV {:.2}% < {}%", cv, MAX_CV);
@@ -157,15 +162,27 @@ fn f206_ring_buffer_statistics_accurate() {
 
     // Min should be 1.0
     let min = buf.min();
-    assert!((min - 1.0).abs() < 0.001, "F206 FALSIFIED: Min calculation wrong: {} != 1.0", min);
+    assert!(
+        (min - 1.0).abs() < 0.001,
+        "F206 FALSIFIED: Min calculation wrong: {} != 1.0",
+        min
+    );
 
     // Max should be 100.0
     let max = buf.max();
-    assert!((max - 100.0).abs() < 0.001, "F206 FALSIFIED: Max calculation wrong: {} != 100.0", max);
+    assert!(
+        (max - 100.0).abs() < 0.001,
+        "F206 FALSIFIED: Max calculation wrong: {} != 100.0",
+        max
+    );
 
     // P50 should be ~50
     let p50 = buf.percentile(0.5);
-    assert!((p50 - 50.0).abs() < 1.0, "F206 FALSIFIED: P50 calculation wrong: {} != ~50", p50);
+    assert!(
+        (p50 - 50.0).abs() < 1.0,
+        "F206 FALSIFIED: P50 calculation wrong: {} != ~50",
+        p50
+    );
 
     println!("✅ F206 Ring buffer statistics accurate");
 }

@@ -402,10 +402,19 @@ mod tests {
         let ptx = kernel.emit_ptx();
 
         assert!(ptx.contains(".entry conv1d"), "Should have conv1d entry");
-        assert!(ptx.contains(".param .u64 input_ptr"), "Should have input_ptr");
-        assert!(ptx.contains(".param .u64 weight_ptr"), "Should have weight_ptr");
+        assert!(
+            ptx.contains(".param .u64 input_ptr"),
+            "Should have input_ptr"
+        );
+        assert!(
+            ptx.contains(".param .u64 weight_ptr"),
+            "Should have weight_ptr"
+        );
         assert!(ptx.contains(".param .u64 bias_ptr"), "Should have bias_ptr");
-        assert!(ptx.contains(".param .u64 output_ptr"), "Should have output_ptr");
+        assert!(
+            ptx.contains(".param .u64 output_ptr"),
+            "Should have output_ptr"
+        );
         assert!(ptx.contains(".param .u32 seq_len"), "Should have seq_len");
     }
 

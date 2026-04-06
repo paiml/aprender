@@ -1,0 +1,99 @@
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+name = "aprender-present-terminal"
+description = "Terminal backend for Presentar UI framework with zero-allocation rendering"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Internal crates
+presentar-core = { workspace = true }
+
+# Terminal rendering (direct crossterm backend)
+crossterm = "0.28"
+
+# Zero-allocation cell buffer (PROBAR-SPEC-009 compliant)
+compact_str = "0.8"
+bitvec = "1.0"
+unicode-width = "0.2"
+unicode-segmentation = "1.12"
+
+# Error handling
+thiserror = "2.0"
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+# ttop and trueno-viz for parity testing against the reference implementation
+# See SPEC-024 Section 11 - Visual Comparison Findings
+ttop = "2.0"
+trueno-viz = { version = "0.1", features = ["monitor"] }
+
+[[bench]]
+name = "terminal"
+harness = false
+
+[features]
+default = []
+ptop = ["sysinfo", "clap", "serde_json"]
+tui-compare = ["clap"]
+bench-tool = ["clap"]
+score = ["clap", "serde", "serde_json", "serde_yaml_ng"]
+
+# SPEC-024: Enforcement features
+# These features require interface tests to exist and pass
+ptop-release = ["ptop"]  # Use for release builds - triggers stricter enforcement
+
+[dependencies.sysinfo]
+version.workspace = true
+optional = true
+
+[dependencies.clap]
+version = "4"
+features = ["derive"]
+optional = true
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+optional = true
+
+[dependencies.serde_json]
+version = "1"
+optional = true
+
+[dependencies.serde_yaml_ng]
+version = "0.10"
+optional = true
+
+[[bin]]
+name = "score"
+path = "src/bin/score.rs"
+required-features = ["score"]
+
+[[bin]]
+name = "ptop"
+path = "src/bin/ptop.rs"
+required-features = ["ptop"]
+
+[[bin]]
+name = "tui-compare"
+path = "src/bin/tui-compare.rs"
+required-features = ["tui-compare"]
+
+[[bin]]
+name = "cbtop-bench"
+path = "src/bin/cbtop-bench.rs"
+required-features = ["bench-tool"]
+
+[[example]]
+name = "test_connections"
+required-features = ["ptop"]
+
+[lints]
+workspace = true

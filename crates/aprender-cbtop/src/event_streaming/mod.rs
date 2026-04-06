@@ -25,7 +25,10 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// happen in practice).
 #[inline]
 fn now_nanos() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
 }
 
 /// Format a slice of events by applying `formatter` to each element and
@@ -132,8 +135,10 @@ impl MetricEvent {
         line.push(' ');
         let mut field_pairs: Vec<_> = self.fields.iter().collect();
         field_pairs.sort_by_key(|(k, _)| *k);
-        let field_str: Vec<String> =
-            field_pairs.iter().map(|(k, v)| format!("{}={}", k, v)).collect();
+        let field_str: Vec<String> = field_pairs
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect();
         line.push_str(&field_str.join(","));
 
         // Add timestamp
@@ -144,11 +149,17 @@ impl MetricEvent {
 
     /// Format as JSON
     pub fn to_json(&self) -> String {
-        let tags_json: Vec<String> =
-            self.tags.iter().map(|(k, v)| format!("\"{}\":\"{}\"", k, v)).collect();
+        let tags_json: Vec<String> = self
+            .tags
+            .iter()
+            .map(|(k, v)| format!("\"{}\":\"{}\"", k, v))
+            .collect();
 
-        let fields_json: Vec<String> =
-            self.fields.iter().map(|(k, v)| format!("\"{}\":{}", k, v)).collect();
+        let fields_json: Vec<String> = self
+            .fields
+            .iter()
+            .map(|(k, v)| format!("\"{}\":{}", k, v))
+            .collect();
 
         let correlation = self
             .correlation_id
@@ -170,7 +181,9 @@ impl MetricEvent {
 
 /// Escape string for InfluxDB Line Protocol
 fn escape_influx(s: &str) -> String {
-    s.replace(' ', "\\ ").replace(',', "\\,").replace('=', "\\=")
+    s.replace(' ', "\\ ")
+        .replace(',', "\\,")
+        .replace('=', "\\=")
 }
 
 /// Event batch
@@ -187,7 +200,11 @@ pub struct EventBatch {
 impl EventBatch {
     /// Create new batch
     pub fn new(batch_id: u64) -> Self {
-        Self { events: Vec::new(), batch_id, created_ns: now_nanos() }
+        Self {
+            events: Vec::new(),
+            batch_id,
+            created_ns: now_nanos(),
+        }
     }
 
     /// Add event
@@ -231,7 +248,12 @@ pub struct SinkHealth {
 
 impl Default for SinkHealth {
     fn default() -> Self {
-        Self { connected: true, last_write_ns: None, events_written: 0, write_errors: 0 }
+        Self {
+            connected: true,
+            last_write_ns: None,
+            events_written: 0,
+            write_errors: 0,
+        }
     }
 }
 
@@ -250,7 +272,12 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
-        Self { max_retries: 3, initial_delay_ms: 100, max_delay_ms: 10000, multiplier: 2.0 }
+        Self {
+            max_retries: 3,
+            initial_delay_ms: 100,
+            max_delay_ms: 10000,
+            multiplier: 2.0,
+        }
     }
 }
 

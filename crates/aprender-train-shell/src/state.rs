@@ -358,7 +358,8 @@ mod tests {
         use tempfile::NamedTempFile;
 
         let mut file = NamedTempFile::new().expect("temp file creation should succeed");
-        file.write_all(b"not valid json").expect("file write should succeed");
+        file.write_all(b"not valid json")
+            .expect("file write should succeed");
 
         let result = SessionState::load(&file.path().to_path_buf());
         assert!(result.is_err());
@@ -389,8 +390,11 @@ mod tests {
 
     #[test]
     fn test_session_metrics_fields() {
-        let metrics =
-            SessionMetrics { total_commands: 10, successful_commands: 8, total_duration_ms: 1000 };
+        let metrics = SessionMetrics {
+            total_commands: 10,
+            successful_commands: 8,
+            total_duration_ms: 1000,
+        };
         assert_eq!(metrics.success_rate(), 80.0);
         assert_eq!(metrics.avg_duration_ms(), 100.0);
     }

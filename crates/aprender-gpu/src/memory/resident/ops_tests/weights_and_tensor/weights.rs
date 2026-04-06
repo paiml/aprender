@@ -27,7 +27,11 @@ macro_rules! cuda_ctx {
 fn test_gpu_encoder_config_creation() {
     use crate::memory::resident::GpuEncoderConfig;
 
-    let config = GpuEncoderConfig { d_model: 256, n_heads: 4, ffn_dim: 1024 };
+    let config = GpuEncoderConfig {
+        d_model: 256,
+        n_heads: 4,
+        ffn_dim: 1024,
+    };
     assert_eq!(config.d_model, 256);
     assert_eq!(config.n_heads, 4);
     assert_eq!(config.ffn_dim, 1024);
@@ -63,7 +67,13 @@ fn test_gpu_kv_cache_creation() {
     let key = GpuResidentTensor::from_host(&ctx, &vec![0.0f32; cache_size]).unwrap();
     let value = GpuResidentTensor::from_host(&ctx, &vec![0.0f32; cache_size]).unwrap();
 
-    let kv_cache = GpuKvCache { key, value, seq_len: 0, max_seq_len, d_model };
+    let kv_cache = GpuKvCache {
+        key,
+        value,
+        seq_len: 0,
+        max_seq_len,
+        d_model,
+    };
     assert_eq!(kv_cache.seq_len, 0);
     assert_eq!(kv_cache.max_seq_len, max_seq_len);
     assert_eq!(kv_cache.d_model, d_model);
@@ -125,7 +135,11 @@ fn test_forward_encoder_block_gpu() {
     let ffn_dim = 128usize;
     let seq_len = 4usize;
 
-    let config = GpuEncoderConfig { d_model: d_model as u32, n_heads, ffn_dim: ffn_dim as u32 };
+    let config = GpuEncoderConfig {
+        d_model: d_model as u32,
+        n_heads,
+        ffn_dim: ffn_dim as u32,
+    };
 
     // Create weights
     let weights = GpuEncoderBlockWeights {
@@ -148,7 +162,9 @@ fn test_forward_encoder_block_gpu() {
     };
 
     // Input: [seq_len * d_model]
-    let input_data: Vec<f32> = (0..(seq_len * d_model)).map(|i| (i as f32) * 0.01).collect();
+    let input_data: Vec<f32> = (0..(seq_len * d_model))
+        .map(|i| (i as f32) * 0.01)
+        .collect();
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();
 
     let output = forward_encoder_block_gpu(&ctx, &input, &weights, &config).unwrap();
@@ -219,7 +235,10 @@ fn test_gpu_conv_frontend_weights_structure() {
     assert!(weights.conv1_bias.is_device_resident());
     assert!(weights.conv2_weight.is_device_resident());
     assert!(weights.conv2_bias.is_device_resident());
-    assert_eq!(weights.conv1_weight.len(), hidden * in_channels * kernel_size);
+    assert_eq!(
+        weights.conv1_weight.len(),
+        hidden * in_channels * kernel_size
+    );
     assert_eq!(weights.conv2_weight.len(), hidden * hidden * kernel_size);
 }
 
@@ -296,7 +315,11 @@ fn test_forward_encoder_block_with_debug() {
     let ffn_dim = 64usize;
     let seq_len = 2usize;
 
-    let config = GpuEncoderConfig { d_model: d_model as u32, n_heads, ffn_dim: ffn_dim as u32 };
+    let config = GpuEncoderConfig {
+        d_model: d_model as u32,
+        n_heads,
+        ffn_dim: ffn_dim as u32,
+    };
 
     // Create weights
     let weights = GpuEncoderBlockWeights {
@@ -337,7 +360,11 @@ fn test_forward_encoder_block_with_debug() {
 fn test_gpu_encoder_config_clone_and_debug() {
     use crate::memory::resident::GpuEncoderConfig;
 
-    let config = GpuEncoderConfig { d_model: 512, n_heads: 8, ffn_dim: 2048 };
+    let config = GpuEncoderConfig {
+        d_model: 512,
+        n_heads: 8,
+        ffn_dim: 2048,
+    };
 
     // Test Clone
     let cloned = config;

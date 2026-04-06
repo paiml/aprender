@@ -24,7 +24,10 @@ impl Size {
         Self { width, height }
     }
 
-    pub const ZERO: Self = Self { width: 0.0, height: 0.0 };
+    pub const ZERO: Self = Self {
+        width: 0.0,
+        height: 0.0,
+    };
 }
 
 /// Point in terminal cells
@@ -53,11 +56,21 @@ pub struct Rect {
 
 impl Rect {
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn from_size(size: Size) -> Self {
-        Self { x: 0.0, y: 0.0, width: size.width, height: size.height }
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: size.width,
+            height: size.height,
+        }
     }
 
     pub fn size(&self) -> Size {
@@ -80,7 +93,12 @@ pub struct Constraints {
 
 impl Constraints {
     pub const fn new(min_width: f32, max_width: f32, min_height: f32, max_height: f32) -> Self {
-        Self { min_width, max_width, min_height, max_height }
+        Self {
+            min_width,
+            max_width,
+            min_height,
+            max_height,
+        }
     }
 
     pub fn tight(size: Size) -> Self {
@@ -93,7 +111,12 @@ impl Constraints {
     }
 
     pub fn loose(size: Size) -> Self {
-        Self { min_width: 0.0, max_width: size.width, min_height: 0.0, max_height: size.height }
+        Self {
+            min_width: 0.0,
+            max_width: size.width,
+            min_height: 0.0,
+            max_height: size.height,
+        }
     }
 
     pub fn constrain(&self, size: Size) -> Size {
@@ -159,7 +182,13 @@ pub struct TextStyle {
 
 impl TextStyle {
     pub const fn new() -> Self {
-        Self { color: Color::WHITE, background: None, bold: false, italic: false, underline: false }
+        Self {
+            color: Color::WHITE,
+            background: None,
+            bold: false,
+            italic: false,
+            underline: false,
+        }
     }
 
     pub const fn color(mut self, color: Color) -> Self {

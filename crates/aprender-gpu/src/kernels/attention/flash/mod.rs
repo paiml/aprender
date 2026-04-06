@@ -116,7 +116,11 @@ impl AttentionKernel {
     pub const fn with_tiles(mut self, tile_q: u32, tile_kv: u32) -> Self {
         self.tile_q = tile_q;
         // GH-32 FIX: Enforce tile_kv >= head_dim to prevent shared memory overflow
-        self.tile_kv = if tile_kv >= self.head_dim { tile_kv } else { self.head_dim };
+        self.tile_kv = if tile_kv >= self.head_dim {
+            tile_kv
+        } else {
+            self.head_dim
+        };
         self
     }
 

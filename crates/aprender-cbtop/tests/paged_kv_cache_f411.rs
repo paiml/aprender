@@ -311,7 +311,10 @@ fn test_f419_reference_counting() {
 #[test]
 fn test_f420_streaming_llm() {
     let mut cache = PagedKvCache::new(100, 16, 32, 128).with_eviction_strategy(
-        EvictionStrategy::StreamingLLM { sink_tokens: 4, window_tokens: 16 },
+        EvictionStrategy::StreamingLLM {
+            sink_tokens: 4,
+            window_tokens: 16,
+        },
     );
 
     // Create sequence with many tokens

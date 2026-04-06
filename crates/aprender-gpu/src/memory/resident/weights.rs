@@ -188,7 +188,13 @@ impl GpuKvCache {
         let key = GpuResidentTensor::from_host(ctx, &zeros)?;
         let value = GpuResidentTensor::from_host(ctx, &zeros)?;
 
-        Ok(Self { key, value, seq_len: 0, max_seq_len, d_model })
+        Ok(Self {
+            key,
+            value,
+            seq_len: 0,
+            max_seq_len,
+            d_model,
+        })
     }
 
     /// Reset cache (for new sequence)
@@ -276,9 +282,30 @@ pub fn forward_encoder_block_gpu(
     }
 
     // Q, K, V projections (all on GPU)
-    let q = x_norm.linear(ctx, &weights.w_q, Some(&weights.b_q), seq_len, d_model, d_model)?;
-    let k = x_norm.linear(ctx, &weights.w_k, Some(&weights.b_k), seq_len, d_model, d_model)?;
-    let v = x_norm.linear(ctx, &weights.w_v, Some(&weights.b_v), seq_len, d_model, d_model)?;
+    let q = x_norm.linear(
+        ctx,
+        &weights.w_q,
+        Some(&weights.b_q),
+        seq_len,
+        d_model,
+        d_model,
+    )?;
+    let k = x_norm.linear(
+        ctx,
+        &weights.w_k,
+        Some(&weights.b_k),
+        seq_len,
+        d_model,
+        d_model,
+    )?;
+    let v = x_norm.linear(
+        ctx,
+        &weights.w_v,
+        Some(&weights.b_v),
+        seq_len,
+        d_model,
+        d_model,
+    )?;
 
     if debug {
         debug_gpu_stats("Q", &q);
@@ -296,8 +323,14 @@ pub fn forward_encoder_block_gpu(
     }
 
     // Output projection
-    let attn_proj =
-        attn_out.linear(ctx, &weights.w_o, Some(&weights.b_o), seq_len, d_model, d_model)?;
+    let attn_proj = attn_out.linear(
+        ctx,
+        &weights.w_o,
+        Some(&weights.b_o),
+        seq_len,
+        d_model,
+        d_model,
+    )?;
 
     if debug {
         debug_gpu_stats("attn_proj", &attn_proj);

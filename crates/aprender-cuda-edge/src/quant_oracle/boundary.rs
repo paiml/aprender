@@ -185,8 +185,12 @@ mod tests {
     fn universal_boundaries_contain_infinity() {
         let gen = BoundaryValueGenerator::new(QuantFormat::Q4K);
         let bounds = gen.universal_boundaries();
-        assert!(bounds.iter().any(|v| v.is_infinite() && v.is_sign_positive()));
-        assert!(bounds.iter().any(|v| v.is_infinite() && v.is_sign_negative()));
+        assert!(bounds
+            .iter()
+            .any(|v| v.is_infinite() && v.is_sign_positive()));
+        assert!(bounds
+            .iter()
+            .any(|v| v.is_infinite() && v.is_sign_negative()));
     }
 
     #[test]

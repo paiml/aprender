@@ -116,11 +116,18 @@ fn test_matmul_2x2_correctness() {
     println!("Expected: {:?}", expected);
     println!("GPU result: {:?}", result);
 
-    let max_diff: f32 =
-        result.iter().zip(expected.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    let max_diff: f32 = result
+        .iter()
+        .zip(expected.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
 
     println!("Max diff: {}", max_diff);
-    assert!(max_diff < 0.01, "Matmul 2x2 failed: max diff {} > 0.01", max_diff);
+    assert!(
+        max_diff < 0.01,
+        "Matmul 2x2 failed: max diff {} > 0.01",
+        max_diff
+    );
     println!("✓ Matmul 2x2 PASSED!");
 }
 
@@ -160,7 +167,9 @@ fn test_attention_steps_individually() {
     // Expected scores: [1.0, 0.0, 0.0, 1.0]
     // Note: We need to manually do transpose + matmul to test
     // For now, test Q @ K (not transposed) which should give same result for identity matrix
-    let mut scores = q.matmul(&ctx, &k, seq_len, seq_len, d_model).expect("Q@K failed");
+    let mut scores = q
+        .matmul(&ctx, &k, seq_len, seq_len, d_model)
+        .expect("Q@K failed");
     let scores_host = scores.to_host().expect("download scores");
     println!("Step 1 - Q @ K (should be identity): {:?}", scores_host);
 
@@ -168,7 +177,9 @@ fn test_attention_steps_individually() {
     let scale = 1.0 / (d_model as f32).sqrt(); // 1/sqrt(2) = 0.707
     let q2 = GpuResidentTensor::from_host(&ctx, &q_data).expect("upload Q2");
     let k2 = GpuResidentTensor::from_host(&ctx, &k_data).expect("upload K2");
-    let mut scores2 = q2.matmul(&ctx, &k2, seq_len, seq_len, d_model).expect("Q@K");
+    let mut scores2 = q2
+        .matmul(&ctx, &k2, seq_len, seq_len, d_model)
+        .expect("Q@K");
     let scaled = scores2.scale(&ctx, scale).expect("scale failed");
     let mut scaled_mut = scaled;
     let scaled_host = scaled_mut.to_host().expect("download scaled");
@@ -177,7 +188,9 @@ fn test_attention_steps_individually() {
     // Step 4: Softmax
     let q3 = GpuResidentTensor::from_host(&ctx, &q_data).expect("upload Q3");
     let k3 = GpuResidentTensor::from_host(&ctx, &k_data).expect("upload K3");
-    let mut scores3 = q3.matmul(&ctx, &k3, seq_len, seq_len, d_model).expect("Q@K");
+    let mut scores3 = q3
+        .matmul(&ctx, &k3, seq_len, seq_len, d_model)
+        .expect("Q@K");
     let scaled3 = scores3.scale(&ctx, scale).expect("scale");
     let softmax_result = scaled3.softmax(&ctx, seq_len).expect("softmax failed");
     let mut softmax_mut = softmax_result;
@@ -193,10 +206,14 @@ fn test_attention_steps_individually() {
     let q4 = GpuResidentTensor::from_host(&ctx, &q_data).expect("Q4");
     let k4 = GpuResidentTensor::from_host(&ctx, &k_data).expect("K4");
     let v4 = GpuResidentTensor::from_host(&ctx, &v_data).expect("V4");
-    let mut scores4 = q4.matmul(&ctx, &k4, seq_len, seq_len, d_model).expect("Q@K");
+    let mut scores4 = q4
+        .matmul(&ctx, &k4, seq_len, seq_len, d_model)
+        .expect("Q@K");
     let scaled4 = scores4.scale(&ctx, scale).expect("scale");
     let attn4 = scaled4.softmax(&ctx, seq_len).expect("softmax");
-    let mut output4 = attn4.matmul(&ctx, &v4, seq_len, d_model, seq_len).expect("attn@V failed");
+    let mut output4 = attn4
+        .matmul(&ctx, &v4, seq_len, d_model, seq_len)
+        .expect("attn@V failed");
     let output_host = output4.to_host().expect("download output");
     println!("Step 4 - Output (attn @ V): {:?}", output_host);
 
@@ -314,11 +331,18 @@ fn test_batched_attention_correctness() {
     println!("GPU output: {:?}", result);
 
     // Check numerical accuracy
-    let max_diff: f32 =
-        result.iter().zip(expected.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+    let max_diff: f32 = result
+        .iter()
+        .zip(expected.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0f32, f32::max);
 
     println!("Max diff: {}", max_diff);
 
-    assert!(max_diff < 0.01, "Max diff: {} exceeds tolerance 0.01", max_diff);
+    assert!(
+        max_diff < 0.01,
+        "Max diff: {} exceeds tolerance 0.01",
+        max_diff
+    );
     println!("✓ Correctness test PASSED!");
 }

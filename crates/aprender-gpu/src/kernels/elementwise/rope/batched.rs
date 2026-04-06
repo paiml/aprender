@@ -35,7 +35,12 @@ impl BatchedRopeKernel {
     /// Create a new batched RoPE kernel
     #[must_use]
     pub fn new(num_heads: u32, head_dim: u32, batch_size: u32, theta: f32) -> Self {
-        Self { num_heads, head_dim, batch_size, theta }
+        Self {
+            num_heads,
+            head_dim,
+            batch_size,
+            theta,
+        }
     }
 }
 
@@ -163,7 +168,12 @@ impl BatchedRopeBackwardKernel {
     /// Create a new batched RoPE backward kernel
     #[must_use]
     pub fn new(num_heads: u32, head_dim: u32, batch_size: u32, theta: f32) -> Self {
-        Self { num_heads, head_dim, batch_size, theta }
+        Self {
+            num_heads,
+            head_dim,
+            batch_size,
+            theta,
+        }
     }
 }
 

@@ -32,7 +32,10 @@ fn test_no_spills_valid() {
 }
 ";
     let result = PtxBugAnalyzer::new().analyze(ptx);
-    assert!(!result.has_bug(&PtxBugClass::RegisterSpills), "No .local = no spills");
+    assert!(
+        !result.has_bug(&PtxBugClass::RegisterSpills),
+        "No .local = no spills"
+    );
 }
 
 // ============================================================================

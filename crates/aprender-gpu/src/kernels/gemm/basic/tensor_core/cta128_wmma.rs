@@ -449,24 +449,26 @@ mod tests {
     fn test_mma_sync_ptx_emission() {
         use crate::ptx::{PtxKernel, PtxModule, PtxReg, PtxType};
 
-        let kernel = PtxKernel::new("test_mma_sync").param(PtxType::U64, "dummy").build(|ctx| {
-            // Allocate registers for mma.sync m16n8k16
-            // A: 4 B32 regs, B: 2 B32 regs, C: 4 F32 regs
-            let a0 = ctx.mov_u32_imm(0);
-            let a1 = ctx.mov_u32_imm(0);
-            let a2 = ctx.mov_u32_imm(0);
-            let a3 = ctx.mov_u32_imm(0);
-            let b0 = ctx.mov_u32_imm(0);
-            let b1 = ctx.mov_u32_imm(0);
-            let c0 = ctx.mov_f32_imm(0.0);
-            let c1 = ctx.mov_f32_imm(0.0);
-            let c2 = ctx.mov_f32_imm(0.0);
-            let c3 = ctx.mov_f32_imm(0.0);
+        let kernel = PtxKernel::new("test_mma_sync")
+            .param(PtxType::U64, "dummy")
+            .build(|ctx| {
+                // Allocate registers for mma.sync m16n8k16
+                // A: 4 B32 regs, B: 2 B32 regs, C: 4 F32 regs
+                let a0 = ctx.mov_u32_imm(0);
+                let a1 = ctx.mov_u32_imm(0);
+                let a2 = ctx.mov_u32_imm(0);
+                let a3 = ctx.mov_u32_imm(0);
+                let b0 = ctx.mov_u32_imm(0);
+                let b1 = ctx.mov_u32_imm(0);
+                let c0 = ctx.mov_f32_imm(0.0);
+                let c1 = ctx.mov_f32_imm(0.0);
+                let c2 = ctx.mov_f32_imm(0.0);
+                let c3 = ctx.mov_f32_imm(0.0);
 
-            let _d = ctx.mma_sync_m16n8k16(&[a0, a1, a2, a3], &[b0, b1], &[c0, c1, c2, c3]);
+                let _d = ctx.mma_sync_m16n8k16(&[a0, a1, a2, a3], &[b0, b1], &[c0, c1, c2, c3]);
 
-            ctx.ret();
-        });
+                ctx.ret();
+            });
 
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
         assert!(
@@ -504,22 +506,24 @@ mod tests {
     fn test_mma_sync_compiles_on_gpu() {
         use crate::ptx::{PtxKernel, PtxModule, PtxType};
 
-        let kernel = PtxKernel::new("test_mma_sync_hw").param(PtxType::U64, "dummy").build(|ctx| {
-            // A/B operands MUST be .b32 (not .u32) — ptxas rejects .u32 for mma.sync
-            let a0 = ctx.mov_b32_imm(0);
-            let a1 = ctx.mov_b32_imm(0);
-            let a2 = ctx.mov_b32_imm(0);
-            let a3 = ctx.mov_b32_imm(0);
-            let b0 = ctx.mov_b32_imm(0);
-            let b1 = ctx.mov_b32_imm(0);
-            let c0 = ctx.mov_f32_imm(0.0);
-            let c1 = ctx.mov_f32_imm(0.0);
-            let c2 = ctx.mov_f32_imm(0.0);
-            let c3 = ctx.mov_f32_imm(0.0);
+        let kernel = PtxKernel::new("test_mma_sync_hw")
+            .param(PtxType::U64, "dummy")
+            .build(|ctx| {
+                // A/B operands MUST be .b32 (not .u32) — ptxas rejects .u32 for mma.sync
+                let a0 = ctx.mov_b32_imm(0);
+                let a1 = ctx.mov_b32_imm(0);
+                let a2 = ctx.mov_b32_imm(0);
+                let a3 = ctx.mov_b32_imm(0);
+                let b0 = ctx.mov_b32_imm(0);
+                let b1 = ctx.mov_b32_imm(0);
+                let c0 = ctx.mov_f32_imm(0.0);
+                let c1 = ctx.mov_f32_imm(0.0);
+                let c2 = ctx.mov_f32_imm(0.0);
+                let c3 = ctx.mov_f32_imm(0.0);
 
-            let _d = ctx.mma_sync_m16n8k16(&[a0, a1, a2, a3], &[b0, b1], &[c0, c1, c2, c3]);
-            ctx.ret();
-        });
+                let _d = ctx.mma_sync_m16n8k16(&[a0, a1, a2, a3], &[b0, b1], &[c0, c1, c2, c3]);
+                ctx.ret();
+            });
 
         let ptx = PtxModule::new().target("sm_80").add_kernel(kernel).emit();
 

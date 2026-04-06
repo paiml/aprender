@@ -67,7 +67,10 @@ fn main() {
             println!("  → Scheduled to: {}", decision.host_id);
             println!("  → Predicted time: {:?}", decision.predicted_time);
             println!("  → Predicted cost: ${:.4}", decision.predicted_cost);
-            println!("  → SLO compliance: {:.1}%", decision.slo_compliance_prob * 100.0);
+            println!(
+                "  → SLO compliance: {:.1}%",
+                decision.slo_compliance_prob * 100.0
+            );
             println!("  → Reason: {}\n", decision.reason);
 
             // Record result (simulate execution)
@@ -84,10 +87,16 @@ fn main() {
     println!("=== Scheduler Metrics ===");
     let metrics = scheduler.metrics();
     println!("Total decisions: {}", metrics.total_decisions);
-    println!("SLO compliance rate: {:.1}%", metrics.slo_compliance_rate() * 100.0);
+    println!(
+        "SLO compliance rate: {:.1}%",
+        metrics.slo_compliance_rate() * 100.0
+    );
     println!("Total cost: ${:.4}", metrics.total_cost);
     println!("Spot savings: ${:.4}", metrics.spot_savings);
-    println!("Avg scheduling latency: {:.1}µs", metrics.avg_scheduling_latency_us);
+    println!(
+        "Avg scheduling latency: {:.1}µs",
+        metrics.avg_scheduling_latency_us
+    );
 
     // Demonstrate load balancing suggestions
     println!("\n=== Load Balancing ===");

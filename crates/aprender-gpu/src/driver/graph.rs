@@ -112,7 +112,11 @@ impl CudaGraph {
             (driver.cuGraphAddKernelNode)(
                 &mut node,
                 self.graph,
-                if deps.is_empty() { ptr::null() } else { deps.as_ptr() },
+                if deps.is_empty() {
+                    ptr::null()
+                } else {
+                    deps.as_ptr()
+                },
                 deps.len(),
                 &params,
             )

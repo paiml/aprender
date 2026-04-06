@@ -10,7 +10,7 @@
 use std::fmt::Write;
 
 use crate::binding::BindingRegistry;
-use crate::coverage::{CoverageReport, coverage_report};
+use crate::coverage::{coverage_report, CoverageReport};
 use crate::proof_status::compute_proof_level;
 use crate::schema::Contract;
 

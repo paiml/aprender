@@ -181,7 +181,10 @@ impl FalsificationReport {
     /// Check if all critical bugs are absent
     pub fn critical_bugs_absent(&self) -> bool {
         // F082 is the remaining critical correctness test
-        self.results.iter().filter(|(id, _, _, _)| id == "F082").all(|(_, _, _, r)| r.is_pass())
+        self.results
+            .iter()
+            .filter(|(id, _, _, _)| id == "F082")
+            .all(|(_, _, _, r)| r.is_pass())
     }
 
     /// Check if any critical bugs were detected
@@ -191,6 +194,9 @@ impl FalsificationReport {
 
     /// Get failed tests
     pub fn failed_tests(&self) -> Vec<&(String, Category, String, TestResult)> {
-        self.results.iter().filter(|(_, _, _, r)| r.is_fail()).collect()
+        self.results
+            .iter()
+            .filter(|(_, _, _, r)| r.is_fail())
+            .collect()
     }
 }

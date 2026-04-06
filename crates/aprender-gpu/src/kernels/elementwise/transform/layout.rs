@@ -28,7 +28,11 @@ impl InterleavedToBatchedKernel {
     /// Create a new interleaved-to-batched kernel
     #[must_use]
     pub const fn new(seq_len: u32, n_heads: u32, head_dim: u32) -> Self {
-        Self { seq_len, n_heads, head_dim }
+        Self {
+            seq_len,
+            n_heads,
+            head_dim,
+        }
     }
 }
 
@@ -107,7 +111,11 @@ impl ExtractSingleHeadKernel {
     /// Create kernel
     #[must_use]
     pub const fn new(seq_len: u32, n_heads: u32, head_dim: u32) -> Self {
-        Self { seq_len, n_heads, head_dim }
+        Self {
+            seq_len,
+            n_heads,
+            head_dim,
+        }
     }
 }
 
@@ -180,7 +188,11 @@ impl CopySingleHeadKernel {
     /// Create kernel
     #[must_use]
     pub const fn new(seq_len: u32, n_heads: u32, head_dim: u32) -> Self {
-        Self { seq_len, n_heads, head_dim }
+        Self {
+            seq_len,
+            n_heads,
+            head_dim,
+        }
     }
 }
 
@@ -253,7 +265,11 @@ impl BatchedToInterleavedKernel {
     /// Create a new batched-to-interleaved kernel
     #[must_use]
     pub const fn new(seq_len: u32, n_heads: u32, head_dim: u32) -> Self {
-        Self { seq_len, n_heads, head_dim }
+        Self {
+            seq_len,
+            n_heads,
+            head_dim,
+        }
     }
 }
 

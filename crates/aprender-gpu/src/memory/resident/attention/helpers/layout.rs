@@ -34,20 +34,37 @@ pub(in super::super) fn interleaved_to_batched_all(
 
     let kernel = InterleavedToBatchedKernel::new(seq_len, n_heads, head_dim);
     let ptx = kernel.emit_ptx();
-    let cache_key = format!("interleaved_to_batched:{}:{}:{}", seq_len, n_heads, head_dim);
+    let cache_key = format!(
+        "interleaved_to_batched:{}:{}:{}",
+        seq_len, n_heads, head_dim
+    );
     let stream = CudaStream::new(ctx)?;
 
     let threads = CUDA_WORKGROUP_SIZE;
     let blocks = (total_size as u32 + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
-    let mut args: Vec<*mut std::ffi::c_void> =
-        vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+    let mut args: Vec<*mut std::ffi::c_void> = vec![
+        std::ptr::addr_of!(input_ptr) as *mut _,
+        std::ptr::addr_of!(output_ptr) as *mut _,
+    ];
 
-    compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+    compile_lock_launch(
+        ctx,
+        &stream,
+        &cache_key,
+        &ptx,
+        kernel.name(),
+        &config,
+        &mut args,
+    )?;
     stream.synchronize()?;
 
     Ok(GpuResidentTensor::from_buffer_internal(output, 1))
@@ -92,7 +109,15 @@ pub(in super::super) fn batched_transpose_all(
         std::ptr::addr_of!(cols) as *mut _,
     ];
 
-    compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+    compile_lock_launch(
+        ctx,
+        &stream,
+        &cache_key,
+        &ptx,
+        kernel.name(),
+        &config,
+        &mut args,
+    )?;
     stream.synchronize()?;
 
     Ok(GpuResidentTensor::from_buffer_internal(output, 1))
@@ -114,20 +139,37 @@ pub(in super::super) fn batched_to_interleaved_all(
 
     let kernel = BatchedToInterleavedKernel::new(seq_len, n_heads, head_dim);
     let ptx = kernel.emit_ptx();
-    let cache_key = format!("batched_to_interleaved:{}:{}:{}", seq_len, n_heads, head_dim);
+    let cache_key = format!(
+        "batched_to_interleaved:{}:{}:{}",
+        seq_len, n_heads, head_dim
+    );
     let stream = CudaStream::new(ctx)?;
 
     let threads = CUDA_WORKGROUP_SIZE;
     let blocks = (total_size as u32 + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input.as_ptr();
     let output_ptr = output.as_ptr();
 
-    let mut args: Vec<*mut std::ffi::c_void> =
-        vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+    let mut args: Vec<*mut std::ffi::c_void> = vec![
+        std::ptr::addr_of!(input_ptr) as *mut _,
+        std::ptr::addr_of!(output_ptr) as *mut _,
+    ];
 
-    compile_lock_launch(ctx, &stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+    compile_lock_launch(
+        ctx,
+        &stream,
+        &cache_key,
+        &ptx,
+        kernel.name(),
+        &config,
+        &mut args,
+    )?;
     stream.synchronize()?;
 
     Ok(GpuResidentTensor::from_buffer_internal(output, 1))

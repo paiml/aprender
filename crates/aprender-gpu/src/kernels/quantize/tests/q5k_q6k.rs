@@ -21,8 +21,14 @@ fn test_q5k_kernel_config() {
 
 #[test]
 fn test_q5k_super_block_constants() {
-    assert_eq!(Q5K_SUPER_BLOCK_SIZE, 256, "Q5_K super-block should have 256 values");
-    assert_eq!(Q5K_SUPER_BLOCK_BYTES, 176, "Q5_K super-block should be 176 bytes (2+2+12+128+32)");
+    assert_eq!(
+        Q5K_SUPER_BLOCK_SIZE, 256,
+        "Q5_K super-block should have 256 values"
+    );
+    assert_eq!(
+        Q5K_SUPER_BLOCK_BYTES, 176,
+        "Q5_K super-block should be 176 bytes (2+2+12+128+32)"
+    );
 }
 
 #[test]
@@ -37,7 +43,10 @@ fn test_q5k_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel name
-    assert!(ptx.contains("q5k_gemm_ggml"), "Should contain Q5_K kernel name");
+    assert!(
+        ptx.contains("q5k_gemm_ggml"),
+        "Should contain Q5_K kernel name"
+    );
 
     // Verify parameters
     assert!(ptx.contains(".param .u64 a_ptr"));
@@ -136,8 +145,14 @@ fn test_q6k_kernel_config() {
 
 #[test]
 fn test_q6k_super_block_constants() {
-    assert_eq!(Q6K_SUPER_BLOCK_SIZE, 256, "Q6_K super-block should have 256 values");
-    assert_eq!(Q6K_SUPER_BLOCK_BYTES, 210, "Q6_K super-block should be 210 bytes (128+64+16+2)");
+    assert_eq!(
+        Q6K_SUPER_BLOCK_SIZE, 256,
+        "Q6_K super-block should have 256 values"
+    );
+    assert_eq!(
+        Q6K_SUPER_BLOCK_BYTES, 210,
+        "Q6_K super-block should be 210 bytes (128+64+16+2)"
+    );
 }
 
 #[test]
@@ -152,7 +167,10 @@ fn test_q6k_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel name
-    assert!(ptx.contains("q6k_gemm_ggml"), "Should contain Q6_K kernel name");
+    assert!(
+        ptx.contains("q6k_gemm_ggml"),
+        "Should contain Q6_K kernel name"
+    );
 
     // Verify parameters
     assert!(ptx.contains(".param .u64 a_ptr"));
@@ -248,9 +266,18 @@ fn test_all_quant_kernels_different() {
     let ptx_q5k = q5k.emit_ptx();
     let ptx_q6k = q6k.emit_ptx();
 
-    assert_ne!(ptx_q4k, ptx_q5k, "Q4_K and Q5_K should produce different PTX");
-    assert_ne!(ptx_q4k, ptx_q6k, "Q4_K and Q6_K should produce different PTX");
-    assert_ne!(ptx_q5k, ptx_q6k, "Q5_K and Q6_K should produce different PTX");
+    assert_ne!(
+        ptx_q4k, ptx_q5k,
+        "Q4_K and Q5_K should produce different PTX"
+    );
+    assert_ne!(
+        ptx_q4k, ptx_q6k,
+        "Q4_K and Q6_K should produce different PTX"
+    );
+    assert_ne!(
+        ptx_q5k, ptx_q6k,
+        "Q5_K and Q6_K should produce different PTX"
+    );
 }
 
 // =========================================================================

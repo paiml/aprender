@@ -166,7 +166,10 @@ fn test_federation_idempotent_merge() {
 
 #[test]
 fn test_federation_skew_detection() {
-    let config = FederationConfig { skew_threshold_percent: 40.0, ..Default::default() };
+    let config = FederationConfig {
+        skew_threshold_percent: 40.0,
+        ..Default::default()
+    };
     let mut fed = MetricsFederation::new("local", config);
 
     fed.add_host("fast_host");
@@ -258,7 +261,10 @@ fn test_sampling_rate_adaptation() {
 
 #[test]
 fn test_error_display() {
-    let err = FederatedError::ClockDriftExceeded { drift_ms: 150, max_ms: 100 };
+    let err = FederatedError::ClockDriftExceeded {
+        drift_ms: 150,
+        max_ms: 100,
+    };
     assert!(err.to_string().contains("150"));
     assert!(err.to_string().contains("100"));
 }

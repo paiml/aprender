@@ -20,7 +20,10 @@ pub fn profile_neon(function: &str, size: u32) -> Result<()> {
 
     if !is_native_arm() {
         println!("  NEON not available -- use --cross-profile for QEMU-based analysis");
-        println!("  This host is {arch}. NEON requires aarch64.", arch = std::env::consts::ARCH);
+        println!(
+            "  This host is {arch}. NEON requires aarch64.",
+            arch = std::env::consts::ARCH
+        );
         println!("  Alternatives:");
         println!("    - Run on ARM host (Apple Silicon, Graviton, Ampere)");
         println!("    - Use QEMU user-mode: qemu-aarch64 -cpu max ./binary");

@@ -59,18 +59,33 @@ fn test_batched_gemm_wmma_fp16_ptx_gen() {
 
 #[test]
 fn test_batched_gemm_kernel_names() {
-    assert_eq!(BatchedGemmKernel::naive(1, 32, 32, 32).name(), "batched_gemm_naive");
-    assert_eq!(BatchedGemmKernel::tiled(1, 32, 32, 32, 16).name(), "batched_gemm_tiled");
+    assert_eq!(
+        BatchedGemmKernel::naive(1, 32, 32, 32).name(),
+        "batched_gemm_naive"
+    );
+    assert_eq!(
+        BatchedGemmKernel::tiled(1, 32, 32, 32, 16).name(),
+        "batched_gemm_tiled"
+    );
     assert_eq!(
         BatchedGemmKernel::tiled_unrolled(1, 32, 32, 32, 16).name(),
         "batched_gemm_tiled_unrolled"
     );
-    assert_eq!(BatchedGemmKernel::wmma_fp16(1, 32, 32, 32).name(), "batched_gemm_wmma_fp16");
+    assert_eq!(
+        BatchedGemmKernel::wmma_fp16(1, 32, 32, 32).name(),
+        "batched_gemm_wmma_fp16"
+    );
 }
 
 #[test]
 fn test_batched_gemm_config_clone() {
-    let config = BatchedGemmConfig { batch: 8, m: 256, n: 128, k: 64, tile_size: 32 };
+    let config = BatchedGemmConfig {
+        batch: 8,
+        m: 256,
+        n: 128,
+        k: 64,
+        tile_size: 32,
+    };
     let cloned = config.clone();
     assert_eq!(cloned.batch, 8);
     assert_eq!(cloned.m, 256);

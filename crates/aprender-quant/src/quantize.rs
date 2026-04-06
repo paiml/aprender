@@ -22,7 +22,11 @@ pub(crate) fn compute_sub_block_stats(padded: &[f32; 256], quant_max: f32) -> ([
         let max = sub_block.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
         let range = max - min;
 
-        sub_scales[j] = if range > F16_MIN_NORMAL { range / quant_max } else { F16_MIN_NORMAL };
+        sub_scales[j] = if range > F16_MIN_NORMAL {
+            range / quant_max
+        } else {
+            F16_MIN_NORMAL
+        };
         sub_mins[j] = (-min).max(0.0);
     }
 
@@ -37,8 +41,16 @@ pub(crate) fn compute_global_scales(
     let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
     let max_min = sub_mins.iter().fold(0.0f32, |a, &b| a.max(b));
 
-    let d = if max_scale > F16_MIN_NORMAL { max_scale / 63.0 } else { F16_MIN_NORMAL };
-    let dmin = if max_min > F16_MIN_NORMAL { max_min / 63.0 } else { F16_MIN_NORMAL };
+    let d = if max_scale > F16_MIN_NORMAL {
+        max_scale / 63.0
+    } else {
+        F16_MIN_NORMAL
+    };
+    let dmin = if max_min > F16_MIN_NORMAL {
+        max_min / 63.0
+    } else {
+        F16_MIN_NORMAL
+    };
 
     let mut scales_6bit = [0u8; 8];
     let mut mins_6bit = [0u8; 8];
@@ -336,11 +348,19 @@ fn compute_q6k_scales(padded: &[f32; 256]) -> (f32, [i8; 16]) {
     let mut sub_scales = [0.0f32; 16];
     for (j, sub_block) in padded.chunks(16).enumerate().take(16) {
         let max_abs = sub_block.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
-        sub_scales[j] = if max_abs > F16_MIN_NORMAL { max_abs / 31.0 } else { F16_MIN_NORMAL };
+        sub_scales[j] = if max_abs > F16_MIN_NORMAL {
+            max_abs / 31.0
+        } else {
+            F16_MIN_NORMAL
+        };
     }
 
     let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
-    let d = if max_scale > F16_MIN_NORMAL { max_scale / 127.0 } else { F16_MIN_NORMAL };
+    let d = if max_scale > F16_MIN_NORMAL {
+        max_scale / 127.0
+    } else {
+        F16_MIN_NORMAL
+    };
 
     let mut scales_i8 = [0i8; 16];
     for j in 0..16 {
@@ -355,7 +375,11 @@ fn quantize_q6k_values(padded: &[f32; 256], d: f32, scales_i8: &[i8; 16]) -> [u8
     let mut q6_vals = [0u8; 256];
     for j in 0..16 {
         let scale = d * f32::from(scales_i8[j]);
-        let inv_scale = if scale.abs() > 1e-10 { 1.0 / scale } else { 0.0 };
+        let inv_scale = if scale.abs() > 1e-10 {
+            1.0 / scale
+        } else {
+            0.0
+        };
         for k in 0..16 {
             let idx = j * 16 + k;
             let q = (padded[idx] * inv_scale).round().clamp(-32.0, 31.0) as i8;

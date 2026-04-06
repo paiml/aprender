@@ -15,7 +15,11 @@ pub struct ThroughputAnalyzerBrick {
 
 impl ThroughputAnalyzerBrick {
     pub fn new() -> Self {
-        Self { samples: Vec::new(), arrival_rate: 0.0, avg_latency_ms: 0.0 }
+        Self {
+            samples: Vec::new(),
+            arrival_rate: 0.0,
+            avg_latency_ms: 0.0,
+        }
     }
 
     pub fn analyze(&mut self, ops_per_sec: f64, latency_ms: f64) -> ThroughputResult {
@@ -67,7 +71,11 @@ impl Brick for ThroughputAnalyzerBrick {
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 1, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 1,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

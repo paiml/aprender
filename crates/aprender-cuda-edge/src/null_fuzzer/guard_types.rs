@@ -32,7 +32,10 @@ impl<T> NonNullDevicePtr<T> {
                 context: "cannot create NonNullDevicePtr from null address".into(),
             });
         }
-        Ok(Self { addr, _marker: PhantomData })
+        Ok(Self {
+            addr,
+            _marker: PhantomData,
+        })
     }
 
     /// Returns the raw device address.
@@ -145,7 +148,9 @@ mod tests {
 
     #[test]
     fn size_threshold_does_not_inject_without_context() {
-        let strategy = InjectionStrategy::SizeThreshold { threshold_bytes: 1024 };
+        let strategy = InjectionStrategy::SizeThreshold {
+            threshold_bytes: 1024,
+        };
         assert!(!strategy.should_inject(0));
     }
 
@@ -161,7 +166,9 @@ mod tests {
 
     #[test]
     fn targeted_does_not_inject_without_context() {
-        let strategy = InjectionStrategy::Targeted { arg_indices: vec![0, 2] };
+        let strategy = InjectionStrategy::Targeted {
+            arg_indices: vec![0, 2],
+        };
         assert!(!strategy.should_inject(0));
     }
 }

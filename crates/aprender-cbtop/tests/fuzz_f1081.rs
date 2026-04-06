@@ -94,7 +94,10 @@ fn f1082_validator_rejects_nan() {
 #[test]
 fn f1082_validator_rejects_infinity() {
     let v = FuzzInputValidator::new();
-    assert_eq!(v.validate_float(f64::INFINITY), Err(FuzzValidationError::Infinity));
+    assert_eq!(
+        v.validate_float(f64::INFINITY),
+        Err(FuzzValidationError::Infinity)
+    );
 }
 
 // ============================================================================
@@ -193,7 +196,10 @@ fn f1086_validator_allows_negative() {
 #[test]
 fn f1086_validator_rejects_negative_when_configured() {
     let v = FuzzInputValidator::non_negative();
-    assert!(matches!(v.validate_float(-1.0), Err(FuzzValidationError::NegativeValue(_))));
+    assert!(matches!(
+        v.validate_float(-1.0),
+        Err(FuzzValidationError::NegativeValue(_))
+    ));
 }
 
 #[test]
@@ -209,7 +215,10 @@ fn f1086_bound_value_handles_negative() {
 #[test]
 fn f1087_validator_rejects_too_large() {
     let v = FuzzInputValidator::new();
-    assert!(matches!(v.validate_float(1e16), Err(FuzzValidationError::TooLarge(_))));
+    assert!(matches!(
+        v.validate_float(1e16),
+        Err(FuzzValidationError::TooLarge(_))
+    ));
 }
 
 #[test]
@@ -254,7 +263,10 @@ fn f1088_validator_allows_newline_tab() {
 fn f1089_validator_rejects_too_long_string() {
     let v = FuzzInputValidator::new();
     let long = "a".repeat(2000);
-    assert!(matches!(v.validate_string(&long), Err(FuzzValidationError::StringTooLong(_))));
+    assert!(matches!(
+        v.validate_string(&long),
+        Err(FuzzValidationError::StringTooLong(_))
+    ));
 }
 
 #[test]
@@ -271,7 +283,10 @@ fn f1089_validator_accepts_normal_string() {
 fn f1090_validator_enforces_numeric_bounds() {
     let v = FuzzInputValidator::strict();
     assert!(v.validate_float(1e10).is_ok());
-    assert!(matches!(v.validate_float(1e13), Err(FuzzValidationError::TooLarge(_))));
+    assert!(matches!(
+        v.validate_float(1e13),
+        Err(FuzzValidationError::TooLarge(_))
+    ));
 }
 
 #[test]
@@ -415,8 +430,14 @@ fn test_fuzz_validation_error_display() {
 fn test_validator_positive_only() {
     let v = FuzzInputValidator::positive_only();
     assert!(v.validate_float(1.0).is_ok());
-    assert!(matches!(v.validate_float(0.0), Err(FuzzValidationError::ZeroValue)));
-    assert!(matches!(v.validate_float(-1.0), Err(FuzzValidationError::NegativeValue(_))));
+    assert!(matches!(
+        v.validate_float(0.0),
+        Err(FuzzValidationError::ZeroValue)
+    ));
+    assert!(matches!(
+        v.validate_float(-1.0),
+        Err(FuzzValidationError::NegativeValue(_))
+    ));
 }
 
 #[test]
@@ -431,8 +452,10 @@ fn test_fuzz_suite_empty() {
 #[test]
 fn test_escalation_thresholds_fuzz() {
     // Test with edge case thresholds
-    let thresholds =
-        EscalationThresholds::default().with_cv(0.0).with_efficiency(100.0).with_rate_limit(0);
+    let thresholds = EscalationThresholds::default()
+        .with_cv(0.0)
+        .with_efficiency(100.0)
+        .with_rate_limit(0);
 
     let escalation = TracingEscalation::new(thresholds);
     // Should handle extreme thresholds without panic

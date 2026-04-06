@@ -183,7 +183,9 @@ impl MemoryMetrics {
                     }
                 }
                 // Used = Total - Available
-                self.ram_used_bytes = self.ram_total_bytes.saturating_sub(self.ram_available_bytes);
+                self.ram_used_bytes = self
+                    .ram_total_bytes
+                    .saturating_sub(self.ram_available_bytes);
             }
         }
     }
@@ -221,7 +223,9 @@ impl MemoryMetrics {
         // Safe jobs = min(available_gb / 3.0, cpu_cores)
         // Based on 3GB/job heuristic [Volkov2008]
         let available_gb = self.ram_available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
-        let cpu_cores = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1);
+        let cpu_cores = std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1);
 
         self.safe_parallel_jobs = ((available_gb / 3.0) as u32).min(cpu_cores).max(1);
     }

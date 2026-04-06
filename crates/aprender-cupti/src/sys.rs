@@ -66,8 +66,9 @@ pub type CUpti_CallbackFunc = Option<
 >;
 
 /// Activity buffer request callback.
-pub type CUpti_BufferRequestFunc =
-    Option<unsafe extern "C" fn(buffer: *mut *mut u8, size: *mut size_t, maxNumRecords: *mut size_t)>;
+pub type CUpti_BufferRequestFunc = Option<
+    unsafe extern "C" fn(buffer: *mut *mut u8, size: *mut size_t, maxNumRecords: *mut size_t),
+>;
 
 /// Activity buffer completed callback.
 pub type CUpti_BufferCompletedFunc = Option<
@@ -294,6 +295,8 @@ mod tests {
     fn test_struct_sizes() {
         // Ensure structs have reasonable sizes (sanity check)
         assert!(std::mem::size_of::<CUpti_Activity>() >= 4);
-        assert!(std::mem::size_of::<CUpti_ActivityKernel>() > std::mem::size_of::<CUpti_Activity>());
+        assert!(
+            std::mem::size_of::<CUpti_ActivityKernel>() > std::mem::size_of::<CUpti_Activity>()
+        );
     }
 }

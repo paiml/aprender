@@ -148,7 +148,10 @@ fn test_scroll_bounds() {
 
 #[test]
 fn test_page_navigation() {
-    let ptx = (0..100).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n");
+    let ptx = (0..100)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
     let report = sample_report();
     let mut app = TuiApp::new(ptx, report);
 
@@ -161,7 +164,10 @@ fn test_page_navigation() {
 
 #[test]
 fn test_home_end() {
-    let ptx = (0..50).map(|i| format!("line{}", i)).collect::<Vec<_>>().join("\n");
+    let ptx = (0..50)
+        .map(|i| format!("line{}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
     let report = sample_report();
     let mut app = TuiApp::new(ptx, report);
 

@@ -3,8 +3,14 @@ use super::*;
 #[test]
 fn test_anomaly_severity() {
     assert_eq!(AnomalySeverity::from_deviation(2.0), AnomalySeverity::Info);
-    assert_eq!(AnomalySeverity::from_deviation(3.5), AnomalySeverity::Warning);
-    assert_eq!(AnomalySeverity::from_deviation(6.0), AnomalySeverity::Critical);
+    assert_eq!(
+        AnomalySeverity::from_deviation(3.5),
+        AnomalySeverity::Warning
+    );
+    assert_eq!(
+        AnomalySeverity::from_deviation(6.0),
+        AnomalySeverity::Critical
+    );
 }
 
 #[test]
@@ -54,7 +60,9 @@ fn test_change_point_detection() {
     let mut detector = AnomalyDetector::new();
 
     // Data with clear change point at index 20
-    let data: Vec<f64> = (0..40).map(|i| if i < 20 { 100.0 } else { 200.0 }).collect();
+    let data: Vec<f64> = (0..40)
+        .map(|i| if i < 20 { 100.0 } else { 200.0 })
+        .collect();
 
     detector.add_all(&data);
     let change_points = detector.detect_change_points();

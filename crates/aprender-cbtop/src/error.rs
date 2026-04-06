@@ -45,7 +45,11 @@ pub enum CbtopError {
 
     /// Budget exceeded
     #[error("Budget exceeded: {phase} took {elapsed_ms}ms (budget: {budget_ms}ms)")]
-    BudgetExceeded { phase: String, elapsed_ms: u64, budget_ms: u32 },
+    BudgetExceeded {
+        phase: String,
+        elapsed_ms: u64,
+        budget_ms: u32,
+    },
 
     /// Render error
     #[error("Render error: {0}")]

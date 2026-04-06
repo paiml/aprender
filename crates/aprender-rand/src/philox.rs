@@ -32,7 +32,10 @@ const PHILOX_W1: u32 = 0xBB67_AE85; // sqrt(3)-1
 impl Philox4x32 {
     /// Create a new Philox RNG with the given seed.
     pub fn new(seed: u64) -> Self {
-        Self { key: [seed as u32, (seed >> 32) as u32], counter: [0, 0, 0, 0] }
+        Self {
+            key: [seed as u32, (seed >> 32) as u32],
+            counter: [0, 0, 0, 0],
+        }
     }
 
     /// Create with explicit key and counter (for reproducible parallel generation).

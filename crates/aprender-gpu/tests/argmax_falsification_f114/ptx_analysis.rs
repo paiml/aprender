@@ -11,7 +11,10 @@ fn f114_test8_register_allocation() {
     let ptx = kernel.emit_ptx();
 
     // Count register declarations
-    let reg_lines: Vec<&str> = ptx.lines().filter(|line: &&str| line.contains(".reg")).collect();
+    let reg_lines: Vec<&str> = ptx
+        .lines()
+        .filter(|line: &&str| line.contains(".reg"))
+        .collect();
 
     let mut total_regs = 0;
     for line in &reg_lines {
@@ -32,7 +35,11 @@ fn f114_test8_register_allocation() {
     // SM 8.9 has 65536 registers per SM
     // With 256 threads per block, max ~256 registers per thread
     // Good target: < 64 registers per thread
-    assert!(total_regs < 256, "Excessive register usage: {} (target < 256)", total_regs);
+    assert!(
+        total_regs < 256,
+        "Excessive register usage: {} (target < 256)",
+        total_regs
+    );
 
     println!("  PASSED - Register usage acceptable");
 }
@@ -46,14 +53,20 @@ fn f114_test9_shared_memory_layout() {
     let ptx = kernel.emit_ptx();
 
     // Verify shared memory declaration
-    assert!(ptx.contains(".shared .align"), "Missing shared memory alignment");
+    assert!(
+        ptx.contains(".shared .align"),
+        "Missing shared memory alignment"
+    );
     assert!(
         ptx.contains("smem[2048]") || ptx.contains(".b8 smem[2048]"),
         "Expected 2KB shared memory"
     );
 
     // Verify cvta.shared for generic addressing
-    assert!(ptx.contains("cvta.shared.u64"), "Missing shared memory address conversion");
+    assert!(
+        ptx.contains("cvta.shared.u64"),
+        "Missing shared memory address conversion"
+    );
 
     println!("  Shared memory: 2048 bytes (256 values + 256 indices)");
     println!("  Bank conflicts: Avoided (stride 4 access)");

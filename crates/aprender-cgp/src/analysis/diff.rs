@@ -75,7 +75,13 @@ pub fn diff_profiles(baseline: &FullProfile, current: &FullProfile) -> Vec<Metri
 
     // GPU memory
     if let (Some(bm), Some(cm)) = (&baseline.gpu_memory, &current.gpu_memory) {
-        add_diff(&mut diffs, "l2_hit_rate_pct", bm.l2_hit_rate_pct, cm.l2_hit_rate_pct, false);
+        add_diff(
+            &mut diffs,
+            "l2_hit_rate_pct",
+            bm.l2_hit_rate_pct,
+            cm.l2_hit_rate_pct,
+            false,
+        );
         add_diff(
             &mut diffs,
             "global_load_efficiency_pct",
@@ -98,7 +104,11 @@ fn add_diff(
     if baseline == 0.0 && current == 0.0 {
         return;
     }
-    let change_pct = if baseline != 0.0 { (current - baseline) / baseline * 100.0 } else { 0.0 };
+    let change_pct = if baseline != 0.0 {
+        (current - baseline) / baseline * 100.0
+    } else {
+        0.0
+    };
 
     let verdict = if change_pct.abs() < 2.0 {
         "="
@@ -114,7 +124,13 @@ fn add_diff(
         "REGRESSED"
     };
 
-    diffs.push(MetricDiff { name: name.to_string(), baseline, current, change_pct, verdict });
+    diffs.push(MetricDiff {
+        name: name.to_string(),
+        baseline,
+        current,
+        change_pct,
+        verdict,
+    });
 }
 
 /// Render diff to stdout.
@@ -192,10 +208,12 @@ pub fn run_diff(
         let c_mean = current_profile.timing.wall_clock_time_us;
         let c_std = current_profile.timing.stddev_us.max(c_mean * 0.01);
 
-        let b_samples: Vec<f64> =
-            (0..30).map(|i| b_mean + b_std * ((i as f64 - 15.0) / 15.0)).collect();
-        let c_samples: Vec<f64> =
-            (0..30).map(|i| c_mean + c_std * ((i as f64 - 15.0) / 15.0)).collect();
+        let b_samples: Vec<f64> = (0..30)
+            .map(|i| b_mean + b_std * ((i as f64 - 15.0) / 15.0))
+            .collect();
+        let c_samples: Vec<f64> = (0..30)
+            .map(|i| c_mean + c_std * ((i as f64 - 15.0) / 15.0))
+            .collect();
 
         let result = detector.compare(&b_samples, &c_samples);
         println!(
@@ -220,7 +238,10 @@ pub fn run_diff(
     }
 
     let elapsed = start.elapsed();
-    println!("  Diff completed in {:.0}ms", elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  Diff completed in {:.0}ms",
+        elapsed.as_secs_f64() * 1000.0
+    );
     println!();
 
     Ok(())
@@ -239,7 +260,10 @@ mod tests {
                 samples: 50,
                 ..Default::default()
             },
-            throughput: ThroughputMetrics { tflops, ..Default::default() },
+            throughput: ThroughputMetrics {
+                tflops,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
@@ -250,7 +274,10 @@ mod tests {
         let current = make_profile(23.2, 11.6);
         let diffs = diff_profiles(&baseline, &current);
 
-        let time_diff = diffs.iter().find(|d| d.name == "wall_clock_time_us").unwrap();
+        let time_diff = diffs
+            .iter()
+            .find(|d| d.name == "wall_clock_time_us")
+            .unwrap();
         assert_eq!(time_diff.verdict, "IMPROVED"); // Lower is better
         assert!(time_diff.change_pct < -30.0);
 
@@ -264,7 +291,10 @@ mod tests {
         let current = make_profile(35.7, 7.5);
         let diffs = diff_profiles(&baseline, &current);
 
-        let time_diff = diffs.iter().find(|d| d.name == "wall_clock_time_us").unwrap();
+        let time_diff = diffs
+            .iter()
+            .find(|d| d.name == "wall_clock_time_us")
+            .unwrap();
         assert_eq!(time_diff.verdict, "REGRESSED");
     }
 
@@ -274,7 +304,10 @@ mod tests {
         let current = make_profile(23.4, 11.5);
         let diffs = diff_profiles(&baseline, &current);
 
-        let time_diff = diffs.iter().find(|d| d.name == "wall_clock_time_us").unwrap();
+        let time_diff = diffs
+            .iter()
+            .find(|d| d.name == "wall_clock_time_us")
+            .unwrap();
         assert_eq!(time_diff.verdict, "="); // <2% change
     }
 
@@ -290,6 +323,10 @@ mod tests {
         }
         let elapsed = start.elapsed();
         // 100 diffs should take << 100ms
-        assert!(elapsed.as_millis() < 100, "100 diffs took {}ms", elapsed.as_millis());
+        assert!(
+            elapsed.as_millis() < 100,
+            "100 diffs took {}ms",
+            elapsed.as_millis()
+        );
     }
 }

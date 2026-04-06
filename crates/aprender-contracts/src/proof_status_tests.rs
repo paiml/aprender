@@ -2,7 +2,7 @@ use crate::obligation_matrix::{
     format_obligation_table, obligation_matrix, property_words_match, truncate,
 };
 use crate::proof_status::*;
-use crate::schema::{Contract, parse_contract_str};
+use crate::schema::{parse_contract_str, Contract};
 
 use crate::proof_status::count_bindings;
 
@@ -178,11 +178,9 @@ fn report_with_kernel_classes() {
         .iter()
         .find(|kc| kc.label == "A")
         .unwrap();
-    assert!(
-        class_a
-            .contract_stems
-            .contains(&"softmax-kernel-v1".to_string())
-    );
+    assert!(class_a
+        .contract_stems
+        .contains(&"softmax-kernel-v1".to_string()));
 }
 
 #[test]

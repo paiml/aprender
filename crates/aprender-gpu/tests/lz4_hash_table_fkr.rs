@@ -36,7 +36,12 @@ fn fkr_001_hash_index_bounds() {
         let hash_shifted = hash_tmp >> HASH_SHIFT;
         let hash_idx = hash_shifted & HASH_MASK;
 
-        assert!(hash_idx <= 2047, "Hash index {} out of bounds for input 0x{:08X}", hash_idx, val);
+        assert!(
+            hash_idx <= 2047,
+            "Hash index {} out of bounds for input 0x{:08X}",
+            hash_idx,
+            val
+        );
     }
 }
 
@@ -179,7 +184,11 @@ fn fkr_011_lz4_kernel_ptx_has_barrier_before_compress() {
     // Count barriers - should have at least 2 (after load, after hash init)
     let barrier_count = ptx.matches("bar.sync").count();
 
-    assert!(barrier_count >= 2, "PTX should have at least 2 barriers (found {})", barrier_count);
+    assert!(
+        barrier_count >= 2,
+        "PTX should have at least 2 barriers (found {})",
+        barrier_count
+    );
 }
 
 #[test]
@@ -197,7 +206,9 @@ fn fkr_012_smem_base_register_used_consistently() {
     let has_hash_table_calc = ptx.lines().any(|line| {
         line.contains("add.u64")
             && (line.contains("4096")
-                || ptx.lines().any(|l| l.contains("mov.u32") && l.contains("4096")))
+                || ptx
+                    .lines()
+                    .any(|l| l.contains("mov.u32") && l.contains("4096")))
     });
 
     assert!(
@@ -247,8 +258,11 @@ mod gpu_tests {
         let ptx = kernel.emit_ptx();
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-        let config =
-            LaunchConfig { grid: kernel.grid_dim(), block: kernel.block_dim(), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: kernel.grid_dim(),
+            block: kernel.block_dim(),
+            shared_mem: 0,
+        };
 
         let num_pages = NUM_PAGES;
         let mut args: [*mut c_void; 4] = [
@@ -270,7 +284,12 @@ mod gpu_tests {
 
         // Zero pages should compress to small size (20 bytes for LZ4 zero encoding)
         for (i, &size) in sizes.iter().enumerate() {
-            assert!(size <= 100, "Zero page {} should compress to <100 bytes, got {}", i, size);
+            assert!(
+                size <= 100,
+                "Zero page {} should compress to <100 bytes, got {}",
+                i,
+                size
+            );
         }
     }
 
@@ -307,8 +326,11 @@ mod gpu_tests {
         let ptx = kernel.emit_ptx();
         let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-        let config =
-            LaunchConfig { grid: kernel.grid_dim(), block: kernel.block_dim(), shared_mem: 0 };
+        let config = LaunchConfig {
+            grid: kernel.grid_dim(),
+            block: kernel.block_dim(),
+            shared_mem: 0,
+        };
 
         let num_pages = NUM_PAGES;
         let mut args: [*mut c_void; 4] = [
@@ -325,7 +347,9 @@ mod gpu_tests {
         }
 
         // THIS IS THE CRITICAL TEST - sync should not crash
-        stream.synchronize().expect("Sync should not crash with non-zero pages");
+        stream
+            .synchronize()
+            .expect("Sync should not crash with non-zero pages");
 
         let mut sizes = vec![0u32; NUM_PAGES as usize];
         sizes_buf.copy_to_host(&mut sizes).unwrap();

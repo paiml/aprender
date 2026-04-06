@@ -330,7 +330,10 @@ mod loading {
             if result == CUBLAS_STATUS_SUCCESS {
                 Ok(())
             } else {
-                Err(GpuError::CudaDriver(cublas_status_string(result).to_string(), result))
+                Err(GpuError::CudaDriver(
+                    cublas_status_string(result).to_string(),
+                    result,
+                ))
             }
         }
     }
@@ -349,7 +352,9 @@ mod loading {
 
         /// Check is a no-op without CUDA
         pub fn check(_result: CublasStatus) -> Result<(), GpuError> {
-            Err(GpuError::CudaNotAvailable("cuda feature not enabled".to_string()))
+            Err(GpuError::CudaNotAvailable(
+                "cuda feature not enabled".to_string(),
+            ))
         }
     }
 }
@@ -389,7 +394,10 @@ mod tests {
 
     #[test]
     fn test_status_strings() {
-        assert_eq!(cublas_status_string(CUBLAS_STATUS_SUCCESS), "CUBLAS_STATUS_SUCCESS");
+        assert_eq!(
+            cublas_status_string(CUBLAS_STATUS_SUCCESS),
+            "CUBLAS_STATUS_SUCCESS"
+        );
         assert_eq!(
             cublas_status_string(CUBLAS_STATUS_INVALID_VALUE),
             "CUBLAS_STATUS_INVALID_VALUE"

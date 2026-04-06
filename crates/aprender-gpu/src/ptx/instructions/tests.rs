@@ -41,9 +41,14 @@ fn test_instruction_builder() {
 #[test]
 fn test_instruction_predicated() {
     let pred_reg = VirtualReg::new(0, PtxType::Pred);
-    let pred = Predicate { reg: pred_reg, negated: false };
+    let pred = Predicate {
+        reg: pred_reg,
+        negated: false,
+    };
 
-    let instr = PtxInstruction::new(PtxOp::Bra, PtxType::B32).predicated(pred).label("exit");
+    let instr = PtxInstruction::new(PtxOp::Bra, PtxType::B32)
+        .predicated(pred)
+        .label("exit");
 
     assert!(instr.predicate.is_some());
     assert!(instr.label.is_some());

@@ -130,7 +130,10 @@ impl FuzzInputValidator {
             return Err(FuzzValidationError::StringTooLong(value.len()));
         }
         // Check for valid UTF-8 (already guaranteed by &str, but check control chars)
-        if value.chars().any(|c| c.is_control() && c != '\n' && c != '\t') {
+        if value
+            .chars()
+            .any(|c| c.is_control() && c != '\n' && c != '\t')
+        {
             return Err(FuzzValidationError::InvalidControlChars);
         }
         Ok(value)
@@ -150,12 +153,19 @@ impl FuzzInputValidator {
 
     /// Create a validator for positive-only values
     pub fn positive_only() -> Self {
-        Self { allow_negative: false, allow_zero: false, ..Self::new() }
+        Self {
+            allow_negative: false,
+            allow_zero: false,
+            ..Self::new()
+        }
     }
 
     /// Create a validator for non-negative values
     pub fn non_negative() -> Self {
-        Self { allow_negative: false, ..Self::new() }
+        Self {
+            allow_negative: false,
+            ..Self::new()
+        }
     }
 
     /// Create a strict validator (no special float values)

@@ -26,13 +26,20 @@ impl FusedKvScatterKernel {
     /// Create a new fused KV scatter kernel
     #[must_use]
     pub fn new(num_kv_heads: u32, head_dim: u32, max_len: u32) -> Self {
-        Self { num_kv_heads, head_dim, max_len }
+        Self {
+            num_kv_heads,
+            head_dim,
+            max_len,
+        }
     }
 
     /// Kernel name for module caching
     #[must_use]
     pub fn name(&self) -> String {
-        format!("fused_kv_scatter_{}_{}_{}", self.num_kv_heads, self.head_dim, self.max_len)
+        format!(
+            "fused_kv_scatter_{}_{}_{}",
+            self.num_kv_heads, self.head_dim, self.max_len
+        )
     }
 
     /// Emit PTX source for the target architecture

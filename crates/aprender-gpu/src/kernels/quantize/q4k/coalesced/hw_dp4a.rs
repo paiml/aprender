@@ -464,7 +464,12 @@ mod tests {
         let hw1_sum: f32 = (100..=115).map(|x| x as f32).sum();
 
         // Lane 0 should have the correct sum of half-warp 0
-        assert!((vals[0] - hw0_sum).abs() < 0.01, "Lane 0: got {}, expected {}", vals[0], hw0_sum);
+        assert!(
+            (vals[0] - hw0_sum).abs() < 0.01,
+            "Lane 0: got {}, expected {}",
+            vals[0],
+            hw0_sum
+        );
 
         // Lane 16 should have the correct sum of half-warp 1
         assert!(

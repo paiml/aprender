@@ -286,7 +286,10 @@ mod tests {
     #[test]
     fn test_invalid_lora_rank() {
         let mut config = DistillConfig::minimal("org/teacher", "org/student");
-        config.student.lora = Some(LoraConfig { rank: 0, ..LoraConfig::default() });
+        config.student.lora = Some(LoraConfig {
+            rank: 0,
+            ..LoraConfig::default()
+        });
 
         let result = ConfigValidator::validate(&config);
         assert!(result.is_err());

@@ -19,7 +19,13 @@ fn test_gemm_config_default() {
 
 #[test]
 fn test_gemm_config_clone() {
-    let config = GemmConfig { m: 512, n: 256, k: 128, tile_size: 16, use_tensor_cores: true };
+    let config = GemmConfig {
+        m: 512,
+        n: 256,
+        k: 128,
+        tile_size: 16,
+        use_tensor_cores: true,
+    };
     let cloned = config.clone();
     assert_eq!(cloned.m, 512);
     assert_eq!(cloned.n, 256);
@@ -235,8 +241,14 @@ fn test_tiled_unrolled_various_tile_sizes() {
         let kernel = GemmKernel::tiled_unrolled(128, 128, 128, tile_size);
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains(".entry gemm_tiled_unrolled"), "Failed for tile_size={tile_size}");
-        assert!(ptx.contains("bar.sync"), "Missing barriers for tile_size={tile_size}");
+        assert!(
+            ptx.contains(".entry gemm_tiled_unrolled"),
+            "Failed for tile_size={tile_size}"
+        );
+        assert!(
+            ptx.contains("bar.sync"),
+            "Missing barriers for tile_size={tile_size}"
+        );
     }
 }
 
@@ -253,8 +265,14 @@ fn test_tiled_unrolled_various_dimensions() {
         let kernel = GemmKernel::tiled_unrolled(m, n, k, tile);
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains(".entry gemm_tiled_unrolled"), "Failed for ({m}, {n}, {k}, {tile})");
-        assert!(ptx.contains("ret;"), "Missing ret for ({m}, {n}, {k}, {tile})");
+        assert!(
+            ptx.contains(".entry gemm_tiled_unrolled"),
+            "Failed for ({m}, {n}, {k}, {tile})"
+        );
+        assert!(
+            ptx.contains("ret;"),
+            "Missing ret for ({m}, {n}, {k}, {tile})"
+        );
     }
 }
 
@@ -298,7 +316,11 @@ fn test_tiled_unrolled_barrier_safety() {
     let kernel = GemmKernel::tiled_unrolled(64, 64, 64, 16);
     let result = kernel.analyze_barrier_safety();
 
-    assert!(result.is_safe, "TiledUnrolled GEMM should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "TiledUnrolled GEMM should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -306,7 +328,11 @@ fn test_tiled_unrolled_validate_barrier_safety() {
     let kernel = GemmKernel::tiled_unrolled(128, 128, 128, 32);
     let result = kernel.validate_barrier_safety();
 
-    assert!(result.is_ok(), "TiledUnrolled should pass barrier validation: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "TiledUnrolled should pass barrier validation: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -414,8 +440,14 @@ fn test_ptx_emission_structural_consistency() {
     assert!(ptx2.contains(".entry gemm_tiled_unrolled"));
     assert!(ptx1.contains(".param .u64 a_ptr"));
     assert!(ptx2.contains(".param .u64 a_ptr"));
-    assert_eq!(ptx1.matches("bar.sync").count(), ptx2.matches("bar.sync").count());
-    assert_eq!(ptx1.matches("fma.rn.f32").count(), ptx2.matches("fma.rn.f32").count());
+    assert_eq!(
+        ptx1.matches("bar.sync").count(),
+        ptx2.matches("bar.sync").count()
+    );
+    assert_eq!(
+        ptx1.matches("fma.rn.f32").count(),
+        ptx2.matches("fma.rn.f32").count()
+    );
     assert_eq!(ptx1.len(), ptx2.len());
 }
 
@@ -435,6 +467,12 @@ fn test_as_module_for_tiled_unrolled() {
 fn test_tiled_gemm_barriers_use_correct_ids() {
     let kernel = GemmKernel::tiled(64, 64, 64, 16);
     let ptx = kernel.emit_ptx();
-    assert!(ptx.contains("bar.sync 0;"), "tiled GEMM must contain bar.sync 0 (before inner loop)");
-    assert!(ptx.contains("bar.sync 1;"), "tiled GEMM must contain bar.sync 1 (after inner loop)");
+    assert!(
+        ptx.contains("bar.sync 0;"),
+        "tiled GEMM must contain bar.sync 0 (before inner loop)"
+    );
+    assert!(
+        ptx.contains("bar.sync 1;"),
+        "tiled GEMM must contain bar.sync 1 (after inner loop)"
+    );
 }

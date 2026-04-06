@@ -160,7 +160,10 @@ impl PtxBugReport {
     /// Check if PTX passed all validations (no critical bugs)
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        !self.bugs.iter().any(|b| b.severity() == BugSeverity::Critical)
+        !self
+            .bugs
+            .iter()
+            .any(|b| b.severity() == BugSeverity::Critical)
     }
 
     /// Check if there are any bugs at all
@@ -172,7 +175,10 @@ impl PtxBugReport {
     /// Count bugs by severity
     #[must_use]
     pub fn count_by_severity(&self, severity: BugSeverity) -> usize {
-        self.bugs.iter().filter(|b| b.severity() == severity).count()
+        self.bugs
+            .iter()
+            .filter(|b| b.severity() == severity)
+            .count()
     }
 
     /// Check for specific bug class
@@ -216,8 +222,11 @@ impl PtxBugReport {
         output.push_str(&format!("P0 CRITICAL BUGS: {}\n", critical));
         if critical > 0 {
             output.push_str("──────────────────\n");
-            for (i, bug) in
-                self.bugs.iter().filter(|b| b.severity() == BugSeverity::Critical).enumerate()
+            for (i, bug) in self
+                .bugs
+                .iter()
+                .filter(|b| b.severity() == BugSeverity::Critical)
+                .enumerate()
             {
                 output.push_str(&format!("  BUG-{:03}: {}\n", i + 1, bug.class));
                 if bug.line > 0 {
@@ -235,7 +244,11 @@ impl PtxBugReport {
         output.push_str(&format!("\nP1 HIGH BUGS: {}\n", high));
         if high > 0 {
             output.push_str("─────────────────\n");
-            for bug in self.bugs.iter().filter(|b| b.severity() == BugSeverity::High) {
+            for bug in self
+                .bugs
+                .iter()
+                .filter(|b| b.severity() == BugSeverity::High)
+            {
                 output.push_str(&format!("  {}: {}\n", bug.class, bug.message));
             }
         }
@@ -244,7 +257,11 @@ impl PtxBugReport {
         output.push_str(&format!("\nP2 MEDIUM BUGS: {}\n", medium));
         if medium > 0 {
             output.push_str("─────────────────\n");
-            for bug in self.bugs.iter().filter(|b| b.severity() == BugSeverity::Medium) {
+            for bug in self
+                .bugs
+                .iter()
+                .filter(|b| b.severity() == BugSeverity::Medium)
+            {
                 output.push_str(&format!("  {}: {}\n", bug.class, bug.message));
             }
         }

@@ -32,8 +32,10 @@ pub struct GoldenTrace {
 impl GoldenTrace {
     /// Create a new golden trace
     pub fn new(name: &str, metrics: TraceMetrics) -> Self {
-        let timestamp =
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO).as_secs();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs();
 
         let mut trace = Self {
             version: "1.0".to_string(),
@@ -214,7 +216,10 @@ pub struct GoldenComparator {
 
 impl Default for GoldenComparator {
     fn default() -> Self {
-        Self { threshold_percent: 10.0, allow_version_mismatch: false }
+        Self {
+            threshold_percent: 10.0,
+            allow_version_mismatch: false,
+        }
     }
 }
 
@@ -243,11 +248,15 @@ impl GoldenComparator {
         golden: &GoldenTrace,
     ) -> GoldenTraceResult<TraceComparison> {
         if !current.is_valid() {
-            return Err(GoldenTraceError::InvalidTrace("Current metrics are invalid".to_string()));
+            return Err(GoldenTraceError::InvalidTrace(
+                "Current metrics are invalid".to_string(),
+            ));
         }
 
         if !golden.metrics.is_valid() {
-            return Err(GoldenTraceError::InvalidTrace("Golden metrics are invalid".to_string()));
+            return Err(GoldenTraceError::InvalidTrace(
+                "Golden metrics are invalid".to_string(),
+            ));
         }
 
         let time_delta = Self::calc_delta(current.total_time_us, golden.metrics.total_time_us);
@@ -274,7 +283,11 @@ impl GoldenComparator {
             format!(
                 "REGRESSION detected vs {}: max delta {:.1}%",
                 golden.name,
-                time_delta.max(p50_delta).max(p99_delta).max(-throughput_delta).max(memory_delta)
+                time_delta
+                    .max(p50_delta)
+                    .max(p99_delta)
+                    .max(-throughput_delta)
+                    .max(memory_delta)
             )
         } else {
             format!(

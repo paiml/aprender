@@ -174,7 +174,13 @@ fn test_eviction_strategy_display() {
     assert_eq!(format!("{}", EvictionStrategy::LRU), "LRU");
     assert_eq!(format!("{}", EvictionStrategy::LFU), "LFU");
     assert_eq!(
-        format!("{}", EvictionStrategy::StreamingLLM { sink_tokens: 4, window_tokens: 512 }),
+        format!(
+            "{}",
+            EvictionStrategy::StreamingLLM {
+                sink_tokens: 4,
+                window_tokens: 512
+            }
+        ),
         "StreamingLLM(sink=4, window=512)"
     );
 }

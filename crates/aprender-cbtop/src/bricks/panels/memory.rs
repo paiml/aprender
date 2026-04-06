@@ -60,13 +60,22 @@ pub struct MemoryPanelBrick {
 impl MemoryPanelBrick {
     /// Create a new memory panel
     pub fn new() -> Self {
-        Self { metrics: MemoryMetrics::default(), theme: Theme::tokyo_night() }
+        Self {
+            metrics: MemoryMetrics::default(),
+            theme: Theme::tokyo_night(),
+        }
     }
 
     /// Paint the memory panel
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         canvas.draw_text("Memory Monitor", Point::new(2.0, 2.0), &label_style);
 
@@ -84,7 +93,10 @@ impl MemoryPanelBrick {
             MemoryMetrics::format_bytes(self.metrics.total_ram),
             ram_pct
         );
-        let ram_style = TextStyle { color: self.theme.memory_color(ram_pct), ..Default::default() };
+        let ram_style = TextStyle {
+            color: self.theme.memory_color(ram_pct),
+            ..Default::default()
+        };
         canvas.draw_text(&ram_info, Point::new(2.0, 5.0), &ram_style);
 
         // Swap usage
@@ -102,8 +114,10 @@ impl MemoryPanelBrick {
             MemoryMetrics::format_bytes(self.metrics.total_swap),
             swap_pct
         );
-        let swap_style =
-            TextStyle { color: self.theme.memory_color(swap_pct), ..Default::default() };
+        let swap_style = TextStyle {
+            color: self.theme.memory_color(swap_pct),
+            ..Default::default()
+        };
         canvas.draw_text(&swap_info, Point::new(2.0, 8.0), &swap_style);
 
         // Cache/Buffer info

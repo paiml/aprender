@@ -51,7 +51,10 @@ fn ptx_pixel_fkr_attention() {
         "Attention kernel uses u64 for shared memory"
     );
 
-    assert!(ptx.contains("bar.sync"), "Attention kernel must have barrier synchronization");
+    assert!(
+        ptx.contains("bar.sync"),
+        "Attention kernel must have barrier synchronization"
+    );
 
     println!("ptx_pixel_fkr_attention: PASS");
 }
@@ -138,7 +141,10 @@ fn ptx_pixel_fkr_bias_activation_relu_max() {
     let kernel = BiasActivationKernel::new(1024, 64).with_relu();
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("max.f32"), "ReLU should use max.f32 instruction");
+    assert!(
+        ptx.contains("max.f32"),
+        "ReLU should use max.f32 instruction"
+    );
 
     println!("ptx_pixel_fkr_bias_activation_relu: PASS (uses max.f32)");
 }

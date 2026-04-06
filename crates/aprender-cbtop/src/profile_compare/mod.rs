@@ -71,7 +71,10 @@ mod tests {
 
     #[test]
     fn test_effect_magnitude() {
-        assert_eq!(EffectMagnitude::from_cohens_d(0.1), EffectMagnitude::Negligible);
+        assert_eq!(
+            EffectMagnitude::from_cohens_d(0.1),
+            EffectMagnitude::Negligible
+        );
         assert_eq!(EffectMagnitude::from_cohens_d(0.3), EffectMagnitude::Small);
         assert_eq!(EffectMagnitude::from_cohens_d(0.6), EffectMagnitude::Medium);
         assert_eq!(EffectMagnitude::from_cohens_d(1.0), EffectMagnitude::Large);
@@ -158,7 +161,10 @@ mod tests {
             comparison.add_metric(format!("metric_{}", i), comp_samples);
         }
 
-        let config = CompareConfig { bonferroni_correction: true, ..Default::default() };
+        let config = CompareConfig {
+            bonferroni_correction: true,
+            ..Default::default()
+        };
 
         let comparator = ProfileComparator::new(config);
         let result = comparator.compare(&baseline, &comparison).unwrap();
@@ -219,12 +225,16 @@ mod tests {
         let b = MetricSamples::new(vec![120.0, 121.0, 119.0, 120.5, 119.5]);
 
         // Throughput: higher is better
-        let result = comparator.compare_metric("throughput", &a, &b, 0.05).unwrap();
+        let result = comparator
+            .compare_metric("throughput", &a, &b, 0.05)
+            .unwrap();
         assert_eq!(result.direction, ChangeDirection::Improved);
         assert!(!result.is_regression);
 
         // Latency: lower is better, so increase is regression
-        let result = comparator.compare_metric("latency_p50", &a, &b, 0.05).unwrap();
+        let result = comparator
+            .compare_metric("latency_p50", &a, &b, 0.05)
+            .unwrap();
         assert_eq!(result.direction, ChangeDirection::Regressed);
         assert!(result.is_regression);
     }
@@ -252,7 +262,9 @@ mod tests {
         assert!(err.to_string().contains("3"));
         assert!(err.to_string().contains("5"));
 
-        let err = CompareError::MetricNotFound { name: "latency".to_string() };
+        let err = CompareError::MetricNotFound {
+            name: "latency".to_string(),
+        };
         assert!(err.to_string().contains("latency"));
     }
 
@@ -277,12 +289,14 @@ mod tests {
 
         for seed in 0..trials {
             // Generate baseline with mean 100, std 5
-            let baseline_values: Vec<f64> =
-                (0..30).map(|i| 100.0 + (((seed * 100 + i) % 10) as f64 - 5.0)).collect();
+            let baseline_values: Vec<f64> = (0..30)
+                .map(|i| 100.0 + (((seed * 100 + i) % 10) as f64 - 5.0))
+                .collect();
 
             // Generate comparison with 5% regression (mean 105 for latency)
-            let comparison_values: Vec<f64> =
-                (0..30).map(|i| 105.0 + (((seed * 100 + i + 50) % 10) as f64 - 5.0)).collect();
+            let comparison_values: Vec<f64> = (0..30)
+                .map(|i| 105.0 + (((seed * 100 + i + 50) % 10) as f64 - 5.0))
+                .collect();
 
             let mut baseline = BenchmarkProfile::new("baseline");
             baseline.add_metric("latency_p50", baseline_values);
@@ -302,6 +316,10 @@ mod tests {
         let detection_rate = detected as f64 / trials as f64;
 
         // FKR-046: Detection rate should be >80%
-        assert!(detection_rate > 0.80, "Detection rate {} should be >80%", detection_rate);
+        assert!(
+            detection_rate > 0.80,
+            "Detection rate {} should be >80%",
+            detection_rate
+        );
     }
 }

@@ -159,13 +159,17 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
 
     // Validate structure
     if contract.kind.is_empty() {
-        result.failed.push("Contract missing 'kind' field".to_string());
+        result
+            .failed
+            .push("Contract missing 'kind' field".to_string());
     } else {
         result.passed.push(format!("kind: {}", contract.kind));
     }
 
     if contract.kernel.is_empty() {
-        result.skipped.push("No kernel field — domain-specific contract".to_string());
+        result
+            .skipped
+            .push("No kernel field — domain-specific contract".to_string());
     } else {
         result.passed.push(format!("kernel: {}", contract.kernel));
     }
@@ -174,7 +178,9 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
     for (i, bound) in contract.bounds.iter().enumerate() {
         if bound.size.is_empty() {
             // Domain-specific bounds without size — structural pass
-            result.passed.push(format!("Bound {i}: structural (no size)"));
+            result
+                .passed
+                .push(format!("Bound {i}: structural (no size)"));
             continue;
         }
 
@@ -232,12 +238,16 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
             }
             None => {
                 // No profile available — validate structure only
-                result.passed.push(format!("Bound {i}: size {:?}", bound.size));
+                result
+                    .passed
+                    .push(format!("Bound {i}: size {:?}", bound.size));
                 if bound.max_time_us.is_none()
                     && bound.min_tflops.is_none()
                     && bound.min_bandwidth_gbps.is_none()
                 {
-                    result.skipped.push(format!("Bound {i}: no criteria specified"));
+                    result
+                        .skipped
+                        .push(format!("Bound {i}: no criteria specified"));
                 }
             }
         }
@@ -246,12 +256,20 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
     // Evaluate falsification checks against profile data
     for check in &contract.falsification {
         if check.name.is_empty() || check.check.is_empty() {
-            result.failed.push(format!("Falsification '{}': missing name or check", check.name));
+            result.failed.push(format!(
+                "Falsification '{}': missing name or check",
+                check.name
+            ));
             continue;
         }
 
         // Try to find a profile and evaluate the check expression
-        let size = contract.bounds.first().and_then(|b| b.size.first()).copied().unwrap_or(512);
+        let size = contract
+            .bounds
+            .first()
+            .and_then(|b| b.size.first())
+            .copied()
+            .unwrap_or(512);
         let profile_path = format!("/tmp/cgp-{}-{size}.json", contract.kernel);
         let profile = std::path::Path::new(&profile_path)
             .exists()
@@ -264,9 +282,10 @@ pub fn verify_contract(contract: &PerformanceContract) -> ContractVerification {
                 if pass {
                     result.passed.push(format!("FALSIFY {}: PASS", check.name));
                 } else {
-                    result
-                        .failed
-                        .push(format!("FALSIFY {}: FAIL ({})", check.name, check.description));
+                    result.failed.push(format!(
+                        "FALSIFY {}: FAIL ({})",
+                        check.name, check.description
+                    ));
                 }
             }
             None => {
@@ -300,15 +319,18 @@ fn evaluate_check(expr: &str, profile: &crate::metrics::catalog::FullProfile) ->
         "wall_clock_time_us" => profile.timing.wall_clock_time_us,
         "bandwidth_gbps" => profile.throughput.bandwidth_gbps,
         "arithmetic_intensity" => profile.throughput.arithmetic_intensity,
-        "warp_execution_efficiency" => {
-            profile.gpu_compute.as_ref().map_or(0.0, |g| g.warp_execution_efficiency_pct)
-        }
-        "achieved_occupancy" => {
-            profile.gpu_compute.as_ref().map_or(0.0, |g| g.achieved_occupancy_pct)
-        }
-        "global_load_efficiency" => {
-            profile.gpu_memory.as_ref().map_or(0.0, |g| g.global_load_efficiency_pct)
-        }
+        "warp_execution_efficiency" => profile
+            .gpu_compute
+            .as_ref()
+            .map_or(0.0, |g| g.warp_execution_efficiency_pct),
+        "achieved_occupancy" => profile
+            .gpu_compute
+            .as_ref()
+            .map_or(0.0, |g| g.achieved_occupancy_pct),
+        "global_load_efficiency" => profile
+            .gpu_memory
+            .as_ref()
+            .map_or(0.0, |g| g.global_load_efficiency_pct),
         _ => return false,
     };
 
@@ -352,7 +374,11 @@ pub fn run_verify(
 
     for c in &contracts {
         let result = verify_contract(c);
-        let status = if result.is_pass() { "\x1b[32mPASS\x1b[0m" } else { "\x1b[31mFAIL\x1b[0m" };
+        let status = if result.is_pass() {
+            "\x1b[32mPASS\x1b[0m"
+        } else {
+            "\x1b[31mFAIL\x1b[0m"
+        };
         println!(
             "  {} {} ({} pass, {} fail, {} skip)",
             status,
@@ -379,7 +405,9 @@ pub fn run_generate(kernel: &str, size: u32, tolerance: f64) -> Result<()> {
     // Try to load a saved profile for this kernel
     let profile_path = format!("/tmp/cgp-{kernel}-{size}.json");
     let profile = if std::path::Path::new(&profile_path).exists() {
-        Some(crate::metrics::export::load_json(std::path::Path::new(&profile_path))?)
+        Some(crate::metrics::export::load_json(std::path::Path::new(
+            &profile_path,
+        ))?)
     } else {
         None
     };
@@ -488,7 +516,10 @@ mod tests {
                 let mut m = std::collections::HashMap::new();
                 m.insert(
                     "warp_execution_efficiency".to_string(),
-                    MetricBound { min: Some(95.0), max: None },
+                    MetricBound {
+                        min: Some(95.0),
+                        max: None,
+                    },
                 );
                 m
             },

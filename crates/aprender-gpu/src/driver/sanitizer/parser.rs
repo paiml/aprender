@@ -72,13 +72,21 @@ impl SanitizerParser {
     /// Classify violation type from the first line of a sanitizer error.
     fn classify_violation(line: &str) -> MemoryViolationType {
         if line.contains("__shared__ read") {
-            MemoryViolationType::InvalidSharedRead { size: Self::extract_size(line).unwrap_or(4) }
+            MemoryViolationType::InvalidSharedRead {
+                size: Self::extract_size(line).unwrap_or(4),
+            }
         } else if line.contains("__shared__ write") {
-            MemoryViolationType::InvalidSharedWrite { size: Self::extract_size(line).unwrap_or(4) }
+            MemoryViolationType::InvalidSharedWrite {
+                size: Self::extract_size(line).unwrap_or(4),
+            }
         } else if line.contains("__global__ read") {
-            MemoryViolationType::InvalidGlobalRead { size: Self::extract_size(line).unwrap_or(4) }
+            MemoryViolationType::InvalidGlobalRead {
+                size: Self::extract_size(line).unwrap_or(4),
+            }
         } else if line.contains("__global__ write") {
-            MemoryViolationType::InvalidGlobalWrite { size: Self::extract_size(line).unwrap_or(4) }
+            MemoryViolationType::InvalidGlobalWrite {
+                size: Self::extract_size(line).unwrap_or(4),
+            }
         } else if line.contains("misaligned") {
             MemoryViolationType::MisalignedAccess { addr: 0 }
         } else {
@@ -93,7 +101,9 @@ impl SanitizerParser {
         let plus_pos = rest.find("+0x")?;
         let kernel_name = rest[..plus_pos].trim().to_string();
         let hex_str = &rest[plus_pos + 3..];
-        let hex_end = hex_str.find(|c: char| !c.is_ascii_hexdigit()).unwrap_or(hex_str.len());
+        let hex_end = hex_str
+            .find(|c: char| !c.is_ascii_hexdigit())
+            .unwrap_or(hex_str.len());
         let offset = u64::from_str_radix(&hex_str[..hex_end], 16).unwrap_or(0);
         Some((kernel_name, offset))
     }
@@ -102,7 +112,9 @@ impl SanitizerParser {
     fn parse_address(line: &str) -> Option<u64> {
         let addr_pos = line.find("Address 0x")?;
         let rest = &line[addr_pos + 10..];
-        let hex_end = rest.find(|c: char| !c.is_ascii_hexdigit()).unwrap_or(rest.len());
+        let hex_end = rest
+            .find(|c: char| !c.is_ascii_hexdigit())
+            .unwrap_or(rest.len());
         Some(u64::from_str_radix(&rest[..hex_end], 16).unwrap_or(0))
     }
 
@@ -123,7 +135,11 @@ impl SanitizerParser {
             let s = s.trim_start_matches('(').trim_end_matches(')');
             let parts: Vec<&str> = s.split(',').collect();
             if parts.len() == 3 {
-                Some((parts[0].parse().ok()?, parts[1].parse().ok()?, parts[2].parse().ok()?))
+                Some((
+                    parts[0].parse().ok()?,
+                    parts[1].parse().ok()?,
+                    parts[2].parse().ok()?,
+                ))
             } else {
                 None
             }
@@ -228,7 +244,11 @@ impl PtxSourceMap {
         let mut result = String::new();
         for (i, line) in lines[start..end].iter().enumerate() {
             let actual_line = start + i + 1;
-            let marker = if actual_line == label_line as usize { ">>>" } else { "   " };
+            let marker = if actual_line == label_line as usize {
+                ">>>"
+            } else {
+                "   "
+            };
             result.push_str(&format!("{} {:4}: {}\n", marker, actual_line, line));
         }
 

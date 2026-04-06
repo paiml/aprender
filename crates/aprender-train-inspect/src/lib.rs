@@ -74,15 +74,21 @@ mod tests {
     #[test]
     fn test_output_format_parsing() {
         assert_eq!(
-            "safetensors".parse::<OutputFormat>().expect("parsing should succeed"),
+            "safetensors"
+                .parse::<OutputFormat>()
+                .expect("parsing should succeed"),
             OutputFormat::SafeTensors
         );
         assert_eq!(
-            "GGUF".parse::<OutputFormat>().expect("parsing should succeed"),
+            "GGUF"
+                .parse::<OutputFormat>()
+                .expect("parsing should succeed"),
             OutputFormat::Gguf
         );
         assert_eq!(
-            "apr".parse::<OutputFormat>().expect("parsing should succeed"),
+            "apr"
+                .parse::<OutputFormat>()
+                .expect("parsing should succeed"),
             OutputFormat::Apr
         );
     }
@@ -90,11 +96,13 @@ mod tests {
     #[test]
     fn test_output_format_st_alias() {
         assert_eq!(
-            "st".parse::<OutputFormat>().expect("parsing should succeed"),
+            "st".parse::<OutputFormat>()
+                .expect("parsing should succeed"),
             OutputFormat::SafeTensors
         );
         assert_eq!(
-            "ST".parse::<OutputFormat>().expect("parsing should succeed"),
+            "ST".parse::<OutputFormat>()
+                .expect("parsing should succeed"),
             OutputFormat::SafeTensors
         );
     }

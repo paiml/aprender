@@ -16,8 +16,12 @@ fn test_variance_analysis_basic() {
 
 #[test]
 fn test_empty_input() {
-    let input =
-        VarianceInput { latencies: vec![], frequencies: None, temperatures: None, warmup_count: 0 };
+    let input = VarianceInput {
+        latencies: vec![],
+        frequencies: None,
+        temperatures: None,
+        warmup_count: 0,
+    };
 
     assert!(VarianceAnalysis::analyze(&input).is_none());
 }
@@ -107,8 +111,14 @@ fn test_trend_calculation() {
 
 #[test]
 fn test_variance_source_names() {
-    assert_eq!(VarianceSource::FrequencyScaling.name(), "CPU frequency scaling");
-    assert_eq!(VarianceSource::ThermalThrottling.name(), "thermal throttling");
+    assert_eq!(
+        VarianceSource::FrequencyScaling.name(),
+        "CPU frequency scaling"
+    );
+    assert_eq!(
+        VarianceSource::ThermalThrottling.name(),
+        "thermal throttling"
+    );
     assert_eq!(VarianceSource::CacheState.name(), "cache state variance");
     assert_eq!(VarianceSource::SystemNoise.name(), "system noise");
 }

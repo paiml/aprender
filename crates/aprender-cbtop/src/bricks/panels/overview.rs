@@ -30,8 +30,14 @@ impl OverviewPanelBrick {
     }
 
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         // CPU section
         canvas.draw_text("CPU Utilization", Point::new(2.0, 2.0), &label_style);
@@ -46,7 +52,11 @@ impl OverviewPanelBrick {
         }
 
         // GPU section
-        canvas.draw_text("GPU Utilization", Point::new(width / 2.0 + 2.0, 2.0), &label_style);
+        canvas.draw_text(
+            "GPU Utilization",
+            Point::new(width / 2.0 + 2.0, 2.0),
+            &label_style,
+        );
         if !self.gpu_data.is_empty() {
             let gpu_usage = self.gpu_data.last().copied().unwrap_or(0.0);
             let mut graph = BrailleGraph::new(self.gpu_data.clone())
@@ -61,10 +71,14 @@ impl OverviewPanelBrick {
         canvas.draw_text("Statistics", Point::new(2.0, 10.0), &label_style);
 
         // Color the CPU/GPU avg values according to their usage
-        let cpu_color_style =
-            TextStyle { color: self.theme.cpu_color(self.cpu_avg), ..Default::default() };
-        let gpu_color_style =
-            TextStyle { color: self.theme.gpu_color(self.gpu_avg), ..Default::default() };
+        let cpu_color_style = TextStyle {
+            color: self.theme.cpu_color(self.cpu_avg),
+            ..Default::default()
+        };
+        let gpu_color_style = TextStyle {
+            color: self.theme.gpu_color(self.gpu_avg),
+            ..Default::default()
+        };
 
         canvas.draw_text("CPU Avg: ", Point::new(2.0, 11.0), &dim_style);
         canvas.draw_text(
@@ -80,7 +94,10 @@ impl OverviewPanelBrick {
         );
 
         canvas.draw_text(
-            &format!("Samples: {}  Problem Size: {}", self.frame_count, self.problem_size),
+            &format!(
+                "Samples: {}  Problem Size: {}",
+                self.frame_count, self.problem_size
+            ),
             Point::new(2.0, 12.0),
             &dim_style,
         );

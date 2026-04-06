@@ -54,18 +54,28 @@ pub fn validate_csr_invariants(
     // 4. Last offset matches nnz
     let nnz = col_indices.len();
     if offsets[rows] as usize != nnz {
-        return Err(SparseError::OffsetNnzMismatch { offset_last: offsets[rows], nnz });
+        return Err(SparseError::OffsetNnzMismatch {
+            offset_last: offsets[rows],
+            nnz,
+        });
     }
 
     // col_indices and values must match
     if nnz != values_len {
-        return Err(SparseError::LengthMismatch { col_len: nnz, val_len: values_len });
+        return Err(SparseError::LengthMismatch {
+            col_len: nnz,
+            val_len: values_len,
+        });
     }
 
     // 5. Column indices in bounds
     for (i, &col) in col_indices.iter().enumerate() {
         if col as usize >= cols {
-            return Err(SparseError::ColumnOutOfBounds { col, cols, position: i });
+            return Err(SparseError::ColumnOutOfBounds {
+                col,
+                cols,
+                position: i,
+            });
         }
     }
 

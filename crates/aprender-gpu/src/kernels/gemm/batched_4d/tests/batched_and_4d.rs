@@ -158,7 +158,14 @@ fn test_batched_4d_gemm_config_debug() {
 /// Test Clone trait for Batched4DGemmConfig
 #[test]
 fn test_batched_4d_gemm_config_clone() {
-    let config = Batched4DGemmConfig { batch: 4, heads: 12, m: 256, n: 256, k: 64, tile_size: 32 };
+    let config = Batched4DGemmConfig {
+        batch: 4,
+        heads: 12,
+        m: 256,
+        n: 256,
+        k: 64,
+        tile_size: 32,
+    };
     let cloned = config.clone();
     assert_eq!(config.batch, cloned.batch);
     assert_eq!(config.heads, cloned.heads);

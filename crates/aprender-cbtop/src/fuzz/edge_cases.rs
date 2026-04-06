@@ -101,8 +101,16 @@ where
     F: Fn(u64) -> T,
     T: fmt::Debug,
 {
-    let edge_cases =
-        [0u64, 1, u64::MAX, u64::MAX - 1, u64::MAX / 2, 1000, 1_000_000, 1_000_000_000];
+    let edge_cases = [
+        0u64,
+        1,
+        u64::MAX,
+        u64::MAX - 1,
+        u64::MAX / 2,
+        1000,
+        1_000_000,
+        1_000_000_000,
+    ];
 
     edge_cases
         .iter()

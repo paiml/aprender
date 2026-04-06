@@ -123,8 +123,11 @@ impl MannWhitneyResult {
         let n2 = sample2.len();
 
         // Combine and rank
-        let mut combined: Vec<(f64, usize)> =
-            sample1.iter().map(|&x| (x, 0)).chain(sample2.iter().map(|&x| (x, 1))).collect();
+        let mut combined: Vec<(f64, usize)> = sample1
+            .iter()
+            .map(|&x| (x, 0))
+            .chain(sample2.iter().map(|&x| (x, 1)))
+            .collect();
 
         combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
 
@@ -160,13 +163,22 @@ impl MannWhitneyResult {
         let mean_u = (n1 * n2) as f64 / 2.0;
         let std_u = ((n1 * n2 * (n1 + n2 + 1)) as f64 / 12.0).sqrt();
 
-        let z = if std_u > 0.0 { (u - mean_u) / std_u } else { 0.0 };
+        let z = if std_u > 0.0 {
+            (u - mean_u) / std_u
+        } else {
+            0.0
+        };
         let p_value = two_tailed_p(z.abs());
 
         // Rank-biserial correlation as effect size
         let effect_size = 1.0 - (2.0 * u) / (n1 * n2) as f64;
 
-        Some(Self { u_statistic: u, p_value, effect_size, significant: p_value < 0.05 })
+        Some(Self {
+            u_statistic: u,
+            p_value,
+            effect_size,
+            significant: p_value < 0.05,
+        })
     }
 }
 
@@ -204,7 +216,14 @@ impl OutlierFilter {
         let lower_fence = q1 - multiplier * iqr;
         let upper_fence = q3 + multiplier * iqr;
 
-        Some(Self { lower_fence, upper_fence, q1, q3, iqr, multiplier })
+        Some(Self {
+            lower_fence,
+            upper_fence,
+            q1,
+            q3,
+            iqr,
+            multiplier,
+        })
     }
 
     /// Check if value is an outlier
@@ -214,7 +233,11 @@ impl OutlierFilter {
 
     /// Filter outliers from samples
     pub fn filter(&self, samples: &[f64]) -> Vec<f64> {
-        samples.iter().copied().filter(|&x| !self.is_outlier(x)).collect()
+        samples
+            .iter()
+            .copied()
+            .filter(|&x| !self.is_outlier(x))
+            .collect()
     }
 
     /// Count outliers in samples

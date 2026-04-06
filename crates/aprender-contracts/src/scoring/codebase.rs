@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use crate::binding::{BindingRegistry, ImplStatus, normalize_contract_id};
+use crate::binding::{normalize_contract_id, BindingRegistry, ImplStatus};
 use crate::schema::{Contract, LeanStatus};
 
 use super::score_contract;

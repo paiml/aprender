@@ -4,8 +4,11 @@ use super::types::{AggregationStrategy, HostBenchmark};
 
 /// Extract three metric vectors (throughput, latency_p50, latency_p99) from benchmarks.
 fn extract_metric_triple(benchmarks: &[HostBenchmark]) -> [Vec<f64>; 3] {
-    let extractors: [fn(&HostBenchmark) -> f64; 3] =
-        [|b| b.throughput_ops, |b| b.latency_p50_us, |b| b.latency_p99_us];
+    let extractors: [fn(&HostBenchmark) -> f64; 3] = [
+        |b| b.throughput_ops,
+        |b| b.latency_p50_us,
+        |b| b.latency_p99_us,
+    ];
     extractors.map(|f| benchmarks.iter().map(f).collect())
 }
 
@@ -34,7 +37,11 @@ pub(crate) fn compute_metrics(
                 s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 s[s.len() / 2]
             };
-            (median(&throughputs), median(&latencies_p50), median(&latencies_p99))
+            (
+                median(&throughputs),
+                median(&latencies_p50),
+                median(&latencies_p99),
+            )
         }
         AggregationStrategy::Minimum => (
             apply(&throughputs, f64::INFINITY, f64::min),

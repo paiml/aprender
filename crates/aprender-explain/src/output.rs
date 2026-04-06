@@ -91,9 +91,18 @@ pub fn format_text(report: &AnalysisReport) -> String {
         report.memory.global_loads,
         report.memory.coalesced_ratio * 100.0
     ));
-    output.push_str(&format!("  ├── Global stores: {}\n", report.memory.global_stores));
-    output.push_str(&format!("  ├── Shared loads: {}\n", report.memory.shared_loads));
-    output.push_str(&format!("  └── Shared stores: {}\n", report.memory.shared_stores));
+    output.push_str(&format!(
+        "  ├── Global stores: {}\n",
+        report.memory.global_stores
+    ));
+    output.push_str(&format!(
+        "  ├── Shared loads: {}\n",
+        report.memory.shared_loads
+    ));
+    output.push_str(&format!(
+        "  └── Shared stores: {}\n",
+        report.memory.shared_stores
+    ));
 
     // Roofline
     output.push_str(&format!("\n{}\n", "Performance Estimate:".white().bold()));
@@ -103,7 +112,11 @@ pub fn format_text(report: &AnalysisReport) -> String {
     ));
     output.push_str(&format!(
         "  └── Bottleneck: {}\n",
-        if report.roofline.memory_bound { "Memory bandwidth".yellow() } else { "Compute".green() }
+        if report.roofline.memory_bound {
+            "Memory bandwidth".yellow()
+        } else {
+            "Compute".green()
+        }
     ));
 
     // Muda Warnings
@@ -124,7 +137,11 @@ pub fn format_text(report: &AnalysisReport) -> String {
                 warning.description
             ));
             if let Some(ref suggestion) = warning.suggestion {
-                output.push_str(&format!("     └── {}: {}\n", "Suggestion".cyan(), suggestion));
+                output.push_str(&format!(
+                    "     └── {}: {}\n",
+                    "Suggestion".cyan(),
+                    suggestion
+                ));
             }
         }
     }

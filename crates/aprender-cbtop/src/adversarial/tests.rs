@@ -12,7 +12,10 @@ fn test_input_validator_max_size() {
     let validator = InputValidator::new().with_max_size(100);
     let data = vec![0u8; 200];
     let result = validator.validate_bytes(&data);
-    assert!(matches!(result, Err(AdversarialError::MaxSizeExceeded { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::MaxSizeExceeded { .. })
+    ));
 }
 
 #[test]
@@ -36,13 +39,19 @@ fn test_bit_flip_injector() {
 #[test]
 fn test_checked_arithmetic_overflow() {
     let result = CheckedArithmetic::checked_add_i64(i64::MAX, 1);
-    assert!(matches!(result, Err(AdversarialError::IntegerOverflow { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::IntegerOverflow { .. })
+    ));
 }
 
 #[test]
 fn test_checked_div_zero() {
     let result = CheckedArithmetic::checked_div_f64(10.0, 0.0);
-    assert!(matches!(result, Err(AdversarialError::DivisionByZero { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::DivisionByZero { .. })
+    ));
 }
 
 #[test]
@@ -62,7 +71,10 @@ fn test_resource_limiter_stack() {
     }
 
     // 6th should fail
-    assert!(matches!(limiter.enter_recursion(), Err(AdversarialError::StackOverflow { .. })));
+    assert!(matches!(
+        limiter.enter_recursion(),
+        Err(AdversarialError::StackOverflow { .. })
+    ));
 }
 
 #[test]
@@ -73,7 +85,10 @@ fn test_cancellation_token() {
 
     token.cancel();
     assert!(token.is_cancelled());
-    assert!(matches!(token.check("test"), Err(AdversarialError::Cancelled { .. })));
+    assert!(matches!(
+        token.check("test"),
+        Err(AdversarialError::Cancelled { .. })
+    ));
 }
 
 #[test]

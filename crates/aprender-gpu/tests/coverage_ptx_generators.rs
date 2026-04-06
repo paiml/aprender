@@ -28,8 +28,16 @@ fn assert_valid_ptx(ptx: &str, kernel_name: &str) {
         kernel_name,
         &ptx[..ptx.len().min(200)]
     );
-    assert!(ptx.contains(".entry"), "{}: Missing .entry directive", kernel_name);
-    assert!(ptx.contains(".target"), "{}: Missing .target directive", kernel_name);
+    assert!(
+        ptx.contains(".entry"),
+        "{}: Missing .entry directive",
+        kernel_name
+    );
+    assert!(
+        ptx.contains(".target"),
+        "{}: Missing .target directive",
+        kernel_name
+    );
 }
 
 // ============================================================================

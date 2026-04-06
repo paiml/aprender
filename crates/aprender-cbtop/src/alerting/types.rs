@@ -51,7 +51,11 @@ pub enum AlertChannel {
     /// PagerDuty Events API
     PagerDuty { routing_key: String },
     /// Email via SMTP
-    Email { smtp_host: String, to: String, from: String },
+    Email {
+        smtp_host: String,
+        to: String,
+        from: String,
+    },
     /// Generic HTTP webhook
     Webhook { url: String, method: String },
     /// Console output (for testing)
@@ -72,17 +76,24 @@ impl AlertChannel {
 
     /// Create Slack channel
     pub fn slack(webhook_url: &str) -> Self {
-        Self::Slack { webhook_url: webhook_url.to_string() }
+        Self::Slack {
+            webhook_url: webhook_url.to_string(),
+        }
     }
 
     /// Create PagerDuty channel
     pub fn pagerduty(routing_key: &str) -> Self {
-        Self::PagerDuty { routing_key: routing_key.to_string() }
+        Self::PagerDuty {
+            routing_key: routing_key.to_string(),
+        }
     }
 
     /// Create webhook channel
     pub fn webhook(url: &str) -> Self {
-        Self::Webhook { url: url.to_string(), method: "POST".to_string() }
+        Self::Webhook {
+            url: url.to_string(),
+            method: "POST".to_string(),
+        }
     }
 }
 
@@ -157,7 +168,10 @@ impl Alert {
     /// Format as Slack message
     pub fn to_slack_json(&self) -> String {
         let value_str = self.value.map(|v| format!("{:.2}", v)).unwrap_or_default();
-        let threshold_str = self.threshold.map(|t| format!("{:.2}", t)).unwrap_or_default();
+        let threshold_str = self
+            .threshold
+            .map(|t| format!("{:.2}", t))
+            .unwrap_or_default();
 
         format!(
             r#"{{"attachments":[{{"color":"{}","title":"{}","text":"{}","fields":[{{"title":"Severity","value":"{}","short":true}},{{"title":"Source","value":"{}","short":true}},{{"title":"Value","value":"{}","short":true}},{{"title":"Threshold","value":"{}","short":true}}],"ts":{}}}]}}"#,
@@ -199,8 +213,12 @@ impl Alert {
             self.message,
             self.severity.name(),
             self.source,
-            self.value.map(|v| format!("{}", v)).unwrap_or("null".to_string()),
-            self.threshold.map(|t| format!("{}", t)).unwrap_or("null".to_string()),
+            self.value
+                .map(|v| format!("{}", v))
+                .unwrap_or("null".to_string()),
+            self.threshold
+                .map(|t| format!("{}", t))
+                .unwrap_or("null".to_string()),
             self.timestamp
         )
     }
@@ -222,7 +240,12 @@ pub struct DeliveryResult {
 impl DeliveryResult {
     /// Create success result
     pub fn success(channel: &str, duration_ms: u64) -> Self {
-        Self { channel: channel.to_string(), success: true, error: None, duration_ms }
+        Self {
+            channel: channel.to_string(),
+            success: true,
+            error: None,
+            duration_ms,
+        }
     }
 
     /// Create failure result

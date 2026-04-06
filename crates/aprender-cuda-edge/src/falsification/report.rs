@@ -24,9 +24,14 @@ impl FalsificationReport {
     pub fn new() -> Self {
         let claims = all_claims();
         let total_claims = claims.len();
-        let statuses =
-            claims.into_iter().map(|c| (c.id.to_string(), ClaimStatus::Pending)).collect();
-        Self { statuses, total_claims }
+        let statuses = claims
+            .into_iter()
+            .map(|c| (c.id.to_string(), ClaimStatus::Pending))
+            .collect();
+        Self {
+            statuses,
+            total_claims,
+        }
     }
 
     /// Mark a claim as verified (property held).
@@ -109,8 +114,15 @@ impl FalsificationReport {
         let mut result: HashMap<Framework, Vec<_>> = HashMap::new();
 
         for claim in claims {
-            let status = self.statuses.get(claim.id).copied().unwrap_or(ClaimStatus::Pending);
-            result.entry(claim.framework).or_default().push((claim, status));
+            let status = self
+                .statuses
+                .get(claim.id)
+                .copied()
+                .unwrap_or(ClaimStatus::Pending);
+            result
+                .entry(claim.framework)
+                .or_default()
+                .push((claim, status));
         }
 
         result

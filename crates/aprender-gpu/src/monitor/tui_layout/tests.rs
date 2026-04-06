@@ -152,7 +152,9 @@ fn h046_progress_bar_clamp() {
 
 #[test]
 fn h046_progress_bar_render() {
-    let bar = ProgressBarWidget::new("RAM").with_progress(0.5).with_total("32 / 64 GB");
+    let bar = ProgressBarWidget::new("RAM")
+        .with_progress(0.5)
+        .with_total("32 / 64 GB");
     let rendered = bar.render(20);
 
     assert!(rendered.contains("RAM"));

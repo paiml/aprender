@@ -148,7 +148,10 @@ fn extract_scale_min(scales: &[u8], sub_block: usize) -> (u8, u8) {
 /// # Returns
 /// W4A16 weight bytes. Size: `ceil(N/16) * num_sb * 2560`.
 pub fn repack_q4k_w4a16(src: &[u8], n: usize, k: usize) -> Vec<u8> {
-    assert!(k % Q4K_SUPER_BLOCK_SIZE as usize == 0, "K must be multiple of 256");
+    assert!(
+        k % Q4K_SUPER_BLOCK_SIZE as usize == 0,
+        "K must be multiple of 256"
+    );
     let num_sb = k / Q4K_SUPER_BLOCK_SIZE as usize;
     let sb_bytes = Q4K_SUPER_BLOCK_BYTES as usize;
     assert_eq!(
@@ -358,7 +361,12 @@ mod tests {
         // Verify byte-interleaving
         for col in 0..16u8 {
             let qs_offset = W4A16_QS_OFFSET + 0 * W4A16_TILE_COLS + col as usize;
-            assert_eq!(dst[qs_offset], col + 0x10, "qs interleave failed col {}", col);
+            assert_eq!(
+                dst[qs_offset],
+                col + 0x10,
+                "qs interleave failed col {}",
+                col
+            );
         }
     }
 
@@ -385,7 +393,12 @@ mod tests {
         for col in 0..16 {
             let off = W4A16_SCALE_OFFSET + (0 * W4A16_TILE_COLS + col) * 2;
             let val = f16_to_f32([dst[off], dst[off + 1]]);
-            assert!((val - 6.0).abs() < 0.1, "col {} eff_scale = {} expected 6.0", col, val);
+            assert!(
+                (val - 6.0).abs() < 0.1,
+                "col {} eff_scale = {} expected 6.0",
+                col,
+                val
+            );
         }
     }
 
@@ -409,12 +422,20 @@ mod tests {
         let tile1_offset = W4A16_TILE_BYTES;
         let off = tile1_offset + W4A16_SCALE_OFFSET + (0 * W4A16_TILE_COLS + 0) * 2;
         let val = f16_to_f32([dst[off], dst[off + 1]]);
-        assert!((val - 5.0).abs() < 0.1, "Padded tile col 0 eff_scale={}", val);
+        assert!(
+            (val - 5.0).abs() < 0.1,
+            "Padded tile col 0 eff_scale={}",
+            val
+        );
 
         // Padded columns (1-15) clone col 16
         let off_pad = tile1_offset + W4A16_SCALE_OFFSET + (0 * W4A16_TILE_COLS + 1) * 2;
         let val_pad = f16_to_f32([dst[off_pad], dst[off_pad + 1]]);
-        assert!((val_pad - 5.0).abs() < 0.1, "Padded col should clone: eff_scale={}", val_pad);
+        assert!(
+            (val_pad - 5.0).abs() < 0.1,
+            "Padded col should clone: eff_scale={}",
+            val_pad
+        );
     }
 
     #[test]

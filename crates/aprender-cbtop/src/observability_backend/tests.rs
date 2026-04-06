@@ -2,8 +2,9 @@ use super::*;
 
 #[test]
 fn test_export_metric_creation() {
-    let metric =
-        ExportMetric::gauge("cpu_usage", 75.5).with_tag("host", "server1").with_unit("percent");
+    let metric = ExportMetric::gauge("cpu_usage", 75.5)
+        .with_tag("host", "server1")
+        .with_unit("percent");
 
     assert_eq!(metric.name, "cpu_usage");
     assert_eq!(metric.value, 75.5);
@@ -162,8 +163,10 @@ fn test_error_display() {
     assert!(err.to_string().contains("Datadog"));
     assert!(err.to_string().contains("timeout"));
 
-    let err =
-        ObservabilityError::RateLimited { backend: "NewRelic".to_string(), retry_after_sec: 60 };
+    let err = ObservabilityError::RateLimited {
+        backend: "NewRelic".to_string(),
+        retry_after_sec: 60,
+    };
     assert!(err.to_string().contains("60"));
 }
 
@@ -218,8 +221,11 @@ fn test_fkr_047_multi_backend_export() {
     assert_eq!(results.len(), 5);
 
     // Verify each backend received metrics
-    let successful_backends: Vec<_> =
-        results.iter().filter(|r| r.success).map(|r| r.backend).collect();
+    let successful_backends: Vec<_> = results
+        .iter()
+        .filter(|r| r.success)
+        .map(|r| r.backend)
+        .collect();
 
     assert!(successful_backends.contains(&ObservabilityBackend::Datadog));
     assert!(successful_backends.contains(&ObservabilityBackend::NewRelic));

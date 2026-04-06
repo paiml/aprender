@@ -60,13 +60,17 @@ pub(crate) fn get_kernel_cache() -> &'static Mutex<HashMap<String, Arc<Mutex<Cud
 fn lock_cache(
     cache: &Mutex<HashMap<String, Arc<Mutex<CudaModule>>>>,
 ) -> Result<std::sync::MutexGuard<'_, HashMap<String, Arc<Mutex<CudaModule>>>>> {
-    cache.lock().map_err(|e| crate::GpuError::KernelLaunch(format!("Cache lock poisoned: {e}")))
+    cache
+        .lock()
+        .map_err(|e| crate::GpuError::KernelLaunch(format!("Cache lock poisoned: {e}")))
 }
 
 /// Acquire a `Mutex<CudaModule>` lock, mapping poison errors to `GpuError`.
 #[cfg(feature = "cuda")]
 fn lock_module(module: &Mutex<CudaModule>) -> Result<std::sync::MutexGuard<'_, CudaModule>> {
-    module.lock().map_err(|e| crate::GpuError::KernelLaunch(format!("Module lock poisoned: {e}")))
+    module
+        .lock()
+        .map_err(|e| crate::GpuError::KernelLaunch(format!("Module lock poisoned: {e}")))
 }
 
 /// Get a cached kernel module, compiling if not present.

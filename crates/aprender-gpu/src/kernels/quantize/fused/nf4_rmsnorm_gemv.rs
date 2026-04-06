@@ -49,7 +49,11 @@ impl FusedRmsNormNf4GemvKernel {
     /// Create a new fused RMSNorm + NF4 GEMV kernel.
     #[must_use]
     pub fn new(k: u32, n: u32) -> Self {
-        Self { k, n, epsilon: 1e-5 }
+        Self {
+            k,
+            n,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon for RMSNorm.

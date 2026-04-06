@@ -13,7 +13,9 @@ fn test_ops_softmax_warp() {
     // Small row size (<=32) uses warp shuffle softmax
     let seq_len = 8u32;
     let row_size = 16u32;
-    let data: Vec<f32> = (0..(seq_len * row_size)).map(|i| (i % row_size) as f32 * 0.1).collect();
+    let data: Vec<f32> = (0..(seq_len * row_size))
+        .map(|i| (i % row_size) as f32 * 0.1)
+        .collect();
 
     let tensor = GpuResidentTensor::from_host(&ctx, &data).unwrap();
     let mut result = tensor.softmax(&ctx, seq_len).unwrap();
@@ -34,7 +36,9 @@ fn test_ops_softmax_long_row() {
     // Large row size (>32) uses long row softmax
     let seq_len = 4u32;
     let row_size = 128u32;
-    let data: Vec<f32> = (0..(seq_len * row_size)).map(|i| (i % row_size) as f32 * 0.01).collect();
+    let data: Vec<f32> = (0..(seq_len * row_size))
+        .map(|i| (i % row_size) as f32 * 0.01)
+        .collect();
 
     let tensor = GpuResidentTensor::from_host(&ctx, &data).unwrap();
     let result = tensor.softmax(&ctx, seq_len).unwrap();

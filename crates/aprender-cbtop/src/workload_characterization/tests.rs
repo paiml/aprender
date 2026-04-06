@@ -35,8 +35,12 @@ fn test_feature_to_vec() {
 
 #[test]
 fn test_cosine_similarity() {
-    let a = WorkloadFeatures::new().with_intensity(10.0).with_compute_density(5.0);
-    let b = WorkloadFeatures::new().with_intensity(20.0).with_compute_density(10.0);
+    let a = WorkloadFeatures::new()
+        .with_intensity(10.0)
+        .with_compute_density(5.0);
+    let b = WorkloadFeatures::new()
+        .with_intensity(20.0)
+        .with_compute_density(10.0);
 
     let sim = a.cosine_similarity(&b);
     assert!(sim > 0.9); // Same direction, similar features

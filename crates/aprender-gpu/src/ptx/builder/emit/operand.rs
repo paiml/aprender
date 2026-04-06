@@ -158,7 +158,10 @@ mod tests {
     #[test]
     fn test_emit_operand_addr_zero_offset() {
         let vreg = VirtualReg::new(0, PtxType::U64);
-        let result = emit_operand(&Operand::Addr { base: vreg, offset: 0 });
+        let result = emit_operand(&Operand::Addr {
+            base: vreg,
+            offset: 0,
+        });
         assert!(result.starts_with('[') && result.ends_with(']'));
         assert!(!result.contains('+'));
     }
@@ -179,7 +182,10 @@ mod tests {
     #[test]
     fn test_emit_shared_mem_operand_addr_zero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
-        let result = emit_shared_mem_operand(&Operand::Addr { base: vreg, offset: 0 });
+        let result = emit_shared_mem_operand(&Operand::Addr {
+            base: vreg,
+            offset: 0,
+        });
         assert!(result.starts_with('[') && result.ends_with(']'));
         assert!(!result.contains('+'));
     }
@@ -200,7 +206,10 @@ mod tests {
     #[test]
     fn test_emit_global_mem_operand_addr_zero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
-        let result = emit_global_mem_operand(&Operand::Addr { base: vreg, offset: 0 });
+        let result = emit_global_mem_operand(&Operand::Addr {
+            base: vreg,
+            offset: 0,
+        });
         assert!(!result.contains('+'));
     }
 
@@ -264,7 +273,13 @@ mod tests {
     fn test_write_operand_addr_zero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
         let mut out = String::new();
-        write_operand(&Operand::Addr { base: vreg, offset: 0 }, &mut out);
+        write_operand(
+            &Operand::Addr {
+                base: vreg,
+                offset: 0,
+            },
+            &mut out,
+        );
         assert!(!out.contains('+'));
     }
 
@@ -272,7 +287,13 @@ mod tests {
     fn test_write_operand_addr_nonzero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
         let mut out = String::new();
-        write_operand(&Operand::Addr { base: vreg, offset: 64 }, &mut out);
+        write_operand(
+            &Operand::Addr {
+                base: vreg,
+                offset: 64,
+            },
+            &mut out,
+        );
         assert!(out.contains("+64"));
     }
 
@@ -295,7 +316,13 @@ mod tests {
     fn test_write_mem_operand_addr_zero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
         let mut out = String::new();
-        write_mem_operand(&Operand::Addr { base: vreg, offset: 0 }, &mut out);
+        write_mem_operand(
+            &Operand::Addr {
+                base: vreg,
+                offset: 0,
+            },
+            &mut out,
+        );
         assert!(!out.contains('+'));
     }
 
@@ -303,7 +330,13 @@ mod tests {
     fn test_write_mem_operand_addr_nonzero() {
         let vreg = VirtualReg::new(0, PtxType::U64);
         let mut out = String::new();
-        write_mem_operand(&Operand::Addr { base: vreg, offset: 32 }, &mut out);
+        write_mem_operand(
+            &Operand::Addr {
+                base: vreg,
+                offset: 32,
+            },
+            &mut out,
+        );
         assert!(out.contains("+32"));
     }
 

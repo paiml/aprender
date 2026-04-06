@@ -14,7 +14,11 @@ fn golden_special_reg_tid_x() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("%tid.x"), "GOLDEN FAIL: %tid.x special reg not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("%tid.x"),
+        "GOLDEN FAIL: %tid.x special reg not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -25,7 +29,11 @@ fn golden_special_reg_ctaid_x() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("%ctaid.x"), "GOLDEN FAIL: %ctaid.x special reg not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("%ctaid.x"),
+        "GOLDEN FAIL: %ctaid.x special reg not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -36,7 +44,11 @@ fn golden_special_reg_ntid_x() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("%ntid.x"), "GOLDEN FAIL: %ntid.x special reg not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("%ntid.x"),
+        "GOLDEN FAIL: %ntid.x special reg not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 // ============================================================================
@@ -95,14 +107,20 @@ fn golden_kernel_params() {
         "GOLDEN FAIL: output_ptr param not found\nPTX:\n{}",
         ptx
     );
-    assert!(ptx.contains(".param .u32 n"), "GOLDEN FAIL: n param not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains(".param .u32 n"),
+        "GOLDEN FAIL: n param not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
 fn golden_shared_memory_declaration() {
-    let kernel = PtxKernel::new("test_shared").shared_memory(4096).build(|ctx| {
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_shared")
+        .shared_memory(4096)
+        .build(|ctx| {
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
 
@@ -128,7 +146,11 @@ fn golden_dp4a_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("dp4a"), "GOLDEN FAIL: dp4a instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("dp4a"),
+        "GOLDEN FAIL: dp4a instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 // ============================================================================

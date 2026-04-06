@@ -48,7 +48,11 @@ fn test_fusion_mul_result_as_second_operand() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 1, "Should fuse even when mul result is second add operand");
+    assert_eq!(
+        result.len(),
+        1,
+        "Should fuse even when mul result is second add operand"
+    );
     assert!(matches!(result[0].op, PtxOp::Fma));
 }
 
@@ -74,7 +78,11 @@ fn test_type_mismatch_prevents_fusion() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Type mismatch between mul and add should prevent fusion");
+    assert_eq!(
+        result.len(),
+        2,
+        "Type mismatch between mul and add should prevent fusion"
+    );
 }
 
 // Test predicate counting in use-counts
@@ -94,7 +102,10 @@ fn test_predicate_use_counts() {
         .dst(Operand::Reg(r2))
         .src(Operand::Reg(r0))
         .src(Operand::Reg(r1));
-    mul_instr.predicate = Some(Predicate { reg: pred, negated: false });
+    mul_instr.predicate = Some(Predicate {
+        reg: pred,
+        negated: false,
+    });
 
     let instructions = vec![mul_instr, make_add(r4, r2, r3)];
 
@@ -120,7 +131,11 @@ fn test_non_mul_definition_not_fused() {
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Add with non-mul source definition should not fuse");
+    assert_eq!(
+        result.len(),
+        2,
+        "Add with non-mul source definition should not fuse"
+    );
 }
 
 // Test mul with insufficient sources (edge case)
@@ -133,12 +148,18 @@ fn test_mul_insufficient_sources() {
 
     // Malformed mul with only 1 source (edge case)
     let instructions = vec![
-        PtxInstruction::new(PtxOp::Mul, PtxType::F32).dst(Operand::Reg(r1)).src(Operand::Reg(r0)), // Only one source!
+        PtxInstruction::new(PtxOp::Mul, PtxType::F32)
+            .dst(Operand::Reg(r1))
+            .src(Operand::Reg(r0)), // Only one source!
         make_add(r3, r1, r2),
     ];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 2, "Mul with insufficient sources should not fuse");
+    assert_eq!(
+        result.len(),
+        2,
+        "Mul with insufficient sources should not fuse"
+    );
 }
 
 // Test add with immediate (non-register) source
@@ -173,5 +194,9 @@ fn test_undefined_register_source() {
     let instructions = vec![make_add(r2, r0, r1)];
 
     let result = pass(instructions);
-    assert_eq!(result.len(), 1, "Add with undefined register should be preserved");
+    assert_eq!(
+        result.len(),
+        1,
+        "Add with undefined register should be preserved"
+    );
 }

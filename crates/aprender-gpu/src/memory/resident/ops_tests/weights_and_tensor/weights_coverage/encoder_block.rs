@@ -92,7 +92,11 @@ fn test_forward_encoder_block_gpu_verifies_output_shape() {
     let ffn_dim = 64usize;
     let seq_len = 8usize;
 
-    let config = GpuEncoderConfig { d_model: d_model as u32, n_heads: 2, ffn_dim: ffn_dim as u32 };
+    let config = GpuEncoderConfig {
+        d_model: d_model as u32,
+        n_heads: 2,
+        ffn_dim: ffn_dim as u32,
+    };
     let weights = build_uniform_weights(&ctx, d_model, ffn_dim, 0.01, 0.0);
     let input = build_input(&ctx, seq_len, d_model, |i| (i as f32) * 0.01);
 
@@ -115,7 +119,11 @@ fn test_forward_encoder_block_gpu_with_different_n_heads() {
     let ffn_dim = 128usize;
     let seq_len = 4usize;
 
-    let config = GpuEncoderConfig { d_model: d_model as u32, n_heads: 4, ffn_dim: ffn_dim as u32 };
+    let config = GpuEncoderConfig {
+        d_model: d_model as u32,
+        n_heads: 4,
+        ffn_dim: ffn_dim as u32,
+    };
     let weights = build_uniform_weights(&ctx, d_model, ffn_dim, 0.02, 0.0);
     let input = build_input(&ctx, seq_len, d_model, |i| (i as f32) * 0.01);
 
@@ -136,7 +144,11 @@ fn test_forward_encoder_block_with_varied_input_values() {
     let ffn_dim = 32usize;
     let seq_len = 4usize;
 
-    let config = GpuEncoderConfig { d_model: d_model as u32, n_heads: 2, ffn_dim: ffn_dim as u32 };
+    let config = GpuEncoderConfig {
+        d_model: d_model as u32,
+        n_heads: 2,
+        ffn_dim: ffn_dim as u32,
+    };
     let weights = build_sequential_weights(&ctx, d_model, ffn_dim, 0.001, 0.1);
     let input = build_input(&ctx, seq_len, d_model, |i| ((i % 10) as f32) * 0.1 - 0.5);
 

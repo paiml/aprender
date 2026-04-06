@@ -50,7 +50,12 @@ impl BuiltComputeBlock {
 
         // Simulate execution (real implementation would dispatch to backends)
         let duration = start.elapsed();
-        let flops = self.inner.workload.as_ref().map(|w| w.flop_count()).unwrap_or(0);
+        let flops = self
+            .inner
+            .workload
+            .as_ref()
+            .map(|w| w.flop_count())
+            .unwrap_or(0);
         let gflops = if duration.as_secs_f64() > 0.0 {
             flops as f64 / duration.as_secs_f64() / 1e9
         } else {
@@ -131,7 +136,10 @@ impl ComputeBlockBuilder {
         Self {
             inner: ComputeBlock {
                 transform: DataTransform::Identity,
-                context: ExecutionContext::Cpu { affinity: None, numa_node: None },
+                context: ExecutionContext::Cpu {
+                    affinity: None,
+                    numa_node: None,
+                },
                 composition: CompositionMode::None,
                 policy: ExecutionPolicy::default(),
                 ..Default::default()
@@ -159,7 +167,9 @@ impl ComputeBlockBuilder {
 
     /// Add a strategy layer with priority
     pub fn strategy_with_priority(mut self, strategy: ExecutionStrategy, priority: i32) -> Self {
-        self.inner.strategies.push(StrategyLayer::new(strategy).priority(priority));
+        self.inner
+            .strategies
+            .push(StrategyLayer::new(strategy).priority(priority));
         self
     }
 

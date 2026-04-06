@@ -93,7 +93,11 @@ fn lz4_fkr_ptx_barrier_safety() {
     let kernel = Lz4WarpCompressKernel::new(100);
     let result = kernel.analyze_barrier_safety();
 
-    assert!(result.is_safe, "LZ4 kernel barrier safety failed: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "LZ4 kernel barrier safety failed: {:?}",
+        result.violations
+    );
 }
 
 /// LZ4-FKR-006: PTX has hash multiply constant (0x9E3779B1 = 2654435761)
@@ -162,7 +166,12 @@ fn lz4_fkr_ptx_validates_with_ptxas() {
 
     // Validate with ptxas
     let output = Command::new("ptxas")
-        .args(["-arch=sm_89", tmpfile.to_str().expect("test"), "-o", "/dev/null"])
+        .args([
+            "-arch=sm_89",
+            tmpfile.to_str().expect("test"),
+            "-o",
+            "/dev/null",
+        ])
         .output()
         .expect("Failed to run ptxas");
 
@@ -273,7 +282,11 @@ fn lz4_fkr_scalar_zero_page() {
 
     let comp_size = lz4_compress_block(&input, &mut compressed).expect("test");
 
-    assert!(comp_size < 100, "Zero page should compress to <100 bytes, got {}", comp_size);
+    assert!(
+        comp_size < 100,
+        "Zero page should compress to <100 bytes, got {}",
+        comp_size
+    );
 }
 
 /// LZ4-FKR-025: Full page roundtrip
@@ -313,7 +326,10 @@ fn lz4_fkr_scalar_deterministic() {
 fn lz4_fkr_constants() {
     assert_eq!(LZ4_MIN_MATCH, 4, "LZ4 minimum match is 4 bytes");
     assert_eq!(LZ4_HASH_SIZE, 4096, "LZ4 hash table is 4096 entries");
-    assert_eq!(LZ4_HASH_MULT, 2654435761, "LZ4 hash multiplier is 0x9E3779B1");
+    assert_eq!(
+        LZ4_HASH_MULT, 2654435761,
+        "LZ4 hash multiplier is 0x9E3779B1"
+    );
     assert_eq!(PAGE_SIZE, 4096, "Page size is 4KB");
 }
 

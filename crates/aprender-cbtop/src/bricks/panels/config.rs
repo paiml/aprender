@@ -21,12 +21,20 @@ pub struct ConfigProfile {
 impl ConfigProfile {
     /// Create a new profile
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self { name: name.into(), description: description.into(), is_active: false }
+        Self {
+            name: name.into(),
+            description: description.into(),
+            is_active: false,
+        }
     }
 
     /// Create a new active profile
     pub fn active(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self { name: name.into(), description: description.into(), is_active: true }
+        Self {
+            name: name.into(),
+            description: description.into(),
+            is_active: true,
+        }
     }
 }
 
@@ -103,8 +111,14 @@ impl ConfigPanelBrick {
 
     /// Paint the config panel
     pub fn paint(&self, canvas: &mut dyn Canvas, _width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
         let active_style = TextStyle {
             color: Color::new(0.3, 1.0, 0.5, 1.0), // Green for active
             ..Default::default()
@@ -150,7 +164,11 @@ impl ConfigPanelBrick {
 
         for (i, profile) in self.profiles.iter().enumerate() {
             let y = 11.0 + i as f32;
-            let prefix = if i == self.selected_index { " > " } else { "   " };
+            let prefix = if i == self.selected_index {
+                " > "
+            } else {
+                "   "
+            };
             let suffix = if profile.is_active { " (active)" } else { "" };
 
             let style = if i == self.selected_index {
@@ -170,7 +188,11 @@ impl ConfigPanelBrick {
 
         // Help text
         let help_y = 11.0 + self.profiles.len() as f32 + 2.0;
-        canvas.draw_text("Press 'P' to activate profile", Point::new(2.0, help_y), &dim_style);
+        canvas.draw_text(
+            "Press 'P' to activate profile",
+            Point::new(2.0, help_y),
+            &dim_style,
+        );
         canvas.draw_text(
             "Press 'S' to save current as new profile",
             Point::new(2.0, help_y + 1.0),

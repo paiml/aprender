@@ -37,7 +37,10 @@ impl Architecture {
 
     /// Check if architecture supports attention distillation.
     pub fn supports_attention_distill(&self) -> bool {
-        matches!(self, Self::Llama | Self::Mistral | Self::Gpt | Self::Bert | Self::T5)
+        matches!(
+            self,
+            Self::Llama | Self::Mistral | Self::Gpt | Self::Bert | Self::T5
+        )
     }
 }
 
@@ -64,27 +67,42 @@ impl ArchitectureDetector {
         let names_lower: Vec<String> = self.tensor_names.iter().map(|n| n.to_lowercase()).collect();
 
         // LLaMA patterns
-        if names_lower.iter().any(|n| n.contains("model.layers") && n.contains("self_attn")) {
+        if names_lower
+            .iter()
+            .any(|n| n.contains("model.layers") && n.contains("self_attn"))
+        {
             return Architecture::Llama;
         }
 
         // Mistral patterns (similar to LLaMA but with sliding window)
-        if names_lower.iter().any(|n| n.contains("mistral") || n.contains("sliding_window")) {
+        if names_lower
+            .iter()
+            .any(|n| n.contains("mistral") || n.contains("sliding_window"))
+        {
             return Architecture::Mistral;
         }
 
         // GPT patterns
-        if names_lower.iter().any(|n| n.contains("transformer.h") || n.contains("attn.c_attn")) {
+        if names_lower
+            .iter()
+            .any(|n| n.contains("transformer.h") || n.contains("attn.c_attn"))
+        {
             return Architecture::Gpt;
         }
 
         // BERT patterns
-        if names_lower.iter().any(|n| n.contains("bert.encoder") || n.contains("bert.pooler")) {
+        if names_lower
+            .iter()
+            .any(|n| n.contains("bert.encoder") || n.contains("bert.pooler"))
+        {
             return Architecture::Bert;
         }
 
         // T5 patterns
-        if names_lower.iter().any(|n| n.contains("encoder.block") && n.contains("decoder.block")) {
+        if names_lower
+            .iter()
+            .any(|n| n.contains("encoder.block") && n.contains("decoder.block"))
+        {
             return Architecture::T5;
         }
 
@@ -126,7 +144,13 @@ impl ArchitectureDetector {
 
         let num_heads = estimate_num_heads(hidden_dim);
 
-        ArchitectureInfo { architecture, hidden_dim, num_layers, vocab_size, num_heads }
+        ArchitectureInfo {
+            architecture,
+            hidden_dim,
+            num_layers,
+            vocab_size,
+            num_heads,
+        }
     }
 }
 
@@ -263,8 +287,9 @@ mod tests {
     fn test_gpt_takes_precedence_over_falcon() {
         // GPT is checked before Falcon in detection order
         // transformer.h matches GPT, even with self_attention.dense
-        let detector = ArchitectureDetector::new()
-            .with_tensors(vec!["transformer.h.0.self_attention.dense.weight".to_string()]);
+        let detector = ArchitectureDetector::new().with_tensors(vec![
+            "transformer.h.0.self_attention.dense.weight".to_string(),
+        ]);
         // GPT is detected first due to matching transformer.h
         assert_eq!(detector.detect(), Architecture::Gpt);
     }
@@ -288,8 +313,14 @@ mod tests {
     fn test_detector_detect_from_shapes() {
         let mut shapes = HashMap::new();
         shapes.insert("model.embed_tokens.weight".to_string(), vec![32000, 4096]);
-        shapes.insert("model.layers.0.self_attn.q_proj.weight".to_string(), vec![4096, 4096]);
-        shapes.insert("model.layers.31.mlp.gate_proj.weight".to_string(), vec![11008, 4096]);
+        shapes.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            vec![4096, 4096],
+        );
+        shapes.insert(
+            "model.layers.31.mlp.gate_proj.weight".to_string(),
+            vec![11008, 4096],
+        );
 
         let detector = ArchitectureDetector::new().with_tensors(shapes.keys().cloned().collect());
         let info = detector.detect_from_shapes(&shapes);
@@ -332,10 +363,22 @@ mod tests {
         let detector = ArchitectureDetector::new().with_tensors(vec![]);
         let info = detector.detect_from_shapes(&shapes);
 
-        assert_eq!(info.hidden_dim, 0, "hidden_dim must be 0 when no embedding tensor found");
-        assert_eq!(info.num_layers, 0, "num_layers must be 0 when no layer tensors found");
-        assert_eq!(info.vocab_size, 0, "vocab_size must be 0 when no embedding tensor found");
-        assert_eq!(info.num_heads, 0, "num_heads must be 0 when hidden_dim is 0");
+        assert_eq!(
+            info.hidden_dim, 0,
+            "hidden_dim must be 0 when no embedding tensor found"
+        );
+        assert_eq!(
+            info.num_layers, 0,
+            "num_layers must be 0 when no layer tensors found"
+        );
+        assert_eq!(
+            info.vocab_size, 0,
+            "vocab_size must be 0 when no embedding tensor found"
+        );
+        assert_eq!(
+            info.num_heads, 0,
+            "num_heads must be 0 when hidden_dim is 0"
+        );
     }
 
     #[test]

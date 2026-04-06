@@ -23,8 +23,14 @@ impl LoadControlPanelBrick {
 
     /// Paint the load control panel
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
         let selected_style = TextStyle {
             color: Color::new(0.3, 0.8, 1.0, 1.0), // Cyan for selected
             ..Default::default()
@@ -45,12 +51,24 @@ impl LoadControlPanelBrick {
         canvas.draw_text("Load Control", Point::new(2.0, 2.0), &label_style);
 
         // Status indicator
-        let status_text = if self.is_running { "RUNNING" } else { "STOPPED" };
-        let status_style = if self.is_running { &running_style } else { &stopped_style };
+        let status_text = if self.is_running {
+            "RUNNING"
+        } else {
+            "STOPPED"
+        };
+        let status_style = if self.is_running {
+            &running_style
+        } else {
+            &stopped_style
+        };
         canvas.draw_text(status_text, Point::new(width - 12.0, 2.0), status_style);
 
         // Backend selection
-        let backend_style = if self.selected_item == 0 { &selected_style } else { &dim_style };
+        let backend_style = if self.selected_item == 0 {
+            &selected_style
+        } else {
+            &dim_style
+        };
         canvas.draw_text("Backend:", Point::new(2.0, 4.0), backend_style);
         canvas.draw_text(
             &format!("< {} >", self.backend.name()),
@@ -59,7 +77,11 @@ impl LoadControlPanelBrick {
         );
 
         // Workload selection
-        let workload_style = if self.selected_item == 1 { &selected_style } else { &dim_style };
+        let workload_style = if self.selected_item == 1 {
+            &selected_style
+        } else {
+            &dim_style
+        };
         canvas.draw_text("Workload:", Point::new(2.0, 5.0), workload_style);
         canvas.draw_text(
             &format!("< {} >", self.workload.short_name()),
@@ -68,7 +90,11 @@ impl LoadControlPanelBrick {
         );
 
         // Intensity slider
-        let intensity_style = if self.selected_item == 2 { &selected_style } else { &dim_style };
+        let intensity_style = if self.selected_item == 2 {
+            &selected_style
+        } else {
+            &dim_style
+        };
         canvas.draw_text("Intensity:", Point::new(2.0, 6.0), intensity_style);
         let intensity_color = self.theme.cpu_color(self.intensity);
         let mut intensity_meter = Meter::new(self.intensity, 100.0).with_color(intensity_color);
@@ -81,7 +107,11 @@ impl LoadControlPanelBrick {
         );
 
         // Problem size
-        let size_style = if self.selected_item == 3 { &selected_style } else { &dim_style };
+        let size_style = if self.selected_item == 3 {
+            &selected_style
+        } else {
+            &dim_style
+        };
         canvas.draw_text("Size:", Point::new(2.0, 7.0), size_style);
         canvas.draw_text(
             &format!("< {} >", Self::format_size(self.problem_size)),
@@ -90,7 +120,11 @@ impl LoadControlPanelBrick {
         );
 
         // Start/Stop button indicator
-        let button_style = if self.selected_item == 4 { &selected_style } else { &dim_style };
+        let button_style = if self.selected_item == 4 {
+            &selected_style
+        } else {
+            &dim_style
+        };
         let button_text = if self.is_running { "[STOP]" } else { "[START]" };
         canvas.draw_text(button_text, Point::new(2.0, 9.0), button_style);
 
@@ -126,7 +160,10 @@ impl LoadControlPanelBrick {
                 BrickGrade::C => Color::new(1.0, 0.8, 0.3, 1.0),                 // Yellow
                 BrickGrade::D | BrickGrade::F => Color::new(1.0, 0.3, 0.3, 1.0), // Red
             };
-            let grade_style = TextStyle { color: grade_color, ..Default::default() };
+            let grade_style = TextStyle {
+                color: grade_color,
+                ..Default::default()
+            };
 
             canvas.draw_text("ComputeBrick Score", Point::new(2.0, 13.0), label_style);
             canvas.draw_text(
@@ -184,7 +221,11 @@ impl LoadControlPanelBrick {
                 Point::new(14.0, 18.0),
                 label_style,
             );
-            canvas.draw_text(&format!("{}/15", score.stability), Point::new(36.0, 18.0), dim_style);
+            canvas.draw_text(
+                &format!("{}/15", score.stability),
+                Point::new(36.0, 18.0),
+                dim_style,
+            );
         } else {
             // Statistics section (fallback when no score available)
             canvas.draw_text("Statistics", Point::new(2.0, 13.0), label_style);

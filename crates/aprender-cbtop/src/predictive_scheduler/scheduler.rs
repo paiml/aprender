@@ -65,8 +65,11 @@ impl PredictiveScheduler {
         let start = Instant::now();
 
         // Filter eligible hosts
-        let eligible_hosts: Vec<_> =
-            self.hosts.values().filter(|h| self.is_host_eligible(h, workload)).collect();
+        let eligible_hosts: Vec<_> = self
+            .hosts
+            .values()
+            .filter(|h| self.is_host_eligible(h, workload))
+            .collect();
 
         if eligible_hosts.is_empty() {
             return None;
@@ -331,14 +334,20 @@ impl PredictiveScheduler {
 
         // Update host utilization
         if let Some(host) = self.hosts.get(host_id) {
-            self.metrics.host_utilization.insert(host_id.to_string(), host.current_load);
+            self.metrics
+                .host_utilization
+                .insert(host_id.to_string(), host.current_load);
         }
 
         // Update host historical compliance
         if let Some(host) = self.hosts.get_mut(host_id) {
             if let Some(history) = self.violation_history.get(host_id) {
-                let recent_violations =
-                    history.iter().rev().take(self.config.history_window).filter(|&&v| v).count();
+                let recent_violations = history
+                    .iter()
+                    .rev()
+                    .take(self.config.history_window)
+                    .filter(|&&v| v)
+                    .count();
                 let total = history.len().min(self.config.history_window);
                 if total > 0 {
                     host.historical_slo_compliance =
@@ -368,7 +377,11 @@ impl PredictiveScheduler {
         let mut migrations = Vec::new();
 
         // Find overloaded and underloaded hosts
-        let mut overloaded: Vec<_> = self.hosts.values().filter(|h| h.current_load > 0.8).collect();
+        let mut overloaded: Vec<_> = self
+            .hosts
+            .values()
+            .filter(|h| h.current_load > 0.8)
+            .collect();
         let mut underloaded: Vec<_> = self
             .hosts
             .values()
@@ -378,10 +391,14 @@ impl PredictiveScheduler {
             .collect();
 
         overloaded.sort_by(|a, b| {
-            b.current_load.partial_cmp(&a.current_load).expect("values should be comparable")
+            b.current_load
+                .partial_cmp(&a.current_load)
+                .expect("values should be comparable")
         });
         underloaded.sort_by(|a, b| {
-            a.current_load.partial_cmp(&b.current_load).expect("values should be comparable")
+            a.current_load
+                .partial_cmp(&b.current_load)
+                .expect("values should be comparable")
         });
 
         // Suggest migrations from overloaded to underloaded

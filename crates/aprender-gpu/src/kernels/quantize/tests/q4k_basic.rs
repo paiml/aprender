@@ -236,8 +236,14 @@ fn test_ggml_kernel_config() {
 #[test]
 fn test_ggml_super_block_constants() {
     // Verify GGML Q4_K super-block constants
-    assert_eq!(Q4K_SUPER_BLOCK_SIZE, 256, "Super-block should have 256 values");
-    assert_eq!(Q4K_SUPER_BLOCK_BYTES, 144, "Super-block should be 144 bytes (2+2+12+128)");
+    assert_eq!(
+        Q4K_SUPER_BLOCK_SIZE, 256,
+        "Super-block should have 256 values"
+    );
+    assert_eq!(
+        Q4K_SUPER_BLOCK_BYTES, 144,
+        "Super-block should be 144 bytes (2+2+12+128)"
+    );
 }
 
 #[test]
@@ -252,7 +258,10 @@ fn test_ggml_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel name
-    assert!(ptx.contains("q4k_gemm_ggml"), "Should contain GGML kernel name");
+    assert!(
+        ptx.contains("q4k_gemm_ggml"),
+        "Should contain GGML kernel name"
+    );
 
     // Verify parameters
     assert!(ptx.contains(".param .u64 a_ptr"));
@@ -286,8 +295,14 @@ fn test_ggml_ptx_contains_triple_nested_loops() {
     let ptx = kernel.emit_ptx();
 
     assert!(ptx.contains("sb_loop"), "Should have super-block loop");
-    assert!(ptx.contains("sub_loop"), "Should have sub-block loop for 8 sub-blocks");
-    assert!(ptx.contains("val_loop"), "Should have value loop for 32 values per sub-block");
+    assert!(
+        ptx.contains("sub_loop"),
+        "Should have sub-block loop for 8 sub-blocks"
+    );
+    assert!(
+        ptx.contains("val_loop"),
+        "Should have value loop for 32 values per sub-block"
+    );
 }
 
 #[test]
@@ -300,8 +315,14 @@ fn test_ggml_ptx_contains_scale_extraction() {
         ptx.contains("shr") || ptx.contains("shl"),
         "Should have shift operations for scale extraction"
     );
-    assert!(ptx.contains("and"), "Should have AND operations for masking");
-    assert!(ptx.contains("selp"), "Should have selp for low/high sub-block selection");
+    assert!(
+        ptx.contains("and"),
+        "Should have AND operations for masking"
+    );
+    assert!(
+        ptx.contains("selp"),
+        "Should have selp for low/high sub-block selection"
+    );
 }
 
 #[test]
@@ -310,7 +331,10 @@ fn test_ggml_ptx_serial_accumulation() {
     let kernel = QuantizeKernel::ggml(1024, 1024, 4096);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("fma"), "Should use FMA for serial accumulation");
+    assert!(
+        ptx.contains("fma"),
+        "Should use FMA for serial accumulation"
+    );
     assert!(
         !ptx.contains("shfl"),
         "Should NOT have warp shuffle (serial accumulation, not warp reduction)"
@@ -385,7 +409,10 @@ fn test_tiled_ptx_generation() {
     let kernel = QuantizeKernel::ggml_tiled(1024, 1024, 4096, 4);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("q4k_gemm_ggml_tiled"), "Should have tiled kernel name");
+    assert!(
+        ptx.contains("q4k_gemm_ggml_tiled"),
+        "Should have tiled kernel name"
+    );
     assert!(ptx.contains(".param .u64 a_ptr"));
     assert!(ptx.contains(".param .u64 b_quant_ptr"));
     assert!(ptx.contains(".param .u64 c_ptr"));
@@ -445,8 +472,14 @@ fn test_tiled_scale_extraction() {
     let kernel = QuantizeKernel::ggml_tiled(1024, 1024, 4096, 4);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("selp"), "Should have selp for split scale format");
-    assert!(ptx.contains("shr"), "Should have shift for scale extraction");
+    assert!(
+        ptx.contains("selp"),
+        "Should have selp for split scale format"
+    );
+    assert!(
+        ptx.contains("shr"),
+        "Should have shift for scale extraction"
+    );
 }
 
 #[test]
@@ -457,7 +490,10 @@ fn test_tiled_vs_serial_different_ptx() {
     let ptx_serial = serial.emit_ptx();
     let ptx_tiled = tiled.emit_ptx();
 
-    assert_ne!(ptx_serial, ptx_tiled, "Serial and tiled should produce different PTX");
+    assert_ne!(
+        ptx_serial, ptx_tiled,
+        "Serial and tiled should produce different PTX"
+    );
     assert!(ptx_serial.contains("q4k_gemm_ggml"));
     assert!(ptx_tiled.contains("q4k_gemm_ggml_tiled"));
 
@@ -483,7 +519,11 @@ fn test_tiled_with_tile_m_builder() {
 
     // tile_m=8 should produce 8 stores
     let store_count = ptx.matches("st.global.f32").count();
-    assert_eq!(store_count, 8, "tile_m=8 should have 8 stores, found {}", store_count);
+    assert_eq!(
+        store_count, 8,
+        "tile_m=8 should have 8 stores, found {}",
+        store_count
+    );
 }
 
 #[test]
@@ -495,7 +535,19 @@ fn test_tiled_all_loops_branch_back() {
     let sub_count = ptx.matches("sub_loop").count();
     let val_count = ptx.matches("val_loop").count();
 
-    assert!(sb_count >= 2, "sb_loop: label + branch back, found {}", sb_count);
-    assert!(sub_count >= 2, "sub_loop: label + branch back, found {}", sub_count);
-    assert!(val_count >= 2, "val_loop: label + branch back, found {}", val_count);
+    assert!(
+        sb_count >= 2,
+        "sb_loop: label + branch back, found {}",
+        sb_count
+    );
+    assert!(
+        sub_count >= 2,
+        "sub_loop: label + branch back, found {}",
+        sub_count
+    );
+    assert!(
+        val_count >= 2,
+        "val_loop: label + branch back, found {}",
+        val_count
+    );
 }

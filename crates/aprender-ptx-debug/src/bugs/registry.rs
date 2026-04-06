@@ -191,12 +191,17 @@ impl BugRegistry {
 
     /// Get critical bugs only
     pub fn critical_bugs(&self) -> Vec<&Bug> {
-        self.bugs.iter().filter(|b| b.class.severity() == Severity::Critical).collect()
+        self.bugs
+            .iter()
+            .filter(|b| b.class.severity() == Severity::Critical)
+            .collect()
     }
 
     /// Check if any critical bugs were detected
     pub fn has_critical_bugs(&self) -> bool {
-        self.bugs.iter().any(|b| b.class.severity() == Severity::Critical)
+        self.bugs
+            .iter()
+            .any(|b| b.class.severity() == Severity::Critical)
     }
 
     /// Clear all bugs
@@ -211,9 +216,15 @@ mod tests {
 
     #[test]
     fn test_bug_class_severity() {
-        assert_eq!(BugClass::GenericAddressCorruption.severity(), Severity::Critical);
+        assert_eq!(
+            BugClass::GenericAddressCorruption.severity(),
+            Severity::Critical
+        );
         assert_eq!(BugClass::DataDependentStore.severity(), Severity::Critical);
-        assert_eq!(BugClass::ComputedAddrFromLoaded.severity(), Severity::Critical);
+        assert_eq!(
+            BugClass::ComputedAddrFromLoaded.severity(),
+            Severity::Critical
+        );
         assert_eq!(BugClass::MissingBarrierSync.severity(), Severity::High);
     }
 

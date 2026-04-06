@@ -114,7 +114,13 @@ impl<T: Copy> GpuResidentTensor<T> {
         // Track transfer
         record_h2d_transfer(bytes as u64);
 
-        Ok(Self { buffer, h2d_count: 1, d2h_count: 0, kernel_launches: 0, is_resident: true })
+        Ok(Self {
+            buffer,
+            h2d_count: 1,
+            d2h_count: 0,
+            kernel_launches: 0,
+            is_resident: true,
+        })
     }
 
     /// Create an uninitialized tensor on GPU
@@ -124,7 +130,13 @@ impl<T: Copy> GpuResidentTensor<T> {
     pub fn new_uninit(ctx: &CudaContext, len: usize) -> Result<Self> {
         let buffer = GpuBuffer::new(ctx, len)?;
 
-        Ok(Self { buffer, h2d_count: 0, d2h_count: 0, kernel_launches: 0, is_resident: true })
+        Ok(Self {
+            buffer,
+            h2d_count: 0,
+            d2h_count: 0,
+            kernel_launches: 0,
+            is_resident: true,
+        })
     }
 
     /// Create from existing GPU buffer (internal constructor)
@@ -132,7 +144,13 @@ impl<T: Copy> GpuResidentTensor<T> {
     /// Used when creating result tensors from GPU operations.
     /// Does NOT count as a transfer since data never left GPU.
     pub(crate) fn from_buffer_internal(buffer: GpuBuffer<T>, kernel_launches: u64) -> Self {
-        Self { buffer, h2d_count: 0, d2h_count: 0, kernel_launches, is_resident: true }
+        Self {
+            buffer,
+            h2d_count: 0,
+            d2h_count: 0,
+            kernel_launches,
+            is_resident: true,
+        }
     }
 
     /// Download tensor to host memory

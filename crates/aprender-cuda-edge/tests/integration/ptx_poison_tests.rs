@@ -62,7 +62,10 @@ fn claim_45_mutation_score_excludes_compile_errors() {
 
     // 2 applicable (excluding compile error), 1 killed → 50%
     let score = report.mutation_score();
-    assert!((score - 0.5).abs() < f64::EPSILON, "Mutation score must exclude compile errors");
+    assert!(
+        (score - 0.5).abs() < f64::EPSILON,
+        "Mutation score must exclude compile errors"
+    );
 }
 
 /// Claim 46: `VerifiedPtx` cannot be constructed externally
@@ -71,16 +74,31 @@ fn claim_45_mutation_score_excludes_compile_errors() {
 fn claim_46_verified_ptx_only_via_verifier() {
     let ptx_verifier = PtxVerifier::new();
     let ptx_verified = ptx_verifier.verify(MINIMAL_VALID_PTX).unwrap();
-    assert!(ptx_verified.source().contains(".version"), "VerifiedPtx must expose verified source");
+    assert!(
+        ptx_verified.source().contains(".version"),
+        "VerifiedPtx must expose verified source"
+    );
 }
 
 /// Claim 47: Timeout counts as killed
 #[test]
 fn claim_47_timeout_counts_as_killed() {
-    assert!(MutantResult::Timeout.is_killed(), "Timeout must count as killed");
-    assert!(MutantResult::Killed.is_killed(), "Killed must count as killed");
-    assert!(!MutantResult::Survived.is_killed(), "Survived must not count as killed");
-    assert!(!MutantResult::CompileError.is_killed(), "CompileError must not count as killed");
+    assert!(
+        MutantResult::Timeout.is_killed(),
+        "Timeout must count as killed"
+    );
+    assert!(
+        MutantResult::Killed.is_killed(),
+        "Killed must count as killed"
+    );
+    assert!(
+        !MutantResult::Survived.is_killed(),
+        "Survived must not count as killed"
+    );
+    assert!(
+        !MutantResult::CompileError.is_killed(),
+        "CompileError must not count as killed"
+    );
 }
 
 /// Claim 48: Mutation not found returns None
@@ -98,7 +116,10 @@ fn claim_48_mutation_not_found_returns_none() {
 fn claim_49_all_mutators_have_descriptions() {
     for mutator in default_mutators() {
         let desc = mutator.description();
-        assert!(!desc.is_empty(), "Mutator {mutator:?} must have a description");
+        assert!(
+            !desc.is_empty(),
+            "Mutator {mutator:?} must have a description"
+        );
     }
 }
 
@@ -197,5 +218,7 @@ fn verifier_unbalanced_braces() {
     let src = ".version 7.0\n.target sm_80\n.address_size 64\n.entry k() {\nret;\n";
     let verifier = PtxVerifier::new();
     let errors = verifier.check_all(src);
-    assert!(errors.iter().any(|e| matches!(e, PtxVerificationError::UnbalancedBraces { .. })));
+    assert!(errors
+        .iter()
+        .any(|e| matches!(e, PtxVerificationError::UnbalancedBraces { .. })));
 }

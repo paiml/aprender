@@ -33,7 +33,10 @@ fn test_parity_114_ntiles_computation() {
     let ptx = kernel.emit_ptx();
 
     // The PTX should have mov.u32 %rXX, 2; for n_tiles
-    assert!(ptx.contains(", 2;"), "PTX should have n_tiles=2 for k=64, tile_size=32");
+    assert!(
+        ptx.contains(", 2;"),
+        "PTX should have n_tiles=2 for k=64, tile_size=32"
+    );
 
     // And tile_size=32
     assert!(ptx.contains(", 32;"), "PTX should have tile_size=32");
@@ -77,7 +80,10 @@ fn test_parity_114_wmma_no_early_exit_before_barrier() {
 
     // Verify wmma instructions are present
     assert!(ptx.contains("wmma.mma"), "WMMA kernel should have wmma.mma");
-    assert!(ptx.contains("wmma.load"), "WMMA kernel should have wmma.load");
+    assert!(
+        ptx.contains("wmma.load"),
+        "WMMA kernel should have wmma.load"
+    );
 }
 
 /// PARITY-114 Countermeasure: Test boundary conditions (non-divisible dimensions)
@@ -111,7 +117,12 @@ fn test_boundary_conditions_tensor_core() {
 /// PARITY-114 Countermeasure: Test boundary conditions for tiled GEMM
 #[test]
 fn test_boundary_conditions_tiled_gemm() {
-    let boundary_cases = [(17, 17, 17, 16), (65, 65, 65, 32), (100, 100, 100, 32), (1, 32, 32, 16)];
+    let boundary_cases = [
+        (17, 17, 17, 16),
+        (65, 65, 65, 32),
+        (100, 100, 100, 32),
+        (1, 32, 32, 16),
+    ];
 
     for (m, n, k, tile) in boundary_cases {
         let kernel = GemmKernel::tiled(m, n, k, tile);

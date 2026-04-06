@@ -141,7 +141,9 @@ fn f1223_weak_correlation() {
 
     // Alternating pattern - should show weak/moderate correlation
     let temps = [60.0, 70.0, 60.0, 70.0, 60.0, 70.0, 60.0, 70.0, 60.0, 70.0];
-    let latencies = [100.0, 110.0, 100.0, 110.0, 100.0, 110.0, 100.0, 110.0, 100.0, 110.0];
+    let latencies = [
+        100.0, 110.0, 100.0, 110.0, 100.0, 110.0, 100.0, 110.0, 100.0, 110.0,
+    ];
 
     for (i, (&temp, &latency)) in temps.iter().zip(latencies.iter()).enumerate() {
         analyzer.add_with_latency(temp, i as f64, latency);

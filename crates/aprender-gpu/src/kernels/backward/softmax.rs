@@ -194,7 +194,10 @@ impl BatchedSoftmaxBackwardKernel {
     /// - `row_size`: Elements per row (no upper limit)
     #[must_use]
     pub const fn new(total_rows: u32, row_size: u32) -> Self {
-        Self { total_rows, row_size }
+        Self {
+            total_rows,
+            row_size,
+        }
     }
 }
 
@@ -341,7 +344,11 @@ mod tests {
     fn test_softmax_backward_barrier_safety() {
         let kernel = SoftmaxBackwardKernel::new(64, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "Softmax backward should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "Softmax backward should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     #[test]
@@ -429,7 +436,14 @@ mod tests {
     #[test]
     fn test_batched_softmax_backward_various_sizes() {
         // Test multiple representative sizes
-        for (rows, cols) in [(1, 1), (16, 16), (64, 32), (128, 64), (512, 128), (1024, 512)] {
+        for (rows, cols) in [
+            (1, 1),
+            (16, 16),
+            (64, 32),
+            (128, 64),
+            (512, 128),
+            (1024, 512),
+        ] {
             let kernel = BatchedSoftmaxBackwardKernel::new(rows, cols);
             let ptx = kernel.emit_ptx();
             assert!(

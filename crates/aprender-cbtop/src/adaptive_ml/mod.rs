@@ -85,8 +85,11 @@ impl AdaptiveThresholdMl {
 
     /// Detect anomaly in a time series
     pub fn detect_anomaly(&self, values: &[f64]) -> MlThresholdResult<AnomalyResult> {
-        let features = TimeSeriesFeatures::extract(values)
-            .ok_or(MlThresholdError::InsufficientData { have: values.len(), need: 10 })?;
+        let features =
+            TimeSeriesFeatures::extract(values).ok_or(MlThresholdError::InsufficientData {
+                have: values.len(),
+                need: 10,
+            })?;
 
         let workload = self.classify_workload(&features);
         let threshold = self.get_threshold(workload);
@@ -94,7 +97,11 @@ impl AdaptiveThresholdMl {
         let is_anomaly = features.cv > threshold;
         let score = features.cv / threshold;
 
-        let confidence = self.thresholds.get(&workload).map(|t| t.confidence).unwrap_or(0.0);
+        let confidence = self
+            .thresholds
+            .get(&workload)
+            .map(|t| t.confidence)
+            .unwrap_or(0.0);
 
         let reason = if is_anomaly {
             format!("CV {:.2}% exceeds threshold {:.2}%", features.cv, threshold)
@@ -114,8 +121,11 @@ impl AdaptiveThresholdMl {
 
     /// Train on labeled sample
     pub fn train(&mut self, values: &[f64], is_anomaly: bool) -> MlThresholdResult<()> {
-        let features = TimeSeriesFeatures::extract(values)
-            .ok_or(MlThresholdError::InsufficientData { have: values.len(), need: 10 })?;
+        let features =
+            TimeSeriesFeatures::extract(values).ok_or(MlThresholdError::InsufficientData {
+                have: values.len(),
+                need: 10,
+            })?;
 
         let workload = self.classify_workload(&features);
 
@@ -141,8 +151,11 @@ impl AdaptiveThresholdMl {
 
     /// Check for drift in recent samples
     pub fn check_drift(&self, values: &[f64]) -> MlThresholdResult<Option<f64>> {
-        let features = TimeSeriesFeatures::extract(values)
-            .ok_or(MlThresholdError::InsufficientData { have: values.len(), need: 10 })?;
+        let features =
+            TimeSeriesFeatures::extract(values).ok_or(MlThresholdError::InsufficientData {
+                have: values.len(),
+                need: 10,
+            })?;
 
         let workload = self.classify_workload(&features);
 
@@ -181,7 +194,10 @@ impl AdaptiveThresholdMl {
         self.thresholds
             .iter()
             .map(|(k, v)| {
-                (k.name().to_string(), (v.cv_threshold, v.confidence, v.training_samples))
+                (
+                    k.name().to_string(),
+                    (v.cv_threshold, v.confidence, v.training_samples),
+                )
             })
             .collect()
     }

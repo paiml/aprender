@@ -247,8 +247,10 @@ impl CallbackBuilder {
     /// Subscribe to kernel launches.
     #[must_use]
     pub fn on_kernel_launch(mut self) -> Self {
-        self.subscriptions
-            .push((CallbackDomain::RuntimeApi, Some(CallbackId::CudaLaunchKernel)));
+        self.subscriptions.push((
+            CallbackDomain::RuntimeApi,
+            Some(CallbackId::CudaLaunchKernel),
+        ));
         self.subscriptions
             .push((CallbackDomain::DriverApi, Some(CallbackId::CuLaunchKernel)));
         self
@@ -269,8 +271,7 @@ impl CallbackBuilder {
     /// Subscribe to synchronization events.
     #[must_use]
     pub fn on_synchronization(mut self) -> Self {
-        self.subscriptions
-            .push((CallbackDomain::Synchronize, None));
+        self.subscriptions.push((CallbackDomain::Synchronize, None));
         self
     }
 

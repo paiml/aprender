@@ -112,7 +112,11 @@ mod tests {
     #[test]
     fn test_run_command_with_extra_args() {
         // Test that we parse first command arg only
-        let args = vec!["xtask".to_string(), "unknown".to_string(), "extra".to_string()];
+        let args = vec![
+            "xtask".to_string(),
+            "unknown".to_string(),
+            "extra".to_string(),
+        ];
         let result = run_command(&args);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();

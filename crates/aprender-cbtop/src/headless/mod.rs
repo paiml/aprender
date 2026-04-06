@@ -37,7 +37,12 @@ impl HeadlessBenchmark {
         size: usize,
         duration: Duration,
     ) -> Self {
-        Self { backend, workload, size, duration }
+        Self {
+            backend,
+            workload,
+            size,
+            duration,
+        }
     }
 
     /// Run the benchmark and return results
@@ -113,7 +118,11 @@ impl HeadlessBenchmark {
         let latencies = brick.latency_history_slice();
         let latency_stats = Self::calculate_latency_stats(&latencies);
         let gflops = brick.gflops();
-        let throughput = if latency_stats.mean > 0.0 { 1000.0 / latency_stats.mean } else { 0.0 };
+        let throughput = if latency_stats.mean > 0.0 {
+            1000.0 / latency_stats.mean
+        } else {
+            0.0
+        };
 
         // Get score
         let score = brick.score();
@@ -184,7 +193,11 @@ impl HeadlessBenchmark {
         // OPT-015: Filter outliers using IQR method before calculating CV
         // This reduces measurement noise from system interrupts, GC pauses, etc.
         let filtered = Self::filter_outliers_iqr(latencies);
-        let data = if filtered.len() >= 10 { &filtered } else { latencies };
+        let data = if filtered.len() >= 10 {
+            &filtered
+        } else {
+            latencies
+        };
 
         let n = data.len() as f64;
         let mean = data.iter().sum::<f64>() / n;
@@ -194,12 +207,18 @@ impl HeadlessBenchmark {
         // Calculate standard deviation on filtered data
         let variance = data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
         let std_dev = variance.sqrt();
-        let cv_percent = if mean > 0.0 { (std_dev / mean) * 100.0 } else { 0.0 };
+        let cv_percent = if mean > 0.0 {
+            (std_dev / mean) * 100.0
+        } else {
+            0.0
+        };
 
         // Calculate percentiles on original data (for accurate p95/p99)
         let mut sorted = latencies.to_vec();
-        sorted
-            .sort_by(|a, b| a.partial_cmp(b).expect("latency values MUST be comparable (no NaN)"));
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("latency values MUST be comparable (no NaN)")
+        });
 
         let percentile = |p: f64| -> f64 {
             let idx = (p * (sorted.len() - 1) as f64).round() as usize;
@@ -225,7 +244,10 @@ impl HeadlessBenchmark {
         }
 
         let mut sorted = data.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).expect("data values MUST be comparable (no NaN)"));
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b)
+                .expect("data values MUST be comparable (no NaN)")
+        });
 
         let n = sorted.len();
         let q1_idx = n / 4;
@@ -239,7 +261,10 @@ impl HeadlessBenchmark {
         let lower_bound = q1 - 1.5 * iqr;
         let upper_bound = q3 + 1.5 * iqr;
 
-        data.iter().cloned().filter(|&x| x >= lower_bound && x <= upper_bound).collect()
+        data.iter()
+            .cloned()
+            .filter(|&x| x >= lower_bound && x <= upper_bound)
+            .collect()
     }
 }
 

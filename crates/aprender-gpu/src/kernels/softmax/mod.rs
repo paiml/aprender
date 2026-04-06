@@ -23,7 +23,10 @@ impl SoftmaxKernel {
     /// Create a new softmax kernel
     #[must_use]
     pub fn new(length: u32) -> Self {
-        Self { length, use_warp_shuffle: true }
+        Self {
+            length,
+            use_warp_shuffle: true,
+        }
     }
 
     /// Disable warp shuffle (for compatibility with older GPUs)

@@ -95,7 +95,10 @@ impl PtxType {
     /// Check if this is a floating point type
     #[must_use]
     pub const fn is_float(self) -> bool {
-        matches!(self, Self::F16 | Self::BF16 | Self::F32 | Self::F64 | Self::V2F32 | Self::V4F32)
+        matches!(
+            self,
+            Self::F16 | Self::BF16 | Self::F32 | Self::F64 | Self::V2F32 | Self::V4F32
+        )
     }
 
     /// Check if this is a signed integer type

@@ -143,8 +143,11 @@ impl Kernel for IncrementalAttentionKernel {
         // 6. Normalize and store output
 
         // PAR-061: Use different kernel name and parameter type for indirect mode
-        let kernel_name =
-            if indirect { "incremental_attention_indirect" } else { "incremental_attention" };
+        let kernel_name = if indirect {
+            "incremental_attention_indirect"
+        } else {
+            "incremental_attention"
+        };
 
         let mut builder = PtxKernel::new(kernel_name)
             .param(PtxType::U64, "q_ptr")

@@ -48,7 +48,12 @@ pub fn validate_shader(shader_path: &str) -> Result<ShaderInfo> {
     // Check for @compute entry point
     let has_compute = content.contains("@compute");
 
-    Ok(ShaderInfo { path: shader_path.to_string(), lines, workgroup_size, has_compute })
+    Ok(ShaderInfo {
+        path: shader_path.to_string(),
+        lines,
+        workgroup_size,
+        has_compute,
+    })
 }
 
 /// Information about a WGSL shader.
@@ -66,7 +71,11 @@ pub fn parse_dispatch(dispatch: &str) -> Result<[u32; 3]> {
     if parts.len() != 3 {
         anyhow::bail!("Dispatch must be X,Y,Z format (got: {dispatch})");
     }
-    Ok([parts[0].trim().parse()?, parts[1].trim().parse()?, parts[2].trim().parse()?])
+    Ok([
+        parts[0].trim().parse()?,
+        parts[1].trim().parse()?,
+        parts[2].trim().parse()?,
+    ])
 }
 
 /// Profile a wgpu compute shader.

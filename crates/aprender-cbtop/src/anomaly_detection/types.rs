@@ -157,7 +157,13 @@ impl ChangePoint {
     pub fn new(index: usize, mean_before: f64, mean_after: f64) -> Self {
         let magnitude = (mean_after - mean_before).abs();
         let direction = mean_after - mean_before;
-        Self { index, mean_before, mean_after, magnitude, direction }
+        Self {
+            index,
+            mean_before,
+            mean_after,
+            magnitude,
+            direction,
+        }
     }
 
     /// Check if change is significant (>10% shift)
@@ -189,7 +195,10 @@ pub struct AnomalyReport {
 impl AnomalyReport {
     /// Count anomalies by severity
     pub fn count_by_severity(&self, severity: AnomalySeverity) -> usize {
-        self.anomalies.iter().filter(|a| a.severity == severity).count()
+        self.anomalies
+            .iter()
+            .filter(|a| a.severity == severity)
+            .count()
     }
 
     /// Get critical anomalies

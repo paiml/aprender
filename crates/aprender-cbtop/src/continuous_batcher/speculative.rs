@@ -18,7 +18,11 @@ pub struct ExponentialMovingAverage {
 impl ExponentialMovingAverage {
     /// Create new EMA with smoothing factor.
     pub fn new(alpha: f64) -> Self {
-        Self { value: 0.0, alpha: alpha.clamp(0.0, 1.0), count: 0 }
+        Self {
+            value: 0.0,
+            alpha: alpha.clamp(0.0, 1.0),
+            count: 0,
+        }
     }
 
     /// Update with new sample.

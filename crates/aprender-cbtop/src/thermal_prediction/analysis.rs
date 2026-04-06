@@ -40,7 +40,12 @@ impl ThermalAnalyzer {
         let current_temp = self.current_temperature()?;
         let trend_slope = self.calculate_trend().unwrap_or(0.0);
 
-        Some(ThrottleRisk::assess(current_temp, self.throttle_threshold_c(), trend_slope, 10.0))
+        Some(ThrottleRisk::assess(
+            current_temp,
+            self.throttle_threshold_c(),
+            trend_slope,
+            10.0,
+        ))
     }
 
     /// Get recommended cooldown

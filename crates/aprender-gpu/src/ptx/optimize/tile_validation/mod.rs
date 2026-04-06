@@ -100,7 +100,10 @@ pub fn validate_shape(shape: &[usize]) -> std::result::Result<(), TileError> {
 
     // Constraint 1: Total element cap
     if total_elements > MAX_TILE_ELEMENTS {
-        return Err(TileError::TooManyElements { actual: total_elements, max: MAX_TILE_ELEMENTS });
+        return Err(TileError::TooManyElements {
+            actual: total_elements,
+            max: MAX_TILE_ELEMENTS,
+        });
     }
 
     // Constraint 2: Power-of-two dimensions (for GPU efficiency)
@@ -113,7 +116,10 @@ pub fn validate_shape(shape: &[usize]) -> std::result::Result<(), TileError> {
     // Constraint 3: Single dimension cap
     for &dim in shape {
         if dim > MAX_TILE_DIM {
-            return Err(TileError::DimensionTooLarge { actual: dim, max: MAX_TILE_DIM });
+            return Err(TileError::DimensionTooLarge {
+                actual: dim,
+                max: MAX_TILE_DIM,
+            });
         }
     }
 
@@ -140,8 +146,9 @@ pub fn validate_wmma_shape(shape: &WmmaShape) -> std::result::Result<(), TileErr
         (32, 8, 16),  // Tall
     ];
 
-    let is_valid =
-        valid_shapes.iter().any(|&(m, n, k)| shape.m == m && shape.n == n && shape.k == k);
+    let is_valid = valid_shapes
+        .iter()
+        .any(|&(m, n, k)| shape.m == m && shape.n == n && shape.k == k);
 
     if !is_valid {
         return Err(TileError::InvalidWmmaShape {

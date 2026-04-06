@@ -55,7 +55,10 @@ fn run_transpose_step(
     cols: u32,
 ) -> Result<GpuBuffer<f32>, ()> {
     let total = (rows * cols) as usize;
-    println!("Step 2: TransposeKernel [{}x{}] -> [{}x{}]...", rows, cols, cols, rows);
+    println!(
+        "Step 2: TransposeKernel [{}x{}] -> [{}x{}]...",
+        rows, cols, cols, rows
+    );
     let output_buf: GpuBuffer<f32> = GpuBuffer::new(ctx, total).expect("Alloc failed");
 
     let transpose = TransposeKernel::new(rows, cols);
@@ -64,8 +67,15 @@ fn run_transpose_step(
 
     let threads = 256u32;
     let blocks = (total as u32 + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
-    println!("  Launch config: grid=({}, 1, 1), block=({}, 1, 1)", blocks, threads);
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
+    println!(
+        "  Launch config: grid=({}, 1, 1), block=({}, 1, 1)",
+        blocks, threads
+    );
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -93,7 +103,9 @@ fn run_transpose_step(
     // Read back and verify
     println!("Step 3: Verify transpose result...");
     let mut result = vec![0.0f32; total];
-    output_buf.copy_to_host(&mut result).expect("Readback failed");
+    output_buf
+        .copy_to_host(&mut result)
+        .expect("Readback failed");
 
     let expected_0_0 = input_data[0];
     let expected_1_0 = input_data[1];
@@ -121,7 +133,10 @@ fn run_gemm_step(
     n: u32,
     k: u32,
 ) -> Result<GpuBuffer<f32>, ()> {
-    println!("Step 4: GemmKernel [{}x{}] @ [{}x{}] = [{}x{}]...", m, k, k, n, m, n);
+    println!(
+        "Step 4: GemmKernel [{}x{}] @ [{}x{}] = [{}x{}]...",
+        m, k, k, n, m, n
+    );
     let c_buf: GpuBuffer<f32> = GpuBuffer::new(ctx, (m * n) as usize).expect("Alloc C failed");
 
     let gemm = GemmKernel::naive(m, n, k);
@@ -162,7 +177,16 @@ fn run_gemm_step(
         std::ptr::addr_of!(k_val) as *mut _,
     ];
 
-    unsafe { launch_and_sync(stream, &mut module, gemm.name(), &config, &mut args, "GemmKernel")? };
+    unsafe {
+        launch_and_sync(
+            stream,
+            &mut module,
+            gemm.name(),
+            &config,
+            &mut args,
+            "GemmKernel",
+        )?
+    };
     Ok(c_buf)
 }
 
@@ -183,7 +207,11 @@ fn run_scale_step(
 
     let threads = 256u32;
     let blocks = ((size as u32) + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let scale_input_ptr = c_buf.as_ptr();
     let scale_output_ptr = scale_out_buf.as_ptr();
@@ -220,7 +248,10 @@ fn run_softmax_step(
     sm_row_size: u32,
 ) -> Result<(), ()> {
     let sm_total = (sm_rows * sm_row_size) as usize;
-    println!("Step 6: Softmax [{} rows x {} cols]...", sm_rows, sm_row_size);
+    println!(
+        "Step 6: Softmax [{} rows x {} cols]...",
+        sm_rows, sm_row_size
+    );
 
     let sm_out_buf: GpuBuffer<f32> = GpuBuffer::new(ctx, sm_total).expect("Alloc softmax out");
 

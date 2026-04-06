@@ -64,8 +64,14 @@ impl GpuPanelBrick {
     }
 
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         canvas.draw_text("GPU Monitor", Point::new(2.0, 2.0), &label_style);
 
@@ -93,7 +99,11 @@ impl GpuPanelBrick {
                 ("No GPU detected", 0.0, 0.0, 0.0)
             };
 
-        let data_source = if self.current_metrics.is_some() { "CUPTI" } else { "none" };
+        let data_source = if self.current_metrics.is_some() {
+            "CUPTI"
+        } else {
+            "none"
+        };
         canvas.draw_text(
             &format!("GPU Info ({})", data_source),
             Point::new(2.0, 12.0),
@@ -105,26 +115,43 @@ impl GpuPanelBrick {
 
         // VRAM with memory gradient
         canvas.draw_text("VRAM: ", Point::new(2.0, 14.0), &dim_style);
-        let vram_pct =
-            if vram_total_gb > 0.0 { (vram_used_gb / vram_total_gb) * 100.0 } else { 0.0 };
-        let vram_style =
-            TextStyle { color: self.theme.memory_color(vram_pct), ..Default::default() };
+        let vram_pct = if vram_total_gb > 0.0 {
+            (vram_used_gb / vram_total_gb) * 100.0
+        } else {
+            0.0
+        };
+        let vram_style = TextStyle {
+            color: self.theme.memory_color(vram_pct),
+            ..Default::default()
+        };
         canvas.draw_text(
-            &format!("{:.1} / {:.1} GB ({:.0}%)", vram_used_gb, vram_total_gb, vram_pct),
+            &format!(
+                "{:.1} / {:.1} GB ({:.0}%)",
+                vram_used_gb, vram_total_gb, vram_pct
+            ),
             Point::new(8.0, 14.0),
             &vram_style,
         );
 
         // Utilization
         canvas.draw_text("Util: ", Point::new(2.0, 15.0), &dim_style);
-        let util_style = TextStyle { color: self.theme.gpu_color(util_pct), ..Default::default() };
-        canvas.draw_text(&format!("{:.0}%", util_pct), Point::new(8.0, 15.0), &util_style);
+        let util_style = TextStyle {
+            color: self.theme.gpu_color(util_pct),
+            ..Default::default()
+        };
+        canvas.draw_text(
+            &format!("{:.0}%", util_pct),
+            Point::new(8.0, 15.0),
+            &util_style,
+        );
 
         // Temperature display with color gradient
         canvas.draw_text("Temp: ", Point::new(16.0, 15.0), &dim_style);
         let temp = self.temperature_c.unwrap_or(0);
-        let temp_style =
-            TextStyle { color: self.theme.temp_color(temp as f64, 100.0), ..Default::default() };
+        let temp_style = TextStyle {
+            color: self.theme.temp_color(temp as f64, 100.0),
+            ..Default::default()
+        };
         canvas.draw_text(&format!("{} C", temp), Point::new(22.0, 15.0), &temp_style);
 
         // Power with cpu gradient (reuse for power)
@@ -132,8 +159,10 @@ impl GpuPanelBrick {
         let power = self.power_watts.unwrap_or(0);
         let power_limit = self.power_limit_watts.unwrap_or(1);
         let power_pct = (power as f64 / power_limit as f64) * 100.0;
-        let power_style =
-            TextStyle { color: self.theme.cpu_color(power_pct), ..Default::default() };
+        let power_style = TextStyle {
+            color: self.theme.cpu_color(power_pct),
+            ..Default::default()
+        };
         canvas.draw_text(
             &format!("{}W / {}W ({:.0}%)", power, power_limit, power_pct),
             Point::new(9.0, 16.0),

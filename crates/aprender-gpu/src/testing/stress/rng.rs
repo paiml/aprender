@@ -14,7 +14,10 @@ impl StressRng {
     /// Create new RNG with seed
     #[must_use]
     pub fn new(seed: u64) -> Self {
-        let mut rng = Self { state: 0, inc: (seed << 1) | 1 };
+        let mut rng = Self {
+            state: 0,
+            inc: (seed << 1) | 1,
+        };
         rng.next_u32();
         rng.state = rng.state.wrapping_add(seed);
         rng.next_u32();
@@ -24,7 +27,9 @@ impl StressRng {
     /// Generate next u32
     pub fn next_u32(&mut self) -> u32 {
         let old_state = self.state;
-        self.state = old_state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(self.inc);
+        self.state = old_state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(self.inc);
         let xorshifted = (((old_state >> 18) ^ old_state) >> 27) as u32;
         let rot = (old_state >> 59) as u32;
         (xorshifted >> rot) | (xorshifted << ((!rot).wrapping_add(1) & 31))

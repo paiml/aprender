@@ -197,7 +197,10 @@ middle:
 #[test]
 fn test_extended_bug_severities() {
     assert_eq!(PtxBugClass::EmptyLoopBody.severity(), BugSeverity::High);
-    assert_eq!(PtxBugClass::MissingBoundsCheck.severity(), BugSeverity::High);
+    assert_eq!(
+        PtxBugClass::MissingBoundsCheck.severity(),
+        BugSeverity::High
+    );
     assert_eq!(PtxBugClass::DeadCode.severity(), BugSeverity::Medium);
 }
 
@@ -236,7 +239,10 @@ done:
     let result = PtxBugAnalyzer::strict().analyze(ptx);
     assert!(result.has_bug(&PtxBugClass::EarlyExitBeforeBarrier));
     // Verify it's P0 Critical
-    assert_eq!(PtxBugClass::EarlyExitBeforeBarrier.severity(), BugSeverity::Critical);
+    assert_eq!(
+        PtxBugClass::EarlyExitBeforeBarrier.severity(),
+        BugSeverity::Critical
+    );
 }
 
 /// PARITY-114: Detect unconditional early exit before barrier
@@ -331,8 +337,14 @@ done:
 /// PARITY-114: Bug class properties
 #[test]
 fn test_parity114_bug_class_properties() {
-    assert_eq!(PtxBugClass::EarlyExitBeforeBarrier.code(), "EARLY_EXIT_BARRIER");
-    assert_eq!(PtxBugClass::EarlyExitBeforeBarrier.severity(), BugSeverity::Critical);
+    assert_eq!(
+        PtxBugClass::EarlyExitBeforeBarrier.code(),
+        "EARLY_EXIT_BARRIER"
+    );
+    assert_eq!(
+        PtxBugClass::EarlyExitBeforeBarrier.severity(),
+        BugSeverity::Critical
+    );
 }
 
 /// PARITY-114: `kv_loop` pattern (attention kernels) - safe after fix

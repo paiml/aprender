@@ -40,8 +40,11 @@ fn test_collect_examples_sorting() {
     assert_eq!(examples.len(), 3);
 
     // Verify sorted order
-    let names: Vec<_> =
-        examples.iter().filter_map(|p| p.file_stem()).filter_map(|n| n.to_str()).collect();
+    let names: Vec<_> = examples
+        .iter()
+        .filter_map(|p| p.file_stem())
+        .filter_map(|n| n.to_str())
+        .collect();
     assert_eq!(names, vec!["apple", "banana", "zebra"]);
 }
 
@@ -128,7 +131,11 @@ fn test_format_error_list_single() {
 
 #[test]
 fn test_format_error_list_multiple() {
-    let errors = vec!["error1".to_string(), "error2".to_string(), "error3".to_string()];
+    let errors = vec![
+        "error1".to_string(),
+        "error2".to_string(),
+        "error3".to_string(),
+    ];
     let result = format_error_list(&errors, "Failures");
     assert!(result.contains("Failures"));
     assert!(result.contains("error1"));
@@ -269,7 +276,12 @@ fn test_contains_module_doc_empty() {
 #[test]
 fn test_count_validation_errors_none() {
     let results = ValidationResults {
-        steps: vec![StepResult { number: 1, name: "Test".to_string(), success: true, error: None }],
+        steps: vec![StepResult {
+            number: 1,
+            name: "Test".to_string(),
+            success: true,
+            error: None,
+        }],
     };
     assert_eq!(count_validation_errors(&results), 0);
 }
@@ -278,7 +290,12 @@ fn test_count_validation_errors_none() {
 fn test_count_validation_errors_some() {
     let results = ValidationResults {
         steps: vec![
-            StepResult { number: 1, name: "Test1".to_string(), success: true, error: None },
+            StepResult {
+                number: 1,
+                name: "Test1".to_string(),
+                success: true,
+                error: None,
+            },
             StepResult {
                 number: 2,
                 name: "Test2".to_string(),
@@ -299,7 +316,12 @@ fn test_count_validation_errors_some() {
 #[test]
 fn test_format_validation_summary_all_pass() {
     let results = ValidationResults {
-        steps: vec![StepResult { number: 1, name: "Test".to_string(), success: true, error: None }],
+        steps: vec![StepResult {
+            number: 1,
+            name: "Test".to_string(),
+            success: true,
+            error: None,
+        }],
     };
     let summary = format_validation_summary(&results);
     assert!(summary.contains('1'));
@@ -310,7 +332,12 @@ fn test_format_validation_summary_all_pass() {
 fn test_format_validation_summary_with_failures() {
     let results = ValidationResults {
         steps: vec![
-            StepResult { number: 1, name: "Test1".to_string(), success: true, error: None },
+            StepResult {
+                number: 1,
+                name: "Test1".to_string(),
+                success: true,
+                error: None,
+            },
             StepResult {
                 number: 2,
                 name: "Test2".to_string(),

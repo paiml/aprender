@@ -112,8 +112,14 @@ impl PciePanelBrick {
 
     /// Paint the PCIe panel
     pub fn paint(&self, canvas: &mut dyn Canvas, width: f32, _height: f32) {
-        let label_style = TextStyle { color: self.theme.foreground, ..Default::default() };
-        let dim_style = TextStyle { color: self.theme.dim, ..Default::default() };
+        let label_style = TextStyle {
+            color: self.theme.foreground,
+            ..Default::default()
+        };
+        let dim_style = TextStyle {
+            color: self.theme.dim,
+            ..Default::default()
+        };
 
         canvas.draw_text("PCIe Monitor", Point::new(2.0, 2.0), &label_style);
 
@@ -139,9 +145,16 @@ impl PciePanelBrick {
             tx_meter.layout(Rect::new(14.0, 6.0, width - 40.0, 1.0));
             tx_meter.paint(canvas);
             canvas.draw_text(
-                &format!("{} ({:.1}%)", Self::format_bandwidth(device.tx_bandwidth), tx_util),
+                &format!(
+                    "{} ({:.1}%)",
+                    Self::format_bandwidth(device.tx_bandwidth),
+                    tx_util
+                ),
                 Point::new(width - 24.0, 6.0),
-                &TextStyle { color: tx_color, ..Default::default() },
+                &TextStyle {
+                    color: tx_color,
+                    ..Default::default()
+                },
             );
 
             // RX (GPU → Host)
@@ -152,9 +165,16 @@ impl PciePanelBrick {
             rx_meter.layout(Rect::new(14.0, 7.0, width - 40.0, 1.0));
             rx_meter.paint(canvas);
             canvas.draw_text(
-                &format!("{} ({:.1}%)", Self::format_bandwidth(device.rx_bandwidth), rx_util),
+                &format!(
+                    "{} ({:.1}%)",
+                    Self::format_bandwidth(device.rx_bandwidth),
+                    rx_util
+                ),
                 Point::new(width - 24.0, 7.0),
-                &TextStyle { color: rx_color, ..Default::default() },
+                &TextStyle {
+                    color: rx_color,
+                    ..Default::default()
+                },
             );
         } else {
             canvas.draw_text("No PCIe GPU detected", Point::new(2.0, 4.0), &dim_style);
@@ -163,7 +183,11 @@ impl PciePanelBrick {
         // Bandwidth history graphs
         if !self.tx_history.is_empty() {
             canvas.draw_text("TX History:", Point::new(2.0, 9.0), &dim_style);
-            let max_bw = self.gpu_device.as_ref().map(|d| d.max_bandwidth()).unwrap_or(16.0);
+            let max_bw = self
+                .gpu_device
+                .as_ref()
+                .map(|d| d.max_bandwidth())
+                .unwrap_or(16.0);
             let mut tx_graph = BrailleGraph::new(self.tx_history.clone())
                 .with_color(self.theme.cpu_color(50.0))
                 .with_range(0.0, max_bw)
@@ -174,7 +198,11 @@ impl PciePanelBrick {
 
         if !self.rx_history.is_empty() {
             canvas.draw_text("RX History:", Point::new(2.0, 14.0), &dim_style);
-            let max_bw = self.gpu_device.as_ref().map(|d| d.max_bandwidth()).unwrap_or(16.0);
+            let max_bw = self
+                .gpu_device
+                .as_ref()
+                .map(|d| d.max_bandwidth())
+                .unwrap_or(16.0);
             let mut rx_sparkline = Sparkline::new(self.rx_history.clone())
                 .with_color(self.theme.cpu_color(50.0))
                 .with_range(0.0, max_bw);

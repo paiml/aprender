@@ -13,21 +13,30 @@ use trueno_cuda_edge::quant_oracle::{
 #[test]
 fn claim_31_q4k_tolerance() {
     let tolerance = QuantFormat::Q4K.tolerance();
-    assert!((tolerance - 0.05).abs() < f64::EPSILON, "Q4K tolerance must be 0.05");
+    assert!(
+        (tolerance - 0.05).abs() < f64::EPSILON,
+        "Q4K tolerance must be 0.05"
+    );
 }
 
 /// Claim 32: Q5K tolerance is 0.02
 #[test]
 fn claim_32_q5k_tolerance() {
     let tolerance = QuantFormat::Q5K.tolerance();
-    assert!((tolerance - 0.02).abs() < f64::EPSILON, "Q5K tolerance must be 0.02");
+    assert!(
+        (tolerance - 0.02).abs() < f64::EPSILON,
+        "Q5K tolerance must be 0.02"
+    );
 }
 
 /// Claim 33: Q6K tolerance is 0.01
 #[test]
 fn claim_33_q6k_tolerance() {
     let tolerance = QuantFormat::Q6K.tolerance();
-    assert!((tolerance - 0.01).abs() < f64::EPSILON, "Q6K tolerance must be 0.01");
+    assert!(
+        (tolerance - 0.01).abs() < f64::EPSILON,
+        "Q6K tolerance must be 0.01"
+    );
 }
 
 /// Claim 34: Parity check detects differences above tolerance
@@ -38,7 +47,10 @@ fn claim_34_parity_detects_violations() {
     let config = ParityConfig::new(QuantFormat::Q4K);
     let report = check_values_parity(&cpu, &gpu, &config);
 
-    assert!(!report.passed(), "Parity check must fail for large differences");
+    assert!(
+        !report.passed(),
+        "Parity check must fail for large differences"
+    );
     assert_eq!(report.violations.len(), 1);
     assert_eq!(report.violations[0].index, 1);
 }
@@ -71,11 +83,15 @@ fn claim_37_boundary_includes_universal() {
 
     assert!(bounds.iter().any(|v| v.is_nan()), "Must include NaN");
     assert!(
-        bounds.iter().any(|v| v.is_infinite() && v.is_sign_positive()),
+        bounds
+            .iter()
+            .any(|v| v.is_infinite() && v.is_sign_positive()),
         "Must include positive infinity"
     );
     assert!(
-        bounds.iter().any(|v| v.is_infinite() && v.is_sign_negative()),
+        bounds
+            .iter()
+            .any(|v| v.is_infinite() && v.is_sign_negative()),
         "Must include negative infinity"
     );
     assert!(bounds.contains(&0.0), "Must include zero");
@@ -106,7 +122,10 @@ fn claim_39_tolerance_positive_all_formats() {
     ];
 
     for format in formats {
-        assert!(format.tolerance() > 0.0, "Tolerance for {format} must be positive");
+        assert!(
+            format.tolerance() > 0.0,
+            "Tolerance for {format} must be positive"
+        );
     }
 }
 

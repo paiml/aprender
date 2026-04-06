@@ -10,12 +10,14 @@ use super::*;
 
 #[test]
 fn golden_st_global_u32_instruction() {
-    let kernel = PtxKernel::new("test_st_global_u32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.mov_u32_imm(42);
-        ctx.st_global_u32(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_st_global_u32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.mov_u32_imm(42);
+            ctx.st_global_u32(ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -27,11 +29,13 @@ fn golden_st_global_u32_instruction() {
 
 #[test]
 fn golden_ld_global_u64_instruction() {
-    let kernel = PtxKernel::new("test_ld_global_u64").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u64(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u64")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u64(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -43,12 +47,14 @@ fn golden_ld_global_u64_instruction() {
 
 #[test]
 fn golden_st_global_u64_instruction() {
-    let kernel = PtxKernel::new("test_st_global_u64").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.mov_u64_imm(0xDEADBEEF);
-        ctx.st_global_u64(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_st_global_u64")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.mov_u64_imm(0xDEADBEEF);
+            ctx.st_global_u64(ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -60,11 +66,13 @@ fn golden_st_global_u64_instruction() {
 
 #[test]
 fn golden_ld_global_u8_instruction() {
-    let kernel = PtxKernel::new("test_ld_global_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u8(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u8(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -76,12 +84,14 @@ fn golden_ld_global_u8_instruction() {
 
 #[test]
 fn golden_st_global_u8_instruction() {
-    let kernel = PtxKernel::new("test_st_global_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.mov_u32_imm(255);
-        ctx.st_global_u8(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_st_global_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.mov_u32_imm(255);
+            ctx.st_global_u8(ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -93,11 +103,13 @@ fn golden_st_global_u8_instruction() {
 
 #[test]
 fn golden_ld_global_u16_instruction() {
-    let kernel = PtxKernel::new("test_ld_global_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let _val = ctx.ld_global_u16(ptr);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_ld_global_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let _val = ctx.ld_global_u16(ptr);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -109,12 +121,14 @@ fn golden_ld_global_u16_instruction() {
 
 #[test]
 fn golden_st_global_u16_instruction() {
-    let kernel = PtxKernel::new("test_st_global_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.mov_u32_imm(65535);
-        ctx.st_global_u16(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_st_global_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.mov_u32_imm(65535);
+            ctx.st_global_u16(ptr, val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -130,12 +144,14 @@ fn golden_st_global_u16_instruction() {
 
 #[test]
 fn golden_cvt_u32_u8_instruction() {
-    let kernel = PtxKernel::new("test_cvt_u32_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let byte = ctx.ld_global_u8(ptr);
-        let _wide = ctx.cvt_u32_u8(byte);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_cvt_u32_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let byte = ctx.ld_global_u8(ptr);
+            let _wide = ctx.cvt_u32_u8(byte);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(
@@ -147,12 +163,14 @@ fn golden_cvt_u32_u8_instruction() {
 
 #[test]
 fn golden_cvt_u32_u16_instruction() {
-    let kernel = PtxKernel::new("test_cvt_u32_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let half = ctx.ld_global_u16(ptr);
-        let _wide = ctx.cvt_u32_u16(half);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_cvt_u32_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let half = ctx.ld_global_u16(ptr);
+            let _wide = ctx.cvt_u32_u16(half);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(

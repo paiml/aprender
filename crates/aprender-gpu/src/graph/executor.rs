@@ -349,35 +349,51 @@ mod tests {
             0x2000,
             [1536, 1, 4, 0],
             vec![input],
-            OpParams { gamma_ptr: 0x3000, scalar: 1e-6, ..Default::default() },
+            OpParams {
+                gamma_ptr: 0x3000,
+                scalar: 1e-6,
+                ..Default::default()
+            },
         );
         let q = g.add_op(
             TensorOp::MulMat,
             0x4000,
             [1536, 1536, 4, 0],
             vec![normed],
-            OpParams { weight_ptr: 0x5000, ..Default::default() },
+            OpParams {
+                weight_ptr: 0x5000,
+                ..Default::default()
+            },
         );
         let k = g.add_op(
             TensorOp::MulMat,
             0x6000,
             [256, 1536, 4, 0],
             vec![normed],
-            OpParams { weight_ptr: 0x7000, ..Default::default() },
+            OpParams {
+                weight_ptr: 0x7000,
+                ..Default::default()
+            },
         );
         let v = g.add_op(
             TensorOp::MulMat,
             0x8000,
             [256, 1536, 4, 0],
             vec![normed],
-            OpParams { weight_ptr: 0x9000, ..Default::default() },
+            OpParams {
+                weight_ptr: 0x9000,
+                ..Default::default()
+            },
         );
         let attn = g.add_op(
             TensorOp::SoftMax,
             0xA000,
             [1536, 1, 4, 0],
             vec![q, k, v],
-            OpParams { int_param: 0, ..Default::default() },
+            OpParams {
+                int_param: 0,
+                ..Default::default()
+            },
         );
         let _residual = g.add_op(
             TensorOp::Add,

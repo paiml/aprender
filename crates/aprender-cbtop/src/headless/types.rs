@@ -36,7 +36,9 @@ pub struct SystemInfo {
 
 impl SystemInfo {
     pub fn detect() -> Self {
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
 
         // Try to get CPU info from /proc/cpuinfo on Linux
         let cpu = Self::detect_cpu();
@@ -339,11 +341,18 @@ Score: {}/100 (Grade: {})
 
         let best = comparisons
             .iter()
-            .max_by(|a, b| a.gflops.partial_cmp(&b.gflops).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.gflops
+                    .partial_cmp(&b.gflops)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|c| c.backend.clone())
             .unwrap_or_default();
 
-        ComparisonResult { backends: comparisons, recommended: best }
+        ComparisonResult {
+            backends: comparisons,
+            recommended: best,
+        }
     }
 }
 

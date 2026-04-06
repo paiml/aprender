@@ -185,7 +185,8 @@ pub trait PtxMemory: KernelBuilderCore {
 
     /// Commit all outstanding cp.async operations as a group.
     fn cp_async_commit_group(&mut self) {
-        self.instructions_mut().push(PtxInstruction::new(PtxOp::CpAsyncCommitGroup, PtxType::U8));
+        self.instructions_mut()
+            .push(PtxInstruction::new(PtxOp::CpAsyncCommitGroup, PtxType::U8));
     }
 
     /// Wait until at most `n` cp.async groups are outstanding.
@@ -282,8 +283,14 @@ mod tests {
         builder.st_shared_f32(addr, val);
 
         assert_eq!(builder.instructions.len(), 2);
-        assert_eq!(builder.instructions[0].state_space, Some(PtxStateSpace::Shared));
-        assert_eq!(builder.instructions[1].state_space, Some(PtxStateSpace::Shared));
+        assert_eq!(
+            builder.instructions[0].state_space,
+            Some(PtxStateSpace::Shared)
+        );
+        assert_eq!(
+            builder.instructions[1].state_space,
+            Some(PtxStateSpace::Shared)
+        );
     }
 
     #[test]
@@ -309,7 +316,10 @@ mod tests {
         assert_eq!(builder.instructions.len(), 1);
         assert_eq!(builder.instructions[0].op, PtxOp::Ld);
         assert_eq!(builder.instructions[0].ty, PtxType::U8);
-        assert_eq!(builder.instructions[0].state_space, Some(PtxStateSpace::Global));
+        assert_eq!(
+            builder.instructions[0].state_space,
+            Some(PtxStateSpace::Global)
+        );
         assert_eq!(val.ty(), PtxType::U32); // Zero-extended to u32
     }
 
@@ -323,7 +333,10 @@ mod tests {
         assert_eq!(builder.instructions.len(), 1);
         assert_eq!(builder.instructions[0].op, PtxOp::Ld);
         assert_eq!(builder.instructions[0].ty, PtxType::U16);
-        assert_eq!(builder.instructions[0].state_space, Some(PtxStateSpace::Global));
+        assert_eq!(
+            builder.instructions[0].state_space,
+            Some(PtxStateSpace::Global)
+        );
         assert_eq!(val.ty(), PtxType::U32); // Zero-extended
     }
 
@@ -338,8 +351,14 @@ mod tests {
         assert_eq!(builder.instructions.len(), 2);
         assert_eq!(builder.instructions[0].op, PtxOp::Ld);
         assert_eq!(builder.instructions[0].ty, PtxType::U32);
-        assert_eq!(builder.instructions[0].state_space, Some(PtxStateSpace::Shared));
+        assert_eq!(
+            builder.instructions[0].state_space,
+            Some(PtxStateSpace::Shared)
+        );
         assert_eq!(builder.instructions[1].op, PtxOp::St);
-        assert_eq!(builder.instructions[1].state_space, Some(PtxStateSpace::Shared));
+        assert_eq!(
+            builder.instructions[1].state_space,
+            Some(PtxStateSpace::Shared)
+        );
     }
 }

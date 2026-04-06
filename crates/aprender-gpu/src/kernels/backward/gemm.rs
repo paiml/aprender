@@ -65,7 +65,13 @@ impl GemmBackwardAKernel {
     /// Create a naive GEMM backward kernel (backward compatible)
     #[must_use]
     pub const fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, tile_size: 16, variant: GemmBackwardVariant::Naive }
+        Self {
+            m,
+            n,
+            k,
+            tile_size: 16,
+            variant: GemmBackwardVariant::Naive,
+        }
     }
 
     /// Create a naive GEMM backward kernel (explicit)
@@ -77,13 +83,25 @@ impl GemmBackwardAKernel {
     /// Create a tiled GEMM backward kernel with shared memory (C-TILE-BWD-001)
     #[must_use]
     pub const fn tiled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
-        Self { m, n, k, tile_size, variant: GemmBackwardVariant::Tiled }
+        Self {
+            m,
+            n,
+            k,
+            tile_size,
+            variant: GemmBackwardVariant::Tiled,
+        }
     }
 
     /// Create a tiled GEMM backward kernel with 4x unrolled inner loop (C-TILE-BWD-005)
     #[must_use]
     pub const fn tiled_unrolled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
-        Self { m, n, k, tile_size, variant: GemmBackwardVariant::TiledUnrolled }
+        Self {
+            m,
+            n,
+            k,
+            tile_size,
+            variant: GemmBackwardVariant::TiledUnrolled,
+        }
     }
 }
 
@@ -539,7 +557,13 @@ impl GemmBackwardBKernel {
     /// Create a naive GEMM backward kernel (backward compatible)
     #[must_use]
     pub const fn new(m: u32, n: u32, k: u32) -> Self {
-        Self { m, n, k, tile_size: 16, variant: GemmBackwardVariant::Naive }
+        Self {
+            m,
+            n,
+            k,
+            tile_size: 16,
+            variant: GemmBackwardVariant::Naive,
+        }
     }
 
     /// Create a naive GEMM backward kernel (explicit)
@@ -551,13 +575,25 @@ impl GemmBackwardBKernel {
     /// Create a tiled GEMM backward kernel with shared memory (C-TILE-BWD-002)
     #[must_use]
     pub const fn tiled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
-        Self { m, n, k, tile_size, variant: GemmBackwardVariant::Tiled }
+        Self {
+            m,
+            n,
+            k,
+            tile_size,
+            variant: GemmBackwardVariant::Tiled,
+        }
     }
 
     /// Create a tiled GEMM backward kernel with 4x unrolled inner loop
     #[must_use]
     pub const fn tiled_unrolled(m: u32, n: u32, k: u32, tile_size: u32) -> Self {
-        Self { m, n, k, tile_size, variant: GemmBackwardVariant::TiledUnrolled }
+        Self {
+            m,
+            n,
+            k,
+            tile_size,
+            variant: GemmBackwardVariant::TiledUnrolled,
+        }
     }
 }
 
@@ -1011,7 +1047,11 @@ mod tests {
     fn test_gemm_backward_a_barrier_safety() {
         let kernel = GemmBackwardAKernel::new(32, 32, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "GEMM backward A should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "GEMM backward A should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     // === Backward A tiled tests (C-TILE-BWD-001) ===
@@ -1026,7 +1066,10 @@ mod tests {
     fn test_gemm_backward_a_tiled_ptx_has_shared_memory() {
         let kernel = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
         let ptx = kernel.emit_ptx();
-        assert!(ptx.contains(".shared"), "C-TILE-BWD-001: must use shared memory");
+        assert!(
+            ptx.contains(".shared"),
+            "C-TILE-BWD-001: must use shared memory"
+        );
         assert!(ptx.contains(".entry gemm_backward_a_tiled"));
         assert!(ptx.contains("bar.sync"), "tiled kernel must have barriers");
     }
@@ -1035,14 +1078,21 @@ mod tests {
     fn test_gemm_backward_a_tiled_ptx_has_fma() {
         let kernel = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
         let ptx = kernel.emit_ptx();
-        assert!(ptx.contains("fma.rn.f64"), "C-TILE-BWD-005: tiled must use f64 FMA (GH-561)");
+        assert!(
+            ptx.contains("fma.rn.f64"),
+            "C-TILE-BWD-005: tiled must use f64 FMA (GH-561)"
+        );
     }
 
     #[test]
     fn test_gemm_backward_a_tiled_barrier_safety() {
         let kernel = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "C-TILE-BWD-006: barrier safety violated: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "C-TILE-BWD-006: barrier safety violated: {:?}",
+            result.violations
+        );
     }
 
     // === Backward A tiled unrolled tests ===
@@ -1066,7 +1116,11 @@ mod tests {
     fn test_gemm_backward_a_tiled_unrolled_barrier_safety() {
         let kernel = GemmBackwardAKernel::tiled_unrolled(128, 2560, 2560, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "C-TILE-BWD-006: barrier safety violated: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "C-TILE-BWD-006: barrier safety violated: {:?}",
+            result.violations
+        );
     }
 
     // === Backward B tests ===
@@ -1092,7 +1146,11 @@ mod tests {
     fn test_gemm_backward_b_barrier_safety() {
         let kernel = GemmBackwardBKernel::new(32, 32, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "GEMM backward B should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "GEMM backward B should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     // === Backward B tiled tests (C-TILE-BWD-002) ===
@@ -1107,7 +1165,10 @@ mod tests {
     fn test_gemm_backward_b_tiled_ptx_has_shared_memory() {
         let kernel = GemmBackwardBKernel::tiled(128, 2560, 2560, 32);
         let ptx = kernel.emit_ptx();
-        assert!(ptx.contains(".shared"), "C-TILE-BWD-002: must use shared memory");
+        assert!(
+            ptx.contains(".shared"),
+            "C-TILE-BWD-002: must use shared memory"
+        );
         assert!(ptx.contains(".entry gemm_backward_b_tiled"));
         assert!(ptx.contains("bar.sync"), "tiled kernel must have barriers");
     }
@@ -1116,14 +1177,21 @@ mod tests {
     fn test_gemm_backward_b_tiled_ptx_has_fma() {
         let kernel = GemmBackwardBKernel::tiled(128, 2560, 2560, 32);
         let ptx = kernel.emit_ptx();
-        assert!(ptx.contains("fma.rn.f64"), "tiled must use f64 FMA (GH-561)");
+        assert!(
+            ptx.contains("fma.rn.f64"),
+            "tiled must use f64 FMA (GH-561)"
+        );
     }
 
     #[test]
     fn test_gemm_backward_b_tiled_barrier_safety() {
         let kernel = GemmBackwardBKernel::tiled(128, 2560, 2560, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "C-TILE-BWD-006: barrier safety violated: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "C-TILE-BWD-006: barrier safety violated: {:?}",
+            result.violations
+        );
     }
 
     // === Backward B tiled unrolled tests ===
@@ -1142,7 +1210,11 @@ mod tests {
     fn test_gemm_backward_b_tiled_unrolled_barrier_safety() {
         let kernel = GemmBackwardBKernel::tiled_unrolled(128, 2560, 2560, 32);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "barrier safety violated: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "barrier safety violated: {:?}",
+            result.violations
+        );
     }
 
     // === Qwen3-4B training shape tests ===

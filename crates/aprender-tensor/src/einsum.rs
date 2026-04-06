@@ -20,7 +20,9 @@ struct EinsumPlan {
 fn parse_subscripts(subscripts: &str) -> Result<EinsumPlan, TensorError> {
     let parts: Vec<&str> = subscripts.split("->").collect();
     if parts.len() != 2 {
-        return Err(TensorError::InvalidSubscript("expected exactly one '->' separator".into()));
+        return Err(TensorError::InvalidSubscript(
+            "expected exactly one '->' separator".into(),
+        ));
     }
 
     let input_part = parts[0];
@@ -29,7 +31,9 @@ fn parse_subscripts(subscripts: &str) -> Result<EinsumPlan, TensorError> {
     let input_labels: Vec<Vec<char>> = input_part.split(',').map(|s| s.chars().collect()).collect();
 
     if input_labels.is_empty() {
-        return Err(TensorError::InvalidSubscript("no input tensors specified".into()));
+        return Err(TensorError::InvalidSubscript(
+            "no input tensors specified".into(),
+        ));
     }
 
     for labels in &input_labels {
@@ -51,7 +55,10 @@ fn parse_subscripts(subscripts: &str) -> Result<EinsumPlan, TensorError> {
         }
     }
 
-    Ok(EinsumPlan { input_labels, output_labels })
+    Ok(EinsumPlan {
+        input_labels,
+        output_labels,
+    })
 }
 
 /// Build a map from index label to dimension size, validating consistency.
@@ -121,7 +128,9 @@ pub fn einsum_nary(subscripts: &str, inputs: &[&Tensor]) -> Result<Tensor, Tenso
     }
 
     if inputs.is_empty() {
-        return Err(TensorError::InvalidSubscript("no input tensors specified".into()));
+        return Err(TensorError::InvalidSubscript(
+            "no input tensors specified".into(),
+        ));
     }
 
     if inputs.len() == 1 {
@@ -229,8 +238,11 @@ fn einsum_single(plan: &EinsumPlan, a: &Tensor) -> Result<Tensor, TensorError> {
     let mut output = Tensor::zeros(out_shape);
 
     // Contracted indices: in input but not in output
-    let contracted: Vec<char> =
-        a_labels.iter().filter(|l| !out_labels.contains(l)).copied().collect();
+    let contracted: Vec<char> = a_labels
+        .iter()
+        .filter(|l| !out_labels.contains(l))
+        .copied()
+        .collect();
 
     let mut all_labels: Vec<char> = out_labels.clone();
     all_labels.extend_from_slice(&contracted);
@@ -245,8 +257,11 @@ fn einsum_single(plan: &EinsumPlan, a: &Tensor) -> Result<Tensor, TensorError> {
     let mut indices = vec![0usize; ndim];
 
     for _ in 0..total {
-        let label_vals: HashMap<char, usize> =
-            all_labels.iter().zip(indices.iter()).map(|(&l, &v)| (l, v)).collect();
+        let label_vals: HashMap<char, usize> = all_labels
+            .iter()
+            .zip(indices.iter())
+            .map(|(&l, &v)| (l, v))
+            .collect();
 
         let a_idx: Vec<usize> = a_labels.iter().map(|l| label_vals[l]).collect();
         let out_idx: Vec<usize> = out_labels.iter().map(|l| label_vals[l]).collect();
@@ -327,7 +342,16 @@ fn einsum_binary(subscripts: &str, a: &Tensor, b: &Tensor) -> Result<Tensor, Ten
     let mut output = Tensor::zeros(out_shape);
 
     // Compute contraction via explicit nested iteration
-    contract_tensors(a, b, &mut output, a_labels, b_labels, out_labels, &contracted, &index_sizes);
+    contract_tensors(
+        a,
+        b,
+        &mut output,
+        a_labels,
+        b_labels,
+        out_labels,
+        &contracted,
+        &index_sizes,
+    );
 
     Ok(output)
 }
@@ -360,8 +384,11 @@ fn contract_tensors(
 
     for _ in 0..total {
         // Build label->value map
-        let label_vals: HashMap<char, usize> =
-            all_labels.iter().zip(indices.iter()).map(|(&l, &v)| (l, v)).collect();
+        let label_vals: HashMap<char, usize> = all_labels
+            .iter()
+            .zip(indices.iter())
+            .map(|(&l, &v)| (l, v))
+            .collect();
 
         // Index into A
         let a_idx: Vec<usize> = a_labels.iter().map(|l| label_vals[l]).collect();
@@ -396,7 +423,9 @@ pub fn outer(a: &Tensor, b: &Tensor) -> Result<Tensor, TensorError> {
 /// Trace via einsum: `"ii->"` but implemented as sum of diagonal.
 pub fn trace(a: &Tensor) -> Result<f32, TensorError> {
     if a.ndim() != 2 || a.shape()[0] != a.shape()[1] {
-        return Err(TensorError::InvalidSubscript("trace requires a square 2D tensor".into()));
+        return Err(TensorError::InvalidSubscript(
+            "trace requires a square 2D tensor".into(),
+        ));
     }
     let n = a.shape()[0];
     let mut sum = 0.0f32;

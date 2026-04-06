@@ -171,7 +171,10 @@ fn test_spot_savings_tracking() {
 /// FKR-052: Falsification test for predictive scheduling SLO compliance
 #[test]
 fn fkr_052_predictive_scheduling_slo_compliance() {
-    let config = PredictiveSchedulerConfig { target_slo_compliance: 0.99, ..Default::default() };
+    let config = PredictiveSchedulerConfig {
+        target_slo_compliance: 0.99,
+        ..Default::default()
+    };
     let mut scheduler = PredictiveScheduler::new(config);
 
     // Setup realistic cluster
@@ -256,7 +259,10 @@ fn fkr_052_predictive_scheduling_slo_compliance() {
 
     // Secondary hypothesis: Cost optimization
     let metrics = scheduler.metrics();
-    println!("Total cost: {:.4}, Spot savings: {:.4}", metrics.total_cost, metrics.spot_savings);
+    println!(
+        "Total cost: {:.4}, Spot savings: {:.4}",
+        metrics.total_cost, metrics.spot_savings
+    );
 
     // Verify spot instances provided savings
     assert!(

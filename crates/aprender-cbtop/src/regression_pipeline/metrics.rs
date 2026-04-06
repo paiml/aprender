@@ -14,7 +14,11 @@ pub struct BenchmarkMetric {
 impl BenchmarkMetric {
     /// Create new benchmark metric
     pub fn new(name: impl Into<String>, samples: Vec<f64>, unit: impl Into<String>) -> Self {
-        Self { name: name.into(), samples, unit: unit.into() }
+        Self {
+            name: name.into(),
+            samples,
+            unit: unit.into(),
+        }
     }
 
     /// Get mean value

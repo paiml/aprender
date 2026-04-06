@@ -73,10 +73,19 @@ fn test_valid_kernel_no_bugs() {
 
 #[test]
 fn test_bug_severity_classification() {
-    assert_eq!(PtxBugClass::MissingBarrierSync.severity(), BugSeverity::Critical);
-    assert_eq!(PtxBugClass::SharedMemU64Addressing.severity(), BugSeverity::Critical);
+    assert_eq!(
+        PtxBugClass::MissingBarrierSync.severity(),
+        BugSeverity::Critical
+    );
+    assert_eq!(
+        PtxBugClass::SharedMemU64Addressing.severity(),
+        BugSeverity::Critical
+    );
     assert_eq!(PtxBugClass::RegisterSpills.severity(), BugSeverity::High);
-    assert_eq!(PtxBugClass::MissingEntryPoint.severity(), BugSeverity::FalsePositive);
+    assert_eq!(
+        PtxBugClass::MissingEntryPoint.severity(),
+        BugSeverity::FalsePositive
+    );
 }
 
 #[test]

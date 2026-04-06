@@ -44,7 +44,11 @@ impl RunningStats {
     }
 
     fn std(&self) -> f64 {
-        if self.count < 2 { 0.0 } else { (self.m2 / (self.count - 1) as f64).sqrt() }
+        if self.count < 2 {
+            0.0
+        } else {
+            (self.m2 / (self.count - 1) as f64).sqrt()
+        }
     }
 }
 
@@ -96,16 +100,30 @@ impl MetricsCollector {
     }
 
     pub fn loss_mean(&self) -> f64 {
-        if self.loss.count == 0 { f64::NAN } else { self.loss.mean }
+        if self.loss.count == 0 {
+            f64::NAN
+        } else {
+            self.loss.mean
+        }
     }
 
     pub fn accuracy_mean(&self) -> f64 {
-        if self.accuracy.count == 0 { f64::NAN } else { self.accuracy.mean }
+        if self.accuracy.count == 0 {
+            f64::NAN
+        } else {
+            self.accuracy.mean
+        }
     }
 
-    pub fn loss_std(&self) -> f64 { self.loss.std() }
-    pub fn accuracy_std(&self) -> f64 { self.accuracy.std() }
-    pub fn count(&self) -> usize { self.loss.count + self.accuracy.count }
+    pub fn loss_std(&self) -> f64 {
+        self.loss.std()
+    }
+    pub fn accuracy_std(&self) -> f64 {
+        self.accuracy.std()
+    }
+    pub fn count(&self) -> usize {
+        self.loss.count + self.accuracy.count
+    }
 
     pub fn clear(&mut self) {
         self.loss = RunningStats::new();
@@ -137,17 +155,26 @@ impl MetricsCollector {
 
 fn sparkline(values: &[f64]) -> String {
     const CHARS: &[char] = &['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    if values.is_empty() { return String::new(); }
+    if values.is_empty() {
+        return String::new();
+    }
 
     let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let range = if (max - min).abs() < 1e-10 { 1.0 } else { max - min };
+    let range = if (max - min).abs() < 1e-10 {
+        1.0
+    } else {
+        max - min
+    };
 
-    values.iter().map(|v| {
-        let norm = ((v - min) / range).clamp(0.0, 1.0);
-        let idx = ((norm * 7.0).round() as usize).min(7);
-        CHARS[idx]
-    }).collect()
+    values
+        .iter()
+        .map(|v| {
+            let norm = ((v - min) / range).clamp(0.0, 1.0);
+            let idx = ((norm * 7.0).round() as usize).min(7);
+            CHARS[idx]
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -257,8 +284,11 @@ mod tests {
         }
         // History should be bounded to 100
         let json = c.state_json();
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON deserialization should succeed");
-        let history = parsed["loss_history"].as_array().expect("parsing should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON deserialization should succeed");
+        let history = parsed["loss_history"]
+            .as_array()
+            .expect("parsing should succeed");
         assert_eq!(history.len(), 100);
     }
 
@@ -341,13 +371,13 @@ mod tests {
     #[test]
     fn test_sparkline_min_max_range() {
         let mut c = MetricsCollector::new();
-        c.record_loss(0.0);  // min
-        c.record_loss(7.0);  // max
+        c.record_loss(0.0); // min
+        c.record_loss(7.0); // max
         let s = c.loss_sparkline();
         // First char should be lowest, last char should be highest
         let chars: Vec<char> = s.chars().collect();
-        assert_eq!(chars[0], '▁');  // min value
-        assert_eq!(chars[1], '█');  // max value
+        assert_eq!(chars[0], '▁'); // min value
+        assert_eq!(chars[1], '█'); // max value
     }
 
     #[test]
@@ -380,8 +410,11 @@ mod tests {
             c.record_loss(i as f64);
         }
         let json = c.state_json();
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON deserialization should succeed");
-        let history = parsed["loss_history"].as_array().expect("parsing should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON deserialization should succeed");
+        let history = parsed["loss_history"]
+            .as_array()
+            .expect("parsing should succeed");
         assert_eq!(history.len(), 100);
         // First value should be 0.0 (no overflow yet)
         assert_eq!(history[0].as_f64().expect("operation should succeed"), 0.0);
@@ -394,8 +427,11 @@ mod tests {
             c.record_loss(i as f64);
         }
         let json = c.state_json();
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON deserialization should succeed");
-        let history = parsed["loss_history"].as_array().expect("parsing should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON deserialization should succeed");
+        let history = parsed["loss_history"]
+            .as_array()
+            .expect("parsing should succeed");
         assert_eq!(history.len(), 100);
         // First value should be 1.0 (0.0 was removed)
         assert_eq!(history[0].as_f64().expect("operation should succeed"), 1.0);
@@ -408,8 +444,11 @@ mod tests {
             c.record_accuracy(i as f64 / 100.0);
         }
         let json = c.state_json();
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("JSON deserialization should succeed");
-        let history = parsed["accuracy_history"].as_array().expect("parsing should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json).expect("JSON deserialization should succeed");
+        let history = parsed["accuracy_history"]
+            .as_array()
+            .expect("parsing should succeed");
         assert_eq!(history.len(), 100);
     }
 
@@ -418,8 +457,8 @@ mod tests {
     fn test_sparkline_normalization_correctness() {
         // Test that normalization is (v - min) / range, not (v + min) / range
         let mut c = MetricsCollector::new();
-        c.record_loss(10.0);  // min = 10
-        c.record_loss(20.0);  // max = 20, range = 10
+        c.record_loss(10.0); // min = 10
+        c.record_loss(20.0); // max = 20, range = 10
         let s = c.loss_sparkline();
         let chars: Vec<char> = s.chars().collect();
         // norm(10) = (10-10)/10 = 0 -> '▁'
@@ -434,7 +473,7 @@ mod tests {
         let mut c = MetricsCollector::new();
         c.record_loss(0.0);
         c.record_loss(2.0);
-        c.record_loss(1.0);  // middle value
+        c.record_loss(1.0); // middle value
         let s = c.loss_sparkline();
         let chars: Vec<char> = s.chars().collect();
         // 0 -> '▁', 2 -> '█', 1 -> '▄' (middle)
@@ -442,7 +481,11 @@ mod tests {
         assert_eq!(chars[1], '█');
         // Middle value should be around index 3-4
         let middle_char = chars[2];
-        assert!(middle_char >= '▃' && middle_char <= '▅', "Middle char was {:?}", middle_char);
+        assert!(
+            middle_char >= '▃' && middle_char <= '▅',
+            "Middle char was {:?}",
+            middle_char
+        );
     }
 
     #[test]
@@ -467,11 +510,11 @@ mod tests {
     fn test_record_accuracy_nan_or_inf() {
         // Test that NaN OR Inf is rejected (not NaN AND Inf)
         let mut c = MetricsCollector::new();
-        c.record_accuracy(f64::NAN);      // Should be rejected
+        c.record_accuracy(f64::NAN); // Should be rejected
         assert_eq!(c.count(), 0);
         c.record_accuracy(f64::INFINITY); // Should also be rejected
         assert_eq!(c.count(), 0);
-        c.record_accuracy(0.5);           // Should be accepted
+        c.record_accuracy(0.5); // Should be accepted
         assert_eq!(c.count(), 1);
     }
 
@@ -480,7 +523,7 @@ mod tests {
         // Test the small range fallback (< 1e-10)
         let mut c = MetricsCollector::new();
         c.record_loss(5.0);
-        c.record_loss(5.0 + 1e-11);  // Very small difference
+        c.record_loss(5.0 + 1e-11); // Very small difference
         let s = c.loss_sparkline();
         // Should not panic and should produce valid chars
         assert_eq!(s.chars().count(), 2);

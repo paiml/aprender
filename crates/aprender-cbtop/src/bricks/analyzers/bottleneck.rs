@@ -11,7 +11,10 @@ pub struct BottleneckAnalyzerBrick {
 
 impl BottleneckAnalyzerBrick {
     pub fn new(peak_flops: f64, peak_bandwidth: f64) -> Self {
-        Self { peak_flops, peak_bandwidth }
+        Self {
+            peak_flops,
+            peak_bandwidth,
+        }
     }
 
     pub fn analyze(&self, achieved_flops: f64, operational_intensity: f64) -> BottleneckResult {
@@ -27,7 +30,11 @@ impl BottleneckAnalyzerBrick {
             achieved_flops,
             theoretical_peak,
             efficiency,
-            bottleneck: if is_compute_bound { Bottleneck::Compute } else { Bottleneck::Memory },
+            bottleneck: if is_compute_bound {
+                Bottleneck::Compute
+            } else {
+                Bottleneck::Memory
+            },
         }
     }
 
@@ -64,11 +71,18 @@ impl Brick for BottleneckAnalyzerBrick {
     }
 
     fn assertions(&self) -> Vec<BrickAssertion> {
-        vec![BrickAssertion::custom("roofline_valid", |_| true), BrickAssertion::max_latency_ms(1)]
+        vec![
+            BrickAssertion::custom("roofline_valid", |_| true),
+            BrickAssertion::max_latency_ms(1),
+        ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 1, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 1,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

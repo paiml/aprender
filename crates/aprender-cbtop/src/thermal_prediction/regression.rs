@@ -33,7 +33,11 @@ pub(crate) fn ols_fit(pairs: &[(f64, f64)]) -> Option<(f64, f64, f64)> {
         ss_res += (y - intercept - slope * x).powi(2);
         ss_tot += (y - mean_y).powi(2);
     }
-    let r_sq = if ss_tot < 1e-10 { 1.0 } else { (1.0 - ss_res / ss_tot).clamp(0.0, 1.0) };
+    let r_sq = if ss_tot < 1e-10 {
+        1.0
+    } else {
+        (1.0 - ss_res / ss_tot).clamp(0.0, 1.0)
+    };
 
     Some((slope, intercept, r_sq))
 }
@@ -57,10 +61,18 @@ pub(crate) fn pearson_r(pairs: &[(f64, f64)]) -> Option<(f64, f64)> {
     }
 
     let denom_r = ((n * sxx - sx * sx) * (n * syy - sy * sy)).sqrt();
-    let r = if denom_r.abs() < 1e-10 { 0.0 } else { (n * sxy - sx * sy) / denom_r };
+    let r = if denom_r.abs() < 1e-10 {
+        0.0
+    } else {
+        (n * sxy - sx * sy) / denom_r
+    };
 
     let slope_denom = n * sxx - sx * sx;
-    let slope = if slope_denom.abs() < 1e-10 { 0.0 } else { (n * sxy - sx * sy) / slope_denom };
+    let slope = if slope_denom.abs() < 1e-10 {
+        0.0
+    } else {
+        (n * sxy - sx * sy) / slope_denom
+    };
 
     Some((r, slope))
 }

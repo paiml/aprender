@@ -113,7 +113,11 @@ mod tests {
         let err = ParseError::UnexpectedToken {
             expected: "identifier".into(),
             found: "number".into(),
-            location: SourceLocation { line: 10, column: 5, file: None },
+            location: SourceLocation {
+                line: 10,
+                column: 5,
+                file: None,
+            },
         };
         let msg = format!("{}", err);
         assert!(msg.contains("Unexpected token"));
@@ -122,8 +126,15 @@ mod tests {
 
     #[test]
     fn test_error_location() {
-        let loc = SourceLocation { line: 42, column: 10, file: None };
-        let err = ParseError::InvalidDirective { directive: ".foo".into(), location: loc.clone() };
+        let loc = SourceLocation {
+            line: 42,
+            column: 10,
+            file: None,
+        };
+        let err = ParseError::InvalidDirective {
+            directive: ".foo".into(),
+            location: loc.clone(),
+        };
         assert_eq!(err.location().line, 42);
         assert_eq!(err.location().column, 10);
     }

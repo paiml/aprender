@@ -95,7 +95,10 @@ fn launch_incremental_attention_kernel(
 
     let kernel = IncrementalAttentionKernel::new(max_seq_len, head_dim, n_heads);
     let ptx = kernel.emit_ptx();
-    let cache_key = format!("incremental_attention:{}:{}:{}", max_seq_len, head_dim, n_heads);
+    let cache_key = format!(
+        "incremental_attention:{}:{}:{}",
+        max_seq_len, head_dim, n_heads
+    );
     let config = LaunchConfig {
         grid: (n_heads, 1, 1),
         block: (32, 1, 1), // One warp
@@ -116,7 +119,15 @@ fn launch_incremental_attention_kernel(
         std::ptr::addr_of!(seq_len_val) as *mut _,
     ];
 
-    compile_lock_launch(ctx, stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+    compile_lock_launch(
+        ctx,
+        stream,
+        &cache_key,
+        &ptx,
+        kernel.name(),
+        &config,
+        &mut args,
+    )?;
 
     Ok(())
 }
@@ -423,7 +434,15 @@ pub fn kv_cache_scatter_gpu(
         std::ptr::addr_of!(max_seq_len) as *mut _,
     ];
 
-    compile_lock_launch(ctx, stream, &cache_key, &ptx, kernel.name(), &config, &mut args)?;
+    compile_lock_launch(
+        ctx,
+        stream,
+        &cache_key,
+        &ptx,
+        kernel.name(),
+        &config,
+        &mut args,
+    )?;
 
     // NO SYNC - caller chains operations (Point 149)
     Ok(())

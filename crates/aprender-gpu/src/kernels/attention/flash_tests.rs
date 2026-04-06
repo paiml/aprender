@@ -81,12 +81,18 @@ mod tests {
     fn test_with_tiles_clamps_tile_kv_to_head_dim() {
         // head_dim=128, request tile_kv=32 — should clamp to 128
         let kernel = AttentionKernel::new(2048, 128).with_tiles(16, 32);
-        assert_eq!(kernel.tile_kv, 128, "GH-32: with_tiles() must clamp tile_kv to head_dim");
+        assert_eq!(
+            kernel.tile_kv, 128,
+            "GH-32: with_tiles() must clamp tile_kv to head_dim"
+        );
         assert_eq!(kernel.tile_q, 16, "tile_q should be set as requested");
 
         // head_dim=64, request tile_kv=128 — should keep 128
         let kernel2 = AttentionKernel::new(2048, 64).with_tiles(32, 128);
-        assert_eq!(kernel2.tile_kv, 128, "tile_kv >= head_dim should be kept as-is");
+        assert_eq!(
+            kernel2.tile_kv, 128,
+            "tile_kv >= head_dim should be kept as-is"
+        );
 
         // head_dim=64, request tile_kv=64 — exact boundary
         let kernel3 = AttentionKernel::new(2048, 64).with_tiles(32, 64);
@@ -109,10 +115,16 @@ mod tests {
         );
 
         // Must have cooperative K loading loop
-        assert!(ptx.contains("k_coop_load"), "GH-32: Should have strided cooperative K loading");
+        assert!(
+            ptx.contains("k_coop_load"),
+            "GH-32: Should have strided cooperative K loading"
+        );
 
         // Must have cooperative V loading loop
-        assert!(ptx.contains("v_coop_load"), "GH-32: Should have strided cooperative V loading");
+        assert!(
+            ptx.contains("v_coop_load"),
+            "GH-32: Should have strided cooperative V loading"
+        );
     }
 
     /// GH-32 FIX: Causal FlashAttention must have per-row causal masking
@@ -129,7 +141,10 @@ mod tests {
         );
 
         // Also must have block-level causal skip
-        assert!(ptx.contains("kv_loop_end"), "Should still have block-level causal skip");
+        assert!(
+            ptx.contains("kv_loop_end"),
+            "Should still have block-level causal skip"
+        );
     }
 
     /// GH-32: Constructor defaults must enforce tile_kv >= head_dim

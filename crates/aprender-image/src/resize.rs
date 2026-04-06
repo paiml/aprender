@@ -37,7 +37,10 @@ pub fn resize(
         });
     }
     if dst_w == 0 || dst_h == 0 {
-        return Err(ImageError::ZeroDimension { width: dst_w, height: dst_h });
+        return Err(ImageError::ZeroDimension {
+            width: dst_w,
+            height: dst_h,
+        });
     }
 
     let mut output = vec![0.0f32; dst_w * dst_h];

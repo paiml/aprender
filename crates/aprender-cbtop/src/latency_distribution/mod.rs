@@ -97,11 +97,17 @@ impl LatencyDistribution {
         let (skewness, kurtosis) = calculate_moments(samples, mean, std_dev);
 
         // Bimodality coefficient: (skewness² + 1) / kurtosis
-        let bimodality_coefficient =
-            if kurtosis > 0.0 { (skewness.powi(2) + 1.0) / kurtosis } else { 0.0 };
+        let bimodality_coefficient = if kurtosis > 0.0 {
+            (skewness.powi(2) + 1.0) / kurtosis
+        } else {
+            0.0
+        };
 
         // Outlier ratio (beyond 3σ)
-        let outlier_count = samples.iter().filter(|&&x| (x - mean).abs() > 3.0 * std_dev).count();
+        let outlier_count = samples
+            .iter()
+            .filter(|&&x| (x - mean).abs() > 3.0 * std_dev)
+            .count();
         let outlier_ratio = outlier_count as f64 / n as f64 * 100.0;
 
         // Build histogram

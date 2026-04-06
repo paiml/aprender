@@ -87,8 +87,10 @@ impl TuiApp {
     }
 
     fn page_down(&mut self) {
-        self.source_scroll =
-            self.source_scroll.saturating_add(20).min(self.source_lines.saturating_sub(1) as u16);
+        self.source_scroll = self
+            .source_scroll
+            .saturating_add(20)
+            .min(self.source_lines.saturating_sub(1) as u16);
     }
 
     fn page_up(&mut self) {
@@ -151,7 +153,9 @@ fn run_app(
 
         // Flush to terminal
         let mut output = Vec::with_capacity(8192);
-        renderer.flush(buffer, &mut output).map_err(|e| io::Error::other(e.to_string()))?;
+        renderer
+            .flush(buffer, &mut output)
+            .map_err(|e| io::Error::other(e.to_string()))?;
         io::Write::write_all(&mut io::stdout(), &output)?;
 
         // Handle input
@@ -168,14 +172,54 @@ fn run_app(
 }
 
 /// Color constants for the main UI.
-const COLOR_CYAN: Color = Color { r: 0.3, g: 1.0, b: 1.0, a: 1.0 };
-const COLOR_YELLOW: Color = Color { r: 1.0, g: 1.0, b: 0.3, a: 1.0 };
-const COLOR_DIM: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
-const COLOR_LINENUM: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
-const COLOR_BG: Color = Color { r: 0.1, g: 0.1, b: 0.1, a: 1.0 };
-const COLOR_TEXT: Color = Color { r: 0.8, g: 0.8, b: 0.8, a: 1.0 };
-const COLOR_SCROLL_TRACK: Color = Color { r: 0.5, g: 0.5, b: 0.5, a: 1.0 };
-const COLOR_SCROLL_THUMB: Color = Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+const COLOR_CYAN: Color = Color {
+    r: 0.3,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
+const COLOR_YELLOW: Color = Color {
+    r: 1.0,
+    g: 1.0,
+    b: 0.3,
+    a: 1.0,
+};
+const COLOR_DIM: Color = Color {
+    r: 0.5,
+    g: 0.5,
+    b: 0.5,
+    a: 1.0,
+};
+const COLOR_LINENUM: Color = Color {
+    r: 0.5,
+    g: 0.5,
+    b: 0.5,
+    a: 1.0,
+};
+const COLOR_BG: Color = Color {
+    r: 0.1,
+    g: 0.1,
+    b: 0.1,
+    a: 1.0,
+};
+const COLOR_TEXT: Color = Color {
+    r: 0.8,
+    g: 0.8,
+    b: 0.8,
+    a: 1.0,
+};
+const COLOR_SCROLL_TRACK: Color = Color {
+    r: 0.5,
+    g: 0.5,
+    b: 0.5,
+    a: 1.0,
+};
+const COLOR_SCROLL_THUMB: Color = Color {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
 
 fn ui(canvas: &mut DirectTerminalCanvas<'_>, app: &TuiApp, width: u16, height: u16) {
     // Clear background
@@ -199,7 +243,14 @@ fn ui(canvas: &mut DirectTerminalCanvas<'_>, app: &TuiApp, width: u16, height: u
 
     // Render sidebar if visible
     if app.sidebar_visible && sidebar_width > 0 {
-        render_sidebar(canvas, app, f32::from(source_width), 0.0, sidebar_width, source_height);
+        render_sidebar(
+            canvas,
+            app,
+            f32::from(source_width),
+            0.0,
+            sidebar_width,
+            source_height,
+        );
     }
 
     // Render status bar at the bottom
@@ -214,7 +265,10 @@ fn render_source_pane(
     width: u16,
     height: u16,
 ) {
-    let border_style = TextStyle { color: COLOR_CYAN, ..Default::default() };
+    let border_style = TextStyle {
+        color: COLOR_CYAN,
+        ..Default::default()
+    };
     let inner_width = (width as usize).saturating_sub(2); // borders
 
     // Top border with title
@@ -239,12 +293,18 @@ fn render_source_pane(
         if line_idx < lines.len() {
             // Line number
             let line_num = format!("{:4} ", line_idx + 1);
-            let linenum_style = TextStyle { color: COLOR_LINENUM, ..Default::default() };
+            let linenum_style = TextStyle {
+                color: COLOR_LINENUM,
+                ..Default::default()
+            };
             canvas.draw_text(&line_num, Point::new(x + 1.0, cy), &linenum_style);
 
             // Highlighted source text
             let (text, color) = highlight_ptx_line(lines[line_idx]);
-            let text_style = TextStyle { color, ..Default::default() };
+            let text_style = TextStyle {
+                color,
+                ..Default::default()
+            };
             // Truncate to fit: inner_width - 5 (line number) - 1 (scrollbar)
             let max_text_len = inner_width.saturating_sub(6);
             let display_text: String = text.chars().take(max_text_len).collect();
@@ -252,12 +312,20 @@ fn render_source_pane(
         }
 
         // Right border (leave room for scrollbar)
-        canvas.draw_text("│", Point::new(x + f32::from(width) - 1.0, cy), &border_style);
+        canvas.draw_text(
+            "│",
+            Point::new(x + f32::from(width) - 1.0, cy),
+            &border_style,
+        );
     }
 
     // Bottom border
     let bottom_line = format!("└{}┘", "─".repeat(inner_width));
-    canvas.draw_text(&bottom_line, Point::new(x, y + f32::from(height) - 1.0), &border_style);
+    canvas.draw_text(
+        &bottom_line,
+        Point::new(x, y + f32::from(height) - 1.0),
+        &border_style,
+    );
 
     // Scrollbar (inside the right border area)
     if app.source_lines > 0 {
@@ -283,21 +351,38 @@ fn draw_scrollbar(
     let pos_ratio = position as f32 / total.max(1) as f32;
     #[allow(clippy::cast_sign_loss)]
     let thumb_y = (pos_ratio * f32::from(height - 1)).round() as u16;
-    let track_style = TextStyle { color: COLOR_SCROLL_TRACK, ..Default::default() };
-    let thumb_style = TextStyle { color: COLOR_SCROLL_THUMB, ..Default::default() };
+    let track_style = TextStyle {
+        color: COLOR_SCROLL_TRACK,
+        ..Default::default()
+    };
+    let thumb_style = TextStyle {
+        color: COLOR_SCROLL_THUMB,
+        ..Default::default()
+    };
 
     for y in 0..height {
         if y == thumb_y {
-            canvas.draw_text("\u{2588}", Point::new(x, top_y + f32::from(y)), &thumb_style);
+            canvas.draw_text(
+                "\u{2588}",
+                Point::new(x, top_y + f32::from(y)),
+                &thumb_style,
+            );
         } else {
-            canvas.draw_text("\u{2502}", Point::new(x, top_y + f32::from(y)), &track_style);
+            canvas.draw_text(
+                "\u{2502}",
+                Point::new(x, top_y + f32::from(y)),
+                &track_style,
+            );
         }
     }
 }
 
 fn render_status_bar(canvas: &mut DirectTerminalCanvas<'_>, width: u16, height: u16) {
     let status_y = f32::from(height - 3);
-    let border_style = TextStyle { color: COLOR_DIM, ..Default::default() };
+    let border_style = TextStyle {
+        color: COLOR_DIM,
+        ..Default::default()
+    };
     let inner_width = (width as usize).saturating_sub(2);
 
     // Status bar top border
@@ -307,12 +392,22 @@ fn render_status_bar(canvas: &mut DirectTerminalCanvas<'_>, width: u16, height: 
     // Status content line
     canvas.draw_text("│", Point::new(0.0, status_y + 1.0), &border_style);
 
-    let key_style = TextStyle { color: COLOR_YELLOW, ..Default::default() };
-    let text_style = TextStyle { color: COLOR_TEXT, ..Default::default() };
+    let key_style = TextStyle {
+        color: COLOR_YELLOW,
+        ..Default::default()
+    };
+    let text_style = TextStyle {
+        color: COLOR_TEXT,
+        ..Default::default()
+    };
 
     let mut cx: f32 = 1.0;
-    let items: &[(&str, &str)] =
-        &[(" q", ":Quit "), ("s", ":Sidebar "), ("jk", ":Scroll "), ("PgUp/Dn", ":Page ")];
+    let items: &[(&str, &str)] = &[
+        (" q", ":Quit "),
+        ("s", ":Sidebar "),
+        ("jk", ":Scroll "),
+        ("PgUp/Dn", ":Page "),
+    ];
 
     for &(key, desc) in items {
         canvas.draw_text(key, Point::new(cx, status_y + 1.0), &key_style);
@@ -321,7 +416,11 @@ fn render_status_bar(canvas: &mut DirectTerminalCanvas<'_>, width: u16, height: 
         cx += desc.len() as f32;
     }
 
-    canvas.draw_text("│", Point::new(f32::from(width) - 1.0, status_y + 1.0), &border_style);
+    canvas.draw_text(
+        "│",
+        Point::new(f32::from(width) - 1.0, status_y + 1.0),
+        &border_style,
+    );
 
     // Status bar bottom border
     let bottom = format!("└{}┘", "─".repeat(inner_width));

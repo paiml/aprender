@@ -47,7 +47,11 @@ pub fn collect_vram() -> Option<VramMetrics> {
     let used = parse_nvidia_val(fields[0]);
     let total = parse_nvidia_val(fields[1]);
     let free = parse_nvidia_val(fields[2]);
-    let utilization = if total > 0.0 { used / total * 100.0 } else { 0.0 };
+    let utilization = if total > 0.0 {
+        used / total * 100.0
+    } else {
+        0.0
+    };
 
     Some(VramMetrics {
         vram_used_mb: used,
@@ -65,9 +69,16 @@ pub fn compute_energy(power_watts: f64, tflops: f64, duration_us: f64) -> Option
     if power_watts <= 0.0 {
         return None;
     }
-    let tflops_per_watt = if power_watts > 0.0 { tflops / power_watts } else { 0.0 };
+    let tflops_per_watt = if power_watts > 0.0 {
+        tflops / power_watts
+    } else {
+        0.0
+    };
     let joules = power_watts * duration_us * 1e-6;
-    Some(EnergyMetrics { tflops_per_watt, joules_per_inference: joules })
+    Some(EnergyMetrics {
+        tflops_per_watt,
+        joules_per_inference: joules,
+    })
 }
 
 /// Run nvidia-smi --query-gpu and return the CSV row.
@@ -96,7 +107,10 @@ fn parse_nvidia_val(s: &str) -> f64 {
         return 0.0;
     }
     // Take the first token that looks numeric
-    s.split_whitespace().next().and_then(|token| token.parse::<f64>().ok()).unwrap_or(0.0)
+    s.split_whitespace()
+        .next()
+        .and_then(|token| token.parse::<f64>().ok())
+        .unwrap_or(0.0)
 }
 
 /// Read current CPU frequency from /proc/cpuinfo (MHz).
@@ -193,7 +207,10 @@ mod tests {
         assert!(health.is_some(), "nvidia-smi exists but no health data");
         let h = health.unwrap();
         assert!(h.gpu_temperature_celsius > 0.0, "GPU temp should be > 0");
-        assert!(h.gpu_memory_total_mb > 0.0, "GPU memory total should be > 0");
+        assert!(
+            h.gpu_memory_total_mb > 0.0,
+            "GPU memory total should be > 0"
+        );
     }
 
     /// If nvidia-smi is available, VRAM must have valid data.

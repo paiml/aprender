@@ -398,8 +398,14 @@ mod tests {
         let k = HalfWarpDp4aQ6KGemvKernel::new(1536, 151936);
         let ptx = k.emit_ptx();
         // PMAT-078: Should load Q8 from shared, not global
-        assert!(ptx.contains("ld.shared.u32"), "Q8 should be loaded from shared memory");
-        assert!(ptx.contains("st.shared.u32"), "Q8 cooperative load stores to shared");
+        assert!(
+            ptx.contains("ld.shared.u32"),
+            "Q8 should be loaded from shared memory"
+        );
+        assert!(
+            ptx.contains("st.shared.u32"),
+            "Q8 cooperative load stores to shared"
+        );
     }
 
     #[test]

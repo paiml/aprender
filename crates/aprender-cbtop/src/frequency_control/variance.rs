@@ -27,7 +27,11 @@ impl FrequencyVariance {
         let mean = readings.iter().sum::<f64>() / n;
         let var = readings.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
         let std_dev = var.sqrt();
-        let cv = if mean > 0.0 { std_dev / mean * 100.0 } else { 0.0 };
+        let cv = if mean > 0.0 {
+            std_dev / mean * 100.0
+        } else {
+            0.0
+        };
         Self {
             mean_mhz: mean,
             std_dev_mhz: std_dev,

@@ -200,8 +200,14 @@ mod tests {
         AnalysisReport {
             name: name.to_string(),
             target: "PTX".to_string(),
-            registers: RegisterUsage { f32_regs: regs, ..Default::default() },
-            memory: MemoryPattern { coalesced_ratio: coal, ..Default::default() },
+            registers: RegisterUsage {
+                f32_regs: regs,
+                ..Default::default()
+            },
+            memory: MemoryPattern {
+                coalesced_ratio: coal,
+                ..Default::default()
+            },
             roofline: RooflineMetric::default(),
             warnings: (0..warns)
                 .map(|_| MudaWarning {
@@ -236,7 +242,11 @@ mod tests {
         let comparison = compare_analyses(&report_a, &report_b);
 
         // A should win on all metrics
-        let a_wins = comparison.metrics.iter().filter(|m| m.winner == "A").count();
+        let a_wins = comparison
+            .metrics
+            .iter()
+            .filter(|m| m.winner == "A")
+            .count();
         assert!(a_wins >= 4, "Optimized should win most metrics");
         assert!(comparison.recommendation.contains("Optimized"));
     }
@@ -250,8 +260,16 @@ mod tests {
         let comparison = compare_analyses(&report_a, &report_b);
 
         // Should have mixed results
-        let a_wins = comparison.metrics.iter().filter(|m| m.winner == "A").count();
-        let b_wins = comparison.metrics.iter().filter(|m| m.winner == "B").count();
+        let a_wins = comparison
+            .metrics
+            .iter()
+            .filter(|m| m.winner == "A")
+            .count();
+        let b_wins = comparison
+            .metrics
+            .iter()
+            .filter(|m| m.winner == "B")
+            .count();
         assert!(a_wins > 0 && b_wins > 0, "Should have mixed winners");
     }
 

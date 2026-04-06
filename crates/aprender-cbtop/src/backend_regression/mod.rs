@@ -118,7 +118,12 @@ impl BackendRegressionDetector {
         &self,
         f: impl Fn(&BackendMeasurement) -> T,
     ) -> Vec<T> {
-        self.measurements.iter().map(f).collect::<HashSet<_>>().into_iter().collect()
+        self.measurements
+            .iter()
+            .map(f)
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     /// Collect unique values from measurements matching a workload.

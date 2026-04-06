@@ -29,7 +29,11 @@ impl std::fmt::Display for SnapshotError {
             Self::NotFound { index } => write!(f, "Snapshot {} not found", index),
             Self::Corrupt { reason } => write!(f, "Corrupt snapshot: {}", reason),
             Self::ChecksumMismatch { expected, actual } => {
-                write!(f, "Checksum mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Checksum mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
             Self::IndexOutOfBounds { index, max } => {
                 write!(f, "Index {} out of bounds (max {})", index, max)
@@ -79,7 +83,11 @@ pub struct MetricData {
 impl MetricData {
     /// Create new metric data
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), values: Vec::new(), timestamps: Vec::new() }
+        Self {
+            name: name.into(),
+            values: Vec::new(),
+            timestamps: Vec::new(),
+        }
     }
 
     /// Add a sample

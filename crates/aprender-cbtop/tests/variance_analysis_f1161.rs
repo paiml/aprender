@@ -359,8 +359,12 @@ fn f1170_no_trend() {
 /// Test empty input returns None
 #[test]
 fn test_empty_input() {
-    let input =
-        VarianceInput { latencies: vec![], frequencies: None, temperatures: None, warmup_count: 0 };
+    let input = VarianceInput {
+        latencies: vec![],
+        frequencies: None,
+        temperatures: None,
+        warmup_count: 0,
+    };
 
     assert!(VarianceAnalysis::analyze(&input).is_none());
 }
@@ -368,8 +372,14 @@ fn test_empty_input() {
 /// Test variance source names
 #[test]
 fn test_variance_source_names() {
-    assert_eq!(VarianceSource::FrequencyScaling.name(), "CPU frequency scaling");
-    assert_eq!(VarianceSource::ThermalThrottling.name(), "thermal throttling");
+    assert_eq!(
+        VarianceSource::FrequencyScaling.name(),
+        "CPU frequency scaling"
+    );
+    assert_eq!(
+        VarianceSource::ThermalThrottling.name(),
+        "thermal throttling"
+    );
     assert_eq!(VarianceSource::CacheState.name(), "cache state variance");
     assert_eq!(VarianceSource::SystemNoise.name(), "system noise");
     assert_eq!(VarianceSource::Unknown.name(), "unknown");
@@ -378,10 +388,16 @@ fn test_variance_source_names() {
 /// Test variance source mitigations
 #[test]
 fn test_variance_source_mitigations() {
-    assert!(VarianceSource::FrequencyScaling.mitigation().contains("cpupower"));
-    assert!(VarianceSource::ThermalThrottling.mitigation().contains("cooldown"));
+    assert!(VarianceSource::FrequencyScaling
+        .mitigation()
+        .contains("cpupower"));
+    assert!(VarianceSource::ThermalThrottling
+        .mitigation()
+        .contains("cooldown"));
     assert!(VarianceSource::CacheState.mitigation().contains("warmup"));
-    assert!(VarianceSource::SystemNoise.mitigation().contains("isolation"));
+    assert!(VarianceSource::SystemNoise
+        .mitigation()
+        .contains("isolation"));
 }
 
 /// Test summary output

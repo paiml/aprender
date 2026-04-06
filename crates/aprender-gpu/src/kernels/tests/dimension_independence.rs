@@ -410,5 +410,9 @@ fn test_falsify_dim_003_unique_training_kernel_count() {
     let mut names: Vec<&str> = training_kernel_types.iter().map(|(n, _)| *n).collect();
     names.sort_unstable();
     names.dedup();
-    assert_eq!(names.len(), training_kernel_types.len(), "Duplicate kernel type names detected");
+    assert_eq!(
+        names.len(),
+        training_kernel_types.len(),
+        "Duplicate kernel type names detected"
+    );
 }

@@ -73,13 +73,22 @@ impl PerfStatResult {
 
     /// Compute SIMD utilization: vector_ops / (vector_ops + scalar_ops) * 100.
     pub fn simd_utilization(&self) -> Option<f64> {
-        let scalar = *self.counters.get("fp_arith_inst_retired.scalar_single").unwrap_or(&0) as f64;
-        let vec128 =
-            *self.counters.get("fp_arith_inst_retired.128b_packed_single").unwrap_or(&0) as f64;
-        let vec256 =
-            *self.counters.get("fp_arith_inst_retired.256b_packed_single").unwrap_or(&0) as f64;
-        let vec512 =
-            *self.counters.get("fp_arith_inst_retired.512b_packed_single").unwrap_or(&0) as f64;
+        let scalar = *self
+            .counters
+            .get("fp_arith_inst_retired.scalar_single")
+            .unwrap_or(&0) as f64;
+        let vec128 = *self
+            .counters
+            .get("fp_arith_inst_retired.128b_packed_single")
+            .unwrap_or(&0) as f64;
+        let vec256 = *self
+            .counters
+            .get("fp_arith_inst_retired.256b_packed_single")
+            .unwrap_or(&0) as f64;
+        let vec512 = *self
+            .counters
+            .get("fp_arith_inst_retired.512b_packed_single")
+            .unwrap_or(&0) as f64;
 
         let vector = vec128 + vec256 + vec512;
         let total = scalar + vector;
@@ -180,9 +189,10 @@ pub fn profile_simd(function: &str, size: u32, arch: &str) -> Result<()> {
                 &["INST_RETIRED", "CPU_CYCLES", "ASE_SPEC"][..]
             }
         }
-        "sse2" => {
-            &["fp_arith_inst_retired.scalar_single", "fp_arith_inst_retired.128b_packed_single"][..]
-        }
+        "sse2" => &[
+            "fp_arith_inst_retired.scalar_single",
+            "fp_arith_inst_retired.128b_packed_single",
+        ][..],
         _ => {
             anyhow::bail!("Unknown SIMD architecture: {arch}. Supported: avx2, avx512, neon, sse2")
         }
@@ -290,7 +300,9 @@ fn find_bench_binary() -> Option<String> {
 
     let mut candidates: Vec<String> = Vec::new();
     if !target_dir.is_empty() {
-        candidates.push(format!("{target_dir}/release/examples/benchmark_matrix_suite"));
+        candidates.push(format!(
+            "{target_dir}/release/examples/benchmark_matrix_suite"
+        ));
     }
     candidates.extend_from_slice(&[
         "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite".to_string(),
@@ -371,8 +383,12 @@ mod tests {
     #[test]
     fn test_simd_utilization() {
         let mut result = PerfStatResult::default();
-        result.counters.insert("fp_arith_inst_retired.scalar_single".to_string(), 100);
-        result.counters.insert("fp_arith_inst_retired.256b_packed_single".to_string(), 900);
+        result
+            .counters
+            .insert("fp_arith_inst_retired.scalar_single".to_string(), 100);
+        result
+            .counters
+            .insert("fp_arith_inst_retired.256b_packed_single".to_string(), 900);
         let util = result.simd_utilization().unwrap();
         assert!((util - 90.0).abs() < 0.01);
     }

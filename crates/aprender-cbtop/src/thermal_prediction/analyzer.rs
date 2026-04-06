@@ -56,7 +56,11 @@ impl ThermalAnalyzer {
 
     /// Add sample with latency
     pub fn add_with_latency(&mut self, temperature_c: f64, timestamp_sec: f64, latency_us: f64) {
-        self.add_sample(ThermalSample::with_latency(temperature_c, timestamp_sec, latency_us));
+        self.add_sample(ThermalSample::with_latency(
+            temperature_c,
+            timestamp_sec,
+            latency_us,
+        ));
     }
 
     /// Get sample count
@@ -88,14 +92,25 @@ impl ThermalAnalyzer {
         if self.samples.is_empty() {
             return None;
         }
-        let min = self.samples.iter().map(|s| s.temperature_c).fold(f64::INFINITY, f64::min);
-        let max = self.samples.iter().map(|s| s.temperature_c).fold(f64::NEG_INFINITY, f64::max);
+        let min = self
+            .samples
+            .iter()
+            .map(|s| s.temperature_c)
+            .fold(f64::INFINITY, f64::min);
+        let max = self
+            .samples
+            .iter()
+            .map(|s| s.temperature_c)
+            .fold(f64::NEG_INFINITY, f64::max);
         Some((min, max))
     }
 
     /// Collect (timestamp, temperature) pairs for regression.
     pub(crate) fn time_temp_pairs(&self) -> Vec<(f64, f64)> {
-        self.samples.iter().map(|s| (s.timestamp_sec, s.temperature_c)).collect()
+        self.samples
+            .iter()
+            .map(|s| (s.timestamp_sec, s.temperature_c))
+            .collect()
     }
 
     /// Get throttle threshold

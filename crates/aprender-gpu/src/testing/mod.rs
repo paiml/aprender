@@ -105,8 +105,14 @@ mod tests {
         ];
 
         for variant in variants {
-            assert!(!variant.description().is_empty(), "{variant:?} has empty description");
-            assert!(!variant.suggested_fix().is_empty(), "{variant:?} has empty fix");
+            assert!(
+                !variant.description().is_empty(),
+                "{variant:?} has empty description"
+            );
+            assert!(
+                !variant.suggested_fix().is_empty(),
+                "{variant:?} has empty fix"
+            );
         }
     }
 

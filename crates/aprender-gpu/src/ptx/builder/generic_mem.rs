@@ -206,7 +206,10 @@ impl<'a> KernelBuilder<'a> {
 
         // 2. Predicated load - only executes if pred is true
         // If pred is false, dst keeps the default value
-        let predicate = Predicate { reg: pred, negated: false };
+        let predicate = Predicate {
+            reg: pred,
+            negated: false,
+        };
 
         self.instructions.push(
             PtxInstruction::new(PtxOp::Ld, PtxType::F32)
@@ -254,7 +257,10 @@ impl<'a> KernelBuilder<'a> {
         );
 
         // 2. Predicated F16 load - only executes if pred is true
-        let predicate = Predicate { reg: pred, negated: false };
+        let predicate = Predicate {
+            reg: pred,
+            negated: false,
+        };
 
         // Load F16 (using .b16 as PTX requires)
         self.instructions.push(

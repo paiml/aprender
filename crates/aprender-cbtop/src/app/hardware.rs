@@ -18,7 +18,9 @@ pub struct HardwareInfo {
 impl HardwareInfo {
     /// Detect hardware at startup
     pub fn detect() -> Self {
-        let cpu_cores = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(1);
+        let cpu_cores = std::thread::available_parallelism()
+            .map(|p| p.get())
+            .unwrap_or(1);
 
         // Detect SIMD capability
         let simd_type = Self::detect_simd();
@@ -32,7 +34,13 @@ impl HardwareInfo {
         // Get total memory
         let memory_gb = Self::read_memory_gb();
 
-        Self { cpu_model, cpu_cores, simd_type, gpu_name, memory_gb }
+        Self {
+            cpu_model,
+            cpu_cores,
+            simd_type,
+            gpu_name,
+            memory_gb,
+        }
     }
 
     fn detect_simd() -> &'static str {
@@ -139,7 +147,9 @@ impl HardwareInfo {
 
     #[cfg(target_os = "macos")]
     fn read_memory_gb_macos() -> f64 {
-        let output = match std::process::Command::new("sysctl").args(["-n", "hw.memsize"]).output()
+        let output = match std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
         {
             Ok(o) => o,
             Err(_) => return 0.0,

@@ -103,23 +103,50 @@ impl IronmanValidator {
         }
 
         // Remaining gates skipped by default (require special setup)
-        scorecard.record("F902", GateResult::Skip("Fuzzing requires cargo-fuzz setup".to_string()));
-        scorecard.record("F904", GateResult::Skip("Loom requires test annotations".to_string()));
-        scorecard.record("F905", GateResult::Skip("ThreadSanitizer requires nightly".to_string()));
-        scorecard.record("F906", GateResult::Skip("AddressSanitizer requires nightly".to_string()));
-        scorecard.record("F907", GateResult::Skip("LeakSanitizer requires nightly".to_string()));
-        scorecard
-            .record("F908", GateResult::Skip("Panic freedom requires fuzz corpus".to_string()));
+        scorecard.record(
+            "F902",
+            GateResult::Skip("Fuzzing requires cargo-fuzz setup".to_string()),
+        );
+        scorecard.record(
+            "F904",
+            GateResult::Skip("Loom requires test annotations".to_string()),
+        );
+        scorecard.record(
+            "F905",
+            GateResult::Skip("ThreadSanitizer requires nightly".to_string()),
+        );
+        scorecard.record(
+            "F906",
+            GateResult::Skip("AddressSanitizer requires nightly".to_string()),
+        );
+        scorecard.record(
+            "F907",
+            GateResult::Skip("LeakSanitizer requires nightly".to_string()),
+        );
+        scorecard.record(
+            "F908",
+            GateResult::Skip("Panic freedom requires fuzz corpus".to_string()),
+        );
         scorecard.record(
             "F913",
             GateResult::Skip("Doc coverage requires --document-private-items".to_string()),
         );
-        scorecard.record("F914", GateResult::Skip("License check requires cargo-deny".to_string()));
-        scorecard
-            .record("F917", GateResult::Skip("Frame latency requires TUI benchmark".to_string()));
-        scorecard.record("F918", GateResult::Skip("Battery impact requires powertop".to_string()));
-        scorecard
-            .record("F919", GateResult::Skip("Accessibility requires screen reader".to_string()));
+        scorecard.record(
+            "F914",
+            GateResult::Skip("License check requires cargo-deny".to_string()),
+        );
+        scorecard.record(
+            "F917",
+            GateResult::Skip("Frame latency requires TUI benchmark".to_string()),
+        );
+        scorecard.record(
+            "F918",
+            GateResult::Skip("Battery impact requires powertop".to_string()),
+        );
+        scorecard.record(
+            "F919",
+            GateResult::Skip("Accessibility requires screen reader".to_string()),
+        );
 
         scorecard
     }
@@ -174,7 +201,10 @@ impl IronmanValidator {
 
     /// F910: Check for known vulnerabilities
     fn check_dependency_audit(&self) -> GateResult {
-        let output = Command::new("cargo").args(["audit"]).current_dir(&self.project_root).output();
+        let output = Command::new("cargo")
+            .args(["audit"])
+            .current_dir(&self.project_root)
+            .output();
 
         match output {
             Ok(result) => {
@@ -182,7 +212,10 @@ impl IronmanValidator {
                     GateResult::Pass("No known vulnerabilities".to_string())
                 } else {
                     let stderr = String::from_utf8_lossy(&result.stderr);
-                    let vuln_count = stderr.lines().filter(|l| l.contains("Vulnerability")).count();
+                    let vuln_count = stderr
+                        .lines()
+                        .filter(|l| l.contains("Vulnerability"))
+                        .count();
                     if vuln_count > 0 {
                         GateResult::Fail(format!("{} vulnerabilities found", vuln_count))
                     } else {
@@ -243,8 +276,10 @@ impl IronmanValidator {
         match output {
             Ok(result) => {
                 let stderr = String::from_utf8_lossy(&result.stderr);
-                let complexity_warnings =
-                    stderr.lines().filter(|l| l.contains("cognitive_complexity")).count();
+                let complexity_warnings = stderr
+                    .lines()
+                    .filter(|l| l.contains("cognitive_complexity"))
+                    .count();
 
                 if complexity_warnings == 0 {
                     GateResult::Pass("All functions under complexity limit".to_string())
@@ -399,7 +434,16 @@ impl IronmanValidator {
 
         // Miri only works on a subset of tests
         let output = Command::new("cargo")
-            .args(["+nightly", "miri", "test", "-p", "cbtop", "--lib", "--", "--test-threads=1"])
+            .args([
+                "+nightly",
+                "miri",
+                "test",
+                "-p",
+                "cbtop",
+                "--lib",
+                "--",
+                "--test-threads=1",
+            ])
             .current_dir(&self.project_root)
             .env("MIRIFLAGS", "-Zmiri-disable-isolation")
             .output();
@@ -428,12 +472,16 @@ impl IronmanValidator {
 
 /// Quick validation mode (skips slow checks)
 pub fn quick_validate(project_root: impl AsRef<Path>) -> IronmanScorecard {
-    IronmanValidator::new(project_root).skip_slow(true).validate()
+    IronmanValidator::new(project_root)
+        .skip_slow(true)
+        .validate()
 }
 
 /// Full validation mode (runs all checks)
 pub fn full_validate(project_root: impl AsRef<Path>) -> IronmanScorecard {
-    IronmanValidator::new(project_root).skip_slow(false).validate()
+    IronmanValidator::new(project_root)
+        .skip_slow(false)
+        .validate()
 }
 
 #[cfg(test)]

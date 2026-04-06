@@ -27,8 +27,12 @@ fn test_interleaved_to_batched_whisper_scale() {
     let total = seq_len * d_model;
 
     let input: Vec<f32> = (0..total).map(|i| (i % 1000) as f32 * 0.001).collect();
-    let expected =
-        cpu_interleaved_to_batched(&input, seq_len as usize, n_heads as usize, head_dim as usize);
+    let expected = cpu_interleaved_to_batched(
+        &input,
+        seq_len as usize,
+        n_heads as usize,
+        head_dim as usize,
+    );
 
     let input_buf = GpuBuffer::from_host(&ctx, &input).expect("Upload failed");
     let output_buf: GpuBuffer<f32> = GpuBuffer::new(&ctx, total as usize).expect("Alloc failed");
@@ -40,13 +44,19 @@ fn test_interleaved_to_batched_whisper_scale() {
 
     let threads = 256u32;
     let blocks = (total + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks, 1, 1), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks, 1, 1),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
 
-    let mut args: Vec<*mut std::ffi::c_void> =
-        vec![std::ptr::addr_of!(input_ptr) as *mut _, std::ptr::addr_of!(output_ptr) as *mut _];
+    let mut args: Vec<*mut std::ffi::c_void> = vec![
+        std::ptr::addr_of!(input_ptr) as *mut _,
+        std::ptr::addr_of!(output_ptr) as *mut _,
+    ];
 
     unsafe {
         stream
@@ -56,7 +66,9 @@ fn test_interleaved_to_batched_whisper_scale() {
     stream.synchronize().expect("Sync failed");
 
     let mut output = vec![0.0f32; total as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     let mut mismatches = 0;
     let check_indices = [0, 1000, 10000, 100000, 500000, total as usize - 1];
@@ -64,7 +76,10 @@ fn test_interleaved_to_batched_whisper_scale() {
         if i < total as usize {
             let delta = (output[i] - expected[i]).abs();
             if delta > 1e-5 {
-                eprintln!("Mismatch at {}: GPU={} vs CPU={}", i, output[i], expected[i]);
+                eprintln!(
+                    "Mismatch at {}: GPU={} vs CPU={}",
+                    i, output[i], expected[i]
+                );
                 mismatches += 1;
             }
         }
@@ -106,7 +121,11 @@ fn test_batched_transpose_whisper_scale() {
     let threads = 256u32;
     let elems_per_batch = rows * cols;
     let blocks_x = (elems_per_batch + threads - 1) / threads;
-    let config = LaunchConfig { grid: (blocks_x, 1, batch), block: (threads, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (blocks_x, 1, batch),
+        block: (threads, 1, 1),
+        shared_mem: 0,
+    };
 
     let input_ptr = input_buf.as_ptr();
     let output_ptr = output_buf.as_ptr();
@@ -127,7 +146,9 @@ fn test_batched_transpose_whisper_scale() {
     stream.synchronize().expect("Sync failed");
 
     let mut output = vec![0.0f32; total as usize];
-    output_buf.copy_to_host(&mut output).expect("Download failed");
+    output_buf
+        .copy_to_host(&mut output)
+        .expect("Download failed");
 
     let mut mismatches = 0;
     let check_indices = [0, 1000, 10000, 100000, 500000, total as usize - 1];
@@ -135,13 +156,20 @@ fn test_batched_transpose_whisper_scale() {
         if i < total as usize {
             let delta = (output[i] - expected[i]).abs();
             if delta > 1e-5 {
-                eprintln!("Mismatch at {}: GPU={} vs CPU={}", i, output[i], expected[i]);
+                eprintln!(
+                    "Mismatch at {}: GPU={} vs CPU={}",
+                    i, output[i], expected[i]
+                );
                 mismatches += 1;
             }
         }
     }
 
-    assert_eq!(mismatches, 0, "BatchedTranspose at Whisper scale has {} mismatches", mismatches);
+    assert_eq!(
+        mismatches, 0,
+        "BatchedTranspose at Whisper scale has {} mismatches",
+        mismatches
+    );
     eprintln!("BatchedTranspose Whisper scale test PASSED");
 }
 
@@ -159,12 +187,19 @@ fn test_batched_gemm_qkt_whisper_scale() {
     let n = 1500u32;
     let k = 64u32;
 
-    let a: Vec<f32> = (0..batch * m * k).map(|i| (i % 100) as f32 * 0.01 - 0.5).collect();
-    let b: Vec<f32> = (0..batch * k * n).map(|i| (i % 100) as f32 * 0.01 - 0.5).collect();
+    let a: Vec<f32> = (0..batch * m * k)
+        .map(|i| (i % 100) as f32 * 0.01 - 0.5)
+        .collect();
+    let b: Vec<f32> = (0..batch * k * n)
+        .map(|i| (i % 100) as f32 * 0.01 - 0.5)
+        .collect();
 
     eprintln!("Computing CPU reference for GEMM [6, 1500, 64] @ [6, 64, 1500]...");
     let expected = cpu_batched_gemm(&a, &b, batch as usize, m as usize, n as usize, k as usize);
-    eprintln!("CPU reference computed. Sample values: {:?}", &expected[..5]);
+    eprintln!(
+        "CPU reference computed. Sample values: {:?}",
+        &expected[..5]
+    );
 
     let a_buf = GpuBuffer::from_host(&ctx, &a).expect("Upload A failed");
     let b_buf = GpuBuffer::from_host(&ctx, &b).expect("Upload B failed");
@@ -217,8 +252,11 @@ fn test_batched_gemm_qkt_whisper_scale() {
     for &i in &check_indices {
         if i < total {
             let delta = (output[i] - expected[i]).abs();
-            let rel_delta =
-                if expected[i].abs() > 1e-6 { delta / expected[i].abs() } else { delta };
+            let rel_delta = if expected[i].abs() > 1e-6 {
+                delta / expected[i].abs()
+            } else {
+                delta
+            };
             if rel_delta > 0.01 && delta > 1e-4 {
                 eprintln!(
                     "Mismatch at {}: GPU={} vs CPU={}, delta={}, rel={}",
@@ -229,7 +267,11 @@ fn test_batched_gemm_qkt_whisper_scale() {
         }
     }
 
-    assert_eq!(mismatches, 0, "BatchedGemm Q@K^T at Whisper scale has {} mismatches", mismatches);
+    assert_eq!(
+        mismatches, 0,
+        "BatchedGemm Q@K^T at Whisper scale has {} mismatches",
+        mismatches
+    );
     eprintln!("BatchedGemm Q@K^T Whisper scale test PASSED");
 }
 

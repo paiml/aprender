@@ -277,7 +277,10 @@ impl RegressionPipeline {
     /// Store artifact for a run
     pub fn store_artifact(&self, analysis: &RegressionAnalysis) -> PipelineResult<String> {
         // In production, serialize and store to artifact_path
-        let artifact_id = format!("{}-{}", analysis.current.commit, analysis.current.timestamp_ns);
+        let artifact_id = format!(
+            "{}-{}",
+            analysis.current.commit, analysis.current.timestamp_ns
+        );
 
         Ok(artifact_id)
     }
@@ -340,9 +343,18 @@ impl RegressionPipeline {
 
         // Details
         report.push_str("## Details\n\n");
-        report.push_str(&format!("- **Baseline commit:** {}\n", analysis.baseline.commit));
-        report.push_str(&format!("- **Current commit:** {}\n", analysis.current.commit));
-        report.push_str(&format!("- **Analysis time:** {}ms\n", analysis.analysis_duration_ms));
+        report.push_str(&format!(
+            "- **Baseline commit:** {}\n",
+            analysis.baseline.commit
+        ));
+        report.push_str(&format!(
+            "- **Current commit:** {}\n",
+            analysis.current.commit
+        ));
+        report.push_str(&format!(
+            "- **Analysis time:** {}ms\n",
+            analysis.analysis_duration_ms
+        ));
 
         report
     }

@@ -37,12 +37,14 @@ pub trait PtxSync: KernelBuilderCore {
 
     /// Memory fence (CTA scope)
     fn membar_cta(&mut self) {
-        self.instructions_mut().push(PtxInstruction::new(PtxOp::MemBar, PtxType::Pred));
+        self.instructions_mut()
+            .push(PtxInstruction::new(PtxOp::MemBar, PtxType::Pred));
     }
 
     /// Memory fence (global scope)
     fn membar_gl(&mut self) {
-        self.instructions_mut().push(PtxInstruction::new(PtxOp::MemBar, PtxType::Pred));
+        self.instructions_mut()
+            .push(PtxInstruction::new(PtxOp::MemBar, PtxType::Pred));
     }
 
     // ===== Warp Shuffle =====

@@ -64,7 +64,11 @@ fn test_process_outputs() {
 
     // Process some tokens
     for token in [10, 11, 12] {
-        batcher.process_outputs(vec![TokenOutput { seq_id: SeqId(1), token, is_eos: false }]);
+        batcher.process_outputs(vec![TokenOutput {
+            seq_id: SeqId(1),
+            token,
+            is_eos: false,
+        }]);
     }
 
     let seq = batcher.get_sequence(SeqId(1)).unwrap();
@@ -74,8 +78,9 @@ fn test_process_outputs() {
 
 #[test]
 fn test_preemption() {
-    let mut batcher = ContinuousBatcher::new(64, 4096)
-        .with_policy(SchedulingPolicy::Priority { preempt_enabled: true });
+    let mut batcher = ContinuousBatcher::new(64, 4096).with_policy(SchedulingPolicy::Priority {
+        preempt_enabled: true,
+    });
 
     // Add and schedule requests
     for i in 0..5 {
@@ -166,7 +171,11 @@ fn test_throughput_tracking() {
 
     // Process tokens
     for i in 0..10 {
-        batcher.process_outputs(vec![TokenOutput { seq_id: SeqId(1), token: i, is_eos: false }]);
+        batcher.process_outputs(vec![TokenOutput {
+            seq_id: SeqId(1),
+            token: i,
+            is_eos: false,
+        }]);
     }
 
     // Throughput should be > 0

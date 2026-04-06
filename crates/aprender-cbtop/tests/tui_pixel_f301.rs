@@ -158,7 +158,10 @@ fn f301_color_gradient_bars() {
     let frame = create_cbtop_frame();
 
     // Verify bars use Unicode block characters for gradients
-    assert!(frame.contains("█"), "Progress bars should use filled blocks");
+    assert!(
+        frame.contains("█"),
+        "Progress bars should use filled blocks"
+    );
     assert!(frame.contains("░"), "Progress bars should use empty blocks");
 }
 
@@ -192,7 +195,10 @@ fn f301_frame_dimensions_valid() {
 
     // Frame should have reasonable dimensions
     assert!(frame.width() > 70, "Frame should be at least 70 chars wide");
-    assert!(frame.height() >= 20, "Frame should be at least 20 lines tall");
+    assert!(
+        frame.height() >= 20,
+        "Frame should be at least 20 lines tall"
+    );
 }
 
 #[test]

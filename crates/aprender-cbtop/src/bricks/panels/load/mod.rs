@@ -58,26 +58,38 @@ impl LoadControlPanelBrick {
 
     /// Cycle to next backend
     pub fn next_backend(&mut self) {
-        let idx = ComputeBackend::ALL.iter().position(|&b| b == self.backend).unwrap_or(0);
+        let idx = ComputeBackend::ALL
+            .iter()
+            .position(|&b| b == self.backend)
+            .unwrap_or(0);
         self.backend = ComputeBackend::ALL[(idx + 1) % ComputeBackend::ALL.len()];
     }
 
     /// Cycle to previous backend
     pub fn prev_backend(&mut self) {
-        let idx = ComputeBackend::ALL.iter().position(|&b| b == self.backend).unwrap_or(0);
+        let idx = ComputeBackend::ALL
+            .iter()
+            .position(|&b| b == self.backend)
+            .unwrap_or(0);
         self.backend =
             ComputeBackend::ALL[(idx + ComputeBackend::ALL.len() - 1) % ComputeBackend::ALL.len()];
     }
 
     /// Cycle to next workload
     pub fn next_workload(&mut self) {
-        let idx = WorkloadType::ALL.iter().position(|&w| w == self.workload).unwrap_or(0);
+        let idx = WorkloadType::ALL
+            .iter()
+            .position(|&w| w == self.workload)
+            .unwrap_or(0);
         self.workload = WorkloadType::ALL[(idx + 1) % WorkloadType::ALL.len()];
     }
 
     /// Cycle to previous workload
     pub fn prev_workload(&mut self) {
-        let idx = WorkloadType::ALL.iter().position(|&w| w == self.workload).unwrap_or(0);
+        let idx = WorkloadType::ALL
+            .iter()
+            .position(|&w| w == self.workload)
+            .unwrap_or(0);
         self.workload =
             WorkloadType::ALL[(idx + WorkloadType::ALL.len() - 1) % WorkloadType::ALL.len()];
     }

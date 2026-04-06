@@ -18,13 +18,25 @@ fn test_long_row_softmax_ptx_generation() {
     assert!(ptx.contains("softmax_long_row"), "Missing kernel name");
 
     // Verify parameters
-    assert!(ptx.contains(".param .u64 input_ptr"), "Missing input_ptr param");
-    assert!(ptx.contains(".param .u64 output_ptr"), "Missing output_ptr param");
-    assert!(ptx.contains(".param .u32 row_size"), "Missing row_size param");
+    assert!(
+        ptx.contains(".param .u64 input_ptr"),
+        "Missing input_ptr param"
+    );
+    assert!(
+        ptx.contains(".param .u64 output_ptr"),
+        "Missing output_ptr param"
+    );
+    assert!(
+        ptx.contains(".param .u32 row_size"),
+        "Missing row_size param"
+    );
 
     // Verify has grid-stride loops (multiple branch labels)
     assert!(ptx.contains("max_loop:"), "Missing max_loop label");
-    assert!(ptx.contains("max_loop_done:"), "Missing max_loop_done label");
+    assert!(
+        ptx.contains("max_loop_done:"),
+        "Missing max_loop_done label"
+    );
     assert!(ptx.contains("sum_loop:"), "Missing sum_loop label");
     assert!(ptx.contains("write_loop:"), "Missing write_loop label");
 

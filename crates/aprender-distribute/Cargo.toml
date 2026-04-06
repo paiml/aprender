@@ -1,16 +1,3 @@
-[workspace]
-resolver = "2"
-
-[workspace.package]
-version = "2.0.4"
-edition = "2021"
-authors = ["Pragmatic AI Labs"]
-license = "MIT"
-repository = "https://github.com/paiml/repartir"
-rust-version = "1.75"
-
-[workspace.dependencies]
-
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "repartir"
@@ -107,36 +94,6 @@ futures = "0.3"
 # TUI testing via probador
 jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
 ratatui = "0.29"
-
-[workspace.lints.rust]
-unsafe_code = "deny"
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub = "warn"
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
-
-# Iron Lotus: Strict lint enforcement
-[workspace.lints.clippy]
-# Set lint groups to lower priority so specific lints can override
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-nursery = { level = "warn", priority = -1 }
-cargo = { level = "warn", priority = -1 }
-
-# Deny certain patterns (Iron Lotus: no unwrap/panic/todo)
-unwrap_used = "deny"
-expect_used = "deny"
-panic = "deny"
-todo = "deny"
-
-# Allow some pedantic lints that conflict with idiomatic Rust
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-similar_names = "allow"
-
-# Allow multiple crate versions (transitive dependency issue)
-multiple_crate_versions = "allow"
 
 [lints]
 workspace = true

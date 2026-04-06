@@ -31,7 +31,10 @@ impl PtxBugAnalyzer {
         for line in lines {
             let trimmed = line.trim();
             if let Some(caps) = loop_label.captures(trimmed) {
-                let label = caps.get(1).expect("invariant: capture group exists").as_str();
+                let label = caps
+                    .get(1)
+                    .expect("invariant: capture group exists")
+                    .as_str();
                 if label.contains("_start")
                     || label.ends_with("_loop")
                     || label.starts_with("loop_")
@@ -47,7 +50,10 @@ impl PtxBugAnalyzer {
         for (line_num, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
             if let Some(caps) = branch_instr.captures(trimmed) {
-                let target = caps.get(1).expect("invariant: capture group exists").as_str();
+                let target = caps
+                    .get(1)
+                    .expect("invariant: capture group exists")
+                    .as_str();
                 // Unconditional branch (not @%p prefixed) to _end label
                 if loop_end_labels.contains(target) && !trimmed.starts_with('@') {
                     bugs.push(PtxBug {
@@ -138,7 +144,10 @@ impl PtxBugAnalyzer {
         for (i, line) in lines.iter().enumerate() {
             let line = line.trim();
             if let Some(label_caps) = label_pattern.captures(line) {
-                let label = label_caps.get(1).expect("invariant: capture group exists").as_str();
+                let label = label_caps
+                    .get(1)
+                    .expect("invariant: capture group exists")
+                    .as_str();
                 if scan_empty_loop(lines, i, label, &branch_pattern) {
                     bugs.push(PtxBug {
                         class: PtxBugClass::EmptyLoopBody,
@@ -249,9 +258,11 @@ fn is_end_label(line: &str) -> bool {
 
 /// If the line is a branch instruction, returns the branch target label.
 fn branch_target<'a>(line: &'a str, branch_re: &Regex) -> Option<&'a str> {
-    branch_re
-        .captures(line)
-        .map(|caps| caps.get(1).expect("invariant: capture group exists").as_str())
+    branch_re.captures(line).map(|caps| {
+        caps.get(1)
+            .expect("invariant: capture group exists")
+            .as_str()
+    })
 }
 
 /// Scan forward from a label to determine if a loop body is empty (no compute ops).

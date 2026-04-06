@@ -16,7 +16,11 @@ fn golden_add_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("add.f32"), "GOLDEN FAIL: add.f32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("add.f32"),
+        "GOLDEN FAIL: add.f32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -29,7 +33,11 @@ fn golden_sub_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("sub.f32"), "GOLDEN FAIL: sub.f32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("sub.f32"),
+        "GOLDEN FAIL: sub.f32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -42,7 +50,11 @@ fn golden_mul_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("mul.f32"), "GOLDEN FAIL: mul.f32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("mul.f32"),
+        "GOLDEN FAIL: mul.f32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -93,7 +105,11 @@ fn golden_add_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("add.u32"), "GOLDEN FAIL: add.u32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("add.u32"),
+        "GOLDEN FAIL: add.u32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]

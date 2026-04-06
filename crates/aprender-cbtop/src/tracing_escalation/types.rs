@@ -179,7 +179,11 @@ impl SyscallBreakdown {
             return "none";
         }
 
-        categories.iter().max_by_key(|(time, _)| time).map(|(_, name)| *name).unwrap_or("none")
+        categories
+            .iter()
+            .max_by_key(|(time, _)| time)
+            .map(|(_, name)| *name)
+            .unwrap_or("none")
     }
 
     /// Add syscall time to appropriate category
@@ -252,9 +256,18 @@ impl TraceResult {
         attrs.insert("brick.name".to_string(), self.brick_name.clone());
         attrs.insert("brick.budget_us".to_string(), self.budget_us.to_string());
         attrs.insert("brick.actual_us".to_string(), self.actual_us.to_string());
-        attrs.insert("brick.efficiency".to_string(), format!("{:.1}", self.efficiency()));
-        attrs.insert("brick.over_budget".to_string(), self.over_budget().to_string());
-        attrs.insert("escalation.reason".to_string(), self.reason.otlp_value().to_string());
+        attrs.insert(
+            "brick.efficiency".to_string(),
+            format!("{:.1}", self.efficiency()),
+        );
+        attrs.insert(
+            "brick.over_budget".to_string(),
+            self.over_budget().to_string(),
+        );
+        attrs.insert(
+            "escalation.reason".to_string(),
+            self.reason.otlp_value().to_string(),
+        );
         attrs.insert(
             "syscall.overhead_percent".to_string(),
             format!("{:.1}", self.syscall_breakdown.syscall_overhead_percent()),

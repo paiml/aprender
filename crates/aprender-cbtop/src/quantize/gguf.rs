@@ -119,7 +119,9 @@ impl GgufLoader {
             return Err(GgufError::Io(format!("File not found: {}", self.path)));
         }
         if path.extension().map_or(true, |ext| ext != "gguf") {
-            return Err(GgufError::InvalidData("File does not have .gguf extension".to_string()));
+            return Err(GgufError::InvalidData(
+                "File does not have .gguf extension".to_string(),
+            ));
         }
         Ok(())
     }
@@ -127,7 +129,9 @@ impl GgufLoader {
     /// Parse GGUF header from bytes.
     pub fn parse_header(&mut self, data: &[u8]) -> GgufResult<()> {
         if data.len() < 24 {
-            return Err(GgufError::InvalidData("File too small for header".to_string()));
+            return Err(GgufError::InvalidData(
+                "File too small for header".to_string(),
+            ));
         }
 
         // SAFETY: length checked above (data.len() >= 24), so all slices are in bounds
@@ -144,10 +148,18 @@ impl GgufLoader {
 
         let tensor_count =
             u64::from_le_bytes(data[8..16].try_into().expect("invariant: slice is 8 bytes"));
-        let metadata_kv_count =
-            u64::from_le_bytes(data[16..24].try_into().expect("invariant: slice is 8 bytes"));
+        let metadata_kv_count = u64::from_le_bytes(
+            data[16..24]
+                .try_into()
+                .expect("invariant: slice is 8 bytes"),
+        );
 
-        self.header = Some(GgufHeader { magic, version, tensor_count, metadata_kv_count });
+        self.header = Some(GgufHeader {
+            magic,
+            version,
+            tensor_count,
+            metadata_kv_count,
+        });
 
         Ok(())
     }

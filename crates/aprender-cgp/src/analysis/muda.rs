@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 pub enum GpuMuda {
     /// Muda of Transport: Data moved unnecessarily.
     /// Examples: register spills, redundant L2 traffic, unnecessary H2D copies.
-    Transport { register_spills: u64, unnecessary_global_loads: u64, redundant_shared_stores: u64 },
+    Transport {
+        register_spills: u64,
+        unnecessary_global_loads: u64,
+        redundant_shared_stores: u64,
+    },
 
     /// Muda of Waiting: Hardware resources idle.
     /// Examples: barrier stalls, memory latency not hidden, pipeline bubbles.
@@ -37,15 +41,27 @@ pub enum GpuMuda {
 
     /// Muda of Motion: Excessive control flow.
     /// Examples: warp divergence, branch overhead, loop overhead.
-    Motion { divergent_branches: u64, branch_efficiency_pct: f64, loop_overhead_cycles: u64 },
+    Motion {
+        divergent_branches: u64,
+        branch_efficiency_pct: f64,
+        loop_overhead_cycles: u64,
+    },
 
     /// Muda of Defects: Incorrect results requiring rework.
     /// Examples: NaN propagation, precision loss, numerical instability.
-    Defects { nan_count: u64, inf_count: u64, precision_loss_bits: f64 },
+    Defects {
+        nan_count: u64,
+        inf_count: u64,
+        precision_loss_bits: f64,
+    },
 
     /// Muda of Overproduction: Computing results that aren't needed.
     /// Examples: padding waste, inactive threads in partial tiles.
-    Overproduction { padding_waste_pct: f64, inactive_thread_pct: f64, unused_output_elements: u64 },
+    Overproduction {
+        padding_waste_pct: f64,
+        inactive_thread_pct: f64,
+        unused_output_elements: u64,
+    },
 }
 
 /// Detected waste with severity and recommendation.
@@ -102,7 +118,9 @@ impl Default for MudaThresholds {
 
 impl MudaDetector {
     pub fn new() -> Self {
-        Self { thresholds: MudaThresholds::default() }
+        Self {
+            thresholds: MudaThresholds::default(),
+        }
     }
 
     pub fn with_thresholds(thresholds: MudaThresholds) -> Self {
@@ -256,7 +274,11 @@ impl MudaDetector {
             || precision_loss_bits > 1.0
         {
             Some(MudaDetection {
-                muda: GpuMuda::Defects { nan_count, inf_count, precision_loss_bits },
+                muda: GpuMuda::Defects {
+                    nan_count,
+                    inf_count,
+                    precision_loss_bits,
+                },
                 impact_pct: if nan_count > 0 || inf_count > 0 {
                     100.0
                 } else {
@@ -316,7 +338,13 @@ mod tests {
         let result = detector.detect_transport(5, 0, 0);
         assert!(result.is_some());
         let detection = result.unwrap();
-        assert!(matches!(detection.muda, GpuMuda::Transport { register_spills: 5, .. }));
+        assert!(matches!(
+            detection.muda,
+            GpuMuda::Transport {
+                register_spills: 5,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -332,7 +360,13 @@ mod tests {
         let result = detector.detect_motion(10, 75.0, 100);
         assert!(result.is_some());
         let detection = result.unwrap();
-        assert!(matches!(detection.muda, GpuMuda::Motion { divergent_branches: 10, .. }));
+        assert!(matches!(
+            detection.muda,
+            GpuMuda::Motion {
+                divergent_branches: 10,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -360,7 +394,10 @@ mod tests {
 
     #[test]
     fn test_custom_thresholds() {
-        let thresholds = MudaThresholds { max_register_spills: 10, ..Default::default() };
+        let thresholds = MudaThresholds {
+            max_register_spills: 10,
+            ..Default::default()
+        };
         let detector = MudaDetector::with_thresholds(thresholds);
         // 5 spills should NOT trigger with threshold 10
         let result = detector.detect_transport(5, 0, 0);

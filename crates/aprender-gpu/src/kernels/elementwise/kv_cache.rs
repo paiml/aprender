@@ -33,7 +33,11 @@ impl KvCacheScatterKernel {
     /// Create a new KV cache scatter kernel
     #[must_use]
     pub const fn new(num_kv_heads: u32, head_dim: u32, max_len: u32) -> Self {
-        Self { num_kv_heads, head_dim, max_len }
+        Self {
+            num_kv_heads,
+            head_dim,
+            max_len,
+        }
     }
 }
 
@@ -110,7 +114,11 @@ impl KvCacheScatterIndirectKernel {
     /// Create a new indirect KV cache scatter kernel
     #[must_use]
     pub const fn new(num_kv_heads: u32, head_dim: u32, max_len: u32) -> Self {
-        Self { num_kv_heads, head_dim, max_len }
+        Self {
+            num_kv_heads,
+            head_dim,
+            max_len,
+        }
     }
 }
 

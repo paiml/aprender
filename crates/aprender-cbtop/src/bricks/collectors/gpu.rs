@@ -42,7 +42,10 @@ pub struct GpuCollectorBrick {
 
 impl GpuCollectorBrick {
     pub fn new(device_index: u32) -> Self {
-        Self { history: RingBuffer::new(120), device_index }
+        Self {
+            history: RingBuffer::new(120),
+            device_index,
+        }
     }
 
     pub fn collect(&mut self) -> GpuMetrics {
@@ -89,16 +92,23 @@ impl Brick for GpuCollectorBrick {
     fn assertions(&self) -> Vec<BrickAssertion> {
         vec![
             BrickAssertion::custom("memory_valid", |b| {
-                let s =
-                    b.downcast_ref::<GpuCollectorBrick>().expect("brick MUST be GpuCollectorBrick");
-                s.history.back().map_or(true, |m| m.memory_used_mb <= m.memory_total_mb)
+                let s = b
+                    .downcast_ref::<GpuCollectorBrick>()
+                    .expect("brick MUST be GpuCollectorBrick");
+                s.history
+                    .back()
+                    .map_or(true, |m| m.memory_used_mb <= m.memory_total_mb)
             }),
             BrickAssertion::max_latency_ms(20),
         ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 20, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 20,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

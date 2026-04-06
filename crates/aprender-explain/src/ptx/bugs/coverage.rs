@@ -33,7 +33,9 @@ impl PtxCoverageTracker {
     /// Create a new coverage tracker builder
     #[must_use]
     pub fn builder() -> PtxCoverageTrackerBuilder {
-        PtxCoverageTrackerBuilder { features: Vec::new() }
+        PtxCoverageTrackerBuilder {
+            features: Vec::new(),
+        }
     }
 
     /// Analyze PTX code and update coverage
@@ -73,7 +75,11 @@ impl PtxCoverageTracker {
     pub fn generate_report(&self) -> PtxCoverageReport {
         let total = self.features.len();
         let covered = self.features.iter().filter(|f| f.covered).count();
-        let coverage = if total > 0 { covered as f64 / total as f64 } else { 1.0 };
+        let coverage = if total > 0 {
+            covered as f64 / total as f64
+        } else {
+            1.0
+        };
 
         PtxCoverageReport {
             total_features: total,
@@ -107,20 +113,28 @@ impl PtxCoverageTrackerBuilder {
     /// Create a new builder
     #[must_use]
     pub fn new() -> Self {
-        Self { features: Vec::new() }
+        Self {
+            features: Vec::new(),
+        }
     }
 
     /// Add a feature to track
     #[must_use]
     pub fn feature(mut self, name: &str) -> Self {
-        self.features.push(PtxFeature { name: name.to_string(), covered: false, hit_count: 0 });
+        self.features.push(PtxFeature {
+            name: name.to_string(),
+            covered: false,
+            hit_count: 0,
+        });
         self
     }
 
     /// Build the coverage tracker
     #[must_use]
     pub fn build(self) -> PtxCoverageTracker {
-        PtxCoverageTracker { features: self.features }
+        PtxCoverageTracker {
+            features: self.features,
+        }
     }
 }
 

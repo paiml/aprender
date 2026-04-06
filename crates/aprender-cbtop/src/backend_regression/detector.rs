@@ -110,10 +110,12 @@ impl BackendRegressionDetector {
         let mut sizes_with_overhead = Vec::new();
 
         for m in &measurements {
-            let transfer =
-                m.transfer_time_us.expect("transfer_time_us MUST be set for GPU measurements");
-            let compute =
-                m.compute_time_us.expect("compute_time_us MUST be set for GPU measurements");
+            let transfer = m
+                .transfer_time_us
+                .expect("transfer_time_us MUST be set for GPU measurements");
+            let compute = m
+                .compute_time_us
+                .expect("compute_time_us MUST be set for GPU measurements");
             total_transfer += transfer;
             total_compute += compute;
 
@@ -152,7 +154,9 @@ impl BackendRegressionDetector {
         }
 
         let best = candidates.iter().max_by(|a, b| {
-            a.throughput.partial_cmp(&b.throughput).expect("throughput MUST be comparable (no NaN)")
+            a.throughput
+                .partial_cmp(&b.throughput)
+                .expect("throughput MUST be comparable (no NaN)")
         })?;
 
         let confidence = (best.efficiency_percent / 100.0).clamp(0.0, 1.0);
@@ -160,7 +164,10 @@ impl BackendRegressionDetector {
         let reason = if best.backend.is_gpu() {
             if let Some(overhead) = best.transfer_overhead() {
                 if overhead > 0.3 {
-                    format!("GPU selected but transfer overhead is {:.1}%", overhead * 100.0)
+                    format!(
+                        "GPU selected but transfer overhead is {:.1}%",
+                        overhead * 100.0
+                    )
                 } else {
                     "Best throughput with low transfer overhead".to_string()
                 }
@@ -221,7 +228,11 @@ impl BackendRegressionDetector {
 
         let all_cliffs: Vec<_> = backends
             .iter()
-            .flat_map(|b| workloads.iter().flat_map(move |w| self.detect_size_cliffs(*b, *w)))
+            .flat_map(|b| {
+                workloads
+                    .iter()
+                    .flat_map(move |w| self.detect_size_cliffs(*b, *w))
+            })
             .collect();
 
         BackendSummary {

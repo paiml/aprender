@@ -42,8 +42,9 @@ pub fn run_bench(
         println!("  Regression check: threshold={threshold}%");
     }
 
-    let output =
-        cmd.output().with_context(|| format!("Failed to run cargo bench --bench {bench_name}"))?;
+    let output = cmd
+        .output()
+        .with_context(|| format!("Failed to run cargo bench --bench {bench_name}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -79,7 +80,11 @@ pub fn run_bench(
                 let name = parts[0].trim().to_string();
                 let timing = parts[1].trim().to_string();
                 let change = extract_change(line);
-                results.push(BenchResult { name, timing, change });
+                results.push(BenchResult {
+                    name,
+                    timing,
+                    change,
+                });
             }
         }
     }
@@ -220,8 +225,11 @@ mod tests {
 
     #[test]
     fn test_bench_result_struct() {
-        let r =
-            BenchResult { name: "test".to_string(), timing: "1.0 ns".to_string(), change: None };
+        let r = BenchResult {
+            name: "test".to_string(),
+            timing: "1.0 ns".to_string(),
+            change: None,
+        };
         assert_eq!(r.name, "test");
     }
 }

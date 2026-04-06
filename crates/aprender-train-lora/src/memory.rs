@@ -50,7 +50,13 @@ impl MemoryPlanner {
         // Estimate architecture from param count
         let (hidden_dim, num_layers) = estimate_architecture(model_params);
 
-        Self { model_params, hidden_dim, num_layers, batch_size: 32, seq_len: 512 }
+        Self {
+            model_params,
+            hidden_dim,
+            num_layers,
+            batch_size: 32,
+            seq_len: 512,
+        }
     }
 
     /// Set batch size.

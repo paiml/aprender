@@ -339,13 +339,20 @@ impl Brick for ZramCollectorBrick {
 
     fn assertions(&self) -> Vec<BrickAssertion> {
         vec![
-            BrickAssertion::ValueInRange { min: 1.0, max: 10.0 }, // Compression ratio
+            BrickAssertion::ValueInRange {
+                min: 1.0,
+                max: 10.0,
+            }, // Compression ratio
             BrickAssertion::max_latency_ms(5),
         ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 5, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 5,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {
@@ -389,7 +396,11 @@ mod tests {
 
     #[test]
     fn test_zram_compression_ratio() {
-        let metrics = ZramMetrics { orig_size: 1000, comp_size: 400, ..Default::default() };
+        let metrics = ZramMetrics {
+            orig_size: 1000,
+            comp_size: 400,
+            ..Default::default()
+        };
 
         assert!((metrics.compression_ratio() - 2.5).abs() < 0.001);
         assert!((metrics.space_savings_percent() - 60.0).abs() < 0.001);
@@ -419,7 +430,10 @@ mod tests {
         let inactive = ZramMetrics::default();
         assert!(!inactive.is_active());
 
-        let active = ZramMetrics { orig_size: 1024, ..Default::default() };
+        let active = ZramMetrics {
+            orig_size: 1024,
+            ..Default::default()
+        };
         assert!(active.is_active());
     }
 }

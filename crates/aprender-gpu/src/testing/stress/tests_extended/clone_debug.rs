@@ -134,14 +134,26 @@ fn test_stress_config_clone() {
 fn test_multiple_anomaly_kinds() {
     // Coverage for all AnomalyKind variants and Anomaly debug
     let anomalies = vec![
-        Anomaly { cycle: 0, kind: AnomalyKind::SlowFrame, description: "Slow".to_string() },
-        Anomaly { cycle: 1, kind: AnomalyKind::HighMemory, description: "High memory".to_string() },
+        Anomaly {
+            cycle: 0,
+            kind: AnomalyKind::SlowFrame,
+            description: "Slow".to_string(),
+        },
+        Anomaly {
+            cycle: 1,
+            kind: AnomalyKind::HighMemory,
+            description: "High memory".to_string(),
+        },
         Anomaly {
             cycle: 2,
             kind: AnomalyKind::TestFailure,
             description: "Test failed".to_string(),
         },
-        Anomaly { cycle: 3, kind: AnomalyKind::TimingSpike, description: "Spike".to_string() },
+        Anomaly {
+            cycle: 3,
+            kind: AnomalyKind::TimingSpike,
+            description: "Spike".to_string(),
+        },
         Anomaly {
             cycle: 4,
             kind: AnomalyKind::NonDeterministic,
@@ -173,7 +185,11 @@ fn test_stress_report_debug() {
 #[test]
 fn test_frame_profile_debug() {
     // Coverage for FrameProfile Debug derive
-    let profile = FrameProfile { cycle: 1, duration_ms: 100, ..Default::default() };
+    let profile = FrameProfile {
+        cycle: 1,
+        duration_ms: 100,
+        ..Default::default()
+    };
 
     let debug_str = format!("{:?}", profile);
     assert!(debug_str.contains("FrameProfile"));

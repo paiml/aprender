@@ -17,7 +17,10 @@ fn test_stress_runner_memory_bytes_calculation() {
     let profile = runner.run_cycle(0, |input| (input.len() as u32, 0));
 
     // memory_bytes should be input_size * sizeof(f32)
-    assert_eq!(profile.memory_bytes, profile.input_size * std::mem::size_of::<f32>());
+    assert_eq!(
+        profile.memory_bytes,
+        profile.input_size * std::mem::size_of::<f32>()
+    );
 }
 
 #[test]
@@ -84,11 +87,19 @@ fn test_stress_rng_different_seeds() {
 #[test]
 fn test_stress_runner_input_generation_determinism() {
     // Coverage for deterministic input generation
-    let config1 =
-        StressConfig { seed: 12345, min_input_size: 50, max_input_size: 100, ..Default::default() };
+    let config1 = StressConfig {
+        seed: 12345,
+        min_input_size: 50,
+        max_input_size: 100,
+        ..Default::default()
+    };
 
-    let config2 =
-        StressConfig { seed: 12345, min_input_size: 50, max_input_size: 100, ..Default::default() };
+    let config2 = StressConfig {
+        seed: 12345,
+        min_input_size: 50,
+        max_input_size: 100,
+        ..Default::default()
+    };
 
     let mut runner1 = StressTestRunner::new(config1);
     let mut runner2 = StressTestRunner::new(config2);
@@ -192,9 +203,16 @@ fn test_run_cycle_with_failures_and_slow_frame() {
     let report = runner.report();
 
     // Should have both SlowFrame and TestFailure anomalies
-    let slow_count = report.anomalies.iter().filter(|a| a.kind == AnomalyKind::SlowFrame).count();
-    let failure_count =
-        report.anomalies.iter().filter(|a| a.kind == AnomalyKind::TestFailure).count();
+    let slow_count = report
+        .anomalies
+        .iter()
+        .filter(|a| a.kind == AnomalyKind::SlowFrame)
+        .count();
+    let failure_count = report
+        .anomalies
+        .iter()
+        .filter(|a| a.kind == AnomalyKind::TestFailure)
+        .count();
 
     assert_eq!(slow_count, 1, "Should have one SlowFrame anomaly");
     assert_eq!(failure_count, 1, "Should have one TestFailure anomaly");

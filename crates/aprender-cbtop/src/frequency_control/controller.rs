@@ -68,8 +68,9 @@ impl FrequencyController {
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0);
 
-        let cpus: Vec<CpuFrequencyInfo> =
-            (0..self.cpu_count).filter_map(|id| self.read_cpu_frequency(id)).collect();
+        let cpus: Vec<CpuFrequencyInfo> = (0..self.cpu_count)
+            .filter_map(|id| self.read_cpu_frequency(id))
+            .collect();
 
         FrequencyReading { cpus, timestamp_ns }
     }

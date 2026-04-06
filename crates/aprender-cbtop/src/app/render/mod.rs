@@ -43,8 +43,10 @@ impl CbtopApp {
             let mut canvas = DirectTerminalCanvas::new(&mut self.buffer);
 
             // Background
-            canvas
-                .fill_rect(Rect::new(0.0, 0.0, width as f32, height as f32), self.theme.background);
+            canvas.fill_rect(
+                Rect::new(0.0, 0.0, width as f32, height as f32),
+                self.theme.background,
+            );
 
             // Title bar with hardware info
             Self::render_title_bar(&mut canvas, width, active_panel, &hardware, &self.theme);
@@ -96,7 +98,10 @@ impl CbtopApp {
         hardware: &HardwareInfo,
         theme: &Theme,
     ) {
-        let title_style = TextStyle { color: theme.foreground, ..Default::default() };
+        let title_style = TextStyle {
+            color: theme.foreground,
+            ..Default::default()
+        };
 
         // Title with hardware info
         let hw_info = format!(
@@ -110,7 +115,10 @@ impl CbtopApp {
 
         // GPU info if available
         if let Some(ref gpu) = hardware.gpu_name {
-            let gpu_style = TextStyle { color: theme.cpu.sample(0.5), ..Default::default() };
+            let gpu_style = TextStyle {
+                color: theme.cpu.sample(0.5),
+                ..Default::default()
+            };
             canvas.draw_text(
                 &format!("│ GPU: {} ", gpu.chars().take(25).collect::<String>()),
                 Point::new(hw_info.len() as f32, 0.0),
@@ -129,9 +137,18 @@ impl CbtopApp {
         active_panel: ActivePanel,
         theme: &Theme,
     ) {
-        let dim_style = TextStyle { color: theme.dim, ..Default::default() };
-        let active_style = TextStyle { color: theme.foreground, ..Default::default() };
-        let highlight_style = TextStyle { color: theme.cpu.sample(0.2), ..Default::default() };
+        let dim_style = TextStyle {
+            color: theme.dim,
+            ..Default::default()
+        };
+        let active_style = TextStyle {
+            color: theme.foreground,
+            ..Default::default()
+        };
+        let highlight_style = TextStyle {
+            color: theme.cpu.sample(0.2),
+            ..Default::default()
+        };
 
         // Build tab bar string with highlighting
         let mut x: f32 = 1.0;
@@ -191,9 +208,18 @@ impl CbtopApp {
         hardware: &HardwareInfo,
         theme: &Theme,
     ) {
-        let dim_style = TextStyle { color: theme.dim, ..Default::default() };
-        let bright_style = TextStyle { color: theme.foreground, ..Default::default() };
-        let accent_style = TextStyle { color: theme.cpu.sample(0.3), ..Default::default() };
+        let dim_style = TextStyle {
+            color: theme.dim,
+            ..Default::default()
+        };
+        let bright_style = TextStyle {
+            color: theme.foreground,
+            ..Default::default()
+        };
+        let accent_style = TextStyle {
+            color: theme.cpu.sample(0.3),
+            ..Default::default()
+        };
 
         // PMAT-012 UI-01: Responsive width boxes
         let box_width = (width as usize).saturating_sub(2).max(40);
@@ -201,17 +227,30 @@ impl CbtopApp {
         let bar_width = inner_width.saturating_sub(22).max(10);
 
         // Header line 2: Load status
-        let status = if is_running { "● RUNNING" } else { "○ STOPPED" };
-        let status_color = if is_running { theme.cpu.sample(0.0) } else { theme.dim };
+        let status = if is_running {
+            "● RUNNING"
+        } else {
+            "○ STOPPED"
+        };
+        let status_color = if is_running {
+            theme.cpu.sample(0.0)
+        } else {
+            theme.dim
+        };
         canvas.draw_text(
             &format!(" Load: {} ", status),
             Point::new(0.0, 2.0),
-            &TextStyle { color: status_color, ..Default::default() },
+            &TextStyle {
+                color: status_color,
+                ..Default::default()
+            },
         );
 
         // Metrics box with responsive width
-        let box_top =
-            format!("┌─ Real-Time Metrics {}┐", "─".repeat(inner_width.saturating_sub(20)));
+        let box_top = format!(
+            "┌─ Real-Time Metrics {}┐",
+            "─".repeat(inner_width.saturating_sub(20))
+        );
         canvas.draw_text(&box_top, Point::new(1.0, 3.0), &dim_style);
 
         // CPU Usage (REAL from /proc/stat) with color gradient
@@ -220,10 +259,17 @@ impl CbtopApp {
         canvas.draw_text(
             &cpu_bar,
             Point::new(17.0, 4.0),
-            &TextStyle { color: theme.cpu_color(cpu_avg), ..Default::default() },
+            &TextStyle {
+                color: theme.cpu_color(cpu_avg),
+                ..Default::default()
+            },
         );
         let cpu_val_x = 17.0 + bar_width as f32 + 1.0;
-        canvas.draw_text(&format!("{:5.1}%", cpu_avg), Point::new(cpu_val_x, 4.0), &bright_style);
+        canvas.draw_text(
+            &format!("{:5.1}%", cpu_avg),
+            Point::new(cpu_val_x, 4.0),
+            &bright_style,
+        );
         canvas.draw_text(" │", Point::new(box_width as f32, 4.0), &dim_style);
 
         // Bricks/Second with color gradient based on rate
@@ -234,9 +280,16 @@ impl CbtopApp {
         canvas.draw_text(
             &bps_bar,
             Point::new(17.0, 5.0),
-            &TextStyle { color: theme.cpu_color(bps_normalized), ..Default::default() },
+            &TextStyle {
+                color: theme.cpu_color(bps_normalized),
+                ..Default::default()
+            },
         );
-        canvas.draw_text(&format!("{:>7.0}", bps), Point::new(cpu_val_x, 5.0), &bright_style);
+        canvas.draw_text(
+            &format!("{:>7.0}", bps),
+            Point::new(cpu_val_x, 5.0),
+            &bright_style,
+        );
         canvas.draw_text(" │", Point::new(box_width as f32, 5.0), &dim_style);
 
         // Total Bricks executed

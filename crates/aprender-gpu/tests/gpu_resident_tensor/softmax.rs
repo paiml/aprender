@@ -23,10 +23,15 @@ fn test_long_row_softmax_correctness() {
     let row_size = 64;
     let total_size = n_rows * row_size;
 
-    println!("Testing softmax with {} rows x {} elements...", n_rows, row_size);
+    println!(
+        "Testing softmax with {} rows x {} elements...",
+        n_rows, row_size
+    );
 
     // Create simple input data
-    let input_data: Vec<f32> = (0..total_size).map(|i| (i % row_size) as f32 * 0.1).collect();
+    let input_data: Vec<f32> = (0..total_size)
+        .map(|i| (i % row_size) as f32 * 0.1)
+        .collect();
 
     println!("Input first row: {:?}", &input_data[0..8]);
 
@@ -42,7 +47,10 @@ fn test_long_row_softmax_correctness() {
     println!("Result downloaded, len={}", result.len());
 
     println!("Output first row (first 8): {:?}", &result[0..8]);
-    println!("Output first row (last 4):  {:?}", &result[row_size - 4..row_size]);
+    println!(
+        "Output first row (last 4):  {:?}",
+        &result[row_size - 4..row_size]
+    );
 
     // FULL SOFTMAX TEST: Verify row sums to 1.0 and values match expected
     for row in 0..n_rows {
@@ -60,9 +68,15 @@ fn test_long_row_softmax_correctness() {
         // Check row sums to 1.0
         let row_sum: f32 = row_output.iter().sum();
         let sum_diff = (row_sum - 1.0).abs();
-        println!("Row {}: sum = {:.6} (diff from 1.0: {:.6})", row, row_sum, sum_diff);
+        println!(
+            "Row {}: sum = {:.6} (diff from 1.0: {:.6})",
+            row, row_sum, sum_diff
+        );
         if sum_diff > 0.01 {
-            panic!("Row {}: sum={:.6} does not equal 1.0 (diff={:.6})", row, row_sum, sum_diff);
+            panic!(
+                "Row {}: sum={:.6} does not equal 1.0 (diff={:.6})",
+                row, row_sum, sum_diff
+            );
         }
 
         // Check individual values
@@ -97,7 +111,9 @@ fn test_long_row_softmax_correctness() {
         .collect();
 
     let input_gpu = GpuResidentTensor::from_host(&ctx, &input_large).expect("upload");
-    let mut output_gpu = input_gpu.softmax(&ctx, n_rows_large as u32).expect("softmax");
+    let mut output_gpu = input_gpu
+        .softmax(&ctx, n_rows_large as u32)
+        .expect("softmax");
     let result_large = output_gpu.to_host().expect("download");
 
     for row in 0..n_rows_large {
@@ -106,7 +122,10 @@ fn test_long_row_softmax_correctness() {
         let row_output = &result_large[start..end];
         let row_sum: f32 = row_output.iter().sum();
         let sum_diff = (row_sum - 1.0).abs();
-        println!("Row {}: sum = {:.6} (diff from 1.0: {:.6})", row, row_sum, sum_diff);
+        println!(
+            "Row {}: sum = {:.6} (diff from 1.0: {:.6})",
+            row, row_sum, sum_diff
+        );
         if sum_diff > 0.01 {
             panic!("Row {}: sum={:.6} does not equal 1.0", row, row_sum);
         }

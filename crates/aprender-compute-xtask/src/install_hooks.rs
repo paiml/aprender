@@ -81,7 +81,10 @@ pub fn run() -> Result<()> {
             .context("Failed to make pre-commit hook executable")?;
     }
 
-    println!("{}", "✅ Installed pre-commit hook: SIMD attribute validation".green());
+    println!(
+        "{}",
+        "✅ Installed pre-commit hook: SIMD attribute validation".green()
+    );
     println!();
 
     // Summary

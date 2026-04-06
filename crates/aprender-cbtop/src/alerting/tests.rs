@@ -16,7 +16,10 @@ fn test_severity_colors() {
 #[test]
 fn test_severity_parsing() {
     assert_eq!(AlertSeverity::parse("INFO"), Some(AlertSeverity::Info));
-    assert_eq!(AlertSeverity::parse("warning"), Some(AlertSeverity::Warning));
+    assert_eq!(
+        AlertSeverity::parse("warning"),
+        Some(AlertSeverity::Warning)
+    );
     assert_eq!(AlertSeverity::parse("invalid"), None);
 }
 

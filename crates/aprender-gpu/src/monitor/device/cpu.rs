@@ -30,7 +30,14 @@ impl CpuDevice {
         let core_count = Self::read_core_count();
         let total_memory = Self::read_total_memory();
 
-        Self { name, core_count, total_memory, cpu_usage: 0.0, memory_used: 0, temperature: None }
+        Self {
+            name,
+            core_count,
+            total_memory,
+            cpu_usage: 0.0,
+            memory_used: 0,
+            temperature: None,
+        }
     }
 
     fn read_cpu_name() -> Option<String> {
@@ -50,11 +57,16 @@ impl CpuDevice {
         #[cfg(target_os = "linux")]
         {
             if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
-                return content.lines().filter(|line| line.starts_with("processor")).count() as u32;
+                return content
+                    .lines()
+                    .filter(|line| line.starts_with("processor"))
+                    .count() as u32;
             }
         }
         // Fallback
-        std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1)
+        std::thread::available_parallelism()
+            .map(|n| n.get() as u32)
+            .unwrap_or(1)
     }
 
     fn read_total_memory() -> u64 {
@@ -188,7 +200,9 @@ impl ComputeDevice for CpuDevice {
                 }
             }
         }
-        Err(GpuError::NotSupported("CPU frequency not available".to_string()))
+        Err(GpuError::NotSupported(
+            "CPU frequency not available".to_string(),
+        ))
     }
 
     fn compute_temperature_c(&self) -> Result<f64, GpuError> {
@@ -199,11 +213,15 @@ impl ComputeDevice for CpuDevice {
     fn compute_power_watts(&self) -> Result<f64, GpuError> {
         // CPU power estimation based on TDP and utilization
         // This is a rough estimate - RAPL provides better data on supported CPUs
-        Err(GpuError::NotSupported("CPU power not available".to_string()))
+        Err(GpuError::NotSupported(
+            "CPU power not available".to_string(),
+        ))
     }
 
     fn compute_power_limit_watts(&self) -> Result<f64, GpuError> {
-        Err(GpuError::NotSupported("CPU power limit not available".to_string()))
+        Err(GpuError::NotSupported(
+            "CPU power limit not available".to_string(),
+        ))
     }
 
     fn memory_used_bytes(&self) -> Result<u64, GpuError> {
@@ -216,7 +234,9 @@ impl ComputeDevice for CpuDevice {
 
     fn memory_bandwidth_gbps(&self) -> Result<f64, GpuError> {
         // Would need memory controller stats - not easily available
-        Err(GpuError::NotSupported("Memory bandwidth not available".to_string()))
+        Err(GpuError::NotSupported(
+            "Memory bandwidth not available".to_string(),
+        ))
     }
 
     fn compute_unit_count(&self) -> u32 {
@@ -229,11 +249,15 @@ impl ComputeDevice for CpuDevice {
     }
 
     fn pcie_tx_bytes_per_sec(&self) -> Result<u64, GpuError> {
-        Err(GpuError::NotSupported("CPU has no PCIe metrics".to_string()))
+        Err(GpuError::NotSupported(
+            "CPU has no PCIe metrics".to_string(),
+        ))
     }
 
     fn pcie_rx_bytes_per_sec(&self) -> Result<u64, GpuError> {
-        Err(GpuError::NotSupported("CPU has no PCIe metrics".to_string()))
+        Err(GpuError::NotSupported(
+            "CPU has no PCIe metrics".to_string(),
+        ))
     }
 
     fn pcie_generation(&self) -> u8 {

@@ -114,12 +114,21 @@ impl VarianceAnalysis {
 
         // Calculate total CV
         let variance = if n > 1 {
-            input.latencies.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64
+            input
+                .latencies
+                .iter()
+                .map(|x| (x - mean).powi(2))
+                .sum::<f64>()
+                / (n - 1) as f64
         } else {
             0.0
         };
         let std_dev = variance.sqrt();
-        let total_cv_percent = if mean > 0.0 { (std_dev / mean) * 100.0 } else { 0.0 };
+        let total_cv_percent = if mean > 0.0 {
+            (std_dev / mean) * 100.0
+        } else {
+            0.0
+        };
 
         // Estimate frequency contribution
         let frequency_contribution = if let Some(ref freqs) = input.frequencies {
@@ -215,9 +224,16 @@ fn estimate_frequency_contribution(frequencies: &[f64], latencies: &[f64]) -> f6
 
     // Frequency variance
     let freq_mean = frequencies.iter().sum::<f64>() / frequencies.len() as f64;
-    let freq_variance = frequencies.iter().map(|f| (f - freq_mean).powi(2)).sum::<f64>()
+    let freq_variance = frequencies
+        .iter()
+        .map(|f| (f - freq_mean).powi(2))
+        .sum::<f64>()
         / (frequencies.len() - 1) as f64;
-    let freq_cv = if freq_mean > 0.0 { freq_variance.sqrt() / freq_mean * 100.0 } else { 0.0 };
+    let freq_cv = if freq_mean > 0.0 {
+        freq_variance.sqrt() / freq_mean * 100.0
+    } else {
+        0.0
+    };
 
     // Contribution is correlation × frequency CV (simplified model)
     correlation.abs() * freq_cv
@@ -234,9 +250,16 @@ fn estimate_thermal_contribution(temperatures: &[f64], latencies: &[f64]) -> f64
 
     // Temperature variance
     let temp_mean = temperatures.iter().sum::<f64>() / temperatures.len() as f64;
-    let temp_variance = temperatures.iter().map(|t| (t - temp_mean).powi(2)).sum::<f64>()
+    let temp_variance = temperatures
+        .iter()
+        .map(|t| (t - temp_mean).powi(2))
+        .sum::<f64>()
         / (temperatures.len() - 1) as f64;
-    let temp_cv = if temp_mean > 0.0 { temp_variance.sqrt() / temp_mean * 100.0 } else { 0.0 };
+    let temp_cv = if temp_mean > 0.0 {
+        temp_variance.sqrt() / temp_mean * 100.0
+    } else {
+        0.0
+    };
 
     // Positive correlation threshold: higher temperature correlates with higher latency
     if correlation > 0.3 {
@@ -264,7 +287,11 @@ fn estimate_cache_contribution(latencies: &[f64], warmup_count: usize) -> (f64, 
     let warm_mean = warm_samples.iter().sum::<f64>() / warm_samples.len() as f64;
 
     // Warmup effect ratio
-    let warmup_effect = if warm_mean > 0.0 { cold_mean / warm_mean } else { 1.0 };
+    let warmup_effect = if warm_mean > 0.0 {
+        cold_mean / warm_mean
+    } else {
+        1.0
+    };
 
     // Cache contribution is the difference between cold and warm CV
     let cold_cv = calculate_cv(&cold_samples);
@@ -376,7 +403,10 @@ fn generate_recommendations(
     let mut recs = Vec::new();
 
     if total_cv >= 5.0 {
-        recs.push(format!("CV {:.1}% exceeds 5% target. Mitigation needed.", total_cv));
+        recs.push(format!(
+            "CV {:.1}% exceeds 5% target. Mitigation needed.",
+            total_cv
+        ));
     }
 
     if freq > 1.0 {

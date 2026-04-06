@@ -248,8 +248,10 @@ fn test_analyze_barrier_safety_counts() {
 /// Test emit_ptx_validated for multiple kernels
 #[test]
 fn test_emit_ptx_validated_multiple() {
-    let kernels: Vec<Box<dyn Kernel>> =
-        vec![Box::new(GemmKernel::naive(32, 32, 32)), Box::new(SoftmaxKernel::new(128))];
+    let kernels: Vec<Box<dyn Kernel>> = vec![
+        Box::new(GemmKernel::naive(32, 32, 32)),
+        Box::new(SoftmaxKernel::new(128)),
+    ];
     for kernel in kernels {
         let ptx = kernel.emit_ptx_validated();
         assert!(!ptx.is_empty());
@@ -337,14 +339,26 @@ fn test_barrier_safety_tiled_conv1d() {
 fn test_barrier_safety_optimizer() {
     assert!(AdamWStepKernel::new(4096).analyze_barrier_safety().is_safe);
     assert!(AdamStepKernel::new(4096).analyze_barrier_safety().is_safe);
-    assert!(GradientClipKernel::new(4096).analyze_barrier_safety().is_safe);
+    assert!(
+        GradientClipKernel::new(4096)
+            .analyze_barrier_safety()
+            .is_safe
+    );
 }
 
 /// Test quantize kernels barrier safety
 #[test]
 fn test_barrier_safety_quantize() {
-    assert!(Q4KGemvKernel::new(4096, 4096).analyze_barrier_safety().is_safe);
-    assert!(Q6KGemvKernel::new(4096, 4096).analyze_barrier_safety().is_safe);
+    assert!(
+        Q4KGemvKernel::new(4096, 4096)
+            .analyze_barrier_safety()
+            .is_safe
+    );
+    assert!(
+        Q6KGemvKernel::new(4096, 4096)
+            .analyze_barrier_safety()
+            .is_safe
+    );
     assert!(Q8QuantizeKernel::new(4096).analyze_barrier_safety().is_safe);
 }
 
@@ -388,15 +402,31 @@ fn test_persistent_ptx() {
 /// Test Lz4 kernels barrier safety
 #[test]
 fn test_barrier_safety_lz4() {
-    assert!(Lz4WarpCompressKernel::new(4).analyze_barrier_safety().is_safe);
-    assert!(Lz4WarpDecompressKernel::new(4).analyze_barrier_safety().is_safe);
+    assert!(
+        Lz4WarpCompressKernel::new(4)
+            .analyze_barrier_safety()
+            .is_safe
+    );
+    assert!(
+        Lz4WarpDecompressKernel::new(4)
+            .analyze_barrier_safety()
+            .is_safe
+    );
 }
 
 /// Test batched elementwise kernels
 #[test]
 fn test_barrier_safety_batched_elementwise() {
-    assert!(BatchedSoftmaxKernel::new(4, 1024).analyze_barrier_safety().is_safe);
-    assert!(BatchedScaleKernel::new(1024).analyze_barrier_safety().is_safe);
+    assert!(
+        BatchedSoftmaxKernel::new(4, 1024)
+            .analyze_barrier_safety()
+            .is_safe
+    );
+    assert!(
+        BatchedScaleKernel::new(1024)
+            .analyze_barrier_safety()
+            .is_safe
+    );
 }
 
 /// Test FusedResidualRmsNormKernel barrier safety

@@ -97,8 +97,11 @@ impl CorrelationAnalyzer {
 
     /// Calculate correlation between CV and event type
     pub fn correlate_events(&self, event_type: EventType) -> Option<CorrelationResult> {
-        let events: Vec<_> =
-            self.event_samples.iter().filter(|e| e.event_type == event_type).collect();
+        let events: Vec<_> = self
+            .event_samples
+            .iter()
+            .filter(|e| e.event_type == event_type)
+            .collect();
 
         if events.len() < 5 || self.perf_samples.len() < 5 {
             return None;
@@ -189,7 +192,9 @@ impl CorrelationAnalyzer {
         }
 
         correlations.sort_by(|a, b| {
-            b.1.abs().partial_cmp(&a.1.abs()).expect("values should be comparable")
+            b.1.abs()
+                .partial_cmp(&a.1.abs())
+                .expect("values should be comparable")
         });
 
         let (primary_source, correlation) = correlations[0];
@@ -203,7 +208,12 @@ impl CorrelationAnalyzer {
             0.5
         };
 
-        Some(InterferenceResult { primary_source, correlation, confidence, secondary_sources })
+        Some(InterferenceResult {
+            primary_source,
+            correlation,
+            confidence,
+            secondary_sources,
+        })
     }
 
     /// Recommend isolation strategy
@@ -252,7 +262,10 @@ impl CorrelationAnalyzer {
 
     /// Get CV spikes
     pub fn get_spikes(&self) -> Vec<&PerformanceSample> {
-        self.perf_samples.iter().filter(|s| s.is_spike(self.spike_threshold)).collect()
+        self.perf_samples
+            .iter()
+            .filter(|s| s.is_spike(self.spike_threshold))
+            .collect()
     }
 
     /// Clear all samples

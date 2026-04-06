@@ -62,13 +62,19 @@ fn golden_ballot_sync_instruction() {
 
 #[test]
 fn golden_bar_sync_instruction() {
-    let kernel = PtxKernel::new("test_bar_sync").shared_memory(256).build(|ctx| {
-        ctx.bar_sync(0);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_bar_sync")
+        .shared_memory(256)
+        .build(|ctx| {
+            ctx.bar_sync(0);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("bar.sync"), "GOLDEN FAIL: bar.sync instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("bar.sync"),
+        "GOLDEN FAIL: bar.sync instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -80,7 +86,11 @@ fn golden_branch_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("bra target"), "GOLDEN FAIL: bra instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("bra target"),
+        "GOLDEN FAIL: bra instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]

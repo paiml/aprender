@@ -47,7 +47,13 @@ impl<T: Clone + Default> CsrMatrix<T> {
         values: Vec<T>,
     ) -> Result<Self, SparseError> {
         validate_csr_invariants(rows, cols, &offsets, &col_indices, values.len())?;
-        Ok(Self { rows, cols, offsets, col_indices, values })
+        Ok(Self {
+            rows,
+            cols,
+            offsets,
+            col_indices,
+            values,
+        })
     }
 
     /// Convert from COO format to CSR.
@@ -115,7 +121,13 @@ impl<T: Clone + Default> CsrMatrix<T> {
             }
         }
 
-        Self { rows, cols, offsets, col_indices, values }
+        Self {
+            rows,
+            cols,
+            offsets,
+            col_indices,
+            values,
+        }
     }
 
     /// Create an identity matrix of size n.
@@ -127,7 +139,13 @@ impl<T: Clone + Default> CsrMatrix<T> {
         let offsets: Vec<u32> = (0..=n).map(|i| i as u32).collect();
         let col_indices: Vec<u32> = (0..n).map(|i| i as u32).collect();
         let values: Vec<T> = (0..n).map(|_| T::from(1.0)).collect();
-        Self { rows: n, cols: n, offsets, col_indices, values }
+        Self {
+            rows: n,
+            cols: n,
+            offsets,
+            col_indices,
+            values,
+        }
     }
 
     /// Number of rows.

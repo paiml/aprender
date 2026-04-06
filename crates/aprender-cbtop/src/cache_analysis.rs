@@ -175,15 +175,18 @@ impl WorkingSetAnalysis {
         let cache_level = config.classify(working_set_bytes);
 
         let (utilization_percent, _cache_size) = match cache_level {
-            CacheLevel::L1 => {
-                ((working_set_bytes as f64 / config.l1_size as f64) * 100.0, config.l1_size)
-            }
-            CacheLevel::L2 => {
-                ((working_set_bytes as f64 / config.l2_size as f64) * 100.0, config.l2_size)
-            }
-            CacheLevel::L3 => {
-                ((working_set_bytes as f64 / config.l3_size as f64) * 100.0, config.l3_size)
-            }
+            CacheLevel::L1 => (
+                (working_set_bytes as f64 / config.l1_size as f64) * 100.0,
+                config.l1_size,
+            ),
+            CacheLevel::L2 => (
+                (working_set_bytes as f64 / config.l2_size as f64) * 100.0,
+                config.l2_size,
+            ),
+            CacheLevel::L3 => (
+                (working_set_bytes as f64 / config.l3_size as f64) * 100.0,
+                config.l3_size,
+            ),
             CacheLevel::Ram => (100.0, working_set_bytes),
         };
 
@@ -391,9 +394,18 @@ mod tests {
     fn test_access_pattern() {
         let config = CacheConfig::default();
 
-        assert_eq!(AccessPattern::estimate(1024, 1, &config), AccessPattern::Streaming);
-        assert_eq!(AccessPattern::estimate(1024, 10, &config), AccessPattern::Reuse);
-        assert_eq!(AccessPattern::estimate(100 * 1024 * 1024, 10, &config), AccessPattern::Random);
+        assert_eq!(
+            AccessPattern::estimate(1024, 1, &config),
+            AccessPattern::Streaming
+        );
+        assert_eq!(
+            AccessPattern::estimate(1024, 10, &config),
+            AccessPattern::Reuse
+        );
+        assert_eq!(
+            AccessPattern::estimate(100 * 1024 * 1024, 10, &config),
+            AccessPattern::Random
+        );
     }
 
     #[test]

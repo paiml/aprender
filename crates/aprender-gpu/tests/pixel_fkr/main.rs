@@ -138,8 +138,14 @@ fn ptx_pixel_fkr_quantize_kernel() {
         let ptx = kernel.emit_ptx();
 
         // Validate PTX structure
-        assert!(ptx.contains(".version"), "QuantizeKernel[{m}x{n}x{k}] missing PTX version");
-        assert!(ptx.contains(".target"), "QuantizeKernel[{m}x{n}x{k}] missing PTX target");
+        assert!(
+            ptx.contains(".version"),
+            "QuantizeKernel[{m}x{n}x{k}] missing PTX version"
+        );
+        assert!(
+            ptx.contains(".target"),
+            "QuantizeKernel[{m}x{n}x{k}] missing PTX target"
+        );
         assert!(
             ptx.contains(".entry") || ptx.contains(".visible"),
             "QuantizeKernel[{m}x{n}x{k}] missing entry point"
@@ -156,7 +162,10 @@ fn ptx_pixel_fkr_quantize_kernel() {
             );
         }
 
-        println!("ptx_pixel_fkr_quantize[{m}x{n}x{k}]: PASS ({} bytes)", ptx.len());
+        println!(
+            "ptx_pixel_fkr_quantize[{m}x{n}x{k}]: PASS ({} bytes)",
+            ptx.len()
+        );
     }
 }
 
@@ -195,7 +204,10 @@ fn ptx_pixel_fkr_bias_activation_runtime() {
             BiasActivationKernel::new(n as u32, bias_size as u32).with_activation(activation);
         let ptx = kernel.emit_ptx();
 
-        assert!(ptx.contains(".entry"), "BiasActivation PTX should have entry point");
+        assert!(
+            ptx.contains(".entry"),
+            "BiasActivation PTX should have entry point"
+        );
 
         println!(
             "ptx_pixel_fkr_bias_activation_{:?}: PTX generated ({} bytes)",

@@ -149,8 +149,10 @@ fn test_validation_results_mixed_outcomes() {
 
 #[test]
 fn test_format_error_list_with_special_characters() {
-    let errors =
-        vec!["error: missing `main()`".to_string(), "error: invalid name \"Bad-Name\"".to_string()];
+    let errors = vec![
+        "error: missing `main()`".to_string(),
+        "error: invalid name \"Bad-Name\"".to_string(),
+    ];
     let result = format_error_list(&errors, "Errors");
     assert!(result.contains("Errors"));
     assert!(result.contains("main()"));

@@ -85,19 +85,29 @@ fn main() {
     let config = cli.common.to_cli();
 
     let result = match cli.command {
-        Commands::Run { config: config_path, output, dry_run } => {
-            run_command(&config_path, output, dry_run, &config)
-        }
+        Commands::Run {
+            config: config_path,
+            output,
+            dry_run,
+        } => run_command(&config_path, output, dry_run, &config),
 
-        Commands::Estimate { teacher, student, batch_size, seq_len } => {
-            estimate_command(&teacher, student, batch_size, seq_len, &config)
-        }
+        Commands::Estimate {
+            teacher,
+            student,
+            batch_size,
+            seq_len,
+        } => estimate_command(&teacher, student, batch_size, seq_len, &config),
 
-        Commands::Validate { config: config_path } => validate_command(&config_path, &config),
+        Commands::Validate {
+            config: config_path,
+        } => validate_command(&config_path, &config),
 
-        Commands::Export { input, format, output, quantize } => {
-            export_command(&input, &format, &output, &quantize, &config)
-        }
+        Commands::Export {
+            input,
+            format,
+            output,
+            quantize,
+        } => export_command(&input, &format, &output, &quantize, &config),
     };
 
     if let Err(e) = result {
@@ -115,7 +125,10 @@ fn run_command(
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     if !cli.is_quiet() {
-        println!("{}", entrenar_common::cli::styles::header("entrenar-distill"));
+        println!(
+            "{}",
+            entrenar_common::cli::styles::header("entrenar-distill")
+        );
     }
 
     // Load configuration
@@ -131,7 +144,10 @@ fn run_command(
 
     if dry_run {
         if !cli.is_quiet() {
-            println!("{}", entrenar_common::cli::styles::success("Configuration valid"));
+            println!(
+                "{}",
+                entrenar_common::cli::styles::success("Configuration valid")
+            );
 
             let estimate = estimate_memory(&config)?;
             println!("\n{}", estimate.to_human_readable());
@@ -143,10 +159,16 @@ fn run_command(
     let result = run(&config)?;
 
     if !cli.is_quiet() {
-        println!("\n{}", entrenar_common::cli::styles::success("Distillation complete"));
+        println!(
+            "\n{}",
+            entrenar_common::cli::styles::success("Distillation complete")
+        );
         println!("  Output: {}", result.output_path.display());
         println!("  Duration: {:.1}s", result.duration_seconds);
-        println!("  Improvement: {:.1}%", result.metrics.improvement_ratio() * 100.0);
+        println!(
+            "  Improvement: {:.1}%",
+            result.metrics.improvement_ratio() * 100.0
+        );
     }
 
     Ok(())
@@ -194,7 +216,10 @@ fn validate_command(
     ConfigValidator::validate(&config)?;
 
     if !cli.is_quiet() {
-        println!("{}", entrenar_common::cli::styles::success("Configuration valid"));
+        println!(
+            "{}",
+            entrenar_common::cli::styles::success("Configuration valid")
+        );
     }
 
     Ok(())
@@ -224,9 +249,9 @@ fn dispatch_export(
         "safetensors" => export_safetensors(weights, shapes, output),
         "gguf" => export_gguf(weights, shapes, output, quantize),
         "apr" | "json" => export_apr(weights, output),
-        other => {
-            Err(entrenar_common::EntrenarError::UnsupportedFormat { format: other.to_string() })
-        }
+        other => Err(entrenar_common::EntrenarError::UnsupportedFormat {
+            format: other.to_string(),
+        }),
     }
 }
 
@@ -238,7 +263,9 @@ fn export_command(
     cli: &entrenar_common::Cli,
 ) -> entrenar_common::Result<()> {
     if !input.exists() {
-        return Err(entrenar_common::EntrenarError::ModelNotFound { path: input.to_path_buf() });
+        return Err(entrenar_common::EntrenarError::ModelNotFound {
+            path: input.to_path_buf(),
+        });
     }
 
     if !cli.is_quiet() {
@@ -284,7 +311,10 @@ fn export_safetensors(
         .map(|name| {
             let data = &weights[*name];
             let bytes: Vec<u8> = bytemuck::cast_slice(data).to_vec();
-            let shape = shapes.get(*name).cloned().unwrap_or_else(|| vec![data.len()]);
+            let shape = shapes
+                .get(*name)
+                .cloned()
+                .unwrap_or_else(|| vec![data.len()]);
             ((*name).clone(), bytes, shape)
         })
         .collect();
@@ -339,14 +369,19 @@ fn export_gguf(
             entrenar_distill::weights::weights_to_model_weights(weights.clone(), shapes.clone());
 
         let output_dir = output.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let filename = output.file_name().unwrap_or_else(|| std::ffi::OsStr::new("model.gguf"));
+        let filename = output
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("model.gguf"));
 
-        let exporter =
-            entrenar::hf_pipeline::Exporter::new().output_dir(output_dir).gguf_quantization(quant);
+        let exporter = entrenar::hf_pipeline::Exporter::new()
+            .output_dir(output_dir)
+            .gguf_quantization(quant);
 
-        exporter.export(&mw, entrenar::hf_pipeline::ExportFormat::GGUF, filename).map_err(|e| {
-            entrenar_common::EntrenarError::Internal { message: format!("GGUF export failed: {e}") }
-        })?;
+        exporter
+            .export(&mw, entrenar::hf_pipeline::ExportFormat::GGUF, filename)
+            .map_err(|e| entrenar_common::EntrenarError::Internal {
+                message: format!("GGUF export failed: {e}"),
+            })?;
 
         Ok(())
     }

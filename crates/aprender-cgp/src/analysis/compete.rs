@@ -121,7 +121,10 @@ pub fn run_compete(
 
     // Print table
     println!();
-    println!("  {:20} {:>12} {:>8} {:>10}", "Competitor", "Time (ms)", "Exit", "vs Best");
+    println!(
+        "  {:20} {:>12} {:>8} {:>10}",
+        "Competitor", "Time (ms)", "Exit", "vs Best"
+    );
     println!("  {}", "-".repeat(54));
 
     for r in &results {
@@ -135,14 +138,26 @@ pub fn run_compete(
         } else {
             "FAILED".to_string()
         };
-        println!("  {:20} {:>12} {:>8} {:>10}", r.label, time_str, r.exit_code, ratio);
+        println!(
+            "  {:20} {:>12} {:>8} {:>10}",
+            r.label, time_str, r.exit_code, ratio
+        );
     }
 
     // Winner
-    if let Some(winner) = results.iter().filter(|r| r.wall_time_ms.is_finite()).min_by(|a, b| {
-        a.wall_time_ms.partial_cmp(&b.wall_time_ms).unwrap_or(std::cmp::Ordering::Equal)
-    }) {
-        println!("\n  Winner: {} ({:.1}ms)", winner.label, winner.wall_time_ms);
+    if let Some(winner) = results
+        .iter()
+        .filter(|r| r.wall_time_ms.is_finite())
+        .min_by(|a, b| {
+            a.wall_time_ms
+                .partial_cmp(&b.wall_time_ms)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    {
+        println!(
+            "\n  Winner: {} ({:.1}ms)",
+            winner.label, winner.wall_time_ms
+        );
     }
 
     println!();

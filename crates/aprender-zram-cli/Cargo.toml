@@ -1,0 +1,30 @@
+[package]
+name = "aprender-zram-cli"
+description = "CLI tool for zram device management (zramctl replacement)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "trueno-zram"
+path = "src/main.rs"
+
+[dependencies]
+trueno-zram-core.workspace = true
+trueno-zram-adaptive.workspace = true
+thiserror.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tokio.workspace = true
+
+[features]
+default = ["std"]
+std = []
+
+[lints]
+workspace = true

@@ -201,15 +201,23 @@ mod tests {
         let patched =
             patch_backward_branches_sm121(ptx).expect("backward branch should be patched");
         // The .reg .pred and setp should appear AFTER .reg .f32 but BEFORE mov
-        let pred_pos =
-            patched.find(".reg .pred %p_jw;").expect("patched PTX must contain pred decl");
-        let setp_pos =
-            patched.find("setp.ne.u32 %p_jw, 1, 0;").expect("patched PTX must contain setp init");
-        let first_mov =
-            patched.find("mov.u32 %r0, 0;").expect("patched PTX must contain mov instruction");
-        let last_reg = patched.rfind(".reg .f32").expect("patched PTX must contain .reg .f32 decl");
+        let pred_pos = patched
+            .find(".reg .pred %p_jw;")
+            .expect("patched PTX must contain pred decl");
+        let setp_pos = patched
+            .find("setp.ne.u32 %p_jw, 1, 0;")
+            .expect("patched PTX must contain setp init");
+        let first_mov = patched
+            .find("mov.u32 %r0, 0;")
+            .expect("patched PTX must contain mov instruction");
+        let last_reg = patched
+            .rfind(".reg .f32")
+            .expect("patched PTX must contain .reg .f32 decl");
         assert!(pred_pos > last_reg, "pred decl must come after last .reg");
         assert!(setp_pos > pred_pos, "setp must come after pred decl");
-        assert!(setp_pos < first_mov, "setp must come before first instruction");
+        assert!(
+            setp_pos < first_mov,
+            "setp must come before first instruction"
+        );
     }
 }

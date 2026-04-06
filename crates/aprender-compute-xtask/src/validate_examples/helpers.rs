@@ -27,7 +27,10 @@ pub(crate) fn get_project_root() -> Result<PathBuf> {
 /// Collect all example .rs files
 pub(crate) fn collect_examples(examples_dir: &Path) -> Result<Vec<PathBuf>> {
     if !examples_dir.exists() {
-        bail!("Examples directory does not exist: {}", examples_dir.display());
+        bail!(
+            "Examples directory does not exist: {}",
+            examples_dir.display()
+        );
     }
 
     let mut examples = Vec::new();
@@ -49,7 +52,10 @@ pub(crate) fn collect_examples(examples_dir: &Path) -> Result<Vec<PathBuf>> {
 pub(crate) fn find_markdown_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
 
-    for entry in WalkDir::new(dir).into_iter().filter_map(std::result::Result::ok) {
+    for entry in WalkDir::new(dir)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+    {
         let path = entry.path();
         if is_markdown_file(path) {
             files.push(path.to_path_buf());

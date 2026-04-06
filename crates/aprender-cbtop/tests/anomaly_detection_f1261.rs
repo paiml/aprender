@@ -85,7 +85,9 @@ fn f1263_change_points_detected() {
     let mut detector = AnomalyDetector::new();
 
     // Clear level shift at index 20
-    let data: Vec<f64> = (0..40).map(|i| if i < 20 { 100.0 } else { 200.0 }).collect();
+    let data: Vec<f64> = (0..40)
+        .map(|i| if i < 20 { 100.0 } else { 200.0 })
+        .collect();
 
     detector.add_all(&data);
     let change_points = detector.detect_change_points();
@@ -188,7 +190,9 @@ fn f1266_cross_metric_anomalies() {
 /// F1267.1: Sliding window works (real-time detection)
 #[test]
 fn f1267_sliding_window() {
-    let mut detector = AnomalyDetector::new().with_window_size(20).with_zscore_threshold(2.0);
+    let mut detector = AnomalyDetector::new()
+        .with_window_size(20)
+        .with_zscore_threshold(2.0);
 
     // Add baseline data with slight variation (for non-zero std dev)
     for i in 0..25 {
@@ -222,8 +226,14 @@ fn f1268_severity_ranking() {
 #[test]
 fn f1268_severity_from_deviation() {
     assert_eq!(AnomalySeverity::from_deviation(2.0), AnomalySeverity::Info);
-    assert_eq!(AnomalySeverity::from_deviation(4.0), AnomalySeverity::Warning);
-    assert_eq!(AnomalySeverity::from_deviation(6.0), AnomalySeverity::Critical);
+    assert_eq!(
+        AnomalySeverity::from_deviation(4.0),
+        AnomalySeverity::Warning
+    );
+    assert_eq!(
+        AnomalySeverity::from_deviation(6.0),
+        AnomalySeverity::Critical
+    );
 }
 
 /// F1268.3: Severity names
@@ -297,7 +307,9 @@ fn test_constants() {
 /// Test detector with custom thresholds
 #[test]
 fn test_custom_thresholds() {
-    let detector = AnomalyDetector::new().with_zscore_threshold(2.5).with_iqr_multiplier(2.0);
+    let detector = AnomalyDetector::new()
+        .with_zscore_threshold(2.5)
+        .with_iqr_multiplier(2.0);
 
     assert_eq!(detector.data_count(), 0);
 }

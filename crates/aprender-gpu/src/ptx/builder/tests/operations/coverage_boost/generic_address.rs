@@ -4,12 +4,14 @@ use super::*;
 
 #[test]
 fn test_ld_generic_u32() {
-    let kernel = PtxKernel::new("test_generic_u32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.ld_generic_u32(ptr);
-        ctx.st_generic_u32(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_u32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.ld_generic_u32(ptr);
+            ctx.st_generic_u32(ptr, val);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
     assert!(ptx.contains("ld.u32"), "Expected ld.u32 in: {}", ptx);
     assert!(ptx.contains("st.u32"), "Expected st.u32 in: {}", ptx);
@@ -17,60 +19,86 @@ fn test_ld_generic_u32() {
 
 #[test]
 fn test_ld_generic_u64() {
-    let kernel = PtxKernel::new("test_generic_u64").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.ld_generic_u64(ptr);
-        ctx.st_generic_u64(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_u64")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.ld_generic_u64(ptr);
+            ctx.st_generic_u64(ptr, val);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
-    assert!(ptx.contains("ld.u64") || ptx.contains(".u64"), "Expected u64 in: {}", ptx);
+    assert!(
+        ptx.contains("ld.u64") || ptx.contains(".u64"),
+        "Expected u64 in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_generic_u8() {
-    let kernel = PtxKernel::new("test_generic_u8").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.ld_generic_u8(ptr);
-        ctx.st_generic_u8(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_u8")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.ld_generic_u8(ptr);
+            ctx.st_generic_u8(ptr, val);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
-    assert!(ptx.contains(".u8") || ptx.contains("u8"), "Expected u8 ops in: {}", ptx);
+    assert!(
+        ptx.contains(".u8") || ptx.contains("u8"),
+        "Expected u8 ops in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_generic_u16() {
-    let kernel = PtxKernel::new("test_generic_u16").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.ld_generic_u16(ptr);
-        ctx.st_generic_u16(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_u16")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.ld_generic_u16(ptr);
+            ctx.st_generic_u16(ptr, val);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
-    assert!(ptx.contains(".u16") || ptx.contains("u16"), "Expected u16 ops in: {}", ptx);
+    assert!(
+        ptx.contains(".u16") || ptx.contains("u16"),
+        "Expected u16 ops in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_generic_f32() {
-    let kernel = PtxKernel::new("test_generic_f32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let val = ctx.ld_generic_f32(ptr);
-        ctx.st_generic_f32(ptr, val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_f32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let val = ctx.ld_generic_f32(ptr);
+            ctx.st_generic_f32(ptr, val);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
-    assert!(ptx.contains(".f32") || ptx.contains("f32"), "Expected f32 ops in: {}", ptx);
+    assert!(
+        ptx.contains(".f32") || ptx.contains("f32"),
+        "Expected f32 ops in: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_ld_generic_u32_into() {
-    let kernel = PtxKernel::new("test_generic_into").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let dest = ctx.mov_u32_imm(0);
-        ctx.ld_generic_u32_into(ptr, dest);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_generic_into")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let dest = ctx.mov_u32_imm(0);
+            ctx.ld_generic_u32_into(ptr, dest);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
     assert!(ptx.contains("ld"), "Expected load in: {}", ptx);
 }
@@ -78,15 +106,25 @@ fn test_ld_generic_u32_into() {
 #[test]
 fn test_shared_base_addr() {
     // shared_base_addr: cvta.to.shared.u64 to get generic address from shared memory label
-    let kernel = PtxKernel::new("test_shared_base").shared_memory(4096).build(|ctx| {
-        let smem = ctx.shared_base_addr();
-        // Use the shared memory address to load a value
-        let _val = ctx.ld_generic_f32(smem);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_shared_base")
+        .shared_memory(4096)
+        .build(|ctx| {
+            let smem = ctx.shared_base_addr();
+            // Use the shared memory address to load a value
+            let _val = ctx.ld_generic_f32(smem);
+            ctx.ret();
+        });
     let ptx = kernel.emit();
-    assert!(ptx.contains("cvta"), "Expected cvta instruction for shared base addr in: {}", ptx);
-    assert!(ptx.contains("smem"), "Expected smem label reference in: {}", ptx);
+    assert!(
+        ptx.contains("cvta"),
+        "Expected cvta instruction for shared base addr in: {}",
+        ptx
+    );
+    assert!(
+        ptx.contains("smem"),
+        "Expected smem label reference in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -110,7 +148,11 @@ fn test_ld_global_f16_to_f32_predicated() {
     let ptx = kernel.emit();
 
     // Must contain default initialization (mov.f32 with 0.0)
-    assert!(ptx.contains("mov.f32"), "Expected mov.f32 for default initialization in: {}", ptx);
+    assert!(
+        ptx.contains("mov.f32"),
+        "Expected mov.f32 for default initialization in: {}",
+        ptx
+    );
     assert!(
         ptx.contains("0F00000000"),
         "Expected 0.0 float literal (0F00000000) for default in: {}",
@@ -118,14 +160,30 @@ fn test_ld_global_f16_to_f32_predicated() {
     );
 
     // Must contain predicated load with b16 type (F16 loaded as b16)
-    assert!(ptx.contains("ld.global"), "Expected ld.global for F16 load in: {}", ptx);
-    assert!(ptx.contains(".b16"), "Expected .b16 type for F16 load in: {}", ptx);
+    assert!(
+        ptx.contains("ld.global"),
+        "Expected ld.global for F16 load in: {}",
+        ptx
+    );
+    assert!(
+        ptx.contains(".b16"),
+        "Expected .b16 type for F16 load in: {}",
+        ptx
+    );
 
     // Must contain predicated cvt from F16 to F32
-    assert!(ptx.contains("cvt"), "Expected cvt instruction for F16->F32 conversion in: {}", ptx);
+    assert!(
+        ptx.contains("cvt"),
+        "Expected cvt instruction for F16->F32 conversion in: {}",
+        ptx
+    );
 
     // Must have predicate guards (@%p)
-    assert!(ptx.contains("@%p"), "Expected predicate guard @%p in: {}", ptx);
+    assert!(
+        ptx.contains("@%p"),
+        "Expected predicate guard @%p in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -165,10 +223,26 @@ fn test_ld_global_f16_to_f32_predicated_with_store() {
 
     // Verify complete instruction sequence
     assert!(ptx.contains("@%p"), "Expected predicate guard in: {}", ptx);
-    assert!(ptx.contains("ld.global"), "Expected global load in: {}", ptx);
-    assert!(ptx.contains("cvt"), "Expected F16->F32 conversion in: {}", ptx);
-    assert!(ptx.contains("mul"), "Expected multiply for scale in: {}", ptx);
-    assert!(ptx.contains("st.global"), "Expected global store in: {}", ptx);
+    assert!(
+        ptx.contains("ld.global"),
+        "Expected global load in: {}",
+        ptx
+    );
+    assert!(
+        ptx.contains("cvt"),
+        "Expected F16->F32 conversion in: {}",
+        ptx
+    );
+    assert!(
+        ptx.contains("mul"),
+        "Expected multiply for scale in: {}",
+        ptx
+    );
+    assert!(
+        ptx.contains("st.global"),
+        "Expected global store in: {}",
+        ptx
+    );
 }
 
 #[test]

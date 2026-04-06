@@ -154,7 +154,10 @@ impl OptimizationSuite {
                 efficiencies.iter().sum::<f64>() / efficiencies.len() as f64
             },
             min_efficiency: efficiencies.iter().cloned().fold(f64::INFINITY, f64::min),
-            max_efficiency: efficiencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+            max_efficiency: efficiencies
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max),
         };
 
         analysis
@@ -221,7 +224,10 @@ impl BottleneckAnalysis {
         let mut report = String::new();
 
         report.push_str("# Bottleneck Analysis Report\n\n");
-        report.push_str(&format!("**Configurations Analyzed**: {}\n", self.summary.total_configs));
+        report.push_str(&format!(
+            "**Configurations Analyzed**: {}\n",
+            self.summary.total_configs
+        ));
         report.push_str(&format!(
             "**Average Efficiency**: {:.1}%\n",
             self.summary.avg_efficiency * 100.0

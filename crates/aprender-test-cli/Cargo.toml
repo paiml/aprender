@@ -1,0 +1,64 @@
+[package]
+name = "probador"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "CLI for Probar: Rust-native testing framework for WASM games"
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["testing", "wasm", "games", "cli", "automation"]
+categories = ["development-tools::testing", "command-line-utilities", "wasm"]
+
+[features]
+default = ["browser", "llm"]
+# Enable real browser control for live validation (requires chromium)
+browser = ["jugar-probar/browser"]
+# Enable LLM testing (correctness, load testing, reporting)
+llm = ["jugar-probar/llm"]
+
+[[bin]]
+name = "probador"
+path = "src/main.rs"
+
+[dependencies]
+# Core library - exact version for verified release
+jugar-probar = { version = "=1.0.4" }
+
+# CLI framework
+clap = { workspace = true }
+console = { workspace = true }
+indicatif = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml_ng = { workspace = true }
+
+# HTTP Server for WASM dev
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tokio-tungstenite = { workspace = true }
+mime_guess = { workspace = true }
+notify = { workspace = true }
+futures = { workspace = true }
+chrono = "0.4"
+
+# Debug and scoring utilities
+atty = "0.2"
+glob = "0.3"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[lints]
+workspace = true

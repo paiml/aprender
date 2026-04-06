@@ -189,7 +189,10 @@ fn test_f979_gap_analysis_actionable() {
     let suggestions = poor.suggestions();
 
     // Critical SM utilization should suggest improvements
-    assert!(!suggestions.is_empty(), "Poor metrics should generate suggestions");
+    assert!(
+        !suggestions.is_empty(),
+        "Poor metrics should generate suggestions"
+    );
 
     // Good throughput should have fewer suggestions
     let good = BaselineComparison::new("NVIDIA A10", 420, 92, None);
@@ -214,7 +217,10 @@ fn test_f980_pure_rust_optimization() {
     let after_grade = after.grade;
 
     // Grade should improve
-    assert!(after_grade >= before_grade, "Optimization should improve grade");
+    assert!(
+        after_grade >= before_grade,
+        "Optimization should improve grade"
+    );
 
     // Throughput should improve
     assert!(after.actual_tok_per_sec > before.actual_tok_per_sec);

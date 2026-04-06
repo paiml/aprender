@@ -94,7 +94,9 @@ impl SequenceGroup {
 
     /// Remaining tokens to generate.
     pub fn remaining_tokens(&self) -> usize {
-        self.request.max_new_tokens.saturating_sub(self.output_tokens.len())
+        self.request
+            .max_new_tokens
+            .saturating_sub(self.output_tokens.len())
     }
 
     /// Add generated token.

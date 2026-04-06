@@ -57,7 +57,11 @@ fn emit_mul_opcode(instr: &PtxInstruction, s: &mut String) {
     });
 
     if is_wide_output && !has_u64_source {
-        let src_ty = if instr.ty == PtxType::U64 { ".u32" } else { ".s32" };
+        let src_ty = if instr.ty == PtxType::U64 {
+            ".u32"
+        } else {
+            ".s32"
+        };
         s.push_str("mul.wide");
         s.push_str(src_ty);
     } else if is_wide_output && has_u64_source {

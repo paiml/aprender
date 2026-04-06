@@ -169,8 +169,11 @@ impl<'a> KernelBuilder<'a> {
 
         // MMA instruction with all fragment registers
         // Format: wmma.mma.sync.aligned.m16n16k16.{alayout}.{blayout}.f32.f32
-        let label =
-            format!("m16n16k16.{}.{}.f32.f32", a_layout.to_ptx_string(), b_layout.to_ptx_string());
+        let label = format!(
+            "m16n16k16.{}.{}.f32.f32",
+            a_layout.to_ptx_string(),
+            b_layout.to_ptx_string()
+        );
         let mut instr = PtxInstruction::new(PtxOp::WmmaMma, PtxType::F32).label(label);
 
         // Add all D registers as destinations (use push_dst for vector dests)

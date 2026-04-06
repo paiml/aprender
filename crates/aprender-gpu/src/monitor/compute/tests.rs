@@ -71,7 +71,10 @@ fn h022_device_metrics_update_history() {
         metrics.update_utilization(i as f64);
     }
 
-    assert_eq!(metrics.history.len(), DeviceComputeMetrics::MAX_HISTORY_POINTS);
+    assert_eq!(
+        metrics.history.len(),
+        DeviceComputeMetrics::MAX_HISTORY_POINTS
+    );
     // Last value should be 99
     assert!((metrics.history.back().expect("test") - 99.0).abs() < 0.01);
 }

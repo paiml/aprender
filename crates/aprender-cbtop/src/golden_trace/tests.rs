@@ -10,8 +10,10 @@ fn test_trace_metrics_default() {
 
 #[test]
 fn test_golden_trace_creation() {
-    let metrics =
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0);
+    let metrics = TraceMetrics::new()
+        .total_time_us(1000.0)
+        .p50_latency_us(50.0)
+        .throughput(10000.0);
 
     let trace = GoldenTrace::new("test", metrics);
     assert_eq!(trace.name, "test");
@@ -30,7 +32,10 @@ fn test_hash_verification() {
 fn test_comparison_no_regression() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     let current = TraceMetrics::new()
@@ -48,7 +53,10 @@ fn test_comparison_no_regression() {
 fn test_comparison_regression() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     let current = TraceMetrics::new()
@@ -91,7 +99,9 @@ fn test_manager_save_load() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = GoldenTraceManager::new(temp_dir.path().to_path_buf());
 
-    let metrics = TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0);
+    let metrics = TraceMetrics::new()
+        .total_time_us(1000.0)
+        .p50_latency_us(50.0);
 
     manager.capture_golden("test_trace", metrics).unwrap();
 
@@ -105,8 +115,12 @@ fn test_manager_list() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = GoldenTraceManager::new(temp_dir.path().to_path_buf());
 
-    manager.capture_golden("trace_a", TraceMetrics::new()).unwrap();
-    manager.capture_golden("trace_b", TraceMetrics::new()).unwrap();
+    manager
+        .capture_golden("trace_a", TraceMetrics::new())
+        .unwrap();
+    manager
+        .capture_golden("trace_b", TraceMetrics::new())
+        .unwrap();
 
     let names = manager.list_goldens().unwrap();
     assert_eq!(names.len(), 2);

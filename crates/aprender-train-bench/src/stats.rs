@@ -48,9 +48,18 @@ impl StatisticalAnalyzer {
 
         // Cohen's d effect size
         let pooled_std = f64::midpoint(var1, var2).sqrt();
-        let effect_size = if pooled_std > 0.0 { (mean1 - mean2).abs() / pooled_std } else { 0.0 };
+        let effect_size = if pooled_std > 0.0 {
+            (mean1 - mean2).abs() / pooled_std
+        } else {
+            0.0
+        };
 
-        TestResult { statistic: t, p_value, significant: p_value < 0.05, effect_size }
+        TestResult {
+            statistic: t,
+            p_value,
+            significant: p_value < 0.05,
+            effect_size,
+        }
     }
 
     /// Perform Mann-Whitney U test (non-parametric).
@@ -89,7 +98,12 @@ impl StatisticalAnalyzer {
         // Effect size: r = z / sqrt(n)
         let effect_size = z.abs() / ((n1 + n2) as f64).sqrt();
 
-        TestResult { statistic: u, p_value, significant: p_value < 0.05, effect_size }
+        TestResult {
+            statistic: u,
+            p_value,
+            significant: p_value < 0.05,
+            effect_size,
+        }
     }
 
     /// Perform one-way ANOVA.
@@ -133,7 +147,11 @@ impl StatisticalAnalyzer {
         let ms_between = ss_between / df_between;
         let ms_within = ss_within / df_within;
 
-        let f = if ms_within > 0.0 { ms_between / ms_within } else { 0.0 };
+        let f = if ms_within > 0.0 {
+            ms_between / ms_within
+        } else {
+            0.0
+        };
 
         // Approximate p-value
         let p_value = Self::f_to_p(f, df_between, df_within);
@@ -141,7 +159,12 @@ impl StatisticalAnalyzer {
         // Eta-squared effect size
         let effect_size = ss_between / (ss_between + ss_within);
 
-        TestResult { statistic: f, p_value, significant: p_value < 0.05, effect_size }
+        TestResult {
+            statistic: f,
+            p_value,
+            significant: p_value < 0.05,
+            effect_size,
+        }
     }
 
     // Approximate t-distribution CDF using normal approximation
@@ -303,7 +326,11 @@ mod tests {
 
     #[test]
     fn test_anova() {
-        let groups = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0], vec![7.0, 8.0, 9.0]];
+        let groups = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+            vec![7.0, 8.0, 9.0],
+        ];
 
         let result = StatisticalAnalyzer::anova(&groups);
         assert!(result.significant);
@@ -320,25 +347,41 @@ mod tests {
 
     #[test]
     fn test_effect_interpretation() {
-        let small =
-            TestResult { statistic: 0.0, p_value: 0.0, significant: false, effect_size: 0.3 };
+        let small = TestResult {
+            statistic: 0.0,
+            p_value: 0.0,
+            significant: false,
+            effect_size: 0.3,
+        };
         assert_eq!(small.effect_interpretation(), "small");
 
-        let large =
-            TestResult { statistic: 0.0, p_value: 0.0, significant: false, effect_size: 1.0 };
+        let large = TestResult {
+            statistic: 0.0,
+            p_value: 0.0,
+            significant: false,
+            effect_size: 1.0,
+        };
         assert_eq!(large.effect_interpretation(), "large");
     }
 
     #[test]
     fn test_effect_interpretation_all_levels() {
         // negligible
-        let negligible =
-            TestResult { statistic: 0.0, p_value: 0.0, significant: false, effect_size: 0.1 };
+        let negligible = TestResult {
+            statistic: 0.0,
+            p_value: 0.0,
+            significant: false,
+            effect_size: 0.1,
+        };
         assert_eq!(negligible.effect_interpretation(), "negligible");
 
         // medium
-        let medium =
-            TestResult { statistic: 0.0, p_value: 0.0, significant: false, effect_size: 0.6 };
+        let medium = TestResult {
+            statistic: 0.0,
+            p_value: 0.0,
+            significant: false,
+            effect_size: 0.6,
+        };
         assert_eq!(medium.effect_interpretation(), "medium");
     }
 
@@ -379,7 +422,11 @@ mod tests {
 
     #[test]
     fn test_anova_identical_groups() {
-        let groups = vec![vec![5.0, 5.0, 5.0], vec![5.0, 5.0, 5.0], vec![5.0, 5.0, 5.0]];
+        let groups = vec![
+            vec![5.0, 5.0, 5.0],
+            vec![5.0, 5.0, 5.0],
+            vec![5.0, 5.0, 5.0],
+        ];
 
         let result = StatisticalAnalyzer::anova(&groups);
         // No variance within or between, F should be 0
@@ -418,8 +465,12 @@ mod tests {
 
     #[test]
     fn test_test_result_to_string() {
-        let result =
-            TestResult { statistic: 2.5, p_value: 0.025, significant: true, effect_size: 0.8 };
+        let result = TestResult {
+            statistic: 2.5,
+            p_value: 0.025,
+            significant: true,
+            effect_size: 0.8,
+        };
 
         let s = result.to_string();
         assert!(s.contains("statistic=2.5"));

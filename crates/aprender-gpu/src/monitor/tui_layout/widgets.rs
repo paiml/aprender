@@ -188,7 +188,11 @@ impl ProgressBarWidget {
     /// Create a new progress bar
     #[must_use]
     pub fn new(label: impl Into<String>) -> Self {
-        Self { label: label.into(), progress: 0.0, total_desc: String::new() }
+        Self {
+            label: label.into(),
+            progress: 0.0,
+            total_desc: String::new(),
+        }
     }
 
     /// Set progress
@@ -238,7 +242,12 @@ impl TableWidget {
     /// Create a new table
     #[must_use]
     pub fn new(headers: Vec<String>) -> Self {
-        Self { headers, rows: Vec::new(), highlight_row: None, column_widths: Vec::new() }
+        Self {
+            headers,
+            rows: Vec::new(),
+            highlight_row: None,
+            column_widths: Vec::new(),
+        }
     }
 
     /// Add a row
@@ -281,7 +290,10 @@ impl TextWidget {
     /// Create a new text widget
     #[must_use]
     pub fn new(content: impl Into<String>) -> Self {
-        Self { content: content.into(), style: TextStyle::Normal }
+        Self {
+            content: content.into(),
+            style: TextStyle::Normal,
+        }
     }
 
     /// Set style

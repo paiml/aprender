@@ -29,7 +29,10 @@ impl RmsNormKernel {
     /// Create a new RMSNorm kernel
     #[must_use]
     pub fn new(hidden_size: u32) -> Self {
-        Self { hidden_size, epsilon: 1e-5 }
+        Self {
+            hidden_size,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon value
@@ -167,7 +170,10 @@ impl VectorizedRmsNormKernel {
     /// Create a new vectorized RMSNorm kernel
     #[must_use]
     pub fn new(hidden_size: u32) -> Self {
-        Self { hidden_size, epsilon: 1e-5 }
+        Self {
+            hidden_size,
+            epsilon: 1e-5,
+        }
     }
 
     /// Set custom epsilon value

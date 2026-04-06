@@ -119,7 +119,11 @@ fn test_rcp_f32() {
     });
     let ptx = kernel.emit();
     // rcp requires .approx modifier for f32 per PTX ISA
-    assert!(ptx.contains("rcp.approx.f32"), "Expected rcp.approx.f32 in: {}", ptx);
+    assert!(
+        ptx.contains("rcp.approx.f32"),
+        "Expected rcp.approx.f32 in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -176,5 +180,9 @@ fn test_mov_s32_imm() {
         ctx.ret();
     });
     let ptx = kernel.emit();
-    assert!(ptx.contains("mov") && ptx.contains("12345"), "Expected mov in: {}", ptx);
+    assert!(
+        ptx.contains("mov") && ptx.contains("12345"),
+        "Expected mov in: {}",
+        ptx
+    );
 }

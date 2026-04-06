@@ -258,15 +258,21 @@ fn test_scorecard_grades() {
 
 #[test]
 fn test_release_decision_properties() {
-    let approved = ReleaseDecision::Approved { reason: "good".to_string() };
+    let approved = ReleaseDecision::Approved {
+        reason: "good".to_string(),
+    };
     assert!(approved.is_approved());
     assert_eq!(approved.reason(), "good");
 
-    let rejected = ReleaseDecision::Rejected { reason: "bad".to_string() };
+    let rejected = ReleaseDecision::Rejected {
+        reason: "bad".to_string(),
+    };
     assert!(!rejected.is_approved());
     assert_eq!(rejected.reason(), "bad");
 
-    let pending = ReleaseDecision::Pending { reason: "waiting".to_string() };
+    let pending = ReleaseDecision::Pending {
+        reason: "waiting".to_string(),
+    };
     assert!(!pending.is_approved());
     assert_eq!(pending.reason(), "waiting");
 }

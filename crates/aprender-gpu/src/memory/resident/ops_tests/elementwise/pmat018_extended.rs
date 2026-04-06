@@ -74,7 +74,9 @@ fn test_ops_layer_norm_larger_batch() {
     let gamma = upload(&ctx, &vec![1.0f32; hidden as usize]);
     let beta = upload(&ctx, &vec![0.0f32; hidden as usize]);
 
-    let output = input.layer_norm(&ctx, &gamma, &beta, hidden, batch).unwrap();
+    let output = input
+        .layer_norm(&ctx, &gamma, &beta, hidden, batch)
+        .unwrap();
     assert_eq!(output.len(), (hidden * batch) as usize);
 }
 
@@ -129,7 +131,9 @@ fn test_ops_layer_norm_with_stream_larger() {
     let beta = upload(&ctx, &vec![0.5f32; hidden as usize]);
 
     let stream = CudaStream::new(&ctx).unwrap();
-    let output = input.layer_norm_with_stream(&ctx, &gamma, &beta, hidden, batch, &stream).unwrap();
+    let output = input
+        .layer_norm_with_stream(&ctx, &gamma, &beta, hidden, batch, &stream)
+        .unwrap();
     stream.synchronize().unwrap();
     assert_eq!(output.len(), (hidden * batch) as usize);
 }

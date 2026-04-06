@@ -20,7 +20,16 @@ fn test_quant_format_memory_ratio() {
 fn test_quant_format_display() {
     assert_eq!(format!("{}", QuantFormat::Q4_K), "Q4_K");
     assert_eq!(format!("{}", QuantFormat::Q8_0), "Q8_0");
-    assert_eq!(format!("{}", QuantFormat::Gptq { bits: 4, group_size: 128 }), "GPTQ-4bit-g128");
+    assert_eq!(
+        format!(
+            "{}",
+            QuantFormat::Gptq {
+                bits: 4,
+                group_size: 128
+            }
+        ),
+        "GPTQ-4bit-g128"
+    );
 }
 
 #[test]

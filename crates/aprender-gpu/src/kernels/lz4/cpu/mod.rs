@@ -50,8 +50,11 @@ pub fn lz4_match_length(data: &[u8], pos1: usize, pos2: usize, limit: usize) -> 
 #[inline]
 fn lz4_compute_token(literal_len: usize, match_length: usize) -> u8 {
     let token_lit = literal_len.min(15) as u8;
-    let token_match =
-        if match_length == 0 { 0 } else { (match_length - LZ4_MIN_MATCH as usize).min(15) as u8 };
+    let token_match = if match_length == 0 {
+        0
+    } else {
+        (match_length - LZ4_MIN_MATCH as usize).min(15) as u8
+    };
     (token_lit << 4) | token_match
 }
 
@@ -292,7 +295,12 @@ struct Lz4CompressState {
 
 impl Lz4CompressState {
     fn new() -> Self {
-        Self { hash_table: [0u32; LZ4_HASH_SIZE as usize], in_pos: 0, out_pos: 0, anchor: 0 }
+        Self {
+            hash_table: [0u32; LZ4_HASH_SIZE as usize],
+            in_pos: 0,
+            out_pos: 0,
+            anchor: 0,
+        }
     }
 
     /// Process one position in the compression loop.
@@ -304,7 +312,13 @@ impl Lz4CompressState {
 
         if let Some((offset, match_len)) = lz4_try_match(input, self.in_pos, match_pos) {
             let literals = &input[self.anchor..self.in_pos];
-            lz4_encode_sequence(output, &mut self.out_pos, literals, offset as u16, match_len)?;
+            lz4_encode_sequence(
+                output,
+                &mut self.out_pos,
+                literals,
+                offset as u16,
+                match_len,
+            )?;
             self.in_pos += match_len;
             self.anchor = self.in_pos;
         } else {

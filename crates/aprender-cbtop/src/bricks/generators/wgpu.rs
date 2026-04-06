@@ -11,7 +11,11 @@ pub struct WgpuLoadBrick {
 
 impl WgpuLoadBrick {
     pub fn new(problem_size: usize) -> Self {
-        Self { is_running: false, intensity: 0.0, problem_size }
+        Self {
+            is_running: false,
+            intensity: 0.0,
+            problem_size,
+        }
     }
 
     pub fn start(&mut self) {
@@ -48,11 +52,18 @@ impl Brick for WgpuLoadBrick {
     }
 
     fn assertions(&self) -> Vec<BrickAssertion> {
-        vec![BrickAssertion::custom("wgpu_available", |_| true), BrickAssertion::max_latency_ms(50)]
+        vec![
+            BrickAssertion::custom("wgpu_available", |_| true),
+            BrickAssertion::max_latency_ms(50),
+        ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 16, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 16,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

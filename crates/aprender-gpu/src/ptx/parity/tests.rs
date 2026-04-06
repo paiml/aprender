@@ -60,9 +60,13 @@ fn test_batch_dispatch_strategies() {
 #[test]
 fn test_has_u64_shared_memory_addressing() {
     // Bad: u64 register for shared memory
-    assert!(has_u64_shared_memory_addressing("    st.shared.f32 [%rd3], %f0;"));
+    assert!(has_u64_shared_memory_addressing(
+        "    st.shared.f32 [%rd3], %f0;"
+    ));
     // Good: u32 register for shared memory
-    assert!(!has_u64_shared_memory_addressing("    st.shared.f32 [%r3], %f0;"));
+    assert!(!has_u64_shared_memory_addressing(
+        "    st.shared.f32 [%r3], %f0;"
+    ));
 }
 
 #[test]
@@ -109,7 +113,11 @@ exit:
 }
 "#;
     let result = validate_parity(single, batched, "rmsnorm", "batched_rmsnorm");
-    assert!(result.is_compatible, "Should be compatible: {:?}", result.violations);
+    assert!(
+        result.is_compatible,
+        "Should be compatible: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -152,7 +160,10 @@ fn test_validate_parity_missing_ctaid_y() {
 "#;
     let result = validate_parity(single, batched, "test", "test_batched");
     assert!(!result.is_compatible);
-    assert!(result.violations.iter().any(|v| v.kind == ParityViolationKind::MissingBatchDispatch));
+    assert!(result
+        .violations
+        .iter()
+        .any(|v| v.kind == ParityViolationKind::MissingBatchDispatch));
 }
 
 #[test]
@@ -227,17 +238,35 @@ fn test_validate_batched_kernel_standalone() {
 
 #[test]
 fn test_parity_violation_display() {
-    assert_eq!(ParityViolationKind::ParameterCountMismatch.to_string(), "PARAM_COUNT");
-    assert_eq!(ParityViolationKind::SharedMemoryAddressingU64.to_string(), "SHARED_MEM_U64");
-    assert_eq!(ParityViolationKind::MissingBatchDispatch.to_string(), "MISSING_CTAID_Y");
+    assert_eq!(
+        ParityViolationKind::ParameterCountMismatch.to_string(),
+        "PARAM_COUNT"
+    );
+    assert_eq!(
+        ParityViolationKind::SharedMemoryAddressingU64.to_string(),
+        "SHARED_MEM_U64"
+    );
+    assert_eq!(
+        ParityViolationKind::MissingBatchDispatch.to_string(),
+        "MISSING_CTAID_Y"
+    );
 }
 
 #[test]
 fn test_parity_violation_display_all_variants() {
     // Cover all Display variants including those not covered above
-    assert_eq!(ParityViolationKind::SharedMemoryMismatch.to_string(), "SHARED_MEM_SIZE");
-    assert_eq!(ParityViolationKind::LoopStructureMismatch.to_string(), "LOOP_STRUCTURE");
-    assert_eq!(ParityViolationKind::RegisterTypeMismatch.to_string(), "REG_TYPE");
+    assert_eq!(
+        ParityViolationKind::SharedMemoryMismatch.to_string(),
+        "SHARED_MEM_SIZE"
+    );
+    assert_eq!(
+        ParityViolationKind::LoopStructureMismatch.to_string(),
+        "LOOP_STRUCTURE"
+    );
+    assert_eq!(
+        ParityViolationKind::RegisterTypeMismatch.to_string(),
+        "REG_TYPE"
+    );
 }
 
 #[test]
@@ -264,7 +293,10 @@ fn test_validate_parity_shared_memory_mismatch() {
     let result = validate_parity(single, batched, "test", "test_batched");
     assert!(!result.is_compatible);
     assert!(
-        result.violations.iter().any(|v| v.kind == ParityViolationKind::SharedMemoryMismatch),
+        result
+            .violations
+            .iter()
+            .any(|v| v.kind == ParityViolationKind::SharedMemoryMismatch),
         "Expected SharedMemoryMismatch, got: {:?}",
         result.violations
     );
@@ -300,7 +332,10 @@ fn test_validate_parity_shared_memory_one_has_none() {
 "#;
     let result = validate_parity(single, batched, "test", "test_batched");
     assert!(!result.is_compatible);
-    assert!(result.violations.iter().any(|v| v.kind == ParityViolationKind::SharedMemoryMismatch));
+    assert!(result
+        .violations
+        .iter()
+        .any(|v| v.kind == ParityViolationKind::SharedMemoryMismatch));
 }
 
 #[test]
@@ -331,7 +366,10 @@ norm_loop:
     let result = validate_parity(single, batched, "test", "test_batched");
     assert!(!result.is_compatible);
     assert!(
-        result.violations.iter().any(|v| v.kind == ParityViolationKind::LoopStructureMismatch),
+        result
+            .violations
+            .iter()
+            .any(|v| v.kind == ParityViolationKind::LoopStructureMismatch),
         "Expected LoopStructureMismatch, got: {:?}",
         result.violations
     );
@@ -383,7 +421,9 @@ fn test_validate_parity_u64_shared_memory_on_single_kernel() {
         u64_violations
     );
     // One message should mention single kernel, the other batched
-    assert!(u64_violations.iter().any(|v| v.message.contains("test_batched")));
+    assert!(u64_violations
+        .iter()
+        .any(|v| v.message.contains("test_batched")));
     assert!(u64_violations.iter().any(|v| v.message.contains("'test'")));
 }
 
@@ -489,10 +529,19 @@ fn test_count_params_with_indentation() {
 
 #[test]
 fn test_extract_shared_memory_bytes_various_sizes() {
-    assert_eq!(extract_shared_memory_bytes("    .shared .align 4 .b8 smem[16384];"), Some(16384));
-    assert_eq!(extract_shared_memory_bytes("    .shared .align 16 .b8 smem[0];"), Some(0));
+    assert_eq!(
+        extract_shared_memory_bytes("    .shared .align 4 .b8 smem[16384];"),
+        Some(16384)
+    );
+    assert_eq!(
+        extract_shared_memory_bytes("    .shared .align 16 .b8 smem[0];"),
+        Some(0)
+    );
     // No smem keyword
-    assert_eq!(extract_shared_memory_bytes("    .shared .align 16 .b8 buf[32];"), None);
+    assert_eq!(
+        extract_shared_memory_bytes("    .shared .align 16 .b8 buf[32];"),
+        None
+    );
     // Malformed
     assert_eq!(extract_shared_memory_bytes("    .shared smem[abc];"), None);
 }
@@ -506,7 +555,11 @@ exit:
     ret;
 "#;
     let labels = extract_loop_labels(ptx);
-    assert!(labels.is_empty(), "Expected no loop labels, got: {:?}", labels);
+    assert!(
+        labels.is_empty(),
+        "Expected no loop labels, got: {:?}",
+        labels
+    );
 }
 
 #[test]
@@ -523,11 +576,17 @@ sum_loop:
 #[test]
 fn test_has_u64_shared_memory_ld_pattern() {
     // ld.shared with u64 register
-    assert!(has_u64_shared_memory_addressing("    ld.shared.f32 %f0, [%rd5];"));
+    assert!(has_u64_shared_memory_addressing(
+        "    ld.shared.f32 %f0, [%rd5];"
+    ));
     // ld.shared with u32 register
-    assert!(!has_u64_shared_memory_addressing("    ld.shared.f32 %f0, [%r5];"));
+    assert!(!has_u64_shared_memory_addressing(
+        "    ld.shared.f32 %f0, [%r5];"
+    ));
     // Global memory (not shared) with u64 register is fine
-    assert!(!has_u64_shared_memory_addressing("    ld.global.f32 %f0, [%rd5];"));
+    assert!(!has_u64_shared_memory_addressing(
+        "    ld.global.f32 %f0, [%rd5];"
+    ));
 }
 
 #[test]

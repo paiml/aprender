@@ -109,10 +109,22 @@ fn test_config_default() {
 // cuda-tile-behavior.md: Test predicate from_cmp_op conversion
 #[test]
 fn test_loop_predicate_from_cmp_op() {
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Lt), Some(LoopPredicate::LessThan));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Le), Some(LoopPredicate::LessEqual));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Gt), Some(LoopPredicate::GreaterThan));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Ge), Some(LoopPredicate::GreaterEqual));
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Lt),
+        Some(LoopPredicate::LessThan)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Le),
+        Some(LoopPredicate::LessEqual)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Gt),
+        Some(LoopPredicate::GreaterThan)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Ge),
+        Some(LoopPredicate::GreaterEqual)
+    );
     // Other comparisons should return None
     assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Eq), None);
     assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Ne), None);

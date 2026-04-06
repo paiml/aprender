@@ -49,10 +49,16 @@ impl PtxBugAnalyzer {
             let trimmed = line.trim();
 
             if let Some(caps) = mov_pattern.captures(trimmed) {
-                let dest =
-                    caps.get(1).expect("invariant: capture group exists").as_str().to_string();
-                let src =
-                    caps.get(2).expect("invariant: capture group exists").as_str().to_string();
+                let dest = caps
+                    .get(1)
+                    .expect("invariant: capture group exists")
+                    .as_str()
+                    .to_string();
+                let src = caps
+                    .get(2)
+                    .expect("invariant: capture group exists")
+                    .as_str()
+                    .to_string();
 
                 // Check if src matches previous dest (redundant chain)
                 if let Some((prev_line, prev_dest, _prev_src)) = &last_mov {
@@ -134,8 +140,11 @@ impl PtxBugAnalyzer {
         let pred_pattern =
             Regex::new(r"\.reg\s+\.pred\s+%p<(\d+)>").expect("invariant: regex pattern is valid");
         if let Some(caps) = pred_pattern.captures(ptx) {
-            if let Ok(pred_count) =
-                caps.get(1).expect("invariant: capture group exists").as_str().parse::<usize>()
+            if let Ok(pred_count) = caps
+                .get(1)
+                .expect("invariant: capture group exists")
+                .as_str()
+                .parse::<usize>()
             {
                 if pred_count > 8 {
                     bugs.push(PtxBug {

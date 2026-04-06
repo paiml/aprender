@@ -409,7 +409,10 @@ fn supervisor_claims() -> [FalsificationClaim; 6] {
 /// Returns claims for a specific framework.
 #[must_use]
 pub fn claims_for_framework(framework: Framework) -> Vec<FalsificationClaim> {
-    all_claims().into_iter().filter(|c| c.framework == framework).collect()
+    all_claims()
+        .into_iter()
+        .filter(|c| c.framework == framework)
+        .collect()
 }
 
 #[cfg(test)]

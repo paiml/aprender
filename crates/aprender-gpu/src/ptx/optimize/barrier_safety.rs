@@ -152,9 +152,14 @@ fn identify_loop_labels(lines: &[&str], ptx: &str) -> (HashSet<String>, HashSet<
     }
 
     // Known end/done patterns from common kernel templates
-    for known in
-        ["k_tile_end", "kv_loop_end", "loop_end", "sb_loop_done", "sub_block_done", "k_block_done"]
-    {
+    for known in [
+        "k_tile_end",
+        "kv_loop_end",
+        "loop_end",
+        "sb_loop_done",
+        "sub_block_done",
+        "k_block_done",
+    ] {
         loop_end_labels.insert(known.to_string());
     }
 
@@ -304,7 +309,10 @@ done:
         let result = analyze(ptx);
         assert!(!result.is_safe, "Should detect early exit");
         assert_eq!(result.violations.len(), 1);
-        assert_eq!(result.violations[0].kind, ViolationKind::ConditionalExitBeforeBarrier);
+        assert_eq!(
+            result.violations[0].kind,
+            ViolationKind::ConditionalExitBeforeBarrier
+        );
     }
 
     /// Test unconditional early exit
@@ -324,7 +332,10 @@ done:
 "#;
         let result = analyze(ptx);
         assert!(!result.is_safe);
-        assert_eq!(result.violations[0].kind, ViolationKind::EarlyExitBeforeBarrier);
+        assert_eq!(
+            result.violations[0].kind,
+            ViolationKind::EarlyExitBeforeBarrier
+        );
     }
 
     /// Test validate function
@@ -365,7 +376,11 @@ done:
 }
 "#;
         let result = analyze(ptx);
-        assert!(result.is_safe, "Exit after loop should be OK: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "Exit after loop should be OK: {:?}",
+            result.violations
+        );
     }
 
     /// Test kv_loop pattern (attention kernels)
@@ -416,7 +431,11 @@ exit:
 }
 "#;
         let result = analyze(ptx);
-        assert!(result.is_safe, "Warp-only kernel should be safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "Warp-only kernel should be safe: {:?}",
+            result.violations
+        );
         assert_eq!(result.barrier_count, 0, "No barriers in warp-only kernel");
     }
 
@@ -436,7 +455,10 @@ exit:
 }
 "#;
         let result = analyze(ptx);
-        assert!(result.is_safe, "No-barrier kernel with conditional exit should be safe");
+        assert!(
+            result.is_safe,
+            "No-barrier kernel with conditional exit should be safe"
+        );
     }
 }
 

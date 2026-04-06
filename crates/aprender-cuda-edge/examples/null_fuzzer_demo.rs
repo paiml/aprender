@@ -39,7 +39,11 @@ fn main() {
     println!("   Periodic (interval=10):");
     for i in [0, 5, 10, 15, 20] {
         let inject = periodic.should_inject(i);
-        println!("     Call {}: {}", i, if inject { "INJECT" } else { "normal" });
+        println!(
+            "     Call {}: {}",
+            i,
+            if inject { "INJECT" } else { "normal" }
+        );
     }
 
     println!();
@@ -82,11 +86,20 @@ fn main() {
     println!("4. Report Analysis");
     println!("   ────────────────");
 
-    let report = NullFuzzerReport { total_calls: 100, injections: 10, caught: 8, crashes: 2 };
+    let report = NullFuzzerReport {
+        total_calls: 100,
+        injections: 10,
+        caught: 8,
+        crashes: 2,
+    };
 
     println!("   Total calls:  {}", report.total_calls);
     println!("   Injections:   {}", report.injections);
-    println!("   Caught:       {} ({:.0}%)", report.caught, report.catch_rate() * 100.0);
+    println!(
+        "   Caught:       {} ({:.0}%)",
+        report.caught,
+        report.catch_rate() * 100.0
+    );
     println!("   Crashes:      {}", report.crashes);
 
     println!("\n=== Demo Complete ===");

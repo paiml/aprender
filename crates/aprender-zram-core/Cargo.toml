@@ -1,0 +1,46 @@
+[package]
+name = "aprender-zram-core"
+description = "SIMD-accelerated LZ4/ZSTD compression for memory pages"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+cudarc = { version = "0.18", optional = true, features = ["cuda-12080", "nvrtc"] }
+rayon = { version = "1.10", optional = true }
+# Pure Rust PTX generation for GPU LZ4 compression
+trueno-gpu = { version = "0.4.5", optional = true, features = ["cuda"] }
+
+[dev-dependencies]
+proptest.workspace = true
+criterion.workspace = true
+rayon = "1.10"
+
+[[bench]]
+name = "compression"
+harness = false
+
+[[example]]
+name = "gpu_info"
+required-features = ["cuda"]
+
+[[example]]
+name = "parallel_scaling"
+# No required features - uses dev-dependency rayon
+
+[features]
+default = ["std"]
+std = []
+# Enable nightly-only SIMD features
+nightly = []
+# Enable CUDA GPU acceleration
+cuda = ["dep:cudarc", "dep:rayon", "dep:trueno-gpu"]
+
+[lints]
+workspace = true

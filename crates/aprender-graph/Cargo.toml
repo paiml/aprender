@@ -63,36 +63,6 @@ gpu = ["wgpu", "bytemuck", "futures-intrusive"]
 # api = ["serde"]
 
 # Workspace lints (PMAT best practices from trueno-db/trueno)
-[workspace]
-resolver = "2"
-members = ["."]
-
-[workspace.package]
-edition = "2021"
-
-[workspace.lints.rust]
-unsafe_op_in_unsafe_fn = "warn"
-missing_docs = "warn"
-rust_2018_idioms = "warn"
-unreachable_pub = "warn"
-
-[workspace.lints.clippy]
-# Correctness (critical - per certeza quality standards)
-correctness = { level = "deny", priority = -1 }
-suspicious = { level = "warn", priority = -1 }
-
-# Performance (graph DB must be fast)
-perf = { level = "warn", priority = -1 }
-
-# Code quality (pmat enforcement)
-complexity = { level = "warn", priority = -1 }          # Cyclomatic complexity
-unwrap_used = "warn"                                    # No unwrap() - use Result
-expect_used = "warn"                                    # Prefer context via anyhow
-
-# Documentation
-missing_docs_in_private_items = "allow"                 # Public items only
-
-# Benchmarks (Phase 2)
 [[bench]]
 name = "graph_algorithms"
 harness = false
@@ -135,8 +105,6 @@ shared-version = true
 file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
-
-[workspace.dependencies]
 
 [profile.dev]
 panic = "abort"

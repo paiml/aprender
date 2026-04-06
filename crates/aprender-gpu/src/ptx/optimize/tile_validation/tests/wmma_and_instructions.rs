@@ -16,12 +16,24 @@ fn test_wmma_shape_validation_all_valid() {
 fn test_wmma_shape_validation_invalid_combinations() {
     // Various invalid combinations
     let cases = [
-        WmmaShape { m: 8, n: 8, k: 8 },    // All 8s
-        WmmaShape { m: 32, n: 32, k: 32 }, // All 32s
-        WmmaShape { m: 16, n: 32, k: 16 }, // Wrong combination
-        WmmaShape { m: 8, n: 16, k: 16 },  // Wrong combination
-        WmmaShape { m: 1, n: 1, k: 1 },    // Minimal
-        WmmaShape { m: 64, n: 64, k: 64 }, // Too large
+        WmmaShape { m: 8, n: 8, k: 8 }, // All 8s
+        WmmaShape {
+            m: 32,
+            n: 32,
+            k: 32,
+        }, // All 32s
+        WmmaShape {
+            m: 16,
+            n: 32,
+            k: 16,
+        }, // Wrong combination
+        WmmaShape { m: 8, n: 16, k: 16 }, // Wrong combination
+        WmmaShape { m: 1, n: 1, k: 1 }, // Minimal
+        WmmaShape {
+            m: 64,
+            n: 64,
+            k: 64,
+        }, // Too large
     ];
 
     for shape in cases {
@@ -52,26 +64,37 @@ fn test_wmma_invalid_error_message_format() {
 
 #[test]
 fn test_validate_wmma_load_a() {
-    let instructions = vec![PtxInstruction::new(PtxOp::WmmaLoadA, crate::ptx::types::PtxType::F16)];
+    let instructions = vec![PtxInstruction::new(
+        PtxOp::WmmaLoadA,
+        crate::ptx::types::PtxType::F16,
+    )];
     assert!(validate(&instructions).is_ok());
 }
 
 #[test]
 fn test_validate_wmma_load_b() {
-    let instructions = vec![PtxInstruction::new(PtxOp::WmmaLoadB, crate::ptx::types::PtxType::F16)];
+    let instructions = vec![PtxInstruction::new(
+        PtxOp::WmmaLoadB,
+        crate::ptx::types::PtxType::F16,
+    )];
     assert!(validate(&instructions).is_ok());
 }
 
 #[test]
 fn test_validate_wmma_load_c() {
-    let instructions = vec![PtxInstruction::new(PtxOp::WmmaLoadC, crate::ptx::types::PtxType::F32)];
+    let instructions = vec![PtxInstruction::new(
+        PtxOp::WmmaLoadC,
+        crate::ptx::types::PtxType::F32,
+    )];
     assert!(validate(&instructions).is_ok());
 }
 
 #[test]
 fn test_validate_wmma_store_d() {
-    let instructions =
-        vec![PtxInstruction::new(PtxOp::WmmaStoreD, crate::ptx::types::PtxType::F32)];
+    let instructions = vec![PtxInstruction::new(
+        PtxOp::WmmaStoreD,
+        crate::ptx::types::PtxType::F32,
+    )];
     assert!(validate(&instructions).is_ok());
 }
 
@@ -106,7 +129,10 @@ fn test_validate_all_wmma_ops_in_sequence() {
 
 #[test]
 fn test_tile_error_clone() {
-    let err1 = TileError::TooManyElements { actual: 1000, max: 500 };
+    let err1 = TileError::TooManyElements {
+        actual: 1000,
+        max: 500,
+    };
     let err2 = err1.clone();
     assert_eq!(err1, err2);
 }
@@ -123,7 +149,10 @@ fn test_tile_error_partial_eq() {
 
 #[test]
 fn test_tile_error_debug() {
-    let err = TileError::DimensionTooLarge { actual: 5000, max: 4096 };
+    let err = TileError::DimensionTooLarge {
+        actual: 5000,
+        max: 4096,
+    };
     let debug_str = format!("{:?}", err);
     assert!(debug_str.contains("DimensionTooLarge"));
     assert!(debug_str.contains("5000"));
@@ -148,7 +177,11 @@ fn test_wmma_valid_shapes() {
 
 #[test]
 fn test_wmma_invalid_shapes() {
-    let invalid = WmmaShape { m: 32, n: 32, k: 16 };
+    let invalid = WmmaShape {
+        m: 32,
+        n: 32,
+        k: 16,
+    };
     assert!(validate_wmma_shape(&invalid).is_err());
 }
 
@@ -169,7 +202,10 @@ fn test_validate_instructions_no_wmma() {
 
 #[test]
 fn test_validate_instructions_with_wmma() {
-    let instructions = vec![PtxInstruction::new(PtxOp::WmmaMma, crate::ptx::types::PtxType::F32)];
+    let instructions = vec![PtxInstruction::new(
+        PtxOp::WmmaMma,
+        crate::ptx::types::PtxType::F32,
+    )];
     // Should validate the default WMMA shape
     assert!(validate(&instructions).is_ok());
 }

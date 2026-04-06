@@ -132,8 +132,10 @@ fn test_remote_agent_collect_benchmarks() {
 
 #[test]
 fn test_aggregation_strategy_geometric_mean() {
-    let config =
-        RemoteAgentConfig { aggregation: AggregationStrategy::GeometricMean, ..Default::default() };
+    let config = RemoteAgentConfig {
+        aggregation: AggregationStrategy::GeometricMean,
+        ..Default::default()
+    };
     let agent = RemoteAgent::new(config);
 
     let benchmarks = vec![
@@ -174,8 +176,10 @@ fn test_aggregation_strategy_geometric_mean() {
 
 #[test]
 fn test_aggregation_strategy_median() {
-    let config =
-        RemoteAgentConfig { aggregation: AggregationStrategy::Median, ..Default::default() };
+    let config = RemoteAgentConfig {
+        aggregation: AggregationStrategy::Median,
+        ..Default::default()
+    };
     let agent = RemoteAgent::new(config);
 
     let benchmarks = vec![
@@ -221,8 +225,10 @@ fn test_aggregation_strategy_median() {
 
 #[test]
 fn test_aggregation_strategy_minimum() {
-    let config =
-        RemoteAgentConfig { aggregation: AggregationStrategy::Minimum, ..Default::default() };
+    let config = RemoteAgentConfig {
+        aggregation: AggregationStrategy::Minimum,
+        ..Default::default()
+    };
     let agent = RemoteAgent::new(config);
 
     let benchmarks = vec![
@@ -322,13 +328,16 @@ fn test_aggregated_result_success_rate() {
 
 #[test]
 fn test_remote_error_display() {
-    let err =
-        RemoteError::ConnectionFailed { host: "host1".to_string(), reason: "timeout".to_string() };
+    let err = RemoteError::ConnectionFailed {
+        host: "host1".to_string(),
+        reason: "timeout".to_string(),
+    };
     assert!(err.to_string().contains("host1"));
     assert!(err.to_string().contains("timeout"));
 
-    let err =
-        RemoteError::AllHostsFailed { failures: vec!["error1".to_string(), "error2".to_string()] };
+    let err = RemoteError::AllHostsFailed {
+        failures: vec!["error1".to_string(), "error2".to_string()],
+    };
     assert!(err.to_string().contains("error1"));
 }
 
@@ -339,13 +348,28 @@ fn test_json_parsing() {
     let json_str = r#"{"host":"server1","arch":"x86_64","throughput":1000000,"latency_p50":50,"latency_p99":200,"memory":1073741824}"#;
 
     // Test string extraction
-    assert_eq!(json::extract_json_string(json_str, "host"), Some("server1".to_string()));
-    assert_eq!(json::extract_json_string(json_str, "arch"), Some("x86_64".to_string()));
+    assert_eq!(
+        json::extract_json_string(json_str, "host"),
+        Some("server1".to_string())
+    );
+    assert_eq!(
+        json::extract_json_string(json_str, "arch"),
+        Some("x86_64".to_string())
+    );
 
     // Test number extraction
-    assert_eq!(json::extract_json_number(json_str, "throughput"), Some(1000000.0));
-    assert_eq!(json::extract_json_number(json_str, "latency_p50"), Some(50.0));
-    assert_eq!(json::extract_json_number(json_str, "memory"), Some(1073741824.0));
+    assert_eq!(
+        json::extract_json_number(json_str, "throughput"),
+        Some(1000000.0)
+    );
+    assert_eq!(
+        json::extract_json_number(json_str, "latency_p50"),
+        Some(50.0)
+    );
+    assert_eq!(
+        json::extract_json_number(json_str, "memory"),
+        Some(1073741824.0)
+    );
 }
 
 #[test]
@@ -385,8 +409,11 @@ fn test_fkr_045_heterogeneous_collection() {
     assert_eq!(aggregated.host_results.len(), 3);
 
     // Verify different architectures are represented
-    let archs: Vec<&str> =
-        aggregated.host_results.iter().map(|r| r.architecture.as_str()).collect();
+    let archs: Vec<&str> = aggregated
+        .host_results
+        .iter()
+        .map(|r| r.architecture.as_str())
+        .collect();
     assert!(archs.contains(&"x86_64"));
     assert!(archs.contains(&"aarch64"));
     assert!(archs.contains(&"riscv64"));

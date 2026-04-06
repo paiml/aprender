@@ -46,7 +46,10 @@ fn f051_loop_splitting_eliminates_divergence() {
         "F051 FALSIFIED: Loop splitting should identify divergent pattern"
     );
 
-    println!("F051 PASSED: Loop splitting identified {} splittable conditions", splittable.len());
+    println!(
+        "F051 PASSED: Loop splitting identified {} splittable conditions",
+        splittable.len()
+    );
 }
 
 /// F052: Split loops produce identical output to original
@@ -81,7 +84,10 @@ fn f052_split_preserves_semantics() {
     let result1 = is_split_profitable(&light_instrs, 10);
     let result2 = is_split_profitable(&light_instrs, 10);
 
-    assert_eq!(result1, result2, "F052 FALSIFIED: Profitability analysis not deterministic");
+    assert_eq!(
+        result1, result2,
+        "F052 FALSIFIED: Profitability analysis not deterministic"
+    );
 
     println!(
         "F052 PASSED: Loop splitting preserves semantics (heavy={}, light={})",
@@ -125,7 +131,10 @@ fn f053_nested_conditional_handling() {
         splittable.len()
     );
 
-    println!("F053 PASSED: Nested conditionals handled ({} split points)", splittable.len());
+    println!(
+        "F053 PASSED: Nested conditionals handled ({} split points)",
+        splittable.len()
+    );
 }
 
 /// F054: Splitting preserves loop-carried dependencies
@@ -195,7 +204,11 @@ fn f061_boundary_conditions() {
     assert_eq!(align_split_point(0, 0, 4), 0, "F061: Zero boundary");
     assert_eq!(align_split_point(0, 5, 4), 5, "F061: Below lower bound");
     assert_eq!(align_split_point(5, 5, 4), 5, "F061: At lower bound");
-    assert_eq!(align_split_point(1000000, 0, 1), 1000000, "F061: Large values");
+    assert_eq!(
+        align_split_point(1000000, 0, 1),
+        1000000,
+        "F061: Large values"
+    );
 
     println!("F061 PASSED: Boundary conditions handled correctly");
 }
@@ -223,8 +236,16 @@ fn f064_idempotent_splitting() {
     let second = analyze(&instructions, &config);
     let third = analyze(&instructions, &config);
 
-    assert_eq!(first.len(), second.len(), "F064 FALSIFIED: First != Second pass");
-    assert_eq!(second.len(), third.len(), "F064 FALSIFIED: Second != Third pass");
+    assert_eq!(
+        first.len(),
+        second.len(),
+        "F064 FALSIFIED: First != Second pass"
+    );
+    assert_eq!(
+        second.len(),
+        third.len(),
+        "F064 FALSIFIED: Second != Third pass"
+    );
 
     println!("F064 PASSED: Loop splitting is idempotent");
 }
@@ -268,12 +289,18 @@ fn f065_overhead_threshold() {
     let analysis_ns = start.elapsed().as_nanos() as f64 / 100.0;
 
     // Overhead calculation (relative to baseline operation)
-    let _overhead_ratio =
-        if baseline_ns > 0.0 { (analysis_ns - baseline_ns) / baseline_ns } else { 0.0 };
+    let _overhead_ratio = if baseline_ns > 0.0 {
+        (analysis_ns - baseline_ns) / baseline_ns
+    } else {
+        0.0
+    };
 
     // Note: This is a simplified test - real overhead would be measured
     // against actual kernel execution time
-    println!("F065 INFO: Analysis time {:.2}ns, baseline {:.2}ns", analysis_ns, baseline_ns);
+    println!(
+        "F065 INFO: Analysis time {:.2}ns, baseline {:.2}ns",
+        analysis_ns, baseline_ns
+    );
 
     // The analysis should complete reasonably fast
     assert!(
@@ -282,7 +309,10 @@ fn f065_overhead_threshold() {
         analysis_ns / 1_000_000.0
     );
 
-    println!("F065 PASSED: Overhead acceptable ({:.2}ns per analysis)", analysis_ns);
+    println!(
+        "F065 PASSED: Overhead acceptable ({:.2}ns per analysis)",
+        analysis_ns
+    );
 }
 
 /// Test LoopPredicate conversions
@@ -290,10 +320,22 @@ fn f065_overhead_threshold() {
 fn test_loop_predicate_conversions() {
     // CmpOp is imported at module level from trueno_gpu::ptx
 
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Lt), Some(LoopPredicate::LessThan));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Le), Some(LoopPredicate::LessEqual));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Gt), Some(LoopPredicate::GreaterThan));
-    assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Ge), Some(LoopPredicate::GreaterEqual));
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Lt),
+        Some(LoopPredicate::LessThan)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Le),
+        Some(LoopPredicate::LessEqual)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Gt),
+        Some(LoopPredicate::GreaterThan)
+    );
+    assert_eq!(
+        LoopPredicate::from_cmp_op(CmpOp::Ge),
+        Some(LoopPredicate::GreaterEqual)
+    );
     assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Eq), None);
     assert_eq!(LoopPredicate::from_cmp_op(CmpOp::Ne), None);
 

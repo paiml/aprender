@@ -30,7 +30,8 @@ fn bench_spmv(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
             b.iter(|| {
                 y.fill(0.0);
-                csr.spmv(black_box(1.0), black_box(&x), 0.0, &mut y).expect("spmv ok");
+                csr.spmv(black_box(1.0), black_box(&x), 0.0, &mut y)
+                    .expect("spmv ok");
                 black_box(&y);
             });
         });
@@ -48,8 +49,14 @@ fn bench_spmm(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |bench, _| {
             bench.iter(|| {
                 c_out.fill(0.0);
-                csr.spmm(black_box(1.0), black_box(&b_dense), black_box(k), 0.0, &mut c_out)
-                    .expect("spmm ok");
+                csr.spmm(
+                    black_box(1.0),
+                    black_box(&b_dense),
+                    black_box(k),
+                    0.0,
+                    &mut c_out,
+                )
+                .expect("spmm ok");
                 black_box(&c_out);
             });
         });

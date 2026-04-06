@@ -66,7 +66,10 @@ pub fn run_baseline(save: Option<&str>, load: Option<&str>) -> Result<()> {
             let profile = export::load_json(Path::new(path))?;
 
             // Use filename stem as baseline name
-            let name = Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("default");
+            let name = Path::new(path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("default");
 
             let saved_path = save_baseline(name, &profile)?;
             println!("Baseline '{name}' saved to {}", saved_path.display());
@@ -128,8 +131,15 @@ mod tests {
     fn test_save_and_load_baseline() {
         let profile = FullProfile {
             version: "2.0".to_string(),
-            timing: TimingMetrics { wall_clock_time_us: 23.2, samples: 50, ..Default::default() },
-            throughput: ThroughputMetrics { tflops: 11.6, ..Default::default() },
+            timing: TimingMetrics {
+                wall_clock_time_us: 23.2,
+                samples: 50,
+                ..Default::default()
+            },
+            throughput: ThroughputMetrics {
+                tflops: 11.6,
+                ..Default::default()
+            },
             ..Default::default()
         };
 

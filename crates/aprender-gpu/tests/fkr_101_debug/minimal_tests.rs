@@ -13,22 +13,28 @@ fn fkr_101_minimal_debug_test() {
     let stream = CudaStream::new(&ctx).expect("CUDA stream");
 
     // Build minimal kernel that just writes a debug marker
-    let kernel = PtxKernel::new("minimal_debug").param(PtxType::U64, "debug_buf").build(|ctx| {
-        let debug_ptr = ctx.load_param_u64("debug_buf");
-        let tid = ctx.special_reg(PtxReg::TidX);
-        let zero = ctx.mov_u32_imm(0);
-        let is_t0 = ctx.setp_eq_u32(tid, zero);
-        ctx.branch_if_not(is_t0, "L_end");
+    let kernel = PtxKernel::new("minimal_debug")
+        .param(PtxType::U64, "debug_buf")
+        .build(|ctx| {
+            let debug_ptr = ctx.load_param_u64("debug_buf");
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let zero = ctx.mov_u32_imm(0);
+            let is_t0 = ctx.setp_eq_u32(tid, zero);
+            ctx.branch_if_not(is_t0, "L_end");
 
-        // Write a marker
-        ctx.emit_debug_marker(debug_ptr, 0xCAFEBABE);
+            // Write a marker
+            ctx.emit_debug_marker(debug_ptr, 0xCAFEBABE);
 
-        ctx.label("L_end");
-        ctx.ret();
-    });
+            ctx.label("L_end");
+            ctx.ret();
+        });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== Minimal Debug PTX ===\n{}", ptx);
 
@@ -37,7 +43,11 @@ fn fkr_101_minimal_debug_test() {
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (32, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (32, 1, 1),
+        shared_mem: 0,
+    };
 
     let mut args: [*mut c_void; 1] = [debug_buf.as_kernel_arg()];
 
@@ -105,8 +115,12 @@ fn fkr_101_smem_debug_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== SMEM Debug PTX ===\n{}", ptx);
 
@@ -125,7 +139,9 @@ fn fkr_101_smem_debug_test() {
 
     println!("Launching kernel...");
     unsafe {
-        stream.launch_kernel(&mut module, "smem_debug", &config, &mut args).expect("Kernel launch");
+        stream
+            .launch_kernel(&mut module, "smem_debug", &config, &mut args)
+            .expect("Kernel launch");
     }
 
     let sync_result = stream.synchronize();
@@ -198,21 +214,31 @@ fn fkr_101_global_debug_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== Global Debug PTX ===\n{}", ptx);
 
     // Create input buffer with test data
     let mut input_buf: GpuBuffer<u32> = GpuBuffer::new(&ctx, 1024).unwrap();
-    input_buf.copy_from_host(&vec![0x12345678u32; 1024]).unwrap();
+    input_buf
+        .copy_from_host(&vec![0x12345678u32; 1024])
+        .unwrap();
 
     let mut debug_buf: GpuBuffer<u32> = GpuBuffer::new(&ctx, 64).unwrap();
     debug_buf.copy_from_host(&vec![0u32; 64]).unwrap();
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let mut args: [*mut c_void; 2] = [input_buf.as_kernel_arg(), debug_buf.as_kernel_arg()];
 

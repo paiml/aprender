@@ -48,10 +48,16 @@ pub fn trsm(
     diag: DiagonalType,
 ) -> Result<TrsmResult, SolverError> {
     if a.len() != n * n {
-        return Err(SolverError::DimensionMismatch { matrix_n: n, rhs_len: a.len() });
+        return Err(SolverError::DimensionMismatch {
+            matrix_n: n,
+            rhs_len: a.len(),
+        });
     }
     if b.len() != n * nrhs {
-        return Err(SolverError::DimensionMismatch { matrix_n: n, rhs_len: b.len() });
+        return Err(SolverError::DimensionMismatch {
+            matrix_n: n,
+            rhs_len: b.len(),
+        });
     }
 
     let mut x = b.to_vec();

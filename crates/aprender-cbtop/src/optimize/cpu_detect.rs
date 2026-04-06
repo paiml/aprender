@@ -30,12 +30,18 @@ impl Default for CpuCapabilities {
 impl CpuCapabilities {
     /// Detect CPU capabilities at runtime
     pub fn detect() -> Self {
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
 
         // Use CPUID to detect features
         #[cfg(target_arch = "x86_64")]
-        let (has_avx512, has_avx2) =
-            { (is_x86_feature_detected!("avx512f"), is_x86_feature_detected!("avx2")) };
+        let (has_avx512, has_avx2) = {
+            (
+                is_x86_feature_detected!("avx512f"),
+                is_x86_feature_detected!("avx2"),
+            )
+        };
 
         #[cfg(not(target_arch = "x86_64"))]
         let (has_avx512, has_avx2) = (false, false);
@@ -95,7 +101,10 @@ impl CpuCapabilities {
 
     #[cfg(target_os = "linux")]
     fn read_cache_size(cpu: u32, index: u32) -> Option<usize> {
-        let path = format!("/sys/devices/system/cpu/cpu{}/cache/index{}/size", cpu, index);
+        let path = format!(
+            "/sys/devices/system/cpu/cpu{}/cache/index{}/size",
+            cpu, index
+        );
         if let Ok(content) = std::fs::read_to_string(&path) {
             let s = content.trim();
             if let Some(kb_str) = s.strip_suffix('K') {

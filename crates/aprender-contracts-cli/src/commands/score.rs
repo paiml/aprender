@@ -376,7 +376,11 @@ fn print_pvscore(codebase: &CodebaseScore) {
 }
 
 fn default_suffix(value: f64) -> &'static str {
-    if value == 0.0 { " (default)" } else { "" }
+    if value == 0.0 {
+        " (default)"
+    } else {
+        ""
+    }
 }
 
 fn score_to_markdown(score: &ContractScore) -> String {

@@ -70,7 +70,11 @@ impl TuiState {
     /// Create new TUI state
     #[must_use]
     pub fn new(total_cycles: u32) -> Self {
-        Self { total_cycles, running: true, ..Default::default() }
+        Self {
+            total_cycles,
+            running: true,
+            ..Default::default()
+        }
     }
 
     /// Update state from stress report
@@ -80,7 +84,13 @@ impl TuiState {
         self.pass_rate = report.pass_rate();
 
         // Update frame times (keep last 50)
-        self.frame_times = report.frames.iter().rev().take(50).map(|f| f.duration_ms).collect();
+        self.frame_times = report
+            .frames
+            .iter()
+            .rev()
+            .take(50)
+            .map(|f| f.duration_ms)
+            .collect();
         self.frame_times.reverse();
 
         // Calculate FPS from mean frame time
@@ -133,7 +143,10 @@ impl TuiState {
     #[must_use]
     pub fn sparkline_string(&self) -> String {
         const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        self.sparkline_data().iter().map(|&v| BLOCKS[v.min(7) as usize]).collect()
+        self.sparkline_data()
+            .iter()
+            .map(|&v| BLOCKS[v.min(7) as usize])
+            .collect()
     }
 }
 

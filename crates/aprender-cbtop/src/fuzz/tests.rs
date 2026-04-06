@@ -17,15 +17,24 @@ fn test_validator_rejects_nan() {
 #[test]
 fn test_validator_rejects_infinity() {
     let v = FuzzInputValidator::new();
-    assert_eq!(v.validate_float(f64::INFINITY), Err(FuzzValidationError::Infinity));
-    assert_eq!(v.validate_float(f64::NEG_INFINITY), Err(FuzzValidationError::Infinity));
+    assert_eq!(
+        v.validate_float(f64::INFINITY),
+        Err(FuzzValidationError::Infinity)
+    );
+    assert_eq!(
+        v.validate_float(f64::NEG_INFINITY),
+        Err(FuzzValidationError::Infinity)
+    );
 }
 
 #[test]
 fn test_validator_positive_only() {
     let v = FuzzInputValidator::positive_only();
     assert!(v.validate_float(1.0).is_ok());
-    assert!(matches!(v.validate_float(-1.0), Err(FuzzValidationError::NegativeValue(_))));
+    assert!(matches!(
+        v.validate_float(-1.0),
+        Err(FuzzValidationError::NegativeValue(_))
+    ));
     assert_eq!(v.validate_float(0.0), Err(FuzzValidationError::ZeroValue));
 }
 
@@ -106,7 +115,10 @@ fn test_string_validation() {
     assert!(v.validate_string("").is_ok());
 
     let long_string = "a".repeat(2000);
-    assert!(matches!(v.validate_string(&long_string), Err(FuzzValidationError::StringTooLong(_))));
+    assert!(matches!(
+        v.validate_string(&long_string),
+        Err(FuzzValidationError::StringTooLong(_))
+    ));
 }
 
 #[test]
@@ -127,7 +139,10 @@ fn test_u64_edge_cases_fn() {
 
 #[test]
 fn test_fuzz_target_config() {
-    let config = FuzzTargetConfig::new("test").with_iterations(1000).with_timeout(30).with_seed(42);
+    let config = FuzzTargetConfig::new("test")
+        .with_iterations(1000)
+        .with_timeout(30)
+        .with_seed(42);
 
     assert_eq!(config.name, "test");
     assert_eq!(config.iterations, 1000);

@@ -93,10 +93,12 @@ impl ProfileComparator {
         let mut improvements = Vec::new();
 
         for metric_name in &common_metrics {
-            let baseline_samples =
-                baseline.get_metric(metric_name).expect("metric should exist in baseline");
-            let comparison_samples =
-                comparison.get_metric(metric_name).expect("metric should exist in comparison");
+            let baseline_samples = baseline
+                .get_metric(metric_name)
+                .expect("metric should exist in baseline");
+            let comparison_samples = comparison
+                .get_metric(metric_name)
+                .expect("metric should exist in comparison");
 
             // Check minimum samples
             if baseline_samples.count() < self.config.min_samples {
@@ -130,9 +132,13 @@ impl ProfileComparator {
         } else {
             // Check if any regression exceeds threshold
             let severe_regression =
-                metric_comparisons.iter().filter(|m| m.is_regression).any(|m| {
-                    m.effect_size.percent_change.abs() >= self.config.regression_threshold_percent
-                });
+                metric_comparisons
+                    .iter()
+                    .filter(|m| m.is_regression)
+                    .any(|m| {
+                        m.effect_size.percent_change.abs()
+                            >= self.config.regression_threshold_percent
+                    });
 
             if severe_regression {
                 ComparisonVerdict::Fail
@@ -162,7 +168,9 @@ impl ProfileComparator {
     ) -> CompareResult<MetricComparison> {
         // Check for zero variance
         if baseline.variance() == 0.0 && comparison.variance() == 0.0 {
-            return Err(CompareError::ZeroVariance { metric: name.to_string() });
+            return Err(CompareError::ZeroVariance {
+                metric: name.to_string(),
+            });
         }
 
         // Perform Welch's t-test
@@ -170,8 +178,11 @@ impl ProfileComparator {
 
         // Calculate effect size (Cohen's d with pooled std)
         let pooled_std = self.pooled_std(baseline, comparison);
-        let cohens_d =
-            if pooled_std > 0.0 { (comparison.mean() - baseline.mean()) / pooled_std } else { 0.0 };
+        let cohens_d = if pooled_std > 0.0 {
+            (comparison.mean() - baseline.mean()) / pooled_std
+        } else {
+            0.0
+        };
 
         let percent_change = if baseline.mean().abs() > 1e-10 {
             ((comparison.mean() - baseline.mean()) / baseline.mean()) * 100.0
@@ -186,7 +197,11 @@ impl ProfileComparator {
         };
 
         // Determine direction and regression
-        let higher_is_better = self.config.higher_is_better.iter().any(|m| name.contains(m));
+        let higher_is_better = self
+            .config
+            .higher_is_better
+            .iter()
+            .any(|m| name.contains(m));
 
         let direction = if !t_test.significant {
             ChangeDirection::NoChange
@@ -448,7 +463,11 @@ impl ProfileComparator {
             return 0.0;
         }
 
-        let t = if p < 0.5 { (-2.0 * p.ln()).sqrt() } else { (-2.0 * (1.0 - p).ln()).sqrt() };
+        let t = if p < 0.5 {
+            (-2.0 * p.ln()).sqrt()
+        } else {
+            (-2.0 * (1.0 - p).ln()).sqrt()
+        };
 
         let c0 = 2.515517;
         let c1 = 0.802853;

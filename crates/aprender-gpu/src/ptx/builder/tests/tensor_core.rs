@@ -8,26 +8,38 @@ use crate::ptx::instructions::WmmaLayout;
 
 #[test]
 fn test_wmma_load_a_f16() {
-    let kernel = PtxKernel::new("test_wmma_load_a").param(PtxType::U64, "a_ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("a_ptr");
-        let _frag_a = ctx.wmma_load_a_f16(ptr, 16, WmmaLayout::RowMajor);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_wmma_load_a")
+        .param(PtxType::U64, "a_ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("a_ptr");
+            let _frag_a = ctx.wmma_load_a_f16(ptr, 16, WmmaLayout::RowMajor);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains(".param .u64 a_ptr"), "Expected a_ptr param, got: {}", ptx);
+    assert!(
+        ptx.contains(".param .u64 a_ptr"),
+        "Expected a_ptr param, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_wmma_load_b_f16() {
-    let kernel = PtxKernel::new("test_wmma_load_b").param(PtxType::U64, "b_ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("b_ptr");
-        let _frag_b = ctx.wmma_load_b_f16(ptr, 16, WmmaLayout::ColMajor);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_wmma_load_b")
+        .param(PtxType::U64, "b_ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("b_ptr");
+            let _frag_b = ctx.wmma_load_b_f16(ptr, 16, WmmaLayout::ColMajor);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains(".param .u64 b_ptr"), "Expected b_ptr param, got: {}", ptx);
+    assert!(
+        ptx.contains(".param .u64 b_ptr"),
+        "Expected b_ptr param, got: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -51,21 +63,31 @@ fn test_wmma_mma_f16_f32() {
 
     let ptx = kernel.emit();
     // Verify kernel structure
-    assert!(ptx.contains(".visible .entry test_wmma_mma"), "Expected kernel entry, got: {}", ptx);
+    assert!(
+        ptx.contains(".visible .entry test_wmma_mma"),
+        "Expected kernel entry, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_wmma_store_d_f32() {
-    let kernel = PtxKernel::new("test_wmma_store").param(PtxType::U64, "d_ptr").build(|ctx| {
-        let d = ctx.load_param_u64("d_ptr");
-        // Create empty fragment for test
-        let frag_d = vec![ctx.mov_f32_imm(0.0)];
-        ctx.wmma_store_d_f32(d, &frag_d, 16, WmmaLayout::RowMajor);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_wmma_store")
+        .param(PtxType::U64, "d_ptr")
+        .build(|ctx| {
+            let d = ctx.load_param_u64("d_ptr");
+            // Create empty fragment for test
+            let frag_d = vec![ctx.mov_f32_imm(0.0)];
+            ctx.wmma_store_d_f32(d, &frag_d, 16, WmmaLayout::RowMajor);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains(".param .u64 d_ptr"), "Expected d_ptr param, got: {}", ptx);
+    assert!(
+        ptx.contains(".param .u64 d_ptr"),
+        "Expected d_ptr param, got: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -77,20 +99,30 @@ fn test_cvt_f16_f32() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("cvt"), "Expected cvt instruction, got: {}", ptx);
+    assert!(
+        ptx.contains("cvt"),
+        "Expected cvt instruction, got: {}",
+        ptx
+    );
 }
 
 #[test]
 fn test_cvt_f32_f16() {
-    let kernel = PtxKernel::new("test_cvt_f32").param(PtxType::U64, "ptr").build(|ctx| {
-        let ptr = ctx.load_param_u64("ptr");
-        let f16_val = ctx.ld_global_f16(ptr);
-        let _f32_val = ctx.cvt_f32_f16(f16_val);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_cvt_f32")
+        .param(PtxType::U64, "ptr")
+        .build(|ctx| {
+            let ptr = ctx.load_param_u64("ptr");
+            let f16_val = ctx.ld_global_f16(ptr);
+            let _f32_val = ctx.cvt_f32_f16(f16_val);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains(".param .u64 ptr"), "Expected ptr param, got: {}", ptx);
+    assert!(
+        ptx.contains(".param .u64 ptr"),
+        "Expected ptr param, got: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -117,14 +149,20 @@ fn test_ld_st_global_f16() {
 #[test]
 fn test_wmma_load_c_f32_fragment() {
     // Test WMMA load C (accumulator) fragment
-    let kernel = PtxKernel::new("test_wmma_load_c").shared_memory(1024).build(|ctx| {
-        let addr = ctx.shared_base_addr();
-        let _frag_c = ctx.wmma_load_c_f32(addr, 16, WmmaLayout::RowMajor);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_wmma_load_c")
+        .shared_memory(1024)
+        .build(|ctx| {
+            let addr = ctx.shared_base_addr();
+            let _frag_c = ctx.wmma_load_c_f32(addr, 16, WmmaLayout::RowMajor);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("wmma.load.c.sync.aligned"), "Expected wmma.load.c in: {}", ptx);
+    assert!(
+        ptx.contains("wmma.load.c.sync.aligned"),
+        "Expected wmma.load.c in: {}",
+        ptx
+    );
 }
 
 #[test]
@@ -139,17 +177,22 @@ fn test_wmma_store_d_empty_fragment() {
 
     let ptx = kernel.emit();
     // With empty fragment, wmma_store should return early
-    assert!(!ptx.contains("wmma.store"), "Expected no wmma.store with empty fragment");
+    assert!(
+        !ptx.contains("wmma.store"),
+        "Expected no wmma.store with empty fragment"
+    );
 }
 
 #[test]
 fn test_wmma_layout_col_major() {
     // Test column-major WMMA layout
-    let kernel = PtxKernel::new("test_wmma_col").shared_memory(1024).build(|ctx| {
-        let addr = ctx.shared_base_addr();
-        let _frag_a = ctx.wmma_load_a_f16(addr, 16, WmmaLayout::ColMajor);
-        ctx.ret();
-    });
+    let kernel = PtxKernel::new("test_wmma_col")
+        .shared_memory(1024)
+        .build(|ctx| {
+            let addr = ctx.shared_base_addr();
+            let _frag_a = ctx.wmma_load_a_f16(addr, 16, WmmaLayout::ColMajor);
+            ctx.ret();
+        });
 
     let ptx = kernel.emit();
     assert!(ptx.contains(".col."), "Expected .col. layout in: {}", ptx);

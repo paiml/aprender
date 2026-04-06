@@ -19,14 +19,18 @@ fn f701_builder_rejects_no_workload() {
 #[test]
 fn f701_builder_accepts_with_workload() {
     // F701: Build with workload must succeed
-    let result = ComputeBlock::builder().workload(WorkloadSpec::dot(1000)).build();
+    let result = ComputeBlock::builder()
+        .workload(WorkloadSpec::dot(1000))
+        .build();
     assert!(result.is_ok());
 }
 
 #[test]
 fn f701_builder_accepts_minimal_spec() {
     // F701: Minimal valid spec
-    let result = ComputeBlock::builder().workload(WorkloadSpec::elementwise(100)).build();
+    let result = ComputeBlock::builder()
+        .workload(WorkloadSpec::elementwise(100))
+        .build();
     assert!(result.is_ok());
 }
 
@@ -178,14 +182,20 @@ fn f710_transform_identity_constructor() {
 fn f711_linear_scale_invalid_domain() {
     // F711: Domain(10, 0) must return Err
     let result = LinearResourceScale::new((10.0, 0.0), (0.0, 8.0));
-    assert!(matches!(result, Err(GrammarError::InvalidScaleDomain { .. })));
+    assert!(matches!(
+        result,
+        Err(GrammarError::InvalidScaleDomain { .. })
+    ));
 }
 
 #[test]
 fn f711_linear_scale_equal_domain() {
     // F711: Domain(10, 10) must return Err
     let result = LinearResourceScale::new((10.0, 10.0), (0.0, 8.0));
-    assert!(matches!(result, Err(GrammarError::InvalidScaleDomain { .. })));
+    assert!(matches!(
+        result,
+        Err(GrammarError::InvalidScaleDomain { .. })
+    ));
 }
 
 #[test]
@@ -199,7 +209,10 @@ fn f711_linear_scale_valid_domain() {
 fn f711_log_scale_invalid_domain() {
     // F711: Log scale with invalid domain
     let result = LogResourceScale::new(10.0, (100.0, 1.0), (0.0, 8.0));
-    assert!(matches!(result, Err(GrammarError::InvalidScaleDomain { .. })));
+    assert!(matches!(
+        result,
+        Err(GrammarError::InvalidScaleDomain { .. })
+    ));
 }
 
 #[test]
@@ -235,8 +248,14 @@ fn f719_builder_creates_independent_instances() {
     // F719: Reusing builder creates independent instances
     let builder = ComputeBlock::builder().workload(WorkloadSpec::dot(1000));
 
-    let block1 = builder.clone().strategy(ExecutionStrategy::simd_auto()).build();
-    let block2 = builder.clone().strategy(ExecutionStrategy::Sequential).build();
+    let block1 = builder
+        .clone()
+        .strategy(ExecutionStrategy::simd_auto())
+        .build();
+    let block2 = builder
+        .clone()
+        .strategy(ExecutionStrategy::Sequential)
+        .build();
 
     assert!(block1.is_ok());
     assert!(block2.is_ok());

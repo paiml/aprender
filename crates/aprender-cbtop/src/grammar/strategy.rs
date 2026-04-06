@@ -56,7 +56,10 @@ pub enum ExecutionStrategy {
     /// Multi-threaded parallel
     Parallel { threads: usize, chunk_size: usize },
     /// GPU acceleration
-    Gpu { device: GpuDevice, kernel: Option<KernelSpec> },
+    Gpu {
+        device: GpuDevice,
+        kernel: Option<KernelSpec>,
+    },
     /// Distributed across nodes
     Distributed { nodes: Vec<String> },
     /// Hybrid CPU+GPU
@@ -66,7 +69,9 @@ pub enum ExecutionStrategy {
 impl ExecutionStrategy {
     /// Create SIMD strategy with auto width
     pub fn simd_auto() -> Self {
-        ExecutionStrategy::Simd { width: SimdWidth::Auto }
+        ExecutionStrategy::Simd {
+            width: SimdWidth::Auto,
+        }
     }
 
     /// Create SIMD strategy with specific width
@@ -76,17 +81,26 @@ impl ExecutionStrategy {
 
     /// Create parallel strategy
     pub fn parallel(threads: usize) -> Self {
-        ExecutionStrategy::Parallel { threads, chunk_size: 1024 }
+        ExecutionStrategy::Parallel {
+            threads,
+            chunk_size: 1024,
+        }
     }
 
     /// Create GPU strategy with auto device
     pub fn gpu_auto() -> Self {
-        ExecutionStrategy::Gpu { device: GpuDevice::Auto, kernel: None }
+        ExecutionStrategy::Gpu {
+            device: GpuDevice::Auto,
+            kernel: None,
+        }
     }
 
     /// Create GPU strategy with specific device
     pub fn gpu(device: GpuDevice) -> Self {
-        ExecutionStrategy::Gpu { device, kernel: None }
+        ExecutionStrategy::Gpu {
+            device,
+            kernel: None,
+        }
     }
 }
 
@@ -106,7 +120,12 @@ pub struct StrategyLayer {
 impl StrategyLayer {
     /// Create new strategy layer
     pub fn new(strategy: ExecutionStrategy) -> Self {
-        Self { strategy, workload: None, resources: ResourceMapping::default(), priority: 0 }
+        Self {
+            strategy,
+            workload: None,
+            resources: ResourceMapping::default(),
+            priority: 0,
+        }
     }
 
     /// Set layer priority

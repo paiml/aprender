@@ -7,7 +7,10 @@ fn test_cuda_error_string_success() {
 
 #[test]
 fn test_cuda_error_string_oom() {
-    assert_eq!(cuda_error_string(CUDA_ERROR_OUT_OF_MEMORY), "CUDA_ERROR_OUT_OF_MEMORY");
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_OUT_OF_MEMORY),
+        "CUDA_ERROR_OUT_OF_MEMORY"
+    );
 }
 
 #[test]
@@ -45,11 +48,26 @@ fn test_check_without_feature() {
 #[test]
 fn test_all_error_strings() {
     // Test all known error codes have proper strings
-    assert_eq!(cuda_error_string(CUDA_ERROR_INVALID_VALUE), "CUDA_ERROR_INVALID_VALUE");
-    assert_eq!(cuda_error_string(CUDA_ERROR_NOT_INITIALIZED), "CUDA_ERROR_NOT_INITIALIZED");
-    assert_eq!(cuda_error_string(CUDA_ERROR_DEINITIALIZED), "CUDA_ERROR_DEINITIALIZED");
-    assert_eq!(cuda_error_string(CUDA_ERROR_INVALID_DEVICE), "CUDA_ERROR_INVALID_DEVICE");
-    assert_eq!(cuda_error_string(CUDA_ERROR_NOT_FOUND), "CUDA_ERROR_NOT_FOUND");
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_INVALID_VALUE),
+        "CUDA_ERROR_INVALID_VALUE"
+    );
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_NOT_INITIALIZED),
+        "CUDA_ERROR_NOT_INITIALIZED"
+    );
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_DEINITIALIZED),
+        "CUDA_ERROR_DEINITIALIZED"
+    );
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_INVALID_DEVICE),
+        "CUDA_ERROR_INVALID_DEVICE"
+    );
+    assert_eq!(
+        cuda_error_string(CUDA_ERROR_NOT_FOUND),
+        "CUDA_ERROR_NOT_FOUND"
+    );
 }
 
 #[test]
@@ -68,7 +86,11 @@ fn test_error_codes_are_distinct() {
     ];
     for i in 0..codes.len() {
         for j in (i + 1)..codes.len() {
-            assert_ne!(codes[i], codes[j], "Error codes at {} and {} are equal", i, j);
+            assert_ne!(
+                codes[i], codes[j],
+                "Error codes at {} and {} are equal",
+                i, j
+            );
         }
     }
 }
@@ -78,12 +100,27 @@ fn test_type_sizes() {
     // Verify FFI types have expected sizes
     assert_eq!(std::mem::size_of::<CUresult>(), std::mem::size_of::<i32>());
     assert_eq!(std::mem::size_of::<CUdevice>(), std::mem::size_of::<i32>());
-    assert_eq!(std::mem::size_of::<CUdeviceptr>(), std::mem::size_of::<u64>());
+    assert_eq!(
+        std::mem::size_of::<CUdeviceptr>(),
+        std::mem::size_of::<u64>()
+    );
     // Opaque pointers are pointer-sized
-    assert_eq!(std::mem::size_of::<CUcontext>(), std::mem::size_of::<*mut ()>());
-    assert_eq!(std::mem::size_of::<CUmodule>(), std::mem::size_of::<*mut ()>());
-    assert_eq!(std::mem::size_of::<CUfunction>(), std::mem::size_of::<*mut ()>());
-    assert_eq!(std::mem::size_of::<CUstream>(), std::mem::size_of::<*mut ()>());
+    assert_eq!(
+        std::mem::size_of::<CUcontext>(),
+        std::mem::size_of::<*mut ()>()
+    );
+    assert_eq!(
+        std::mem::size_of::<CUmodule>(),
+        std::mem::size_of::<*mut ()>()
+    );
+    assert_eq!(
+        std::mem::size_of::<CUfunction>(),
+        std::mem::size_of::<*mut ()>()
+    );
+    assert_eq!(
+        std::mem::size_of::<CUstream>(),
+        std::mem::size_of::<*mut ()>()
+    );
 }
 
 #[test]

@@ -54,7 +54,10 @@ impl DistillConfig {
                 revision: None,
                 format: WeightFormat::SafeTensors,
             },
-            student: StudentConfig { model_id: student_id.to_string(), lora: None },
+            student: StudentConfig {
+                model_id: student_id.to_string(),
+                lora: None,
+            },
             distillation: DistillationParams::default(),
             training: TrainingConfig::default(),
             dataset: DatasetConfig::default(),

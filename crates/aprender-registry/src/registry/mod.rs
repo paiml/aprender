@@ -172,7 +172,9 @@ impl Registry {
     pub fn list_model_versions(&self, name: &str) -> Result<Vec<ModelVersion>> {
         contract_pre_ols_fit!();
         let result = self.db.list_model_versions(name);
-        if let Ok(ref val) = result { contract_post_configuration!(val); }
+        if let Ok(ref val) = result {
+            contract_post_configuration!(val);
+        }
         result
     }
 
@@ -184,7 +186,9 @@ impl Registry {
     pub fn list_models(&self) -> Result<Vec<String>> {
         contract_pre_ols_fit!();
         let result = self.db.list_model_names();
-        if let Ok(ref val) = result { contract_post_configuration!(val); }
+        if let Ok(ref val) = result {
+            contract_post_configuration!(val);
+        }
         result
     }
 
@@ -287,7 +291,9 @@ impl Registry {
     pub fn list_datasets(&self) -> Result<Vec<String>> {
         contract_pre_configuration!();
         let result = self.db.list_dataset_names();
-        if let Ok(ref val) = result { contract_post_configuration!(val); }
+        if let Ok(ref val) = result {
+            contract_post_configuration!(val);
+        }
         result
     }
 
@@ -299,7 +305,9 @@ impl Registry {
     pub fn list_dataset_versions(&self, name: &str) -> Result<Vec<crate::data::DatasetVersion>> {
         contract_pre_configuration!(name);
         let result = self.db.list_dataset_versions(name);
-        if let Ok(ref val) = result { contract_post_configuration!(val); }
+        if let Ok(ref val) = result {
+            contract_post_configuration!(val);
+        }
         result
     }
 
@@ -360,7 +368,9 @@ impl Registry {
     pub fn list_recipes(&self) -> Result<Vec<String>> {
         contract_pre_configuration!();
         let result = self.db.list_recipe_names();
-        if let Ok(ref val) = result { contract_post_configuration!(val); }
+        if let Ok(ref val) = result {
+            contract_post_configuration!(val);
+        }
         result
     }
 

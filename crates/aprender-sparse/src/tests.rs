@@ -67,7 +67,10 @@ fn test_reject_wrong_offsets_length() {
     );
     assert!(result.is_err());
     match result.unwrap_err() {
-        SparseError::InvalidOffsetsLength { actual: 2, expected: 4 } => {}
+        SparseError::InvalidOffsetsLength {
+            actual: 2,
+            expected: 4,
+        } => {}
         e => panic!("Expected InvalidOffsetsLength, got {e:?}"),
     }
 }
@@ -87,7 +90,9 @@ fn test_reject_column_out_of_bounds() {
     );
     assert!(result.is_err());
     match result.unwrap_err() {
-        SparseError::ColumnOutOfBounds { col: 5, cols: 3, .. } => {}
+        SparseError::ColumnOutOfBounds {
+            col: 5, cols: 3, ..
+        } => {}
         e => panic!("Expected ColumnOutOfBounds, got {e:?}"),
     }
 }
@@ -196,9 +201,14 @@ fn test_spmv_empty_rows() {
 
 #[test]
 fn test_coo_to_csr_basic() {
-    let coo =
-        CooMatrix::new(3, 3, vec![0, 1, 2, 0], vec![0, 1, 2, 2], vec![1.0_f32, 2.0, 3.0, 4.0])
-            .unwrap();
+    let coo = CooMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 0],
+        vec![0, 1, 2, 2],
+        vec![1.0_f32, 2.0, 3.0, 4.0],
+    )
+    .unwrap();
 
     let csr = CsrMatrix::from_coo(&coo);
     assert_eq!(csr.rows(), 3);
@@ -554,7 +564,13 @@ fn test_spgemm_identity() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_spgemm_identity_left() -> Result<(), Box<dyn std::error::Error>> {
     // I * A = A
-    let a = CsrMatrix::new(3, 3, vec![0, 2, 3, 4], vec![0, 2, 1, 0], vec![1.0_f32, 2.0, 3.0, 4.0])?;
+    let a = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 2, 3, 4],
+        vec![0, 2, 1, 0],
+        vec![1.0_f32, 2.0, 3.0, 4.0],
+    )?;
     let eye = CsrMatrix::<f32>::identity(3);
     let c = crate::spgemm::spgemm(&eye, &a)?;
     assert_eq!(c.to_dense(), a.to_dense());
@@ -565,8 +581,20 @@ fn test_spgemm_identity_left() -> Result<(), Box<dyn std::error::Error>> {
 fn test_spgemm_known_product() -> Result<(), Box<dyn std::error::Error>> {
     // A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]]
     // AB = [[19, 22], [43, 50]]
-    let a = CsrMatrix::new(2, 2, vec![0, 2, 4], vec![0, 1, 0, 1], vec![1.0_f32, 2.0, 3.0, 4.0])?;
-    let b = CsrMatrix::new(2, 2, vec![0, 2, 4], vec![0, 1, 0, 1], vec![5.0_f32, 6.0, 7.0, 8.0])?;
+    let a = CsrMatrix::new(
+        2,
+        2,
+        vec![0, 2, 4],
+        vec![0, 1, 0, 1],
+        vec![1.0_f32, 2.0, 3.0, 4.0],
+    )?;
+    let b = CsrMatrix::new(
+        2,
+        2,
+        vec![0, 2, 4],
+        vec![0, 1, 0, 1],
+        vec![5.0_f32, 6.0, 7.0, 8.0],
+    )?;
     let c = crate::spgemm::spgemm(&a, &b)?;
     let d = c.to_dense();
     assert!((d[0] - 19.0).abs() < 1e-4, "got {}", d[0]);
@@ -588,8 +616,20 @@ fn test_spgemm_dimension_mismatch() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_spgemm_sparse_result() -> Result<(), Box<dyn std::error::Error>> {
     // Diagonal × Diagonal = Diagonal
-    let a = CsrMatrix::new(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![2.0_f32, 3.0, 4.0])?;
-    let b = CsrMatrix::new(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![5.0_f32, 6.0, 7.0])?;
+    let a = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 3],
+        vec![0, 1, 2],
+        vec![2.0_f32, 3.0, 4.0],
+    )?;
+    let b = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 3],
+        vec![0, 1, 2],
+        vec![5.0_f32, 6.0, 7.0],
+    )?;
     let c = crate::spgemm::spgemm(&a, &b)?;
     assert_eq!(c.nnz(), 3);
     let d = c.to_dense();
@@ -673,7 +713,13 @@ fn test_sell_dimension_mismatch() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_sell_properties() -> Result<(), Box<dyn std::error::Error>> {
-    let csr = CsrMatrix::new(3, 3, vec![0, 2, 3, 3], vec![0, 1, 2], vec![1.0, 2.0, 3.0_f32])?;
+    let csr = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 2, 3, 3],
+        vec![0, 1, 2],
+        vec![1.0, 2.0, 3.0_f32],
+    )?;
     let sell = SellMatrix::from_csr(&csr, 2);
     assert_eq!(sell.rows(), 3);
     assert_eq!(sell.cols(), 3);
@@ -688,7 +734,13 @@ use crate::ops::{ScalarBackend, SparseBackend};
 #[test]
 fn test_scalar_backend_spmv() -> Result<(), Box<dyn std::error::Error>> {
     // 3×3 identity via scalar backend
-    let csr = CsrMatrix::new(3, 3, vec![0, 1, 2, 3], vec![0, 1, 2], vec![1.0, 1.0, 1.0_f32])?;
+    let csr = CsrMatrix::new(
+        3,
+        3,
+        vec![0, 1, 2, 3],
+        vec![0, 1, 2],
+        vec![1.0, 1.0, 1.0_f32],
+    )?;
     let x = [2.0, 3.0, 4.0_f32];
     let mut y = [0.0_f32; 3];
     ScalarBackend::spmv_kernel(&csr, 1.0, &x, 0.0, &mut y);
@@ -763,7 +815,10 @@ fn test_falsify_spmv_zero_nnz_matrix() {
     // beta=0 should zero out y even with no nonzeros
     a.spmv(1.0, &[1.0, 2.0, 3.0], 0.0, &mut y).unwrap();
     for &v in &y {
-        assert!(v.abs() < 1e-7, "Zero-nnz matrix should give zero output, got {v}");
+        assert!(
+            v.abs() < 1e-7,
+            "Zero-nnz matrix should give zero output, got {v}"
+        );
     }
 }
 
@@ -784,7 +839,11 @@ fn test_falsify_coo_duplicate_entries_sum() {
     let csr = CsrMatrix::from_coo(&coo);
     let dense = csr.to_dense();
     // (0,0) should be 3+4=7
-    assert!((dense[0] - 7.0).abs() < 1e-5, "Duplicate entries should sum: got {}", dense[0]);
+    assert!(
+        (dense[0] - 7.0).abs() < 1e-5,
+        "Duplicate entries should sum: got {}",
+        dense[0]
+    );
     assert!((dense[3] - 5.0).abs() < 1e-5);
 }
 

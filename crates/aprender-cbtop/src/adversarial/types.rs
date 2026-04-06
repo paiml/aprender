@@ -6,7 +6,11 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, PartialEq)]
 pub enum AdversarialError {
     /// Input tensor contains corrupted data
-    CorruptedInput { byte_index: usize, expected_checksum: u32, actual_checksum: u32 },
+    CorruptedInput {
+        byte_index: usize,
+        expected_checksum: u32,
+        actual_checksum: u32,
+    },
     /// Memory allocation failed under pressure
     AllocationFailed { requested_bytes: usize },
     /// Zero-size input detected
@@ -20,7 +24,12 @@ pub enum AdversarialError {
     /// Configuration parsing failed
     ConfigParseError { field: String, reason: String },
     /// Configuration value out of bounds
-    ConfigOutOfBounds { field: String, value: String, min: String, max: String },
+    ConfigOutOfBounds {
+        field: String,
+        value: String,
+        min: String,
+        max: String,
+    },
     /// Integer overflow detected
     IntegerOverflow { operation: String },
     /// Division by zero attempted
@@ -34,11 +43,18 @@ pub enum AdversarialError {
     /// Resource exhaustion (memory, handles, etc.)
     ResourceExhausted { resource: String },
     /// Operation timed out
-    Timeout { operation: String, elapsed: Duration, limit: Duration },
+    Timeout {
+        operation: String,
+        elapsed: Duration,
+        limit: Duration,
+    },
     /// Operation was cancelled
     Cancelled { operation: String },
     /// Recovery failed after error
-    RecoveryFailed { original_error: String, recovery_error: String },
+    RecoveryFailed {
+        original_error: String,
+        recovery_error: String,
+    },
 }
 
 /// Result type for adversarial operations
@@ -107,25 +123,33 @@ impl CheckedArithmetic {
     /// Add with overflow check (F1012)
     pub fn checked_add_i64(a: i64, b: i64) -> AdversarialResult<i64> {
         a.checked_add(b)
-            .ok_or_else(|| AdversarialError::IntegerOverflow { operation: format!("{a} + {b}") })
+            .ok_or_else(|| AdversarialError::IntegerOverflow {
+                operation: format!("{a} + {b}"),
+            })
     }
 
     /// Multiply with overflow check (F1012)
     pub fn checked_mul_i64(a: i64, b: i64) -> AdversarialResult<i64> {
         a.checked_mul(b)
-            .ok_or_else(|| AdversarialError::IntegerOverflow { operation: format!("{a} * {b}") })
+            .ok_or_else(|| AdversarialError::IntegerOverflow {
+                operation: format!("{a} * {b}"),
+            })
     }
 
     /// Add with overflow check for usize
     pub fn checked_add_usize(a: usize, b: usize) -> AdversarialResult<usize> {
         a.checked_add(b)
-            .ok_or_else(|| AdversarialError::IntegerOverflow { operation: format!("{a} + {b}") })
+            .ok_or_else(|| AdversarialError::IntegerOverflow {
+                operation: format!("{a} + {b}"),
+            })
     }
 
     /// Multiply with overflow check for usize
     pub fn checked_mul_usize(a: usize, b: usize) -> AdversarialResult<usize> {
         a.checked_mul(b)
-            .ok_or_else(|| AdversarialError::IntegerOverflow { operation: format!("{a} * {b}") })
+            .ok_or_else(|| AdversarialError::IntegerOverflow {
+                operation: format!("{a} * {b}"),
+            })
     }
 
     /// Division with zero check (F1013)
@@ -139,7 +163,9 @@ impl CheckedArithmetic {
     /// Division with zero check for integers
     pub fn checked_div_i64(a: i64, b: i64) -> AdversarialResult<i64> {
         if b == 0 {
-            return Err(AdversarialError::DivisionByZero { numerator: a as f64 });
+            return Err(AdversarialError::DivisionByZero {
+                numerator: a as f64,
+            });
         }
         Ok(a / b)
     }
@@ -160,7 +186,9 @@ impl Default for MonotonicClock {
 impl MonotonicClock {
     /// Create a new monotonic clock tracker
     pub fn new() -> Self {
-        Self { last_timestamp: None }
+        Self {
+            last_timestamp: None,
+        }
     }
 
     /// Record a timestamp and verify monotonicity

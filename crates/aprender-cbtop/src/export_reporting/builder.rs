@@ -57,7 +57,8 @@ impl ReportBuilder {
 
     /// Add comparison
     pub fn comparison(mut self, metric: &str, baseline: f64, current: f64, unit: &str) -> Self {
-        self.comparisons.push(ComparisonEntry::new(metric, baseline, current, unit));
+        self.comparisons
+            .push(ComparisonEntry::new(metric, baseline, current, unit));
         self
     }
 

@@ -94,7 +94,9 @@ impl CpuTimes {
 impl CpuCollectorBrick {
     /// Create new CPU collector
     pub fn new() -> Self {
-        let core_count = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let core_count = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
 
         Self {
             history: RingBuffer::new(120), // 2 minutes at 1Hz
@@ -204,13 +206,20 @@ impl Brick for CpuCollectorBrick {
 
     fn assertions(&self) -> Vec<BrickAssertion> {
         vec![
-            BrickAssertion::ValueInRange { min: 0.0, max: 100.0 },
+            BrickAssertion::ValueInRange {
+                min: 0.0,
+                max: 100.0,
+            },
             BrickAssertion::max_latency_ms(5),
         ]
     }
 
     fn budget(&self) -> BrickBudget {
-        BrickBudget { collect_ms: 5, layout_ms: 0, render_ms: 0 }
+        BrickBudget {
+            collect_ms: 5,
+            layout_ms: 0,
+            render_ms: 0,
+        }
     }
 
     fn verify(&self) -> BrickVerification {

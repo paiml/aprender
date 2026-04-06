@@ -20,7 +20,10 @@ fn claim_01_non_null_ptr_rejects_zero() {
 fn claim_02_non_null_ptr_accepts_valid() {
     let valid_addr = 0x1000_u64;
     let result = NonNullDevicePtr::<u8>::new(valid_addr);
-    assert!(result.is_ok(), "NonNullDevicePtr::new(valid) must return Ok");
+    assert!(
+        result.is_ok(),
+        "NonNullDevicePtr::new(valid) must return Ok"
+    );
     assert_eq!(result.unwrap().addr(), valid_addr);
 }
 
@@ -45,7 +48,10 @@ fn claim_06_periodic_injection_deterministic() {
         injections2.push(fuzzer2.next_call());
     }
 
-    assert_eq!(injections1, injections2, "Periodic injection must be deterministic");
+    assert_eq!(
+        injections1, injections2,
+        "Periodic injection must be deterministic"
+    );
 }
 
 /// Claim 7: Size-threshold strategy only injects above threshold
@@ -57,7 +63,10 @@ fn claim_07_size_threshold_below_no_injection() {
 
     // SizeThreshold requires allocation context, so should_inject returns false
     // without that context
-    assert!(!strategy.should_inject(0), "SizeThreshold without context must not inject");
+    assert!(
+        !strategy.should_inject(0),
+        "SizeThreshold without context must not inject"
+    );
 }
 
 /// Claim 8: Fuzzer report counts match actual injections
@@ -88,7 +97,11 @@ fn claim_10_no_false_positives() {
     // Valid non-zero addresses should never produce errors
     for addr in [0x1000_u64, 0x2000, 0xFFFF_FFFF, u64::MAX] {
         let ptr = NonNullDevicePtr::<f32>::new(addr);
-        assert!(ptr.is_ok(), "Valid address 0x{:x} must not produce false positive", addr);
+        assert!(
+            ptr.is_ok(),
+            "Valid address 0x{:x} must not produce false positive",
+            addr
+        );
     }
 }
 

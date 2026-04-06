@@ -40,7 +40,12 @@ pub struct BatchedHwDp4aQ4KGemvKernel {
 impl BatchedHwDp4aQ4KGemvKernel {
     /// Create a new batched HW DP4A Q4K GEMV kernel.
     pub fn new(k: u32, n: u32, m: u32) -> Self {
-        Self { k, n, m, num_warps: 3 }
+        Self {
+            k,
+            n,
+            m,
+            num_warps: 3,
+        }
     }
 }
 
@@ -407,7 +412,10 @@ mod tests {
     fn test_ptx_emits_batched_hw_dp4a() {
         let k = BatchedHwDp4aQ4KGemvKernel::new(1536, 256, 4);
         let ptx = k.emit_ptx();
-        assert!(ptx.contains("batched_hw_dp4a_q4k_gemv"), "kernel name present");
+        assert!(
+            ptx.contains("batched_hw_dp4a_q4k_gemv"),
+            "kernel name present"
+        );
         assert!(ptx.contains("dp4a.u32.s32"), "DP4A instruction present");
         // Should have half-warp identity
         assert!(ptx.contains("and.b32"), "half_lane = lane_id & 15");

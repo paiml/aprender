@@ -34,7 +34,10 @@ fn test_stress_runner_visual() {
     println!("Configuration:");
     println!("  Cycles: {}", config.cycles);
     println!("  Seed: {}", config.seed);
-    println!("  Input size: {}-{}", config.min_input_size, config.max_input_size);
+    println!(
+        "  Input size: {}-{}",
+        config.min_input_size, config.max_input_size
+    );
     println!();
 
     let mut runner = StressTestRunner::new(config.clone());
@@ -108,7 +111,10 @@ fn test_stress_runner_visual() {
         println!("ANOMALIES:");
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         for anomaly in &report.anomalies {
-            println!("  [Cycle {}] {:?}: {}", anomaly.cycle, anomaly.kind, anomaly.description);
+            println!(
+                "  [Cycle {}] {:?}: {}",
+                anomaly.cycle, anomaly.kind, anomaly.description
+            );
         }
         println!();
     }
@@ -120,7 +126,10 @@ fn test_stress_runner_visual() {
 
     // Assertions
     assert_eq!(report.cycles_completed, config.cycles);
-    assert!(report.total_passed > 0, "Should have at least some passing tests");
+    assert!(
+        report.total_passed > 0,
+        "Should have at least some passing tests"
+    );
     // Note: We don't assert perf.passed because timing can vary in CI
 }
 
@@ -160,7 +169,10 @@ fn test_stress_determinism() {
         .collect();
 
     // Should be identical
-    assert_eq!(inputs1, inputs2, "Same seed should produce identical inputs");
+    assert_eq!(
+        inputs1, inputs2,
+        "Same seed should produce identical inputs"
+    );
 
     println!("  ✓ Deterministic: Same seed produces identical inputs");
     println!("  Inputs generated: {:?}", inputs1);

@@ -45,7 +45,11 @@ fn test_lu_3x3() {
         for j in 0..3 {
             ax_i += a[i * 3 + j] * x[j];
         }
-        assert!((ax_i - b[i]).abs() < 1e-4, "Ax[{i}]={ax_i}, b[{i}]={}", b[i]);
+        assert!(
+            (ax_i - b[i]).abs() < 1e-4,
+            "Ax[{i}]={ax_i}, b[{i}]={}",
+            b[i]
+        );
     }
 }
 
@@ -172,7 +176,11 @@ fn test_qr_solve_least_squares() {
         }
         residual += (ax - b[i]).powi(2);
     }
-    assert!(residual.sqrt() < 1.0, "Residual too large: {}", residual.sqrt());
+    assert!(
+        residual.sqrt() < 1.0,
+        "Residual too large: {}",
+        residual.sqrt()
+    );
 }
 
 // ============================================================================
@@ -185,8 +193,16 @@ fn test_svd_2x2_identity() {
     let result = svd(&a, 2, 2).expect("svd ok");
 
     // Singular values should be [1, 1]
-    assert!((result.sigma[0] - 1.0).abs() < 1e-4, "σ[0]={}", result.sigma[0]);
-    assert!((result.sigma[1] - 1.0).abs() < 1e-4, "σ[1]={}", result.sigma[1]);
+    assert!(
+        (result.sigma[0] - 1.0).abs() < 1e-4,
+        "σ[0]={}",
+        result.sigma[0]
+    );
+    assert!(
+        (result.sigma[1] - 1.0).abs() < 1e-4,
+        "σ[1]={}",
+        result.sigma[1]
+    );
 }
 
 #[test]
@@ -286,7 +302,12 @@ fn test_cholesky_2x2() {
     }
 
     for i in 0..4 {
-        assert!((recon[i] - a[i]).abs() < 1e-5, "LL^T[{i}]={}, A[{i}]={}", recon[i], a[i]);
+        assert!(
+            (recon[i] - a[i]).abs() < 1e-5,
+            "LL^T[{i}]={}, A[{i}]={}",
+            recon[i],
+            a[i]
+        );
     }
 }
 
@@ -328,7 +349,12 @@ fn test_cholesky_3x3() {
     }
 
     for i in 0..9 {
-        assert!((recon[i] - a[i]).abs() < 1e-3, "LL^T[{i}]={}, A[{i}]={}", recon[i], a[i]);
+        assert!(
+            (recon[i] - a[i]).abs() < 1e-3,
+            "LL^T[{i}]={}, A[{i}]={}",
+            recon[i],
+            a[i]
+        );
     }
 }
 
@@ -512,7 +538,12 @@ fn test_syrk_symmetry() -> Result<(), Box<dyn std::error::Error>> {
     let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0_f32]; // 2×3
     let mut c = [0.0_f32; 4];
     syrk(&a, &mut c, 2, 3, 2.0, 0.0)?;
-    assert!((c[1] - c[2]).abs() < 1e-6, "Not symmetric: c[1]={}, c[2]={}", c[1], c[2]);
+    assert!(
+        (c[1] - c[2]).abs() < 1e-6,
+        "Not symmetric: c[1]={}, c[2]={}",
+        c[1],
+        c[2]
+    );
     Ok(())
 }
 
@@ -630,7 +661,12 @@ fn test_syr2k_symmetry() -> Result<(), Box<dyn std::error::Error>> {
     let b = [5.0, 6.0, 7.0, 8.0_f32]; // 2×2
     let mut c = [0.0_f32; 4];
     syr2k(&a, &b, &mut c, 2, 2, 1.0, 0.0)?;
-    assert!((c[1] - c[2]).abs() < 1e-5, "Not symmetric: c[1]={}, c[2]={}", c[1], c[2]);
+    assert!(
+        (c[1] - c[2]).abs() < 1e-5,
+        "Not symmetric: c[1]={}, c[2]={}",
+        c[1],
+        c[2]
+    );
     Ok(())
 }
 
@@ -655,8 +691,18 @@ use crate::blas3::{f32_to_f16, gemm_ex, gemm_strided_batched};
 #[test]
 fn test_gemm_ex_identity() -> Result<(), Box<dyn std::error::Error>> {
     // A = 2×2 identity in f16, B = [[1,2],[3,4]] in f16
-    let a = [f32_to_f16(1.0), f32_to_f16(0.0), f32_to_f16(0.0), f32_to_f16(1.0)];
-    let b = [f32_to_f16(1.0), f32_to_f16(2.0), f32_to_f16(3.0), f32_to_f16(4.0)];
+    let a = [
+        f32_to_f16(1.0),
+        f32_to_f16(0.0),
+        f32_to_f16(0.0),
+        f32_to_f16(1.0),
+    ];
+    let b = [
+        f32_to_f16(1.0),
+        f32_to_f16(2.0),
+        f32_to_f16(3.0),
+        f32_to_f16(4.0),
+    ];
     let mut c = [0.0_f32; 4];
     gemm_ex(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0)?;
     assert!((c[0] - 1.0).abs() < 1e-3);
@@ -669,7 +715,12 @@ fn test_gemm_ex_identity() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_gemm_ex_alpha_beta() -> Result<(), Box<dyn std::error::Error>> {
     // C = 2·A·B + 0.5·C where A=B=I, C=[10,0,0,10]
-    let i16 = [f32_to_f16(1.0), f32_to_f16(0.0), f32_to_f16(0.0), f32_to_f16(1.0)];
+    let i16 = [
+        f32_to_f16(1.0),
+        f32_to_f16(0.0),
+        f32_to_f16(0.0),
+        f32_to_f16(1.0),
+    ];
     let mut c = [10.0, 0.0, 0.0, 10.0_f32];
     gemm_ex(&i16, &i16, &mut c, 2, 2, 2, 2.0, 0.5)?;
     // C = 2·I + 0.5·[10,0,0,10] = [[2+5, 0], [0, 2+5]] = [[7, 0], [0, 7]]
@@ -681,9 +732,14 @@ fn test_gemm_ex_alpha_beta() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_gemm_ex_matmul_2x3_3x2() -> Result<(), Box<dyn std::error::Error>> {
     // A = [[1,2,3],[4,5,6]], B = [[7,8],[9,10],[11,12]]
-    let a: Vec<u16> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> =
-        [7.0, 8.0, 9.0, 10.0, 11.0, 12.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [7.0, 8.0, 9.0, 10.0, 11.0, 12.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     gemm_ex(&a, &b, &mut c, 2, 2, 3, 1.0, 0.0)?;
     // C = [[58, 64], [139, 154]]
@@ -703,7 +759,11 @@ fn test_f16_roundtrip() {
         // Use gemm_ex with 1×1 identity to convert back (α=1, β=0)
         let mut c = [0.0_f32];
         gemm_ex(&[h], &[f32_to_f16(1.0)], &mut c, 1, 1, 1, 1.0, 0.0).expect("gemm_ex roundtrip ok");
-        assert!((c[0] - v).abs() < 0.01, "f16 roundtrip failed for {v}: got {}", c[0]);
+        assert!(
+            (c[0] - v).abs() < 0.01,
+            "f16 roundtrip failed for {v}: got {}",
+            c[0]
+        );
     }
 }
 
@@ -823,8 +883,14 @@ fn test_solver_trait_qr() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_gemm_ex_epilogue_none() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [3.0, 4.0, 5.0, 6.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [3.0, 4.0, 5.0, 6.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::None, None)?;
     assert!((c[0] - 3.0).abs() < 0.1);
@@ -834,8 +900,14 @@ fn test_gemm_ex_epilogue_none() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_gemm_ex_epilogue_relu() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [-3.0, 4.0, 5.0, -6.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [-3.0, 4.0, 5.0, -6.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::Relu, None)?;
     assert!((c[0] - 0.0).abs() < 0.1); // max(0, -3) = 0
@@ -846,11 +918,28 @@ fn test_gemm_ex_epilogue_relu() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_gemm_ex_epilogue_bias() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [1.0, 2.0, 3.0, 4.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [1.0, 2.0, 3.0, 4.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     let bias = [10.0, 20.0_f32];
-    gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::Bias, Some(&bias))?;
+    gemm_ex_epilogue(
+        &a,
+        &b,
+        &mut c,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+        Epilogue::Bias,
+        Some(&bias),
+    )?;
     assert!((c[0] - 11.0).abs() < 0.1); // 1 + 10
     assert!((c[1] - 22.0).abs() < 0.1); // 2 + 20
     Ok(())
@@ -858,8 +947,14 @@ fn test_gemm_ex_epilogue_bias() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_gemm_ex_epilogue_gelu() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [2.0, 0.0, 0.0, -2.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [2.0, 0.0, 0.0, -2.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::Gelu, None)?;
     // GELU(2.0) ≈ 1.9545, GELU(-2.0) ≈ -0.0455
@@ -911,7 +1006,10 @@ fn test_falsify_svd_zero_matrix() {
     let a = [0.0_f32; 4]; // 2×2 zero
     let result = svd(&a, 2, 2).expect("svd of zero");
     for s in &result.sigma {
-        assert!(s.abs() < 1e-5, "Zero matrix should have zero singular values: {s}");
+        assert!(
+            s.abs() < 1e-5,
+            "Zero matrix should have zero singular values: {s}"
+        );
     }
 }
 
@@ -963,11 +1061,28 @@ fn test_falsify_gemm_ex_1x1() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_falsify_epilogue_bias_relu() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [-10.0, 5.0, 3.0, -7.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [-10.0, 5.0, 3.0, -7.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     let bias = [100.0, 200.0_f32];
-    gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::BiasRelu, Some(&bias))?;
+    gemm_ex_epilogue(
+        &a,
+        &b,
+        &mut c,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+        Epilogue::BiasRelu,
+        Some(&bias),
+    )?;
     // C = matmul + bias, then ReLU
     // [(-10+100), (5+200)] = [90, 205] → relu: [90, 205]
     // [(3+100), (-7+200)] = [103, 193] → relu: [103, 193]
@@ -978,11 +1093,28 @@ fn test_falsify_epilogue_bias_relu() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_falsify_epilogue_bias_gelu() -> Result<(), Box<dyn std::error::Error>> {
-    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
-    let b: Vec<u16> = [2.0, -2.0, 0.0, 3.0_f32].iter().map(|&v| f32_to_f16(v)).collect();
+    let a: Vec<u16> = [1.0, 0.0, 0.0, 1.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
+    let b: Vec<u16> = [2.0, -2.0, 0.0, 3.0_f32]
+        .iter()
+        .map(|&v| f32_to_f16(v))
+        .collect();
     let mut c = [0.0_f32; 4];
     let bias = [1.0, 1.0_f32];
-    gemm_ex_epilogue(&a, &b, &mut c, 2, 2, 2, 1.0, 0.0, Epilogue::BiasGelu, Some(&bias))?;
+    gemm_ex_epilogue(
+        &a,
+        &b,
+        &mut c,
+        2,
+        2,
+        2,
+        1.0,
+        0.0,
+        Epilogue::BiasGelu,
+        Some(&bias),
+    )?;
     // C[0,0] = gelu(2+1) = gelu(3) ≈ 2.996
     assert!(c[0] > 2.9, "BiasGelu c[0]={}", c[0]);
     // C[0,1] = gelu(-2+1) = gelu(-1) ≈ -0.159
@@ -1011,7 +1143,11 @@ fn test_falsify_batched_independence() -> Result<(), Box<dyn std::error::Error>>
     assert!((c[0] - 5.0).abs() < 1e-5);
     // Batch 1: zero * B = 0
     for i in 4..8 {
-        assert!(c[i].abs() < 1e-5, "Batch independence violated at c[{i}]={}", c[i]);
+        assert!(
+            c[i].abs() < 1e-5,
+            "Batch independence violated at c[{i}]={}",
+            c[i]
+        );
     }
     Ok(())
 }

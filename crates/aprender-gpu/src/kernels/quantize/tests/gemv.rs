@@ -25,7 +25,10 @@ fn test_q4k_gemv_ptx_generation() {
     let ptx = kernel.emit_ptx();
 
     // Verify kernel name
-    assert!(ptx.contains("q4k_gemv_warp_reduce"), "Should contain GEMV kernel name");
+    assert!(
+        ptx.contains("q4k_gemv_warp_reduce"),
+        "Should contain GEMV kernel name"
+    );
 
     // Verify parameters (different from GEMM)
     assert!(ptx.contains(".param .u64 y_ptr"), "Missing y_ptr param");
@@ -53,7 +56,11 @@ fn test_q4k_gemv_no_shared_memory() {
     let ptx_kernel = kernel.build_ptx();
 
     // GEMV kernels don't need shared memory - each warp works independently
-    assert_eq!(ptx_kernel.shared_memory_bytes(), 0, "Q4K GEMV should not use shared memory");
+    assert_eq!(
+        ptx_kernel.shared_memory_bytes(),
+        0,
+        "Q4K GEMV should not use shared memory"
+    );
 }
 
 #[test]
@@ -79,7 +86,10 @@ fn test_q5k_gemv_ptx_generation() {
     let kernel = Q5KGemvKernel::new(4096, 4096);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("q5k_gemv_warp_reduce"), "Should contain GEMV kernel name");
+    assert!(
+        ptx.contains("q5k_gemv_warp_reduce"),
+        "Should contain GEMV kernel name"
+    );
     assert!(ptx.contains(".param .u64 y_ptr"), "Missing y_ptr param");
     assert!(ptx.contains(".param .u64 w_ptr"), "Missing w_ptr param");
     assert!(ptx.contains(".param .u64 x_ptr"), "Missing x_ptr param");
@@ -96,7 +106,10 @@ fn test_q6k_gemv_ptx_generation() {
     let kernel = Q6KGemvKernel::new(4096, 4096);
     let ptx = kernel.emit_ptx();
 
-    assert!(ptx.contains("q6k_gemv_warp_reduce"), "Should contain GEMV kernel name");
+    assert!(
+        ptx.contains("q6k_gemv_warp_reduce"),
+        "Should contain GEMV kernel name"
+    );
     assert!(ptx.contains(".param .u64 y_ptr"), "Missing y_ptr param");
     assert!(ptx.contains(".param .u64 w_ptr"), "Missing w_ptr param");
     assert!(ptx.contains(".param .u64 x_ptr"), "Missing x_ptr param");
@@ -112,9 +125,18 @@ fn test_all_gemv_kernels_different() {
     let ptx_q5k = q5k.emit_ptx();
     let ptx_q6k = q6k.emit_ptx();
 
-    assert_ne!(ptx_q4k, ptx_q5k, "Q4K and Q5K GEMV should produce different PTX");
-    assert_ne!(ptx_q5k, ptx_q6k, "Q5K and Q6K GEMV should produce different PTX");
-    assert_ne!(ptx_q4k, ptx_q6k, "Q4K and Q6K GEMV should produce different PTX");
+    assert_ne!(
+        ptx_q4k, ptx_q5k,
+        "Q4K and Q5K GEMV should produce different PTX"
+    );
+    assert_ne!(
+        ptx_q5k, ptx_q6k,
+        "Q5K and Q6K GEMV should produce different PTX"
+    );
+    assert_ne!(
+        ptx_q4k, ptx_q6k,
+        "Q4K and Q6K GEMV should produce different PTX"
+    );
 }
 
 #[test]
@@ -126,9 +148,18 @@ fn test_q4k_gemv_vs_gemm_different() {
     let ptx_gemm = gemm.emit_ptx();
 
     // GEMV and GEMM should have different kernel names and structures
-    assert!(ptx_gemv.contains("gemv"), "GEMV kernel should have 'gemv' in name");
-    assert!(ptx_gemm.contains("gemm"), "GEMM kernel should have 'gemm' in name");
-    assert_ne!(ptx_gemv, ptx_gemm, "GEMV and GEMM should produce different PTX");
+    assert!(
+        ptx_gemv.contains("gemv"),
+        "GEMV kernel should have 'gemv' in name"
+    );
+    assert!(
+        ptx_gemm.contains("gemm"),
+        "GEMM kernel should have 'gemm' in name"
+    );
+    assert_ne!(
+        ptx_gemv, ptx_gemm,
+        "GEMV and GEMM should produce different PTX"
+    );
 }
 
 #[test]
@@ -152,7 +183,11 @@ fn test_q4k_gemv_barrier_safety() {
     let kernel = Q4KGemvKernel::new(4096, 4096);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Q4K GEMV should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q4K GEMV should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -161,7 +196,11 @@ fn test_q5k_gemv_barrier_safety() {
     let kernel = Q5KGemvKernel::new(4096, 4096);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Q5K GEMV should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q5K GEMV should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]
@@ -170,7 +209,11 @@ fn test_q6k_gemv_barrier_safety() {
     let kernel = Q6KGemvKernel::new(4096, 4096);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Q6K GEMV should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Q6K GEMV should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 // =========================================================================
@@ -238,14 +281,23 @@ fn test_fused_rmsnorm_q4k_gemv_operations() {
     assert!(ptx.contains("shfl"), "Should have warp shuffle");
 
     // Verify shared memory operations
-    assert!(ptx.contains("ld.shared.f32"), "Should load from shared memory");
-    assert!(ptx.contains("st.shared.f32"), "Should store to shared memory");
+    assert!(
+        ptx.contains("ld.shared.f32"),
+        "Should load from shared memory"
+    );
+    assert!(
+        ptx.contains("st.shared.f32"),
+        "Should store to shared memory"
+    );
 
     // Verify barrier synchronization
     assert!(ptx.contains("bar.sync"), "Should have barrier sync");
 
     // Verify Q4K dequantization (d, dmin loads)
-    assert!(ptx.contains("cvt.f32.f16"), "Should convert F16 to F32 for d/dmin");
+    assert!(
+        ptx.contains("cvt.f32.f16"),
+        "Should convert F16 to F32 for d/dmin"
+    );
 }
 
 #[test]
@@ -378,7 +430,10 @@ fn test_tiled_q4k_gemv_operations() {
     assert!(ptx.contains("shfl"), "Should have warp shuffle");
 
     // Verify Q4K dequantization (d, dmin loads)
-    assert!(ptx.contains("cvt.f32.f16"), "Should convert F16 to F32 for d/dmin");
+    assert!(
+        ptx.contains("cvt.f32.f16"),
+        "Should convert F16 to F32 for d/dmin"
+    );
 }
 
 #[test]
@@ -410,7 +465,11 @@ fn test_tiled_q4k_gemv_barrier_safety() {
     let kernel = TiledQ4KGemvKernel::new(3584, 4096);
     let ptx = kernel.emit_ptx();
     let result = barrier_safety::analyze(&ptx);
-    assert!(result.is_safe, "Tiled Q4K GEMV should be barrier-safe: {:?}", result.violations);
+    assert!(
+        result.is_safe,
+        "Tiled Q4K GEMV should be barrier-safe: {:?}",
+        result.violations
+    );
 }
 
 #[test]

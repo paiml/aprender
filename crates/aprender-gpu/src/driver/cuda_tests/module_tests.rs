@@ -33,7 +33,9 @@ fn test_module_get_function() {
 "#;
 
     let mut module = CudaModule::from_ptx(&ctx, ptx).expect("Module MUST succeed");
-    let func = module.get_function("test_func").expect("get_function MUST succeed");
+    let func = module
+        .get_function("test_func")
+        .expect("get_function MUST succeed");
     assert!(!func.is_null());
 }
 
@@ -128,10 +130,14 @@ fn test_module_get_function_cached() {
     let mut module = CudaModule::from_ptx(&ctx, ptx).expect("Module MUST succeed");
 
     // First lookup
-    let func1 = module.get_function("cached_test").expect("First lookup MUST succeed");
+    let func1 = module
+        .get_function("cached_test")
+        .expect("First lookup MUST succeed");
 
     // Second lookup (from cache)
-    let func2 = module.get_function("cached_test").expect("Second lookup MUST succeed");
+    let func2 = module
+        .get_function("cached_test")
+        .expect("Second lookup MUST succeed");
 
     // Should return same function handle
     assert_eq!(func1, func2);

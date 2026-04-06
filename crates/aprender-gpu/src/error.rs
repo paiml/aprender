@@ -252,7 +252,10 @@ mod tests {
 
     #[test]
     fn test_out_of_memory_error() {
-        let err = GpuError::OutOfMemory { requested: 1_000_000_000, available: 500_000_000 };
+        let err = GpuError::OutOfMemory {
+            requested: 1_000_000_000,
+            available: 500_000_000,
+        };
         assert!(err.to_string().contains("1000000000"));
         assert!(err.to_string().contains("500000000"));
     }

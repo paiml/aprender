@@ -70,8 +70,12 @@ fn fkr_101_5param_debug_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== 5-Param Debug PTX ===\n{}", ptx);
 
@@ -86,7 +90,11 @@ fn fkr_101_5param_debug_test() {
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1; // Only process 1 page
     let mut args: [*mut c_void; 5] = [
@@ -228,21 +236,31 @@ fn fkr_101_loadloop_debug_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== LoadLoop Debug PTX ===\n{}", ptx);
 
     // Allocate buffers
     let mut input_buf: GpuBuffer<u8> = GpuBuffer::new(&ctx, 4096).unwrap();
-    input_buf.copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>()).unwrap();
+    input_buf
+        .copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>())
+        .unwrap();
 
     let mut debug_buf: GpuBuffer<u32> = GpuBuffer::new(&ctx, 256).unwrap();
     debug_buf.copy_from_host(&vec![0u32; 256]).unwrap();
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1;
     let mut args: [*mut c_void; 3] = [
@@ -341,8 +359,12 @@ fn fkr_101_barebones_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== Barebones PTX ===\n{}", ptx);
 
@@ -356,7 +378,11 @@ fn fkr_101_barebones_test() {
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
     // SAME config as failing test
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1;
     let mut args: [*mut c_void; 5] = [
@@ -369,7 +395,9 @@ fn fkr_101_barebones_test() {
 
     println!("Launching barebones kernel...");
     unsafe {
-        stream.launch_kernel(&mut module, "barebones", &config, &mut args).expect("Kernel launch");
+        stream
+            .launch_kernel(&mut module, "barebones", &config, &mut args)
+            .expect("Kernel launch");
     }
 
     let sync_result = stream.synchronize();

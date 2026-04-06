@@ -123,8 +123,11 @@ impl AnomalyDetector {
         for (i, &value) in self.data.iter().enumerate() {
             let z_score = (value - mean) / std_dev;
             if z_score.abs() > self.zscore_threshold {
-                let anomaly_type =
-                    if z_score > 0.0 { AnomalyType::Spike } else { AnomalyType::Drop };
+                let anomaly_type = if z_score > 0.0 {
+                    AnomalyType::Spike
+                } else {
+                    AnomalyType::Drop
+                };
                 outliers.push(Anomaly::new(i, value, mean, z_score, anomaly_type));
             }
         }
@@ -162,8 +165,11 @@ impl AnomalyDetector {
                 } else {
                     (value - upper_bound) / iqr
                 };
-                let anomaly_type =
-                    if value > median { AnomalyType::Spike } else { AnomalyType::Drop };
+                let anomaly_type = if value > median {
+                    AnomalyType::Spike
+                } else {
+                    AnomalyType::Drop
+                };
                 outliers.push(Anomaly::new(i, value, median, deviation, anomaly_type));
             }
         }
@@ -207,7 +213,9 @@ impl AnomalyDetector {
         // Filter to keep only most significant change points
         if change_points.len() > 1 {
             change_points.sort_by(|a, b| {
-                b.magnitude.partial_cmp(&a.magnitude).unwrap_or(std::cmp::Ordering::Equal)
+                b.magnitude
+                    .partial_cmp(&a.magnitude)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
             // Keep top change points
             change_points.truncate(3);
@@ -267,7 +275,11 @@ impl AnomalyDetector {
             change_points,
             mean,
             std_dev,
-            method: if zscore_outliers.is_empty() { "iqr" } else { "zscore" },
+            method: if zscore_outliers.is_empty() {
+                "iqr"
+            } else {
+                "zscore"
+            },
         }
     }
 
@@ -292,7 +304,11 @@ impl AnomalyDetector {
 
         let z_score = (new_value - mean) / std_dev;
         if z_score.abs() > self.zscore_threshold {
-            let anomaly_type = if z_score > 0.0 { AnomalyType::Spike } else { AnomalyType::Drop };
+            let anomaly_type = if z_score > 0.0 {
+                AnomalyType::Spike
+            } else {
+                AnomalyType::Drop
+            };
             let anomaly = Anomaly::new(self.data.len() - 1, new_value, mean, z_score, anomaly_type);
             self.anomalies.push(anomaly.clone());
             return Some(anomaly);

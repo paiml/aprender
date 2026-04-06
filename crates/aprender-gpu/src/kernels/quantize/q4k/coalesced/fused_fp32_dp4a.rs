@@ -70,7 +70,12 @@ pub struct FusedFp32Q4KGemvKernel {
 impl FusedFp32Q4KGemvKernel {
     /// Creates a new fused FP32 Q4K GEMV kernel with the given dimensions and default warp count.
     pub fn new(k: u32, n: u32, m: u32) -> Self {
-        Self { k, n, m, num_warps: 3 }
+        Self {
+            k,
+            n,
+            m,
+            num_warps: 3,
+        }
     }
 }
 

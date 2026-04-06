@@ -213,7 +213,13 @@ fn test_metal_gemm_equivalence() {
     let result = expected.clone();
 
     for (i, (r, e)) in result.iter().zip(&expected).enumerate() {
-        assert!((r - e).abs() < 1e-5, "GEMM mismatch at {}: {} vs {}", i, r, e);
+        assert!(
+            (r - e).abs() < 1e-5,
+            "GEMM mismatch at {}: {} vs {}",
+            i,
+            r,
+            e
+        );
     }
 
     println!("Metal GEMM equivalence verified");
@@ -232,17 +238,30 @@ fn test_metal_softmax_equivalence() {
     // Compute reference softmax
     let max_val = input.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let exp_sum: f32 = input.iter().map(|x| (x - max_val).exp()).sum();
-    let expected: Vec<f32> = input.iter().map(|x| (x - max_val).exp() / exp_sum).collect();
+    let expected: Vec<f32> = input
+        .iter()
+        .map(|x| (x - max_val).exp() / exp_sum)
+        .collect();
 
     // Stub: Use reference as result
     let result = expected.clone();
 
     // Verify sum to 1
     let sum: f32 = result.iter().sum();
-    assert!((sum - 1.0).abs() < 1e-5, "Softmax sum should be 1.0, got {}", sum);
+    assert!(
+        (sum - 1.0).abs() < 1e-5,
+        "Softmax sum should be 1.0, got {}",
+        sum
+    );
 
     for (i, (r, e)) in result.iter().zip(&expected).enumerate() {
-        assert!((r - e).abs() < 1e-5, "Softmax mismatch at {}: {} vs {}", i, r, e);
+        assert!(
+            (r - e).abs() < 1e-5,
+            "Softmax mismatch at {}: {} vs {}",
+            i,
+            r,
+            e
+        );
     }
 
     println!("Metal softmax equivalence verified");
@@ -270,10 +289,20 @@ fn test_metal_layernorm_equivalence() {
 
     // Verify zero mean (approximately)
     let result_mean: f32 = result.iter().sum::<f32>() / result.len() as f32;
-    assert!(result_mean.abs() < 1e-5, "LayerNorm mean should be ~0, got {}", result_mean);
+    assert!(
+        result_mean.abs() < 1e-5,
+        "LayerNorm mean should be ~0, got {}",
+        result_mean
+    );
 
     for (i, (r, e)) in result.iter().zip(&expected).enumerate() {
-        assert!((r - e).abs() < 1e-5, "LayerNorm mismatch at {}: {} vs {}", i, r, e);
+        assert!(
+            (r - e).abs() < 1e-5,
+            "LayerNorm mismatch at {}: {} vs {}",
+            i,
+            r,
+            e
+        );
     }
 
     println!("Metal LayerNorm equivalence verified");
@@ -311,13 +340,20 @@ fn test_metal_backend_detection() {
         // On macOS, Metal should generally be available
         println!(
             "Metal backend detection: {} (macOS)",
-            if available { "available" } else { "not available" }
+            if available {
+                "available"
+            } else {
+                "not available"
+            }
         );
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        assert!(!available, "Metal should not be available on non-macOS platforms");
+        assert!(
+            !available,
+            "Metal should not be available on non-macOS platforms"
+        );
         println!("Metal backend detection: correctly unavailable (non-macOS)");
     }
 }

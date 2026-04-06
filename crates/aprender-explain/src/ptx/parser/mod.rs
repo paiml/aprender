@@ -18,7 +18,10 @@ pub struct PtxAnalyzer {
 
 impl Default for PtxAnalyzer {
     fn default() -> Self {
-        Self { register_warning_threshold: 128, coalescing_warning_threshold: 0.8 }
+        Self {
+            register_warning_threshold: 128,
+            coalescing_warning_threshold: 0.8,
+        }
     }
 }
 
@@ -128,7 +131,9 @@ impl PtxAnalyzer {
         // Count lines that look like instructions (not directives or labels)
         let instruction_pattern = Regex::new(r"^\s+(add|sub|mul|div|mad|fma|ld|st|mov|setp|bra|ret|cvt|and|or|xor|shl|shr|min|max|abs|neg|sqrt|rsqrt|sin|cos|ex2|lg2|rcp|selp|set|bar)").expect("valid regex pattern");
 
-        ptx.lines().filter(|line| instruction_pattern.is_match(line)).count() as u32
+        ptx.lines()
+            .filter(|line| instruction_pattern.is_match(line))
+            .count() as u32
     }
 
     /// Extract kernel name from PTX
@@ -260,7 +265,11 @@ impl Analyzer for PtxAnalyzer {
 
         let flops = analysis.instruction_count; // Rough approximation
 
-        let arithmetic_intensity = if bytes > 0 { flops as f32 / bytes as f32 } else { 0.0 };
+        let arithmetic_intensity = if bytes > 0 {
+            flops as f32 / bytes as f32
+        } else {
+            0.0
+        };
 
         // SM 7.0 theoretical peak: ~15 TFLOPS (varies by GPU)
         let theoretical_peak_gflops = 15000.0;
@@ -268,7 +277,11 @@ impl Analyzer for PtxAnalyzer {
         // Memory bound if AI < ridge point (typically ~10 for modern GPUs)
         let memory_bound = arithmetic_intensity < 10.0;
 
-        RooflineMetric { arithmetic_intensity, theoretical_peak_gflops, memory_bound }
+        RooflineMetric {
+            arithmetic_intensity,
+            theoretical_peak_gflops,
+            memory_bound,
+        }
     }
 }
 

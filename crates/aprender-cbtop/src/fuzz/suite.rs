@@ -104,7 +104,10 @@ impl FuzzSuite {
         let avg_coverage = if self.results.is_empty() {
             0.0
         } else {
-            self.results.values().map(|r| r.coverage_percent).sum::<f64>()
+            self.results
+                .values()
+                .map(|r| r.coverage_percent)
+                .sum::<f64>()
                 / self.results.len() as f64
         };
 

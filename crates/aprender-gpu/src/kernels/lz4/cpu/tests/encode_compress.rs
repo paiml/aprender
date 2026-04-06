@@ -121,5 +121,9 @@ fn test_lz4_compress_all_same_byte() {
     let size = lz4_compress_block(&input, &mut output).expect("test");
 
     // Should achieve >10:1 ratio
-    assert!(size < 52, "Repeated pattern should achieve >10:1 ratio, got {} bytes", size);
+    assert!(
+        size < 52,
+        "Repeated pattern should achieve >10:1 ratio, got {} bytes",
+        size
+    );
 }

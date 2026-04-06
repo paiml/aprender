@@ -38,7 +38,12 @@ pub fn roundtrip_idempotence<Q: Quantizer>(quantizer: &Q, value: f64) -> Roundtr
     let q2 = quantizer.quantize(d1);
     let d2 = quantizer.dequantize(q2);
 
-    RoundtripResult { original: value, after_first: d1, after_second: d2, idempotent: q1 == q2 }
+    RoundtripResult {
+        original: value,
+        after_first: d1,
+        after_second: d2,
+        idempotent: q1 == q2,
+    }
 }
 
 /// A mock quantizer for testing purposes.
@@ -55,7 +60,10 @@ impl MockQuantizer {
     #[must_use]
     #[allow(clippy::cast_possible_wrap)]
     pub fn for_format(format: QuantFormat) -> Self {
-        Self { levels: format.levels() as i64, scale: 1.0 }
+        Self {
+            levels: format.levels() as i64,
+            scale: 1.0,
+        }
     }
 }
 
@@ -94,7 +102,10 @@ mod tests {
 
     #[test]
     fn mock_quantizer_clamps() {
-        let q = MockQuantizer { levels: 16, scale: 1.0 };
+        let q = MockQuantizer {
+            levels: 16,
+            scale: 1.0,
+        };
         // Value outside range gets clamped
         let quantized = q.quantize(100.0);
         assert_eq!(quantized, 7); // 16/2 - 1 = 7

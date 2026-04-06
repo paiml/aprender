@@ -15,14 +15,20 @@ fn f1014_nan_detected_in_floats() {
     let validator = InputValidator::new();
     let data = vec![1.0, 2.0, f32::NAN, 4.0];
     let result = validator.validate_floats(&data);
-    assert!(matches!(result, Err(AdversarialError::NaNDetected { index: 2 })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::NaNDetected { index: 2 })
+    ));
 }
 
 #[test]
 fn f1014_config_nan_rejected() {
     let validator = ConfigValidator::new();
     let result = validator.validate_numeric("value", f64::NAN);
-    assert!(matches!(result, Err(AdversarialError::ConfigParseError { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::ConfigParseError { .. })
+    ));
 }
 
 // ============================================================================
@@ -34,7 +40,13 @@ fn f1015_positive_inf_detected() {
     let validator = InputValidator::new();
     let data = vec![1.0, f32::INFINITY, 3.0];
     let result = validator.validate_floats(&data);
-    assert!(matches!(result, Err(AdversarialError::InfinityDetected { index: 1, positive: true })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::InfinityDetected {
+            index: 1,
+            positive: true
+        })
+    ));
 }
 
 #[test]
@@ -44,7 +56,10 @@ fn f1015_negative_inf_detected() {
     let result = validator.validate_floats(&data);
     assert!(matches!(
         result,
-        Err(AdversarialError::InfinityDetected { index: 1, positive: false })
+        Err(AdversarialError::InfinityDetected {
+            index: 1,
+            positive: false
+        })
     ));
 }
 
@@ -63,7 +78,10 @@ fn f1016_stack_depth_limit_enforced() {
 
     // 11th should fail
     let result = limiter.enter_recursion();
-    assert!(matches!(result, Err(AdversarialError::StackOverflow { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::StackOverflow { .. })
+    ));
 }
 
 #[test]
@@ -92,7 +110,10 @@ fn f1017_cumulative_memory_tracked() {
     limiter.request_memory(400).unwrap();
     // Third request would exceed
     let result = limiter.request_memory(400);
-    assert!(matches!(result, Err(AdversarialError::ResourceExhausted { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::ResourceExhausted { .. })
+    ));
 }
 
 // ============================================================================
@@ -146,7 +167,10 @@ fn f1019_cancelled_check_fails() {
 fn f1020_recovery_without_checkpoint_fails() {
     let handler: RecoveryHandler<i32> = RecoveryHandler::new();
     let result = handler.recover();
-    assert!(matches!(result, Err(AdversarialError::RecoveryFailed { .. })));
+    assert!(matches!(
+        result,
+        Err(AdversarialError::RecoveryFailed { .. })
+    ));
 }
 
 #[test]

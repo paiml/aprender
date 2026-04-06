@@ -85,8 +85,11 @@ impl BrickProfiler {
         let mut kernels_compared = 0;
 
         for actual_trace in &self.traces {
-            let key =
-                (actual_trace.kernel_name.as_str(), actual_trace.layer_idx, actual_trace.position);
+            let key = (
+                actual_trace.kernel_name.as_str(),
+                actual_trace.layer_idx,
+                actual_trace.position,
+            );
 
             if let Some(expected_trace) = ref_index.get(&key) {
                 kernels_compared += 1;
@@ -115,12 +118,18 @@ impl BrickProfiler {
 
     /// Get traces for a specific kernel name
     pub fn traces_for_kernel(&self, kernel_name: &str) -> Vec<&KernelTrace> {
-        self.traces.iter().filter(|t| t.kernel_name == kernel_name).collect()
+        self.traces
+            .iter()
+            .filter(|t| t.kernel_name == kernel_name)
+            .collect()
     }
 
     /// Get traces for a specific layer
     pub fn traces_for_layer(&self, layer_idx: usize) -> Vec<&KernelTrace> {
-        self.traces.iter().filter(|t| t.layer_idx == layer_idx).collect()
+        self.traces
+            .iter()
+            .filter(|t| t.layer_idx == layer_idx)
+            .collect()
     }
 
     /// Clear all traces (for reuse)

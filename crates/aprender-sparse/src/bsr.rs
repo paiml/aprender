@@ -64,7 +64,14 @@ impl BsrMatrix {
                 val_len: values.len(),
             });
         }
-        Ok(Self { block_rows, block_cols, block_size, offsets, col_indices, values })
+        Ok(Self {
+            block_rows,
+            block_cols,
+            block_size,
+            offsets,
+            col_indices,
+            values,
+        })
     }
 
     /// Create BSR from a dense matrix.
@@ -105,7 +112,14 @@ impl BsrMatrix {
             offsets[bi + 1] = col_indices.len() as u32;
         }
 
-        Self { block_rows: br, block_cols: bc, block_size, offsets, col_indices, values }
+        Self {
+            block_rows: br,
+            block_cols: bc,
+            block_size,
+            offsets,
+            col_indices,
+            values,
+        }
     }
 
     /// Convert to CSR format.

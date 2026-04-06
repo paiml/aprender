@@ -12,11 +12,36 @@ use crate::ptx::BugSeverity;
 use super::TuiApp;
 
 /// Color constants for sidebar rendering.
-const COLOR_GREEN: Color = Color { r: 0.3, g: 1.0, b: 0.3, a: 1.0 };
-const COLOR_YELLOW: Color = Color { r: 1.0, g: 1.0, b: 0.3, a: 1.0 };
-const COLOR_RED: Color = Color { r: 1.0, g: 0.3, b: 0.3, a: 1.0 };
-const COLOR_BLUE: Color = Color { r: 0.3, g: 0.5, b: 1.0, a: 1.0 };
-const COLOR_TEXT: Color = Color { r: 0.8, g: 0.8, b: 0.8, a: 1.0 };
+const COLOR_GREEN: Color = Color {
+    r: 0.3,
+    g: 1.0,
+    b: 0.3,
+    a: 1.0,
+};
+const COLOR_YELLOW: Color = Color {
+    r: 1.0,
+    g: 1.0,
+    b: 0.3,
+    a: 1.0,
+};
+const COLOR_RED: Color = Color {
+    r: 1.0,
+    g: 0.3,
+    b: 0.3,
+    a: 1.0,
+};
+const COLOR_BLUE: Color = Color {
+    r: 0.3,
+    g: 0.5,
+    b: 1.0,
+    a: 1.0,
+};
+const COLOR_TEXT: Color = Color {
+    r: 0.8,
+    g: 0.8,
+    b: 0.8,
+    a: 1.0,
+};
 
 /// Draw a box border top line: `┌─ Title ───┐`
 fn draw_box_top(
@@ -27,7 +52,10 @@ fn draw_box_top(
     width: u16,
     color: Color,
 ) {
-    let style = TextStyle { color, ..Default::default() };
+    let style = TextStyle {
+        color,
+        ..Default::default()
+    };
     let inner = (width as usize).saturating_sub(2);
     let title_part = format!("┌─ {} ", title);
     let fill_len = inner.saturating_sub(title_part.len().saturating_sub(1));
@@ -43,7 +71,10 @@ fn draw_box_bottom(
     width: u16,
     color: Color,
 ) {
-    let style = TextStyle { color, ..Default::default() };
+    let style = TextStyle {
+        color,
+        ..Default::default()
+    };
     let inner = (width as usize).saturating_sub(2);
     let line = format!("└{}┘", "─".repeat(inner));
     canvas.draw_text(&line, Point::new(x, y), &style);
@@ -59,8 +90,14 @@ fn draw_box_line(
     text_color: Color,
     border_color: Color,
 ) {
-    let border_style = TextStyle { color: border_color, ..Default::default() };
-    let text_style = TextStyle { color: text_color, ..Default::default() };
+    let border_style = TextStyle {
+        color: border_color,
+        ..Default::default()
+    };
+    let text_style = TextStyle {
+        color: text_color,
+        ..Default::default()
+    };
     let inner = (width as usize).saturating_sub(4); // "│ " + " │"
     let padded: String = if text.len() > inner {
         text.chars().take(inner).collect()
@@ -165,7 +202,15 @@ fn render_register_panel(
 
     // Total + occupancy line with status color for the value
     let occ_text = format!("Total: {} -> {:.0}% occ", total, occupancy * 100.0);
-    draw_box_line(canvas, &occ_text, x, y + 5.0, width, status_color, status_color);
+    draw_box_line(
+        canvas,
+        &occ_text,
+        x,
+        y + 5.0,
+        width,
+        status_color,
+        status_color,
+    );
 
     // Empty line + bottom border
     draw_box_line(canvas, "", x, y + 6.0, width, COLOR_TEXT, status_color);
@@ -212,7 +257,15 @@ fn render_memory_panel(
     );
 
     let coal_text = format!("Coalesced: {:.1}%", coal_pct);
-    draw_box_line(canvas, &coal_text, x, y + 3.0, width, status_color, status_color);
+    draw_box_line(
+        canvas,
+        &coal_text,
+        x,
+        y + 3.0,
+        width,
+        status_color,
+        status_color,
+    );
 
     draw_box_line(canvas, "", x, y + 4.0, width, COLOR_TEXT, status_color);
     draw_box_bottom(canvas, x, y + 5.0, width, status_color);
@@ -281,7 +334,15 @@ fn render_bugs_panel(
     draw_box_top(canvas, "Bug Hunt", x, y, width, status_color);
 
     if bug_report.bugs.is_empty() {
-        draw_box_line(canvas, "No bugs detected", x, y + 1.0, width, COLOR_GREEN, status_color);
+        draw_box_line(
+            canvas,
+            "No bugs detected",
+            x,
+            y + 1.0,
+            width,
+            COLOR_GREEN,
+            status_color,
+        );
         draw_box_line(canvas, "", x, y + 2.0, width, COLOR_TEXT, status_color);
         draw_box_line(canvas, "", x, y + 3.0, width, COLOR_TEXT, status_color);
     } else {
@@ -330,15 +391,35 @@ fn render_warnings_panel(
     width: u16,
     height: u16,
 ) {
-    let border_color = if app.report.warnings.is_empty() { COLOR_GREEN } else { COLOR_YELLOW };
+    let border_color = if app.report.warnings.is_empty() {
+        COLOR_GREEN
+    } else {
+        COLOR_YELLOW
+    };
 
     draw_box_top(canvas, "Muda (Waste)", x, y, width, border_color);
 
     if app.report.warnings.is_empty() {
-        draw_box_line(canvas, "No Muda detected", x, y + 1.0, width, COLOR_GREEN, border_color);
+        draw_box_line(
+            canvas,
+            "No Muda detected",
+            x,
+            y + 1.0,
+            width,
+            COLOR_GREEN,
+            border_color,
+        );
         // Fill remaining lines
         for row in 2..height.saturating_sub(1) {
-            draw_box_line(canvas, "", x, y + f32::from(row), width, COLOR_TEXT, border_color);
+            draw_box_line(
+                canvas,
+                "",
+                x,
+                y + f32::from(row),
+                width,
+                COLOR_TEXT,
+                border_color,
+            );
         }
     } else {
         let max_items = (height as usize).saturating_sub(2);
@@ -349,12 +430,28 @@ fn render_warnings_panel(
                 MudaType::Overprocessing => "@ ",
             };
             let text = format!("{}{}", icon, w.description);
-            draw_box_line(canvas, &text, x, y + 1.0 + i as f32, width, COLOR_YELLOW, border_color);
+            draw_box_line(
+                canvas,
+                &text,
+                x,
+                y + 1.0 + i as f32,
+                width,
+                COLOR_YELLOW,
+                border_color,
+            );
         }
         // Fill remaining lines
         let used = app.report.warnings.len().min(max_items);
         for row in (used + 1)..height.saturating_sub(1) as usize {
-            draw_box_line(canvas, "", x, y + row as f32, width, COLOR_TEXT, border_color);
+            draw_box_line(
+                canvas,
+                "",
+                x,
+                y + row as f32,
+                width,
+                COLOR_TEXT,
+                border_color,
+            );
         }
     }
 

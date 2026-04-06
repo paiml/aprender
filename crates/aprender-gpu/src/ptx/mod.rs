@@ -59,8 +59,9 @@ pub fn validate_target(target: &str) -> Result<()> {
     }
 
     let version_str = &target[3..];
-    let version: u32 =
-        version_str.parse().map_err(|_| GpuError::InvalidTarget(target.to_string()))?;
+    let version: u32 = version_str
+        .parse()
+        .map_err(|_| GpuError::InvalidTarget(target.to_string()))?;
 
     if version < 70 {
         return Err(GpuError::InvalidTarget(target.to_string()));
@@ -140,7 +141,10 @@ mod tests {
 
     #[test]
     fn test_module_emit_header() {
-        let module = PtxModule::new().version(8, 0).target("sm_70").address_size(64);
+        let module = PtxModule::new()
+            .version(8, 0)
+            .target("sm_70")
+            .address_size(64);
 
         let ptx = module.emit();
 
@@ -157,8 +161,11 @@ mod tests {
             .param(PtxType::U64, "c_ptr")
             .param(PtxType::U32, "n");
 
-        let module =
-            PtxModule::new().version(8, 0).target("sm_70").address_size(64).add_kernel(kernel);
+        let module = PtxModule::new()
+            .version(8, 0)
+            .target("sm_70")
+            .address_size(64)
+            .add_kernel(kernel);
 
         let ptx = module.emit();
 
@@ -271,8 +278,11 @@ mod tests {
                 ctx.ret();
             });
 
-        let module =
-            PtxModule::new().version(8, 0).target("sm_70").address_size(64).add_kernel(kernel);
+        let module = PtxModule::new()
+            .version(8, 0)
+            .target("sm_70")
+            .address_size(64)
+            .add_kernel(kernel);
 
         let ptx = module.emit();
 

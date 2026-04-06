@@ -20,7 +20,12 @@ struct RateLimiter {
 
 impl RateLimiter {
     fn new(max_count: u32, interval: Duration) -> Self {
-        Self { count: 0, interval_start: Instant::now(), max_count, interval }
+        Self {
+            count: 0,
+            interval_start: Instant::now(),
+            max_count,
+            interval,
+        }
     }
 
     fn should_allow(&mut self) -> bool {
@@ -182,7 +187,9 @@ pub struct OtlpSpanAttributes {
 impl OtlpSpanAttributes {
     /// Create from trace result
     pub fn from_trace_result(result: &TraceResult) -> Self {
-        Self { attributes: result.as_otlp_attributes() }
+        Self {
+            attributes: result.as_otlp_attributes(),
+        }
     }
 
     /// Add custom attribute
@@ -203,6 +210,8 @@ impl OtlpSpanAttributes {
             "syscall.overhead_percent",
             "syscall.dominant",
         ];
-        required.iter().all(|key| self.attributes.contains_key(*key))
+        required
+            .iter()
+            .all(|key| self.attributes.contains_key(*key))
     }
 }

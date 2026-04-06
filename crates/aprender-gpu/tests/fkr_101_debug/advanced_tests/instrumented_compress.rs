@@ -342,7 +342,12 @@ fn build_instrumented_compress_kernel() -> String {
             ctx.ret();
         });
 
-    PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit()
+    PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit()
 }
 
 /// FKR-101-DEBUG: Run instrumented compression with debug buffer

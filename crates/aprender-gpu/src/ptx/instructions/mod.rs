@@ -288,7 +288,11 @@ pub struct WmmaShape {
 
 impl WmmaShape {
     /// Standard 16x16x16 tensor core tile
-    pub const M16N16K16: Self = Self { m: 16, n: 16, k: 16 };
+    pub const M16N16K16: Self = Self {
+        m: 16,
+        n: 16,
+        k: 16,
+    };
     /// 8x32x16 tile for different aspect ratios
     pub const M8N32K16: Self = Self { m: 8, n: 32, k: 16 };
     /// 32x8x16 tile for different aspect ratios

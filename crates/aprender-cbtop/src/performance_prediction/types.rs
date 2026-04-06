@@ -17,7 +17,11 @@ pub struct DataPoint {
 impl DataPoint {
     /// Create new data point
     pub fn new(size: usize, performance: f64, latency_us: f64) -> Self {
-        Self { size, performance, latency_us }
+        Self {
+            size,
+            performance,
+            latency_us,
+        }
     }
 }
 

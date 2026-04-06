@@ -113,11 +113,14 @@ impl RegressionAnalysis {
 
     /// Get worst regression
     pub fn worst_regression(&self) -> Option<&MetricRegression> {
-        self.regressions.iter().filter(|r| r.is_regression).max_by(|a, b| {
-            a.percent_change
-                .abs()
-                .partial_cmp(&b.percent_change.abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+        self.regressions
+            .iter()
+            .filter(|r| r.is_regression)
+            .max_by(|a, b| {
+                a.percent_change
+                    .abs()
+                    .partial_cmp(&b.percent_change.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 }

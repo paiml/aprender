@@ -250,8 +250,12 @@ fn test_transfer_stats_default() {
 fn test_transfer_stats_clone() {
     use crate::memory::resident::TransferStats;
 
-    let stats =
-        TransferStats { h2d_transfers: 10, d2h_transfers: 5, h2d_bytes: 1000, d2h_bytes: 500 };
+    let stats = TransferStats {
+        h2d_transfers: 10,
+        d2h_transfers: 5,
+        h2d_bytes: 1000,
+        d2h_bytes: 500,
+    };
 
     let cloned = stats.clone();
     assert_eq!(cloned.h2d_transfers, 10);
@@ -264,8 +268,12 @@ fn test_transfer_stats_clone() {
 fn test_transfer_stats_debug() {
     use crate::memory::resident::TransferStats;
 
-    let stats =
-        TransferStats { h2d_transfers: 100, d2h_transfers: 50, h2d_bytes: 10240, d2h_bytes: 5120 };
+    let stats = TransferStats {
+        h2d_transfers: 100,
+        d2h_transfers: 50,
+        h2d_bytes: 10240,
+        d2h_bytes: 5120,
+    };
 
     let debug_str = format!("{:?}", stats);
     assert!(debug_str.contains("TransferStats"));
@@ -300,5 +308,8 @@ fn test_kernel_cache_stats_after_operations() {
     let _ = tensor2.gelu(&ctx).unwrap();
 
     let hits = kernel_cache_hits();
-    assert!(hits >= 1, "Should have at least 1 cache hit on repeated operation");
+    assert!(
+        hits >= 1,
+        "Should have at least 1 cache hit on repeated operation"
+    );
 }

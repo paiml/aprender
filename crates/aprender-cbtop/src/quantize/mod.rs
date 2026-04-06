@@ -81,7 +81,9 @@ impl QuantizedBrick {
 
     /// Get effective bits per weight.
     pub fn bits_per_weight(&self) -> f64 {
-        self.weights.as_ref().map_or(0.0, |w| w.actual_bits_per_weight())
+        self.weights
+            .as_ref()
+            .map_or(0.0, |w| w.actual_bits_per_weight())
     }
 
     /// Get quantization format.

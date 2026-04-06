@@ -495,7 +495,10 @@ mod tests {
     fn test_ptx_emits_valid() {
         let k = FusedGateUpSwigluHwDp4aQ4KGemvKernel::new(1536, 4096);
         let ptx = k.emit_ptx();
-        assert!(ptx.contains("fused_gate_up_swiglu_hw_dp4a_q4k_gemv"), "kernel name");
+        assert!(
+            ptx.contains("fused_gate_up_swiglu_hw_dp4a_q4k_gemv"),
+            "kernel name"
+        );
         assert!(ptx.contains("dp4a.u32.s32"), "DP4A instruction");
         assert!(ptx.contains("ex2.approx"), "exp for sigmoid");
         assert!(ptx.contains("rcp.approx"), "rcp for sigmoid");

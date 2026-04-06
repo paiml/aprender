@@ -51,7 +51,11 @@ fn golden_rsqrt_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("rsqrt"), "GOLDEN FAIL: rsqrt instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("rsqrt"),
+        "GOLDEN FAIL: rsqrt instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -63,7 +67,11 @@ fn golden_ex2_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("ex2"), "GOLDEN FAIL: ex2 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("ex2"),
+        "GOLDEN FAIL: ex2 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -75,7 +83,11 @@ fn golden_sin_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("sin"), "GOLDEN FAIL: sin instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("sin"),
+        "GOLDEN FAIL: sin instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -88,7 +100,11 @@ fn golden_max_f32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("max.f32"), "GOLDEN FAIL: max.f32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("max.f32"),
+        "GOLDEN FAIL: max.f32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -101,7 +117,11 @@ fn golden_min_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("min.u32"), "GOLDEN FAIL: min.u32 instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("min.u32"),
+        "GOLDEN FAIL: min.u32 instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 // ============================================================================
@@ -117,7 +137,11 @@ fn golden_popc_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("popc"), "GOLDEN FAIL: popc instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("popc"),
+        "GOLDEN FAIL: popc instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -129,7 +153,11 @@ fn golden_clz_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("clz"), "GOLDEN FAIL: clz instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("clz"),
+        "GOLDEN FAIL: clz instruction not found\nPTX:\n{}",
+        ptx
+    );
 }
 
 #[test]
@@ -141,5 +169,9 @@ fn golden_bfind_u32_instruction() {
     });
 
     let ptx = kernel.emit();
-    assert!(ptx.contains("bfind"), "GOLDEN FAIL: bfind instruction not found\nPTX:\n{}", ptx);
+    assert!(
+        ptx.contains("bfind"),
+        "GOLDEN FAIL: bfind instruction not found\nPTX:\n{}",
+        ptx
+    );
 }

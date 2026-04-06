@@ -205,8 +205,12 @@ fn fkr_101_compress_minimal_test() {
             ctx.ret();
         });
 
-    let ptx =
-        PtxModule::new().version(8, 0).target("sm_89").address_size(64).add_kernel(kernel).emit();
+    let ptx = PtxModule::new()
+        .version(8, 0)
+        .target("sm_89")
+        .address_size(64)
+        .add_kernel(kernel)
+        .emit();
 
     println!("=== Compress-Minimal PTX ===");
     for (i, line) in ptx.lines().enumerate() {
@@ -214,7 +218,9 @@ fn fkr_101_compress_minimal_test() {
     }
 
     let mut input_buf: GpuBuffer<u8> = GpuBuffer::new(&ctx, 4096).unwrap();
-    input_buf.copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>()).unwrap();
+    input_buf
+        .copy_from_host(&(0..4096u32).map(|i| (i % 256) as u8).collect::<Vec<_>>())
+        .unwrap();
 
     let mut output_buf: GpuBuffer<u8> = GpuBuffer::new(&ctx, 4352).unwrap();
     let mut sizes_buf: GpuBuffer<u32> = GpuBuffer::new(&ctx, 1).unwrap();
@@ -223,7 +229,11 @@ fn fkr_101_compress_minimal_test() {
 
     let mut module = CudaModule::from_ptx(&ctx, &ptx).expect("PTX load");
 
-    let config = LaunchConfig { grid: (1, 1, 1), block: (96, 1, 1), shared_mem: 0 };
+    let config = LaunchConfig {
+        grid: (1, 1, 1),
+        block: (96, 1, 1),
+        shared_mem: 0,
+    };
 
     let batch_size: u32 = 1;
     let mut args: [*mut c_void; 5] = [
@@ -236,7 +246,9 @@ fn fkr_101_compress_minimal_test() {
 
     println!("Launching compress-minimal kernel...");
     unsafe {
-        stream.launch_kernel(&mut module, "compress_minimal", &config, &mut args).expect("Launch");
+        stream
+            .launch_kernel(&mut module, "compress_minimal", &config, &mut args)
+            .expect("Launch");
     }
 
     let sync_result = stream.synchronize();
@@ -250,7 +262,10 @@ fn fkr_101_compress_minimal_test() {
     if let Err(e) = debug_buf.copy_to_host(&mut output) {
         eprintln!("Copy to host failed: {:?}", e);
         if sync_result.is_err() {
-            panic!("Compress-minimal test crashed during kernel: {:?}", sync_result.unwrap_err());
+            panic!(
+                "Compress-minimal test crashed during kernel: {:?}",
+                sync_result.unwrap_err()
+            );
         }
         panic!("Compress-minimal test crashed during copy: {:?}", e);
     }

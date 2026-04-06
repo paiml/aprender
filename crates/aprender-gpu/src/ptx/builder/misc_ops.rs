@@ -218,9 +218,15 @@ impl<'a> KernelBuilder<'a> {
 
     /// Branch if predicate is false (negated predicate)
     pub fn branch_if_not(&mut self, pred: VirtualReg, label: &str) {
-        let predicate = Predicate { reg: pred, negated: true };
-        self.instructions
-            .push(PtxInstruction::new(PtxOp::Bra, PtxType::B32).predicated(predicate).label(label));
+        let predicate = Predicate {
+            reg: pred,
+            negated: true,
+        };
+        self.instructions.push(
+            PtxInstruction::new(PtxOp::Bra, PtxType::B32)
+                .predicated(predicate)
+                .label(label),
+        );
     }
 
     // =========================================================================

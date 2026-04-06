@@ -38,7 +38,11 @@ impl PerHeadRmsNormKernel {
     /// Create a new per-head RMSNorm kernel
     #[must_use]
     pub fn new(head_dim: u32, num_heads: u32) -> Self {
-        Self { head_dim, num_heads, epsilon: 1e-6 }
+        Self {
+            head_dim,
+            num_heads,
+            epsilon: 1e-6,
+        }
     }
 
     /// Set custom epsilon value

@@ -73,9 +73,15 @@ fn parse_dimensions(size: &str) -> Result<[u32; 3]> {
     if parts.len() != 3 {
         anyhow::bail!("Dimensions must be MxNxK format, got: {size}");
     }
-    let m: u32 = parts[0].parse().map_err(|_| anyhow::anyhow!("Invalid M: {}", parts[0]))?;
-    let n: u32 = parts[1].parse().map_err(|_| anyhow::anyhow!("Invalid N: {}", parts[1]))?;
-    let k: u32 = parts[2].parse().map_err(|_| anyhow::anyhow!("Invalid K: {}", parts[2]))?;
+    let m: u32 = parts[0]
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid M: {}", parts[0]))?;
+    let n: u32 = parts[1]
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid N: {}", parts[1]))?;
+    let k: u32 = parts[2]
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid K: {}", parts[2]))?;
     Ok([m, n, k])
 }
 
@@ -103,7 +109,10 @@ pub fn profile_quant(kernel_name: &str, size: &str) -> Result<()> {
     println!("  Super-blocks: {num_superblocks}");
     println!("  Compressed size: {:.2} MB", compressed_bytes as f64 / 1e6);
     println!("  FP32 equivalent: {:.2} MB", fp32_bytes as f64 / 1e6);
-    println!("  Compression ratio: {:.1}x", fp32_bytes as f64 / compressed_bytes as f64);
+    println!(
+        "  Compression ratio: {:.1}x",
+        fp32_bytes as f64 / compressed_bytes as f64
+    );
 
     // Try to get actual timing from benchmark_matrix_suite
     if let Some(timing) = parse_q4k_timing(dims[0], dims[2]) {
@@ -132,8 +141,14 @@ pub fn profile_quant(kernel_name: &str, size: &str) -> Result<()> {
         let theoretical_bw_gbps = 40.0;
         let bw_pct = peak_bw_gbps / theoretical_bw_gbps * 100.0;
 
-        println!("    Compute util: {:.0}% of AVX-512 peak (~150 GFLOP/s)", compute_pct);
-        println!("    Bandwidth util: {:.0}% of practical DRAM (~40 GB/s)", bw_pct);
+        println!(
+            "    Compute util: {:.0}% of AVX-512 peak (~150 GFLOP/s)",
+            compute_pct
+        );
+        println!(
+            "    Bandwidth util: {:.0}% of practical DRAM (~40 GB/s)",
+            bw_pct
+        );
 
         if bw_pct > compute_pct {
             println!("    Bottleneck: COMPUTE-BOUND (fused dequant+dot overhead)");
@@ -202,7 +217,11 @@ pub fn profile_quant_all() -> Result<()> {
                         .and_then(|s| s.trim().parse::<f64>().ok())?;
                     let bw_gbps = extract_between(line, "GFLOPS, ", " GB/s")
                         .and_then(|s| s.trim().parse::<f64>().ok())?;
-                    return Some(Q4kTiming { time_us, gflops, bw_gbps });
+                    return Some(Q4kTiming {
+                        time_us,
+                        gflops,
+                        bw_gbps,
+                    });
                 }
             }
             None
@@ -231,13 +250,19 @@ pub fn profile_quant_all() -> Result<()> {
             .iter()
             .take(4) // Only first 4 are benchmarked by default
             .count();
-        println!("\n  Summary ({measured_count}/{} layers measured):", STANDARD_LAYERS.len());
+        println!(
+            "\n  Summary ({measured_count}/{} layers measured):",
+            STANDARD_LAYERS.len()
+        );
         let _ = avg_gflops;
         let avg_time = total_time_us / measured_count as f64;
         let composite_tok_s = 1000.0 / (avg_time * 192.0 / 1000.0);
         println!("    Avg GEMV time: {:.1} us", avg_time);
         println!("    Composite tok/s estimate: {:.1}", composite_tok_s);
-        println!("    Total GEMV time (measured layers): {:.1} us", total_time_us);
+        println!(
+            "    Total GEMV time (measured layers): {:.1} us",
+            total_time_us
+        );
     } else {
         println!("\n  No benchmark data available.");
         println!(
@@ -276,7 +301,11 @@ fn parse_q4k_timing(out_dim: u32, in_dim: u32) -> Option<Q4kTiming> {
                 extract_between(line, "(", " GFLOPS").and_then(|s| s.trim().parse::<f64>().ok())?;
             let bw_gbps = extract_between(line, "GFLOPS, ", " GB/s")
                 .and_then(|s| s.trim().parse::<f64>().ok())?;
-            return Some(Q4kTiming { time_us, gflops, bw_gbps });
+            return Some(Q4kTiming {
+                time_us,
+                gflops,
+                bw_gbps,
+            });
         }
     }
     None
@@ -346,7 +375,10 @@ mod tests {
 
     #[test]
     fn test_kernel_from_str() {
-        assert_eq!("q4k_gemv".parse::<QuantKernel>().unwrap(), QuantKernel::Q4kGemv);
+        assert_eq!(
+            "q4k_gemv".parse::<QuantKernel>().unwrap(),
+            QuantKernel::Q4kGemv
+        );
         assert_eq!("q6k".parse::<QuantKernel>().unwrap(), QuantKernel::Q6kGemv);
         assert!("invalid".parse::<QuantKernel>().is_err());
     }

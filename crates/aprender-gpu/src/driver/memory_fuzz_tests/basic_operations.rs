@@ -15,7 +15,8 @@ fn test_zero_sized_buffer() {
         assert_eq!(buf.len(), 0);
         // Copying 0 bytes should be a no-op
         let src: Vec<f32> = vec![];
-        buf.copy_from_host(&src).expect("Zero-byte copy should succeed");
+        buf.copy_from_host(&src)
+            .expect("Zero-byte copy should succeed");
     }
 }
 
@@ -75,7 +76,15 @@ fn test_oom_resilience() {
     let (free_end, _) = ctx.memory_info().expect("Mem info");
     // Allow some small driver overhead variance, but major blocks should be free
     // Diff should be small
-    let diff = if free_start > free_end { free_start - free_end } else { 0 };
+    let diff = if free_start > free_end {
+        free_start - free_end
+    } else {
+        0
+    };
     // 100MB tolerance
-    assert!(diff < 100 * 1024 * 1024, "Memory leak detected! {} bytes missing", diff);
+    assert!(
+        diff < 100 * 1024 * 1024,
+        "Memory leak detected! {} bytes missing",
+        diff
+    );
 }

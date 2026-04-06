@@ -12,7 +12,10 @@ fn test_gemm_naive_no_critical_bugs() {
     let ptx = kernel.emit_ptx();
 
     let result = PtxBugAnalyzer::new().analyze(&ptx);
-    assert!(result.is_valid(), "GEMM naive should not have critical bugs");
+    assert!(
+        result.is_valid(),
+        "GEMM naive should not have critical bugs"
+    );
 }
 
 #[test]
@@ -107,7 +110,10 @@ fn test_ptx_bug_analysis_determinism() {
 
 #[test]
 fn test_ptx_analyzer_determinism() {
-    let kernels = [GemmKernel::naive(64, 64, 64).emit_ptx(), SoftmaxKernel::new(1024).emit_ptx()];
+    let kernels = [
+        GemmKernel::naive(64, 64, 64).emit_ptx(),
+        SoftmaxKernel::new(1024).emit_ptx(),
+    ];
 
     let analyzer = PtxAnalyzer::new();
 

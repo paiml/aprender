@@ -74,8 +74,9 @@ fn test_inverse_roundtrip_size_4() {
 #[test]
 fn test_inverse_roundtrip_size_16() {
     let plan = FftPlan::new(16).expect("valid plan");
-    let input: Vec<Complex> =
-        (0..16).map(|i| Complex::new((i as f32).sin(), (i as f32).cos())).collect();
+    let input: Vec<Complex> = (0..16)
+        .map(|i| Complex::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
     let mut freq = vec![Complex::ZERO; 16];
     let mut recovered = vec![Complex::ZERO; 16];
 
@@ -121,7 +122,11 @@ fn test_dc_signal() {
     // FFT of constant = N*constant at k=0, zero elsewhere
     assert!((output[0].re - 12.0).abs() < 1e-5, "DC component wrong");
     for k in 1..4 {
-        assert!(output[k].abs() < 1e-5, "Non-DC component non-zero at k={k}: {:?}", output[k]);
+        assert!(
+            output[k].abs() < 1e-5,
+            "Non-DC component non-zero at k={k}: {:?}",
+            output[k]
+        );
     }
 }
 
@@ -133,14 +138,19 @@ fn test_dc_signal() {
 fn test_linearity() {
     let plan = FftPlan::new(8).expect("valid plan");
     let x: Vec<Complex> = (0..8).map(|i| Complex::new(i as f32, 0.0)).collect();
-    let y: Vec<Complex> = (0..8).map(|i| Complex::new(0.0, (i as f32).sin())).collect();
+    let y: Vec<Complex> = (0..8)
+        .map(|i| Complex::new(0.0, (i as f32).sin()))
+        .collect();
 
     let alpha = Complex::new(2.0, 0.0);
     let beta = Complex::new(0.5, 0.0);
 
     // FFT(α*x + β*y)
-    let combined: Vec<Complex> =
-        x.iter().zip(y.iter()).map(|(&xi, &yi)| alpha * xi + beta * yi).collect();
+    let combined: Vec<Complex> = x
+        .iter()
+        .zip(y.iter())
+        .map(|(&xi, &yi)| alpha * xi + beta * yi)
+        .collect();
     let mut fft_combined = vec![Complex::ZERO; 8];
     plan.forward(&combined, &mut fft_combined).expect("ok");
 
@@ -194,7 +204,10 @@ fn test_fft_2d_impulse() {
 
     // 2D impulse → all ones
     for (k, x) in output.iter().enumerate() {
-        assert!((x.re - 1.0).abs() < 1e-5 && x.im.abs() < 1e-5, "2D impulse wrong at k={k}: {x:?}");
+        assert!(
+            (x.re - 1.0).abs() < 1e-5 && x.im.abs() < 1e-5,
+            "2D impulse wrong at k={k}: {x:?}"
+        );
     }
 }
 
@@ -290,7 +303,11 @@ mod proptests {
 #[test]
 fn test_bluestein_size_3() -> Result<(), Box<dyn std::error::Error>> {
     // DFT of [1, 1, 1] size 3: X[0]=3, X[1]=X[2]=0
-    let input = [Complex::new(1.0, 0.0), Complex::new(1.0, 0.0), Complex::new(1.0, 0.0)];
+    let input = [
+        Complex::new(1.0, 0.0),
+        Complex::new(1.0, 0.0),
+        Complex::new(1.0, 0.0),
+    ];
     let mut output = [Complex::ZERO; 3];
     bluestein_fft(&input, &mut output, false)?;
     assert!((output[0].re - 3.0).abs() < 1e-3);
@@ -346,8 +363,16 @@ fn test_bluestein_size_6_impulse() -> Result<(), Box<dyn std::error::Error>> {
     bluestein_fft(&input, &mut output, false)?;
 
     for k in 0..6 {
-        assert!((output[k].re - 1.0).abs() < 1e-3, "Impulse X[{k}].re = {}", output[k].re);
-        assert!(output[k].im.abs() < 1e-3, "Impulse X[{k}].im = {}", output[k].im);
+        assert!(
+            (output[k].re - 1.0).abs() < 1e-3,
+            "Impulse X[{k}].re = {}",
+            output[k].re
+        );
+        assert!(
+            output[k].im.abs() < 1e-3,
+            "Impulse X[{k}].im = {}",
+            output[k].im
+        );
     }
     Ok(())
 }
@@ -410,7 +435,10 @@ fn test_fft_3d_impulse() -> Result<(), Box<dyn std::error::Error>> {
 
     // 3D impulse → all ones
     for (k, x) in output.iter().enumerate() {
-        assert!((x.re - 1.0).abs() < 1e-4 && x.im.abs() < 1e-4, "3D impulse wrong at k={k}: {x:?}");
+        assert!(
+            (x.re - 1.0).abs() < 1e-4 && x.im.abs() < 1e-4,
+            "3D impulse wrong at k={k}: {x:?}"
+        );
     }
     Ok(())
 }
@@ -419,8 +447,9 @@ fn test_fft_3d_impulse() -> Result<(), Box<dyn std::error::Error>> {
 fn test_fft_3d_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let (nx, ny, nz) = (2, 4, 2);
     let total = nx * ny * nz;
-    let input: Vec<Complex> =
-        (0..total).map(|i| Complex::new((i as f32).sin(), (i as f32).cos())).collect();
+    let input: Vec<Complex> = (0..total)
+        .map(|i| Complex::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
     let mut freq = vec![Complex::ZERO; total];
     let mut recovered = vec![Complex::ZERO; total];
 
@@ -502,7 +531,9 @@ fn test_fft_batched_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let n = 8;
     let batch = 2;
     let total = n * batch;
-    let input: Vec<Complex> = (0..total).map(|i| Complex::new((i as f32).sin(), 0.0)).collect();
+    let input: Vec<Complex> = (0..total)
+        .map(|i| Complex::new((i as f32).sin(), 0.0))
+        .collect();
     let mut freq = vec![Complex::ZERO; total];
     let mut recovered = vec![Complex::ZERO; total];
 
@@ -543,7 +574,10 @@ fn test_c2r_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 
     for (i, (&orig, &rec)) in real_input.iter().zip(recovered.iter()).enumerate() {
         let err = (orig - rec).abs();
-        assert!(err < 1e-4, "C2R roundtrip failed at {i}: orig={orig}, rec={rec}, err={err}");
+        assert!(
+            err < 1e-4,
+            "C2R roundtrip failed at {i}: orig={orig}, rec={rec}, err={err}"
+        );
     }
     Ok(())
 }
@@ -657,7 +691,10 @@ fn test_fft_trait_r2c_c2r() {
     fft.fft_c2r(&freq, &mut output).expect("c2r ok");
 
     for (i, (&a, &b)) in input.iter().zip(output.iter()).enumerate() {
-        assert!((a - b).abs() < 1e-4, "r2c/c2r roundtrip mismatch at {i}: {a} vs {b}");
+        assert!(
+            (a - b).abs() < 1e-4,
+            "r2c/c2r roundtrip mismatch at {i}: {a} vs {b}"
+        );
     }
 }
 
@@ -691,8 +728,9 @@ fn test_fft_trait_2d_parseval() {
     let plan = FftPlan::new(4).expect("valid plan");
     let fft: &dyn Fft = &plan;
 
-    let input: Vec<Complex> =
-        (0..16).map(|i| Complex::new((i as f32).sin(), (i as f32).cos())).collect();
+    let input: Vec<Complex> = (0..16)
+        .map(|i| Complex::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
     let mut output = vec![Complex::ZERO; 16];
 
     fft.fft_2d(&input, &mut output, 4, 4).expect("2d ok");
@@ -717,7 +755,10 @@ fn test_falsify_fft_all_zeros() {
     let mut output = vec![Complex::ZERO; 8];
     plan.forward(&input, &mut output).expect("fft ok");
     for (k, x) in output.iter().enumerate() {
-        assert!(x.abs() < 1e-7, "FFT of all zeros should be all zeros, got {x:?} at k={k}");
+        assert!(
+            x.abs() < 1e-7,
+            "FFT of all zeros should be all zeros, got {x:?} at k={k}"
+        );
     }
 }
 
@@ -736,7 +777,11 @@ fn test_falsify_fft_nyquist_only() {
 
     // All energy should be at Nyquist (k=N/2=2)
     assert!(output[0].abs() < 1e-5, "DC should be zero: {:?}", output[0]);
-    assert!(output[2].abs() > 3.9, "Nyquist should have all energy: {:?}", output[2]);
+    assert!(
+        output[2].abs() > 3.9,
+        "Nyquist should have all energy: {:?}",
+        output[2]
+    );
 }
 
 #[test]
@@ -761,16 +806,20 @@ fn test_falsify_fft_large_power_of_two() {
 fn test_falsify_fft_roundtrip_large() {
     let n = 256;
     let plan = FftPlan::new(n).expect("valid plan");
-    let input: Vec<Complex> =
-        (0..n).map(|i| Complex::new((i as f32 * 0.1).sin(), (i as f32 * 0.07).cos())).collect();
+    let input: Vec<Complex> = (0..n)
+        .map(|i| Complex::new((i as f32 * 0.1).sin(), (i as f32 * 0.07).cos()))
+        .collect();
     let mut freq = vec![Complex::ZERO; n];
     let mut recovered = vec![Complex::ZERO; n];
 
     plan.forward(&input, &mut freq).expect("ok");
     plan.inverse(&freq, &mut recovered).expect("ok");
 
-    let max_err =
-        input.iter().zip(recovered.iter()).map(|(a, b)| (*a - *b).abs()).fold(0.0_f32, f32::max);
+    let max_err = input
+        .iter()
+        .zip(recovered.iter())
+        .map(|(a, b)| (*a - *b).abs())
+        .fold(0.0_f32, f32::max);
     assert!(max_err < 1e-3, "Large roundtrip max error: {max_err}");
 }
 
@@ -797,17 +846,24 @@ fn test_falsify_bluestein_large_prime() -> Result<(), Box<dyn std::error::Error>
 #[test]
 fn test_falsify_bluestein_roundtrip_prime_23() -> Result<(), Box<dyn std::error::Error>> {
     let n = 23;
-    let input: Vec<Complex> =
-        (0..n).map(|i| Complex::new((i as f32).sin(), (i as f32).cos())).collect();
+    let input: Vec<Complex> = (0..n)
+        .map(|i| Complex::new((i as f32).sin(), (i as f32).cos()))
+        .collect();
     let mut freq = vec![Complex::ZERO; n];
     let mut recovered = vec![Complex::ZERO; n];
 
     bluestein_fft(&input, &mut freq, false)?;
     bluestein_fft(&freq, &mut recovered, true)?;
 
-    let max_err =
-        input.iter().zip(recovered.iter()).map(|(a, b)| (*a - *b).abs()).fold(0.0_f32, f32::max);
-    assert!(max_err < 0.05, "Bluestein prime=23 roundtrip max error: {max_err}");
+    let max_err = input
+        .iter()
+        .zip(recovered.iter())
+        .map(|(a, b)| (*a - *b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_err < 0.05,
+        "Bluestein prime=23 roundtrip max error: {max_err}"
+    );
     Ok(())
 }
 
@@ -820,10 +876,18 @@ fn test_falsify_fft_2d_constant() {
     fft_2d(&input, &mut output, 4, 4).expect("ok");
 
     // DC = N*M*val = 16*3 = 48
-    assert!((output[0].re - 48.0).abs() < 1e-3, "2D constant DC: {:?}", output[0]);
+    assert!(
+        (output[0].re - 48.0).abs() < 1e-3,
+        "2D constant DC: {:?}",
+        output[0]
+    );
     // All other bins should be ~0
     for k in 1..16 {
-        assert!(output[k].abs() < 1e-3, "2D constant non-DC at k={k}: {:?}", output[k]);
+        assert!(
+            output[k].abs() < 1e-3,
+            "2D constant non-DC at k={k}: {:?}",
+            output[k]
+        );
     }
 }
 
@@ -838,8 +902,14 @@ fn test_falsify_r2c_c2r_roundtrip_large() -> Result<(), Box<dyn std::error::Erro
     plan.forward_r2c(&real_input, &mut freq)?;
     plan.inverse_c2r(&freq, &mut recovered)?;
 
-    let max_err =
-        real_input.iter().zip(recovered.iter()).map(|(a, b)| (a - b).abs()).fold(0.0_f32, f32::max);
-    assert!(max_err < 1e-3, "R2C/C2R large roundtrip max error: {max_err}");
+    let max_err = real_input
+        .iter()
+        .zip(recovered.iter())
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    assert!(
+        max_err < 1e-3,
+        "R2C/C2R large roundtrip max error: {max_err}"
+    );
     Ok(())
 }

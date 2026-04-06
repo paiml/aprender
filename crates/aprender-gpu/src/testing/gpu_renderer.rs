@@ -69,7 +69,13 @@ impl ColorPalette {
     /// Grayscale palette
     #[must_use]
     pub fn grayscale() -> Self {
-        Self { colors: vec![Rgb::new(0, 0, 0), Rgb::new(128, 128, 128), Rgb::new(255, 255, 255)] }
+        Self {
+            colors: vec![
+                Rgb::new(0, 0, 0),
+                Rgb::new(128, 128, 128),
+                Rgb::new(255, 255, 255),
+            ],
+        }
     }
 
     #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
@@ -109,7 +115,10 @@ impl GpuPixelRenderer {
     /// Create renderer with auto-normalization
     #[must_use]
     pub fn new() -> Self {
-        Self { palette: ColorPalette::default(), range: None }
+        Self {
+            palette: ColorPalette::default(),
+            range: None,
+        }
     }
 
     /// Set fixed range for normalization
@@ -210,12 +219,20 @@ pub fn compare_png_bytes(a: &[u8], b: &[u8], tolerance: u8) -> PixelDiffResult {
     // PNG header check
     let png_header = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
     if a.len() < 8 || b.len() < 8 || a[0..8] != png_header || b[0..8] != png_header {
-        return PixelDiffResult { different_pixels: 1, total_pixels: 1, max_diff: 255 };
+        return PixelDiffResult {
+            different_pixels: 1,
+            total_pixels: 1,
+            max_diff: 255,
+        };
     }
 
     // For exact comparison, just compare bytes
     if a == b {
-        return PixelDiffResult { different_pixels: 0, total_pixels: a.len(), max_diff: 0 };
+        return PixelDiffResult {
+            different_pixels: 0,
+            total_pixels: a.len(),
+            max_diff: 0,
+        };
     }
 
     // Byte-level comparison with tolerance
@@ -261,7 +278,10 @@ mod tests {
         let png = renderer.render_to_png(&buffer, 8, 8);
 
         // PNG magic bytes
-        assert_eq!(&png[0..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(
+            &png[0..8],
+            &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+        );
     }
 
     #[test]
@@ -271,7 +291,10 @@ mod tests {
         let png = renderer.render_to_png(&buffer, 2, 2);
         assert!(!png.is_empty());
         // Verify PNG header
-        assert_eq!(&png[0..8], &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+        assert_eq!(
+            &png[0..8],
+            &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
+        );
     }
 
     #[test]

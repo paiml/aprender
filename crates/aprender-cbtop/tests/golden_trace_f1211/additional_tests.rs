@@ -72,9 +72,15 @@ fn f1219_multiple_goldens() {
     let mut manager = GoldenTraceManager::new(temp_dir.path().to_path_buf());
 
     // Save multiple goldens
-    manager.capture_golden("v1", TraceMetrics::new().total_time_us(1000.0)).unwrap();
-    manager.capture_golden("v2", TraceMetrics::new().total_time_us(900.0)).unwrap();
-    manager.capture_golden("v3", TraceMetrics::new().total_time_us(800.0)).unwrap();
+    manager
+        .capture_golden("v1", TraceMetrics::new().total_time_us(1000.0))
+        .unwrap();
+    manager
+        .capture_golden("v2", TraceMetrics::new().total_time_us(900.0))
+        .unwrap();
+    manager
+        .capture_golden("v3", TraceMetrics::new().total_time_us(800.0))
+        .unwrap();
 
     let names = manager.list_goldens().unwrap();
     assert_eq!(names.len(), 3);
@@ -86,8 +92,12 @@ fn f1219_version_selection() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = GoldenTraceManager::new(temp_dir.path().to_path_buf());
 
-    manager.capture_golden("release_1_0", TraceMetrics::new().total_time_us(1000.0)).unwrap();
-    manager.capture_golden("release_2_0", TraceMetrics::new().total_time_us(800.0)).unwrap();
+    manager
+        .capture_golden("release_1_0", TraceMetrics::new().total_time_us(1000.0))
+        .unwrap();
+    manager
+        .capture_golden("release_2_0", TraceMetrics::new().total_time_us(800.0))
+        .unwrap();
 
     // Can load specific version
     let v1 = manager.load_golden("release_1_0").unwrap();
@@ -104,7 +114,9 @@ fn f1219_version_selection() {
 /// F1220.1: JSON export valid
 #[test]
 fn f1220_json_export() {
-    let metrics = TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0);
+    let metrics = TraceMetrics::new()
+        .total_time_us(1000.0)
+        .p50_latency_us(50.0);
     let trace = GoldenTrace::new("json_export", metrics);
 
     let json = trace.to_json().unwrap();
@@ -118,7 +130,9 @@ fn f1220_json_export() {
 /// F1220.2: TOML export valid
 #[test]
 fn f1220_toml_export() {
-    let metrics = TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0);
+    let metrics = TraceMetrics::new()
+        .total_time_us(1000.0)
+        .p50_latency_us(50.0);
     let trace = GoldenTrace::new("toml_export", metrics);
 
     let toml_str = trace.to_toml().unwrap();
@@ -134,7 +148,9 @@ fn f1220_export_to_file() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = GoldenTraceManager::new(temp_dir.path().join("goldens"));
 
-    manager.capture_golden("exportable", TraceMetrics::new().total_time_us(1000.0)).unwrap();
+    manager
+        .capture_golden("exportable", TraceMetrics::new().total_time_us(1000.0))
+        .unwrap();
 
     // Export to different location
     let export_path = temp_dir.path().join("exported.toml");
@@ -156,7 +172,9 @@ fn test_trace_deletion() {
     let temp_dir = TempDir::new().unwrap();
     let mut manager = GoldenTraceManager::new(temp_dir.path().to_path_buf());
 
-    manager.capture_golden("deletable", TraceMetrics::new()).unwrap();
+    manager
+        .capture_golden("deletable", TraceMetrics::new())
+        .unwrap();
     assert!(manager.golden_exists("deletable"));
 
     manager.delete_golden("deletable").unwrap();
@@ -182,7 +200,10 @@ fn test_regression_summary() {
 fn test_regressions_list() {
     let golden = GoldenTrace::new(
         "baseline",
-        TraceMetrics::new().total_time_us(1000.0).p50_latency_us(50.0).throughput(10000.0),
+        TraceMetrics::new()
+            .total_time_us(1000.0)
+            .p50_latency_us(50.0)
+            .throughput(10000.0),
     );
 
     let current = TraceMetrics::new()

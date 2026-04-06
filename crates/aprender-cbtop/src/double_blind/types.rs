@@ -258,7 +258,8 @@ impl VerificationAttempt {
 
     /// Record result for a criterion
     pub fn record_criterion(&mut self, criterion_id: &str, passed: bool) {
-        self.criterion_results.insert(criterion_id.to_string(), passed);
+        self.criterion_results
+            .insert(criterion_id.to_string(), passed);
     }
 
     /// Add evidence
@@ -302,7 +303,11 @@ pub struct ScorecardComponent {
 impl ScorecardComponent {
     /// Create a new component
     pub fn new(name: &str, weight: f64, score: u32) -> Self {
-        Self { name: name.to_string(), weight, score: score.min(100) }
+        Self {
+            name: name.to_string(),
+            weight,
+            score: score.min(100),
+        }
     }
 
     /// Calculate weighted score

@@ -132,10 +132,18 @@ impl fmt::Display for BaselineComparison {
         writeln!(f)?;
         writeln!(f, "GPU Class: {}", self.gpu_class)?;
         writeln!(f, "Actual Throughput: {} tok/s", self.actual_tok_per_sec)?;
-        writeln!(f, "Expected Range: {}-{} tok/s", self.expected_range.0, self.expected_range.1)?;
+        writeln!(
+            f,
+            "Expected Range: {}-{} tok/s",
+            self.expected_range.0, self.expected_range.1
+        )?;
         writeln!(f, "Grade: {}", self.grade)?;
         writeln!(f)?;
-        writeln!(f, "SM Utilization: {}% ({})", self.sm_utilization, self.sm_health)?;
+        writeln!(
+            f,
+            "SM Utilization: {}% ({})",
+            self.sm_utilization, self.sm_health
+        )?;
         if let Some(latency) = self.p95_latency_ms {
             writeln!(f, "P95 Latency: {} ms", latency)?;
         }
@@ -195,7 +203,10 @@ impl BaselineValidator {
         self.validations.push((
             "F971".to_string(),
             passed,
-            format!("Throughput {:.1}% of vLLM (need >= 70%)", comparison.vllm_percentage),
+            format!(
+                "Throughput {:.1}% of vLLM (need >= 70%)",
+                comparison.vllm_percentage
+            ),
         ));
         passed
     }
@@ -236,13 +247,21 @@ impl BaselineValidator {
     /// Validate F982: GPU class detected correctly.
     pub fn validate_f982_gpu_detected(&mut self, gpu_class: &GpuClass) -> bool {
         let passed = *gpu_class != GpuClass::Unknown;
-        self.validations.push(("F982".to_string(), passed, format!("GPU class: {}", gpu_class)));
+        self.validations.push((
+            "F982".to_string(),
+            passed,
+            format!("GPU class: {}", gpu_class),
+        ));
         passed
     }
 
     /// Validate F983: Throughput grade calculated.
     pub fn validate_f983_grade_calculated(&mut self, grade: &ThroughputGrade) -> bool {
-        self.validations.push(("F983".to_string(), true, format!("Grade calculated: {:?}", grade)));
+        self.validations.push((
+            "F983".to_string(),
+            true,
+            format!("Grade calculated: {:?}", grade),
+        ));
         true
     }
 
@@ -257,7 +276,10 @@ impl BaselineValidator {
         self.validations.push((
             "F984".to_string(),
             passed,
-            format!("Health: SM={}, Memory={}, Scaling={}", has_sm, has_memory, has_scaling),
+            format!(
+                "Health: SM={}, Memory={}, Scaling={}",
+                has_sm, has_memory, has_scaling
+            ),
         ));
         passed
     }

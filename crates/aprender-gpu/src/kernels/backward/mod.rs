@@ -133,16 +133,34 @@ mod tests {
         assert_eq!(ReluBackwardKernel::new(128).name(), "relu_backward");
         assert_eq!(GeluBackwardKernel::new(128).name(), "gelu_backward");
         assert_eq!(SiluBackwardKernel::new(128).name(), "silu_backward");
-        assert_eq!(SoftmaxBackwardKernel::new(16, 16).name(), "softmax_backward");
-        assert_eq!(BatchedSoftmaxBackwardKernel::new(16, 64).name(), "batched_softmax_backward");
-        assert_eq!(RmsNormBackwardKernel::new(16, 16, 1e-5).name(), "rms_norm_backward");
+        assert_eq!(
+            SoftmaxBackwardKernel::new(16, 16).name(),
+            "softmax_backward"
+        );
+        assert_eq!(
+            BatchedSoftmaxBackwardKernel::new(16, 64).name(),
+            "batched_softmax_backward"
+        );
+        assert_eq!(
+            RmsNormBackwardKernel::new(16, 16, 1e-5).name(),
+            "rms_norm_backward"
+        );
         assert_eq!(
             BatchedRmsNormBackwardKernel::new(16, 64, 1e-5).name(),
             "batched_rms_norm_backward"
         );
-        assert_eq!(LayerNormBackwardKernel::new(16, 16).name(), "layer_norm_backward");
-        assert_eq!(GemmBackwardAKernel::new(32, 32, 32).name(), "gemm_backward_a");
-        assert_eq!(GemmBackwardBKernel::new(32, 32, 32).name(), "gemm_backward_b");
+        assert_eq!(
+            LayerNormBackwardKernel::new(16, 16).name(),
+            "layer_norm_backward"
+        );
+        assert_eq!(
+            GemmBackwardAKernel::new(32, 32, 32).name(),
+            "gemm_backward_a"
+        );
+        assert_eq!(
+            GemmBackwardBKernel::new(32, 32, 32).name(),
+            "gemm_backward_b"
+        );
     }
 
     #[test]
@@ -348,7 +366,10 @@ mod tests {
         for ptx in kernels_ptx {
             assert!(ptx.contains(".version"), "PTX should contain version");
             assert!(ptx.contains(".target"), "PTX should contain target");
-            assert!(ptx.contains("ret;"), "PTX should contain return instruction");
+            assert!(
+                ptx.contains("ret;"),
+                "PTX should contain return instruction"
+            );
         }
     }
 }

@@ -24,8 +24,16 @@ pub struct Threefry4x64 {
 }
 
 // Rotation constants for Threefry 4x64 (from the original paper, Table 4)
-const R_4X64: [[u32; 2]; 8] =
-    [[14, 16], [52, 57], [23, 40], [5, 37], [25, 33], [46, 12], [58, 22], [32, 32]];
+const R_4X64: [[u32; 2]; 8] = [
+    [14, 16],
+    [52, 57],
+    [23, 40],
+    [5, 37],
+    [25, 33],
+    [46, 12],
+    [58, 22],
+    [32, 32],
+];
 
 // Skein key schedule constant (2^64 / golden ratio)
 const KS_PARITY: u64 = 0x1BD1_1BDA_A9FC_1A22;
@@ -33,7 +41,10 @@ const KS_PARITY: u64 = 0x1BD1_1BDA_A9FC_1A22;
 impl Threefry4x64 {
     /// Create a new Threefry RNG with the given seed.
     pub fn new(seed: u64) -> Self {
-        Self { key: [seed, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15), 0, 0], counter: [0, 0, 0, 0] }
+        Self {
+            key: [seed, seed.wrapping_mul(0x9E37_79B9_7F4A_7C15), 0, 0],
+            counter: [0, 0, 0, 0],
+        }
     }
 
     /// Create with explicit key and counter (for reproducible parallel generation).

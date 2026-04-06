@@ -52,17 +52,31 @@ impl<T: Clone> CooMatrix<T> {
 
         for (i, &row) in row_indices.iter().enumerate() {
             if row as usize >= rows {
-                return Err(SparseError::RowOutOfBounds { row, rows, position: i });
+                return Err(SparseError::RowOutOfBounds {
+                    row,
+                    rows,
+                    position: i,
+                });
             }
         }
 
         for (i, &col) in col_indices.iter().enumerate() {
             if col as usize >= cols {
-                return Err(SparseError::ColumnOutOfBounds { col, cols, position: i });
+                return Err(SparseError::ColumnOutOfBounds {
+                    col,
+                    cols,
+                    position: i,
+                });
             }
         }
 
-        Ok(Self { rows, cols, row_indices, col_indices, values })
+        Ok(Self {
+            rows,
+            cols,
+            row_indices,
+            col_indices,
+            values,
+        })
     }
 
     /// Number of stored nonzero entries.
@@ -74,6 +88,12 @@ impl<T: Clone> CooMatrix<T> {
     /// Create an empty COO matrix.
     #[must_use]
     pub fn empty(rows: usize, cols: usize) -> Self {
-        Self { rows, cols, row_indices: Vec::new(), col_indices: Vec::new(), values: Vec::new() }
+        Self {
+            rows,
+            cols,
+            row_indices: Vec::new(),
+            col_indices: Vec::new(),
+            values: Vec::new(),
+        }
     }
 }

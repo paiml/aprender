@@ -62,7 +62,9 @@ fn find_scalar_binary() -> Option<String> {
     let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_default();
     let mut candidates: Vec<String> = Vec::new();
     if !target_dir.is_empty() {
-        candidates.push(format!("{target_dir}/release/examples/benchmark_matrix_suite"));
+        candidates.push(format!(
+            "{target_dir}/release/examples/benchmark_matrix_suite"
+        ));
     }
     candidates.extend_from_slice(&[
         "/mnt/nvme-raid0/targets/trueno/release/examples/benchmark_matrix_suite".to_string(),

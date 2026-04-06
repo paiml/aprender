@@ -36,7 +36,10 @@ impl Parse for MicrokernelParams {
         let _eq2: Token![=] = input.parse()?;
         let nr_lit: LitInt = input.parse()?;
 
-        Ok(MicrokernelParams { mr: mr_lit.base10_parse()?, nr: nr_lit.base10_parse()? })
+        Ok(MicrokernelParams {
+            mr: mr_lit.base10_parse()?,
+            nr: nr_lit.base10_parse()?,
+        })
     }
 }
 

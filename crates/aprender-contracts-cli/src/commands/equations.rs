@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use provable_contracts::latex::{latex_escape, math_to_latex};
-use provable_contracts::schema::{Contract, Equation, parse_contract};
+use provable_contracts::schema::{parse_contract, Contract, Equation};
 
 /// Supported output formats for equation rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

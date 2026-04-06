@@ -30,9 +30,18 @@ fn f021_budget_60fps_correct() {
 fn f023_budget_uniform_distribution() {
     let budget = BrickBudget::uniform(10);
     // uniform(n) sets each phase to n ms
-    assert_eq!(budget.collect_ms, 10, "F023 FALSIFIED: uniform collect_ms wrong");
-    assert_eq!(budget.layout_ms, 10, "F023 FALSIFIED: uniform layout_ms wrong");
-    assert_eq!(budget.render_ms, 10, "F023 FALSIFIED: uniform render_ms wrong");
+    assert_eq!(
+        budget.collect_ms, 10,
+        "F023 FALSIFIED: uniform collect_ms wrong"
+    );
+    assert_eq!(
+        budget.layout_ms, 10,
+        "F023 FALSIFIED: uniform layout_ms wrong"
+    );
+    assert_eq!(
+        budget.render_ms, 10,
+        "F023 FALSIFIED: uniform render_ms wrong"
+    );
 }
 
 /// F025: Zero total budget handled correctly
@@ -107,7 +116,10 @@ fn f044_pepita_collector_valid_metrics() {
     let metrics = collector.collect();
 
     // Latency should be non-negative
-    assert!(metrics.avg_latency_us >= 0.0, "F044 FALSIFIED: Negative latency");
+    assert!(
+        metrics.avg_latency_us >= 0.0,
+        "F044 FALSIFIED: Negative latency"
+    );
     assert!(
         metrics.p99_latency_us >= metrics.avg_latency_us,
         "F044 FALSIFIED: P99 ({}) < avg ({})",
@@ -123,7 +135,10 @@ fn f045_wos_collector_valid_metrics() {
     let metrics = collector.collect();
 
     // Syscalls should be non-negative
-    assert!(metrics.syscalls_per_sec >= 0.0, "F045 FALSIFIED: Negative syscall rate");
+    assert!(
+        metrics.syscalls_per_sec >= 0.0,
+        "F045 FALSIFIED: Negative syscall rate"
+    );
 }
 
 /// F046: ZRAM collector produces valid compression metrics

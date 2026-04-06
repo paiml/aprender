@@ -27,7 +27,10 @@ pub struct CholeskyFactorization {
 /// Returns `NotPositiveDefinite` if a non-positive pivot is encountered.
 pub fn cholesky(a: &[f32], n: usize) -> Result<CholeskyFactorization, SolverError> {
     if a.len() != n * n {
-        return Err(SolverError::NotSquare { rows: n, cols: a.len() / n.max(1) });
+        return Err(SolverError::NotSquare {
+            rows: n,
+            cols: a.len() / n.max(1),
+        });
     }
 
     let mut l = vec![0.0f32; n * n];
@@ -68,7 +71,10 @@ impl CholeskyFactorization {
     /// Returns error on dimension mismatch.
     pub fn solve(&self, b: &[f32]) -> Result<Vec<f32>, SolverError> {
         if b.len() != self.n {
-            return Err(SolverError::DimensionMismatch { matrix_n: self.n, rhs_len: b.len() });
+            return Err(SolverError::DimensionMismatch {
+                matrix_n: self.n,
+                rhs_len: b.len(),
+            });
         }
 
         let n = self.n;

@@ -24,7 +24,10 @@ struct SimpleRng {
 
 impl SimpleRng {
     fn new(seed: u64) -> Self {
-        let mut rng = Self { state: 0, inc: (seed << 1) | 1 };
+        let mut rng = Self {
+            state: 0,
+            inc: (seed << 1) | 1,
+        };
         rng.next_u32();
         rng.state = rng.state.wrapping_add(seed);
         rng.next_u32();
@@ -33,7 +36,9 @@ impl SimpleRng {
 
     fn next_u32(&mut self) -> u32 {
         let old_state = self.state;
-        self.state = old_state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(self.inc);
+        self.state = old_state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(self.inc);
         let xorshifted = (((old_state >> 18) ^ old_state) >> 27) as u32;
         let rot = (old_state >> 59) as u32;
         (xorshifted >> rot) | (xorshifted << ((!rot).wrapping_add(1) & 31))
@@ -131,8 +136,9 @@ fn simulate_gemm_buggy(size: usize) -> Vec<f32> {
 pub fn test_identity_matrix() -> WasmTestResult {
     let renderer = GpuPixelRenderer::new();
     let size = 16;
-    let identity: Vec<f32> =
-        (0..size * size).map(|i| if i / size == i % size { 1.0 } else { 0.0 }).collect();
+    let identity: Vec<f32> = (0..size * size)
+        .map(|i| if i / size == i % size { 1.0 } else { 0.0 })
+        .collect();
 
     let png = renderer.render_to_png(&identity, size as u32, size as u32);
     let result = compare_png_bytes(&png, &png, 0);
@@ -152,7 +158,9 @@ pub fn test_identity_matrix() -> WasmTestResult {
 pub fn test_gradient() -> WasmTestResult {
     let renderer = GpuPixelRenderer::new();
     let size = 16;
-    let gradient: Vec<f32> = (0..size * size).map(|i| i as f32 / (size * size) as f32).collect();
+    let gradient: Vec<f32> = (0..size * size)
+        .map(|i| i as f32 / (size * size) as f32)
+        .collect();
 
     let png = renderer.render_to_png(&gradient, size as u32, size as u32);
     let result = compare_png_bytes(&png, &png, 0);

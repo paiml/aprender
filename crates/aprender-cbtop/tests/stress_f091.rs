@@ -51,14 +51,22 @@ fn f092_ring_buffer_extreme_sizes() {
         tiny.push(i as f64);
     }
     assert_eq!(tiny.len(), 1, "F092 FALSIFIED: Tiny buffer wrong size");
-    assert_eq!(tiny.back(), Some(&99.0), "F092 FALSIFIED: Tiny buffer wrong value");
+    assert_eq!(
+        tiny.back(),
+        Some(&99.0),
+        "F092 FALSIFIED: Tiny buffer wrong value"
+    );
 
     // Very large buffer
     let mut large: RingBuffer<u32> = RingBuffer::new(10_000);
     for i in 0..20_000u32 {
         large.push(i);
     }
-    assert_eq!(large.len(), 10_000, "F092 FALSIFIED: Large buffer wrong size");
+    assert_eq!(
+        large.len(),
+        10_000,
+        "F092 FALSIFIED: Large buffer wrong size"
+    );
 
     // Empty operations
     let empty: RingBuffer<f64> = RingBuffer::new(100);
@@ -83,9 +91,18 @@ fn f093_rapid_collection() {
     }
 
     // Verify histories are bounded
-    assert!(cpu.history().len() <= 120, "F093 FALSIFIED: CPU history unbounded");
-    assert!(gpu.history().len() <= 120, "F093 FALSIFIED: GPU history unbounded");
-    assert!(mem.history().len() <= 120, "F093 FALSIFIED: Memory history unbounded");
+    assert!(
+        cpu.history().len() <= 120,
+        "F093 FALSIFIED: CPU history unbounded"
+    );
+    assert!(
+        gpu.history().len() <= 120,
+        "F093 FALSIFIED: GPU history unbounded"
+    );
+    assert!(
+        mem.history().len() <= 120,
+        "F093 FALSIFIED: Memory history unbounded"
+    );
 
     println!("✅ F093 Collectors handle rapid collection");
 }
@@ -143,7 +160,11 @@ fn f096_verification_stress() {
 
     // Score should be ~50%
     let score = v.score();
-    assert!((score - 0.5).abs() < 0.01, "F096 FALSIFIED: Score should be ~50%, got {}", score);
+    assert!(
+        (score - 0.5).abs() < 0.01,
+        "F096 FALSIFIED: Score should be ~50%, got {}",
+        score
+    );
 
     println!("✅ F096 Verification handles many assertions");
 }
@@ -156,8 +177,14 @@ fn f097_pepita_graceful_degradation() {
 
     // Should return mock data on systems without io_uring, not panic
     // Check for valid structure regardless of real data availability
-    assert!(metrics.avg_latency_us >= 0.0, "F097 FALSIFIED: Latency should be non-negative");
-    assert!(metrics.p99_latency_us >= 0.0, "F097 FALSIFIED: P99 should be non-negative");
+    assert!(
+        metrics.avg_latency_us >= 0.0,
+        "F097 FALSIFIED: Latency should be non-negative"
+    );
+    assert!(
+        metrics.p99_latency_us >= 0.0,
+        "F097 FALSIFIED: P99 should be non-negative"
+    );
 
     println!("✅ F097 Pepita handles unavailable io_uring");
 }
@@ -190,7 +217,11 @@ fn f098_zram_graceful_degradation() {
 #[test]
 fn f099_budget_overflow_protection() {
     // Max values
-    let budget = BrickBudget { collect_ms: u32::MAX, layout_ms: u32::MAX, render_ms: u32::MAX };
+    let budget = BrickBudget {
+        collect_ms: u32::MAX,
+        layout_ms: u32::MAX,
+        render_ms: u32::MAX,
+    };
 
     // These should not overflow in comparisons
     let _ = budget.collect_ms;
@@ -219,7 +250,10 @@ fn f100_wos_graceful_degradation() {
     );
 
     let summary = wos.jidoka_summary();
-    assert!(summary.checks_passed <= 100, "F100 FALSIFIED: checks_passed should be <= 100");
+    assert!(
+        summary.checks_passed <= 100,
+        "F100 FALSIFIED: checks_passed should be <= 100"
+    );
 
     println!("✅ F100 WOS handles missing kernel metrics");
 }

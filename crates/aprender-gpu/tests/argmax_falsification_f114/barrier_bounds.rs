@@ -46,17 +46,26 @@ fn f114_test1_barrier_safety() {
     println!("  bar.sync count: {}", bar_sync_count);
 
     // Verify PTX structure has barrier after each skip label
-    let skip_labels: Vec<&str> = ptx.lines().filter(|line: &&str| line.contains("skip_")).collect();
+    let skip_labels: Vec<&str> = ptx
+        .lines()
+        .filter(|line: &&str| line.contains("skip_"))
+        .collect();
 
     println!("  Skip labels: {:?}", skip_labels.len());
 
     // Each reduction step should have a barrier after the skip label
     // Expected pattern: skip_reduce_X: followed by bar.sync 0;
-    assert!(bar_sync_count >= 8, "Expected at least 8 bar.sync (7 reduction steps + 1 initial)");
+    assert!(
+        bar_sync_count >= 8,
+        "Expected at least 8 bar.sync (7 reduction steps + 1 initial)"
+    );
 
     // Verify no early exit before barriers
     let lines: Vec<&str> = ptx.lines().collect();
-    assert!(!detect_barrier_divergence(&lines), "PARITY-114: Found potential barrier divergence");
+    assert!(
+        !detect_barrier_divergence(&lines),
+        "PARITY-114: Found potential barrier divergence"
+    );
     println!("  PASSED - No barrier divergence detected");
 }
 

@@ -60,8 +60,15 @@ impl RmsNormBackwardKernel {
     /// Panics if `hidden_dim` > 32
     #[must_use]
     pub fn new(num_rows: u32, hidden_dim: u32, eps: f32) -> Self {
-        assert!(hidden_dim <= 32, "hidden_dim must be ≤ 32 for warp reduction");
-        Self { num_rows, hidden_dim, eps }
+        assert!(
+            hidden_dim <= 32,
+            "hidden_dim must be ≤ 32 for warp reduction"
+        );
+        Self {
+            num_rows,
+            hidden_dim,
+            eps,
+        }
     }
 }
 
@@ -236,7 +243,11 @@ impl BatchedRmsNormBackwardKernel {
     /// - `eps`: Epsilon for numerical stability
     #[must_use]
     pub fn new(num_rows: u32, hidden_dim: u32, eps: f32) -> Self {
-        Self { num_rows, hidden_dim, eps }
+        Self {
+            num_rows,
+            hidden_dim,
+            eps,
+        }
     }
 }
 
@@ -446,7 +457,11 @@ mod tests {
     fn test_rms_norm_backward_barrier_safety() {
         let kernel = RmsNormBackwardKernel::new(64, 32, 1e-6);
         let result = kernel.analyze_barrier_safety();
-        assert!(result.is_safe, "RMSNorm backward should be barrier-safe: {:?}", result.violations);
+        assert!(
+            result.is_safe,
+            "RMSNorm backward should be barrier-safe: {:?}",
+            result.violations
+        );
     }
 
     #[test]

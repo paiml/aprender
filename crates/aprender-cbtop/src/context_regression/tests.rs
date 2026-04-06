@@ -2,8 +2,10 @@ use super::*;
 
 #[test]
 fn test_system_context() {
-    let ctx =
-        SystemContext::new().with_cpu_temp(70.0).with_memory(60.0).with_cpu_freq(3500.0, 4000.0);
+    let ctx = SystemContext::new()
+        .with_cpu_temp(70.0)
+        .with_memory(60.0)
+        .with_cpu_freq(3500.0, 4000.0);
 
     assert_eq!(ctx.cpu_temp_c, 70.0);
     assert_eq!(ctx.memory_percent, 60.0);

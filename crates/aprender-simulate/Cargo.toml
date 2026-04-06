@@ -53,8 +53,8 @@ ratatui = { version = "0.29", optional = true }
 crossterm = { version = "0.28", optional = true }
 # ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
 # Path deps to avoid jugar-probar prod dep chain (CB-081)
-presentar-terminal = { version = "0.3", path = "../presentar/crates/presentar-terminal", optional = true }
-presentar-core = { version = "0.3", path = "../presentar/crates/presentar-core", default-features = false, optional = true }
+presentar-terminal = { version = "0.3", optional = true }
+presentar-core = { version = "0.3", default-features = false, optional = true }
 
 # WASM (optional)
 wasm-bindgen = { version = "0.2", optional = true }
@@ -82,7 +82,7 @@ bitflags = "2.6"
 
 # Work stealing for Heijunka
 crossbeam-deque = "0.8"
-provable-contracts-macros = { version = "0.2", path = "../provable-contracts/crates/provable-contracts-macros" }
+provable-contracts-macros = { version = "0.2" }
 
 # Z3 removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
 # Re-add with: z3 = { version = "0.12", optional = true }
@@ -94,7 +94,7 @@ serde_yaml = "0.9"
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
-provable-contracts = { version = "0.2", path = "../provable-contracts/crates/provable-contracts" }
+provable-contracts = { version = "0.2" }
 # Property-based testing (Popperian falsification)
 proptest = "1.5"
 criterion = { version = "0.5", default-features = false }
@@ -102,7 +102,7 @@ tempfile = "3.14"
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)
-presentar-test = { version = "0.3", path = "../presentar/crates/presentar-test" }
+presentar-test = { version = "0.3" }
 
 [features]
 default = []

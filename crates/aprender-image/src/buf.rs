@@ -39,9 +39,18 @@ impl ImageBuf {
     ) -> Result<Self, ImageError> {
         let expected = width * height * channels;
         if data.len() != expected {
-            return Err(ImageError::DimensionMismatch { expected, got: data.len() });
+            return Err(ImageError::DimensionMismatch {
+                expected,
+                got: data.len(),
+            });
         }
-        Ok(Self { data, width, height, channels, dtype: DType::F32 })
+        Ok(Self {
+            data,
+            width,
+            height,
+            channels,
+            dtype: DType::F32,
+        })
     }
 
     /// Create a zero-filled image buffer.
@@ -102,7 +111,10 @@ impl ImageBuf {
     /// Returns error if `channel >= self.channels()`.
     pub fn channel(&self, channel: usize) -> Result<Self, ImageError> {
         if channel >= self.channels {
-            return Err(ImageError::InvalidChannel { channel, max: self.channels });
+            return Err(ImageError::InvalidChannel {
+                channel,
+                max: self.channels,
+            });
         }
         let mut out = Vec::with_capacity(self.width * self.height);
         for i in 0..self.width * self.height {

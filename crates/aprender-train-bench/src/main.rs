@@ -118,20 +118,37 @@ fn main() {
     let config = cli.common.to_cli();
 
     let result = match cli.command {
-        Commands::Temperature { start, end, step, runs } => {
-            temperature_command(start, end, step, runs, &config)
-        }
-        Commands::Alpha { start, end, step, runs } => {
-            alpha_command(start, end, step, runs, &config)
-        }
+        Commands::Temperature {
+            start,
+            end,
+            step,
+            runs,
+        } => temperature_command(start, end, step, runs, &config),
+        Commands::Alpha {
+            start,
+            end,
+            step,
+            runs,
+        } => alpha_command(start, end, step, runs, &config),
         Commands::Compare { strategies, runs } => compare_command(&strategies, runs, &config),
         Commands::Ablation { config: cfg_path } => ablation_command(cfg_path.as_deref(), &config),
         Commands::CostPerformance { gpu, results } => {
             cost_performance_command(&gpu, results.as_deref(), &config)
         }
-        Commands::Recommend { max_gpu_hours, max_cost, min_accuracy, max_memory, gpu } => {
-            recommend_command(max_gpu_hours, max_cost, min_accuracy, max_memory, &gpu, &config)
-        }
+        Commands::Recommend {
+            max_gpu_hours,
+            max_cost,
+            min_accuracy,
+            max_memory,
+            gpu,
+        } => recommend_command(
+            max_gpu_hours,
+            max_cost,
+            min_accuracy,
+            max_memory,
+            &gpu,
+            &config,
+        ),
     };
 
     if let Err(e) = result {
@@ -284,7 +301,10 @@ fn compare_command(
         println!("{}", comparison.to_table());
 
         if let Some(best) = &comparison.best_by_accuracy {
-            println!("\n{}", styles::success(&format!("Recommendation: {best} for best accuracy")));
+            println!(
+                "\n{}",
+                styles::success(&format!("Recommendation: {best} for best accuracy"))
+            );
         }
     }
 
@@ -309,10 +329,20 @@ fn ablation_command(
                 alpha: 0.0, // No KD, just CE
             },
         ),
-        ("+ KD (T=4)", DistillStrategy::KDOnly { temperature: 4.0, alpha: 0.7 }),
+        (
+            "+ KD (T=4)",
+            DistillStrategy::KDOnly {
+                temperature: 4.0,
+                alpha: 0.7,
+            },
+        ),
         (
             "+ Progressive",
-            DistillStrategy::Progressive { temperature: 4.0, alpha: 0.7, layer_weight: 0.3 },
+            DistillStrategy::Progressive {
+                temperature: 4.0,
+                alpha: 0.7,
+                layer_weight: 0.3,
+            },
         ),
         (
             "+ Attention",
@@ -367,7 +397,10 @@ fn cost_performance_command(
 
     if !cli.is_quiet() {
         println!("{}", styles::header("Cost-Performance Analysis"));
-        println!("GPU: {} (${:.2}/hour)\n", cost_model.gpu_type, cost_model.cost_per_hour);
+        println!(
+            "GPU: {} (${:.2}/hour)\n",
+            cost_model.gpu_type, cost_model.cost_per_hour
+        );
     }
 
     // Generate sample data points (in a real scenario, load from results file)
@@ -482,7 +515,10 @@ fn build_constraints(
 /// Print human-readable recommendation output (non-JSON).
 fn print_recommendations(recommendations: &[entrenar_bench::cost::Recommendation]) {
     if recommendations.is_empty() {
-        println!("{}", styles::warning("No configurations match the specified constraints."));
+        println!(
+            "{}",
+            styles::warning("No configurations match the specified constraints.")
+        );
         println!("\nTry relaxing your constraints:");
         println!("  \u{2022} Increase max-cost or max-gpu-hours");
         println!("  \u{2022} Decrease min-accuracy");
@@ -503,7 +539,10 @@ fn print_recommendations(recommendations: &[entrenar_bench::cost::Recommendation
     }
 
     if let Some(top) = recommendations.first() {
-        println!("{}", styles::success(&format!("Top recommendation: {}", top.point.name)));
+        println!(
+            "{}",
+            styles::success(&format!("Top recommendation: {}", top.point.name))
+        );
     }
 }
 
@@ -532,7 +571,10 @@ fn recommend_command(
 
     if !cli.is_quiet() {
         println!("{}", styles::header("Configuration Recommendation"));
-        println!("GPU: {} (${:.2}/hour)\n", cost_model.gpu_type, cost_model.cost_per_hour);
+        println!(
+            "GPU: {} (${:.2}/hour)\n",
+            cost_model.gpu_type, cost_model.cost_per_hour
+        );
         print_constraints(max_gpu_hours, max_cost, min_accuracy, max_memory);
     }
 

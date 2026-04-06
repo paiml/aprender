@@ -15,7 +15,9 @@ fn test_ops_layer_norm() {
     let hidden_size = 16u32;
     let batch_size = 4u32;
 
-    let input_data: Vec<f32> = (0..(hidden_size * batch_size)).map(|i| i as f32 * 0.1).collect();
+    let input_data: Vec<f32> = (0..(hidden_size * batch_size))
+        .map(|i| i as f32 * 0.1)
+        .collect();
     let gamma_data = vec![1.0f32; hidden_size as usize];
     let beta_data = vec![0.0f32; hidden_size as usize];
 
@@ -23,13 +25,19 @@ fn test_ops_layer_norm() {
     let gamma = GpuResidentTensor::from_host(&ctx, &gamma_data).unwrap();
     let beta = GpuResidentTensor::from_host(&ctx, &beta_data).unwrap();
 
-    let mut output = input.layer_norm(&ctx, &gamma, &beta, hidden_size, batch_size).unwrap();
+    let mut output = input
+        .layer_norm(&ctx, &gamma, &beta, hidden_size, batch_size)
+        .unwrap();
     assert_eq!(output.len(), (hidden_size * batch_size) as usize);
 
     let host_output = output.to_host().unwrap();
     let first_row: Vec<f32> = host_output[0..hidden_size as usize].to_vec();
     let mean: f32 = first_row.iter().sum::<f32>() / hidden_size as f32;
-    assert!((mean).abs() < 0.1, "LayerNorm output mean should be ~0, got {}", mean);
+    assert!(
+        (mean).abs() < 0.1,
+        "LayerNorm output mean should be ~0, got {}",
+        mean
+    );
 }
 
 #[test]
@@ -74,7 +82,10 @@ fn test_ops_gelu() {
 
     assert!((result[0]).abs() < 1e-5, "GELU(0) should be ~0");
     assert!((result[1] - 0.841).abs() < 0.1, "GELU(1) should be ~0.841");
-    assert!((result[3] - (-0.159)).abs() < 0.1, "GELU(-1) should be ~-0.159");
+    assert!(
+        (result[3] - (-0.159)).abs() < 0.1,
+        "GELU(-1) should be ~-0.159"
+    );
 }
 
 #[test]
@@ -99,7 +110,9 @@ fn test_ops_gelu_with_stream() {
 fn test_ops_bias_add() {
     let ctx = cuda_ctx!();
 
-    let input_data = vec![1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+    let input_data = vec![
+        1.0f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+    ];
     let bias_data = vec![0.1f32, 0.2, 0.3];
 
     let input = GpuResidentTensor::from_host(&ctx, &input_data).unwrap();

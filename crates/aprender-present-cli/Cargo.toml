@@ -1,0 +1,32 @@
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+name = "aprender-present-cli"
+description = "CLI for Presentar WASM apps - serve and bundle"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "presentar"
+path = "src/main.rs"
+
+[dependencies]
+presentar-yaml = { workspace = true }
+clap = { version = "4.4", features = ["derive"] }
+notify = { version = "7.0", optional = true }
+tiny_http = "0.12"
+tungstenite = { version = "0.26", optional = true }
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[features]
+default = []
+dev-server = ["dep:notify", "dep:tungstenite"]
+
+[lints]
+workspace = true

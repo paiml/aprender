@@ -17,8 +17,10 @@ fn f1201_profile_loaded_by_name() {
     let mut manager = ProfileManager::new(temp_dir.path().to_path_buf());
 
     // Save a profile
-    let profile =
-        ProfileConfig::new("my_profile").unwrap().backend(BackendConfig::Cuda).problem_size(2048);
+    let profile = ProfileConfig::new("my_profile")
+        .unwrap()
+        .backend(BackendConfig::Cuda)
+        .problem_size(2048);
     manager.save_profile(&profile).unwrap();
 
     // Load by name
@@ -89,9 +91,15 @@ fn f1203_profile_listing() {
     let mut manager = ProfileManager::new(temp_dir.path().to_path_buf());
 
     // Save multiple profiles
-    manager.save_profile(&ProfileConfig::new("alpha").unwrap()).unwrap();
-    manager.save_profile(&ProfileConfig::new("beta").unwrap()).unwrap();
-    manager.save_profile(&ProfileConfig::new("gamma").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("alpha").unwrap())
+        .unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("beta").unwrap())
+        .unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("gamma").unwrap())
+        .unwrap();
 
     let profiles = manager.list_profiles().unwrap();
     assert_eq!(profiles.len(), 3);
@@ -117,8 +125,10 @@ fn f1203_empty_listing() {
 /// F1204.1: CLI overlay merges correctly
 #[test]
 fn f1204_overlay_merges() {
-    let profile =
-        ProfileConfig::new("base").unwrap().backend(BackendConfig::Simd).problem_size(1024);
+    let profile = ProfileConfig::new("base")
+        .unwrap()
+        .backend(BackendConfig::Simd)
+        .problem_size(1024);
 
     let overlay = ProfileOverlay::new()
         .backend(BackendConfig::Cuda) // Override backend
@@ -136,8 +146,10 @@ fn f1204_overlay_merges() {
 /// F1204.2: Empty overlay preserves profile
 #[test]
 fn f1204_empty_overlay() {
-    let profile =
-        ProfileConfig::new("unchanged").unwrap().backend(BackendConfig::Wgpu).problem_size(4096);
+    let profile = ProfileConfig::new("unchanged")
+        .unwrap()
+        .backend(BackendConfig::Wgpu)
+        .problem_size(4096);
 
     let overlay = ProfileOverlay::new();
     assert!(!overlay.has_overrides());
@@ -190,7 +202,9 @@ fn f1206_directory_created() {
     assert!(!subdir.exists());
 
     // Save creates directory
-    manager.save_profile(&ProfileConfig::new("test").unwrap()).unwrap();
+    manager
+        .save_profile(&ProfileConfig::new("test").unwrap())
+        .unwrap();
 
     // Now it exists
     assert!(subdir.exists());

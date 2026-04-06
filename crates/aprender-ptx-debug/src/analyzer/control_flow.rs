@@ -60,7 +60,11 @@ impl ControlFlowGraph {
             }
         }
 
-        self.nodes.iter().filter(|n| !reachable.contains(&n.id)).map(|n| n.id).collect()
+        self.nodes
+            .iter()
+            .filter(|n| !reachable.contains(&n.id))
+            .map(|n| n.id)
+            .collect()
     }
 }
 
@@ -241,7 +245,12 @@ impl ControlFlowAnalyzer {
             nodes[to].predecessors.push(from);
         }
 
-        let cfg = ControlFlowGraph { nodes, entry: 0, exits, label_to_node };
+        let cfg = ControlFlowGraph {
+            nodes,
+            entry: 0,
+            exits,
+            label_to_node,
+        };
 
         self.cfg = Some(cfg.clone());
         cfg
@@ -268,8 +277,10 @@ impl ControlFlowAnalyzer {
                         if let Some(ref write_loc) = last_shared_write {
                             // Check if there's a barrier between write and read
                             // Simplified: just check if bar.sync appears
-                            let has_barrier =
-                                node.instructions.iter().any(|i| matches!(i.opcode, Opcode::Bar));
+                            let has_barrier = node
+                                .instructions
+                                .iter()
+                                .any(|i| matches!(i.opcode, Opcode::Bar));
 
                             if !has_barrier {
                                 violations.push(BarrierViolation {
@@ -350,7 +361,11 @@ mod tests {
         let cfg = analyzer.build_cfg(&module.kernels[0]);
         let unreachable = cfg.find_unreachable();
 
-        assert!(unreachable.is_empty(), "F062: Found unreachable code: {:?}", unreachable);
+        assert!(
+            unreachable.is_empty(),
+            "F062: Found unreachable code: {:?}",
+            unreachable
+        );
     }
 
     // F036: bar.sync after shared write, before read
@@ -377,6 +392,9 @@ mod tests {
         let _ = analyzer.build_cfg(&module.kernels[0]);
         let violations = analyzer.analyze_barriers(&module);
 
-        assert!(violations.is_empty(), "F036: Should have no barrier violations with proper sync");
+        assert!(
+            violations.is_empty(),
+            "F036: Should have no barrier violations with proper sync"
+        );
     }
 }

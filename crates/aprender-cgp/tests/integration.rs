@@ -15,7 +15,10 @@ fn cgp_cmd() -> Command {
 #[test]
 fn test_doctor_completes() {
     let start = std::time::Instant::now();
-    let output = cgp_cmd().arg("doctor").output().expect("Failed to run cgp doctor");
+    let output = cgp_cmd()
+        .arg("doctor")
+        .output()
+        .expect("Failed to run cgp doctor");
     let elapsed = start.elapsed();
 
     assert!(output.status.success(), "cgp doctor failed");
@@ -23,7 +26,11 @@ fn test_doctor_completes() {
     assert!(stdout.contains("cgp System Check"), "Missing header");
     assert!(stdout.contains("CPU"), "Missing CPU detection");
     // Doctor should complete in <2s (FALSIFY-CGP-061), allow 30s for compilation
-    assert!(elapsed.as_secs() < 30, "cgp doctor took too long: {:?}", elapsed);
+    assert!(
+        elapsed.as_secs() < 30,
+        "cgp doctor took too long: {:?}",
+        elapsed
+    );
 }
 
 /// cgp roofline --target cuda must show RTX 4090 data.
@@ -67,7 +74,10 @@ fn test_roofline_export() {
         .expect("Failed to run cgp roofline");
 
     assert!(output.status.success());
-    assert!(std::path::Path::new(path).exists(), "Export file not created");
+    assert!(
+        std::path::Path::new(path).exists(),
+        "Export file not created"
+    );
 
     let content = std::fs::read_to_string(path).unwrap();
     assert!(content.contains("peak_compute"));
@@ -132,7 +142,16 @@ fn test_profile_compare() {
 #[test]
 fn test_compete() {
     let output = cgp_cmd()
-        .args(["compete", "test", "--ours", "true", "--theirs", "true", "--label", "cmd1,cmd2"])
+        .args([
+            "compete",
+            "test",
+            "--ours",
+            "true",
+            "--theirs",
+            "true",
+            "--label",
+            "cmd1,cmd2",
+        ])
         .output()
         .expect("Failed to run cgp compete");
 
@@ -175,7 +194,14 @@ fn test_contract_generate() {
 #[test]
 fn test_profile_kernel_no_binary() {
     let output = cgp_cmd()
-        .args(["profile", "kernel", "--name", "nonexistent_kernel", "--size", "512"])
+        .args([
+            "profile",
+            "kernel",
+            "--name",
+            "nonexistent_kernel",
+            "--size",
+            "512",
+        ])
         .output()
         .expect("Failed to run cgp profile kernel");
 
@@ -208,7 +234,10 @@ fn test_metal_not_available() {
 /// cgp --version must work.
 #[test]
 fn test_version() {
-    let output = cgp_cmd().arg("--version").output().expect("Failed to run cgp --version");
+    let output = cgp_cmd()
+        .arg("--version")
+        .output()
+        .expect("Failed to run cgp --version");
 
     // clap replaces the subcommand dispatch, but since we use `cargo run -- --version`
     // it may behave differently. Just check it doesn't panic.
@@ -216,14 +245,19 @@ fn test_version() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{stdout}{stderr}");
     // Either it shows version or clap error — both are fine
-    assert!(combined.contains("cgp") || combined.contains("0.1"), "output: {combined}");
+    assert!(
+        combined.contains("cgp") || combined.contains("0.1"),
+        "output: {combined}"
+    );
 }
 
 /// cgp --json doctor must output valid JSON with operational status.
 #[test]
 fn test_json_doctor() {
-    let output =
-        cgp_cmd().args(["--json", "doctor"]).output().expect("Failed to run cgp --json doctor");
+    let output = cgp_cmd()
+        .args(["--json", "doctor"])
+        .output()
+        .expect("Failed to run cgp --json doctor");
 
     assert!(output.status.success(), "cgp --json doctor failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -234,8 +268,14 @@ fn test_json_doctor() {
 
     // Must have expected fields
     assert!(parsed.get("checks").is_some(), "Missing 'checks' field");
-    assert!(parsed.get("operational").is_some(), "Missing 'operational' field");
-    assert!(parsed.get("elapsed_ms").is_some(), "Missing 'elapsed_ms' field");
+    assert!(
+        parsed.get("operational").is_some(),
+        "Missing 'operational' field"
+    );
+    assert!(
+        parsed.get("elapsed_ms").is_some(),
+        "Missing 'elapsed_ms' field"
+    );
     assert!(parsed["ok_count"].as_u64().unwrap_or(0) > 0, "No OK checks");
 }
 
@@ -254,7 +294,10 @@ fn test_json_roofline() {
         serde_json::from_str(&stdout).expect("Roofline JSON is not valid JSON");
 
     assert!(parsed.get("peak_compute").is_some(), "Missing peak_compute");
-    assert!(parsed.get("peak_bandwidth").is_some(), "Missing peak_bandwidth");
+    assert!(
+        parsed.get("peak_bandwidth").is_some(),
+        "Missing peak_bandwidth"
+    );
     assert!(parsed.get("target").is_some(), "Missing target");
 }
 
@@ -305,7 +348,10 @@ fn test_bench_missing() {
     // Should succeed (graceful handling, not crash)
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("CGP Bench") || stdout.contains("not found"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("CGP Bench") || stdout.contains("not found"),
+        "stdout: {stdout}"
+    );
 }
 
 /// cgp profile simd --arch neon must degrade gracefully on x86.
@@ -314,13 +360,25 @@ fn test_bench_missing() {
 #[cfg(target_arch = "x86_64")]
 fn test_neon_graceful_on_x86() {
     let output = cgp_cmd()
-        .args(["profile", "simd", "--function", "test", "--size", "1024", "--arch", "neon"])
+        .args([
+            "profile",
+            "simd",
+            "--function",
+            "test",
+            "--size",
+            "1024",
+            "--arch",
+            "neon",
+        ])
         .output()
         .expect("Failed to run cgp profile simd neon");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("NEON not available"), "Should mention NEON not available: {stdout}");
+    assert!(
+        stdout.contains("NEON not available"),
+        "Should mention NEON not available: {stdout}"
+    );
 }
 
 /// cgp profile wgpu must detect backend and not crash.
@@ -328,7 +386,14 @@ fn test_neon_graceful_on_x86() {
 #[test]
 fn test_wgpu_native_profile() {
     let output = cgp_cmd()
-        .args(["profile", "wgpu", "--shader", "nonexistent.wgsl", "--dispatch", "256,256,1"])
+        .args([
+            "profile",
+            "wgpu",
+            "--shader",
+            "nonexistent.wgsl",
+            "--dispatch",
+            "256,256,1",
+        ])
         .output()
         .expect("Failed to run cgp profile wgpu");
 
@@ -346,7 +411,14 @@ fn test_wgpu_native_profile() {
 #[test]
 fn test_wgpu_web_fallback() {
     let output = cgp_cmd()
-        .args(["profile", "wgpu", "--shader", "test.wgsl", "--target", "web"])
+        .args([
+            "profile",
+            "wgpu",
+            "--shader",
+            "test.wgsl",
+            "--target",
+            "web",
+        ])
         .output()
         .expect("Failed to run cgp profile wgpu web");
 
@@ -364,7 +436,14 @@ fn test_wgpu_web_fallback() {
 #[test]
 fn test_wasm_profile() {
     let output = cgp_cmd()
-        .args(["profile", "wasm", "--function", "vector_dot_wasm", "--size", "1024"])
+        .args([
+            "profile",
+            "wasm",
+            "--function",
+            "vector_dot_wasm",
+            "--size",
+            "1024",
+        ])
         .output()
         .expect("Failed to run cgp profile wasm");
 
@@ -382,14 +461,24 @@ fn test_wasm_profile() {
 #[test]
 fn test_scalar_profile() {
     let output = cgp_cmd()
-        .args(["profile", "scalar", "--function", "matrix_mul_naive", "--size", "256"])
+        .args([
+            "profile",
+            "scalar",
+            "--function",
+            "matrix_mul_naive",
+            "--size",
+            "256",
+        ])
         .output()
         .expect("Failed to run cgp profile scalar");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Scalar"), "Should mention Scalar: {stdout}");
-    assert!(stdout.contains("baseline"), "Should mention baseline: {stdout}");
+    assert!(
+        stdout.contains("baseline"),
+        "Should mention baseline: {stdout}"
+    );
 }
 
 /// cgp profile parallel must not crash.
@@ -412,7 +501,10 @@ fn test_parallel_profile() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Parallel") || stdout.contains("Rayon"), "stdout: {stdout}");
+    assert!(
+        stdout.contains("Parallel") || stdout.contains("Rayon"),
+        "stdout: {stdout}"
+    );
 }
 
 /// cgp --json roofline must produce valid JSON for different targets.
@@ -436,7 +528,14 @@ fn test_json_roofline_avx2() {
 #[test]
 fn test_quant_profile() {
     let output = cgp_cmd()
-        .args(["profile", "quant", "--kernel", "q4k_gemv", "--size", "4096x1x4096"])
+        .args([
+            "profile",
+            "quant",
+            "--kernel",
+            "q4k_gemv",
+            "--size",
+            "4096x1x4096",
+        ])
         .output()
         .expect("Failed to run cgp profile quant");
 
@@ -452,7 +551,12 @@ fn test_quant_profile() {
 #[test]
 fn test_contract_verify_missing_dir() {
     let output = cgp_cmd()
-        .args(["contract", "verify", "--contracts-dir", "/tmp/nonexistent_cgp_contracts_xyz"])
+        .args([
+            "contract",
+            "verify",
+            "--contracts-dir",
+            "/tmp/nonexistent_cgp_contracts_xyz",
+        ])
         .output()
         .expect("Failed to run cgp contract verify");
 
@@ -485,15 +589,23 @@ fn test_json_profile_compare() {
     assert!(parsed.is_array(), "Compare output should be an array");
     let arr = parsed.as_array().unwrap();
     assert!(!arr.is_empty(), "Should have backend results");
-    assert!(arr[0].get("name").is_some(), "Each result should have a name");
-    assert!(arr[0].get("tflops").is_some(), "Each result should have tflops");
+    assert!(
+        arr[0].get("name").is_some(),
+        "Each result should have a name"
+    );
+    assert!(
+        arr[0].get("tflops").is_some(),
+        "Each result should have tflops"
+    );
 }
 
 /// cgp explain ptx must not crash and mention PTX.
 #[test]
 fn test_explain_ptx() {
-    let output =
-        cgp_cmd().args(["explain", "ptx"]).output().expect("Failed to run cgp explain ptx");
+    let output = cgp_cmd()
+        .args(["explain", "ptx"])
+        .output()
+        .expect("Failed to run cgp explain ptx");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -503,8 +615,10 @@ fn test_explain_ptx() {
 /// cgp explain wgsl must not crash.
 #[test]
 fn test_explain_wgsl() {
-    let output =
-        cgp_cmd().args(["explain", "wgsl"]).output().expect("Failed to run cgp explain wgsl");
+    let output = cgp_cmd()
+        .args(["explain", "wgsl"])
+        .output()
+        .expect("Failed to run cgp explain wgsl");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -545,8 +659,10 @@ fn test_json_scaling() {
 /// cgp --json doctor must have GPU detection fields.
 #[test]
 fn test_json_doctor_gpu_detection() {
-    let output =
-        cgp_cmd().args(["--json", "doctor"]).output().expect("Failed to run cgp --json doctor");
+    let output = cgp_cmd()
+        .args(["--json", "doctor"])
+        .output()
+        .expect("Failed to run cgp --json doctor");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);

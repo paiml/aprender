@@ -24,7 +24,10 @@ pub struct IsolationConfig {
 
 impl Default for IsolationConfig {
     fn default() -> Self {
-        Self { use_reexec: true, device_index: 0 }
+        Self {
+            use_reexec: true,
+            device_index: 0,
+        }
     }
 }
 
@@ -37,7 +40,10 @@ pub fn is_worker_process() -> bool {
 /// Read the worker task ID from the environment, if present.
 #[must_use]
 pub fn worker_task_id() -> Option<WorkerTaskId> {
-    std::env::var(WORKER_TASK_ID_VAR).ok().and_then(|s| s.parse::<u64>().ok()).map(WorkerTaskId)
+    std::env::var(WORKER_TASK_ID_VAR)
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .map(WorkerTaskId)
 }
 
 #[cfg(test)]

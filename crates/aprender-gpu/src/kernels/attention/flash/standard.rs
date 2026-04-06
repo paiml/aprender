@@ -17,7 +17,11 @@ impl AttentionKernel {
         // Shared memory for Q, K, V tiles
         let smem_size = (tile_q * head_dim + tile_kv * head_dim * 2) * 4;
 
-        let kernel_name = if causal { "flash_attention_causal" } else { "flash_attention" };
+        let kernel_name = if causal {
+            "flash_attention_causal"
+        } else {
+            "flash_attention"
+        };
 
         PtxKernel::new(kernel_name)
             .param(PtxType::U64, "q_ptr")

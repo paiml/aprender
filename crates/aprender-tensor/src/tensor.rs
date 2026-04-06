@@ -29,14 +29,22 @@ impl Tensor {
             });
         }
         let strides = compute_strides(&shape);
-        Ok(Self { shape, strides, data })
+        Ok(Self {
+            shape,
+            strides,
+            data,
+        })
     }
 
     /// Create a zero tensor with the given shape.
     pub fn zeros(shape: Vec<usize>) -> Self {
         let product: usize = shape.iter().product();
         let strides = compute_strides(&shape);
-        Self { shape, strides, data: vec![0.0; product] }
+        Self {
+            shape,
+            strides,
+            data: vec![0.0; product],
+        }
     }
 
     /// Tensor shape.
@@ -83,7 +91,11 @@ impl Tensor {
 
     /// Compute linear offset from multi-index.
     fn offset(&self, indices: &[usize]) -> usize {
-        indices.iter().zip(self.strides.iter()).map(|(&i, &s)| i * s).sum()
+        indices
+            .iter()
+            .zip(self.strides.iter())
+            .map(|(&i, &s)| i * s)
+            .sum()
     }
 
     /// Reshape tensor (must have same total elements).
@@ -133,7 +145,11 @@ impl Tensor {
             new_data[new_offset] = self.data[flat];
         }
 
-        Self { shape: new_shape, strides: new_strides, data: new_data }
+        Self {
+            shape: new_shape,
+            strides: new_strides,
+            data: new_data,
+        }
     }
 }
 

@@ -20,13 +20,17 @@ impl ParityConfig {
     /// Create a parity config for the given format with default tolerance.
     #[must_use]
     pub fn new(format: QuantFormat) -> Self {
-        Self { format, tolerance_override: None }
+        Self {
+            format,
+            tolerance_override: None,
+        }
     }
 
     /// Get the effective tolerance for this config.
     #[must_use]
     pub fn tolerance(&self) -> f64 {
-        self.tolerance_override.unwrap_or_else(|| self.format.tolerance())
+        self.tolerance_override
+            .unwrap_or_else(|| self.format.tolerance())
     }
 }
 
@@ -127,9 +131,18 @@ pub fn check_values_parity(
         }
     }
 
-    let mean_abs_diff = if len > 0 { sum_abs_diff / len as f64 } else { 0.0 };
+    let mean_abs_diff = if len > 0 {
+        sum_abs_diff / len as f64
+    } else {
+        0.0
+    };
 
-    ParityReport { violations, total_elements: len, max_abs_diff, mean_abs_diff }
+    ParityReport {
+        violations,
+        total_elements: len,
+        max_abs_diff,
+        mean_abs_diff,
+    }
 }
 
 #[cfg(test)]
