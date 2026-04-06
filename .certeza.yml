@@ -1,0 +1,136 @@
+# trueno-graph Quality Thresholds (certeza standard)
+# Higher standards than PMAT (95% vs 85% coverage)
+
+version: "1.0"
+
+# Quality thresholds
+thresholds:
+  test_coverage: 95%                # Line coverage (higher than PMAT's 85%)
+  mutation_score: 80%               # Mutation testing (certeza standard)
+  complexity_max: 20                # Cyclomatic complexity per function
+  unsafe_allowed: 0                 # Zero unsafe code (pure Rust graph DB)
+  doc_coverage: 90%                 # Rustdoc coverage for public items
+
+# Automated checks (run by make quality)
+checks:
+  - name: "Zero SATD"
+    description: "No self-admitted technical debt markers"
+    command: "pmat analyze satd --fail-on-any --path ."
+    blocking: true
+
+  - name: "Complexity check"
+    description: "All functions ≤20 cyclomatic complexity"
+    command: "pmat analyze complexity --fail-above 20 --path ."
+    blocking: true
+
+  - name: "Dead code detection"
+    description: "Zero unused code"
+    command: "pmat analyze dead-code --path ."
+    blocking: true
+
+  - name: "Dependency freshness"
+    description: "No outdated dependencies"
+    command: "cargo outdated --exit-code 1"
+    blocking: false  # Warning only
+
+  - name: "Security audit"
+    description: "Zero known vulnerabilities"
+    command: "cargo audit --deny warnings"
+    blocking: true
+
+  - name: "Benchmark regression"
+    description: "No performance regressions vs baseline"
+    command: "cargo bench --features gpu -- --save-baseline main"
+    blocking: false  # Informational
+
+# Mutation testing configuration
+mutation:
+  targets:
+    - src/storage/csr.rs          # Core CSR implementation
+    - src/storage/parquet.rs      # Persistence layer
+    - src/algorithms/pagerank.rs  # PageRank correctness
+    - src/algorithms/traversal.rs # BFS traversal
+    - src/query/api.rs            # Public API surface
+
+  operators:
+    - arithmetic                  # + → -, * → /, etc.
+    - relational                  # < → <=, == → !=
+    - logical                     # && → ||, ! → identity
+    - unary                       # -x → x
+    - statement                   # return → continue
+
+  exclusions:
+    # Exclude generated code
+    - target/
+    - tests/
+    # Exclude trivial getters
+    - "fn num_nodes"
+    - "fn num_edges"
+
+  thresholds:
+    mutation_score: 0.80          # Kill ≥80% of mutants
+    timeout_multiplier: 2         # 2x original test time max
+    max_mutants_per_file: 100     # Cap for large files
+
+# Coverage configuration
+coverage:
+  tool: "cargo-llvm-cov"
+  output_format: "html"
+  output_dir: "coverage"
+  exclusions:
+    - tests/
+    - benches/
+    - examples/
+
+  # Branch coverage (stricter than line coverage)
+  branch_coverage_threshold: 85%  # Ensure all code paths tested
+
+# Documentation requirements
+documentation:
+  public_items_required: true
+  examples_required: true         # All public APIs need examples
+  missing_docs_level: "warn"      # Warn on missing docs
+
+# Benchmark validation
+benchmarks:
+  baseline: "main"
+  regression_threshold: 10%       # Max 10% slowdown allowed
+  comparison_targets:
+    - pagerank_simd
+    - pagerank_gpu
+    - bfs_simd
+    - bfs_gpu
+    - louvain_gpu
+
+# Quality report
+reporting:
+  format: "markdown"
+  output: "QUALITY_REPORT.md"
+  include:
+    - test_coverage
+    - mutation_score
+    - complexity_distribution
+    - benchmark_results
+    - dependency_audit
+
+# Toyota Way principles enforcement
+toyota_way:
+  jidoka:
+    - "Mutation testing catches weak tests"
+    - "Benchmarks validate performance claims"
+    - "Zero SATD = built-in quality"
+
+  muda:
+    - "Reuse trueno/trueno-db/aprender (no reinvention)"
+    - "Feature flags (SIMD default, GPU opt-in)"
+    - "Zero dead code"
+
+  kaizen:
+    - "Track quality metrics over time"
+    - "Benchmark-driven optimization"
+    - "Peer-reviewed algorithm selection"
+
+  genchi_genbutsu:
+    - "Performance claims validated by benchmarks"
+    - "Real PMAT call graph integration tests"
+    - "Profiling identifies bottlenecks"

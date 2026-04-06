@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="gpu" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Graph visualization -->
+  <g transform="translate(640, 260)">
+    <!-- Center node -->
+    <circle cx="0" cy="0" r="25" fill="url(#node)" opacity="0.9"/>
+    <text x="0" y="5" font-family="monospace" font-size="12" fill="#1a1a2e" text-anchor="middle">0</text>
+
+    <!-- Surrounding nodes with edges -->
+    <!-- Node 1 - top left -->
+    <line x1="0" y1="0" x2="-100" y2="-80" stroke="url(#edge)" stroke-width="2" opacity="0.7"/>
+    <circle cx="-100" cy="-80" r="20" fill="url(#gpu)" opacity="0.8"/>
+    <text x="-100" y="-75" font-family="monospace" font-size="11" fill="#1a1a2e" text-anchor="middle">1</text>
+
+    <!-- Node 2 - top right -->
+    <line x1="0" y1="0" x2="100" y2="-80" stroke="url(#edge)" stroke-width="2" opacity="0.7"/>
+    <circle cx="100" cy="-80" r="20" fill="url(#gpu)" opacity="0.8"/>
+    <text x="100" y="-75" font-family="monospace" font-size="11" fill="#1a1a2e" text-anchor="middle">2</text>
+
+    <!-- Node 3 - right -->
+    <line x1="0" y1="0" x2="120" y2="20" stroke="url(#edge)" stroke-width="2" opacity="0.7"/>
+    <circle cx="120" cy="20" r="20" fill="url(#gpu)" opacity="0.8"/>
+    <text x="120" y="25" font-family="monospace" font-size="11" fill="#1a1a2e" text-anchor="middle">3</text>
+
+    <!-- Node 4 - bottom -->
+    <line x1="0" y1="0" x2="0" y2="100" stroke="url(#edge)" stroke-width="2" opacity="0.7"/>
+    <circle cx="0" cy="100" r="20" fill="url(#gpu)" opacity="0.8"/>
+    <text x="0" y="105" font-family="monospace" font-size="11" fill="#1a1a2e" text-anchor="middle">4</text>
+
+    <!-- Node 5 - left -->
+    <line x1="0" y1="0" x2="-120" y2="20" stroke="url(#edge)" stroke-width="2" opacity="0.7"/>
+    <circle cx="-120" cy="20" r="20" fill="url(#gpu)" opacity="0.8"/>
+    <text x="-120" y="25" font-family="monospace" font-size="11" fill="#1a1a2e" text-anchor="middle">5</text>
+
+    <!-- Secondary edges between outer nodes -->
+    <line x1="-100" y1="-80" x2="100" y2="-80" stroke="url(#edge)" stroke-width="1" opacity="0.4"/>
+    <line x1="100" y1="-80" x2="120" y2="20" stroke="url(#edge)" stroke-width="1" opacity="0.4"/>
+    <line x1="-100" y1="-80" x2="-120" y2="20" stroke="url(#edge)" stroke-width="1" opacity="0.4"/>
+    <line x1="-120" y1="20" x2="0" y2="100" stroke="url(#edge)" stroke-width="1" opacity="0.4"/>
+    <line x1="120" y1="20" x2="0" y2="100" stroke="url(#edge)" stroke-width="1" opacity="0.4"/>
+  </g>
+
+  <!-- Performance badge -->
+  <g transform="translate(880, 180)" opacity="0.7">
+    <rect x="0" y="0" width="160" height="60" rx="4" fill="#0f3460" stroke="url(#gpu)" stroke-width="1"/>
+    <text x="80" y="25" font-family="monospace" font-size="24" font-weight="bold" fill="url(#gpu)" text-anchor="middle">10-250x</text>
+    <text x="80" y="45" font-family="monospace" font-size="11" fill="#888" text-anchor="middle">GPU acceleration</text>
+  </g>
+
+  <!-- Algorithm labels -->
+  <g transform="translate(200, 200)" opacity="0.5">
+    <text x="0" y="0" font-family="monospace" font-size="12" fill="#60a5fa">BFS</text>
+    <text x="0" y="20" font-family="monospace" font-size="12" fill="#34d399">PageRank</text>
+    <text x="0" y="40" font-family="monospace" font-size="12" fill="#fbbf24">CSR</text>
+  </g>
+
+  <text x="640" y="460" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">trueno-graph</text>
+  <text x="640" y="510" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">GPU-First Embedded Graph Database</text>
+</svg>

@@ -1,0 +1,142 @@
+[package]
+name = "trueno-graph"
+version = "0.1.18"
+edition = "2021"
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+license = "MIT"
+description = "GPU-first embedded graph database for code analysis (call graphs, dependencies, AST traversals)"
+repository = "https://github.com/paiml/trueno-graph"
+keywords = ["graph", "gpu", "database", "csr", "pagerank"]
+categories = ["database", "algorithms", "data-structures"]
+rust-version = "1.75"
+readme = "README.md"
+
+[dependencies]
+# Data formats (columnar) - MVP uses Arrow/Parquet directly
+# Minimal features: drops arrow-csv, arrow-json (~fewer transitive deps)
+arrow = { version = "54", default-features = false, optional = true }  # RecordBatch zero-copy
+parquet = { version = "54", optional = true }                       # Persistent storage
+
+# Async runtime (required for I/O)
+tokio = { version = "1", features = ["rt", "fs", "sync", "macros"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Phase 2+ dependencies
+aprender = "0.27"                                        # Sparse matrix ops, PageRank
+trueno = "0.17"                                          # SIMD primitives
+trueno-db = "0.3.17"                                     # Columnar storage
+
+# Phase 3: GPU acceleration (optional - requires wgpu-capable hardware)
+wgpu = { version = "22", optional = true, features = ["wgsl"] }
+bytemuck = { version = "1", optional = true, features = ["derive"] }
+futures-intrusive = { version = "0.5", optional = true }
+
+# Future optional dependencies
+# lru = { version = "0.12", optional = true }
+# serde = { version = "1", features = ["derive"], optional = true }
+
+[dev-dependencies]
+# Testing
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio-test = "0.4"
+proptest = "1.9"                                        # Property-based testing
+serial_test = "3"                                       # Sequential test execution
+tempfile = "3"                                          # Temporary directories for tests
+
+# Benchmarks
+criterion = { version = "0.6", features = ["html_reports"] }
+
+[features]
+default = ["storage"]
+
+# Parquet/Arrow storage for graph persistence
+storage = ["dep:arrow", "dep:parquet"]
+
+# GPU acceleration (Phase 3)
+gpu = ["wgpu", "bytemuck", "futures-intrusive"]
+
+# Features for future phases (currently disabled for MVP)
+# simd = ["trueno"]
+# api = ["serde"]
+
+# Workspace lints (PMAT best practices from trueno-db/trueno)
+[workspace]
+resolver = "2"
+members = ["."]
+
+[workspace.package]
+edition = "2021"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+missing_docs = "warn"
+rust_2018_idioms = "warn"
+unreachable_pub = "warn"
+
+[workspace.lints.clippy]
+# Correctness (critical - per certeza quality standards)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+
+# Performance (graph DB must be fast)
+perf = { level = "warn", priority = -1 }
+
+# Code quality (pmat enforcement)
+complexity = { level = "warn", priority = -1 }          # Cyclomatic complexity
+unwrap_used = "warn"                                    # No unwrap() - use Result
+expect_used = "warn"                                    # Prefer context via anyhow
+
+# Documentation
+missing_docs_in_private_items = "allow"                 # Public items only
+
+# Benchmarks (Phase 2)
+[[bench]]
+name = "graph_algorithms"
+harness = false
+
+# GPU Benchmarks (Phase 3)
+[[bench]]
+name = "gpu_algorithms"
+harness = false
+required-features = ["gpu"]
+
+# GPU Examples (require gpu feature)
+[[example]]
+name = "paging_demo"
+required-features = ["gpu"]
+
+# Phase 4 Benchmarks (Community detection, Pattern matching)
+[[bench]]
+name = "phase4_algorithms"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "thin"                                            # Link-time optimization (faster PageRank)
+codegen-units = 1                                       # Better optimization (slower compile)
+strip = true                                            # Remove debug symbols
+panic = "abort"                                         # Smaller binary
+
+[profile.bench]
+inherits = "release"
+debug = true                                            # Keep symbols for flamegraph profiling
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[workspace.dependencies]
+
+[profile.dev]
+panic = "abort"
