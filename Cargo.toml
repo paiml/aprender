@@ -57,7 +57,13 @@ members = [
     "crates/aprender-graph",
     "crates/aprender-rag",
     "crates/aprender-viz",
-    # Phase 3: sub-crates below need workspace dep wiring before enabling
+    # --- APR-MONO Phase 3a: zram sub-crates (enabled) ---
+    "crates/aprender-zram",
+    "crates/aprender-zram-core",
+    "crates/aprender-zram-adaptive",
+    "crates/aprender-zram-cli",
+    "crates/aprender-zram-generator",
+    # Phase 3b/3c: presentar + test sub-crates pending wiring
     # "crates/aprender-viz-ttop",
     # "crates/aprender-present",
     # "crates/aprender-present-core",
@@ -75,11 +81,6 @@ members = [
     # "crates/aprender-test-derive",
     # "crates/aprender-test-js-gen",
     # "crates/aprender-test-showcase",
-    # "crates/aprender-zram",
-    # "crates/aprender-zram-core",
-    # "crates/aprender-zram-adaptive",
-    # "crates/aprender-zram-cli",
-    # "crates/aprender-zram-generator",
 ]
 exclude = [
     "fuzz",
@@ -101,11 +102,6 @@ exclude = [
     "crates/aprender-test-derive",
     "crates/aprender-test-js-gen",
     "crates/aprender-test-showcase",
-    "crates/aprender-zram",
-    "crates/aprender-zram-core",
-    "crates/aprender-zram-adaptive",
-    "crates/aprender-zram-cli",
-    "crates/aprender-zram-generator",
     "crates/aprender-train-canary",
 ]
 resolver = "2"
@@ -117,6 +113,8 @@ license = "MIT"
 repository = "https://github.com/paiml/aprender"
 authors = ["Noah Gift <noah@paiml.com>"]
 rust-version = "1.89"
+keywords = ["machine-learning", "inference", "training", "gpu", "simd"]
+categories = ["science", "algorithms"]
 
 [workspace.dependencies]
 # Serialization
@@ -182,11 +180,51 @@ serde_yaml = "0.9"
 # HF Hub
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
 
-# Workspace-internal crates (will be populated as subtree merges complete)
-# aprender-compute = { path = "crates/aprender-compute" }
-# aprender-serve = { path = "crates/aprender-serve" }
-# aprender-train = { path = "crates/aprender-train" }
-# aprender-orchestrate = { path = "crates/aprender-orchestrate" }
+# Workspace-internal crates (paths within the monorepo)
+aprender-compute = { path = "crates/aprender-compute" }
+aprender-gpu = { path = "crates/aprender-gpu" }
+aprender-quant = { path = "crates/aprender-quant" }
+aprender-serve = { path = "crates/aprender-serve" }
+aprender-train = { path = "crates/aprender-train" }
+aprender-train-common = { path = "crates/aprender-train-common" }
+aprender-orchestrate = { path = "crates/aprender-orchestrate" }
+aprender-contracts = { path = "crates/aprender-contracts" }
+aprender-profile = { path = "crates/aprender-profile" }
+aprender-profile-core = { path = "crates/aprender-profile-core" }
+aprender-zram-core = { path = "crates/aprender-zram-core" }
+aprender-zram-adaptive = { path = "crates/aprender-zram-adaptive" }
+aprender-present-core = { path = "crates/aprender-present-core" }
+aprender-present-terminal = { path = "crates/aprender-present-terminal" }
+aprender-present-widgets = { path = "crates/aprender-present-widgets" }
+aprender-present-layout = { path = "crates/aprender-present-layout" }
+aprender-present-yaml = { path = "crates/aprender-present-yaml" }
+aprender-present-test = { path = "crates/aprender-present-test" }
+aprender-db = { path = "crates/aprender-db" }
+aprender-graph = { path = "crates/aprender-graph" }
+aprender-rag = { path = "crates/aprender-rag" }
+aprender-data = { path = "crates/aprender-data" }
+
+# Additional external deps needed by sub-crates
+serde_yaml_ng = "0.10"
+crossterm = "0.28"
+sysinfo = "0.32"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+image = "0.25"
+base64 = "0.22"
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+async-trait = "0.1"
+notify = "7"
+futures = "0.3"
+tokio-tungstenite = "0.24"
+indicatif = "0.17"
+console = "0.15"
+
+# Old crate name aliases (workspace = true refs in migrated sub-crates)
+trueno-zram-core = { path = "crates/aprender-zram-core", package = "aprender-zram-core" }
+trueno-zram-adaptive = { path = "crates/aprender-zram-adaptive", package = "aprender-zram-adaptive" }
 
 [workspace.lints.rust]
 # Safety

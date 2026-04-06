@@ -15,7 +15,7 @@ thiserror.workspace = true
 cudarc = { version = "0.18", optional = true, features = ["cuda-12080", "nvrtc"] }
 rayon = { version = "1.10", optional = true }
 # Pure Rust PTX generation for GPU LZ4 compression
-trueno-gpu = { version = "0.4.5", optional = true, features = ["cuda"] }
+aprender-gpu = { workspace = true, optional = true, features = ["cuda"] }
 
 [dev-dependencies]
 proptest.workspace = true
@@ -40,7 +40,7 @@ std = []
 # Enable nightly-only SIMD features
 nightly = []
 # Enable CUDA GPU acceleration
-cuda = ["dep:cudarc", "dep:rayon", "dep:trueno-gpu"]
+cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
 
 [lints]
 workspace = true

@@ -48,7 +48,4 @@ codegen-units = 1
 [profile.dev]
 panic = "abort"
 
-[[workspace.metadata.release.pre-release-replacements]]
-file = "CHANGELOG.md"
-search = "## \\[Unreleased\\]"
-replace = "## [{{version}}] - {{date}}"
+# Old [[workspace.metadata.release]] removed — root workspace handles releases
