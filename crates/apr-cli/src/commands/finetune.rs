@@ -249,6 +249,7 @@ fn execute_training(
     learning_rate: f64,
     json_output: bool,
     model_size: Option<&str>,
+    gpu_backend: &str,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructConfig;
@@ -318,13 +319,33 @@ fn execute_training(
         println!("  Data: {} samples", corpus.len());
     }
 
-    // PMAT-491: WGPU path is the ONLY working NF4 training path.
-    // Five-whys (v6.0.0): CUDA NF4 path has TWO fatal issues:
-    //   1. InstructPipeline::from_apr() dequants ALL Q4K→F32 on CPU (20+ min)
-    //   2. trueno CUDA PTX JIT takes 2 hours on first run (PMAT-492)
-    // WGPU path loads Q4K in seconds via OwnedQuantizedModel, trains at 119 tok/s.
-    // WGPU works on ALL GPU backends (Vulkan on NVIDIA, Metal on Apple).
-    if trueno::backends::gpu::GpuDevice::is_available() && instruct_config.quantize_nf4 {
+    // PMAT-494 FIX: Route based on --gpu-backend flag.
+    // "cuda" → InstructPipeline with cuBLAS backward (proper per-layer backward with
+    //   RMSNorm, SiLU, attention backward + cuBLAS GEMM = 15-40x faster LoRA backward)
+    // "wgpu" → WgpuInstructPipeline (portable but 336 WGSL dispatches/step)
+    // "auto" → WGPU for NF4 (fast load), CUDA for full FT
+    let use_wgpu = match gpu_backend {
+        "cuda" => {
+            eprintln!("[gpu-backend] CUDA selected — using cuBLAS backward path");
+            false
+        }
+        "wgpu" => {
+            eprintln!("[gpu-backend] WGPU selected — using WGSL compute shader path");
+            true
+        }
+        _ => {
+            // "auto": prefer WGPU for NF4 (fast Q4K load), CUDA for full FT
+            if instruct_config.quantize_nf4 && trueno::backends::gpu::GpuDevice::is_available() {
+                eprintln!("[gpu-backend] auto → WGPU (NF4 fast load path)");
+                true
+            } else {
+                eprintln!("[gpu-backend] auto → CUDA (full FT path)");
+                false
+            }
+        }
+    };
+
+    if use_wgpu && trueno::backends::gpu::GpuDevice::is_available() {
         return execute_training_wgpu(
             model_path,
             &model_config,
@@ -338,7 +359,12 @@ fn execute_training(
         );
     }
 
-    // Full fine-tune (non-NF4) or no GPU: must dequant entire model to F32.
+    // CUDA path (or CPU fallback): dequant model to F32.
+    // PMAT-494: This path has full cuBLAS backward with proper per-layer gradient
+    // propagation (RMSNorm backward, SiLU backward, attention backward).
+    // On gx10 (120GB VRAM), the 20-min CPU dequant is acceptable for the 15-40x
+    // backward speedup from cuBLAS vs WGSL.
+    eprintln!("[training] Loading model via InstructPipeline (F32 dequant)...");
     let pipeline = InstructPipeline::from_apr(model_path, &model_config, instruct_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
@@ -1106,6 +1132,7 @@ pub(crate) fn run(
         learning_rate,
         json_output,
         model_size,
+        gpu_backend,
     )
 }
 
@@ -1119,6 +1146,7 @@ fn run_finetune_training(
     learning_rate: f64,
     json_output: bool,
     model_size: Option<&str>,
+    gpu_backend: &str,
 ) -> Result<()> {
     let data = match data_path {
         Some(d) if d.exists() => d,
@@ -1154,6 +1182,7 @@ fn run_finetune_training(
         learning_rate,
         json_output,
         model_size,
+        gpu_backend,
     )
 }
 

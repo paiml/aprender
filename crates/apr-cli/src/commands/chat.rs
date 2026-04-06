@@ -94,6 +94,7 @@ pub(crate) fn run(
     trace_level: &str,
     profile: bool,
 ) -> Result<(), CliError> {
+    contract_pre_temperature_bounds!();
     // Validate file exists
     if !path.exists() {
         return Err(CliError::FileNotFound(path.to_path_buf()));
