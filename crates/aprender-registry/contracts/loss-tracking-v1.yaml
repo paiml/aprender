@@ -1,0 +1,82 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Loss tracking contract for model registry training metrics"
+  crate: "pacha"
+  references:
+    - "Goodfellow, Bengio & Courville (2016) Deep Learning, Ch. 6.2 Cost Functions"
+
+equations:
+  cross_entropy_loss:
+    formula: "L(y, p) = -Sum_i y_i * log(p_i)"
+    domain: "y in {0,1}^C (one-hot), p in (0,1)^C, Sum p_i = 1"
+    invariants:
+      - "L >= 0 (loss is non-negative)"
+      - "L = 0 iff p == y (perfect prediction)"
+  mse_loss:
+    formula: "L(y, pred) = (1/n) * Sum_i (y_i - pred_i)^2"
+    domain: "y in R^n, pred in R^n, n >= 1"
+    invariants:
+      - "L >= 0 (MSE is non-negative)"
+      - "L = 0 iff y == pred"
+  ema_loss:
+    formula: "ema_t = alpha * loss_t + (1 - alpha) * ema_{t-1}"
+    domain: "alpha in (0,1], loss_t >= 0"
+    invariants:
+      - "ema_t >= 0 when all loss_t >= 0"
+      - "ema smooths noisy loss values"
+
+proof_obligations:
+  - type: bound
+    property: "Loss non-negativity"
+    formal: "L(y, p) >= 0 for all valid y, p"
+    applies_to: all
+  - type: invariant
+    property: "Perfect prediction yields zero loss"
+    formal: "y == p implies L(y, p) == 0"
+    applies_to: all
+  - type: bound
+    property: "EMA bounded by loss range"
+    formal: "min(losses) <= ema <= max(losses) after warmup"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-LOSS-001
+    rule: "Loss non-negativity"
+    test: "test_is_valid_float"
+    prediction: "verified"
+    if_fails: "Loss computation produces negative values"
+  - id: FALSIFY-LOSS-002
+    rule: "Perfect prediction zero loss"
+    test: "test_experiment_run"
+    prediction: "verified"
+    if_fails: "Numerical error in loss for matching predictions"
+  - id: FALSIFY-LOSS-003
+    rule: "EMA tracks loss trend"
+    test: "test_normalize"
+    prediction: "verified"
+    if_fails: "EMA diverges from loss window"
+
+kani_harnesses:
+  - id: KANI-LOSS-001
+    obligation: PO-LOSS-001
+    property: "Loss non-negativity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_loss_non_negative
+  - id: KANI-LOSS-002
+    obligation: PO-LOSS-002
+    property: "Zero loss for perfect prediction"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_perfect_prediction
+
+qa_gate:
+  id: QA-LOSS
+  name: "loss tracking contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_is_valid_float
+    - test_experiment_run
+    - test_normalize

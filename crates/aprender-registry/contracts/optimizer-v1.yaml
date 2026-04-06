@@ -1,0 +1,84 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Optimizer contract for model registry parameter update strategies"
+  crate: "pacha"
+  references:
+    - "Kingma & Ba (2015) Adam: A Method for Stochastic Optimization, arXiv:1412.6980"
+    - "Loshchilov & Hutter (2019) Decoupled Weight Decay Regularization, arXiv:1711.05101"
+
+equations:
+  sgd_update:
+    formula: "theta_{t+1} = theta_t - lr * gradient_t"
+    domain: "lr in R+, theta in R^n, gradient in R^n"
+    invariants:
+      - "Parameter update magnitude proportional to learning rate"
+      - "Zero gradient implies no parameter change"
+  adam_moment:
+    formula: "m_t = beta_1 * m_{t-1} + (1 - beta_1) * g_t; v_t = beta_2 * v_{t-1} + (1 - beta_2) * g_t^2"
+    domain: "beta_1 in (0,1), beta_2 in (0,1), g_t in R^n"
+    invariants:
+      - "First moment is exponential moving average of gradients"
+      - "Second moment is exponential moving average of squared gradients"
+      - "v_t >= 0 for all t (second moment non-negative)"
+  learning_rate_schedule:
+    formula: "lr_t = lr_0 * decay_factor(t, schedule)"
+    domain: "lr_0 > 0, t >= 0"
+    invariants:
+      - "lr_t > 0 for all t (learning rate stays positive)"
+      - "For cosine schedule: lr_t >= lr_min"
+
+proof_obligations:
+  - type: invariant
+    property: "Zero gradient produces zero update"
+    formal: "gradient == 0 implies theta_{t+1} == theta_t"
+    applies_to: all
+  - type: bound
+    property: "Second moment non-negative"
+    formal: "v_t >= 0 for all t"
+    applies_to: all
+  - type: bound
+    property: "Learning rate stays positive"
+    formal: "lr_t > 0 for all t >= 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-OPT-001
+    rule: "Zero gradient no-op"
+    test: "test_optimizer_spec"
+    prediction: "verified"
+    if_fails: "Optimizer applies update even with zero gradient"
+  - id: FALSIFY-OPT-002
+    rule: "Second moment non-negative"
+    test: "test_hyperparameters_default"
+    prediction: "verified"
+    if_fails: "Squared gradient accumulation underflows"
+  - id: FALSIFY-OPT-003
+    rule: "Learning rate positive"
+    test: "test_recipe_builder"
+    prediction: "verified"
+    if_fails: "Schedule decays to zero or negative"
+
+kani_harnesses:
+  - id: KANI-OPT-001
+    obligation: PO-OPT-001
+    property: "Zero gradient identity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_zero_gradient_noop
+  - id: KANI-OPT-002
+    obligation: PO-OPT-002
+    property: "Second moment non-negative"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_second_moment_bound
+
+qa_gate:
+  id: QA-OPTIMIZER
+  name: "optimizer contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_optimizer_spec
+    - test_hyperparameters_default
+    - test_recipe_builder

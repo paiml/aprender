@@ -1,0 +1,16 @@
+# cargo-release configuration
+# See: https://github.com/crate-ci/cargo-release
+
+[workspace]
+shared-version = true
+allow-branch = ["main"]
+tag-prefix = "v"
+tag-name = "v{{version}}"
+
+pre-release-commit-message = "release: v{{version}}"
+post-release-commit-message = "chore: start next development cycle"
+tag-message = "v{{version}}"
+
+pre-release-replacements = [
+    { file = "CHANGELOG.md", search = "## \\[Unreleased\\]", replace = "## [{{version}}] - {{date}}" },
+]
