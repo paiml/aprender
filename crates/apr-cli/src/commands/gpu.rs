@@ -33,7 +33,7 @@ pub fn run(json: bool) -> Result<()> {
             "gpu_uuid": uuid,
             "total_mb": total_mb,
             "memory_type": format!("{mem_type:?}"),
-            "reserve_factor": mem_type.reserve_factor(),
+            "reserve_factor": (f64::from(mem_type.reserve_factor()) * 100.0).round() / 100.0,
             "capacity_mb": ledger.capacity_mb(),
             "reserved_mb": reserved,
             "available_mb": ledger.capacity_mb().saturating_sub(reserved),
