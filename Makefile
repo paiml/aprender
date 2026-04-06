@@ -827,6 +827,32 @@ dev-setup: ## Set up local dev environment with sibling repo overrides
 	@echo ""
 	@$(MAKE) --no-print-directory check-siblings
 
+publish: ## Publish crate(s) to crates.io — temporarily removes [patch] to avoid diamond deps
+	@echo "Publishing to crates.io (removing [patch.crates-io] temporarily)..."
+	@if [ -f .cargo/config.toml ]; then \
+		cp .cargo/config.toml .cargo/config.toml.publish-backup; \
+		echo "# Clean config for publishing" > .cargo/config.toml; \
+	fi
+	@CRATE=$(CRATE); \
+	if [ -z "$$CRATE" ]; then \
+		echo "Usage: make publish CRATE=aprender   (or apr-cli, entrenar-lora)"; \
+		echo "Restoring config..."; \
+		if [ -f .cargo/config.toml.publish-backup ]; then \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			rm -f .cargo/config.toml.publish-backup; \
+		fi; \
+		exit 1; \
+	fi; \
+	echo "Publishing $$CRATE..."; \
+	cargo publish -p $$CRATE --allow-dirty --no-verify; \
+	STATUS=$$?; \
+	echo "Restoring .cargo/config.toml..."; \
+	if [ -f .cargo/config.toml.publish-backup ]; then \
+		cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+		rm -f .cargo/config.toml.publish-backup; \
+	fi; \
+	exit $$STATUS
+
 check-siblings: ## Verify sibling repos exist and versions are compatible
 	@echo "Checking sibling repositories..."
 	@all_ok=true; \
