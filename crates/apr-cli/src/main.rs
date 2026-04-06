@@ -32,8 +32,13 @@ fn main() -> ExitCode {
 
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
-    // Force colored output (matches pmat behavior) — users can disable with NO_COLOR=1
-    control::set_override(true);
+    // GH-662: Respect NO_COLOR env var and non-TTY output.
+    // The `colored` crate's auto-detect doesn't reliably work in all environments.
+    let no_color = std::env::var("NO_COLOR").is_ok();
+    let is_tty = std::io::IsTerminal::is_terminal(&std::io::stdout());
+    if no_color || !is_tty {
+        control::set_override(false);
+    }
     let cli = Cli::parse();
     match execute_command(&cli) {
         Ok(()) => ExitCode::SUCCESS,

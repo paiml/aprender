@@ -99,6 +99,17 @@ pub fn resolve_model_path(
         return Ok(path.to_path_buf());
     }
     if path.is_dir() {
+        // GH-668: Reject common system/temp directories. Only resolve dirs that
+        // are plausible HuggingFace model checkpoints (not /, /tmp, /home, etc.).
+        if let Some(parent) = path.parent() {
+            let depth = path.components().count();
+            // Directories at filesystem root level (depth <= 2) are never model dirs
+            if depth <= 2 {
+                return Err(CliError::NotAFile(path.to_path_buf()));
+            }
+            let _ = parent; // suppress unused warning
+        }
+
         // PMAT-314: Check sharded SafeTensors index FIRST — individual shard files
         // only contain a subset of tensors and will fail the architecture gate.
         let index = path.join("model.safetensors.index.json");
@@ -123,7 +134,9 @@ pub fn resolve_model_path(
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.extension().is_some_and(|ext| ext == "gguf") && p.is_file() {
+                // GH-668: Skip temp files (rosetta_temp.apr, etc.) to avoid inspecting stale artifacts
+                let is_temp = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
+                if !is_temp && p.extension().is_some_and(|ext| ext == "gguf") && p.is_file() {
                     return Ok(p);
                 }
             }
@@ -132,7 +145,8 @@ pub fn resolve_model_path(
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                if p.extension().is_some_and(|ext| ext == "apr") && p.is_file() {
+                let is_temp = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
+                if !is_temp && p.extension().is_some_and(|ext| ext == "apr") && p.is_file() {
                     return Ok(p);
                 }
             }
