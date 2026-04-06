@@ -232,6 +232,7 @@ pub(crate) fn run(
     json_output: bool,
     plan: bool,
 ) -> Result<()> {
+    contract_pre_merge_tensor_shape!();
     if plan {
         return run_plan(
             files,

@@ -632,6 +632,67 @@ macro_rules! contract_tokenizer_consistency {
     }};
 }
 
+// Auto-generated from contracts/apr-cli-safety-v1.yaml — DO NOT EDIT
+// Contract: apr-cli-safety-v1
+
+/// Preconditions for equation `encrypt_guard`.
+/// Domain-specific. Call: `contract_pre_encrypt_guard!(slice_expr)`
+macro_rules! contract_pre_encrypt_guard {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_input_path = &$input;
+    }};
+}
+
+/// Invariants for equation `encrypt_guard`.
+/// Check after computation: `contract_inv_encrypt_guard!(result_expr)`
+macro_rules! contract_inv_encrypt_guard {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Preconditions for equation `offline_guard`.
+/// Domain-specific. Call: `contract_pre_offline_guard!(slice_expr)`
+macro_rules! contract_pre_offline_guard {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_source = &$input;
+        debug_assert!(
+            _pv_source.len() > 0,
+            "Contract offline_guard: precondition violated — source.len() > 0"
+        );
+    }};
+}
+
+/// Invariants for equation `offline_guard`.
+/// Check after computation: `contract_inv_offline_guard!(result_expr)`
+macro_rules! contract_inv_offline_guard {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
+/// Preconditions for equation `validate_exit_code`.
+/// Domain-specific. Call: `contract_pre_validate_exit_code!(slice_expr)`
+macro_rules! contract_pre_validate_exit_code {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_path = &$input;
+    }};
+}
+
+/// Invariants for equation `validate_exit_code`.
+/// Check after computation: `contract_inv_validate_exit_code!(result_expr)`
+macro_rules! contract_inv_validate_exit_code {
+    () => {{}};
+    ($result:expr) => {{
+        let _contract_result = &$result;
+    }};
+}
+
 // Auto-generated from contracts/apr-cli-v1.yaml — DO NOT EDIT
 // Contract: apr-cli-v1
 
@@ -3736,21 +3797,19 @@ macro_rules! contract_inv_warmup_lr {
     }};
 }
 
-// Total: 21 preconditions, 0 postconditions, 0 invariants from 29 contracts
+// Total: 22 preconditions, 0 postconditions, 0 invariants from 30 contracts
 
-// Stub macros for CLI functions not yet in contract YAML
-// GH-674: These should be generated from binding.yaml once contract coverage improves
-macro_rules! contract_pre_dispatch_core_command {
-    () => {{}};
-}
-macro_rules! contract_pre_with_stdin_support {
-    () => {{}};
-}
-macro_rules! contract_pre_resolve_model_path {
-    () => {{}};
-}
+// ── Stub macros for PMAT-493/541 call-site annotations (contracts pending) ──
+// These will be replaced when the corresponding YAML contracts are created.
 
-// Stub: contract_pre_execute_command (GH-611 build fix)
-macro_rules! contract_pre_execute_command {
-    () => {{}};
-}
+macro_rules! contract_pre_dispatch_core_command { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_execute_command { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_with_stdin_support { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_resolve_model_path { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_merge_tensor_shape { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_validate_exit_code_consistency { () => {{}}; ($($t:tt)*) => {{}}; }
+
+macro_rules! contract_pre_validate_exit_code_consistency { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_format_conversion_roundtrip { () => {{}}; ($($t:tt)*) => {{}}; }
+macro_rules! contract_pre_encryption_idempotency { () => {{}}; ($($t:tt)*) => {{}}; }
+

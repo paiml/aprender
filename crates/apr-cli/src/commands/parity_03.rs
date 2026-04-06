@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[cfg(feature = "cuda")]
-pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool) -> Result<()> {
+pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) -> Result<()> {
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, OwnedQuantizedModelCuda,
     };
@@ -135,6 +135,45 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool) -> Result<()
         all_metrics.push(m);
     }
 
+    // GH-636: JSON output path — emit structured data instead of SPC table
+    if json {
+        let metrics_json: Vec<serde_json::Value> = all_metrics
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "position": m.position,
+                    "token_id": m.token_id,
+                    "cpu_argmax": m.cpu_argmax,
+                    "gpu_argmax": m.gpu_argmax,
+                    "max_abs_diff": m.max_abs_diff,
+                    "mean_abs_diff": m.mean_abs_diff,
+                    "cosine_similarity": m.cosine_similarity,
+                    "kl_divergence": m.kl_divergence,
+                    "sigma_level": m.sigma_level,
+                    "cpk": m.cpk(),
+                    "verdict": format!("{:?}", m.verdict()),
+                })
+            })
+            .collect();
+        let has_failures = all_metrics.iter().any(|m| m.verdict().is_fail());
+        let summary = serde_json::json!({
+            "model": file.display().to_string(),
+            "tokens": all_metrics.len(),
+            "passed": all_metrics.iter().filter(|m| !m.verdict().is_fail()).count(),
+            "failed": all_metrics.iter().filter(|m| m.verdict().is_fail()).count(),
+            "parity": !has_failures,
+            "metrics": metrics_json,
+        });
+        println!("{}", serde_json::to_string_pretty(&summary).unwrap_or_default());
+        return if has_failures {
+            Err(CliError::ValidationFailed(
+                "PARITY DISPROVEN: GPU/CPU divergence exceeds tolerance".to_string(),
+            ))
+        } else {
+            Ok(())
+        };
+    }
+
     print_footer();
 
     // ── Summary statistics ──────────────────────────────────────────────────
@@ -157,7 +196,7 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool) -> Result<()
 }
 
 #[cfg(not(feature = "cuda"))]
-pub fn run(_file: &Path, _prompt: &str, _assert: bool, _verbose: bool) -> Result<()> {
+pub fn run(_file: &Path, _prompt: &str, _assert: bool, _verbose: bool, _json: bool) -> Result<()> {
     Err(CliError::FeatureDisabled(
         "cuda feature required for parity check".to_string(),
     ))

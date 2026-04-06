@@ -249,6 +249,7 @@ pub(crate) fn run(
     json_output: bool,
     plan: bool,
 ) -> Result<()> {
+    contract_pre_format_conversion_roundtrip!();
     // Handle --list-formats
     if list_formats {
         return run_list_formats(json_output);
