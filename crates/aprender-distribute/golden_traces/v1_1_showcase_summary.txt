@@ -1,0 +1,186 @@
+║  🚀 Repartir v1.1 - Production Hardening Showcase            ║
+║  Sovereign AI-Grade Distributed Computing for Rust           ║
+╚═══════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────┐
+│ CPU Executor - Work-Stealing Scheduler                       
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:29.342316Z[0m [32m INFO[0m [2mrepartir::executor::cpu[0m[2m:[0m CpuExecutor initialized with 48 cores
+  Name:     CPU
+  Capacity: 48 workers
+  Features: Blumofe & Leiserson work-stealing
+
+  ✓ Task executed successfully in 839.009µs
+  ✓ Output: CPU executor working!
+
+┌─────────────────────────────────────────────────────────────┐
+│ GPU Executor - Cross-Platform Compute                        
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:29.343386Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m Initializing GPU executor with wgpu
+[2m2025-11-23T13:55:29.546225Z[0m [32m INFO[0m [2mwgpu_hal::vulkan::instance[0m[2m:[0m Debug utils not enabled: debug_utils_user_data not passed to Instance::from_raw
+[2m2025-11-23T13:55:29.596970Z[0m [32m INFO[0m [2mwgpu_hal::gles::egl[0m[2m:[0m Using X11 platform
+[2m2025-11-23T13:55:29.611438Z[0m [33m WARN[0m [2mwgpu_hal::gles::egl[0m[2m:[0m No config found!
+[2m2025-11-23T13:55:29.611519Z[0m [33m WARN[0m [2mwgpu_hal::gles::egl[0m[2m:[0m EGL says it can present to the window but not natively
+[2m2025-11-23T13:55:29.720326Z[0m [33m WARN[0m [2mwgpu_hal::gles::adapter[0m[2m:[0m Max vertex attribute stride unknown. Assuming it is 2048
+[2m2025-11-23T13:55:29.720533Z[0m [32m INFO[0m [2mwgpu_core::instance[0m[2m:[0m Adapter AdapterInfo { name: "NVIDIA GeForce RTX 4090", vendor: 4318, device: 9860, device_type: DiscreteGpu, driver: "NVIDIA", driver_info: "570.195.03", backend: Vulkan }
+[2m2025-11-23T13:55:29.720752Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m Selected GPU adapter: NVIDIA GeForce RTX 4090
+[2m2025-11-23T13:55:29.720769Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m Backend: Vulkan
+[2m2025-11-23T13:55:29.720785Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m Device type: DiscreteGpu
+[2m2025-11-23T13:55:29.821577Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m GPU executor initialized
+[2m2025-11-23T13:55:29.821606Z[0m [32m INFO[0m [2mrepartir::executor::gpu[0m[2m:[0m Estimated compute units: 2048
+  ✓ GPU Detected!
+  Device:        NVIDIA GeForce RTX 4090
+  Executor:      GPU
+  Compute Units: 2048
+
+  Backends: Vulkan, Metal, DirectX 12, WebGPU
+  Note: v1.1 provides detection only (compute in v1.2)
+
+┌─────────────────────────────────────────────────────────────┐
+│ TLS Encryption - Secure Remote Execution                     
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:29.860096Z[0m [32m INFO[0m [2mrepartir::executor::tls[0m[2m:[0m Client TLS configured
+[2m2025-11-23T13:55:29.860679Z[0m [32m INFO[0m [2mrepartir::executor::tls[0m[2m:[0m Server TLS configured
+  ✓ TLS Configuration loaded
+
+  Client: ✓ Enabled
+  Server: ✓ Enabled
+
+  Security:
+    • TLS 1.3 encryption
+    • Certificate-based auth
+    • Perfect forward secrecy
+    • MITM protection
+
+┌─────────────────────────────────────────────────────────────┐
+│ Priority Scheduling - Iron Lotus Quality                     
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:29.861359Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler initialized with capacity 100
+[2m2025-11-23T13:55:29.861405Z[0m [32m INFO[0m [2mrepartir::executor::cpu[0m[2m:[0m CpuExecutor initialized with 48 cores
+[2m2025-11-23T13:55:29.861425Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Initializing pool with 4 CPU workers
+  Pool capacity: 4 workers
+
+  Submitting tasks with priorities:
+  ✓ High:   High priority (500.688µs)
+  ✓ Normal: Normal priority (503.702µs)
+  ✓ Low:    Low priority (577.984µs)
+
+  Total execution: 43.884357ms
+[2m2025-11-23T13:55:29.905591Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Shutting down pool
+[2m2025-11-23T13:55:29.905614Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler cleared
+
+┌─────────────────────────────────────────────────────────────┐
+│ Work-Stealing Performance - Parallel Speedup                 
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:29.905750Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler initialized with capacity 100
+[2m2025-11-23T13:55:29.905783Z[0m [32m INFO[0m [2mrepartir::executor::cpu[0m[2m:[0m CpuExecutor initialized with 48 cores
+[2m2025-11-23T13:55:29.905800Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Initializing pool with 4 CPU workers
+  Executing 20 parallel tasks...
+
+  Results:
+    Tasks:     20/20 succeeded
+    Duration:  520.81186ms
+    Workers:   4
+
+  ⚡ Parallel speedup: 3.85x
+  (vs sequential: 2s)
+[2m2025-11-23T13:55:30.426823Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Shutting down pool
+[2m2025-11-23T13:55:30.426844Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler cleared
+
+┌─────────────────────────────────────────────────────────────┐
+│ Fault Tolerance - Graceful Error Handling                    
+└─────────────────────────────────────────────────────────────┘
+
+[2m2025-11-23T13:55:30.426959Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler initialized with capacity 50
+[2m2025-11-23T13:55:30.426991Z[0m [32m INFO[0m [2mrepartir::executor::cpu[0m[2m:[0m CpuExecutor initialized with 48 cores
+[2m2025-11-23T13:55:30.427007Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Initializing pool with 2 CPU workers
+  ✓ Successful task:
+    Exit code: 0
+    Output:    Success!
+
+  ✓ Failed task handled gracefully:
+    Exit code: 42
+    Is error:  true
+
+  ✓ System remains stable after errors
+[2m2025-11-23T13:55:30.472121Z[0m [32m INFO[0m [2mrepartir[0m[2m:[0m Shutting down pool
+[2m2025-11-23T13:55:30.472161Z[0m [32m INFO[0m [2mrepartir::scheduler[0m[2m:[0m Scheduler cleared
+
+
+╔═══════════════════════════════════════════════════════════════╗
+║  ✅ All v1.1 Features Demonstrated Successfully               ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Next steps:
+  • Review the Iron Lotus quality gates (make tier2)
+  • Run mutation testing (make mutation)
+  • Deploy to production with TLS encryption
+  • Scale to distributed workers
+
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+  4.11    0.041585          10      4157           read
+  2.19    0.022196          10      2113       241 openat
+  8.06    0.081510          42      1912           close
+  1.23    0.012442           7      1672        51 newfstatat
+  1.08    0.010872           6      1595           getpid
+ 16.48    0.166670         109      1525           ioctl
+  0.48    0.004892           8       596         6 stat
+  0.36    0.003599           6       539         1 lseek
+  0.40    0.004095           8       489       350 readlink
+  0.59    0.005929          12       462           mmap
+ 60.23    0.609033        1602       380         7 futex
+  0.54    0.005486          28       191           poll
+  0.15    0.001514           8       176           mremap
+  0.14    0.001443           8       171        98 recvmsg
+  0.79    0.007984          47       167           munmap
+  0.19    0.001952          11       164           mprotect
+  0.21    0.002109          12       164           write
+  0.16    0.001635          10       161           getdents64
+  0.11    0.001080           7       154           fcntl
+  0.12    0.001249           9       132         1 access
+  0.09    0.000952           7       127           fstat
+  0.08    0.000803           6       115           sched_yield
+  0.08    0.000808           7       109           rt_sigprocmask
+  1.18    0.011975         123        97         2 unknown
+  0.21    0.002101          23        89           setgid
+  0.06    0.000619           7        87           getgid
+  0.06    0.000613           7        87           geteuid
+  0.08    0.000774           8        87           getuid
+  0.07    0.000675           9        70           writev
+  0.12    0.001253          23        54           clone3
+  0.04    0.000436           9        44           brk
+  0.03    0.000317           7        41        41 unlink
+  0.03    0.000287           7        38           getrandom
+  0.07    0.000723          20        36         2 recvfrom
+  0.02    0.000240           9        26        26 rmdir
+  0.02    0.000167           9        17           sendmsg
+  0.01    0.000120           8        15        15 symlink
+  0.02    0.000186          12        15         5 connect
+  0.02    0.000181          12        15           socket
+  0.01    0.000067           7         9           getsockname
+  0.01    0.000068           8         8           sendto
+  0.00    0.000042           7         6         4 prctl
+  0.00    0.000041           6         6           uname
+  0.01    0.000085          14         6           socketpair
+  0.01    0.000066          11         6           statx
+  0.00    0.000046           7         6           getpeername
+  0.01    0.000071          11         6           shutdown
+  0.00    0.000039           6         6           rt_sigaction
+  0.00    0.000033           8         4         4 mkdir
+  0.00    0.000025           6         4           pread64
+  0.00    0.000019           6         3           sigaltstack
+  0.00    0.000033          16         2         1 arch_prctl
+  0.00    0.000018           9         2         1 madvise
+  0.00    0.000023          11         2           sysinfo
+  0.00    0.000012          12         1           set_robust_list
+  0.00    0.000011          11         1           wait4
+  0.00    0.000010          10         1           ftruncate
+  0.00    0.000012          12         1           set_tid_address
+------ ----------- ----------- --------- --------- ----------------
+100.00    1.011226          55     18169       856 total

@@ -1,0 +1,199 @@
+[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "2.0.4"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+license = "MIT"
+repository = "https://github.com/paiml/repartir"
+rust-version = "1.75"
+
+[workspace.dependencies]
+
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
+name = "repartir"
+version = "2.0.4"
+edition = "2021"
+authors = ["Pragmatic AI Labs"]
+description = "Sovereign AI-grade distributed computing primitives for Rust (CPU, GPU, HPC)"
+repository = "https://github.com/paiml/repartir"
+license = "MIT"
+keywords = ["distributed", "hpc", "gpu", "cpu", "sovereign-ai"]
+categories = ["concurrency", "science"]
+readme = "README.md"
+documentation = "https://docs.rs/repartir"
+
+[features]
+default = ["cpu"]
+cpu = ["tokio", "num_cpus"]
+gpu = ["wgpu", "pollster"]
+remote = ["tokio", "bincode", "tracing-subscriber"]
+remote-tls = ["remote", "rustls", "tokio-rustls", "rustls-pemfile"]
+checkpoint = ["trueno-db", "tokio", "arrow", "parquet"]  # v2.0: Persistent checkpointing with Parquet
+tensor = ["trueno"]                  # v2.0: SIMD tensor operations
+tui = ["ratatui", "crossterm", "tokio"]  # Job flow TUI visualization
+serverless = ["pepita", "tokio"]    # v2.0: Serverless functions with pepita
+microvm = ["pepita", "tokio"]       # v2.0: MicroVM isolation with pepita
+simd = ["pepita"]                   # v2.0: SIMD acceleration with pepita
+full = ["cpu", "gpu", "remote", "remote-tls", "checkpoint", "tensor", "tui", "serverless", "microvm", "simd"]
+
+[dependencies]
+# Core async runtime (industry standard, pure Rust)
+tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "net"], optional = true }
+
+# CPU backend
+num_cpus = { version = "1.16", optional = true }
+
+# GPU backend (pure Rust via gfx-rs)
+# wgpu provides cross-platform GPU compute (Vulkan/Metal/DX12/WebGPU)
+wgpu = { version = "23.0", features = ["fragile-send-sync-non-atomic-wasm"], optional = true }
+pollster = { version = "0.4", optional = true }  # Block on GPU async operations
+futures = "0.3"  # Async utilities for GPU operations
+
+# Serialization (ubiquitous, zero-C)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"  # For checkpoint serialization
+bincode = { version = "1.3", optional = true }
+
+# TLS support (NOTE: rustls uses aws-lc-rs which has C dependencies)
+# v1.2+: Explore pure Rust alternatives (RustCrypto) for full sovereignty
+rustls = { version = "0.23", optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-pemfile = { version = "2.0", optional = true }
+
+# Error handling
+thiserror = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# TUI (job-flow visualization)
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# UUIDs for stable IDs (per Iron Lotus case study)
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Logging (for binaries)
+tracing-subscriber = { version = "0.3", optional = true }
+
+# v2.0: Data integration
+trueno-db = { version = "0.3.16", features = ["distributed"], optional = true }
+trueno = { version = "0.16", features = ["parallel"], optional = true }
+
+# v2.0: Parquet checkpoint storage (Apache Arrow ecosystem)
+arrow = { version = "53.0", optional = true }
+parquet = { version = "53.0", optional = true }
+
+# v2.0: Pepita - Sovereign AI kernel interfaces and infrastructure
+pepita = { version = "0.1.0", optional = true }
+
+[dev-dependencies]
+# Property-based testing (certeza Tier 2)
+proptest = "1.4"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+# Async testing
+tokio-test = "0.4"
+
+# For examples
+tracing-subscriber = "0.3"
+futures = "0.3"
+
+# TUI testing via probador
+jugar-probar = { version = "0.4", default-features = false, features = ["tui"] }
+ratatui = "0.29"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+# Iron Lotus: Strict lint enforcement
+[workspace.lints.clippy]
+# Set lint groups to lower priority so specific lints can override
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Deny certain patterns (Iron Lotus: no unwrap/panic/todo)
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+
+# Allow some pedantic lints that conflict with idiomatic Rust
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+similar_names = "allow"
+
+# Allow multiple crate versions (transitive dependency issue)
+multiple_crate_versions = "allow"
+
+[lints]
+workspace = true
+
+[profile.dev]
+panic = "abort"
+# Fast incremental compilation for Tier 1 feedback
+opt-level = 0
+
+[profile.test]
+# Optimizations for faster test execution (Tier 2)
+opt-level = 1
+
+[profile.release]
+# Production optimizations (Sovereign AI: maximum performance)
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+# Benchmark optimizations
+lto = true
+codegen-units = 1
+
+[[bench]]
+name = "scheduler_bench"
+harness = false
+
+[[bench]]
+name = "pool_bench"
+harness = false
+
+[[bin]]
+name = "repartir-worker"
+required-features = ["remote"]
+
+[[bin]]
+name = "job-flow"
+required-features = ["tui", "remote"]
+
+[[example]]
+name = "test_mac_worker"
+required-features = ["remote"]
+
+[[example]]
+name = "checkpoint_example"
+required-features = ["cpu"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
