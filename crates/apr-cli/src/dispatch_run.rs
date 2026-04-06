@@ -131,9 +131,13 @@ fn dispatch_serve_command(command: &ServeCommands, cli: &Cli) -> Result<(), CliE
             seq_len,
             format,
             quant,
-        } => commands::serve_plan::run_serve_plan(
-            model, *gpu, *batch_size, *seq_len, format, quant.as_deref(),
-        ),
+        } => {
+            // GH-630: Thread cli.json through to serve plan
+            let effective_format = if cli.json { "json" } else { format.as_str() };
+            commands::serve_plan::run_serve_plan(
+                model, *gpu, *batch_size, *seq_len, effective_format, quant.as_deref(),
+            )
+        }
         ServeCommands::Run {
             file,
             port,

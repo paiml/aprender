@@ -65,11 +65,15 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             verbose,
             backend,
         } => {
+            // GH-614: --backend cpu forces CPU-only inference
+            let backend_forces_cpu = backend.as_deref() == Some("cpu");
             if let Some(ref b) = backend {
-                eprintln!("Backend override: {b}");
+                if b != "cpu" {
+                    eprintln!("Backend override: {b}");
+                }
             }
             // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu { false } else { *no_gpu };
+            let effective_no_gpu = if *gpu { false } else { *no_gpu || backend_forces_cpu };
 
             // Batch JSONL mode: load model once, process all prompts
             if let Some(ref batch_file) = batch_jsonl {
