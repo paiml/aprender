@@ -126,6 +126,7 @@ async fn predict_handler(
     State(state): State<Arc<ServerState>>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
+    contract_pre_request_response_schema!();
     let start = Instant::now();
 
     let request: serde_json::Value = match validate_and_parse(&body, &state.metrics) {
@@ -317,6 +318,7 @@ async fn method_not_allowed(State(state): State<Arc<ServerState>>) -> impl IntoR
 /// Handler: 404 for unknown endpoints (EH03)
 #[cfg(feature = "inference")]
 async fn fallback_handler(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    contract_pre_error_envelope_preservation!();
     state.metrics.record_client_error();
     (
         StatusCode::NOT_FOUND,

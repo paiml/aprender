@@ -75,6 +75,7 @@ const PARALLEL_THRESHOLD: usize = 1_000;
 /// ```
 #[must_use]
 pub fn select_backend(size: usize, gpu_available: bool) -> BackendCategory {
+    contract_pre_backend_selection!();
     if size < PARALLEL_THRESHOLD {
         BackendCategory::SimdOnly
     } else if size < GPU_THRESHOLD {

@@ -63,6 +63,7 @@ pub enum CliError {
 impl CliError {
     /// Get exit code for this error
     pub fn exit_code(&self) -> ExitCode {
+        contract_pre_exit_code_semantics!();
         match self {
             Self::FileNotFound(_) | Self::NotAFile(_) => ExitCode::from(3),
             Self::InvalidFormat(_) => ExitCode::from(4),

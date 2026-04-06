@@ -111,7 +111,7 @@ pub fn with_stdin_support<F>(file: &Path, f: F) -> Result<(), CliError>
 where
     F: FnOnce(&Path) -> Result<(), CliError>,
 {
-    contract_pre_with_stdin_support!();
+    contract_pre_pipe_stdin_support!();
     let file_str = file.to_string_lossy();
     if is_stdin(&file_str) {
         let tmp = read_stdin_to_tempfile()?;

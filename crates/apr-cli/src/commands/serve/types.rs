@@ -421,6 +421,7 @@ pub(super) fn parse_tool_calls(output: &str) -> Option<Vec<ToolCall>> {
 
 /// Extract a ToolCall from a parsed JSON value containing a "tool_call" field.
 fn extract_tool_call(parsed: &serde_json::Value) -> Option<ToolCall> {
+    contract_pre_tool_schema_fidelity!();
     let tool_call = parsed.get("tool_call")?;
     let name = tool_call.get("name")?.as_str()?;
     let arguments = tool_call.get("arguments")?;

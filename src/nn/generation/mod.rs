@@ -94,6 +94,7 @@ impl GenerationConfig {
     /// Set temperature for sampling.
     #[must_use]
     pub fn with_temperature(mut self, temperature: f32) -> Self {
+        contract_pre_temperature_bounds!();
         self.temperature = temperature;
         self
     }

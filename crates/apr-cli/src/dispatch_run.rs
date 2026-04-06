@@ -327,7 +327,7 @@ fn dispatch_rosetta(action: &RosettaCommands, global_json: bool) -> Result<(), C
 
 /// Execute the CLI command and return the result.
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
-    contract_pre_execute_command!();
+    contract_pre_contract_gate_enforcement!();
     // PMAT-237: Contract gate — refuse to operate on corrupt models
     if !cli.skip_contract {
         let paths = extract_model_paths(&cli.command);
