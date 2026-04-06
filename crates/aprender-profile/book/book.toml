@@ -1,0 +1,26 @@
+[book]
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+language = "en"
+multilingual = false
+src = "src"
+title = "The Renacer Book - Pure Rust System Call Tracing"
+description = "A comprehensive guide to renacer: syscall tracing, DWARF correlation, and performance analysis"
+
+[build]
+build-dir = "book"
+create-missing = true
+use-default-preprocessors = true
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/paiml/renacer"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/paiml/renacer/edit/main/book/{path}"
+site-url = "/renacer/"
+
+[output.html.playground]
+editable = true
+copyable = true
+copy-js = true
+runnable = false

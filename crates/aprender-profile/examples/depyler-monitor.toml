@@ -1,0 +1,54 @@
+# Depyler Decision Trace Monitor Configuration
+#
+# This configuration enables renacer to ingest decision traces from
+# depyler's transpiler for CITL (Compiler-in-the-Loop) training.
+#
+# Reference: paiml/depyler docs/specifications/decision-traces-signal-spec.md
+#
+# Usage:
+#   renacer --config examples/depyler-monitor.toml watch
+#   renacer stats /tmp/depyler_decisions.msgpack
+#   renacer export --format otlp /tmp/depyler_decisions.msgpack
+
+[ingest]
+# Paths to watch for decision trace files
+watch_paths = ["/tmp/depyler_decisions.msgpack"]
+
+# Poll interval in milliseconds (default: 100ms)
+poll_interval_ms = 100
+
+[sampling]
+# Sampling rate for remote export (0.0 - 1.0)
+# 0.1 = 10% of decisions are exported remotely
+# Full local capture always occurs
+remote_sample_rate = 0.1
+
+# Maximum decisions per second for remote export (circuit breaker)
+# Prevents DoS if transpiler generates excessive decisions
+max_remote_rate = 1000
+
+[export]
+# OTLP endpoint URL for entrenar
+otlp_endpoint = "http://localhost:4317"
+
+# Batch size for export (default: 100)
+batch_size = 100
+
+# Flush interval in milliseconds (default: 1000ms)
+flush_interval_ms = 1000
+
+# Optional auth token (can also use RENACER_AUTH_TOKEN env var)
+# auth_token = "your-secret-token"
+
+[export.retry]
+# Maximum number of retry attempts
+max_attempts = 5
+
+# Initial backoff in milliseconds (exponential backoff)
+initial_backoff_ms = 100
+
+# Maximum backoff in milliseconds
+max_backoff_ms = 30000
+
+# Maximum queue size for offline resilience
+queue_size = 10000

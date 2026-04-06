@@ -1,0 +1,150 @@
+# renacer.toml - Build-time trace assertions (Sprint 44)
+#
+# This file defines performance assertions that are evaluated at build time
+# during `cargo test`. If any assertion with `fail_on_violation = true` fails,
+# the test suite will fail, preventing performance regressions from reaching
+# production.
+#
+# Toyota Way Principle: Andon (Visual Control)
+# Build-time assertions catch regressions early and stop the line.
+
+# ============================================================================
+# Critical Path Assertions
+# ============================================================================
+
+[[assertion]]
+name = "api_max_latency"
+type = "critical_path"
+max_duration_ms = 100
+trace_name_pattern = "api_.*"
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "db_query_max_latency"
+type = "critical_path"
+max_duration_ms = 50
+trace_name_pattern = "db_query_.*"
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "file_io_max_latency"
+type = "critical_path"
+max_duration_ms = 200
+trace_name_pattern = "file_.*"
+fail_on_violation = true
+enabled = true
+
+# ============================================================================
+# Anti-Pattern Detection
+# ============================================================================
+
+[[assertion]]
+name = "no_god_process"
+type = "anti_pattern"
+pattern = "GodProcess"
+threshold = 0.8
+process_name_pattern = ".*"
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "no_tight_loop"
+type = "anti_pattern"
+pattern = "TightLoop"
+threshold = 0.9
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "no_pcie_bottleneck"
+type = "anti_pattern"
+pattern = "PcieBottleneck"
+threshold = 0.85
+fail_on_violation = true
+enabled = true
+
+# ============================================================================
+# Resource Constraints
+# ============================================================================
+
+[[assertion]]
+name = "max_syscalls_per_request"
+type = "span_count"
+max_spans = 10000
+span_name_pattern = ".*"
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "max_file_opens"
+type = "span_count"
+max_spans = 100
+span_name_pattern = "open.*"
+fail_on_violation = false  # Warning only
+enabled = true
+
+[[assertion]]
+name = "max_memory_allocations"
+type = "memory_usage"
+max_bytes = 100000000  # 100MB
+tracking_mode = "allocations"
+fail_on_violation = true
+enabled = true
+
+[[assertion]]
+name = "max_rss"
+type = "memory_usage"
+max_bytes = 500000000  # 500MB
+tracking_mode = "rss"
+fail_on_violation = false  # Warning only
+enabled = true
+
+# ============================================================================
+# Custom Assertions (Advanced)
+# ============================================================================
+
+# Note: Custom assertions require Rust expression evaluation (not yet implemented)
+
+# [[assertion]]
+# name = "custom_validation"
+# type = "custom"
+# expression = "trace.spans.iter().all(|s| s.duration_ms < 50)"
+# fail_on_violation = true
+# enabled = false
+
+# ============================================================================
+# Example: Disabled Assertion (for debugging)
+# ============================================================================
+
+[[assertion]]
+name = "experimental_check"
+type = "critical_path"
+max_duration_ms = 10  # Very strict
+fail_on_violation = true
+enabled = false  # Disabled for now
+
+# ============================================================================
+# Usage
+# ============================================================================
+#
+# 1. Place this file in your project root or tests directory
+# 2. Run: cargo test
+# 3. Assertions are evaluated against generated traces
+# 4. If any fail_on_violation assertion fails, cargo test fails
+#
+# Example output:
+#   running 1 test
+#   test trace_assertions ... FAILED
+#
+#   failures:
+#
+#   ---- trace_assertions stdout ----
+#   thread 'trace_assertions' panicked at 'Assertion "api_max_latency" failed:
+#   Critical path duration 150ms exceeds maximum 100ms'
+#
+#   failures:
+#       trace_assertions
+#
+#   test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

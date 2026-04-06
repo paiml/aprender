@@ -1,0 +1,15 @@
+# cargo-mutants configuration for Renacer
+# Sprint 11-12: Mutation testing setup
+
+# Timeout per test (seconds)
+timeout = 30
+
+# Additional test arguments to skip benchmark tests
+# Benchmark tests require the built binary, which cargo-mutants doesn't provide
+test_args = ["--", "--skip", "bench_"]
+
+# Build in release mode for faster execution
+# test_tool = "nextest"  # Uncomment if using nextest
+
+# Minimum caught percentage (fail if survival rate is too high)
+# minimum_caught_percentage = 90

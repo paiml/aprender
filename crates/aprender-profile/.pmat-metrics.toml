@@ -1,0 +1,10 @@
+# PMAT metrics configuration
+[thresholds]
+complexity = 25
+cognitive = 15
+lines = 100
+satd = 0
+
+[quality]
+min_grade = "A"
+min_tdg = 2.0
