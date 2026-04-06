@@ -1,5 +1,5 @@
 [package]
-name = "provable-contracts"
+name = "aprender-contracts"
 description = "Papers to Math to Contracts in Code — YAML contract parsing, validation, scaffold generation, and Kani harness codegen for provable Rust kernels"
 version.workspace = true
 edition.workspace = true
@@ -16,7 +16,7 @@ default = []
 kani = []
 
 [dependencies]
-provable-contracts-macros = { workspace = true }
+aprender-contracts-macros = { workspace = true }
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }

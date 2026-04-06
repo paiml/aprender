@@ -26,6 +26,10 @@ members = [
     "crates/aprender-tensor",
     "crates/aprender-gemm-codegen",
     "crates/aprender-compute-xtask",
+    # --- APR-MONO Phase 2b: was provable-contracts ---
+    "crates/aprender-contracts",
+    "crates/aprender-contracts-macros",
+    "crates/aprender-contracts-cli",
 ]
 exclude = ["fuzz"]
 resolver = "2"
@@ -94,6 +98,10 @@ minijinja = { version = "2.14", features = ["loader", "serde"] }
 # Contracts
 provable-contracts = "0.3"
 provable-contracts-macros = "0.3"
+aprender-contracts-macros = { path = "crates/aprender-contracts-macros" }
+
+# YAML
+serde_yaml = "0.9"
 
 # HF Hub
 hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }

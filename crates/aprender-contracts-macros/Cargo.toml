@@ -1,5 +1,5 @@
 [package]
-name = "provable-contracts-macros"
+name = "aprender-contracts-macros"
 description = "Proc macros for compile-time contract enforcement — #[contract] attribute"
 version.workspace = true
 edition.workspace = true

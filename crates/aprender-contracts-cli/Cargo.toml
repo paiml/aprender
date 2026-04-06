@@ -1,5 +1,5 @@
 [package]
-name = "provable-contracts-cli"
+name = "aprender-contracts-cli"
 description = "CLI for provable-contracts — validate, scaffold, verify, status, audit"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,7 @@ name = "pv"
 path = "src/main.rs"
 
 [dependencies]
-provable-contracts = { workspace = true }
+aprender-contracts = { path = "../aprender-contracts" }
 clap = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
