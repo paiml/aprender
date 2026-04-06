@@ -1,0 +1,249 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1100">
+  <defs>
+    <!-- Colorblind-friendly palette: Blue vs Orange -->
+    <linearGradient id="legacyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0d253f"/>
+    </linearGradient>
+    <linearGradient id="futureGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3d2008"/>
+      <stop offset="100%" style="stop-color:#1a0f04"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="1100" fill="#0a0a0c"/>
+
+  <!-- Subtle grid -->
+  <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+    <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#1a1a1f" stroke-width="0.5"/>
+  </pattern>
+  <rect width="1400" height="1100" fill="url(#grid)"/>
+
+  <!-- Header Row -->
+  <rect x="60" y="30" width="620" height="85" rx="6" fill="url(#legacyGrad)" stroke="#4a90d9" stroke-width="3"/>
+  <rect x="720" y="30" width="620" height="85" rx="6" fill="url(#futureGrad)" stroke="#e67e22" stroke-width="3"/>
+
+  <text x="370" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#7ab3ef" text-anchor="middle" letter-spacing="6" font-weight="600">LEGACY</text>
+  <text x="370" y="95" font-family="system-ui, -apple-system, sans-serif" font-size="26" fill="#fff" text-anchor="middle" font-weight="bold">Python / Jupyter Ecosystem</text>
+
+  <text x="1030" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#f5a623" text-anchor="middle" letter-spacing="6" font-weight="600">FUTURE</text>
+  <text x="1030" y="95" font-family="system-ui, -apple-system, sans-serif" font-size="26" fill="#fff" text-anchor="middle" font-weight="bold">Sovereign AI Stack (Rust)</text>
+
+  <!-- Row definitions -->
+  <g font-family="system-ui, -apple-system, sans-serif">
+
+    <!-- Row 1: Deployment -->
+    <rect x="60" y="130" width="620" height="80" rx="4" fill="#111318" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="130" width="620" height="80" rx="4" fill="#18130e" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: stacked boxes -->
+    <rect x="80" y="155" width="28" height="20" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <rect x="88" y="163" width="28" height="20" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: single box -->
+    <rect x="740" y="158" width="30" height="24" rx="3" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <circle cx="755" cy="170" r="4" fill="#e67e22"/>
+
+    <text x="130" y="155" font-size="13" fill="#4a90d9" font-weight="bold">01</text>
+    <text x="160" y="155" font-size="15" fill="#bbb" font-weight="600">DEPLOYMENT</text>
+    <text x="130" y="180" font-size="14" fill="#e8e8e8">Python + conda/venv + C libs + CUDA</text>
+    <text x="130" y="200" font-size="13" fill="#7ab3ef">(~5GB+ install)</text>
+    <text x="790" y="180" font-size="14" fill="#e8e8e8">Single static binary, copy and run</text>
+    <text x="790" y="200" font-size="13" fill="#2ecc71">(~10-50MB)</text>
+
+    <!-- Row 2: Underlying Reality -->
+    <rect x="60" y="220" width="620" height="80" rx="4" fill="#0e1015" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="220" width="620" height="80" rx="4" fill="#140f09" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: layered stack -->
+    <rect x="80" y="248" width="35" height="6" rx="1" fill="#4a90d9"/>
+    <rect x="80" y="258" width="35" height="6" rx="1" fill="#6ba3e0"/>
+    <rect x="80" y="268" width="35" height="6" rx="1" fill="#8cb8e8"/>
+    <!-- Rust icon: solid block -->
+    <rect x="740" y="248" width="35" height="28" rx="3" fill="#e67e22"/>
+
+    <text x="130" y="245" font-size="13" fill="#4a90d9" font-weight="bold">02</text>
+    <text x="160" y="245" font-size="15" fill="#bbb" font-weight="600">UNDERLYING REALITY</text>
+    <text x="130" y="270" font-size="14" fill="#e8e8e8">C/C++/Fortran with Python bindings</text>
+    <text x="130" y="290" font-size="13" fill="#7ab3ef">(NumPy=BLAS, PyTorch=libtorch)</text>
+    <text x="790" y="270" font-size="14" fill="#e8e8e8">Pure Rust, no FFI, no C toolchain</text>
+    <text x="790" y="290" font-size="13" fill="#2ecc71">Self-contained</text>
+
+    <!-- Row 3: Error Discovery -->
+    <rect x="60" y="310" width="620" height="80" rx="4" fill="#111318" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="310" width="620" height="80" rx="4" fill="#18130e" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: bug -->
+    <circle cx="97" cy="350" r="12" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="85" y1="345" x2="80" y2="340" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="109" y1="345" x2="114" y2="340" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: checkmark -->
+    <circle cx="757" cy="350" r="14" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <polyline points="747,350 754,358 768,343" fill="none" stroke="#e67e22" stroke-width="2.5"/>
+
+    <text x="130" y="335" font-size="13" fill="#4a90d9" font-weight="bold">03</text>
+    <text x="160" y="335" font-size="15" fill="#bbb" font-weight="600">ERROR DISCOVERY</text>
+    <text x="130" y="360" font-size="14" fill="#e8e8e8">Runtime, one cell at a time</text>
+    <text x="130" y="380" font-size="13" fill="#e74c3c">Silent shape bugs, kernel crashes</text>
+    <text x="790" y="360" font-size="14" fill="#e8e8e8">Compile-time, all at once</text>
+    <text x="790" y="380" font-size="13" fill="#2ecc71">Actionable fix suggestions</text>
+
+    <!-- Row 4: Memory/Thread Safety -->
+    <rect x="60" y="400" width="620" height="80" rx="4" fill="#0e1015" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="400" width="620" height="80" rx="4" fill="#140f09" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: broken shield -->
+    <path d="M97 425 L82 435 L82 450 L97 460 L112 450 L112 435 Z" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="87" y1="430" x2="107" y2="455" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: solid shield -->
+    <path d="M757 425 L742 435 L742 450 L757 462 L772 450 L772 435 Z" fill="#e67e22" stroke="#e67e22" stroke-width="2"/>
+
+    <text x="130" y="425" font-size="13" fill="#4a90d9" font-weight="bold">04</text>
+    <text x="160" y="425" font-size="15" fill="#bbb" font-weight="600">MEMORY / THREAD SAFETY</text>
+    <text x="130" y="450" font-size="14" fill="#e8e8e8">GC + GIL + manual C buffer mgmt</text>
+    <text x="130" y="470" font-size="13" fill="#e74c3c">"just pray"</text>
+    <text x="790" y="450" font-size="14" fill="#e8e8e8">Ownership + Send/Sync</text>
+    <text x="790" y="470" font-size="13" fill="#2ecc71">Enforced at compile-time</text>
+
+    <!-- Row 5: GPU -->
+    <rect x="60" y="490" width="620" height="80" rx="4" fill="#111318" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="490" width="620" height="80" rx="4" fill="#18130e" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: single chip -->
+    <rect x="82" y="520" width="30" height="22" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="82" y1="527" x2="75" y2="527" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="82" y1="535" x2="75" y2="535" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: multi chip -->
+    <rect x="740" y="518" width="18" height="14" rx="1" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <rect x="762" y="518" width="18" height="14" rx="1" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <rect x="751" y="536" width="18" height="14" rx="1" fill="none" stroke="#e67e22" stroke-width="2"/>
+
+    <text x="130" y="515" font-size="13" fill="#4a90d9" font-weight="bold">05</text>
+    <text x="160" y="515" font-size="15" fill="#bbb" font-weight="600">GPU SUPPORT</text>
+    <text x="130" y="540" font-size="14" fill="#e8e8e8">CUDA-only, C++ underneath</text>
+    <text x="130" y="560" font-size="13" fill="#e74c3c">NVIDIA lock-in</text>
+    <text x="790" y="540" font-size="14" fill="#e8e8e8">CUDA + wgpu (Metal/Vulkan/WebGPU)</text>
+    <text x="790" y="560" font-size="13" fill="#2ecc71">Cross-platform, pure Rust</text>
+
+    <!-- Row 6: Model Security -->
+    <rect x="60" y="580" width="620" height="80" rx="4" fill="#0e1015" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="580" width="620" height="80" rx="4" fill="#140f09" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: open lock -->
+    <rect x="90" y="620" width="18" height="14" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <path d="M93 620 L93 612 Q93 605 99 605 Q105 605 105 612" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: closed lock -->
+    <rect x="750" y="620" width="18" height="14" rx="2" fill="#e67e22"/>
+    <path d="M753 620 L753 612 Q753 605 759 605 Q765 605 765 612 L765 620" fill="none" stroke="#e67e22" stroke-width="2"/>
+
+    <text x="130" y="605" font-size="13" fill="#4a90d9" font-weight="bold">06</text>
+    <text x="160" y="605" font-size="15" fill="#bbb" font-weight="600">MODEL SECURITY</text>
+    <text x="130" y="630" font-size="14" fill="#e8e8e8">Pickle (RCE vector)</text>
+    <text x="130" y="650" font-size="13" fill="#e74c3c">Signing bolted-on</text>
+    <text x="790" y="630" font-size="14" fill="#e8e8e8">Ed25519 / ChaCha20 / BLAKE3</text>
+    <text x="790" y="650" font-size="13" fill="#2ecc71">Native .apr format</text>
+
+    <!-- Row 7: Privacy/Sovereignty -->
+    <rect x="60" y="670" width="620" height="80" rx="4" fill="#111318" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="670" width="620" height="80" rx="4" fill="#18130e" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: eye open -->
+    <ellipse cx="97" cy="710" rx="16" ry="10" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <circle cx="97" cy="710" r="5" fill="#4a90d9"/>
+    <!-- Rust icon: eye with slash -->
+    <ellipse cx="757" cy="710" rx="16" ry="10" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <line x1="745" y1="720" x2="769" y2="700" stroke="#e67e22" stroke-width="2"/>
+
+    <text x="130" y="695" font-size="13" fill="#4a90d9" font-weight="bold">07</text>
+    <text x="160" y="695" font-size="15" fill="#bbb" font-weight="600">PRIVACY / SOVEREIGNTY</text>
+    <text x="130" y="720" font-size="14" fill="#e8e8e8">Requires discipline</text>
+    <text x="130" y="740" font-size="13" fill="#e74c3c">Easy to leak data</text>
+    <text x="790" y="720" font-size="14" fill="#e8e8e8">Enforced privacy tiers</text>
+    <text x="790" y="740" font-size="13" fill="#2ecc71">Blocks external calls by design</text>
+
+    <!-- Row 8: Dependency Hell -->
+    <rect x="60" y="760" width="620" height="80" rx="4" fill="#0e1015" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="760" width="620" height="80" rx="4" fill="#140f09" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: tangled nodes -->
+    <circle cx="85" cy="800" r="5" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <circle cx="97" cy="790" r="5" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <circle cx="109" cy="800" r="5" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <circle cx="97" cy="812" r="5" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <line x1="88" y1="796" x2="94" y2="792" stroke="#4a90d9" stroke-width="1.5"/>
+    <line x1="100" y1="792" x2="106" y2="796" stroke="#4a90d9" stroke-width="1.5"/>
+    <line x1="85" y1="805" x2="92" y2="810" stroke="#4a90d9" stroke-width="1.5"/>
+    <line x1="102" y1="810" x2="109" y2="805" stroke="#4a90d9" stroke-width="1.5"/>
+    <!-- Rust icon: clean tree -->
+    <circle cx="757" cy="790" r="5" fill="#e67e22"/>
+    <line x1="757" y1="795" x2="757" y2="815" stroke="#e67e22" stroke-width="2"/>
+    <line x1="757" y1="802" x2="745" y2="810" stroke="#e67e22" stroke-width="2"/>
+    <line x1="757" y1="802" x2="769" y2="810" stroke="#e67e22" stroke-width="2"/>
+
+    <text x="130" y="785" font-size="13" fill="#4a90d9" font-weight="bold">08</text>
+    <text x="160" y="785" font-size="15" fill="#bbb" font-weight="600">DEPENDENCY MANAGEMENT</text>
+    <text x="130" y="810" font-size="14" fill="#e8e8e8">conda conflicts, C lib mismatches</text>
+    <text x="130" y="830" font-size="13" fill="#e74c3c">"works on my machine"</text>
+    <text x="790" y="810" font-size="14" fill="#e8e8e8">Cargo.lock deterministic builds</text>
+    <text x="790" y="830" font-size="13" fill="#2ecc71">No system dependencies</text>
+
+    <!-- Row 9: Model Formats -->
+    <rect x="60" y="850" width="620" height="80" rx="4" fill="#111318" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="850" width="620" height="80" rx="4" fill="#18130e" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: multiple files -->
+    <rect x="80" y="878" width="16" height="20" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <rect x="88" y="882" width="16" height="20" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <rect x="96" y="886" width="16" height="20" rx="2" fill="none" stroke="#4a90d9" stroke-width="2"/>
+    <!-- Rust icon: unified file -->
+    <rect x="745" y="878" width="24" height="28" rx="3" fill="none" stroke="#e67e22" stroke-width="2"/>
+    <text x="751" y="898" font-size="10" fill="#e67e22" font-weight="bold">.apr</text>
+
+    <text x="130" y="875" font-size="13" fill="#4a90d9" font-weight="bold">09</text>
+    <text x="160" y="875" font-size="15" fill="#bbb" font-weight="600">MODEL FORMATS</text>
+    <text x="130" y="900" font-size="14" fill="#e8e8e8">Pickle, SafeTensors, GGUF, ONNX</text>
+    <text x="130" y="920" font-size="13" fill="#e74c3c">Fragmented ecosystem</text>
+    <text x="790" y="900" font-size="14" fill="#e8e8e8">Native .apr + imports GGUF/SafeTensors</text>
+    <text x="790" y="920" font-size="13" fill="#2ecc71">Unified with interop</text>
+
+    <!-- Row 10: Debug Cycle -->
+    <rect x="60" y="940" width="620" height="80" rx="4" fill="#0e1015" stroke="#2a2a35" stroke-width="1"/>
+    <rect x="720" y="940" width="620" height="80" rx="4" fill="#140f09" stroke="#2a2a35" stroke-width="1"/>
+    <!-- Python icon: circular arrows (cycle) -->
+    <circle cx="97" cy="980" r="12" fill="none" stroke="#4a90d9" stroke-width="2" stroke-dasharray="6,4"/>
+    <polygon points="109,980 105,975 105,985" fill="#4a90d9"/>
+    <!-- Rust icon: straight arrow -->
+    <line x1="740" y1="980" x2="775" y2="980" stroke="#e67e22" stroke-width="3"/>
+    <polygon points="775,980 768,975 768,985" fill="#e67e22"/>
+
+    <text x="130" y="965" font-size="13" fill="#4a90d9" font-weight="bold">10</text>
+    <text x="160" y="965" font-size="15" fill="#bbb" font-weight="600">DEBUG CYCLE</text>
+    <text x="130" y="990" font-size="14" fill="#e8e8e8">cell → crash → fix → conda → conflict</text>
+    <text x="130" y="1010" font-size="13" fill="#e74c3c">Restart kernel, lose state</text>
+    <text x="790" y="990" font-size="14" fill="#e8e8e8">cargo build → fix all → runs</text>
+    <text x="790" y="1010" font-size="13" fill="#2ecc71">Deterministic, reproducible</text>
+
+  </g>
+
+  <!-- Divider line -->
+  <line x1="700" y1="130" x2="700" y2="1020" stroke="#3a3a45" stroke-width="3"/>
+
+  <!-- Footer with links -->
+  <rect x="60" y="1040" width="1280" height="45" rx="4" fill="#111115" stroke="#2a2a35" stroke-width="1"/>
+
+  <text x="200" y="1068" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#888">
+    Try it:
+  </text>
+
+  <!-- Link: interactive.paiml.com -->
+  <a href="https://interactive.paiml.com" target="_blank">
+    <rect x="260" y="1050" width="280" height="28" rx="4" fill="#1a1a25" stroke="#4a90d9" stroke-width="1.5"/>
+    <text x="400" y="1070" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#7ab3ef" text-anchor="middle" font-weight="600">
+      interactive.paiml.com
+    </text>
+  </a>
+
+  <!-- Link: github.com/paiml/aprender -->
+  <a href="https://github.com/paiml/aprender" target="_blank">
+    <rect x="560" y="1050" width="340" height="28" rx="4" fill="#1a1510" stroke="#e67e22" stroke-width="1.5"/>
+    <text x="730" y="1070" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#f5a623" text-anchor="middle" font-weight="600">
+      github.com/paiml/aprender
+    </text>
+  </a>
+
+  <text x="1100" y="1068" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#555">
+    Python ML = C/C++ with scripting glue — Rust replaces the entire tower
+  </text>
+
+</svg>

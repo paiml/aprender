@@ -1,0 +1,82 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Quantization contract for mutation score discretization and metric bucketing"
+  crate: "batuta"
+  references:
+    - "Dettmers et al. (2022) LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale"
+    - "Jacob et al. (2018) Quantization and Training of Neural Networks for Efficient Integer-Arithmetic-Only Inference"
+
+equations:
+  quantize_score:
+    formula: "quantize(score, bits) = round(score * (2^bits - 1)) / (2^bits - 1)"
+    domain: "score in [0.0, 1.0], bits in {4, 8, 16}"
+    invariants:
+      - "quantize(score) in [0.0, 1.0]"
+      - "Monotonicity: s1 <= s2 implies quantize(s1) <= quantize(s2)"
+  dequantize:
+    formula: "dequantize(q, scale, zero_point) = (q - zero_point) * scale"
+    domain: "q in Z, scale > 0, zero_point in Z"
+    invariants:
+      - "Monotonically increasing with q for fixed scale/zero_point"
+  quantization_error:
+    formula: "|score - quantize(score, bits)| <= 0.5 / (2^bits - 1)"
+    domain: "score in [0.0, 1.0], bits >= 1"
+    invariants:
+      - "Maximum error decreases exponentially with bits"
+      - "8-bit quantization error < 0.002"
+
+proof_obligations:
+  - type: bound
+    property: "Quantized score in [0, 1]"
+    formal: "0.0 <= quantize(score, bits) <= 1.0"
+    applies_to: all
+  - type: monotonicity
+    property: "Quantization preserves ordering"
+    formal: "s1 <= s2 implies quantize(s1) <= quantize(s2)"
+    applies_to: all
+  - type: bound
+    property: "Quantization error bounded"
+    formal: "|score - quantize(score, bits)| <= 0.5 / (2^bits - 1)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-QUANT-001
+    rule: "Score in [0, 1]"
+    test: "test_quantization_bits_valid"
+    prediction: "verified"
+    if_fails: "Quantization produces out-of-range value"
+  - id: FALSIFY-QUANT-002
+    rule: "Ordering preserved"
+    test: "test_reward_score_ordering"
+    prediction: "verified"
+    if_fails: "Quantization inverts score ordering"
+  - id: FALSIFY-QUANT-003
+    rule: "Error bounded"
+    test: "test_margin_non_negative"
+    prediction: "verified"
+    if_fails: "Quantization error exceeds theoretical maximum"
+
+kani_harnesses:
+  - id: KANI-QUANT-001
+    obligation: PO-QUANT-001
+    property: "Score range"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_quantize_range
+  - id: KANI-QUANT-002
+    obligation: PO-QUANT-002
+    property: "Monotonicity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_quantize_monotonic
+
+qa_gate:
+  id: QA-QUANTIZE
+  name: "quantize contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_quantization_bits_valid
+    - test_reward_score_ordering
+    - test_margin_non_negative

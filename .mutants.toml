@@ -1,0 +1,54 @@
+# Mutation Testing Configuration for Batuta
+# Targets >80% mutation coverage per EXTREME TDD requirements
+
+# Timeout per mutant (5 minutes as per spec)
+timeout = 300
+
+# Exclude files that shouldn't be mutated
+exclude_files = [
+    # Main entry point (CLI orchestration, not core logic)
+    "src/main.rs",
+
+    # Test files
+    "tests/**",
+    "benches/**",
+    "examples/**",
+
+    # Generated code
+    "target/**",
+]
+
+# Focus on core logic modules with high test coverage
+include_files = [
+    # ML Converters (97-98% coverage, excellent mutation targets)
+    "src/numpy_converter.rs",
+    "src/sklearn_converter.rs",
+    "src/pytorch_converter.rs",
+
+    # Backend selection (48% coverage, good mutation target)
+    "src/backend.rs",
+
+    # Support modules
+    "src/tools.rs",
+    "src/parf.rs",
+
+    # Pipeline (5% coverage, but critical logic)
+    "src/pipeline.rs",
+]
+
+# Show detailed output
+json = false
+output = "text"
+
+# Only test changes, not all mutants (for faster iteration)
+# baseline = "auto"
+
+# Minimum test timeout multiplier
+minimum_test_time = 1.0
+
+# Show caught and uncaught mutants
+show_times = true
+show_all_logs = false
+
+# Fail if mutation score is below threshold (targeting 80%)
+# minimum_test_coverage = 80

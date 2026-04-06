@@ -1,0 +1,87 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Privacy tier enforcement — Poka-Yoke gate for Sovereign/Private/Standard"
+  references:
+    - "Banco Spec §5: Privacy Tiers"
+  depends_on: []
+
+equations:
+  sovereign_gate:
+    formula: "∀ req where tier = Sovereign: backend(req) ∈ LocalBackends"
+    domain: "req ∈ ChatRequest, tier ∈ {Sovereign, Private, Standard}"
+    codomain: "backend ∈ ServingBackend"
+    invariants:
+      - "Sovereign never routes to remote"
+      - "Private allows only enterprise remotes (Azure, AWS, GCP, Lambda)"
+      - "Standard allows all backends"
+
+  middleware_header:
+    formula: "∀ resp: resp.headers['x-privacy-tier'] = tier_string(state.privacy_tier)"
+    domain: "resp ∈ HttpResponse, state ∈ BancoState"
+    codomain: "header ∈ {'sovereign', 'private', 'standard'}"
+    invariants:
+      - "Header always present on every response"
+      - "Header value matches state privacy tier"
+
+  sovereign_rejection:
+    formula: "tier = Sovereign ∧ header('x-banco-backend') ∉ LocalNames → 403"
+    domain: "req ∈ HttpRequest with x-banco-backend header"
+    codomain: "HttpResponse with status 403 or passthrough"
+    invariants:
+      - "External backend hints rejected in Sovereign"
+      - "Local backend hints allowed in Sovereign"
+      - "All hints allowed in Standard"
+
+proof_obligations:
+  - type: soundness
+    property: "Sovereign rejects all remote backends"
+    formal: "∀ b ∈ RemoteBackends: ¬PrivacyTier::Sovereign.allows(b)"
+    applies_to: all
+  - type: completeness
+    property: "Standard allows all backends"
+    formal: "∀ b ∈ ServingBackend: PrivacyTier::Standard.allows(b)"
+    applies_to: all
+  - type: invariant
+    property: "Middleware injects correct header"
+    formal: "∀ resp: resp.headers['x-privacy-tier'] = tier_string(state.privacy_tier)"
+    applies_to: all
+  - type: soundness
+    property: "Sovereign middleware rejects external hints"
+    formal: "tier = Sovereign ∧ hint ∉ LocalNames → status = 403"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PRIV-001
+    rule: "Sovereign blocks remote"
+    prediction: "BackendSelector with Sovereign tier recommends zero remote backends"
+    test: "test_SERVE_RTR_006_sovereign_no_public_spillover"
+    if_fails: "New remote backend added without privacy gate update"
+  - id: FALSIFY-PRIV-002
+    rule: "Middleware rejects external hint in Sovereign"
+    prediction: "Request with x-banco-backend: openai returns 403 in Sovereign mode"
+    test: "test_BANCO_MID_003_sovereign_allows_local_backend"
+    if_fails: "Middleware bypass or missing check"
+  - id: FALSIFY-PRIV-003
+    rule: "Middleware allows local hint in Sovereign"
+    prediction: "Request with x-banco-backend: realizar returns 200 in Sovereign mode"
+    test: "test_BANCO_MID_003_standard_allows_any_backend"
+    if_fails: "Overly aggressive blocking"
+  - id: FALSIFY-PRIV-004
+    rule: "Header always present"
+    prediction: "Every response from every endpoint has x-privacy-tier header"
+    test: "test_BANCO_HDL_008_privacy_header_on_health"
+    if_fails: "Middleware not applied to all routes"
+
+kani_harnesses:
+  - id: KANI-PRIV-001
+    obligation: "Sovereign rejects all remote"
+    bound: 24
+    strategy: exhaustive
+    harness: "verify_sovereign_blocks_all_remote_backends"
+  - id: KANI-PRIV-002
+    obligation: "Standard allows all"
+    bound: 24
+    strategy: exhaustive
+    harness: "verify_standard_allows_all_backends"

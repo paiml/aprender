@@ -1,0 +1,54 @@
+# Batuta Development Dockerfile
+# Includes development tools and hot-reload support
+#
+# Build: docker build -f Dockerfile.dev -t batuta:dev .
+# Run:   docker-compose up dev
+
+FROM rust:1.75-slim
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    gcc \
+    g++ \
+    make \
+    curl \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo development tools
+RUN cargo install cargo-watch cargo-edit cargo-outdated
+
+# Create development user
+RUN useradd -m -u 1000 -s /bin/bash batuta
+
+# Set working directory
+WORKDIR /workspace
+
+# Set ownership
+RUN chown -R batuta:batuta /workspace
+
+# Switch to development user
+USER batuta
+
+# Set environment variables
+ENV RUST_BACKTRACE=full
+ENV BATUTA_LOG_LEVEL=debug
+ENV CARGO_HOME=/home/batuta/.cargo
+ENV PATH=$PATH:/home/batuta/.cargo/bin
+
+# Expose any ports needed for development
+EXPOSE 8080
+
+# Default command: watch mode
+CMD ["cargo", "watch", "-x", "check", "-x", "test"]
+
+# Labels
+LABEL maintainer="Pragmatic AI Labs"
+LABEL description="Batuta Development Environment"
+LABEL version="0.1.0-dev"

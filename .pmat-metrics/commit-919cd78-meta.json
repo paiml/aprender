@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "GH-18",
+  "prompt": "bug-hunter: Improve lcov.info path detection for SBFL analysis",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-09T10:16:20.067343684Z"
+}

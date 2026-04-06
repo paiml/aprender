@@ -1,0 +1,84 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Tokenization contract for orchestrated code analysis and mutation targeting"
+  crate: "batuta"
+  references:
+    - "Sennrich, Haddow & Birch (2016) Neural Machine Translation of Rare Words with Subword Units"
+    - "Kudo & Richardson (2018) SentencePiece: A simple and language independent subword tokenizer"
+
+equations:
+  tokenize_source:
+    formula: "tokenize(source) = [token_1, ..., token_n] where tokens cover source completely"
+    domain: "source in String, source.len() > 0"
+    invariants:
+      - "Concatenation of tokens reconstructs original source"
+      - "No token is empty"
+      - "Token count > 0 for non-empty input"
+  token_span:
+    formula: "span(token_i) = (start_i, end_i) where start_i >= 0 and end_i <= source.len()"
+    domain: "token_i in TokenStream"
+    invariants:
+      - "start_i < end_i (non-zero width)"
+      - "start_{i+1} >= end_i (non-overlapping)"
+      - "start_0 == 0 and end_n == source.len() (complete coverage)"
+  token_frequency:
+    formula: "tf(t, src) = count(t in tokenize(src)) / |tokenize(src)|"
+    domain: "t in Token, src in String"
+    invariants:
+      - "0 < tf <= 1.0 for tokens present in source"
+
+proof_obligations:
+  - type: invariant
+    property: "Complete coverage"
+    formal: "join(tokenize(source)) == source"
+    applies_to: all
+  - type: invariant
+    property: "Non-empty tokens"
+    formal: "forall t in tokenize(source): t.len() > 0"
+    applies_to: all
+  - type: invariant
+    property: "Non-overlapping spans"
+    formal: "forall i: span(token_{i+1}).start >= span(token_i).end"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BTOK-001
+    rule: "Complete coverage"
+    test: "test_P2B_tokenize_heuristic_fallback"
+    prediction: "verified"
+    if_fails: "Tokenizer drops characters from source"
+  - id: FALSIFY-BTOK-002
+    rule: "Non-empty tokens"
+    test: "test_P1_tokenize_endpoint"
+    prediction: "verified"
+    if_fails: "Tokenizer produces zero-width tokens"
+  - id: FALSIFY-BTOK-003
+    rule: "Non-overlapping spans"
+    test: "test_grid_layout_no_overlaps"
+    prediction: "verified"
+    if_fails: "Token spans overlap"
+
+kani_harnesses:
+  - id: KANI-BTOK-001
+    obligation: PO-BTOK-001
+    property: "Complete coverage"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_tokenize_coverage
+  - id: KANI-BTOK-002
+    obligation: PO-BTOK-002
+    property: "Non-empty tokens"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_tokenize_non_empty
+
+qa_gate:
+  id: QA-BTOKENIZE
+  name: "tokenize contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_P2B_tokenize_heuristic_fallback
+    - test_tokenize_no_empty_tokens
+    - test_tokenize_non_overlapping

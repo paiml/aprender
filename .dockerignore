@@ -1,0 +1,45 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+*.pdb
+
+# Cargo files
+Cargo.lock
+.cargo/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation build
+book/book/
+wasm-dist/
+
+# Testing
+.batuta-state.json
+
+# CI/CD
+.github/
+
+# Development
+*.log
+*.tmp
+.env
+.env.local
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore

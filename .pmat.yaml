@@ -1,0 +1,4 @@
+comply:
+  thresholds:
+    tdg_exclude_paths:
+      - "examples/*"

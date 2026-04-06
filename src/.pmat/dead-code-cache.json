@@ -1,0 +1,308 @@
+{
+  "tree_hash": "d96fd9bf46307705c1e40174f8a75eace97fde43",
+  "pmat_version": "2.215.0",
+  "timestamp": "2026-02-01T19:12:36.924786988Z",
+  "report": {
+    "files_with_dead_code": [
+      {
+        "file_path": "backend.rs",
+        "dead_items": [
+          {
+            "name": "Backend",
+            "kind": "Suppressed",
+            "line": 51,
+            "column": 1,
+            "message": "enum `Backend` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "OpComplexity",
+            "kind": "Suppressed",
+            "line": 73,
+            "column": 1,
+            "message": "enum `OpComplexity` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BackendSelector",
+            "kind": "Suppressed",
+            "line": 85,
+            "column": 1,
+            "message": "struct `BackendSelector` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.9523809523809524
+      },
+      {
+        "file_path": "stack/quality_checker.rs",
+        "dead_items": [
+          {
+            "name": "with_min_grade",
+            "kind": "Suppressed",
+            "line": 35,
+            "column": 1,
+            "message": "fn `with_min_grade` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "strict",
+            "kind": "Suppressed",
+            "line": 42,
+            "column": 1,
+            "message": "fn `strict` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "check_all",
+            "kind": "Suppressed",
+            "line": 72,
+            "column": 1,
+            "message": "fn `check_all` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 2.7649769585253456
+      },
+      {
+        "file_path": "stack/publish_status.rs",
+        "dead_items": [
+          {
+            "name": "check_crate",
+            "kind": "Suppressed",
+            "line": 486,
+            "column": 1,
+            "message": "fn `check_crate` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "format_report_text",
+            "kind": "Suppressed",
+            "line": 637,
+            "column": 1,
+            "message": "fn `format_report_text` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.4542873367404884
+      },
+      {
+        "file_path": "cli/mod.rs",
+        "dead_items": [
+          {
+            "name": "calculate_progress",
+            "kind": "Suppressed",
+            "line": 120,
+            "column": 1,
+            "message": "fn `calculate_progress` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "is_phase_complete",
+            "kind": "Suppressed",
+            "line": 126,
+            "column": 1,
+            "message": "fn `is_phase_complete` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "get_next_phase",
+            "kind": "Suppressed",
+            "line": 132,
+            "column": 1,
+            "message": "fn `get_next_phase` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "count_completed_phases",
+            "kind": "Suppressed",
+            "line": 138,
+            "column": 1,
+            "message": "fn `count_completed_phases` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "has_work_started",
+            "kind": "Suppressed",
+            "line": 148,
+            "column": 1,
+            "message": "fn `has_work_started` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ValidationResult",
+            "kind": "Suppressed",
+            "line": 217,
+            "column": 1,
+            "message": "struct `ValidationResult` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "parse_integration_components",
+            "kind": "Suppressed",
+            "line": 262,
+            "column": 1,
+            "message": "fn `parse_integration_components` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 4.8359240069084635
+      },
+      {
+        "file_path": "oracle/rag/mod.rs",
+        "dead_items": [
+          {
+            "name": "chunker",
+            "kind": "Suppressed",
+            "line": 21,
+            "column": 1,
+            "message": "mod `chunker` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "falsification",
+            "kind": "Suppressed",
+            "line": 23,
+            "column": 1,
+            "message": "mod `falsification` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "fingerprint",
+            "kind": "Suppressed",
+            "line": 25,
+            "column": 1,
+            "message": "mod `fingerprint` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "indexer",
+            "kind": "Suppressed",
+            "line": 27,
+            "column": 1,
+            "message": "mod `indexer` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "persistence",
+            "kind": "Suppressed",
+            "line": 29,
+            "column": 1,
+            "message": "mod `persistence` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "retriever",
+            "kind": "Suppressed",
+            "line": 32,
+            "column": 1,
+            "message": "mod `retriever` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "types",
+            "kind": "Suppressed",
+            "line": 35,
+            "column": 1,
+            "message": "mod `types` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "validator",
+            "kind": "Suppressed",
+            "line": 37,
+            "column": 1,
+            "message": "mod `validator` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "RagOracle",
+            "kind": "Suppressed",
+            "line": 73,
+            "column": 1,
+            "message": "struct `RagOracle` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "RagOracleConfig",
+            "kind": "Suppressed",
+            "line": 87,
+            "column": 1,
+            "message": "struct `RagOracleConfig` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "DocumentSource",
+            "kind": "Suppressed",
+            "line": 123,
+            "column": 1,
+            "message": "enum `DocumentSource` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "DocumentIndex",
+            "kind": "Suppressed",
+            "line": 175,
+            "column": 1,
+            "message": "struct `DocumentIndex` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "IndexedDocument",
+            "kind": "Suppressed",
+            "line": 187,
+            "column": 1,
+            "message": "struct `IndexedDocument` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "DocumentChunk",
+            "kind": "Suppressed",
+            "line": 203,
+            "column": 1,
+            "message": "struct `DocumentChunk` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "IndexStats",
+            "kind": "Suppressed",
+            "line": 273,
+            "column": 1,
+            "message": "struct `IndexStats` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 12.396694214876034
+      },
+      {
+        "file_path": "pytorch_converter.rs",
+        "dead_items": [
+          {
+            "name": "PyTorchOperation",
+            "kind": "Suppressed",
+            "line": 51,
+            "column": 1,
+            "message": "enum `PyTorchOperation` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.45977011494252873
+      },
+      {
+        "file_path": "sklearn_converter.rs",
+        "dead_items": [
+          {
+            "name": "SklearnAlgorithm",
+            "kind": "Suppressed",
+            "line": 48,
+            "column": 1,
+            "message": "enum `SklearnAlgorithm` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.42194092827004215
+      },
+      {
+        "file_path": "stack/hero_image.rs",
+        "dead_items": [
+          {
+            "name": "extension",
+            "kind": "Suppressed",
+            "line": 32,
+            "column": 1,
+            "message": "fn `extension` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 1.5151515151515151
+      },
+      {
+        "file_path": "numpy_converter.rs",
+        "dead_items": [
+          {
+            "name": "NumPyOp",
+            "kind": "Suppressed",
+            "line": 40,
+            "column": 1,
+            "message": "enum `NumPyOp` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.6369426751592357
+      }
+    ],
+    "total_dead_items": 34,
+    "dead_code_percentage": 0.07351112936877724,
+    "total_lines": 92503,
+    "dead_lines": 68,
+    "dead_by_type": {
+      "suppressed": 34
+    }
+  }
+}

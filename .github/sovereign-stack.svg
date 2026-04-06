@@ -1,0 +1,253 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 650">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="l0Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea"/>
+      <stop offset="100%" style="stop-color:#764ba2"/>
+    </linearGradient>
+    <linearGradient id="l1Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f093fb"/>
+      <stop offset="100%" style="stop-color:#f5576c"/>
+    </linearGradient>
+    <linearGradient id="l2Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe"/>
+      <stop offset="100%" style="stop-color:#00f2fe"/>
+    </linearGradient>
+    <linearGradient id="l3Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#43e97b"/>
+      <stop offset="100%" style="stop-color:#38f9d7"/>
+    </linearGradient>
+    <linearGradient id="l4Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fa709a"/>
+      <stop offset="100%" style="stop-color:#fee140"/>
+    </linearGradient>
+    <linearGradient id="l5Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#a8edea"/>
+      <stop offset="100%" style="stop-color:#fed6e3"/>
+    </linearGradient>
+    <linearGradient id="l6Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#d299c2"/>
+      <stop offset="100%" style="stop-color:#fef9d7"/>
+    </linearGradient>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="2" dy="3" stdDeviation="3" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="650" fill="#0f0f1a"/>
+
+  <!-- Title -->
+  <text x="450" y="40" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="24" font-weight="bold">🎵 Sovereign AI Stack</text>
+  <text x="450" y="62" text-anchor="middle" fill="#888" font-family="system-ui, sans-serif" font-size="14">20 Components • 7 Layers • 100% Rust</text>
+
+  <!-- Layer 0: Compute Primitives -->
+  <g transform="translate(30, 85)">
+    <rect x="0" y="0" width="840" height="75" rx="8" fill="url(#l0Grad)" filter="url(#shadow)"/>
+    <text x="15" y="22" fill="#fff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L0: COMPUTE PRIMITIVES</text>
+
+    <g transform="translate(15, 32)">
+      <rect x="0" y="0" width="150" height="35" rx="4" fill="rgba(255,255,255,0.2)"/>
+      <text x="75" y="15" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">trueno</text>
+      <text x="75" y="28" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">SIMD/GPU compute</text>
+    </g>
+    <g transform="translate(175, 32)">
+      <rect x="0" y="0" width="150" height="35" rx="4" fill="rgba(255,255,255,0.2)"/>
+      <text x="75" y="15" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">trueno-db</text>
+      <text x="75" y="28" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">Vector database</text>
+    </g>
+    <g transform="translate(335, 32)">
+      <rect x="0" y="0" width="150" height="35" rx="4" fill="rgba(255,255,255,0.2)"/>
+      <text x="75" y="15" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">trueno-graph</text>
+      <text x="75" y="28" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">Graph analytics</text>
+    </g>
+    <g transform="translate(495, 32)">
+      <rect x="0" y="0" width="150" height="35" rx="4" fill="rgba(255,255,255,0.2)"/>
+      <text x="75" y="15" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">trueno-viz</text>
+      <text x="75" y="28" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">Visualization</text>
+    </g>
+    <g transform="translate(655, 32)">
+      <rect x="0" y="0" width="170" height="35" rx="4" fill="rgba(255,255,255,0.3)"/>
+      <text x="85" y="15" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">trueno-rag</text>
+      <text x="85" y="28" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">RAG pipeline</text>
+    </g>
+  </g>
+
+  <!-- Layer 1: ML Algorithms -->
+  <g transform="translate(30, 170)">
+    <rect x="0" y="0" width="260" height="65" rx="8" fill="url(#l1Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#fff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L1: ML ALGORITHMS</text>
+    <g transform="translate(15, 28)">
+      <rect x="0" y="0" width="230" height="30" rx="4" fill="rgba(255,255,255,0.2)"/>
+      <text x="115" y="12" text-anchor="middle" fill="#fff" font-family="monospace" font-size="11" font-weight="bold">aprender</text>
+      <text x="115" y="24" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="9">First-principles ML</text>
+    </g>
+  </g>
+
+  <!-- Layer 2: Training & Inference -->
+  <g transform="translate(300, 170)">
+    <rect x="0" y="0" width="320" height="65" rx="8" fill="url(#l2Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L2: TRAINING & INFERENCE</text>
+    <g transform="translate(15, 28)">
+      <rect x="0" y="0" width="140" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="70" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">entrenar</text>
+      <text x="70" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Training + LoRA</text>
+    </g>
+    <g transform="translate(165, 28)">
+      <rect x="0" y="0" width="140" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="70" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">realizar</text>
+      <text x="70" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">LLM inference</text>
+    </g>
+  </g>
+
+  <!-- Layer 3: Transpilers -->
+  <g transform="translate(630, 170)">
+    <rect x="0" y="0" width="240" height="65" rx="8" fill="url(#l3Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L3: TRANSPILERS</text>
+    <g transform="translate(10, 28)">
+      <rect x="0" y="0" width="52" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="26" y="18" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="9" font-weight="bold">depyler</text>
+    </g>
+    <g transform="translate(67, 28)">
+      <rect x="0" y="0" width="45" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="22" y="18" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="9" font-weight="bold">decy</text>
+    </g>
+    <g transform="translate(117, 28)">
+      <rect x="0" y="0" width="52" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="26" y="18" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="9" font-weight="bold">bashrs</text>
+    </g>
+    <g transform="translate(174, 28)">
+      <rect x="0" y="0" width="52" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="26" y="18" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="9" font-weight="bold">ruchy</text>
+    </g>
+  </g>
+
+  <!-- Layer 4: Orchestration -->
+  <g transform="translate(30, 250)">
+    <rect x="0" y="0" width="410" height="65" rx="8" fill="url(#l4Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L4: ORCHESTRATION</text>
+    <g transform="translate(15, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">batuta</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">5-phase workflow</text>
+    </g>
+    <g transform="translate(145, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">repartir</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Distributed</text>
+    </g>
+    <g transform="translate(275, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.2)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">pforge</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">MCP servers</text>
+    </g>
+  </g>
+
+  <!-- Layer 5: Quality -->
+  <g transform="translate(460, 250)">
+    <rect x="0" y="0" width="410" height="65" rx="8" fill="url(#l5Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L5: QUALITY</text>
+    <g transform="translate(15, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.15)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">certeza</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Validation</text>
+    </g>
+    <g transform="translate(145, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.15)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">pmat</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Code quality</text>
+    </g>
+    <g transform="translate(275, 28)">
+      <rect x="0" y="0" width="120" height="30" rx="4" fill="rgba(0,0,0,0.15)"/>
+      <text x="60" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">renacer</text>
+      <text x="60" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Syscall tracing</text>
+    </g>
+  </g>
+
+  <!-- Layer 6: Data & MLOps -->
+  <g transform="translate(30, 330)">
+    <rect x="0" y="0" width="320" height="65" rx="8" fill="url(#l6Grad)" filter="url(#shadow)"/>
+    <text x="15" y="20" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">L6: DATA & MLOPS</text>
+    <g transform="translate(15, 28)">
+      <rect x="0" y="0" width="140" height="30" rx="4" fill="rgba(0,0,0,0.15)"/>
+      <text x="70" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">alimentar</text>
+      <text x="70" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Data loading</text>
+    </g>
+    <g transform="translate(165, 28)">
+      <rect x="0" y="0" width="140" height="30" rx="4" fill="rgba(0,0,0,0.15)"/>
+      <text x="70" y="12" text-anchor="middle" fill="#1a1a2e" font-family="monospace" font-size="11" font-weight="bold">pacha</text>
+      <text x="70" y="24" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="9">Model registry</text>
+    </g>
+  </g>
+
+  <!-- 5-Phase Workflow -->
+  <g transform="translate(30, 420)">
+    <rect x="0" y="0" width="840" height="100" rx="8" fill="url(#headerGrad)" filter="url(#shadow)"/>
+    <text x="420" y="22" text-anchor="middle" fill="#fff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">5-PHASE KANBAN WORKFLOW</text>
+
+    <!-- Phase boxes -->
+    <g transform="translate(20, 35)">
+      <rect x="0" y="0" width="150" height="55" rx="6" fill="#667eea"/>
+      <text x="75" y="20" text-anchor="middle" fill="#fff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">1. Analysis</text>
+      <text x="75" y="38" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="10">Language • Deps • TDG</text>
+    </g>
+    <text x="178" y="72" fill="#888" font-size="20">→</text>
+    <g transform="translate(185, 35)">
+      <rect x="0" y="0" width="150" height="55" rx="6" fill="#43e97b"/>
+      <text x="75" y="20" text-anchor="middle" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">2. Transpile</text>
+      <text x="75" y="38" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="10">depyler • decy • bashrs</text>
+    </g>
+    <text x="343" y="72" fill="#888" font-size="20">→</text>
+    <g transform="translate(350, 35)">
+      <rect x="0" y="0" width="150" height="55" rx="6" fill="#4facfe"/>
+      <text x="75" y="20" text-anchor="middle" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">3. Optimize</text>
+      <text x="75" y="38" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="10">SIMD • GPU • MoE</text>
+    </g>
+    <text x="508" y="72" fill="#888" font-size="20">→</text>
+    <g transform="translate(515, 35)">
+      <rect x="0" y="0" width="150" height="55" rx="6" fill="#fa709a"/>
+      <text x="75" y="20" text-anchor="middle" fill="#fff" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">4. Validate</text>
+      <text x="75" y="38" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="monospace" font-size="10">renacer • certeza</text>
+    </g>
+    <text x="673" y="72" fill="#888" font-size="20">→</text>
+    <g transform="translate(680, 35)">
+      <rect x="0" y="0" width="150" height="55" rx="6" fill="#38f9d7"/>
+      <text x="75" y="20" text-anchor="middle" fill="#1a1a2e" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">5. Deploy</text>
+      <text x="75" y="38" text-anchor="middle" fill="rgba(0,0,0,0.7)" font-family="monospace" font-size="10">WASM • Lambda • Edge</text>
+    </g>
+  </g>
+
+  <!-- Key Features -->
+  <g transform="translate(30, 540)">
+    <rect x="0" y="0" width="270" height="95" rx="8" fill="rgba(102, 126, 234, 0.2)" stroke="#667eea" stroke-width="1"/>
+    <text x="15" y="22" fill="#667eea" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">🔐 Security</text>
+    <text x="15" y="42" fill="#aaa" font-family="monospace" font-size="10">• AES-256-GCM encryption</text>
+    <text x="15" y="57" fill="#aaa" font-family="monospace" font-size="10">• .apr/.ald secure formats</text>
+    <text x="15" y="72" fill="#aaa" font-family="monospace" font-size="10">• X25519 key exchange</text>
+    <text x="15" y="87" fill="#aaa" font-family="monospace" font-size="10">• Ed25519 signatures</text>
+  </g>
+
+  <g transform="translate(315, 540)">
+    <rect x="0" y="0" width="270" height="95" rx="8" fill="rgba(67, 233, 123, 0.2)" stroke="#43e97b" stroke-width="1"/>
+    <text x="15" y="22" fill="#43e97b" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">⚡ Performance</text>
+    <text x="15" y="42" fill="#aaa" font-family="monospace" font-size="10">• 9.6x faster than PyTorch</text>
+    <text x="15" y="57" fill="#aaa" font-family="monospace" font-size="10">• SIMD auto-vectorization</text>
+    <text x="15" y="72" fill="#aaa" font-family="monospace" font-size="10">• GPU via wgpu (Vulkan/Metal)</text>
+    <text x="15" y="87" fill="#aaa" font-family="monospace" font-size="10">• Zero-copy operations</text>
+  </g>
+
+  <g transform="translate(600, 540)">
+    <rect x="0" y="0" width="270" height="95" rx="8" fill="rgba(250, 112, 154, 0.2)" stroke="#fa709a" stroke-width="1"/>
+    <text x="15" y="22" fill="#fa709a" font-family="system-ui, sans-serif" font-size="12" font-weight="bold">🌍 Deployment</text>
+    <text x="15" y="42" fill="#aaa" font-family="monospace" font-size="10">• WASM (browsers, edge)</text>
+    <text x="15" y="57" fill="#aaa" font-family="monospace" font-size="10">• AWS Lambda (53,000x cold start)</text>
+    <text x="15" y="72" fill="#aaa" font-family="monospace" font-size="10">• Embedded (ARM, IoT)</text>
+    <text x="15" y="87" fill="#aaa" font-family="monospace" font-size="10">• Single binary, no deps</text>
+  </g>
+</svg>

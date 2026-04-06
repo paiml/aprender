@@ -1,0 +1,92 @@
+# Pre-commit hooks for EXTREME TDD
+# Install: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Rust formatting
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        name: cargo fmt
+        description: Format Rust code
+        entry: cargo fmt
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: clippy
+        name: cargo clippy
+        description: Lint Rust code
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # General file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        name: Check YAML syntax
+      - id: check-toml
+        name: Check TOML syntax
+      - id: check-json
+        name: Check JSON syntax
+      - id: end-of-file-fixer
+        name: Fix end of files
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+      - id: mixed-line-ending
+        name: Fix mixed line endings
+
+  # Markdown
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        name: Check for large files
+        args: ['--maxkb=1000']
+
+# Local hooks for Rust-specific checks
+  - repo: local
+    hooks:
+      - id: rust-verify
+        name: Rust verification (push only)
+        entry: cargo test --quiet --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [push]
+
+      - id: cargo-build
+        name: cargo build
+        entry: cargo build
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [push]
+
+      - id: stack-quality-gate
+        name: Stack Quality Gate (A- enforcement)
+        entry: cargo run --quiet -- stack gate
+        language: system
+        pass_filenames: false
+        stages: [push]
+        description: |
+          Enforces A- quality threshold for all downstream PAIML stack components.
+          Prevents push if any component is below 85 SQI.
+
+      - id: demo-score
+        name: Demo Score Quality Gate (A- enforcement)
+        entry: pmat demo-score -p . --gate
+        language: system
+        pass_filenames: false
+        stages: [push]
+        description: |
+          Enforces A- (85) demo-score for publication quality.
+          Checks README structure, CI matrix, and demo validity.
+
+# Configuration
+default_stages: [commit]
+fail_fast: false

@@ -1,0 +1,54 @@
+Based on sovereign-ai-spec.md section 2.2 (5× PCIe rule)
+
+Example 1: Matrix Multiplication 64×64
+  Selected backend: SIMD
+  Rationale: Small matrix, PCIe overhead dominates
+
+Example 2: Matrix Multiplication 512×512
+  Selected backend: SIMD
+  Rationale: Compute/transfer ratio still < 5×
+
+Example 3: Matrix Multiplication 2048×2048
+  Selected backend: SIMD
+  Rationale: O(n³) compute begins to justify GPU
+
+Example 4: Dot Product (10K elements)
+  Selected backend: SIMD
+  Rationale: Memory-bound, GPU overhead too high
+
+Example 5: Element-wise Add (1M elements)
+  Selected backend: Scalar
+  Rationale: Minimal compute, uses SIMD
+
+Example 6: Custom Workload
+  Data: 1000000 bytes
+  FLOPs: 1000000000
+  Selected backend: SIMD
+  Compute/Transfer ratio: 1.60×
+  (Need > 5× for GPU benefit)
+
+✅ Per Gregg & Hazelwood (2011): GPU dispatch when
+   compute_time > 5× transfer_time
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 30.56    0.000235           9        25           write
+ 15.99    0.000123           9        13           mmap
+  8.19    0.000063          10         6           mprotect
+  6.76    0.000052          10         5           read
+  4.03    0.000031           6         5           rt_sigaction
+  3.25    0.000025           6         4           pread64
+  3.51    0.000027           6         4           newfstatat
+  3.38    0.000026           6         4           unknown
+  5.46    0.000042          10         4           openat
+  3.51    0.000027           6         4           close
+  2.60    0.000020           6         3           sigaltstack
+  3.25    0.000025           8         3           brk
+  1.95    0.000015           7         2         1 arch_prctl
+  2.99    0.000023          11         2           munmap
+  1.04    0.000008           8         1         1 access
+  0.91    0.000007           7         1           poll
+  0.91    0.000007           7         1           set_tid_address
+  0.91    0.000007           7         1           getrandom
+  0.78    0.000006           6         1           set_robust_list
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.000769           8        89         2 total

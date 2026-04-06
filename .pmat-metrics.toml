@@ -1,0 +1,33 @@
+# PMAT Metrics Configuration
+# Defines thresholds for code quality metrics
+
+[thresholds]
+# File size thresholds (lines)
+max_file_lines = 2000
+warn_file_lines = 1000
+
+# Function complexity
+max_cyclomatic = 20
+max_cognitive = 15
+
+# Code coverage
+min_coverage = 93
+target_coverage = 95
+
+[file-health]
+# File health grading thresholds
+grade_a = 90  # > 90% = A
+grade_b = 80  # > 80% = B
+grade_c = 70  # > 70% = C
+grade_d = 60  # > 60% = D
+# < 60% = F
+
+[tracking]
+# Metrics tracking options
+track_history = true
+history_retention_days = 90
+
+[reporting]
+# Reporting options
+format = "table"
+include_recommendations = true

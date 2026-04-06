@@ -1,0 +1,406 @@
+# Agent Loop Design-by-Contract Specification v1
+#
+# Defines formal invariants for the perceive-reason-act agent loop.
+# Used by provable-contracts for compile-time binding audit and
+# Kani verification harness generation.
+#
+# Ref: docs/specifications/batuta-agent.md Section 13.2
+# arXiv: 2512.10350 (Tacheny — agentic loop dynamics)
+# arXiv: 2503.14470 (Wang — formal verification of LLM agents)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-05"
+  description: "Agent loop design-by-contract invariants"
+  kind: pattern
+  references:
+    - "docs/specifications/batuta-agent.md"
+    - "arXiv: 2512.10350"
+
+contract:
+  name: agent-loop-v1
+  version: "1.0.0"
+  module: batuta::agent
+  description: >
+    Formal invariants for the sovereign agent perceive-reason-act loop.
+    Guarantees termination, capability enforcement, guard monotonicity,
+    and ping-pong detection.
+
+# ============================================================================
+# INVARIANT 1: Loop Termination Guarantee (Jidoka)
+# ============================================================================
+# The agent loop MUST terminate within max_iterations.
+# No infinite loops are possible when the guard is properly wired.
+
+invariants:
+  - id: INV-001
+    name: loop-terminates
+    description: >
+      The agent loop terminates within max_iterations + 1 LLM calls.
+      After max_iterations, the guard returns CircuitBreak, and the
+      loop exits with AgentError::CircuitBreak.
+    preconditions:
+      - guard.max_iterations > 0
+      - guard.current_iteration == 0
+    postconditions:
+      - guard.current_iteration <= guard.max_iterations + 1
+      - result.is_ok() || matches!(result.unwrap_err(), AgentError::CircuitBreak(_))
+    equation: |
+      ∀ n ∈ ℕ, n > max_iterations ⟹ check_iteration(n) = CircuitBreak
+    module_path: batuta::agent::guard::LoopGuard::check_iteration
+    test_binding: agent::guard::tests::test_iteration_limit
+
+  # ==========================================================================
+  # INVARIANT 2: Guard Monotonicity
+  # ==========================================================================
+  # The iteration counter strictly increases on each check_iteration() call.
+
+  - id: INV-002
+    name: guard-monotonic
+    description: >
+      current_iteration strictly increases by 1 on each check_iteration() call.
+      The counter never decreases or stays the same.
+    preconditions:
+      - guard.current_iteration == n
+    postconditions:
+      - guard.current_iteration == n + 1
+    equation: |
+      check_iteration(guard) ⟹ guard.current_iteration' = guard.current_iteration + 1
+    module_path: batuta::agent::guard::LoopGuard::check_iteration
+    test_binding: agent::guard::tests::test_counters
+
+  # ==========================================================================
+  # INVARIANT 3: Capability Enforcement (Poka-Yoke)
+  # ==========================================================================
+  # A tool MUST NOT execute if the manifest does not grant its capability.
+
+  - id: INV-003
+    name: capability-poka-yoke
+    description: >
+      Tool execution is blocked when the agent manifest does not include
+      the tool's required_capability in its capabilities list.
+      The loop pushes an error ToolResult instead of executing.
+    preconditions:
+      - tool.required_capability() ∉ manifest.capabilities
+    postconditions:
+      - tool.execute() is NOT called
+      - error message contains "capability"
+    equation: |
+      ¬capability_matches(manifest.capabilities, tool.required_capability())
+        ⟹ tool_result.is_error = true
+    module_path: batuta::agent::runtime::handle_tool_calls
+    test_binding: agent::runtime::tests::test_capability_denied_handled
+
+  # ==========================================================================
+  # INVARIANT 4: Ping-Pong Detection (Tacheny Oscillatory Regime)
+  # ==========================================================================
+  # After PINGPONG_THRESHOLD (3) identical tool calls, the guard blocks.
+
+  - id: INV-004
+    name: pingpong-halting
+    description: >
+      When the same (tool_name, input) pair is observed PINGPONG_THRESHOLD
+      times, the guard returns Block to prevent oscillatory loops.
+      Uses FxHash for efficient collision-resistant detection.
+    preconditions:
+      - tool_call_counts[hash(tool_name, input)] >= PINGPONG_THRESHOLD
+    postconditions:
+      - check_tool_call() returns Block(msg)
+    equation: |
+      count(hash(name, input)) ≥ 3 ⟹ check_tool_call(name, input) = Block
+    module_path: batuta::agent::guard::LoopGuard::check_tool_call
+    test_binding: agent::guard::tests::test_pingpong_detection
+
+  # ==========================================================================
+  # INVARIANT 5: Cost Budget Enforcement (Muda Elimination)
+  # ==========================================================================
+  # Accumulated cost exceeding budget triggers CircuitBreak.
+
+  - id: INV-005
+    name: cost-budget
+    description: >
+      When accumulated_cost_usd exceeds max_cost_usd (and max_cost_usd > 0),
+      the guard returns CircuitBreak to prevent runaway spend.
+    preconditions:
+      - max_cost_usd > 0.0
+      - accumulated_cost_usd + new_cost > max_cost_usd
+    postconditions:
+      - record_cost() returns CircuitBreak(msg)
+    equation: |
+      max_cost > 0 ∧ Σcost > max_cost ⟹ record_cost(c) = CircuitBreak
+    module_path: batuta::agent::guard::LoopGuard::record_cost
+    test_binding: agent::guard::tests::test_cost_budget
+
+  # ==========================================================================
+  # INVARIANT 6: MaxTokens Truncation Recovery
+  # ==========================================================================
+  # Consecutive MaxTokens responses are tracked; circuit-break at threshold.
+
+  - id: INV-006
+    name: truncation-circuit-break
+    description: >
+      After MAX_CONSECUTIVE_TRUNCATION (5) consecutive MaxTokens stop
+      reasons without any EndTurn or ToolUse, the guard circuit-breaks.
+      Any non-MaxTokens response resets the counter.
+    preconditions:
+      - consecutive_max_tokens >= MAX_CONSECUTIVE_TRUNCATION
+    postconditions:
+      - record_max_tokens() returns CircuitBreak(msg)
+    equation: |
+      consecutive_max_tokens ≥ 5 ⟹ record_max_tokens() = CircuitBreak
+    module_path: batuta::agent::guard::LoopGuard::record_max_tokens
+    test_binding: agent::guard::tests::test_consecutive_max_tokens
+
+  # ==========================================================================
+  # INVARIANT 7: Memory Store Guarantee
+  # ==========================================================================
+  # After a successful agent loop, the conversation is stored in memory.
+
+  - id: INV-007
+    name: memory-store
+    description: >
+      On successful loop completion (EndTurn), the query and response
+      are stored in the memory substrate for future recall.
+    preconditions:
+      - result.is_ok()
+    postconditions:
+      - memory.recall(query) returns non-empty results
+    equation: |
+      run_agent_loop(q) = Ok(r) ⟹ memory.recall(q) ≠ ∅
+    module_path: batuta::agent::runtime::run_agent_loop
+    test_binding: agent::runtime::tests::test_conversation_stored_in_memory
+
+  # ==========================================================================
+  # INVARIANT 8: Pool Capacity Enforcement (Muda)
+  # ==========================================================================
+  # AgentPool MUST NOT spawn beyond max_concurrent.
+
+  - id: INV-008
+    name: pool-capacity
+    description: >
+      When the number of active agents equals max_concurrent, spawn()
+      returns CircuitBreak error. No unbounded resource consumption.
+    preconditions:
+      - pool.active_count() >= pool.max_concurrent()
+    postconditions:
+      - pool.spawn(config).is_err()
+      - matches!(err, AgentError::CircuitBreak(_))
+    equation: |
+      active_count ≥ max_concurrent ⟹ spawn() = Err(CircuitBreak)
+    module_path: batuta::agent::pool::AgentPool::spawn
+    test_binding: agent::pool::tests::test_pool_capacity_limit
+
+  # ==========================================================================
+  # INVARIANT 9: Fan-Out Count Preservation
+  # ==========================================================================
+  # fan_out(N configs) spawns exactly N agents.
+
+  - id: INV-009
+    name: fanout-count
+    description: >
+      fan_out() with N configs spawns exactly N agents and returns
+      N AgentIds, provided pool has sufficient capacity.
+    preconditions:
+      - pool.active_count() + configs.len() <= pool.max_concurrent()
+    postconditions:
+      - ids.len() == configs.len()
+      - pool.active_count() == initial_count + configs.len()
+    equation: |
+      |configs| ≤ capacity_remaining ⟹ |fan_out(configs)| = |configs|
+    module_path: batuta::agent::pool::AgentPool::fan_out
+    test_binding: agent::pool::tests::test_pool_fan_out_fan_in
+
+  # ==========================================================================
+  # INVARIANT 10: Fan-In Completeness
+  # ==========================================================================
+  # join_all() collects exactly one result per spawned agent.
+
+  - id: INV-010
+    name: fanin-complete
+    description: >
+      join_all() returns one Result per spawned agent. No results
+      are lost. The returned HashMap has as many entries as were
+      spawned (barring panics).
+    preconditions:
+      - pool.active_count() == N
+    postconditions:
+      - results.len() == N (if no panics)
+    equation: |
+      join_all() → HashMap with |results| = |spawned_agents|
+    module_path: batuta::agent::pool::AgentPool::join_all
+    test_binding: agent::pool::tests::test_pool_join_all
+
+  # ==========================================================================
+  # INVARIANT 11: Tool Output Sanitization (Poka-Yoke)
+  # ==========================================================================
+  # All tool results are sanitized before entering conversation history.
+
+  - id: INV-011
+    name: output-sanitization
+    description: >
+      Known prompt injection patterns are stripped from tool results
+      before they enter the conversation history. Case-insensitive
+      matching for ChatML, LLaMA, and instruction-override markers.
+    preconditions:
+      - tool_result.content contains INJECTION_MARKERS pattern
+    postconditions:
+      - sanitized.content does NOT contain the pattern
+      - sanitized.content contains "[SANITIZED]"
+    equation: |
+      content ∋ marker ⟹ sanitized(content) ∌ marker ∧ sanitized(content) ∋ "[SANITIZED]"
+    module_path: batuta::agent::tool::sanitize_output
+    test_binding: agent::tool::tests::test_sanitize_output_system_injection
+
+  # ==========================================================================
+  # INVARIANT 12: Spawn Depth Bound (Jidoka)
+  # ==========================================================================
+  # SpawnTool MUST NOT spawn beyond max_depth.
+
+  - id: INV-012
+    name: spawn-depth-bound
+    description: >
+      When current_depth >= max_depth, SpawnTool.execute() returns an
+      error result without spawning a child agent. Prevents unbounded
+      recursion in multi-agent hierarchies.
+    preconditions:
+      - spawn_tool.current_depth >= spawn_tool.max_depth
+    postconditions:
+      - result.is_error == true
+      - result.content contains "depth limit"
+    equation: |
+      current_depth ≥ max_depth ⟹ execute() = ToolResult::error("depth limit")
+    module_path: batuta::agent::tool::spawn::SpawnTool::execute
+    test_binding: agent::tool::spawn::tests::test_spawn_tool_depth_limit
+
+  # ==========================================================================
+  # INVARIANT 13: Network Host Allowlist (Poka-Yoke)
+  # ==========================================================================
+  # NetworkTool MUST reject requests to non-allowed hosts.
+
+  - id: INV-013
+    name: network-host-allowlist
+    description: >
+      When the target host is not in allowed_hosts (and no wildcard "*"),
+      NetworkTool.execute() returns an error. No data exfiltration to
+      unauthorized endpoints is possible.
+    preconditions:
+      - "host(url) ∉ allowed_hosts"
+      - "'*' ∉ allowed_hosts"
+    postconditions:
+      - result.is_error == true
+      - "result.content contains 'not in allowed_hosts'"
+    equation: |
+      host ∉ allowed ∧ '*' ∉ allowed ⟹ execute(url) = ToolResult::error
+    module_path: batuta::agent::tool::network::NetworkTool::execute
+    test_binding: agent::tool::network::tests::test_blocked_host
+
+  # ==========================================================================
+  # INVARIANT 14: Inference Timeout Bound
+  # ==========================================================================
+  # InferenceTool has a 300s timeout, longer than default 120s.
+
+  - id: INV-014
+    name: inference-timeout
+    description: >
+      InferenceTool declares a 300-second timeout to allow for complex
+      chain-of-thought reasoning. The tool MUST complete or timeout
+      within this bound.
+    preconditions:
+      - tool.name() == "inference"
+    postconditions:
+      - tool.timeout() == Duration::from_secs(300)
+    equation: |
+      name = "inference" ⟹ timeout = 300s
+    module_path: batuta::agent::tool::inference::InferenceTool::timeout
+    test_binding: agent::tool::inference::tests::test_inference_tool_timeout
+
+  # ==========================================================================
+  # INVARIANT 15: Sovereign Privacy Blocks Network (Poka-Yoke)
+  # ==========================================================================
+  # Sovereign tier MUST NOT permit network egress tools.
+
+  - id: INV-015
+    name: sovereign-blocks-network
+    description: >
+      When the agent manifest has privacy=Sovereign, NetworkTool execute()
+      is blocked by the runtime even if Capability::Network is granted.
+      Defense-in-depth: capability granting does not override privacy tier.
+    preconditions:
+      - manifest.privacy == PrivacyTier::Sovereign
+      - manifest.capabilities contains Capability::Network
+    postconditions:
+      - tool_result.is_error == true
+      - tool_result.content contains "sovereign"
+    equation: |
+      privacy = Sovereign ∧ tool.capability = Network ⟹ tool_denied
+    module_path: batuta::agent::runtime::handle_tool_calls
+    test_binding: agent::runtime::tests_advanced::test_sovereign_privacy_blocks_network
+
+  # ==========================================================================
+  # INVARIANT 16: Token Budget Enforcement
+  # ==========================================================================
+  # When max_tokens_budget is set, cumulative usage must not exceed it.
+
+  - id: INV-016
+    name: token-budget-enforcement
+    description: >
+      When ResourceQuota.max_tokens_budget is Some(budget), the LoopGuard
+      MUST circuit-break once cumulative input+output tokens exceed budget.
+      Warn at 80% threshold. None = unlimited (sovereign local inference).
+    preconditions:
+      - guard.max_tokens_budget.is_some()
+    postconditions:
+      - total_tokens > budget ⟹ CircuitBreak
+      - total_tokens >= 0.8*budget ⟹ Warn
+      - total_tokens < 0.8*budget ⟹ Allow
+    equation: |
+      budget > 0 ∧ (input + output) > budget ⟹ CircuitBreak
+    module_path: batuta::agent::guard::LoopGuard::check_token_budget
+    test_binding: agent::guard::tests::test_token_budget_exhausted
+
+# ============================================================================
+# VERIFICATION TARGETS
+# ============================================================================
+
+verification:
+  unit_tests:
+    - agent::guard::tests::test_iteration_limit
+    - agent::guard::tests::test_warn_at_80_percent
+    - agent::guard::tests::test_tool_call_limit
+    - agent::guard::tests::test_pingpong_detection
+    - agent::guard::tests::test_different_inputs_no_pingpong
+    - agent::guard::tests::test_consecutive_max_tokens
+    - agent::guard::tests::test_max_tokens_reset
+    - agent::guard::tests::test_cost_budget
+    - agent::guard::tests::test_zero_cost_budget_unlimited
+    - agent::guard::tests::test_usage_tracking
+    - agent::guard::tests::test_fx_hash_deterministic
+    - agent::guard::tests::test_fx_hash_different_tools
+    - agent::guard::tests::test_counters
+    - agent::guard::tests::test_token_budget_unlimited
+    - agent::guard::tests::test_token_budget_allow
+    - agent::guard::tests::test_token_budget_warn
+    - agent::guard::tests::test_token_budget_exhausted
+    - agent::runtime::tests::test_single_turn_response
+    - agent::runtime::tests::test_tool_call_and_response
+    - agent::runtime::tests::test_max_iterations_reached
+    - agent::runtime::tests::test_unknown_tool_handled
+    - agent::runtime::tests::test_capability_denied_handled
+    - agent::runtime::tests::test_stream_events_emitted
+    - agent::runtime::tests::test_memories_recalled_into_system
+    - agent::runtime::tests::test_conversation_stored_in_memory
+    - agent::pool::tests::test_pool_capacity_limit
+    - agent::pool::tests::test_pool_fan_out_fan_in
+    - agent::pool::tests::test_pool_join_all
+    - agent::tool::tests::test_sanitize_output_system_injection
+    - agent::tool::tests::test_sanitize_output_case_insensitive
+    - agent::tool::tests::test_sanitize_preserves_non_injection
+    - agent::tool::spawn::tests::test_spawn_tool_depth_limit
+    - agent::tool::network::tests::test_blocked_host
+    - agent::tool::inference::tests::test_inference_tool_timeout
+    - agent::runtime::tests_advanced::test_sovereign_privacy_blocks_network
+
+  coverage_target: 95
+  mutation_target: 80
+  complexity_max_cyclomatic: 30
+  complexity_max_cognitive: 25

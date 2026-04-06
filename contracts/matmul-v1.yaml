@@ -1,0 +1,93 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Matrix multiplication contract for orchestrated similarity computation and TDG adjacency"
+  crate: "batuta"
+  references:
+    - "Goto & Van De Geijn (2008) Anatomy of High-Performance Matrix Multiplication"
+    - "Skiena (2008) The Algorithm Design Manual, Ch. 13.7"
+
+equations:
+  matmul_definition:
+    formula: "C[i,j] = Sum_{k=0}^{K-1} A[i,k] * B[k,j]"
+    domain: "A in R^{M x K}, B in R^{K x N}, C in R^{M x N}"
+    invariants:
+      - "Inner dimensions must match: A.cols == B.rows"
+      - "Output shape: (A.rows, B.cols)"
+  similarity_matrix:
+    formula: "S[i,j] = cosine(embed_i, embed_j) = (embed_i . embed_j) / (||embed_i|| * ||embed_j||)"
+    domain: "embed in R^{n x d}, d > 0"
+    invariants:
+      - "S[i,j] in [-1.0, 1.0]"
+      - "S[i,i] = 1.0 (self-similarity)"
+      - "S[i,j] = S[j,i] (symmetric)"
+  adjacency_product:
+    formula: "reachability(k) = A^k where A is boolean adjacency matrix"
+    domain: "A in {0,1}^{n x n}, k >= 1"
+    invariants:
+      - "A^k[i,j] > 0 iff path of length k exists from i to j"
+
+proof_obligations:
+  - type: invariant
+    property: "Dimension compatibility"
+    formal: "A.cols != B.rows implies matmul(A, B) returns Err"
+    applies_to: all
+  - type: invariant
+    property: "Output shape"
+    formal: "matmul(A, B).shape == (A.rows, B.cols)"
+    applies_to: all
+  - type: bound
+    property: "Cosine similarity in [-1, 1]"
+    formal: "-1.0 <= cosine(a, b) <= 1.0 for non-zero vectors"
+    applies_to: all
+  - type: invariant
+    property: "Similarity matrix symmetric"
+    formal: "S[i,j] == S[j,i] within epsilon"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BMM-001
+    rule: "Dimension check"
+    test: "test_matrix_dimensions_valid"
+    prediction: "verified"
+    if_fails: "Accepts incompatible dimensions"
+  - id: FALSIFY-BMM-002
+    rule: "Output shape"
+    test: "test_matmul_output_shape"
+    prediction: "verified"
+    if_fails: "Wrong output dimensions"
+  - id: FALSIFY-BMM-003
+    rule: "Cosine bounded"
+    test: "test_NC_07_cosine_normalization"
+    prediction: "verified"
+    if_fails: "Cosine similarity outside [-1, 1]"
+  - id: FALSIFY-BMM-004
+    rule: "Similarity symmetric"
+    test: "test_dot_product_computation"
+    prediction: "verified"
+    if_fails: "Asymmetric similarity computation"
+
+kani_harnesses:
+  - id: KANI-BMM-001
+    obligation: PO-BMM-001
+    property: "Dimension compatibility"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_matmul_dimensions
+  - id: KANI-BMM-002
+    obligation: PO-BMM-003
+    property: "Cosine bound"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_cosine_bound
+
+qa_gate:
+  id: QA-BMATMUL
+  name: "matmul contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_matrix_dimensions_valid
+    - test_matmul_output_shape
+    - test_NC_07_cosine_normalization
+    - test_similarity_matrix_symmetric

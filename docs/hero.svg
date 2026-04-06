@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#ff6b6b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <g transform="translate(640, 280)">
+    <circle r="120" fill="none" stroke="url(#accent)" stroke-width="3" opacity="0.3"/>
+    <circle r="90" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.5"/>
+    <circle r="60" fill="url(#accent)" opacity="0.8"/>
+    <path d="M-30,-20 L0,-40 L30,-20 L30,20 L0,40 L-30,20 Z" fill="#fff" opacity="0.9"/>
+    <circle r="15" fill="#1a1a2e"/>
+  </g>
+  <text x="640" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">batuta</text>
+  <text x="640" y="530" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">Sovereign AI Stack Orchestrator</text>
+  <g transform="translate(100, 580)" opacity="0.6">
+    <rect width="80" height="4" rx="2" fill="url(#accent)"/>
+    <rect x="100" width="60" height="4" rx="2" fill="#444"/>
+    <rect x="180" width="40" height="4" rx="2" fill="#444"/>
+  </g>
+</svg>

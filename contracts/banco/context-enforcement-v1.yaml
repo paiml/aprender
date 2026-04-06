@@ -1,0 +1,86 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-19"
+  author: "PAIML Engineering"
+  description: "Context window enforcement — never exceed model token limits"
+  references:
+    - "Banco Spec §5: Architecture (ContextManager)"
+  depends_on: []
+
+equations:
+  fits:
+    formula: "fits(msgs) = estimate_tokens(msgs) ≤ available_input()"
+    domain: "msgs ∈ Vec<ChatMessage>"
+    codomain: "bool"
+    invariants:
+      - "available_input = max_tokens - output_reserve"
+      - "estimate_tokens uses ~4 chars/token heuristic + 4 tokens per message overhead"
+
+  truncate:
+    formula: "truncate(msgs) → msgs' where fits(msgs') = true"
+    domain: "msgs ∈ Vec<ChatMessage>, strategy ∈ {SlidingWindow, MiddleOut, Error}"
+    codomain: "Result<Vec<ChatMessage>, ContextError>"
+    invariants:
+      - "SlidingWindow: keeps most recent messages + system prompt"
+      - "MiddleOut: keeps first and last messages, removes middle"
+      - "Error: returns Err if truncation needed"
+      - "Output always fits within context window"
+
+  available_input:
+    formula: "available_input() = max_tokens - output_reserve"
+    domain: "max_tokens ∈ ℕ, output_reserve ∈ ℕ"
+    codomain: "ℕ (saturating subtraction)"
+    invariants:
+      - "output_reserve ≤ max_tokens (no negative available)"
+
+proof_obligations:
+  - type: bound
+    property: "Truncated output fits within context"
+    formal: "estimate_tokens(truncate(msgs).unwrap()) ≤ available_input()"
+    applies_to: all
+  - type: monotonicity
+    property: "More messages means more tokens"
+    formal: "msgs₁ ⊆ msgs₂ → estimate_tokens(msgs₁) ≤ estimate_tokens(msgs₂)"
+    applies_to: all
+  - type: invariant
+    property: "Error strategy refuses truncation"
+    formal: "strategy = Error ∧ ¬fits(msgs) → truncate(msgs) = Err(ExceedsLimit)"
+    applies_to: all
+  - type: invariant
+    property: "Fits messages pass through unchanged"
+    formal: "fits(msgs) → truncate(msgs) = Ok(msgs)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CTX-001
+    rule: "Truncated always fits"
+    prediction: "truncate(msgs) → fits(result) for SlidingWindow and MiddleOut"
+    test: "test_SERVE_CTX_004_sliding_window_truncation"
+    if_fails: "Truncation underestimates or miscounts tokens"
+  - id: FALSIFY-CTX-002
+    rule: "Error strategy rejects"
+    prediction: "truncate with Error strategy on oversized input → Err"
+    test: "test_SERVE_CTX_003_truncate_error_strategy"
+    if_fails: "Error strategy silently truncates instead of failing"
+  - id: FALSIFY-CTX-003
+    rule: "Token count monotonicity"
+    prediction: "Adding a message never decreases estimated token count"
+    test: "test_SERVE_CTX_002_estimate_messages"
+    if_fails: "Token estimator has negative contribution for some message"
+  - id: FALSIFY-CTX-004
+    rule: "Passthrough on fit"
+    prediction: "Small message set passes through truncate unchanged"
+    test: "test_SERVE_CTX_003_truncate_not_needed"
+    if_fails: "Truncation modifies messages that already fit"
+
+kani_harnesses:
+  - id: KANI-CTX-001
+    obligation: "Truncated fits"
+    bound: 16
+    strategy: bounded_int
+    harness: "verify_truncated_messages_fit_context"
+  - id: KANI-CTX-002
+    obligation: "Passthrough"
+    bound: 4
+    strategy: bounded_int
+    harness: "verify_fitting_messages_unchanged"

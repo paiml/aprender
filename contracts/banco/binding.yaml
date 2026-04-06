@@ -1,0 +1,133 @@
+# Banco provable contracts → implementation binding registry
+# Verified by: pv audit --binding contracts/banco/binding.yaml
+version: "1.0.0"
+project: batuta
+module_root: batuta
+
+bindings:
+  # ============================================================================
+  # privacy-enforcement-v1.yaml
+  # ============================================================================
+  - contract: privacy-enforcement-v1.yaml
+    equation: sovereign_gate
+    module_path: "batuta::serve::backends::PrivacyTier"
+    function: "allows"
+    signature: "fn allows(&self, backend: ServingBackend) -> bool"
+    status: implemented
+    notes: "Match on self (Sovereign/Private/Standard) × backend.is_local()"
+
+  - contract: privacy-enforcement-v1.yaml
+    equation: middleware_header
+    module_path: "batuta::serve::banco::middleware"
+    function: "privacy_layer"
+    signature: "async fn privacy_layer(tier: PrivacyTier, request: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode>"
+    status: implemented
+    notes: "Inserts x-privacy-tier header on every response"
+
+  - contract: privacy-enforcement-v1.yaml
+    equation: sovereign_rejection
+    module_path: "batuta::serve::banco::middleware"
+    function: "privacy_layer"
+    signature: "async fn privacy_layer(tier: PrivacyTier, request: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode>"
+    status: implemented
+    notes: "Checks x-banco-backend header against local backend list in Sovereign mode"
+
+  # ============================================================================
+  # budget-conservation-v1.yaml
+  # ============================================================================
+  - contract: budget-conservation-v1.yaml
+    equation: budget_check
+    module_path: "batuta::serve::circuit_breaker::CostCircuitBreaker"
+    function: "check"
+    signature: "fn check(&self, estimated_cost_usd: f64) -> Result<(), CircuitBreakerError>"
+    status: implemented
+    notes: "Checks per-request limit first, then circuit state, then budget"
+
+  - contract: budget-conservation-v1.yaml
+    equation: record
+    module_path: "batuta::serve::circuit_breaker::CostCircuitBreaker"
+    function: "record"
+    signature: "fn record(&self, actual_cost_usd: f64)"
+    status: implemented
+    notes: "Atomic millicent accumulation via AtomicU64"
+
+  - contract: budget-conservation-v1.yaml
+    equation: per_request_limit
+    module_path: "batuta::serve::circuit_breaker::CostCircuitBreaker"
+    function: "check"
+    signature: "fn check(&self, estimated_cost_usd: f64) -> Result<(), CircuitBreakerError>"
+    status: implemented
+    notes: "Per-request check is first branch in check() method"
+
+  # ============================================================================
+  # routing-determinism-v1.yaml
+  # ============================================================================
+  - contract: routing-determinism-v1.yaml
+    equation: route
+    module_path: "batuta::serve::router::SpilloverRouter"
+    function: "route"
+    signature: "fn route(&self) -> RoutingDecision"
+    status: implemented
+    notes: "Reads atomic queue depths, no randomness"
+
+  - contract: routing-determinism-v1.yaml
+    equation: find_spillover
+    module_path: "batuta::serve::router::SpilloverRouter"
+    function: "find_available_spillover"
+    signature: "fn find_available_spillover(&self) -> Option<ServingBackend>"
+    status: implemented
+    notes: "Private method; iterates spillover_backends with privacy + depth filter"
+
+  # ============================================================================
+  # context-enforcement-v1.yaml
+  # ============================================================================
+  - contract: context-enforcement-v1.yaml
+    equation: fits
+    module_path: "batuta::serve::context::ContextManager"
+    function: "fits"
+    signature: "fn fits(&self, messages: &[ChatMessage]) -> bool"
+    status: implemented
+    notes: "Delegates to TokenEstimator::estimate_messages"
+
+  - contract: context-enforcement-v1.yaml
+    equation: truncate
+    module_path: "batuta::serve::context::ContextManager"
+    function: "truncate"
+    signature: "fn truncate(&self, messages: &[ChatMessage]) -> Result<Vec<ChatMessage>, ContextError>"
+    status: implemented
+    notes: "Branches on TruncationStrategy (SlidingWindow, MiddleOut, Error)"
+
+  - contract: context-enforcement-v1.yaml
+    equation: available_input
+    module_path: "batuta::serve::context::ContextWindow"
+    function: "available_input"
+    signature: "fn available_input(&self) -> usize"
+    status: implemented
+    notes: "const fn using saturating_sub"
+
+  # ============================================================================
+  # template-correctness-v1.yaml
+  # ============================================================================
+  - contract: template-correctness-v1.yaml
+    equation: apply
+    module_path: "batuta::serve::templates::ChatTemplateEngine"
+    function: "apply"
+    signature: "fn apply(&self, messages: &[ChatMessage]) -> String"
+    status: implemented
+    notes: "Dispatches on self.format to format-specific private methods"
+
+  - contract: template-correctness-v1.yaml
+    equation: apply_raw
+    module_path: "batuta::serve::templates::ChatTemplateEngine"
+    function: "apply_raw"
+    signature: "fn apply_raw(&self, messages: &[ChatMessage]) -> String"
+    status: implemented
+    notes: "Private method; joins message contents with newline"
+
+  - contract: template-correctness-v1.yaml
+    equation: from_model_name
+    module_path: "batuta::serve::templates::TemplateFormat"
+    function: "from_model_name"
+    signature: "fn from_model_name(name: &str) -> Self"
+    status: implemented
+    notes: "Pattern matching on lowercase model name"

@@ -1,0 +1,3526 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/batuta
+roadmap:
+- id: INTEG-001
+  github_issue: null
+  item_type: task
+  title: End-to-end Sovereign Stack example
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/initial-release-spec.md
+  acceptance_criteria:
+  - Full workflow demo showing pacha → realizar → batuta integration
+  - Model registration with content addressing
+  - Ed25519 signature generation and verification
+  - ChaCha20-Poly1305 encryption and decryption
+  - Privacy tier enforcement (Sovereign mode)
+  - Comprehensive tests with ≥85% coverage
+  phases: []
+  subtasks: []
+  estimated_effort: 2 days
+  labels:
+  - integration
+  - sovereign-stack
+  - e2e
+  notes: Per Initial Release Specification §2-6
+- id: INTEG-002
+  github_issue: null
+  item_type: task
+  title: Cross-project integration tests
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/initial-release-spec.md
+  acceptance_criteria:
+  - Integration tests for pacha → realizar pipeline
+  - Signature verification in serving pipeline
+  - Encryption/decryption in inference loop
+  - Privacy tier enforcement blocks unauthorized backends
+  - Property-based tests for security guarantees
+  phases: []
+  subtasks: []
+  estimated_effort: 3 days
+  labels:
+  - integration
+  - testing
+  - tdd
+  notes: Cross-project validation per spec
+- id: INTEG-003
+  github_issue: null
+  item_type: task
+  title: Pacha URI scheme in realizar
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/initial-release-spec.md
+  acceptance_criteria:
+  - Support pacha://model:version URI scheme
+  - Automatic metadata retrieval from pacha registry
+  - Lineage propagation to inference metrics
+  - Unit tests for URI parsing
+  phases: []
+  subtasks: []
+  estimated_effort: 1 day
+  labels:
+  - pacha
+  - realizar
+  - uri
+  notes: Enables direct registry integration
+- id: QA-SEC4
+  github_issue: null
+  item_type: task
+  title: 'QA Checklist Section IV: Orchestration & Stack Health'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - '[31] Dependency Graph visualization'
+  - '[32] Cycle Detection passes'
+  - '[33] Path vs Crates.io verification'
+  - '[34] Version Alignment check'
+  - '[35] Release Topological Sort'
+  - '[36] TUI Dashboard renders'
+  - '[37] Git Tag Sync'
+  - '[38] Orphan Detection'
+  - '[39] CI Integration JSON output'
+  - '[40] Performance < 500ms'
+  phases: []
+  subtasks: []
+  estimated_effort: 1 day
+  labels:
+  - qa
+  - batuta
+  - toyota-way
+  notes: Items 31-40 from 100-point QA checklist
+- id: QA-SEC5
+  github_issue: null
+  item_type: task
+  title: 'QA Checklist Section V: PMAT Compliance & Quality'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - '[41] TDG Baseline > 90/100'
+  - '[42] Test Coverage > 85%'
+  - '[43] Mutation Testing active'
+  - '[44] SATD Detection < 10 items'
+  - '[45] Linter Compliance (zero warnings)'
+  - '[46] Formatting 100% standard'
+  - '[47] Security Audit (zero vulns)'
+  - '[48] Dependency Freshness'
+  - '[49] Clean Architecture'
+  - '[50] Golden Traces verification'
+  phases: []
+  subtasks: []
+  estimated_effort: 1 day
+  labels:
+  - qa
+  - pmat
+  - quality
+  notes: Items 41-50 from 100-point QA checklist
+- id: QA-PERF
+  github_issue: null
+  item_type: task
+  title: '[40] Performance Optimization - Crates.io Caching'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Implement in-memory cache for crates.io responses
+  - Add --offline mode for CI environments
+  - Stack check completes in < 500ms with warm cache
+  - Unit tests for cache hit/miss scenarios
+  - Property-based tests for cache consistency
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - qa
+  - performance
+  - caching
+  notes: QA Item 40 - Performance must be < 500ms
+- id: QA-TUI
+  github_issue: null
+  item_type: task
+  title: '[36] TUI Dashboard Implementation'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Interactive terminal UI for stack visualization
+  - Real-time dependency graph display
+  - Health status indicators with colors
+  - Keyboard navigation support
+  - Unit tests for TUI components
+  phases: []
+  subtasks: []
+  estimated_effort: 6 hours
+  labels:
+  - qa
+  - tui
+  - visualization
+  notes: QA Item 36 - TUI Dashboard for stack monitoring
+- id: PMAT-UNWRAP
+  github_issue: null
+  item_type: task
+  title: '[41] CRITICAL: Replace 134 unwrap() calls with proper error handling'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2026-02-09T10:15:53.907410516+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Replace all unwrap() in production code with expect() or ? operator
+  - Add context to error messages
+  - Zero unwrap() in critical paths (per Cloudflare 2025-11-18 outage)
+  - pmat rust-project-score Known Defects = 20/20
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - pmat
+  - quality
+  - critical
+  notes: 'Per pmat rust-project-score: 134 unwrap() calls detected'
+- id: PMAT-LINTS
+  github_issue: null
+  item_type: task
+  title: '[41] Add workspace lints to Cargo.toml'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Add [workspace.lints.rust] section
+  - Add [workspace.lints.clippy] section
+  - Enable unsafe_op_in_unsafe_fn, unreachable_pub, checked_conversions
+  - Create .clippy.toml with disallowed-methods
+  phases: []
+  subtasks: []
+  estimated_effort: 1 hour
+  labels:
+  - pmat
+  - linting
+  - ci
+  notes: 'Per pmat rust-project-score: CI/CD score 28.5%'
+- id: PMAT-DENY
+  github_issue: null
+  item_type: task
+  title: '[41] Add deny.toml for dependency policy'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Create deny.toml with license policy
+  - Add banned crates list
+  - Configure advisory database checks
+  - Integrate with CI via make deny
+  phases: []
+  subtasks: []
+  estimated_effort: 1 hour
+  labels:
+  - pmat
+  - security
+  - dependencies
+  notes: 'Per pmat rust-project-score: Dependency Health 58.3%'
+- id: PMAT-MUTANTS
+  github_issue: null
+  item_type: task
+  title: '[44] Mutation Testing - Tool Active'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - cargo mutants --list finds mutants - 354 mutants identified
+  - Tool is active and integrated with CI
+  - make mutants-fast target available
+  phases: []
+  subtasks: []
+  estimated_effort: 2 hours
+  labels:
+  - pmat
+  - testing
+  - mutation
+  notes: QA Item 44 - Mutants identified (tool is active). 354 mutants found.
+- id: PMAT-CLIPPY
+  github_issue: null
+  item_type: task
+  title: '[46] Linter Compliance - Zero clippy warnings'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - cargo clippy -- -D warnings passes
+  - Correctness lints set to deny
+  - Perf/style lints set to warn
+  phases: []
+  subtasks: []
+  estimated_effort: 1 hour
+  labels:
+  - pmat
+  - linting
+  - qa
+  notes: QA Item 46 - Zero warnings allowed
+- id: PMAT-FMT
+  github_issue: null
+  item_type: task
+  title: '[47] Formatting - 100% cargo fmt compliance'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - cargo fmt -- --check passes
+  - All code follows standard Rust formatting
+  phases: []
+  subtasks: []
+  estimated_effort: 30 minutes
+  labels:
+  - pmat
+  - formatting
+  - qa
+  notes: QA Item 47 - Standard Rust formatting
+- id: PMAT-AUDIT
+  github_issue: null
+  item_type: task
+  title: '[48] Security Audit - Zero vulnerabilities'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - cargo audit passes (no vulnerabilities)
+  - Only warning is paste crate unmaintained (known, ignored)
+  phases: []
+  subtasks: []
+  estimated_effort: 30 minutes
+  labels:
+  - pmat
+  - security
+  - qa
+  notes: QA Item 48 - Zero vulnerabilities detected
+- id: PMAT-OUTDATED
+  github_issue: null
+  item_type: task
+  title: '[49] Dependency Freshness - No critical outdated deps'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - cargo outdated reviewed
+  - No critical security-related outdated deps
+  - Major version updates deferred (potential breaking changes)
+  phases: []
+  subtasks: []
+  estimated_effort: 30 minutes
+  labels:
+  - pmat
+  - dependencies
+  - qa
+  notes: QA Item 49 - Dependency freshness checked
+- id: PMAT-TDG
+  github_issue: null
+  item_type: task
+  title: '[42] TDG Baseline - Score > 90/100'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - pmat tdg score > 90/100 (A- grade)
+  - 'Score achieved: 96.6/100 (A+)'
+  phases: []
+  subtasks: []
+  estimated_effort: 30 minutes
+  labels:
+  - pmat
+  - quality
+  - qa
+  notes: QA Item 42 - TDG Baseline
+- id: PMAT-SATD
+  github_issue: null
+  item_type: task
+  title: '[45] SATD Detection - < 10 items'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - SATD count < 10 items
+  - Reduced from 12 to 6 items
+  - Converted TODOs to roadmap documentation
+  phases: []
+  subtasks: []
+  estimated_effort: 1 hour
+  labels:
+  - pmat
+  - quality
+  - qa
+  notes: QA Item 45 - SATD Detection
+- id: PMAT-ARCH
+  github_issue: null
+  item_type: task
+  title: '[50] Clean Architecture - No layer violations'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - batuta stack check passes
+  - All 7 crates healthy
+  - No layer boundary violations
+  phases: []
+  subtasks: []
+  estimated_effort: 30 minutes
+  labels:
+  - pmat
+  - architecture
+  - qa
+  notes: QA Item 50 - Clean Architecture check
+- id: PMAT-COVERAGE
+  github_issue: null
+  item_type: task
+  title: '[43] Test Coverage - > 85%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - make coverage or tarpaulin > 85%
+  - All tests pass (1019 tests)
+  - Achieved 94.91% line coverage
+  phases: []
+  subtasks: []
+  estimated_effort: 2 hours
+  labels:
+  - pmat
+  - testing
+  - qa
+  notes: QA Item 43 - Test Coverage - 94.91% achieved
+- id: PMAT-TRACES
+  github_issue: null
+  item_type: task
+  title: '[51] Golden Traces - Renacer verification'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-06T00:00:00+00:00
+  updated: 2025-12-06T00:00:00+00:00
+  spec: docs/specifications/batuta-stack-0.1-100-point-qa-checklist.md
+  acceptance_criteria:
+  - Golden traces captured for all examples
+  - orchestration_latency < 5000ms - PASS
+  - max_syscall_budget < 10000 syscalls - PASS
+  - memory_allocation_budget < 1GB - PASS
+  - Trace summaries generated with syscall statistics
+  phases: []
+  subtasks: []
+  estimated_effort: 1 hour
+  labels:
+  - pmat
+  - traces
+  - qa
+  notes: QA Item 51 - Golden Traces verification via renacer
+- id: STACK-AUDIT
+  github_issue: null
+  item_type: task
+  title: 'New task: STACK-AUDIT'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-07T13:11:35.842705416+00:00
+  updated: 2026-01-15T22:55:19.696504972+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: COURSE-LEVELS
+  github_issue: null
+  item_type: task
+  title: 'New task: COURSE-LEVELS'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-07T15:46:57.018942575+00:00
+  updated: 2025-12-07T15:48:07.938368449+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: BOOK-SCORE
+  github_issue: null
+  item_type: task
+  title: 'New task: BOOK-SCORE'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-22T11:12:29.150989393+00:00
+  updated: 2025-12-22T11:17:31.548902413+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: SCORE-A-PLUS
+  github_issue: null
+  item_type: task
+  title: 'New task: SCORE-A-PLUS'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-22T11:18:36.593017898+00:00
+  updated: 2025-12-22T11:22:06.543122824+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-STACK-GATES
+  github_issue: null
+  item_type: task
+  title: Integrate PMAT quality gates into stack release pipeline
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-13T00:00:00+00:00
+  updated: 2026-01-13T12:28:36.646341910+00:00
+  spec: null
+  acceptance_criteria:
+  - Add pmat quality-gate check to preflight
+  - Add pmat tdg scoring check with configurable threshold
+  - Add pmat analyze dead-code check
+  - Add pmat popper-score check for falsifiability
+  - Add pmat analyze complexity check
+  - Add pmat analyze satd check for tech debt
+  - Add pmat five-whys integration for failure diagnosis
+  - All checks configurable via ReleaseConfig
+  - Tests for all new checks
+  phases: []
+  subtasks: []
+  estimated_effort: 1 day
+  labels:
+  - pmat
+  - quality
+  - stack
+  - release
+  notes: Prevent quality issues before stack deployment
+- id: DEP-REDUCE
+  github_issue: null
+  item_type: task
+  title: Reduce external dependencies - replace with PAIML stack components
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-13T00:00:00+00:00
+  updated: 2026-01-13T12:45:21.985040892+00:00
+  spec: null
+  acceptance_criteria:
+  - Replace regex-lite with string methods (3 patterns)
+  - Replace colored with ANSI constants module
+  - Migrate petgraph to trueno-graph for dependency analysis
+  - Remove unused dependencies from Cargo.toml
+  - All tests pass
+  - Binary size reduced by ~400KB
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - dependencies
+  - optimization
+  - paiml-stack
+  notes: Dogfood PAIML stack components instead of external deps
+- id: ORACLE-LOCAL
+  github_issue: null
+  item_type: task
+  title: Local workspace oracle for multi-project development
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-14T00:00:00+00:00
+  updated: 2026-01-15T22:52:32.134043386+00:00
+  spec: null
+  acceptance_criteria:
+  - Auto-discover PAIML projects in ~/src (scan for Cargo.toml)
+  - Track git status across all discovered projects
+  - Build cross-project dependency graph using trueno-graph
+  - Detect version drift (local version vs crates.io version)
+  - Suggest publish order for dependent crates (topological sort)
+  - Single command interface - batuta oracle status
+  - Performance < 500ms with warm cache
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - oracle
+  - multi-project
+  - workspace
+  - trueno-graph
+  notes: Enables intelligent orchestration across 10+ local PAIML projects
+- id: PMAT-004
+  github_issue: null
+  item_type: task
+  title: Document CPU thread optimization findings
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-15T22:52:56Z
+  updated: 2026-01-15T22:53:52.021086127+00:00
+  spec: null
+  acceptance_criteria:
+  - Document the 2.05x speedup discovery from reducing rayon thread count from 48 to 16. Add performance tuning section to batuta book.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - docs
+  - perf
+  notes: null
+- id: SIMD-EXP
+  github_issue: null
+  item_type: task
+  title: SIMD exp approximation for 2-3x softmax speedup
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-16T00:00:00+00:00
+  updated: 2026-01-16T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement polynomial exp approximation (ggml_v_expf equivalent)
+  - AVX2 and AVX-512 variants
+  - Unit tests with <1e-5 error vs std exp
+  - BrickProfiler benchmarks showing 2-3x improvement
+  - 95% test coverage
+  phases: []
+  subtasks: []
+  estimated_effort: 4 hours
+  labels:
+  - trueno
+  - simd
+  - performance
+  notes: Match llama.cpp performance for softmax
+- id: QUANT-Q5K
+  github_issue: null
+  item_type: task
+  title: Add Q5_K and Q6_K quantization formats
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-16T00:00:00+00:00
+  updated: 2026-01-16T00:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - Q5_K block format (5-bit with super-blocks)
+  - Q6_K block format (6-bit with super-blocks)
+  - Dequantize and dot product kernels
+  - Unit tests and property-based tests
+  - 95% test coverage
+  phases: []
+  subtasks: []
+  estimated_effort: 6 hours
+  labels:
+  - trueno
+  - quantization
+  - llama-compat
+  notes: Extended quantization formats for mejor model support
+- id: GH-18
+  github_issue: 18
+  item_type: task
+  title: 'bug-hunter: Improve lcov.info path detection for SBFL analysis'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T14:04:35.768632865+00:00
+  updated: 2026-02-09T10:16:20.065193052+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-19
+  github_issue: 19
+  item_type: task
+  title: 'bug-hunter fuzz: Skip BH-FUZZ-NOTARGETS for #![forbid(unsafe_code)] crates'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T14:09:12.476631222+00:00
+  updated: 2026-02-09T11:17:59.401774190+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: RAG-SQLITE-CLEANUP
+  github_issue: null
+  item_type: task
+  title: 'New task: RAG-SQLITE-CLEANUP'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T09:21:40.513041004+00:00
+  updated: 2026-02-09T09:59:19.529270950+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Phase 3 cleanup: gated JSON types behind cfg, routed pmat_query through SQLite, deduplicated sqlite_index_path, fixed clippy. Remaining: delete .bak files after release cycle.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-23
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-23'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T10:18:12.544059064+00:00
+  updated: 2026-02-09T10:25:53.622730966+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-22
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-22'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T10:26:04.855564972+00:00
+  updated: 2026-02-09T11:07:40.123628442+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-9
+  github_issue: 9
+  item_type: task
+  title: 'feat: Add release orchestration for PAIML stack dependencies'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T11:08:50.096913040+00:00
+  updated: 2026-02-09T11:33:22Z
+  spec: null
+  acceptance_criteria:
+  - Dependency graph analysis across local workspace
+  - Topological sort for release order
+  - Pre-flight quality checks (lint, coverage, git status)
+  - Automatic Cargo.toml dependency updates
+  - Interactive confirmation before each publish
+  - Post-release verification (crates.io availability)
+  - Dry-run mode for planning
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-14
+  github_issue: 14
+  item_type: task
+  title: 'RFC: Ollama-style CLI location - realizar vs batuta'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T11:18:07.816849610+00:00
+  updated: 2026-02-09T11:33:27Z
+  spec: null
+  acceptance_criteria:
+  - Decision documented in ADR
+  - CLI location determined
+  - Command structure defined (`run`, `pull`, `list`, `serve`, `chat`)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-11
+  github_issue: 11
+  item_type: task
+  title: 'feat: Add MCP server for HuggingFace integration tools'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T11:19:38.747089510+00:00
+  updated: 2026-02-09T11:33:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-024
+  github_issue: null
+  item_type: task
+  title: Implement build command - Phase 5 pipeline (BATUTA-009)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T11:55:16Z
+  updated: 2026-02-09T11:59:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-025
+  github_issue: null
+  item_type: task
+  title: Implement optimize command - Phase 3 pipeline (BATUTA-007)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T12:46:31Z
+  updated: 2026-02-09T12:46:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-026
+  github_issue: null
+  item_type: task
+  title: Implement Ruchy REPL in transpile command
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T14:06:33Z
+  updated: 2026-02-09T14:08:30Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-027
+  github_issue: null
+  item_type: task
+  title: 'Implement cmd_validate sub-features: diff_output, run_original_tests, benchmark'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T14:13:54Z
+  updated: 2026-02-09T14:13:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-028
+  github_issue: null
+  item_type: task
+  title: Update book, examples, and CLI reference documentation
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T14:23:31Z
+  updated: 2026-02-09T14:23:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: SQI-055
+  github_issue: null
+  item_type: task
+  title: 'New task: SQI-055'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-28T22:19:50.874080982+00:00
+  updated: 2026-02-28T22:19:50.874080982+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-056
+  github_issue: null
+  item_type: task
+  title: 'Fix nightly CI: patch path dependencies'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-10T12:56:14Z
+  updated: 2026-03-10T12:56:16.519769707+00:00
+  spec: null
+  acceptance_criteria:
+  - Patch path deps (trueno-rag, trueno-cuda-edge) in nightly.yml so CI builds without local sibling repos
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-057
+  github_issue: null
+  item_type: task
+  title: 'Banco: unified AI studio interface (batuta serve --banco)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-18T20:58:21Z
+  updated: 2026-03-19T12:15:15Z
+  spec: null
+  acceptance_criteria:
+  - 'Add Banco, a local-first AI workbench UI served by batuta. Phase 1: HTTP API foundation with model management (pacha), inference with SSE streaming (realizar), and OpenAI-compatible endpoints. Privacy tier middleware using existing BackendSelector. Feature-gated behind ''banco'' flag.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - banco
+  - studio
+  - serve
+  - api
+  notes: null
+- id: PMAT-058
+  github_issue: null
+  item_type: task
+  title: 'Banco provable contracts: 5 YAML contracts + binding registry + spec title fix'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T15:24:31Z
+  updated: 2026-03-19T15:28:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-059
+  github_issue: null
+  item_type: task
+  title: 'Banco: generate provable contract tests + wire into banco test suite'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T15:30:49Z
+  updated: 2026-03-19T15:33:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-060
+  github_issue: null
+  item_type: task
+  title: 'Banco P0 cross-cutting: OpenAI SDK compat (Role fix + /v1/ routes), config persistence, no-telemetry'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T15:35:25Z
+  updated: 2026-03-19T15:44:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-061
+  github_issue: null
+  item_type: task
+  title: 'STOP THE LINE: fix pre-push clippy gate — allow unwrap_used/float_cmp in test code + fix 16 real lint errors'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T15:54:32Z
+  updated: 2026-03-19T16:38:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-062
+  github_issue: null
+  item_type: task
+  title: 'Banco: book chapter + cookbook recipe + P1 tokenizer endpoint'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T16:47:38Z
+  updated: 2026-03-19T16:59:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-063
+  github_issue: null
+  item_type: task
+  title: 'Banco P1: embeddings endpoint + request audit logging middleware'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T17:01:16Z
+  updated: 2026-03-19T17:06:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-064
+  github_issue: null
+  item_type: task
+  title: 'Banco P1: conversation persistence (create, list, get, delete, auto-title)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-19T20:26:45Z
+  updated: 2026-03-19T20:32:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-065
+  github_issue: null
+  item_type: task
+  title: 'Banco P2: system prompt presets + Ollama API compat layer'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T06:20:00Z
+  updated: 2026-03-20T06:24:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-066
+  github_issue: null
+  item_type: task
+  title: 'Banco P2: API key authentication for LAN access'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T07:48:10Z
+  updated: 2026-03-20T07:51:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-067
+  github_issue: null
+  item_type: task
+  title: 'Banco: CORS middleware + book SUMMARY entry + banco module file size check'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T07:56:49Z
+  updated: 2026-03-20T08:00:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-068
+  github_issue: null
+  item_type: task
+  title: 'Banco: wire config.toml into startup + split handlers.rs before 500-line limit'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T08:02:28Z
+  updated: 2026-03-20T08:05:25Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-069
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2a: model slot + load/unload/status endpoints + --model CLI flag'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T12:59:06Z
+  updated: 2026-03-20T13:04:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-070
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2a: inference parameter tuning (GET/PUT /api/v1/chat/parameters)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T13:07:49Z
+  updated: 2026-03-20T13:10:25Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-071
+  github_issue: null
+  item_type: task
+  title: 'Banco: split types.rs by domain + comprehensive cookbook update'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T13:12:03Z
+  updated: 2026-03-20T13:15:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-072
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2a final: response_format field + book banco chapter update + pmat checkpoint'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T13:17:45Z
+  updated: 2026-03-20T13:20:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-073
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2b: realizar GGUF metadata loading behind inference feature'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T14:11:55Z
+  updated: 2026-03-20T14:16:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-074
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2b: store OwnedQuantizedModel + vocab in model slot'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T14:20:02Z
+  updated: 2026-03-20T14:23:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-075
+  github_issue: null
+  item_type: task
+  title: 'Banco Phase 2b: inference-aware chat handler + update book/cookbook/spec'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T14:27:01Z
+  updated: 2026-03-20T14:30:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-076
+  github_issue: null
+  item_type: task
+  title: 'STOP THE LINE: fix 11 flaky tests with unique temp directory paths'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T14:39:05Z
+  updated: 2026-03-20T14:47:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-077
+  github_issue: null
+  item_type: task
+  title: 'PMAT-077: Wire realizar inference loop into banco chat handler'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T15:31:52Z
+  updated: 2026-03-20T15:53:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-078
+  github_issue: null
+  item_type: task
+  title: 'PMAT-078: Wire real tokenizer into tokenize/detokenize endpoints when model loaded'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T15:46:58Z
+  updated: 2026-03-20T15:53:42Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-079
+  github_issue: null
+  item_type: task
+  title: 'PMAT-079: Add Phase 2b integration tests for inference pipeline'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T15:53:52Z
+  updated: 2026-03-20T15:57:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-080
+  github_issue: null
+  item_type: task
+  title: 'PMAT-080: Real embeddings from model embedding layer when inference enabled'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:00:57Z
+  updated: 2026-03-20T16:05:22Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-081
+  github_issue: null
+  item_type: task
+  title: 'PMAT-081: Add Ollama generate endpoint + update spec status to Phase 2b complete'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:08:52Z
+  updated: 2026-03-20T16:14:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-082
+  github_issue: null
+  item_type: task
+  title: 'PMAT-082: Conversation export/import endpoints'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:14:45Z
+  updated: 2026-03-20T16:21:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-083
+  github_issue: null
+  item_type: task
+  title: 'PMAT-083: Phase 3 foundation — file upload, list, delete endpoints with storage module'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:23:09Z
+  updated: 2026-03-20T16:32:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-084
+  github_issue: null
+  item_type: task
+  title: 'PMAT-084: Data recipes engine — create, run, list recipes with chunk+format steps'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:33:23Z
+  updated: 2026-03-20T16:42:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-085
+  github_issue: null
+  item_type: task
+  title: 'PMAT-085: Built-in RAG pipeline — index uploaded docs, retrieve in chat'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T16:52:05Z
+  updated: 2026-03-20T17:14:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-086
+  github_issue: null
+  item_type: task
+  title: 'PMAT-086: Eval endpoints — perplexity and benchmark using existing inference'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-20T20:54:53Z
+  updated: 2026-03-20T21:08:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-087
+  github_issue: null
+  item_type: task
+  title: 'PMAT-087: Experiment tracking — create experiments, compare runs'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T07:47:34Z
+  updated: 2026-03-21T07:55:13Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-088
+  github_issue: null
+  item_type: task
+  title: 'PMAT-088: Batch inference endpoint — process JSONL prompts'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T07:58:56Z
+  updated: 2026-03-21T08:03:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-089
+  github_issue: null
+  item_type: task
+  title: 'PMAT-089: Wire inference into batch + eval endpoints for real model usage'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T08:34:00Z
+  updated: 2026-03-21T08:38:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-090
+  github_issue: null
+  item_type: task
+  title: 'PMAT-090: Runtime config endpoint — GET/PUT /api/v1/config'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T08:41:19Z
+  updated: 2026-03-21T08:44:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-091
+  github_issue: null
+  item_type: task
+  title: 'PMAT-091: Audit log query endpoint + enrich /system with operational stats'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T09:05:00Z
+  updated: 2026-03-21T09:12:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-092
+  github_issue: null
+  item_type: task
+  title: 'PMAT-092: Wire disk persistence for conversations, files, audit in from_config'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T09:14:42Z
+  updated: 2026-03-21T09:20:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-093
+  github_issue: null
+  item_type: task
+  title: 'PMAT-093: Improve no-model UX — helpful responses, usage hints, model loading guide'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T09:23:46Z
+  updated: 2026-03-21T09:33:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-094
+  github_issue: null
+  item_type: task
+  title: 'PMAT-094: Conversation search endpoint — find conversations by content'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T09:35:47Z
+  updated: 2026-03-21T09:45:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-095
+  github_issue: null
+  item_type: task
+  title: 'PMAT-095: Conversation rename + RAG search endpoint'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T09:45:20Z
+  updated: 2026-03-21T09:50:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-096
+  github_issue: null
+  item_type: task
+  title: 'PMAT-096: Load existing conversations and files from disk on startup'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T10:10:04Z
+  updated: 2026-03-21T10:15:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-097
+  github_issue: null
+  item_type: task
+  title: 'PMAT-097: Save assistant responses to conversations + reload RAG index on startup'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T10:17:10Z
+  updated: 2026-03-21T10:22:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-098
+  github_issue: null
+  item_type: task
+  title: 'PMAT-098: Split handlers.rs — extract data handlers to stay under 500 lines'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T10:22:57Z
+  updated: 2026-03-21T10:28:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-099
+  github_issue: null
+  item_type: task
+  title: 'PMAT-099: Startup summary — show loaded conversations, files, RAG status'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T10:30:34Z
+  updated: 2026-03-21T10:34:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-100
+  github_issue: null
+  item_type: task
+  title: 'PMAT-100: Quality gate — full test sweep, book final update, cookbook final recipe'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T10:41:06Z
+  updated: 2026-03-21T10:46:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-101
+  github_issue: null
+  item_type: task
+  title: 'PMAT-101: Wire entrenar LoRA into Banco training'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-21T11:16:10Z
+  updated: 2026-03-21T11:16:14.375407828+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-102
+  github_issue: null
+  item_type: task
+  title: 'apr code spec suite: commit, cross-ref audit, dogfood batuta-spec v2.3'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T15:54:25Z
+  updated: 2026-04-02T16:00:04Z
+  spec: null
+  acceptance_criteria:
+  - Commit 6 new + 2 modified spec files. Fix cross-ref gaps (12 banco specs missing from parent). Dogfood batuta-spec.md against actual code. Refs apr-code, multi-provider-api, agent-and-playbook, presentar-probar-integration, falsification-report, apr-code-tui-testing, apr-code-feasibility-falsification.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-103
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 1: implement FileReadTool + FileWriteTool + FileEditTool'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T16:08:24Z
+  updated: 2026-04-02T16:15:26Z
+  spec: null
+  acceptance_criteria:
+  - 'First 3 of 6 missing file tools for apr code. Register in ToolRegistry alongside existing ShellTool. Probar-first: write tests before implementation. ~300 lines.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-104
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 1: implement GlobTool + GrepTool'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T16:18:46Z
+  updated: 2026-04-02T16:24:45Z
+  spec: null
+  acceptance_criteria:
+  - 'Remaining search tools for apr code. GlobTool: file pattern matching. GrepTool: content search with context lines. ~160 lines total. Refs apr-code-feasibility-falsification GAP-B.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-105
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 1 GAP-A: interactive REPL with streaming'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T16:31:20Z
+  updated: 2026-04-02T16:41:36Z
+  spec: null
+  acceptance_criteria:
+  - 'The single biggest remaining blocker for apr code. Replace blocking read-prompt loop with crossterm raw-mode event loop. Split-pane: input at bottom, streaming output above. Slash command parser. Ctrl+C cancels generation. Uses existing mpsc::channel<StreamEvent>.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-106
+  github_issue: null
+  item_type: task
+  title: 'apr code: wire REPL into batuta CLI subcommand'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T21:45:19Z
+  updated: 2026-04-02T22:03:59Z
+  spec: null
+  acceptance_criteria:
+  - Add 'batuta code' subcommand that calls agent::repl::run_repl(). Builds default AgentManifest for coding assistant, registers file/search/shell tools, discovers local model. ~100 lines. This makes apr code runnable from batuta directly.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-107
+  github_issue: null
+  item_type: task
+  title: 'apr code: smoke test batuta code with MockDriver'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:05:02Z
+  updated: 2026-04-02T22:06:59Z
+  spec: null
+  acceptance_criteria:
+  - 'Integration test: build default manifest, register tools, run agent loop with MockDriver that returns tool_use then end_turn. Verify file_read tool executes. This proves the full pipeline works end-to-end.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-108
+  github_issue: null
+  item_type: task
+  title: 'apr code: test with real model via RealizarDriver'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:14:02Z
+  updated: 2026-04-02T22:43:27Z
+  spec: null
+  acceptance_criteria:
+  - 'Falsification test F-2 from feasibility report: does RealizarDriver + Qwen2.5-Coder produce valid tool_use JSON? Run batuta code --offline with a local GGUF model. This is the single most important validation remaining — proves Sovereign tier actually works for coding tasks.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-109
+  github_issue: null
+  item_type: task
+  title: 'spec dogfood: reconcile apr-code.md claims vs actual implementation'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:17:43Z
+  updated: 2026-04-02T22:20:03Z
+  spec: null
+  acceptance_criteria:
+  - The spec was written before implementation. Now that batuta code exists, audit every claim in apr-code.md against actual code. Fix stale tool counts, update phase status, correct architecture diagram, reconcile with feasibility report.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-110
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2: wire RemoteDriver for Anthropic API'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:21:07Z
+  updated: 2026-04-02T22:21:49Z
+  spec: null
+  acceptance_criteria:
+  - Cancelled — apr code is Sovereign stack ONLY. No remote API wiring.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-111
+  github_issue: null
+  item_type: task
+  title: 'spec fix: apr code is Sovereign-only, remove remote API claims'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-02T22:21:56Z
+  updated: 2026-04-02T22:26:21Z
+  spec: null
+  acceptance_criteria:
+  - apr code uses ONLY local models via realizar. Remove all multi-provider, Anthropic/OpenAI, remote API references. The comparison table, phase table, and multi-provider-api.md cross-refs all need fixing. This is a design decision, not a gap.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-112
+  github_issue: null
+  item_type: task
+  title: 'spec fix: cascade Sovereign-only into all dependent specs'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:27:26Z
+  updated: 2026-04-02T22:31:08Z
+  spec: null
+  acceptance_criteria:
+  - apr-code.md is now Sovereign-only but multi-provider-api.md, agent-and-playbook.md, presentar-probar-integration.md, and falsification-report.md still reference remote providers in apr code context. Also update batuta-spec.md overview and provable contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-113
+  github_issue: null
+  item_type: task
+  title: 'apr code: implement no_model_error — clear error when no local model'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-02T22:32:12Z
+  updated: 2026-04-02T22:34:44Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract FALSIFY-AC-004: when no local model found, show error with apr pull instructions instead of silently using MockDriver. This is the Sovereign-only contract — never silently degrade.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-114
+  github_issue: null
+  item_type: task
+  title: 'apr code: download model + test RealizarDriver end-to-end'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-02T22:35:51Z
+  updated: 2026-04-02T22:43:26Z
+  spec: null
+  acceptance_criteria:
+  - 'PMAT-108 blocker resolved: use apr pull to download a coding model (Qwen2.5-Coder or Qwen3), then test batuta code with real RealizarDriver. This proves the Sovereign tier claim. Prefer APR format, GGUF as fallback.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-115
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2a: multi-turn conversation history for REPL'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - run_agent_turn() accepts &mut Vec<Message> for persistent history
+  - REPL accumulates messages across turns
+  - /context shows history breakdown, /compact strips old tool details, /clear resets
+  - 6 new tests (3 runtime multi-turn, 3 repl compact)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - multi-turn
+  notes: 'Dogfood finding: REPL called run_agent_loop fresh each turn, losing all context. Critical gap for a coding assistant.'
+- id: PMAT-116
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2a: model discovery — auto-detect local APR/GGUF'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - ModelConfig::discover_model() scans ~/.apr/models/, ~/.cache/huggingface/, ./models/
+  - APR files preferred over GGUF (stack native format)
+  - Sorted by mtime (newest first)
+  - resolve_model_path() falls back to discovery when no explicit path/repo
+  - Welcome banner shows discovered model name and format
+  - 4 new tests
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - model-discovery
+  notes: 'Dogfood finding: user had to manually specify --model every time. APR-preferred aligns with stack native format policy.'
+- id: PMAT-117
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2a: always-Sovereign fix + chat template detection'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - build_default_manifest() always returns Sovereign tier (spec §5.4)
+  - 'ChatTemplate enum: ChatMl, Llama3, Generic — auto-detected from model filename'
+  - RealizarDriver stores and uses detected template
+  - 6 new tests (template detection + format verification)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - sovereignty
+  - chat-templates
+  notes: 'Dogfood finding: build_default_manifest(false) returned Standard tier, violating spec. Generic prompt template was not standard for any model family.'
+- id: PMAT-118
+  github_issue: null
+  item_type: task
+  title: 'PMAT-115: apr code Phase 2a — multi-turn conversation history for REPL'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T06:54:22Z
+  updated: 2026-04-03T06:54:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-119
+  github_issue: null
+  item_type: task
+  title: 'PMAT-116: apr code Phase 2a — model discovery, auto-detect local APR/GGUF'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T06:54:22Z
+  updated: 2026-04-03T06:54:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-120
+  github_issue: null
+  item_type: task
+  title: 'PMAT-117: apr code Phase 2a — always-Sovereign fix + chat template detection'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T06:54:23Z
+  updated: 2026-04-03T06:54:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-121
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2b: inject tool definitions into prompt for local models'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - build_enriched_system() appends tool definitions + JSON schemas to system prompt
+  - compact_schema() formats tool parameters for readability
+  - Tool call format (<tool_call> blocks) taught in prompt
+  - 4 new tests (injection, no-tools, schema compact, tool messages)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - tool-use
+  notes: 'CRITICAL dogfood finding: chat_template.rs ignored request.tools entirely. Local models had NO way to know about available tools — the entire agentic system was non-functional.'
+- id: PMAT-122
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2b: expand system prompt with tool call format + APR preference'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - CODE_SYSTEM_PROMPT includes <tool_call> format examples
+  - APR format (.apr) preference documented in prompt
+  - 'Sovereign identity: model identifies as apr code'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - system-prompt
+  notes: Previous prompt was minimal (6 lines). Now includes tool call format, APR preference, and coding guidelines.
+- id: PMAT-123
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2b: session persistence (JSONL)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - SessionStore writes to ~/.apr/sessions/{id}/manifest.json + messages.jsonl
+  - REPL persists messages after each turn via persist_messages()
+  - SessionStore::resume() reloads from disk
+  - SessionStore::find_recent_for_cwd() finds sessions for current directory
+  - 6 new tests with temp dir isolation
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - session-persistence
+  notes: 'Phase 2b: conversations now survive restarts. Each session gets manifest.json (metadata) + messages.jsonl (append-only log).'
+- id: PMAT-124
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2b: load APR.md/CLAUDE.md project instructions'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - load_project_instructions() discovers APR.md then CLAUDE.md in cwd
+  - Instructions merged into system prompt under Project Instructions header
+  - Truncated to 4KB to protect context window
+  - 2 new tests
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - project-instructions
+  notes: 'Spec §3.5: project-level instructions flow into agent behavior. APR.md preferred over CLAUDE.md.'
+- id: PMAT-125
+  github_issue: null
+  item_type: task
+  title: 'PMAT-121: apr code Phase 2b — inject tool definitions into prompt for local models'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T07:33:37Z
+  updated: 2026-04-03T07:33:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-126
+  github_issue: null
+  item_type: task
+  title: 'PMAT-122: apr code Phase 2b — expand system prompt with tool call format + APR preference'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T07:33:37Z
+  updated: 2026-04-03T07:33:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-127
+  github_issue: null
+  item_type: task
+  title: 'PMAT-123: apr code Phase 2b — session persistence (JSONL)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T07:33:38Z
+  updated: 2026-04-03T07:33:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-128
+  github_issue: null
+  item_type: task
+  title: 'PMAT-124: apr code Phase 2b — load APR.md/CLAUDE.md project instructions'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T07:33:38Z
+  updated: 2026-04-03T07:33:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-129
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2c: --resume/--project CLI flags, /session slash commands'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - --resume flag wires SessionStore::find_recent_for_cwd()
+  - --project changes cwd for APR.md discovery
+  - /session and /sessions slash commands with list_recent_sessions()
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - cli
+  notes: Session persistence infrastructure was dead code. This wires it end-to-end.
+- id: PMAT-130
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 2c: integration tests for session, tool injection, multi-turn'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - test_session_roundtrip, test_tool_definitions_in_prompt, test_multi_turn_session_integration
+  - Fixed 2 pre-existing tests broken by model discovery fallback
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - testing
+  notes: Previous tests only covered individual tools. Now validates full session lifecycle.
+- id: PMAT-131
+  github_issue: null
+  item_type: task
+  title: 'PMAT-129: apr code Phase 2c — --resume/--project CLI flags, /session commands'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T07:59:29Z
+  updated: 2026-04-03T07:59:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-132
+  github_issue: null
+  item_type: task
+  title: 'PMAT-130: apr code Phase 2c — integration tests (session, tool injection, multi-turn)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T07:59:29Z
+  updated: 2026-04-03T07:59:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-133
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3a: auto-compaction at 80% context + token tracking'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - AUTO_COMPACT_THRESHOLD at 80% — auto_compact_if_needed() after each turn
+  - /context shows ~tokens / window_size (N%) with warning at 80%+
+  - ReplSession tracks context_window from driver
+  - 4 new tests (context_usage, auto_compact, slash commands)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - context-management
+  notes: Spec §7.3 promised auto-compact at 80%. Now implemented. Long sessions no longer silently truncate.
+- id: PMAT-134
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3a: /test and /quality shortcut commands'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - /test runs cargo test --lib via shell subprocess
+  - /quality runs clippy + test via shell subprocess
+  - run_shell_shortcut() helper with exit code display
+  - Updated /help to show all 10 commands
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - ux
+  notes: Most common coding session actions now available as single-keystroke commands.
+- id: PMAT-135
+  github_issue: null
+  item_type: task
+  title: 'PMAT-133: apr code Phase 3a — auto-compaction at 80% context + token tracking'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T08:25:44Z
+  updated: 2026-04-03T08:25:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-136
+  github_issue: null
+  item_type: task
+  title: 'PMAT-134: apr code Phase 3a — /test and /quality shortcut commands'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-03T08:25:44Z
+  updated: 2026-04-03T08:25:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-137
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3b: agents in default features + APR format awareness'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - agents feature added to Cargo.toml default — batuta code exists in standard binary
+  - Release binary 17MB (well under 50MB spec threshold)
+  - GGUF models show APR conversion tip in welcome banner
+  - No-model error mentions auto-discovery from ~/.apr/models/
+  - APR format labeled as native in welcome
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - binary
+  - apr-format
+  notes: 'CRITICAL dogfood finding: batuta code did not exist in the default binary. cargo install batuta gave a binary with no code subcommand.'
+- id: PMAT-138
+  github_issue: null
+  item_type: task
+  title: 'PMAT-136: agents in default features — batuta code in standard binary'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T08:44:25Z
+  updated: 2026-04-03T08:44:30Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-139
+  github_issue: null
+  item_type: task
+  title: 'PMAT-137: APR format awareness — GGUF conversion tip, native label'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-03T08:44:25Z
+  updated: 2026-04-03T08:44:30Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-139
+  github_issue: null
+  item_type: task
+  title: Dogfood batuta-spec.md — reconcile with implementation, bump to v2.4.0
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/batuta-spec.md
+  acceptance_criteria:
+  - Version 2.3.0→2.4.0, date updated to 2026-04-03
+  - Agent §3.6 split into Implemented vs Planned sections
+  - Feature flags table adds agents (default), rag (default), agents-inference, agents-rag
+  - 'Key Commands §7 updated: batuta code with --resume/--project, slash commands listed'
+  - 'Component spec table updated: apr-code description reflects Phases 1-3b DONE'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - dogfood
+  notes: Top-level spec was frozen at 2.3.0 from before apr code implementation. Now reflects actual state.
+- id: PMAT-140
+  github_issue: null
+  item_type: task
+  title: 'apr code: project context enrichment — git info, file stats, language at session start'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T09:17:28Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - gather_project_context() collects git branch, dirty files, language, build system
+  - Injected into system prompt under Project Context header
+  - Helps local model understand the codebase before first turn
+  - 2 new tests (content, manifest integration)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - context
+  notes: Spec §6.2 promised project context capture at session start. Now implemented.
+- id: PMAT-141
+  github_issue: null
+  item_type: task
+  title: 'PMAT-139: Dogfood batuta-spec.md — reconcile with impl, bump v2.4.0'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T09:17:28Z
+  updated: 2026-04-03T09:17:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-142
+  github_issue: null
+  item_type: task
+  title: 'PMAT-140: Project context enrichment — git, language, files at session start'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T09:17:28Z
+  updated: 2026-04-03T09:17:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-141
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3d: inference in default features + context-aware prompt budget'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T00:00:00Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - inference feature in Cargo.toml default — RealizarDriver compiles in standard binary
+  - resolve_model_path() no longer calls discover_model() (moved to cmd_code only)
+  - instruction_budget() scales CLAUDE.md truncation to 25% of context window, max 4KB
+  - Models <4K context skip project instructions entirely
+  - UTF-8 safe truncation for multi-byte chars
+  - 4 new tests, 11,020 total pass
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - context-budget
+  notes: 'Real-model dogfood: batuta code --model silently fell back to MockDriver. System prompt consumed 67% of context for small models.'
+- id: PMAT-143
+  github_issue: null
+  item_type: task
+  title: 'PMAT-141: inference in default features + context-aware prompt budget'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T09:42:23Z
+  updated: 2026-04-03T09:42:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-144
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3e: CONTRACT apr_model_validity — APR tokenizer validation at load boundary'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T10:05:15Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - Contract equation apr_model_validity added to apr-code-v1.yaml
+  - 'FALSIFY-AC-008: APR without tokenizer rejected at load time'
+  - 'KANI-AC-005: Formal verification harness for model validity'
+  - validate_model_file() enforces Jidoka at RealizarDriver::new() boundary
+  - APR magic check, tokenizer scan, actionable apr convert error
+  - GGUF magic validation
+  - '5 new tests: apr_without_tokenizer, apr_with_tokenizer, gguf_valid, gguf_invalid, empty_file'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - contract
+  - jidoka
+  - apr-format
+  notes: 'CATASTROPHIC dogfood finding: APR model without embedded tokenizer crashed at inference with opaque error. Now caught at the load boundary with actionable fix instructions. Design by contract, not ad-hoc validation.'
+- id: PMAT-145
+  github_issue: null
+  item_type: task
+  title: 'PMAT-144: CONTRACT apr_model_validity — APR tokenizer validation at load boundary (Jidoka)'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T10:05:15Z
+  updated: 2026-04-03T10:05:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-146
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 3f: output sanitization + model size warning'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T10:18:30Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - sanitize_output() strips echoed system prompt from small model responses
+  - Strips leaked chat template markers (im_start, im_end, eot_id, etc.)
+  - Welcome banner warns when context_window <= 2048 tokens
+  - 'Spec §5.2 updated: 3B+ minimum, 7B+ recommended for tool-use'
+  - 4 new tests for sanitization
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - output-quality
+  notes: 'Dogfood: TinyLlama 1.1B echoed the entire system prompt as its response. sanitize_output() detects and strips this. Model size warning added.'
+- id: PMAT-147
+  github_issue: null
+  item_type: task
+  title: 'PMAT-146: Output sanitization — strip echoed system prompt + model size warning'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T10:18:30Z
+  updated: 2026-04-03T10:18:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-148
+  github_issue: null
+  item_type: task
+  title: 'Spec hygiene: fix stale refs, contradictions, duplicate phases in apr-code.md'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T00:00:00Z
+  updated: 2026-04-03T10:47:49Z
+  spec: docs/specifications/components/apr-code.md
+  acceptance_criteria:
+  - 'Fixed: --features agents stale → now default'
+  - 'Fixed: --offline described as feature → always sovereign, no flag'
+  - 'Fixed: comparison table outdated → reflects 7 tools + 10 commands + sessions + APR'
+  - 'Fixed: duplicate Phase 4 entries → renumbered 4-7'
+  - 'Fixed: Phase 3 "planned" labels → shell fallback documented'
+  - 'Fixed: slash commands table → split into Implemented (10) vs Planned (2)'
+  - Qwen2.5-Coder 1.5B as default model throughout spec
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - spec
+  - hygiene
+  notes: 12 stale/contradictory references fixed. Spec now accurately reflects implementation state after 12 phases of work.
+- id: PMAT-149
+  github_issue: null
+  item_type: task
+  title: 'PMAT-148: Spec hygiene — fix 12 stale refs and contradictions in apr-code.md'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T10:47:49Z
+  updated: 2026-04-03T10:47:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-150
+  github_issue: null
+  item_type: task
+  title: 'apr code: model discovery validates APR tokenizer before selection'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T11:27:52Z
+  updated: 2026-04-03T11:43:30Z
+  spec: null
+  acceptance_criteria:
+  - 'discover_model() prefers .apr by extension alone. When APR lacks embedded tokenizer, user hits dead end. Fix: validate APR at discovery, fall through to GGUF if invalid.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  notes: null
+- id: PMAT-151
+  github_issue: null
+  item_type: task
+  title: 'apr code: spec dogfood — fix stale refs, document tokenizer gap, exit codes'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T11:27:56Z
+  updated: 2026-04-03T11:43:30Z
+  spec: null
+  acceptance_criteria:
+  - 'Update apr-code.md with dogfooding findings: APR tokenizer requirement at discovery, GGUF fallback behavior, exit code 2/3/4 gaps, compact_history location fix.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  - spec
+  notes: null
+- id: PMAT-152
+  github_issue: null
+  item_type: task
+  title: 'apr code: implement exit codes 2/3/4 for non-interactive mode'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-03T11:27:57Z
+  updated: 2026-04-03T11:43:30Z
+  spec: null
+  acceptance_criteria:
+  - Spec says exit 2=budget, 3=max turns, 4=sandbox violation. Only 0/1/5 implemented. Wire missing codes.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  notes: null
+- id: PMAT-153
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 4a: wire RagTool into build_code_tools()'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-03T11:27:58Z
+  updated: 2026-04-03T11:43:30Z
+  spec: null
+  acceptance_criteria:
+  - RagTool exists at src/agent/tool/rag.rs but not registered in build_code_tools(). Wire with Rag capability for semantic code search.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - phase4
+  notes: null
+- id: PMAT-154
+  github_issue: null
+  item_type: task
+  title: 'P0: APR Q4K converter missing tokenizer embedding — save_model_tensors_q4k never calls insert_tokenizer_metadata'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T12:04:18Z
+  updated: 2026-04-03T12:29:49Z
+  spec: null
+  acceptance_criteria:
+  - 'save_model_tensors_q4k() in aprender infer_q4k_config.rs builds metadata without tokenizer. All other APR paths embed it. Causes ''Tokenizer encode failed'' in realizar. Fix: extract GGUF tokenizer and pass to insert_tokenizer_metadata().'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr
+  - p0
+  - aprender
+  notes: null
+- id: PMAT-155
+  github_issue: null
+  item_type: task
+  title: 'Dogfood: re-convert qwen2.5-coder-1.5b to APR with tokenizer, verify batuta code works'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T12:04:24Z
+  updated: 2026-04-03T12:29:49Z
+  spec: null
+  acceptance_criteria:
+  - 'After PMAT-154 fix, re-convert the default model and verify end-to-end: batuta code -p with APR model produces coherent tool-using output.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  notes: null
+- id: PMAT-156
+  github_issue: null
+  item_type: task
+  title: 'P0: APR Q4K passthrough produces garbage inference — tensor data misalignment between GGUF raw bytes and APR loader'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T12:35:43Z
+  updated: 2026-04-03T12:53:43Z
+  spec: null
+  acceptance_criteria:
+  - 'GGUF works fine, same model converted via Q4K passthrough to APR produces garbage. Tokenizer loads correctly (PMAT-154 fixed). Issue is tensor data layout: write_apr_file_raw copies raw GGUF Q4K bytes but APR loader may expect different alignment/naming.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr
+  - p0
+  - realizar
+  - aprender
+  notes: null
+- id: PMAT-157
+  github_issue: null
+  item_type: task
+  title: Publish realizar 0.8.4 with has_quantized_tensors_apr fix for APR Q4K inference
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T13:45:48Z
+  updated: 2026-04-04T10:22:19.560067419+00:00
+  spec: null
+  acceptance_criteria:
+  - PMAT-156 fix committed locally but not published. batuta uses crates.io realizar which lacks the fix. APR Q4K inference broken without it.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - realizar
+  - publish
+  - apr
+  notes: null
+- id: PMAT-158
+  github_issue: null
+  item_type: task
+  title: 'apr code: lenient tool_call parser — accept unclosed tags at end of output'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T13:48:28Z
+  updated: 2026-04-03T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Small models (1.5B) emit <tool_call> JSON without </tool_call>. Parser misses them, prints raw text. Fix: try parsing to end-of-string when closing tag missing.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  notes: null
+- id: PMAT-159
+  github_issue: null
+  item_type: task
+  title: 'apr code: enable realizar/cuda feature for GGUF GPU inference'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T14:09:55Z
+  updated: 2026-04-05T07:34:53Z
+  spec: null
+  acceptance_criteria:
+  - Without cuda feature, GGUF inference is CPU-only (minutes per response). Need cuda feature or apr serve HTTP backend for interactive use.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - performance
+  notes: null
+- id: PMAT-160
+  github_issue: null
+  item_type: task
+  title: 'apr code: use apr serve as first-class inference backend (auto-launch + HTTP)'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T14:56:58Z
+  updated: 2026-04-03T15:04:17Z
+  spec: null
+  acceptance_criteria:
+  - Instead of embedded realizar (no cuda feature), auto-launch 'apr serve run <model> --port 0' as subprocess and connect via RemoteDriver/HTTP. apr-cli has full CUDA+GPU. Solves PMAT-157 (no publish needed) and PMAT-159 (GPU inference) in one shot.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - architecture
+  notes: null
+- id: PMAT-161
+  github_issue: null
+  item_type: task
+  title: 'apr code: compact system prompt + zombie cleanup + GPU flag for apr serve'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T16:03:31Z
+  updated: 2026-04-03T16:03:56Z
+  spec: null
+  acceptance_criteria:
+  - 'PMAT-161: Strip verbose tool schemas for HTTP path, cap max_tokens at 512, add --gpu flag, fix zombie processes (return exit code instead of process::exit), request timeout.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  notes: null
+- id: PMAT-162
+  github_issue: null
+  item_type: task
+  title: 'apr code Phase 6: wire Code subcommand in apr-cli commands_enum.rs and dispatch'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-03T20:05:18Z
+  updated: 2026-04-03T20:23:54Z
+  spec: null
+  acceptance_criteria:
+  - Add Code variant to apr-cli commands_enum.rs (model, project, resume, prompt, print, max_turns, manifest). Dispatch to batuta::cli::code::cmd_code. Add batuta dep to apr-cli Cargo.toml behind code feature flag.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - phase-6
+  - apr-cli
+  notes: null
+- id: PMAT-163
+  github_issue: null
+  item_type: task
+  title: 'apr code: dedicated PmatQueryTool — structured pmat query output instead of shell fallback'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T20:05:21Z
+  updated: 2026-04-03T20:23:54Z
+  spec: null
+  acceptance_criteria:
+  - 'Replace shell: pmat query with a dedicated PmatQueryTool in build_code_tools(). Executes pmat query as subprocess, parses structured output (function name, file, line, grade, complexity). Returns structured results to agent instead of raw shell output.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - phase-4
+  - tools
+  notes: null
+- id: PMAT-164
+  github_issue: null
+  item_type: task
+  title: 'apr code: clean AprServeDriver — remove debug eprintln, conditional no_gpu for APR vs GGUF'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T20:05:23Z
+  updated: 2026-04-03T20:23:54Z
+  spec: null
+  acceptance_criteria:
+  - 'Remove [PMAT-160] debug output. Make --gpu flag conditional: GGUF gets --gpu (needs CUDA), APR gets no --gpu flag (wgpu shader bug with -inf). Currently always passes --gpu.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - cleanup
+  - dogfood
+  notes: null
+- id: PMAT-165
+  github_issue: null
+  item_type: task
+  title: 'apr code: interactive auto-resume prompt for recent sessions (spec §6.3)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T06:29:28Z
+  updated: 2026-04-04T06:43:39Z
+  spec: null
+  acceptance_criteria:
+  - When no --resume flag given, check for recent session (<24h) for cwd. Show interactive Y/n prompt. Currently silent — UX contract violation.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - ux
+  - dogfood
+  notes: null
+- id: PMAT-166
+  github_issue: null
+  item_type: task
+  title: 'apr code: AprServeDriver graceful shutdown — SIGTERM before SIGKILL'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-04T06:29:29Z
+  updated: 2026-04-04T06:43:39Z
+  spec: null
+  acceptance_criteria:
+  - Drop impl sends SIGKILL immediately. Should SIGTERM → 2s timeout → SIGKILL for clean model unload.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - robustness
+  - dogfood
+  notes: null
+- id: PMAT-167
+  github_issue: null
+  item_type: task
+  title: 'apr code: unblock apr-cli build — align trueno version in entrenar or disable training-gpu'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T06:29:32Z
+  updated: 2026-04-04T06:43:39Z
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli build fails due to trueno 0.16 vs 0.17 version mismatch between entrenar and aprender. Fix: update entrenar to trueno 0.17 or disable training-gpu default feature in apr-cli.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - phase-6
+  - apr-cli
+  - blocker
+  notes: null
+- id: PMAT-168
+  github_issue: null
+  item_type: task
+  title: 'apr code: optimize system prompt for small models — enumerate tools, add pmat_query example'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T06:54:07Z
+  updated: 2026-04-04T07:01:48Z
+  spec: null
+  acceptance_criteria:
+  - System prompt says 'tools listed below' but never lists them. Add explicit tool names + pmat_query usage example for 1.5B-7B models.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - prompt
+  - dogfood
+  notes: null
+- id: PMAT-169
+  github_issue: null
+  item_type: task
+  title: 'apr code: fix /cost display for local inference — show tokens not dollars'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T06:54:09Z
+  updated: 2026-04-04T07:01:48Z
+  spec: null
+  acceptance_criteria:
+  - /cost shows misleading dollar amounts for free local inference. Show 'free (local)' + token counts instead.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - ux
+  - dogfood
+  notes: null
+- id: PMAT-170
+  github_issue: null
+  item_type: task
+  title: 'apr code: raise AprServeDriver max_tokens from 512 to 1024 — tool calls truncated'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T06:54:11Z
+  updated: 2026-04-04T07:01:48Z
+  spec: null
+  acceptance_criteria:
+  - 512 token cap on HTTP responses truncates long file edits and multi-tool responses. Raise to 1024 with comment explaining rationale.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - dogfood
+  notes: null
+- id: PMAT-171
+  github_issue: null
+  item_type: task
+  title: 'apr code: capture apr serve stderr on startup failure — actionable debug output'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-04T06:54:13Z
+  updated: 2026-04-04T07:01:48Z
+  spec: null
+  acceptance_criteria:
+  - When apr serve fails to start, user sees generic error. Capture subprocess stderr, log last lines, suggest manual debug command.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - ux
+  - dogfood
+  notes: null
+- id: PMAT-172
+  github_issue: null
+  item_type: task
+  title: 'apr code: -p mode exhausts 50 iterations without output — agent loop stuck'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T07:14:57Z
+  updated: 2026-04-04T07:23:01Z
+  spec: null
+  acceptance_criteria:
+  - 'batuta code -p ''What files are in src/agent/?'' hits MaxIterationsReached(50) with no output. Model likely stuck in tool loop or producing unparseable tool calls. Need: (1) lower -p max_iterations, (2) detect stuck loops, (3) output partial response on budget exhaustion.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  - inference
+  notes: null
+- id: PMAT-173
+  github_issue: null
+  item_type: task
+  title: 'apr code: fix tool format mismatch — system prompt teaches <tool_call> but HTTP driver teaches raw JSON'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T09:04:00Z
+  updated: 2026-04-04T09:09:53Z
+  spec: null
+  acceptance_criteria:
+  - 'CODE_SYSTEM_PROMPT teaches <tool_call> blocks but AprServeDriver build_openai_body appends conflicting ''respond with JSON object'' instruction. Strip logic only looks for ''## Available Tools'' header. Fix: align format instructions, ensure HTTP path strips tool section correctly.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - dogfood
+  notes: null
+- id: PMAT-174
+  github_issue: null
+  item_type: task
+  title: 'apr code: offer_auto_resume consumes piped stdin — breaks -p with piped input'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T09:04:02Z
+  updated: 2026-04-04T09:09:53Z
+  spec: null
+  acceptance_criteria:
+  - offer_auto_resume() calls stdin().read_line() which steals piped input. Skip auto-resume when stdin is not a TTY (atty check) or when -p flag is set.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - ux
+  - dogfood
+  notes: null
+- id: PMAT-175
+  github_issue: null
+  item_type: task
+  title: 'apr code: shell injection filter blocks pipes and chained commands'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T09:04:03Z
+  updated: 2026-04-04T09:09:53Z
+  spec: null
+  acceptance_criteria:
+  - 'Shell tool blocks |, &&, backticks even with allowed_commands: [*]. Common coding patterns (cargo test | head, git diff && git log) fail. Relax filter for wildcard mode or use proper parsing.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - tools
+  - dogfood
+  notes: null
+- id: PMAT-176
+  github_issue: null
+  item_type: task
+  title: 'apr code: preserve CODE_SYSTEM_PROMPT tool table in AprServeDriver — only strip build_enriched_system section'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T09:15:30Z
+  updated: 2026-04-04T09:25:39Z
+  spec: null
+  acceptance_criteria:
+  - AprServeDriver strips '## Tools' from CODE_SYSTEM_PROMPT (the compact 9-tool table with examples designed for 1.5B models). Only the verbose '## Available Tools' from build_enriched_system() should be stripped. Dogfood shows model outputs 'Hello, World!' without tool context.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - dogfood
+  notes: null
+- id: PMAT-177
+  github_issue: null
+  item_type: task
+  title: 'apr code: single-turn retry when model ignores tools on first iteration'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T09:15:32Z
+  updated: 2026-04-04T09:25:39Z
+  spec: null
+  acceptance_criteria:
+  - 'When model returns EndTurn with no tool calls on iteration 1, re-prompt with ''Use a tool to answer. Which tool helps for: {query}?'' Max 1 retry. Helps small models that need nudging.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - dogfood
+  notes: null
+- id: PMAT-178
+  github_issue: null
+  item_type: task
+  title: 'apr code: main.rs was replaced with ''Hello, World!'' stub — all previous -p dogfood was running stub'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T09:35:53Z
+  updated: 2026-04-04T09:36:19Z
+  spec: null
+  acceptance_criteria:
+  - src/main.rs had uncommitted local modification replacing the full CLI with println!("Hello, World!"). All dogfood runs since PMAT-172 were testing the stub, not the real agent. Restored from git. Previous 'Hello, World!' dogfood findings (PMAT-176/177) were misdiagnosed — the model wasn't even being loaded.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - dogfood
+  - regression
+  notes: null
+- id: PMAT-179
+  github_issue: null
+  item_type: task
+  title: 'apr code: switch default model from Qwen2.5-Coder 1.5B to Qwen3 1.7B — 0.960 tool-calling score'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T09:45:27Z
+  updated: 2026-04-04T09:50:53Z
+  spec: null
+  acceptance_criteria:
+  - Qwen2.5-Coder 1.5B cannot do tool use (dogfood confirmed). Qwen3 1.7B scores 0.960 on tool-calling benchmark, native <tool_call> format, 1.2GB Q4K. Update spec, model discovery preferences, system prompt examples, and recommended model table.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - model
+  - dogfood
+  notes: null
+- id: PMAT-180
+  github_issue: null
+  item_type: task
+  title: 'apr code: disable default --gpu for GGUF in AprServeDriver — Qwen3 GGUF produces garbage with GPU'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T09:58:03Z
+  updated: 2026-04-04T10:12:05Z
+  spec: null
+  acceptance_criteria:
+  - 'Qwen3-1.7B-Q4_K_M.gguf produces mojibake with --gpu via apr serve, works fine with --no-gpu. Current logic always passes --gpu for GGUF. Fix: don''t pass --gpu by default, let apr serve auto-detect. CPU inference works correctly.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - apr-code
+  - inference
+  - dogfood
+  notes: null
+- id: PMAT-181
+  github_issue: null
+  item_type: task
+  title: 'realizar: apr serve needs enable_thinking=false for Qwen3 — model loops on </think> tokens'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T10:09:59Z
+  updated: 2026-04-05T08:50:44Z
+  spec: null
+  acceptance_criteria:
+  - 'Qwen3 1.7B GGUF through apr serve produces only </think> tokens. apr run --no-gpu --chat works fine (thinking completes then answers). apr serve applies chat template but doesn''t disable thinking mode. Need: (1) chat_template_kwargs support in /v1/chat/completions, or (2) auto-detect Qwen3 and suppress thinking tokens.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - realizar
+  - inference
+  - qwen3
+  - blocker
+  notes: null
+- id: PMAT-182
+  github_issue: null
+  item_type: task
+  title: 'PMAT-182: Wire apr code into apr-cli — Code variant + dispatch + batuta dep'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T10:28:14Z
+  updated: 2026-04-05T06:47:23Z
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli has no Code variant. Spec claims PMAT-162 done but reality: zero wiring. Need Code in commands_enum.rs, dispatch to batuta::agent::code::cmd_code(), batuta dep with code feature flag.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-183
+  github_issue: null
+  item_type: task
+  title: 'PMAT-183: Dogfood spec update — apr-cli wiring NOT done, model family warning, test gaps'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T10:28:19Z
+  updated: 2026-04-04T14:40:26Z
+  spec: null
+  acceptance_criteria:
+  - 'Update apr-code.md: Phase 6 NOT done (apr-cli has no Code), add model family detection for broken Qwen2.5-Coder, add missing tests for discovery + entrypoint'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-184
+  github_issue: null
+  item_type: task
+  title: 'PMAT-185: Model discovery mtime-first + Qwen3 tool-use confirmed'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T11:15:08Z
+  updated: 2026-04-05T06:50:26Z
+  spec: null
+  acceptance_criteria:
+  - discover_model() sorts valid>mtime>APR. Qwen3 1.7B GGUF tool-use confirmed. AppState caches architecture for Qwen3NoThinkTemplate auto-selection.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-185
+  github_issue: null
+  item_type: task
+  title: 'PMAT-186: Popperian falsification of apr-code.md and batuta-spec.md'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T11:25:08Z
+  updated: 2026-04-05T06:02:35Z
+  spec: null
+  acceptance_criteria:
+  - '10 findings: single-binary claim contradicted, APR.md 4-level discovery is 2-level, permission model 6→4 active, stale default model, feature flags 8→29, welcome banner mismatch, duplicate resume field, config not implemented, tool counts stale, pipeline.rs path wrong'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-186
+  github_issue: null
+  item_type: task
+  title: 'PMAT-187: chat-template-v1 provable contract — 6 equations, 10 FALSIFY tests, 1 bug found'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T11:48:50Z
+  updated: 2026-04-04T14:40:20Z
+  spec: null
+  acceptance_criteria:
+  - Contract for chat template correctness. Found Qwen3NoThinkTemplate::format() returning wrong TemplateFormat. 10 enforcement tests across realizar + batuta.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-187
+  github_issue: null
+  item_type: task
+  title: 'PMAT-188: provable-contracts for all apr-cli components — dispatch, serve, discovery'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-04T12:16:22Z
+  updated: 2026-04-04T14:40:26Z
+  spec: null
+  acceptance_criteria:
+  - Updated cli-dispatch-v1 (code subcommand + feature gate), apr-serve-v1 (chat template dispatch + format detection), NEW apr-model-discovery-v1 (search order, mtime-first, Jidoka, architecture extraction, no-model UX). 25+ falsification tests across 6 contracts.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-188
+  github_issue: null
+  item_type: task
+  title: 'PMAT-189: contract enforcement tests for http-api, session, tokenizer'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T12:40:41Z
+  updated: 2026-04-04T14:40:26Z
+  spec: null
+  acceptance_criteria:
+  - '9 new enforcement tests: 5 FALSIFY-HTTP-001 (OpenAI body schema, max_tokens cap, tool format), 4 FALSIFY-SESSION (JSONL roundtrip, resume, manifest serde, 24h filter), 5 tokenizer F-TOK (deterministic encode, empty input, vocab size, thread safety). Total: 46 passing in batuta + 19 in realizar.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-189
+  github_issue: null
+  item_type: task
+  title: 'PMAT-190: -p mode blank output with thinking models + JSON false alarm'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T14:11:05Z
+  updated: 2026-04-04T14:40:26Z
+  spec: null
+  acceptance_criteria:
+  - 'batuta code -p produces empty stdout when Qwen3 responds with only thinking tokens. Added diagnostic message. JSON parse error was bash test script bug (echo unescaping), not realizar. Root fix: publish realizar with Qwen3NoThinkTemplate (PMAT-181).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-190
+  github_issue: null
+  item_type: task
+  title: 'apr-cli contract enforcement: close 9 FALSIFY gaps across chat/serve/tokenizer/data'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T20:11:10Z
+  updated: 2026-04-04T20:24:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-191
+  github_issue: null
+  item_type: task
+  title: 'apr-cli: tokenizer-loading-v1 FALSIFY enforcement tests (7 tests defined, 0 wired)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-04T20:24:40Z
+  updated: 2026-04-05T06:02:35Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-192
+  github_issue: null
+  item_type: task
+  title: 'apr-cli: apr-data-pipeline-v1 FALSIFY enforcement tests (5 tests defined, 0 wired)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-04T20:24:41Z
+  updated: 2026-04-05T06:02:35Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-193
+  github_issue: null
+  item_type: task
+  title: 'apr-cli: finetune/prune/distill provable-contracts (model-ops coverage gap)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-04T20:24:42Z
+  updated: 2026-04-05T07:03:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-194
+  github_issue: null
+  item_type: task
+  title: cgp roofline profiling for realizr inference kernels (Q4K/Q6K matvec, attention, softmax)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T06:20:06Z
+  updated: 2026-04-05T09:09:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-195
+  github_issue: null
+  item_type: task
+  title: probar LLM load testing for apr serve — TTFT/TPOT/P99 SLO baselines at concurrency 1/4/8
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T06:20:07Z
+  updated: 2026-04-05T08:58:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-196
+  github_issue: null
+  item_type: task
+  title: Wire apr serve loadtest + bench subcommands into apr-cli (probar llm)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T06:24:43Z
+  updated: 2026-04-05T06:43:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-197
+  github_issue: null
+  item_type: task
+  title: 'batuta code -p: compact prompt + 32K context window (fixes thinking loops)'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-05T07:49:46Z
+  updated: 2026-04-05T07:49:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-198
+  github_issue: null
+  item_type: task
+  title: Prompt scaling by model size — auto-detect params from filename (Refs PMAT-198)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T08:09:51Z
+  updated: 2026-04-05T08:09:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-199
+  github_issue: null
+  item_type: task
+  title: model-format-conversion-v1 + apr-model-lifecycle-v1 FALSIFY enforcement (17 tests)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T08:17:51Z
+  updated: 2026-04-05T08:17:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

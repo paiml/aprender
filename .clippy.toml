@@ -1,0 +1,18 @@
+# Clippy Configuration
+# Per pmat rust-project-score recommendations
+
+# Cognitive complexity threshold (default is 25)
+cognitive-complexity-threshold = 30
+
+# Too many arguments threshold (default is 7)
+too-many-arguments-threshold = 8
+
+# Disallowed methods for code quality
+# Uncomment to enforce stricter rules:
+# disallowed-methods = [
+#     { path = "std::option::Option::unwrap", reason = "Use expect() or ? operator" },
+#     { path = "std::result::Result::unwrap", reason = "Use expect() or ? operator" },
+# ]
+
+# Type complexity threshold
+type-complexity-threshold = 300
