@@ -129,6 +129,7 @@ pub(super) fn reconstruct_tree_node(
 // Contract: decision-tree-v1, equation = "gini_impurity"
 
 pub fn gini_impurity(labels: &[usize]) -> f32 {
+    contract_pre_gini_impurity!();
     if labels.is_empty() {
         return 0.0;
     }
@@ -155,6 +156,7 @@ pub fn gini_impurity(labels: &[usize]) -> f32 {
 // Contract: decision-tree-v1, equation = "gini_split"
 
 pub fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
+    contract_pre_gini_split!();
     let n_left = left_labels.len() as f32;
     let n_right = right_labels.len() as f32;
     let n_total = n_left + n_right;

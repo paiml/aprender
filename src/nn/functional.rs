@@ -23,6 +23,7 @@ use crate::autograd::Tensor;
 #[provable_contracts_macros::contract("activation-kernel-v1", equation = "relu")]
 #[must_use]
 pub fn relu(x: &Tensor) -> Tensor {
+    contract_pre_relu!(x.data());
     x.relu()
 }
 
@@ -88,6 +89,7 @@ pub fn sigmoid_scalar_f64(x: f64) -> f64 {
 #[provable_contracts_macros::contract("silu-kernel-v1", equation = "silu")]
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
+    contract_pre_silu!(x.data());
     let src = x.data();
     let n = src.len();
     let mut data = vec![0.0f32; n];
@@ -116,6 +118,7 @@ pub fn silu_scalar(x: f32) -> f32 {
 // Contract: swiglu-kernel-v1, equation = "swiglu"
 #[must_use]
 pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
+    contract_pre_swiglu!(x.data());
     let src_x = x.data();
     let src_g = gate.data();
     let n = src_x.len();
@@ -219,6 +222,7 @@ pub fn tanh(x: &Tensor) -> Tensor {
 #[provable_contracts_macros::contract("activation-kernel-v1", equation = "gelu")]
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
+    contract_pre_gelu!(x.data());
     // ONE PATH: Per-element delegates to trueno::gelu_scalar (UCBD §4).
     let src = x.data();
     let n = src.len();

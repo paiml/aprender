@@ -46,6 +46,7 @@ pub enum Average {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-classification-v1", equation = "accuracy")]
 pub fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32 {
+    contract_pre_accuracy!();
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 
@@ -89,6 +90,7 @@ pub fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-classification-v1", equation = "precision")]
 pub fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
+    contract_pre_precision!();
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 
@@ -176,6 +178,7 @@ pub fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-classification-v1", equation = "recall")]
 pub fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
+    contract_pre_recall!();
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 
@@ -297,6 +300,7 @@ fn class_f1(tp: usize, fp: usize, fn_count: usize) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-classification-v1", equation = "f1_score")]
 pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
+    contract_pre_f1_score!();
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 

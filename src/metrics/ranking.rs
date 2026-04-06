@@ -26,6 +26,7 @@
 // Contract: metrics-ranking-v1, equation = "hit_at_k"
 #[must_use]
 pub fn hit_at_k<T: PartialEq>(predictions: &[T], target: &T, k: usize) -> f32 {
+    contract_pre_hit_at_k!();
     let top_k = predictions.iter().take(k);
     if top_k.into_iter().any(|p| p == target) {
         1.0
@@ -85,6 +86,7 @@ pub fn mean_hit_at_k<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]
 // Contract: metrics-ranking-v1, equation = "reciprocal_rank"
 #[must_use]
 pub fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32 {
+    contract_pre_reciprocal_rank!();
     for (i, pred) in predictions.iter().enumerate() {
         if pred == target {
             return 1.0 / (i + 1) as f32;
@@ -116,6 +118,7 @@ pub fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32 {
 // Contract: metrics-ranking-v1, equation = "mrr"
 #[must_use]
 pub fn mrr<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]) -> f32 {
+    contract_pre_mrr!();
     if predictions.is_empty() || predictions.len() != targets.len() {
         return 0.0;
     }
@@ -182,6 +185,7 @@ pub fn dcg_at_k(relevance: &[f32], k: usize) -> f32 {
 // Contract: metrics-ranking-v1, equation = "ndcg_at_k"
 #[must_use]
 pub fn ndcg_at_k(relevance: &[f32], k: usize) -> f32 {
+    contract_pre_ndcg_at_k!(relevance);
     let dcg = dcg_at_k(relevance, k);
 
     // Compute ideal DCG (sorted by relevance descending)

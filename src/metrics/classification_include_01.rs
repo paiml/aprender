@@ -81,6 +81,7 @@ pub fn f1_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-classification-v1", equation = "confusion_matrix")]
 pub fn confusion_matrix(y_pred: &[usize], y_true: &[usize]) -> Matrix<usize> {
+    contract_pre_confusion_matrix!();
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 

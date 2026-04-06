@@ -138,6 +138,7 @@ impl PlattScaling {
 #[provable_contracts_macros::contract("calibration-v1", equation = "expected_calibration_error")]
 #[must_use]
 pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
+    contract_pre_expected_calibration_error!(predictions);
     let mut bin_sums = vec![0.0; n_bins];
     let mut bin_correct = vec![0.0; n_bins];
     let mut bin_counts = vec![0usize; n_bins];
@@ -166,6 +167,7 @@ pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: 
 #[provable_contracts_macros::contract("calibration-v1", equation = "maximum_calibration_error")]
 #[must_use]
 pub fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
+    contract_pre_maximum_calibration_error!(predictions);
     let mut bin_sums = vec![0.0; n_bins];
     let mut bin_correct = vec![0.0; n_bins];
     let mut bin_counts = vec![0usize; n_bins];

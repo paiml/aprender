@@ -38,6 +38,7 @@ use crate::primitives::{Matrix, Vector};
 #[must_use]
 #[provable_contracts_macros::contract("metrics-regression-v1", equation = "r_squared")]
 pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
+    contract_pre_r_squared!(y_pred.as_slice());
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
 
     let y_mean = y_true.mean();
@@ -80,6 +81,7 @@ pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-regression-v1", equation = "mse")]
 pub fn mse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
+    contract_pre_mse!(y_pred.as_slice());
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 
@@ -117,6 +119,7 @@ pub fn mse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-regression-v1", equation = "mae")]
 pub fn mae(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
+    contract_pre_mae!(y_pred.as_slice());
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
 
@@ -154,6 +157,7 @@ pub fn mae(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-regression-v1", equation = "rmse")]
 pub fn rmse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
+    contract_pre_rmse!(y_pred.as_slice());
     mse(y_pred, y_true).sqrt()
 }
 
@@ -181,6 +185,7 @@ pub fn rmse(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-clustering-v1", equation = "inertia")]
 pub fn inertia(data: &Matrix<f32>, centroids: &Matrix<f32>, labels: &[usize]) -> f32 {
+    contract_pre_inertia!();
     let mut total = 0.0;
 
     for (i, &label) in labels.iter().enumerate() {
@@ -297,6 +302,7 @@ fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32 {
 #[must_use]
 #[provable_contracts_macros::contract("metrics-clustering-v1", equation = "silhouette_score")]
 pub fn silhouette_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
+    contract_pre_silhouette_score!();
     let n_samples = data.n_rows();
 
     if n_samples < 2 {

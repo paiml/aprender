@@ -105,6 +105,7 @@ fn accumulate_mean_single(x_data: &[f32], num_nodes: usize, num_features: usize)
 // Contract: gnn-v1, equation = "global_mean_pool"
 #[must_use]
 pub fn global_mean_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
+    contract_pre_global_mean_pool!(x.data());
     let num_nodes = x.shape()[0];
     let num_features = x.shape()[1];
     let x_data = x.data();
@@ -148,6 +149,7 @@ pub fn global_sum_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
 /// Global max pooling for graph-level predictions.
 // Contract: gnn-v1, equation = "global_max_pool"
 pub fn global_max_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
+    contract_pre_global_max_pool!(x.data());
     let num_nodes = x.shape()[0];
     let num_features = x.shape()[1];
     let x_data = x.data();
