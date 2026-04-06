@@ -1,0 +1,156 @@
+# Equation Model Card (EMC) Schema v1.0
+# Markov Chain
+
+emc_version: "1.0"
+emc_id: "EMC-STAT-003"
+
+identity:
+  name: "Markov Chain"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \pi P = \pi, \quad P(X_{n+1}=j | X_n=i, X_{n-1},...) = P(X_{n+1}=j | X_n=i) = p_{ij}
+  plain_text: "pi * P = pi (stationary distribution), P(X_{n+1}|X_n,...,X_0) = P(X_{n+1}|X_n)"
+  description: |
+    A Markov chain is a stochastic process where the probability of the
+    next state depends only on the current state (memorylessness). The
+    stationary distribution pi satisfies pi*P = pi where P is the
+    transition matrix.
+
+  variables:
+    - symbol: "P"
+      description: "Transition probability matrix"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "p_ij"
+      description: "Probability of transition from state i to j"
+      units: "dimensionless"
+      type: "element"
+    - symbol: "pi"
+      description: "Stationary distribution"
+      units: "probability"
+      type: "derived"
+    - symbol: "X_n"
+      description: "State at time n"
+      units: "state"
+      type: "dependent"
+
+  equation_type: "stochastic"
+  order: 1
+  linearity: "linear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Markov, A.A."]
+    title: "Extension of the limit theorems of probability theory"
+    journal: "Izvestiya Fiziko-matematicheskogo Obschestva"
+    year: 1906
+    volume: 15
+    pages: "135-156"
+
+  supporting_citations:
+    - authors: ["Norris, J.R."]
+      title: "Markov Chains"
+      year: 1997
+      publisher: "Cambridge University Press"
+      isbn: "978-0521633963"
+
+  derivation_method: "Probability theory axioms"
+  derivation_summary: |
+    The Markov property states that conditional on the present,
+    future is independent of past. For discrete state space,
+    transition probabilities form a stochastic matrix.
+
+domain_of_validity:
+  parameters:
+    transition_matrix:
+      physical_constraint: "row-stochastic: sum_j(p_ij) = 1, p_ij >= 0"
+    state_space:
+      physical_constraint: "Finite or countably infinite"
+
+  assumptions:
+    - "Time-homogeneous (P constant)"
+    - "Memoryless (Markov property)"
+    - "Discrete time steps"
+
+  limitations:
+    - description: "Periodic chains don't converge to stationary"
+      reference: "Need aperiodicity for convergence"
+    - description: "Transient states have zero stationary probability"
+      reference: "Only recurrent states contribute"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \pi_j = \lim_{n \to \infty} P^n_{ij} \text{ (for ergodic chains)}
+    parameters:
+      pi: "Stationary distribution (left eigenvector with eigenvalue 1)"
+
+  test_cases:
+    - name: "Two-state chain"
+      parameters:
+        P: [[0.7, 0.3], [0.4, 0.6]]
+      expected:
+        stationary: [0.571, 0.429]
+        mixing_time: 5
+      tolerance: 0.01
+
+    - name: "Random walk on cycle"
+      parameters:
+        n_states: 5
+        P: "circulant symmetric"
+      expected:
+        stationary: "uniform"
+      tolerance: 0.01
+
+verification_tests:
+  tests:
+    - id: "MC-VT-001"
+      name: "Stochastic matrix"
+      type: "matrix_validation"
+      tolerance: 1e-10
+      description: "Rows sum to 1, entries non-negative"
+
+    - id: "MC-VT-002"
+      name: "Stationary distribution"
+      type: "eigenvalue"
+      tolerance: 1e-6
+      description: "pi*P = pi"
+
+    - id: "MC-VT-003"
+      name: "Ergodic convergence"
+      type: "simulation"
+      tolerance: 0.05
+      description: "Long run frequencies match pi"
+
+falsification_criteria:
+  criteria:
+    - id: "MC-FC-001"
+      name: "Non-stochastic matrix"
+      condition: "any(row_sum != 1) or any(p_ij < 0)"
+      threshold: 1e-10
+      severity: "critical"
+
+    - id: "MC-FC-002"
+      name: "Non-ergodicity"
+      condition: "chain is not irreducible or not aperiodic"
+      threshold: null
+      severity: "major"
+
+    - id: "MC-FC-003"
+      name: "Frequency deviation"
+      condition: "|empirical_pi - theoretical_pi| > tolerance"
+      threshold: 0.05
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/monte_carlo/markov_chain.rs"
+  test_file: "tests/verification/markov_chain_test.rs"
+  experiment_template: "examples/experiments/markov_chain.yaml"

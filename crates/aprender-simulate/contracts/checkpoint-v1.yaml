@@ -1,0 +1,93 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Checkpoint contract for simulation state persistence and recovery"
+  crate: "simular"
+  references:
+    - "Chen et al. (2016) Training Deep Nets with Sublinear Memory Cost, arXiv:1604.06174"
+    - "Jain et al. (2020) Checkmate: Breaking the Memory Wall with Optimal Tensor Rematerialization"
+
+equations:
+  checkpoint_roundtrip:
+    formula: "deserialize(serialize(state)) == state"
+    domain: "state in SimulationState"
+    invariants:
+      - "Serialization is lossless for all state components"
+      - "Deserialized state produces identical simulation continuation"
+  checkpoint_size:
+    formula: "size(checkpoint) = Sum_{p in params} sizeof(p) + metadata_overhead"
+    domain: "params in Vec<Parameter>"
+    invariants:
+      - "Checkpoint size bounded by model parameter count"
+      - "Metadata overhead is O(1) per checkpoint"
+  checkpoint_interval:
+    formula: "checkpoint_at(step) = (step % interval == 0) || is_best(metric)"
+    domain: "step >= 0, interval >= 1"
+    invariants:
+      - "Checkpoints created at regular intervals"
+      - "Best model always checkpointed regardless of interval"
+
+proof_obligations:
+  - type: invariant
+    property: "Roundtrip fidelity"
+    formal: "deserialize(serialize(state)) == state for all valid states"
+    applies_to: all
+  - type: bound
+    property: "Checkpoint size bounded"
+    formal: "size(checkpoint) <= max_checkpoint_size"
+    applies_to: all
+  - type: invariant
+    property: "Best model always saved"
+    formal: "is_best(metric) implies checkpoint exists for that step"
+    applies_to: all
+  - type: invariant
+    property: "Checkpoint file integrity"
+    formal: "checksum(read(path)) == stored_checksum"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-CKPT-001
+    rule: "Roundtrip fidelity"
+    test: "test_streaming_checkpoint_roundtrip"
+    prediction: "verified"
+    if_fails: "State corruption during serialization"
+  - id: FALSIFY-CKPT-002
+    rule: "Size bounded"
+    test: "test_checkpoint_compressed_size"
+    prediction: "verified"
+    if_fails: "Checkpoint grows unboundedly"
+  - id: FALSIFY-CKPT-003
+    rule: "Best model saved"
+    test: "test_checkpoint_manager"
+    prediction: "verified"
+    if_fails: "Best model checkpoint missed"
+  - id: FALSIFY-CKPT-004
+    rule: "File integrity"
+    test: "test_checkpoint_integrity_check"
+    prediction: "verified"
+    if_fails: "Corrupted checkpoint not detected"
+
+kani_harnesses:
+  - id: KANI-CKPT-001
+    obligation: PO-CKPT-001
+    property: "Roundtrip fidelity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_checkpoint_roundtrip
+  - id: KANI-CKPT-002
+    obligation: PO-CKPT-002
+    property: "Size bound"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_checkpoint_size
+
+qa_gate:
+  id: QA-CHECKPOINT
+  name: "checkpoint contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_streaming_checkpoint_roundtrip
+    - test_checkpoint_compressed_size
+    - test_checkpoint_manager
+    - test_checkpoint_integrity_check

@@ -1,0 +1,101 @@
+# TPS Test Case 4: Heijunka vs Bullwhip Effect
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-004"
+
+metadata:
+  name: "Heijunka vs Bullwhip Effect"
+  description: |
+    Validate that Heijunka (production leveling) acts as a low-pass filter
+    against demand variability, dampening the Bullwhip Effect compared to
+    a Chase strategy that reacts to every demand fluctuation.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "heijunka", "bullwhip", "supply-chain"]
+
+equation_model_card:
+  emc_ref: "operations/bullwhip_effect"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Reacting immediately to customer demand fluctuations (Chase)
+    minimizes inventory and variance compared to smoothing (Heijunka).
+  alternative_hypothesis: |
+    H₁: Heijunka reduces upstream variance amplification (Bullwhip)
+    by 10x or more compared to Chase strategy.
+  expected_outcome: "reject"  # Chase causes Bullwhip, Heijunka prevents it
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  supply_chain:
+    stages:
+      - name: "Retailer"
+        lead_time: 1
+      - name: "Wholesaler"
+        lead_time: 2
+      - name: "Distributor"
+        lead_time: 2
+      - name: "Factory"
+        lead_time: 3
+
+  demand:
+    distribution: "normal"
+    mean: 100
+    variance: 10  # CV = 0.1
+
+  strategies:
+    - name: "chase"
+      policy: "order_up_to"
+      forecast_periods: 1
+      description: "React immediately to demand changes"
+
+    - name: "heijunka"
+      policy: "fixed_level"
+      production_rate: 100  # Constant at mean
+      smoothing_window: 20
+      description: "Level production at average demand"
+
+  duration:
+    warmup: 50  # periods
+    simulation: 500  # periods
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC4-BWE-CHASE"
+      name: "Bullwhip with chase"
+      condition: "var_orders_factory / var_demand > 3"
+      severity: "major"
+      interpretation: "Chase amplifies variance 3x+"
+
+    - id: "TC4-BWE-HEIJUNKA"
+      name: "Bullwhip with heijunka"
+      condition: "var_orders_factory / var_demand < 0.5"
+      severity: "major"
+      interpretation: "Heijunka dampens variance"
+
+    - id: "TC4-RATIO"
+      name: "Variance reduction ratio"
+      condition: "var_chase / var_heijunka > 10"
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  variance_ratio_test: "f_test"
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc4_heijunka_bullwhip.md"
+  include:
+    - "variance_by_stage"
+    - "order_time_series"
+    - "bullwhip_ratio_plot"

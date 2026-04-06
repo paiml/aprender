@@ -1,0 +1,68 @@
+# DVC Pipeline Configuration
+# See: https://dvc.org/doc/user-guide/project-structure/dvcyaml-files
+
+# Data versioning for reproducible experiments
+stages:
+  # TSP benchmark data
+  prepare_tsp_data:
+    cmd: cargo run --example prepare_data -- --dataset tsp
+    deps:
+      - data/raw/california_cities.yaml
+    outs:
+      - data/processed/tsp_benchmark.parquet
+
+  # Run TSP benchmarks
+  benchmark_tsp:
+    cmd: cargo bench --bench simulation_benchmarks -- tsp
+    deps:
+      - benches/simulation_benchmarks.rs
+      - src/demos/tsp_grasp.rs
+    metrics:
+      - metrics/tsp_benchmark.json:
+          cache: false
+    plots:
+      - plots/tsp_convergence.csv:
+          x: iteration
+          y: tour_length
+
+  # Orbit simulation benchmarks
+  benchmark_orbit:
+    cmd: cargo bench --bench simulation_benchmarks -- orbit
+    deps:
+      - benches/simulation_benchmarks.rs
+      - src/orbit/physics.rs
+    metrics:
+      - metrics/orbit_benchmark.json:
+          cache: false
+
+  # Monte Carlo benchmarks
+  benchmark_monte_carlo:
+    cmd: cargo bench --bench simulation_benchmarks -- monte_carlo
+    deps:
+      - benches/simulation_benchmarks.rs
+      - src/domains/monte_carlo.rs
+    metrics:
+      - metrics/monte_carlo_benchmark.json:
+          cache: false
+
+  # Generate comparison report
+  compare_benchmarks:
+    cmd: python scripts/compare_benchmarks.py
+    deps:
+      - metrics/tsp_benchmark.json
+      - metrics/orbit_benchmark.json
+      - metrics/monte_carlo_benchmark.json
+    outs:
+      - reports/benchmark_comparison.md
+
+# Artifact versioning
+artifacts:
+  tsp-model:
+    path: models/tsp_surrogate.bin
+    type: model
+    desc: Gaussian Process surrogate for TSP
+
+  orbit-params:
+    path: params/orbit_config.yaml
+    type: params
+    desc: Orbital simulation parameters

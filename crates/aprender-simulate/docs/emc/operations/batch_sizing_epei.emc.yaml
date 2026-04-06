@@ -1,0 +1,185 @@
+# Equation Model Card (EMC) Schema v1.0
+# Batch Sizing and EPEI (Every Part Every Interval)
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-006"
+
+identity:
+  name: "Batch Sizing / EPEI"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    EPEI = \frac{\sum_{i=1}^n (S_i + P_i)}{Available\_Time}
+    Q^*_{EOQ} = \sqrt{\frac{2DS}{H}}
+    CT_{batch} = \frac{Setup}{Batch} + Processing
+  plain_text: "EPEI = total cycle time / available time; EOQ minimizes total cost"
+  description: |
+    EPEI (Every Part Every Interval) measures how frequently all products
+    can be made in a repeating sequence. Smaller batches reduce inventory
+    but increase setup frequency. SMED enables small batches by reducing
+    setup time, breaking the traditional EOQ tradeoff.
+
+  variables:
+    - symbol: "EPEI"
+      description: "Every Part Every Interval (days/weeks)"
+      units: "time"
+      type: "output"
+    - symbol: "S_i"
+      description: "Setup time for product i"
+      units: "time"
+      type: "parameter"
+    - symbol: "P_i"
+      description: "Processing time for demand of product i"
+      units: "time"
+      type: "parameter"
+    - symbol: "Q"
+      description: "Batch size"
+      units: "units"
+      type: "decision"
+    - symbol: "D"
+      description: "Annual demand"
+      units: "units/year"
+      type: "parameter"
+    - symbol: "S"
+      description: "Setup cost"
+      units: "$/setup"
+      type: "parameter"
+    - symbol: "H"
+      description: "Holding cost per unit per year"
+      units: "$/unit/year"
+      type: "parameter"
+
+  equation_type: "optimization"
+  order: 0
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Shingo, S."]
+    title: "A Revolution in Manufacturing: The SMED System"
+    year: 1985
+    publisher: "Productivity Press"
+    isbn: "978-0915299034"
+
+  supporting_citations:
+    - authors: ["Harris, F.W."]
+      title: "How Many Parts to Make at Once"
+      journal: "Factory, The Magazine of Management"
+      year: 1913
+      volume: 10
+      pages: "135-136"
+
+  derivation_method: "Total cost minimization"
+  derivation_summary: |
+    EOQ: Total Cost = D*S/Q + Q*H/2
+    Setting dTC/dQ = 0: -DS/Q^2 + H/2 = 0
+    Solving: Q* = sqrt(2DS/H)
+
+    SMED insight: Reducing S allows smaller Q without cost penalty.
+
+domain_of_validity:
+  parameters:
+    setup_time:
+      min: 0.0
+      max: null
+      physical_constraint: "S >= 0"
+    demand:
+      min: 0.0
+      max: null
+      physical_constraint: "D > 0"
+    batch_size:
+      min: 1
+      max: null
+      physical_constraint: "Q >= 1"
+
+  assumptions:
+    - "Constant demand rate"
+    - "Fixed setup cost independent of batch size"
+    - "Linear holding cost"
+    - "No stockouts allowed"
+
+  limitations:
+    - description: "EOQ ignores variability"
+      reference: "Deterministic model"
+    - description: "Single product or aggregate"
+      reference: "Multi-product complicates scheduling"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      Q^*_{EOQ} = \sqrt{\frac{2DS}{H}}
+      TC^* = \sqrt{2DSH}
+    parameters:
+      Q_star: "Optimal batch size"
+      TC_star: "Minimum total cost"
+
+  test_cases:
+    - name: "TPS TC-2: SMED effect"
+      parameters:
+        setup_before: 30  # minutes
+        setup_after: 3    # minutes (SMED applied)
+        batch_before: 100
+        batch_after: 10
+        demand_rate: 4.0
+      expected:
+        ct_before: 8.2
+        ct_after: 2.1
+        ct_reduction: ">74%"
+      tolerance: 0.10
+
+    - name: "EOQ calculation"
+      parameters:
+        D: 10000  # units/year
+        S: 500    # $/setup
+        H: 10     # $/unit/year
+      expected:
+        Q_star: 1000
+        cycles_per_year: 10
+      tolerance: 0.01
+
+verification_tests:
+  tests:
+    - id: "EPEI-VT-001"
+      name: "EOQ formula"
+      type: "numerical_vs_analytical"
+      tolerance: 0.01
+      description: "Simulation matches EOQ formula"
+
+    - id: "EPEI-VT-002"
+      name: "SMED enables small batches"
+      type: "comparison"
+      tolerance: 0.10
+      description: "After SMED, small batches are viable"
+
+    - id: "EPEI-VT-003"
+      name: "One-piece flow limit"
+      type: "asymptotic"
+      tolerance: 0.20
+      description: "As S->0, optimal batch->1"
+
+falsification_criteria:
+  criteria:
+    - id: "EPEI-FC-001"
+      name: "Throughput collapse"
+      condition: "TH(small_batch, no_smed) < TH(large_batch) * 0.5"
+      threshold: 0.5
+      severity: "critical"
+      interpretation: "SMED is necessary for small batches"
+
+    - id: "EPEI-FC-002"
+      name: "CT not reduced"
+      condition: "CT(smed) >= CT(no_smed)"
+      threshold: null
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/operations/batch_sizing.rs"
+  test_file: "tests/verification/batch_sizing_test.rs"
+  experiment_template: "examples/experiments/batch_sizing.yaml"

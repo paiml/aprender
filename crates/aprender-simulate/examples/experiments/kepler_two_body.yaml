@@ -1,0 +1,133 @@
+# Kepler Two-Body Problem Verification Experiment
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "EXP-KEPLER-001"
+
+metadata:
+  name: "Kepler Two-Body Verification"
+  description: |
+    Verify orbital mechanics against analytical Kepler solution.
+    Tests conservation of energy, angular momentum, and eccentricity.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["physics", "verification", "kepler", "orbital", "celestial"]
+
+equation_model_card:
+  emc_ref: "physics/kepler_two_body"
+  emc_version: "1.0.0"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: The numerical orbit deviates significantly from Kepler's laws:
+    1. Orbits are not conic sections
+    2. Equal areas are not swept in equal times
+    3. T² is not proportional to a³
+  alternative_hypothesis: |
+    H₁: Numerical orbit satisfies all three Kepler laws within tolerance.
+  expected_outcome: "reject"  # We expect H₀ to be FALSIFIED
+
+reproducibility:
+  seed: 299792458  # Speed of light (memorable seed)
+  ieee_strict: true
+
+initial_conditions:
+  state:
+    # Earth-like orbit around Sun-like star
+    r: [1.496e11, 0.0, 0.0]      # 1 AU in meters
+    v: [0.0, 2.978e4, 0.0]       # ~30 km/s
+
+  parameters:
+    mu: 1.32712440018e20          # GM_sun (m³/s²)
+
+  derived:
+    specific_energy: "-mu/(2*a)"
+    angular_momentum: "norm(cross(r, v))"
+    eccentricity: "sqrt(1 + 2*E*L^2/(mu^2))"
+    semi_major_axis: "-mu/(2*E)"
+    period: "2*pi*sqrt(a^3/mu)"
+
+simulation:
+  time:
+    start: 0.0
+    end: 3.1536e7                 # 1 year in seconds
+    dt: 3600                      # 1 hour timestep
+    units: "s"
+
+  integrator:
+    type: "stormer_verlet"
+    adaptive: false
+
+  output:
+    sample_interval: 24  # Daily samples
+    format: "parquet"
+    quantities:
+      - name: "t"
+      - name: "r"
+        description: "Position vector"
+      - name: "v"
+        description: "Velocity vector"
+      - name: "E"
+        description: "Specific orbital energy"
+      - name: "L"
+        description: "Angular momentum magnitude"
+      - name: "e"
+        description: "Eccentricity"
+      - name: "true_anomaly"
+        description: "Angle in orbit"
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "KEPLER-1"
+      name: "Eccentricity conservation"
+      condition: "std(e) < tolerance"
+      tolerance: 1e-10
+      severity: "critical"
+
+    - id: "KEPLER-2"
+      name: "Angular momentum conservation"
+      condition: "max(abs(L - L_initial)) / L_initial < tolerance"
+      tolerance: 1e-12
+      severity: "critical"
+
+    - id: "KEPLER-3"
+      name: "Specific energy conservation"
+      condition: "max(abs(E - E_initial)) / abs(E_initial) < tolerance"
+      tolerance: 1e-10
+      severity: "critical"
+
+    - id: "KEPLER-4"
+      name: "Period accuracy"
+      condition: "|T_measured - T_expected| / T_expected < tolerance"
+      tolerance: 1e-6
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  kepler_laws:
+    - law: 1
+      description: "Orbit is ellipse with Sun at focus"
+      metric: "eccentricity_constancy"
+
+    - law: 2
+      description: "Equal areas in equal times"
+      metric: "areal_velocity_constancy"
+
+    - law: 3
+      description: "T² ∝ a³"
+      metric: "period_semimajor_relation"
+
+statistics:
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/kepler_verification.md"
+  include:
+    - "orbit_plot"
+    - "conservation_plots"
+    - "kepler_law_verification"

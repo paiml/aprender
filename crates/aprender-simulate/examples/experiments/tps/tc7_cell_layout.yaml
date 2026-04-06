@@ -1,0 +1,100 @@
+# TPS Test Case 7: U-Shaped vs Straight Line Layout
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-007"
+
+metadata:
+  name: "Cell Layout Design: U-Line vs Straight Line"
+  description: |
+    Validate that physical layout significantly impacts performance.
+    U-shaped cells enable better operator balancing through multi-machine
+    handling, reducing balance delay loss.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "cell-design", "u-line", "layout"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Physical layout and material flow patterns have no significant impact
+    on system performance when processing times are identical.
+  alternative_hypothesis: |
+    H₁: U-shaped layout improves operator utilization and balancing
+    efficiency by 10%+ compared to straight line.
+  expected_outcome: "reject"  # Layout matters
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  stations: 8
+  operators: 3
+
+  layouts:
+    - name: "straight_line"
+      topology: "linear"
+      operator_zones: [[1,2,3], [4,5], [6,7,8]]
+      walk_time_factor: 1.0
+      description: "Traditional straight production line"
+
+    - name: "u_shape"
+      topology: "u_cell"
+      operator_zones: [[1,2,8], [3,4,7], [5,6]]
+      walk_time_factor: 0.7  # Shorter walks
+      description: "U-shaped cell with multi-machine handling"
+
+  processing:
+    task_times: [8, 10, 9, 11, 7, 12, 8, 10]  # seconds
+    takt_time: 12  # seconds
+
+  demand:
+    rate: 300  # units/hour
+
+  duration:
+    warmup: 60  # minutes
+    simulation: 480  # minutes (8 hours)
+    replications: 20
+
+falsification:
+  criteria:
+    - id: "TC7-UTIL-VAR"
+      name: "Utilization variance"
+      condition: "util_var_u < util_var_straight * 0.5"
+      severity: "major"
+      interpretation: "U-line balances workload better"
+
+    - id: "TC7-BALANCE"
+      name: "Balance efficiency"
+      condition: "balance_eff_u > balance_eff_straight * 1.1"
+      severity: "major"
+
+    - id: "TC7-CT"
+      name: "Cycle time improvement"
+      condition: "ct_u < ct_straight"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  metrics:
+    - name: "balance_delay"
+      formula: "(n * CT - sum(task_times)) / (n * CT)"
+      description: "Fraction of time lost to imbalance"
+
+    - name: "operator_utilization_variance"
+      type: "variance"
+      description: "Variance in utilization across operators"
+
+statistics:
+  comparison_test: "paired_t_test"
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc7_cell_layout.md"

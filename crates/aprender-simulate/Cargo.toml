@@ -1,0 +1,234 @@
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+name = "simular"
+version = "0.3.2"
+edition = "2021"
+rust-version = "1.82.0"
+authors = ["PAIML Engineering"]
+description = "Unified Simulation Engine for the Sovereign AI Stack"
+license = "MIT"
+repository = "https://github.com/paiml/simular"
+keywords = ["simulation", "physics", "monte-carlo", "optimization", "reproducible"]
+categories = ["simulation", "science", "mathematics"]
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+bincode = "1.3"
+
+# Validation
+validator = { version = "0.20", features = ["derive"] }
+thiserror = "2.0"
+# jsonschema removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
+# Re-add with: jsonschema = { version = "0.29", optional = true }
+# Code gated behind #[cfg(feature = "schema-validation")]
+
+# Random number generation (deterministic)
+rand = "0.8"
+rand_pcg = { version = "0.3", features = ["serde1"] }
+
+# Collections (deterministic)
+indexmap = { version = "2.0", features = ["serde"] }
+
+# Compression
+zstd = "0.13"
+
+# Hashing
+blake3 = "1.5"
+
+# Memory mapping
+memmap2 = "0.9"
+
+# Async runtime (for web visualization)
+tokio = { version = "1.0", features = ["full"], optional = true }
+
+# Web server removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
+# Re-add with: axum = { version = "0.7", features = ["ws"], optional = true }
+# Code gated behind #[cfg(feature = "web")]
+
+# TUI (optional)
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+# ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
+# Path deps to avoid jugar-probar prod dep chain (CB-081)
+presentar-terminal = { version = "0.3", path = "../presentar/crates/presentar-terminal", optional = true }
+presentar-core = { version = "0.3", path = "../presentar/crates/presentar-core", default-features = false, optional = true }
+
+# WASM (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", features = [
+    "console", "Window", "Performance", "Document", "Element", "HtmlElement",
+    "HtmlCanvasElement", "HtmlInputElement", "HtmlSelectElement", "CanvasRenderingContext2d",
+    "EventTarget", "Event", "NodeList", "DomTokenList", "CssStyleDeclaration"
+], optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# Numeric
+num-traits = "0.2"
+
+# Type-safe physical units (Poka-Yoke)
+uom = { version = "0.36", features = ["serde"] }
+
+# TOML parsing (for stack discovery)
+toml = "0.8"
+
+# Bitflags for abort conditions
+bitflags = "2.6"
+
+# Work stealing for Heijunka
+crossbeam-deque = "0.8"
+provable-contracts-macros = { version = "0.2", path = "../provable-contracts/crates/provable-contracts-macros" }
+
+# Z3 removed from Cargo.toml to reduce Cargo.lock bloat (CB-081)
+# Re-add with: z3 = { version = "0.12", optional = true }
+# Code gated behind #[cfg(feature = "z3-proofs")]
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+
+[dev-dependencies]
+# Contract trait enforcement (Section 23)
+provable-contracts = { version = "0.2", path = "../provable-contracts/crates/provable-contracts" }
+# Property-based testing (Popperian falsification)
+proptest = "1.5"
+criterion = { version = "0.5", default-features = false }
+tempfile = "3.14"
+# jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
+# Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
+# Presentar TUI testing framework (SPEC-024 Section 12 & 13)
+presentar-test = { version = "0.3", path = "../presentar/crates/presentar-test" }
+
+[features]
+default = []
+tui = ["dep:ratatui", "dep:crossterm", "dep:presentar-terminal", "dep:presentar-core"]
+web = ["dep:tokio"]
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:getrandom", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]
+full = ["tui", "web"]
+# EDD verification feature - enables extended verification tests
+verification = []
+# Property-based testing feature
+proptest = []
+# Z3 equation proofs - re-add z3 dep to enable
+z3-proofs = []
+# JSON Schema validation - re-add jsonschema dep to enable
+schema-validation = []
+
+[lib]
+name = "simular"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "simular"
+path = "src/main.rs"
+
+[[example]]
+name = "monte_carlo"
+path = "examples/monte_carlo.rs"
+
+[[example]]
+name = "physics_simulation"
+path = "examples/physics_simulation.rs"
+
+[[example]]
+name = "optimization"
+path = "examples/optimization.rs"
+
+[[example]]
+name = "reproducibility"
+path = "examples/reproducibility.rs"
+
+[[example]]
+name = "jidoka_guards"
+path = "examples/jidoka_guards.rs"
+
+[[example]]
+name = "orbit_demo"
+path = "examples/orbit_demo.rs"
+
+[[example]]
+name = "tsp_grasp_demo"
+path = "examples/tsp_grasp_demo.rs"
+
+[[example]]
+name = "contract_pipeline_demo"
+path = "examples/contract_pipeline_demo.rs"
+
+[[bin]]
+name = "orbit-tui"
+path = "src/bin/orbit_tui.rs"
+required-features = ["tui"]
+
+[[bin]]
+name = "tsp-tui"
+path = "src/bin/tsp_tui.rs"
+required-features = ["tui"]
+
+[[bench]]
+name = "simulation_benchmarks"
+harness = false
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+# Force getrandom to use js feature for WASM
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# unwrap/expect/panic denied at crate level in lib.rs (not here — tests/examples need them)
+missing_panics_doc = { level = "allow", priority = 1 }
+unnecessary_wraps = { level = "allow", priority = 1 }
+# Simulation/numerical code allows
+uninlined_format_args = { level = "allow", priority = 1 }
+suboptimal_flops = { level = "allow", priority = 1 }
+doc_markdown = { level = "allow", priority = 1 }
+cast_lossless = { level = "allow", priority = 1 }
+float_cmp = { level = "allow", priority = 1 }
+field_reassign_with_default = { level = "allow", priority = 1 }
+approx_constant = { level = "allow", priority = 1 }
+items_after_statements = { level = "allow", priority = 1 }
+too_many_lines = { level = "allow", priority = 1 }
+many_single_char_names = { level = "allow", priority = 1 }
+redundant_clone = { level = "allow", priority = 1 }
+clone_on_copy = { level = "allow", priority = 1 }
+used_underscore_items = { level = "allow", priority = 1 }
+iter_without_into_iter = { level = "allow", priority = 1 }
+option_if_let_else = { level = "allow", priority = 1 }
+cast_precision_loss = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
+cast_sign_loss = { level = "allow", priority = 1 }
+cast_possible_wrap = { level = "allow", priority = 1 }
+imprecise_flops = { level = "allow", priority = 1 }
+cloned_instead_of_copied = { level = "allow", priority = 1 }
+explicit_iter_loop = { level = "allow", priority = 1 }
+default_trait_access = { level = "allow", priority = 1 }
+unreadable_literal = { level = "allow", priority = 1 }
+stable_sort_primitive = { level = "allow", priority = 1 }
+redundant_closure_for_method_calls = { level = "allow", priority = 1 }
+manual_range_contains = { level = "allow", priority = 1 }
+needless_range_loop = { level = "allow", priority = 1 }
+module_name_repetitions = { level = "allow", priority = 1 }
+similar_names = { level = "allow", priority = 1 }
+suspicious_operation_groupings = { level = "allow", priority = 1 }
+no_effect_underscore_binding = { level = "allow", priority = 1 }
+missing_const_for_fn = { level = "allow", priority = 1 }
+manual_midpoint = { level = "allow", priority = 1 }
+manual_is_multiple_of = { level = "allow", priority = 1 }

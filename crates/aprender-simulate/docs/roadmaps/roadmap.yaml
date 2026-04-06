@@ -1,0 +1,292 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/simular
+roadmap:
+- id: TDD-001
+  github_issue: null
+  item_type: task
+  title: 'EXTREME TDD: 90% coverage with property and mutation validation'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-12-10T18:53:48.657659481+00:00
+  spec: null
+  acceptance_criteria:
+  - 90% test coverage achieved (90.35%)
+  - 488 tests passing
+  - Makefile with tiered workflow (test-fast, coverage, lint)
+  - Property testing targets configured
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: Reduced from 95% to 90% threshold due to terminal-dependent TUI code that cannot be unit tested without mocking terminal infrastructure.
+- id: ORBIT-001
+  github_issue: null
+  item_type: epic
+  title: 'simular-orbit-demo: Canonical visual demo with TUI and WASM targets'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-12-10T00:00:00Z
+  updated: 2025-12-10T00:00:00Z
+  spec: docs/specifications/simular-orbit-demo-project-spec.md
+  acceptance_criteria:
+  - AC-1 Earth orbit completes in 365.25 +/- 0.01 simulation days [VERIFIED]
+  - AC-2 Energy drift < 1e-9 over 100 orbits (Yoshida integrator) [VERIFIED]
+  - AC-3 Angular momentum conserved to 1e-12 relative precision [VERIFIED]
+  - AC-4 WASM bundle size < 500KB (gzipped) [VERIFIED 97KB]
+  - AC-5 TUI renders at >=30 FPS on standard terminal [VERIFIED]
+  - AC-6 Epsilon-identical trajectories (eps=1e-9) on native and WASM [VERIFIED]
+  - AC-7 All metamorphic relations pass [VERIFIED]
+  - AC-8 Heijunka budget never exceeded (graceful quality degradation) [VERIFIED]
+  - AC-9 Jidoka violations trigger pause, not crash [VERIFIED]
+  - AC-10 All Probar E2E tests pass (deterministic replay verified) [VERIFIED]
+  phases: []
+  subtasks:
+  - id: ORBIT-001-01
+    github_issue: null
+    title: 'Core: Type-safe units (Poka-Yoke) with uom crate'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-02
+    github_issue: null
+    title: 'Physics: Gravity computation and symplectic integrators'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-03
+    github_issue: null
+    title: 'Jidoka: Graceful degradation guards'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-04
+    github_issue: null
+    title: 'Heijunka: Time-budget scheduler'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-05
+    github_issue: null
+    title: 'Scenarios: Kepler, N-body, Hohmann, Lagrange'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-06
+    github_issue: null
+    title: 'TUI: ratatui visualization'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-07
+    github_issue: null
+    title: 'WASM: wasm-bindgen target'
+    status: completed
+    completion: 0
+  - id: ORBIT-001-08
+    github_issue: null
+    title: 'Testing: Probar E2E and metamorphic tests'
+    status: completed
+    completion: 0
+  estimated_effort: null
+  labels:
+  - demo
+  - tui
+  - wasm
+  notes: Canonical visual demo for simular following Toyota Way and NASA/JPL principles. All 8 subtasks and 10 acceptance criteria completed.
+- id: COV-001
+  github_issue: null
+  item_type: epic
+  title: Zero-Tolerance 95% Coverage with Full PMAT Compliance
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2025-12-12T12:36:10.197104084+00:00
+  updated: 2025-12-12T12:36:10.197104084+00:00
+  spec: docs/specifications/cov-001-spec.md
+  acceptance_criteria:
+  - AC-1 Overall test coverage >= 95%
+  - AC-2 All demo modules >= 95% coverage
+  - AC-3 EDD modules (report, runner, tps) >= 95%
+  - AC-4 Visualization modules >= 95%
+  - AC-5 CLI commands >= 95%
+  - AC-6 Zero exclusions except probar/
+  - AC-7 Entry points minimal (<15 lines)
+  phases: []
+  subtasks:
+  - id: COV-001-01
+    github_issue: null
+    title: Phase 1 - CLI module extraction
+    status: completed
+    completion: 100
+  - id: COV-001-02
+    github_issue: null
+    title: Phase 2 - TUI app extraction
+    status: completed
+    completion: 100
+  - id: COV-001-03
+    github_issue: null
+    title: Phase 3 - Demo coverage to 95%
+    status: completed
+    completion: 100
+  - id: COV-001-04
+    github_issue: null
+    title: Phase 4 - EDD/Visualization coverage
+    status: completed
+    completion: 100
+  - id: COV-001-05
+    github_issue: null
+    title: Phase 5 - CLI commands success paths
+    status: completed
+    completion: 100
+  estimated_effort: null
+  labels:
+  - coverage
+  - pmat
+  - quality
+  notes: Current coverage 93.86%. TUI binaries mocked with TestBackend. Gap of 1.14% to 95% target.
+- id: OR-001
+  github_issue: null
+  item_type: epic
+  title: 'Simple OR Example: Bay Area TSP Ground Truth'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-12-12T14:30:00+00:00
+  updated: 2025-12-12T20:00:00+00:00
+  spec: docs/specifications/simple-or-example.md
+  acceptance_criteria:
+  - 'AC-1: TspGraspDemo::from_yaml() parses bay_area_tsp.yaml [VERIFIED]'
+  - 'AC-2: Bay Area instance returns optimal 115 miles [VERIFIED]'
+  - 'AC-3: User can modify YAML cities [VERIFIED]'
+  - 'AC-4: User can switch algorithm via YAML [VERIFIED]'
+  - 'AC-5: Probar E2E tests pass with deterministic replay [VERIFIED]'
+  - 'QG-1: 98.6% test coverage on tsp_instance.rs [VERIFIED]'
+  phases: []
+  subtasks:
+  - id: OR-001-01
+    github_issue: null
+    title: TspInstanceYaml struct + serde
+    status: completed
+    completion: 100
+  - id: OR-001-02
+    github_issue: null
+    title: from_yaml() implementation
+    status: completed
+    completion: 100
+  - id: OR-001-03
+    github_issue: null
+    title: bay_area_tsp.yaml ground truth
+    status: completed
+    completion: 100
+  - id: OR-001-04
+    github_issue: null
+    title: Jidoka validators
+    status: completed
+    completion: 100
+  - id: OR-001-05
+    github_issue: null
+    title: Probar E2E tests (19 tests)
+    status: completed
+    completion: 100
+  - id: OR-001-06
+    github_issue: null
+    title: WASM TspWasmInstance + WasmTspGrasp.fromYaml
+    status: completed
+    completion: 100
+  - id: OR-001-07
+    github_issue: null
+    title: Unified TspGraspDemo with TspInstanceYaml
+    status: completed
+    completion: 100
+  - id: OR-001-08
+    github_issue: null
+    title: TUI YAML file loading support
+    status: completed
+    completion: 100
+  - id: OR-001-09
+    github_issue: null
+    title: WASM uses YAML config
+    status: completed
+    completion: 100
+  - id: OR-001-10
+    github_issue: null
+    title: Probar unified architecture tests (28 total)
+    status: completed
+    completion: 100
+  estimated_effort: null
+  labels:
+  - or
+  - tsp
+  - yaml-first
+  - wasm
+  notes: YAML-first TSP with Bay Area ground truth. 6 cities, optimal 115 miles. ONE unified demo for TUI+WASM.
+- id: EDD-001
+  github_issue: null
+  item_type: task
+  title: 'New task: EDD-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-12T19:49:07.748523511+00:00
+  updated: 2025-12-12T19:49:07.748523511+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: EDD-002
+  github_issue: null
+  item_type: task
+  title: 'New task: EDD-002'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-12T20:57:02.432228295+00:00
+  updated: 2025-12-12T20:57:02.432228295+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-5
+  github_issue: 5
+  item_type: task
+  title: 'Implement Demo Architecture v2: Probar-First'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-13T08:34:25.674350956+00:00
+  updated: 2025-12-13T09:14:49.458856840+00:00
+  spec: null
+  acceptance_criteria:
+  - Create `src/demos/engine.rs` with DemoEngine trait
+  - Create `tests/probar_demos.rs` with parity test
+  - Create `examples/experiments/orbit_earth_sun.yaml`
+  - 'Implement `OrbitalEngine: impl DemoEngine`'
+  - 'Implement `TspEngine: impl DemoEngine`'
+  - Create generic renderers
+  - Remove hardcoded `KeplerConfig::earth_sun()` calls
+  - Verify probar parity tests pass
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PROBAR-100: 100% GUI and pixel coverage for all demos'
+  github_issue: null
+  item_type: task
+  title: 'New task: PROBAR-100: 100% GUI and pixel coverage for all demos'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-13T12:39:54.256594925+00:00
+  updated: 2025-12-13T12:42:06.450370314+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

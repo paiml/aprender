@@ -1,0 +1,48 @@
+# Little's Law Validation Experiment
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-001"
+
+metadata:
+  name: "Little's Law Validation"
+  description: |
+    Validate Little's Law (L = λW) under stochastic conditions.
+    This is TPS Test Case 1 from the EDD specification.
+  tags: ["tps", "operations", "littles-law", "queueing"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: There is no statistically significant linear relationship
+    between WIP and Throughput × Cycle Time (L ≠ λW).
+  alternative_hypothesis: |
+    H₁: Little's Law holds: L = λW within statistical tolerance.
+  expected_outcome: "reject"
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  duration:
+    warmup: 100.0
+    simulation: 1000.0
+    replications: 30
+  parameters:
+    arrival_rate: 5.0
+    service_rate: 6.0
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "LL-FC-001"
+      name: "Linear relationship"
+      condition: "R² < 0.95"
+      severity: "critical"
+    - id: "LL-FC-002"
+      name: "Relative error"
+      condition: "|L - λW| / L > 0.05"
+      severity: "major"

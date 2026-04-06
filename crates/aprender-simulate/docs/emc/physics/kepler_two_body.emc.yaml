@@ -1,0 +1,176 @@
+emc_version: "1.0"
+emc_id: "EMC-PHY-002"
+
+identity:
+  name: "Kepler Two-Body Problem"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "\\ddot{\\vec{r}} = -\\frac{\\mu}{r^3}\\vec{r}"
+  plain_text: "r̈ = -μ/r³ · r"
+  description: |
+    The Kepler two-body problem describes the motion of two bodies interacting
+    via gravitational attraction. Using the reduced mass formulation, this
+    reduces to a single body orbiting a central potential. Solutions are
+    conic sections: ellipses (bound orbits), parabolas, or hyperbolas.
+  equation_type: "ODE"
+  variables:
+    - symbol: "r"
+      description: "Position vector from primary to secondary"
+      units: "m"
+      type: "dependent"
+    - symbol: "t"
+      description: "Time"
+      units: "s"
+      type: "independent"
+    - symbol: "μ"
+      description: "Gravitational parameter (G × M)"
+      units: "m³/s²"
+      type: "parameter"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Goldstein, H.", "Poole, C.", "Safko, J."]
+    title: "Classical Mechanics"
+    year: 2002
+    publisher: "Addison-Wesley"
+    edition: "3rd"
+    pages: "70-102"
+    isbn: "978-0201657029"
+  supporting_citations:
+    - authors: ["Bate, R.R.", "Mueller, D.D.", "White, J.E."]
+      title: "Fundamentals of Astrodynamics"
+      year: 1971
+      publisher: "Dover"
+  derivation_method: "Conservation laws"
+  derivation_summary: |
+    From Newton's law of gravitation F = -GMm/r² and F = ma:
+    m·r̈ = -GMm/r² · r̂
+    r̈ = -μ/r² · r̂ = -μ/r³ · r
+
+    Conservation of angular momentum: h = r × v = const
+    Conservation of energy: E = v²/2 - μ/r = const
+
+    Kepler's laws emerge:
+    1. Orbits are conic sections with focus at primary
+    2. Equal areas swept in equal times (h = const)
+    3. T² = (4π²/μ)a³ for period T and semi-major axis a
+
+domain_of_validity:
+  parameters:
+    mu:
+      min: 0.0
+      max: null
+      units: "m³/s²"
+      physical_constraint: "μ > 0 (attractive gravity)"
+  assumptions:
+    - "Point masses (no extended body effects)"
+    - "No perturbations (third bodies, drag, radiation pressure)"
+    - "Non-relativistic (v << c)"
+    - "Newtonian gravity (weak field limit)"
+
+analytical_solution:
+  general_solution:
+    latex: "r = \\frac{p}{1 + e\\cos\\nu}"
+    parameters:
+      p: "Semi-latus rectum = h²/μ"
+      e: "Eccentricity"
+      nu: "True anomaly"
+  conserved_quantities:
+    - name: "Specific angular momentum"
+      expression: "h = |r × v|"
+    - name: "Specific orbital energy"
+      expression: "ε = v²/2 - μ/r"
+    - name: "Eccentricity vector"
+      expression: "e = (v × h)/μ - r̂"
+  test_cases:
+    - name: "Circular orbit"
+      initial_conditions:
+        r: [1.496e11, 0.0, 0.0]
+        v: [0.0, 2.978e4, 0.0]
+      parameters:
+        mu: 1.32712440018e20
+      expected:
+        eccentricity: 0.0
+        period: 3.1558e7
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Störmer-Verlet"
+      order: 2
+      symplectic: true
+      energy_drift: "bounded"
+    - name: "Yoshida 4th order"
+      order: 4
+      symplectic: true
+      energy_drift: "bounded"
+    - name: "Gauss-Legendre (implicit)"
+      order: 4
+      symplectic: true
+      energy_drift: "bounded"
+  stability_conditions:
+    - condition: "dt ≪ T_orbital"
+      description: "Many steps per orbit for accuracy"
+    - condition: "dt adaptive near perihelion"
+      description: "Higher resolution at close approach"
+  conserved_quantities:
+    - name: "Specific energy"
+      expression: "ε = v²/2 - μ/r"
+      tolerance: 1.0e-10
+    - name: "Angular momentum magnitude"
+      expression: "h = |r × v|"
+      tolerance: 1.0e-12
+    - name: "Eccentricity"
+      expression: "|e|"
+      tolerance: 1.0e-10
+
+verification_tests:
+  tests:
+    - id: "KEP-001"
+      name: "Kepler's First Law"
+      type: "geometry"
+      description: "Verify orbit is ellipse with correct semi-major axis and eccentricity"
+      tolerance: 1.0e-8
+    - id: "KEP-002"
+      name: "Kepler's Second Law"
+      type: "conservation_law"
+      conserved_quantity: "angular_momentum"
+      tolerance: 1.0e-12
+      description: "Equal areas in equal times"
+    - id: "KEP-003"
+      name: "Kepler's Third Law"
+      type: "period_analysis"
+      condition: "T² = (4π²/μ)a³"
+      tolerance: 1.0e-8
+    - id: "KEP-004"
+      name: "Energy conservation"
+      type: "conservation_law"
+      conserved_quantity: "specific_energy"
+      tolerance: 1.0e-10
+
+falsification_criteria:
+  criteria:
+    - id: "KEP-FC-001"
+      name: "Energy drift"
+      condition: "|ε(t) - ε(0)| / |ε(0)| > tolerance"
+      threshold: 1.0e-8
+      severity: "critical"
+    - id: "KEP-FC-002"
+      name: "Angular momentum violation"
+      condition: "|h(t) - h(0)| / h(0) > tolerance"
+      threshold: 1.0e-10
+      severity: "critical"
+    - id: "KEP-FC-003"
+      name: "Eccentricity drift"
+      condition: "std(e) > tolerance"
+      threshold: 1.0e-8
+      severity: "major"
+    - id: "KEP-FC-004"
+      name: "Period error"
+      condition: "|T_measured - T_kepler| / T_kepler > tolerance"
+      threshold: 1.0e-6
+      severity: "major"

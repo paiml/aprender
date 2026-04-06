@@ -1,0 +1,228 @@
+# Equation Model Card: Bullwhip Effect (Variance Amplification)
+# EMC-OPS-004 - Demand variance amplification in supply chains
+#
+# Reference: Lee, H.L., Padmanabhan, V., & Whang, S. (1997).
+#            "The Bullwhip Effect in Supply Chains"
+#            Sloan Management Review, 38(3), 93-102.
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-004"
+
+# ============================================================================
+# SECTION 1: IDENTITY
+# ============================================================================
+identity:
+  name: "Bullwhip Effect"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+# ============================================================================
+# SECTION 2: GOVERNING EQUATION
+# ============================================================================
+governing_equation:
+  latex: "\\frac{Var(q)}{Var(d)} \\geq 1 + \\frac{2L}{p} + \\frac{2L^2}{p^2}"
+  plain_text: "Var(Order)/Var(Demand) ≥ 1 + 2L/p + 2L²/p²"
+  description: |
+    The Bullwhip Effect describes how demand variability amplifies as
+    orders propagate upstream in a supply chain. Even when end-consumer
+    demand is stable, supplier orders exhibit increasingly wild swings.
+
+    The formula shows the lower bound on variance amplification for a
+    single echelon using moving average demand forecasting with p periods
+    and lead time L. Key insight: variance amplification is INEVITABLE
+    under standard ordering policies.
+
+    Heijunka (production leveling) in TPS acts as a low-pass filter,
+    dampening this variance amplification effect.
+
+  variables:
+    - symbol: "Var(q)"
+      description: "Variance of orders placed upstream"
+      units: "items²"
+      type: "dependent"
+    - symbol: "Var(d)"
+      description: "Variance of downstream demand"
+      units: "items²"
+      type: "independent"
+    - symbol: "L"
+      description: "Lead time for replenishment"
+      units: "periods"
+      type: "parameter"
+    - symbol: "p"
+      description: "Number of periods in moving average forecast"
+      units: "periods"
+      type: "parameter"
+
+  equation_type: "inequality"
+  linearity: "nonlinear (quadratic in L)"
+
+# ============================================================================
+# SECTION 3: ANALYTICAL DERIVATION
+# ============================================================================
+analytical_derivation:
+  primary_citation:
+    authors: ["Lee, H.L.", "Padmanabhan, V.", "Whang, S."]
+    title: "The Bullwhip Effect in Supply Chains"
+    journal: "Sloan Management Review"
+    year: 1997
+    volume: 38
+    issue: 3
+    pages: "93-102"
+
+  supporting_citations:
+    - authors: ["Chen, F.", "Drezner, Z.", "Ryan, J.K.", "Simchi-Levi, D."]
+      title: "Quantifying the Bullwhip Effect in a Simple Supply Chain"
+      journal: "Management Science"
+      year: 2000
+      volume: 46
+      issue: 3
+      pages: "436-443"
+      doi: "10.1287/mnsc.46.3.436.12069"
+    - authors: ["Forrester, J.W."]
+      title: "Industrial Dynamics"
+      year: 1961
+      publisher: "MIT Press"
+
+  derivation_method: "Order-up-to policy analysis"
+  derivation_summary: |
+    Under an order-up-to policy with moving average forecasting:
+
+    1. The order-up-to level S_t = L × d̂_t + z × σ_L
+       where d̂_t is the p-period moving average forecast
+
+    2. Order quantity q_t = S_t - S_{t-1} + d_{t-1}
+
+    3. Taking variance and using properties of MA(p):
+       Var(q) = Var(d) × [1 + 2L/p + 2L²/p²] (lower bound)
+
+    The 2L/p term captures forecast updating effect.
+    The 2L²/p² term captures lead time uncertainty effect.
+
+    Both terms are ALWAYS positive, proving variance MUST amplify.
+
+# ============================================================================
+# SECTION 4: DOMAIN OF VALIDITY
+# ============================================================================
+domain_of_validity:
+  parameters:
+    L:
+      min: 1
+      max: null
+      units: "periods"
+      physical_constraint: "L ≥ 1 for meaningful lead time"
+    p:
+      min: 1
+      max: null
+      units: "periods"
+      physical_constraint: "p ≥ 1 for moving average"
+
+  assumptions:
+    - "Order-up-to inventory policy"
+    - "Moving average demand forecasting"
+    - "IID demand process"
+    - "Single echelon analysis (can be extended to multi-echelon)"
+    - "No information sharing between echelons"
+
+  limitations:
+    - description: "Lower bound only; actual amplification may be higher"
+      severity: "informational"
+    - description: "Assumes specific forecasting method"
+      severity: "minor"
+    - description: "Does not model information sharing effects"
+      severity: "major"
+
+# ============================================================================
+# SECTION 5: VERIFICATION TESTS
+# ============================================================================
+verification_tests:
+  tests:
+    - id: "BWE-001"
+      name: "Minimum amplification (p=L)"
+      description: "When forecast period equals lead time"
+      parameters:
+        L: 4
+        p: 4
+      expected:
+        amplification_min: 1.75  # 1 + 2×4/4 + 2×16/16 = 1 + 0.5 + 0.5
+      tolerance: 0.01
+
+    - id: "BWE-002"
+      name: "Long lead time amplification"
+      description: "Lead time much longer than forecast period"
+      parameters:
+        L: 10
+        p: 2
+      expected:
+        amplification_min: 61.0  # 1 + 2×10/2 + 2×100/4 = 1 + 10 + 50
+      tolerance: 0.1
+
+    - id: "BWE-003"
+      name: "Unit lead time"
+      description: "L=1, p=1 gives amplification of 5"
+      parameters:
+        L: 1
+        p: 1
+      expected:
+        amplification_min: 5.0  # 1 + 2 + 2 = 5
+      tolerance: 0.01
+
+    - id: "BWE-004"
+      name: "Long forecast period"
+      description: "Large p reduces but doesn't eliminate amplification"
+      parameters:
+        L: 2
+        p: 10
+      expected:
+        amplification_min: 1.48  # 1 + 0.4 + 0.08 = 1.48
+      tolerance: 0.01
+
+    - id: "BWE-005"
+      name: "Amplification always >= 1"
+      description: "Verify lower bound is always at least 1"
+      parameters:
+        L: 1
+        p: 100
+      expected:
+        amplification_min_ge: 1.0
+      tolerance: 0.001
+
+# ============================================================================
+# SECTION 6: FALSIFICATION CRITERIA
+# ============================================================================
+falsification_criteria:
+  criteria:
+    - id: "BWE-FC-001"
+      name: "Variance reduction detected"
+      condition: "Var(orders) < Var(demand) without information sharing"
+      severity: "critical"
+      interpretation: "Either implementation bug or unreported information sharing"
+
+    - id: "BWE-FC-002"
+      name: "Amplification below theoretical minimum"
+      condition: "Measured amplification < 1 + 2L/p + 2L²/p²"
+      severity: "critical"
+      interpretation: "Violation of fundamental inequality"
+
+    - id: "BWE-FC-003"
+      name: "Multi-echelon non-multiplicative"
+      condition: "Amplification doesn't compound across echelons"
+      severity: "major"
+      interpretation: "Inter-echelon effects not properly modeled"
+
+# ============================================================================
+# SECTION 7: IMPLEMENTATION
+# ============================================================================
+implementation:
+  source_file: "src/edd/operations.rs"
+  struct_name: "BullwhipEffect"
+  test_file: "src/edd/operations.rs (inline tests)"
+
+  notes: |
+    - Validates TPS Test Case TC-4 (Heijunka vs Bullwhip)
+    - Demonstrates why Lean focuses on stable demand signals
+    - Information sharing and Heijunka can mitigate but not eliminate

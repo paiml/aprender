@@ -1,0 +1,235 @@
+# Equation Model Card: Square Root Law (Safety Stock)
+# EMC-OPS-003 - Inventory scales with square root of lead time
+#
+# Reference: Hopp, W.J. & Spearman, M.L. (2011). Factory Physics, Chapter 10.
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-003"
+
+# ============================================================================
+# SECTION 1: IDENTITY
+# ============================================================================
+identity:
+  name: "Square Root Law"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+# ============================================================================
+# SECTION 2: GOVERNING EQUATION
+# ============================================================================
+governing_equation:
+  latex: "I_{safety} = z \\cdot \\sigma_D \\cdot \\sqrt{L}"
+  plain_text: "Safety Stock = z × σ_D × √Lead Time"
+  description: |
+    The Square Root Law describes how safety stock requirements scale with
+    the square root of lead time, not linearly. This is a fundamental result
+    in inventory theory with profound implications for supply chain design.
+
+    Key insight: If lead time quadruples, safety stock only needs to double
+    (√4 = 2), not quadruple. This explains why companies focus on lead time
+    reduction - the benefits compound sublinearly.
+
+    This also explains the risk pooling effect: combining n independent
+    demand streams reduces total safety stock by factor of √n.
+
+  variables:
+    - symbol: "I_safety"
+      description: "Required safety stock"
+      units: "items"
+      type: "dependent"
+    - symbol: "z"
+      description: "Service level factor (z-score from standard normal)"
+      units: "dimensionless"
+      type: "parameter"
+      typical_values:
+        - value: 1.65
+          description: "95% service level"
+        - value: 1.96
+          description: "97.5% service level"
+        - value: 2.33
+          description: "99% service level"
+    - symbol: "σ_D"
+      aliases: ["sigma_D", "demand_std"]
+      description: "Standard deviation of demand per time period"
+      units: "items/time"
+      type: "independent"
+    - symbol: "L"
+      aliases: ["lead_time"]
+      description: "Replenishment lead time"
+      units: "time"
+      type: "independent"
+
+  equation_type: "algebraic"
+  linearity: "nonlinear (square root)"
+
+# ============================================================================
+# SECTION 3: ANALYTICAL DERIVATION
+# ============================================================================
+analytical_derivation:
+  primary_citation:
+    authors: ["Hopp, W.J.", "Spearman, M.L."]
+    title: "Factory Physics"
+    year: 2011
+    edition: "3rd"
+    publisher: "Waveland Press"
+    chapter: "10: Inventory"
+    isbn: "978-1577667391"
+
+  supporting_citations:
+    - authors: ["Silver, E.A.", "Pyke, D.F.", "Peterson, R."]
+      title: "Inventory Management and Production Planning and Scheduling"
+      year: 1998
+      publisher: "Wiley"
+
+  derivation_method: "Variance of sum of independent random variables"
+  derivation_summary: |
+    During lead time L, total demand is the sum of L independent
+    demand periods: D_total = D₁ + D₂ + ... + D_L
+
+    For independent, identically distributed demands:
+      Var(D_total) = L × Var(D)
+      σ(D_total) = √L × σ_D
+
+    Safety stock must cover demand variability over lead time at
+    desired service level:
+      I_safety = z × σ(D_total) = z × σ_D × √L
+
+    The square root arises from the central limit theorem applied
+    to the sum of independent random variables.
+
+# ============================================================================
+# SECTION 4: DOMAIN OF VALIDITY
+# ============================================================================
+domain_of_validity:
+  parameters:
+    z:
+      min: 0.0
+      max: 4.0  # Practical limit
+      units: "dimensionless"
+      physical_constraint: "z > 0 for any stockout protection"
+    sigma_D:
+      min: 0.0
+      max: null
+      units: "items/time"
+      physical_constraint: "σ_D ≥ 0"
+    L:
+      min: 0.0
+      max: null
+      units: "time"
+      physical_constraint: "L > 0 for meaningful lead time"
+
+  assumptions:
+    - "Demand is normally distributed"
+    - "Demand periods are independent"
+    - "Lead time is constant (not stochastic)"
+    - "Demand mean and variance are stationary"
+
+  limitations:
+    - description: "Assumes constant lead time; variable lead time requires convolution"
+      severity: "major"
+    - description: "Normal approximation may fail for slow-moving items"
+      severity: "minor"
+    - description: "Does not account for demand correlation"
+      severity: "minor"
+
+# ============================================================================
+# SECTION 5: VERIFICATION TESTS
+# ============================================================================
+verification_tests:
+  tests:
+    - id: "SRL-001"
+      name: "Basic calculation"
+      description: "Safety stock for 95% service level"
+      parameters:
+        z: 1.96
+        sigma_D: 100.0
+        L: 1.0
+      expected:
+        I_safety: 196.0
+      tolerance: 0.1
+
+    - id: "SRL-002"
+      name: "Lead time quadruple → safety stock double"
+      description: "Verify √L scaling: if L×4 then I×2"
+      parameters:
+        z: 1.96
+        sigma_D: 100.0
+        L_1: 1.0
+        L_2: 4.0
+      expected:
+        ratio: 2.0  # I_safety(L=4) / I_safety(L=1) = √4 = 2
+      tolerance: 0.001
+
+    - id: "SRL-003"
+      name: "Zero lead time"
+      description: "No safety stock needed if L=0"
+      parameters:
+        z: 1.96
+        sigma_D: 100.0
+        L: 0.0
+      expected:
+        I_safety: 0.0
+      tolerance: 1e-10
+
+    - id: "SRL-004"
+      name: "High variability demand"
+      description: "Large σ_D requires more safety stock"
+      parameters:
+        z: 1.96
+        sigma_D: 500.0
+        L: 4.0
+      expected:
+        I_safety: 1960.0  # 1.96 × 500 × 2
+      tolerance: 1.0
+
+    - id: "SRL-005"
+      name: "99% service level"
+      description: "Higher service level needs more safety stock"
+      parameters:
+        z: 2.33
+        sigma_D: 100.0
+        L: 1.0
+      expected:
+        I_safety: 233.0
+      tolerance: 0.1
+
+# ============================================================================
+# SECTION 6: FALSIFICATION CRITERIA
+# ============================================================================
+falsification_criteria:
+  criteria:
+    - id: "SRL-FC-001"
+      name: "Linear scaling detected"
+      condition: "Safety stock scales linearly with lead time instead of √L"
+      severity: "critical"
+      interpretation: "Implementation bug or demand correlation present"
+
+    - id: "SRL-FC-002"
+      name: "Negative safety stock"
+      condition: "I_safety < 0"
+      severity: "critical"
+      interpretation: "Invalid calculation"
+
+    - id: "SRL-FC-003"
+      name: "Service level mismatch"
+      condition: "Simulated stockout rate significantly differs from (1-Φ(z))"
+      severity: "major"
+      interpretation: "Normal assumption may be violated"
+
+# ============================================================================
+# SECTION 7: IMPLEMENTATION
+# ============================================================================
+implementation:
+  source_file: "src/edd/operations.rs"
+  struct_name: "SquareRootLaw"
+  test_file: "src/edd/operations.rs (inline tests)"
+
+  notes: |
+    - Validates TPS Test Case TC-9 (non-linear inventory scaling)
+    - Fundamental to understanding risk pooling benefits
+    - Explains value of lead time reduction in Lean

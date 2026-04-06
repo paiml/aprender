@@ -1,0 +1,78 @@
+# PMAT Quality Gates Configuration
+# Enforced via pre-commit hooks and CI
+
+[gates]
+# Minimum quality grade for all code
+min_grade = "B+"
+
+# Test coverage threshold (percentage)
+min_coverage = 95
+
+# Mutation testing threshold (percentage)
+min_mutation_score = 80
+
+# Maximum cyclomatic complexity per function
+max_complexity = 15
+
+# Maximum cognitive complexity per function
+max_cognitive = 20
+
+# Maximum nesting depth (JPL Rule 1)
+max_nesting = 4
+
+# Maximum lines per function (JPL Rule 4)
+max_function_lines = 60
+
+# Minimum assertions per function (JPL Rule 5)
+min_assertions = 2
+
+[thresholds]
+# TDG score minimum
+min_tdg_score = 70
+
+# Popper score minimum (falsifiability)
+min_popper_score = 60
+
+# Repository health minimum
+min_repo_score = 85
+
+# Rust project score minimum
+min_rust_score = 80
+
+[enforcement]
+# Fail CI on quality regression
+fail_on_regression = true
+
+# Maximum score drop before failing
+max_score_drop = 5
+
+# Require all gates to pass for merge
+require_all_gates = true
+
+[satd]
+# Self-Admitted Technical Debt policy
+allow_todo = false
+allow_fixme = false
+allow_hack = false
+allow_xxx = false
+
+[security]
+# Security requirements
+require_audit = true
+max_vulnerabilities = 0
+allowed_advisories = []
+
+[compute-brick]
+enabled = true
+require_safety_comments = true
+require_target_feature = true
+cv_threshold_percent = 15.0
+efficiency_threshold_percent = 25.0
+
+[documentation]
+# Documentation requirements
+require_readme = true
+require_changelog = true
+require_contributing = true
+require_license = true
+min_doc_coverage = 80

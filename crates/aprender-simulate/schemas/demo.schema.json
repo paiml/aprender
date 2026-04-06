@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simular.paiml.com/schemas/demo.schema.json",
+  "title": "Simular Demo Configuration Schema",
+  "description": "Unified schema for all simular demos (SIMULAR-DEMO-001)",
+  "type": "object",
+  "required": ["meta", "seed", "config", "falsification"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "description": "Demo metadata (MANDATORY)",
+      "required": ["id", "version", "demo_type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[A-Z0-9]+-[0-9]+$",
+          "description": "Unique identifier (e.g., TSP-BAY-020)"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "Semantic version"
+        },
+        "demo_type": {
+          "type": "string",
+          "enum": ["tsp", "orbit", "monte_carlo", "oscillator", "epidemic", "climate", "factory", "kepler"],
+          "description": "Demo engine type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "author": {
+          "type": "string",
+          "description": "Author name or organization"
+        },
+        "created": {
+          "type": "string",
+          "format": "date",
+          "description": "Creation date (YYYY-MM-DD)"
+        }
+      }
+    },
+    "seed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "RNG seed for reproducibility"
+    },
+    "deterministic": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enforce deterministic execution"
+    },
+    "config": {
+      "type": "object",
+      "description": "Demo-specific configuration (varies by demo_type)"
+    },
+    "falsification": {
+      "type": "object",
+      "description": "Falsification criteria (MANDATORY per EDD)",
+      "required": ["criteria"],
+      "properties": {
+        "criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/criterion" },
+          "description": "List of falsification criteria"
+        }
+      }
+    },
+    "metamorphic": {
+      "type": "object",
+      "description": "Metamorphic relations for testing",
+      "properties": {
+        "relations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/metamorphicRelation" },
+          "description": "List of metamorphic relations"
+        }
+      }
+    },
+    "visualization": {
+      "type": "object",
+      "description": "Renderer hints (optional)",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Display title"
+        },
+        "color_scheme": {
+          "type": "string",
+          "enum": ["default", "dark", "light", "scientific"],
+          "default": "default"
+        },
+        "show_coordinates": {
+          "type": "boolean",
+          "default": true
+        },
+        "show_animation": {
+          "type": "boolean",
+          "default": true
+        },
+        "update_rate_ms": {
+          "type": "integer",
+          "minimum": 10,
+          "default": 100
+        }
+      }
+    }
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "required": ["id", "threshold", "condition"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[A-Z0-9]+(-[0-9]+)?$",
+          "description": "Criterion ID (e.g., TSP-GAP-001)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name"
+        },
+        "metric": {
+          "type": "string",
+          "description": "Metric being evaluated"
+        },
+        "threshold": {
+          "type": "number",
+          "description": "Threshold value for comparison"
+        },
+        "condition": {
+          "type": "string",
+          "description": "Condition expression (e.g., 'gap <= threshold')"
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-10,
+          "description": "Tolerance for floating-point comparisons"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "major", "minor"],
+          "default": "major",
+          "description": "Severity level"
+        }
+      }
+    },
+    "metamorphicRelation": {
+      "type": "object",
+      "required": ["id", "source_transform", "expected_relation"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^MR-[A-Za-z]+$",
+          "description": "Relation ID (e.g., MR-PermutationInvariance)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "source_transform": {
+          "type": "string",
+          "description": "Transform to apply to source input"
+        },
+        "expected_relation": {
+          "type": "string",
+          "description": "Expected relation between source and follow-up outputs"
+        },
+        "tolerance": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-10,
+          "description": "Tolerance for numerical comparisons"
+        }
+      }
+    },
+    "city": {
+      "type": "object",
+      "description": "City definition for TSP demos",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "description": "Celestial body for orbit demos",
+      "required": ["name", "mass"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mass": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "position": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "velocity": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    }
+  }
+}

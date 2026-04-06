@@ -1,0 +1,21 @@
+{
+    "name": "simular",
+    "image": "mcr.microsoft.com/devcontainers/rust:1-1-bookworm",
+    "features": {
+        "ghcr.io/devcontainers/features/rust:1": {
+            "version": "1.83.0",
+            "profile": "default"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "serayuzgur.crates",
+                "vadimcn.vscode-lldb"
+            ]
+        }
+    },
+    "postCreateCommand": "cargo build",
+    "remoteUser": "vscode"
+}

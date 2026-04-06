@@ -1,0 +1,5 @@
+# mise configuration for reproducible development environment
+# Install mise: https://mise.jdx.dev/
+
+[tools]
+rust = "1.83.0"

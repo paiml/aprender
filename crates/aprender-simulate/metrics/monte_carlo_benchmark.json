@@ -1,0 +1,80 @@
+{
+  "benchmark": "Monte Carlo Pi Estimation",
+  "version": "1.0.0",
+  "timestamp": "2024-12-12T00:00:00Z",
+  "hardware": {
+    "cpu": "AMD Ryzen 9 5950X",
+    "cores": 16,
+    "ram_gb": 64,
+    "os": "Linux 6.8"
+  },
+  "results": {
+    "pi_estimate_1k": {
+      "metric": "estimation_error",
+      "sample_size": 100,
+      "n_samples": 1000,
+      "mean": 0.028,
+      "std": 0.015,
+      "ci_lower": 0.025,
+      "ci_upper": 0.031,
+      "confidence_level": 0.95,
+      "expected_error": 0.032,
+      "within_expected": true
+    },
+    "pi_estimate_10k": {
+      "metric": "estimation_error",
+      "sample_size": 100,
+      "n_samples": 10000,
+      "mean": 0.0089,
+      "std": 0.0048,
+      "ci_lower": 0.0080,
+      "ci_upper": 0.0098,
+      "confidence_level": 0.95,
+      "expected_error": 0.010,
+      "within_expected": true
+    },
+    "pi_estimate_100k": {
+      "metric": "estimation_error",
+      "sample_size": 100,
+      "n_samples": 100000,
+      "mean": 0.0028,
+      "std": 0.0015,
+      "ci_lower": 0.0025,
+      "ci_upper": 0.0031,
+      "confidence_level": 0.95,
+      "expected_error": 0.0032,
+      "within_expected": true
+    },
+    "execution_time_10k": {
+      "metric": "execution_time_ns",
+      "sample_size": 100,
+      "mean": 567890,
+      "std": 23456,
+      "ci_lower": 563289,
+      "ci_upper": 572491,
+      "confidence_level": 0.95
+    }
+  },
+  "convergence_analysis": {
+    "convergence_rate": {
+      "theoretical": "O(1/sqrt(n))",
+      "empirical_exponent": -0.498,
+      "ci_lower": -0.512,
+      "ci_upper": -0.484,
+      "matches_theory": true
+    },
+    "variance_reduction": {
+      "baseline_variance": 0.0015,
+      "antithetic_variance": 0.0008,
+      "reduction_percent": 46.7,
+      "p_value": 0.0001
+    }
+  },
+  "effect_sizes": {
+    "10k_vs_1k": {
+      "cohens_d": 1.87,
+      "interpretation": "large",
+      "practical_significance": "10x samples gives ~3x accuracy improvement"
+    }
+  }
+}

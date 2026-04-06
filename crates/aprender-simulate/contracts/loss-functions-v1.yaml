@@ -1,0 +1,94 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Loss function contract for simulation objective computation"
+  crate: "simular"
+  references:
+    - "Goodfellow, Bengio & Courville (2016) Deep Learning, Ch. 6.2"
+    - "Huber (1964) Robust Estimation of a Location Parameter"
+
+equations:
+  mse_loss:
+    formula: "L_mse(y, pred) = (1/n) * Sum_i (y_i - pred_i)^2"
+    domain: "y in R^n, pred in R^n, n >= 1"
+    invariants:
+      - "L_mse >= 0"
+      - "L_mse = 0 iff y == pred"
+  huber_loss:
+    formula: "L_huber(a) = 0.5*a^2 if |a| <= delta, else delta*(|a| - 0.5*delta)"
+    domain: "a in R, delta > 0"
+    invariants:
+      - "L_huber >= 0"
+      - "L_huber is continuous and differentiable"
+      - "Quadratic for small errors, linear for large errors"
+  gradient_of_loss:
+    formula: "dL/dpred_i = (2/n) * (pred_i - y_i) for MSE"
+    domain: "y in R^n, pred in R^n"
+    invariants:
+      - "Gradient is zero at loss minimum"
+      - "Gradient direction points away from target"
+
+proof_obligations:
+  - type: bound
+    property: "Loss non-negativity"
+    formal: "L(y, pred) >= 0 for all valid inputs"
+    applies_to: all
+  - type: invariant
+    property: "Zero loss at perfect prediction"
+    formal: "y == pred implies L(y, pred) == 0"
+    applies_to: all
+  - type: invariant
+    property: "Gradient zero at minimum"
+    formal: "y == pred implies dL/dpred == 0"
+    applies_to: all
+  - type: bound
+    property: "Huber loss bounded by MSE for small errors"
+    formal: "|a| <= delta implies L_huber(a) == 0.5*a^2"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-SIMLOSS-001
+    rule: "Loss non-negativity"
+    test: "test_anomaly_detector_loss_spike"
+    prediction: "verified"
+    if_fails: "Loss function returns negative value"
+  - id: FALSIFY-SIMLOSS-002
+    rule: "Zero at minimum"
+    test: "test_trajectory_best_val_loss"
+    prediction: "verified"
+    if_fails: "Nonzero loss for identical inputs"
+  - id: FALSIFY-SIMLOSS-003
+    rule: "Gradient zero at minimum"
+    test: "test_anomaly_detector_gradient_vanishing"
+    prediction: "verified"
+    if_fails: "Gradient nonzero when pred == target"
+  - id: FALSIFY-SIMLOSS-004
+    rule: "Huber quadratic regime"
+    test: "test_self_healing_loss_spike_auto_correct"
+    prediction: "verified"
+    if_fails: "Huber loss wrong in quadratic regime"
+
+kani_harnesses:
+  - id: KANI-SIMLOSS-001
+    obligation: PO-SIMLOSS-001
+    property: "Loss non-negativity"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_loss_non_negative
+  - id: KANI-SIMLOSS-002
+    obligation: PO-SIMLOSS-002
+    property: "Zero at minimum"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_loss_zero_minimum
+
+qa_gate:
+  id: QA-SIMLOSS
+  name: "loss functions contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests:
+    - test_anomaly_detector_loss_spike
+    - test_trajectory_best_val_loss
+    - test_gradient_zero_at_minimum
+    - test_huber_quadratic_small_error

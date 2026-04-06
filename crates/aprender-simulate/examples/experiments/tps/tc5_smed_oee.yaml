@@ -1,0 +1,93 @@
+# TPS Test Case 5: SMED Impact on OEE
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-005"
+
+metadata:
+  name: "SMED Impact on OEE"
+  description: |
+    Validate that SMED (Single Minute Exchange of Die) provides non-linear
+    gains in capacity utilization. Setup reduction enables flexibility gains
+    beyond simple time savings.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "smed", "oee", "setup-reduction"]
+
+equation_model_card:
+  emc_ref: "operations/batch_sizing_epei"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Reducing setup times provides linear gains in capacity utilization.
+    90% setup reduction yields ~40% throughput gain (proportional to time saved).
+  alternative_hypothesis: |
+    H₁: SMED enables non-linear gains through flexibility effects.
+    90% setup reduction can yield 100%+ throughput gain.
+  expected_outcome: "reject"  # Gains are non-linear
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  resource:
+    available_time: 480  # minutes (8 hour shift)
+
+  products:
+    count: 6
+    processing_times: [10, 12, 8, 15, 11, 9]  # minutes each
+
+  scenarios:
+    - name: "pre_smed"
+      setup_time: 60  # minutes per changeover
+      batch_size: 100
+
+    - name: "post_smed"
+      setup_time: 10  # minutes (83% reduction)
+      batch_size: 20  # Smaller batches now viable
+
+    - name: "linear_prediction"
+      description: "What linear model would predict"
+      setup_time: 10
+      batch_size: 100  # Same batch size
+
+  demand:
+    pattern: "mixed_model"
+    daily_volume: 200
+
+  duration:
+    warmup: 5  # days
+    simulation: 30  # days
+    replications: 20
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC5-NONLINEAR"
+      name: "Non-linear gain"
+      condition: "th_post_smed / th_pre_smed > 2.0"
+      severity: "major"
+      interpretation: "Gain exceeds 100% (non-linear)"
+
+    - id: "TC5-VS-LINEAR"
+      name: "Exceeds linear prediction"
+      condition: "th_post_smed > th_linear * 1.5"
+      severity: "major"
+
+    - id: "TC5-OEE"
+      name: "OEE improvement"
+      condition: "oee_post > oee_pre * 1.3"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  comparison_test: "paired_t_test"
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc5_smed_oee.md"

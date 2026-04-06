@@ -1,0 +1,140 @@
+# Harmonic Oscillator Verification Experiment
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "EXP-HO-001"
+
+metadata:
+  name: "Harmonic Oscillator Verification"
+  description: |
+    Verify Störmer-Verlet integrator against analytical solution
+    for simple harmonic oscillator. EDD compliance test.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["physics", "verification", "edd", "harmonic", "symplectic"]
+
+equation_model_card:
+  emc_ref: "physics/harmonic_oscillator"
+  emc_version: "1.0.0"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: The Störmer-Verlet integrator produces solutions that deviate
+    significantly from the analytical solution x(t) = A·cos(ωt + φ)
+    for the simple harmonic oscillator.
+  alternative_hypothesis: |
+    H₁: Numerical solution matches analytical within tolerance ε = 1e-6
+    over 100 periods.
+  expected_outcome: "reject"  # We expect H₀ to be FALSIFIED
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+  platforms:
+    - "x86_64-unknown-linux-gnu"
+    - "aarch64-apple-darwin"
+    - "wasm32-unknown-unknown"
+
+initial_conditions:
+  state:
+    x: 1.0      # Initial displacement (m)
+    v: 0.0      # Initial velocity (m/s)
+
+  parameters:
+    omega: 6.283185307  # 2π rad/s (1 Hz)
+
+  derived:
+    amplitude: "sqrt(x^2 + (v/omega)^2)"
+    phase: "atan2(-v/omega, x)"
+    total_energy: "0.5 * omega^2 * amplitude^2"
+
+simulation:
+  time:
+    start: 0.0
+    end: 100.0        # 100 periods at ω = 2π
+    dt: 0.001         # 1000 steps per period
+    units: "s"
+
+  integrator:
+    type: "stormer_verlet"
+    adaptive: false
+
+  output:
+    sample_interval: 10
+    format: "parquet"
+    quantities:
+      - name: "t"
+        description: "Simulation time"
+      - name: "x"
+        description: "Displacement"
+      - name: "v"
+        description: "Velocity"
+      - name: "E"
+        description: "Total energy"
+      - name: "x_analytical"
+        description: "Analytical solution"
+      - name: "error"
+        description: "Numerical - Analytical"
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "HO-FC-001"
+      name: "Maximum error bound"
+      condition: "max(abs(error)) < tolerance"
+      tolerance: 1e-6
+      severity: "critical"
+
+    - id: "HO-FC-002"
+      name: "Energy conservation"
+      condition: "max(abs(E - E_initial)) / E_initial < tolerance"
+      tolerance: 1e-10
+      severity: "critical"
+
+    - id: "HO-FC-003"
+      name: "Period accuracy"
+      condition: "|T_measured - T_expected| / T_expected < tolerance"
+      tolerance: 1e-6
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  analytical_solution:
+    expression: "amplitude * cos(omega * t + phase)"
+
+  metrics:
+    - name: "L2_error"
+      type: "l2_norm"
+      expected: "< 1e-6"
+
+    - name: "Linf_error"
+      type: "linf_norm"
+      expected: "< 1e-6"
+
+    - name: "energy_drift"
+      type: "conservation"
+      quantity: "E"
+      expected: "< 1e-10"
+
+  convergence:
+    enabled: true
+    dt_sequence: [0.01, 0.005, 0.0025, 0.00125]
+    expected_order: 2
+    tolerance: 0.1
+
+statistics:
+  bootstrap:
+    n_samples: 1000
+    confidence_level: 0.95
+
+reporting:
+  format: "markdown"
+  output: "reports/harmonic_oscillator_verification.md"
+  include:
+    - "hypothesis_test_results"
+    - "convergence_plot"
+    - "energy_conservation_plot"
+    - "error_distribution"

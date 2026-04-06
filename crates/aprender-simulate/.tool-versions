@@ -1,0 +1,4 @@
+# asdf version manager configuration
+# Install with: asdf install
+
+rust 1.83.0

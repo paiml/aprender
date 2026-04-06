@@ -1,0 +1,74 @@
+# Pre-commit hooks for EDD compliance
+# See https://pre-commit.com for more information
+
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Rust formatting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Cargo Format
+        entry: cargo fmt --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: Cargo Clippy (warnings as errors)
+        entry: cargo clippy -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-test
+        name: Cargo Test
+        entry: cargo test --lib
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # EDD Compliance Hooks
+      - id: edd-check
+        name: EDD Compliance Check
+        entry: cargo run --bin simular -- emc-check
+        language: system
+        files: 'examples/experiments/.*\.yaml$'
+        pass_filenames: true
+
+      - id: emc-validate
+        name: EMC Schema Validation
+        entry: python3 -c "import yaml; import sys; yaml.safe_load(open(sys.argv[1]))"
+        language: system
+        files: '\.emc\.yaml$'
+        pass_filenames: true
+
+      # YAML syntax validation
+      - id: yaml-lint
+        name: YAML Lint
+        entry: python3 -c "import yaml; import sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]"
+        language: system
+        types: [yaml]
+        pass_filenames: true
+
+      # Documentation checks
+      - id: check-satd
+        name: Check for SATD (TODO/FIXME/HACK)
+        entry: bash -c 'if grep -rn "TODO\|FIXME\|HACK\|XXX" --include="*.rs" src/; then echo "SATD found! Create GitHub issues instead."; exit 1; fi'
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+# Configuration
+default_stages: [commit]
+fail_fast: false

@@ -1,0 +1,95 @@
+# TPS Test Case 1: Push vs Pull (CONWIP) Effectiveness
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-001"
+
+metadata:
+  name: "Push vs Pull Effectiveness"
+  description: |
+    Validate CONWIP superiority via Little's Law.
+    This is the foundational TPS test case demonstrating that
+    WIP-limited (Pull) systems outperform unrestricted (Push) systems.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "push-pull", "conwip", "wip-control"]
+
+equation_model_card:
+  emc_ref: "operations/littles_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: There is no statistically significant difference in Throughput (TH)
+    or Cycle Time (CT) between Push and Pull systems when resource capacity
+    and average demand are identical.
+  alternative_hypothesis: |
+    H₁: Pull systems achieve lower cycle time with equivalent throughput.
+  expected_outcome: "reject"  # We expect to FALSIFY H₀
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  topology:
+    type: "tandem_line"
+    stations: 5
+
+  scenarios:
+    - name: "push"
+      wip_limit: null  # Unlimited
+      description: "MRP-style unlimited WIP release"
+
+    - name: "pull_conwip"
+      wip_limit: 10  # System-wide cap
+      description: "CONWIP with WIP cap of 10"
+
+  arrivals:
+    distribution: "poisson"
+    rate: 4.5  # units/hour
+
+  processing:
+    distribution: "lognormal"
+    mean: 1.0
+    cv: 1.5  # High variability
+
+  duration:
+    warmup: 100  # hours
+    simulation: 1000  # hours
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC1-CT"
+      name: "Cycle time reduction"
+      condition: "pull_ct < push_ct * 0.6"
+      severity: "major"
+      confidence: 0.95
+
+    - id: "TC1-TH"
+      name: "Throughput maintained"
+      condition: "|pull_th - push_th| / push_th < 0.05"
+      severity: "major"
+
+    - id: "TC1-VAR"
+      name: "Variance reduction"
+      condition: "std(pull_ct) < std(push_ct) * 0.5"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  comparison_test: "welch_t_test"
+  alpha: 0.05
+  effect_size: "cohens_d"
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc1_push_vs_pull.md"
+  include:
+    - "hypothesis_test_results"
+    - "ct_distribution_comparison"
+    - "wip_time_series"

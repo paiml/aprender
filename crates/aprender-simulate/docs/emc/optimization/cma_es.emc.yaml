@@ -1,0 +1,172 @@
+# Equation Model Card (EMC) Schema v1.0
+# CMA-ES (Covariance Matrix Adaptation Evolution Strategy)
+
+emc_version: "1.0"
+emc_id: "EMC-OPT-003"
+
+identity:
+  name: "CMA-ES"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    m^{(g+1)} = m^{(g)} + c_m \sum_{i=1}^{\mu} w_i (x_i^{(g+1)} - m^{(g)})
+    C^{(g+1)} = (1-c_1-c_\mu)C^{(g)} + c_1 p_c p_c^T + c_\mu \sum_{i=1}^{\mu} w_i y_i y_i^T
+  plain_text: "Mean and covariance matrix update equations"
+  description: |
+    CMA-ES is a state-of-the-art derivative-free optimization algorithm.
+    It adapts a multivariate normal search distribution by learning the
+    covariance matrix that captures dependencies between variables.
+
+  variables:
+    - symbol: "m"
+      description: "Distribution mean (current best estimate)"
+      units: "parameter space"
+      type: "dependent"
+    - symbol: "C"
+      description: "Covariance matrix"
+      units: "parameter^2"
+      type: "dependent"
+    - symbol: "sigma"
+      description: "Step size (global scale)"
+      units: "parameter space"
+      type: "dependent"
+    - symbol: "lambda"
+      description: "Population size"
+      units: "count"
+      type: "parameter"
+    - symbol: "mu"
+      description: "Number of parents"
+      units: "count"
+      type: "parameter"
+
+  equation_type: "iterative"
+  order: 1
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Hansen, N.", "Ostermeier, A."]
+    title: "Completely Derandomized Self-Adaptation in Evolution Strategies"
+    journal: "Evolutionary Computation"
+    year: 2001
+    volume: 9
+    issue: 2
+    pages: "159-195"
+
+  supporting_citations:
+    - authors: ["Hansen, N."]
+      title: "The CMA Evolution Strategy: A Tutorial"
+      year: 2016
+      note: "arXiv:1604.00772"
+
+  derivation_method: "Natural gradient on Gaussian search distribution"
+  derivation_summary: |
+    CMA-ES can be derived as natural gradient descent on the expected
+    fitness landscape, where the Fisher information metric naturally
+    leads to covariance matrix adaptation.
+
+domain_of_validity:
+  parameters:
+    dimension:
+      min: 1
+      max: 1000
+      physical_constraint: "Performance degrades for very high dimensions"
+    population_size:
+      min: 4
+      max: null
+      physical_constraint: "lambda >= 4 + floor(3*ln(n))"
+    initial_sigma:
+      min: 0.0
+      max: null
+      physical_constraint: "sigma > 0"
+
+  assumptions:
+    - "Continuous search space"
+    - "Objective function is black-box"
+    - "Function evaluations are expensive"
+    - "No gradient information available"
+
+  limitations:
+    - description: "Not ideal for highly multimodal functions"
+      reference: "May converge to local optima"
+    - description: "Expensive for very high dimensions"
+      reference: "O(n^2) per generation for covariance"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \text{Linear convergence rate: } \|\mathbf{m}^{(g)} - \mathbf{x}^*\| \approx c^g
+    parameters:
+      c: "Convergence rate constant (< 1 for convex functions)"
+
+  test_cases:
+    - name: "Sphere function"
+      objective: "f(x) = sum(x_i^2)"
+      parameters:
+        dimension: 10
+        initial_sigma: 1.0
+      expected:
+        convergence: "linear"
+        evaluations_to_1e-10: 4000
+      tolerance: 0.20
+
+    - name: "Rosenbrock function"
+      objective: "f(x) = sum(100*(x_{i+1}-x_i^2)^2 + (1-x_i)^2)"
+      parameters:
+        dimension: 10
+      expected:
+        global_minimum: 0.0
+        minimizer: "ones(n)"
+      tolerance: 1e-6
+
+verification_tests:
+  tests:
+    - id: "CMA-VT-001"
+      name: "Sphere convergence"
+      type: "optimization"
+      tolerance: 1e-10
+      max_evaluations: 10000
+
+    - id: "CMA-VT-002"
+      name: "Covariance learning"
+      type: "ellipsoid"
+      tolerance: 0.10
+      description: "Learns correct correlation structure"
+
+    - id: "CMA-VT-003"
+      name: "Step size adaptation"
+      type: "path_length"
+      tolerance: 0.20
+      description: "Sigma adapts to landscape"
+
+falsification_criteria:
+  criteria:
+    - id: "CMA-FC-001"
+      name: "Convergence failure"
+      condition: "evaluations > budget and f(m) > target"
+      threshold: null
+      severity: "major"
+
+    - id: "CMA-FC-002"
+      name: "Condition number explosion"
+      condition: "cond(C) > 1e14"
+      threshold: 1e14
+      severity: "critical"
+
+    - id: "CMA-FC-003"
+      name: "Step size collapse"
+      condition: "sigma < 1e-20"
+      threshold: 1e-20
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/optimization/cma_es.rs"
+  test_file: "tests/verification/cma_es_test.rs"
+  experiment_template: "examples/experiments/cma_es.yaml"

@@ -1,0 +1,148 @@
+emc_version: "1.0"
+emc_id: "EMC-ML-002"
+
+identity:
+  name: "Gaussian Process Regression"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "f(x) \\sim \\mathcal{GP}(m(x), k(x, x'))"
+  plain_text: "f(x) ~ GP(m(x), k(x, x'))"
+  description: |
+    A Gaussian Process is a collection of random variables, any finite number
+    of which have a joint Gaussian distribution. GP regression provides a
+    principled, probabilistic approach to learning unknown functions with
+    built-in uncertainty quantification.
+  equation_type: "probabilistic"
+  variables:
+    - symbol: "f"
+      description: "Unknown function"
+      units: "varies"
+      type: "latent"
+    - symbol: "m(x)"
+      description: "Mean function"
+      units: "varies"
+      type: "prior"
+    - symbol: "k(x, x')"
+      description: "Covariance (kernel) function"
+      units: "varies²"
+      type: "prior"
+    - symbol: "X"
+      description: "Training inputs"
+      units: "varies"
+      type: "input"
+    - symbol: "y"
+      description: "Training outputs (possibly noisy)"
+      units: "varies"
+      type: "output"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Rasmussen, C.E.", "Williams, C.K.I."]
+    title: "Gaussian Processes for Machine Learning"
+    year: 2006
+    publisher: "MIT Press"
+  supporting_citations:
+    - authors: ["MacKay, D.J.C."]
+      title: "Information Theory, Inference, and Learning Algorithms"
+      year: 2003
+      publisher: "Cambridge University Press"
+  derivation_method: "Bayesian inference"
+  derivation_summary: |
+    Prior: f ~ GP(m, k)
+    Likelihood: y|f ~ N(f, σ²I)  [for Gaussian noise]
+
+    Posterior predictive at test points X*:
+    f*|X*, X, y ~ N(μ*, Σ*)
+
+    where:
+    μ* = m(X*) + K(X*, X)[K(X, X) + σ²I]^{-1}(y - m(X))
+    Σ* = K(X*, X*) - K(X*, X)[K(X, X) + σ²I]^{-1}K(X, X*)
+
+    K(·,·) denotes kernel matrix evaluated at given points.
+
+domain_of_validity:
+  parameters:
+    noise_variance:
+      min: 0.0
+      max: null
+      units: "varies²"
+      physical_constraint: "σ² ≥ 0"
+  assumptions:
+    - "Prior is Gaussian Process"
+    - "Observation noise is Gaussian (for exact inference)"
+    - "Kernel is positive semi-definite"
+    - "Training data size is manageable (O(n³) complexity)"
+
+kernel_functions:
+  - name: "Squared Exponential (RBF)"
+    formula: "k(x, x') = σ² exp(-||x - x'||²/(2ℓ²))"
+    properties: "Infinitely differentiable, very smooth"
+    hyperparameters: ["σ² (variance)", "ℓ (lengthscale)"]
+  - name: "Matérn 5/2"
+    formula: "k(x, x') = σ²(1 + √5r/ℓ + 5r²/(3ℓ²))exp(-√5r/ℓ)"
+    properties: "Twice differentiable, less smooth than RBF"
+    hyperparameters: ["σ² (variance)", "ℓ (lengthscale)"]
+  - name: "Rational Quadratic"
+    formula: "k(x, x') = σ²(1 + ||x-x'||²/(2αℓ²))^{-α}"
+    properties: "Scale mixture of RBFs"
+    hyperparameters: ["σ²", "ℓ", "α"]
+
+analytical_solution:
+  posterior_mean: "μ* = K(X*, X)[K(X, X) + σ²I]^{-1}y"
+  posterior_variance: "Σ* = K(X*, X*) - K(X*, X)[K(X, X) + σ²I]^{-1}K(X, X*)"
+  marginal_likelihood: "log p(y|X) = -½y^T K_y^{-1} y - ½log|K_y| - (n/2)log(2π)"
+  test_cases:
+    - name: "Interpolation (no noise)"
+      condition: "μ*(x_train) = y_train when σ² = 0"
+      tolerance: 1.0e-10
+    - name: "Uncertainty increases away from data"
+      condition: "Var[f*(x)] increases as x moves from training points"
+    - name: "Prior samples have correct covariance"
+      condition: "Sample covariance ≈ kernel matrix"
+      tolerance: 0.1
+
+verification_tests:
+  tests:
+    - id: "GP-001"
+      name: "Interpolation"
+      condition: "Predictions match training data when noise = 0"
+      tolerance: 1.0e-10
+    - id: "GP-002"
+      name: "Uncertainty quantification"
+      condition: "95% CI covers true function ~95% of time"
+      tolerance: 0.05
+    - id: "GP-003"
+      name: "Posterior consistency"
+      condition: "Posterior variance → 0 as n → ∞ at training points"
+    - id: "GP-004"
+      name: "Marginal likelihood gradient"
+      condition: "Numerical gradient ≈ analytical gradient"
+      tolerance: 1.0e-5
+
+falsification_criteria:
+  criteria:
+    - id: "GP-FC-001"
+      name: "Non-PSD kernel matrix"
+      condition: "K(X, X) has negative eigenvalues"
+      threshold: -1.0e-10
+      severity: "critical"
+    - id: "GP-FC-002"
+      name: "Negative variance"
+      condition: "Posterior variance < 0"
+      threshold: 0.0
+      severity: "critical"
+    - id: "GP-FC-003"
+      name: "Poor uncertainty calibration"
+      condition: "CI coverage deviates significantly from nominal"
+      threshold: 0.1
+      severity: "major"
+    - id: "GP-FC-004"
+      name: "Numerical instability"
+      condition: "NaN or Inf in predictions"
+      threshold: null
+      severity: "critical"

@@ -1,0 +1,140 @@
+emc_version: "1.0"
+emc_id: "EMC-QUE-002"
+
+identity:
+  name: "G/G/1 Queue (Kingman Approximation)"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  status: "production"
+
+governing_equation:
+  latex: "E[W_q] \\approx \\left(\\frac{\\rho}{1-\\rho}\\right) \\left(\\frac{c_a^2 + c_s^2}{2}\\right) \\tau"
+  plain_text: "E[Wq] ≈ (ρ/(1-ρ)) × ((c_a² + c_s²)/2) × τ"
+  description: |
+    Kingman's formula (VUT equation) provides an approximation for the expected
+    waiting time in a G/G/1 queue with general arrival and service distributions.
+    The formula captures the "hockey stick" effect where waiting times explode
+    exponentially as utilization approaches 100%.
+  equation_type: "approximation"
+  variables:
+    - symbol: "Wq"
+      description: "Expected waiting time in queue"
+      units: "time"
+      type: "output"
+    - symbol: "ρ"
+      description: "Utilization (λ/μ)"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "c_a"
+      description: "Coefficient of variation of inter-arrival times"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "c_s"
+      description: "Coefficient of variation of service times"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "τ"
+      description: "Mean service time (1/μ)"
+      units: "time"
+      type: "parameter"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Kingman, J.F.C."]
+    title: "The single server queue in heavy traffic"
+    journal: "Mathematical Proceedings of the Cambridge Philosophical Society"
+    year: 1961
+    volume: 57
+    issue: 4
+    pages: "902-904"
+  supporting_citations:
+    - authors: ["Hopp, W.J.", "Spearman, M.L."]
+      title: "Factory Physics"
+      year: 2011
+      publisher: "Waveland Press"
+      edition: "3rd"
+  derivation_method: "Heavy traffic approximation"
+  derivation_summary: |
+    In heavy traffic (ρ → 1), the queue length behaves like a reflected
+    Brownian motion. The approximation combines:
+    - Utilization factor: ρ/(1-ρ) - the "hockey stick"
+    - Variability factor: (c_a² + c_s²)/2 - arrival and service variability
+    - Time factor: τ = 1/μ - mean service time
+
+    This is known as the VUT (Variability, Utilization, Time) equation.
+
+domain_of_validity:
+  parameters:
+    rho:
+      min: 0.0
+      max: 1.0
+      units: "dimensionless"
+      physical_constraint: "ρ < 1 for stability"
+    c_a:
+      min: 0.0
+      max: null
+      units: "dimensionless"
+      physical_constraint: "c_a ≥ 0"
+    c_s:
+      min: 0.0
+      max: null
+      units: "dimensionless"
+      physical_constraint: "c_s ≥ 0"
+  assumptions:
+    - "Single server"
+    - "Infinite queue capacity"
+    - "FIFO discipline"
+    - "Stationary arrival and service processes"
+    - "Better accuracy at higher utilization (ρ > 0.5)"
+  accuracy_notes: |
+    Kingman's formula is an approximation, exact for M/M/1 (c_a = c_s = 1).
+    Accuracy improves in heavy traffic (ρ → 1).
+    For low utilization, exact formulas (if available) are preferred.
+
+verification_tests:
+  tests:
+    - id: "GG1-001"
+      name: "M/M/1 validation"
+      description: "Kingman reduces to M/M/1 formula when c_a = c_s = 1"
+      parameters:
+        rho: 0.8
+        c_a: 1.0
+        c_s: 1.0
+        tau: 1.0
+      expected:
+        Wq: 4.0
+      tolerance: 0.01
+    - id: "GG1-002"
+      name: "Deterministic service"
+      description: "D/M/1 queue with c_s = 0"
+      parameters:
+        rho: 0.8
+        c_a: 1.0
+        c_s: 0.0
+        tau: 1.0
+      expected:
+        Wq: 2.0
+      tolerance: 0.1
+    - id: "GG1-003"
+      name: "Hockey stick effect"
+      description: "Wait time explodes at high utilization"
+      parameters_sequence:
+        - {rho: 0.5, expected_ratio: 1.0}
+        - {rho: 0.7, expected_ratio: 2.33}
+        - {rho: 0.85, expected_ratio: 5.67}
+        - {rho: 0.95, expected_ratio: 19.0}
+
+falsification_criteria:
+  criteria:
+    - id: "GG1-FC-001"
+      name: "Non-exponential growth"
+      condition: "Wait time growth is linear, not exponential"
+      threshold: null
+      severity: "critical"
+    - id: "GG1-FC-002"
+      name: "Approximation error excessive"
+      condition: "|Wq_sim - Wq_kingman| / Wq_sim > 0.2 for ρ > 0.7"
+      threshold: 0.2
+      severity: "major"

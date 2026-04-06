@@ -1,0 +1,106 @@
+# TPS Test Case 9: Square Root Law of Inventory
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-009"
+
+metadata:
+  name: "Square Root Law of Inventory"
+  description: |
+    Validate that safety stock scales with the square root of demand
+    variability, not linearly. This validates Toyota's strategy of
+    risk pooling and centralized logistics (supermarket concept).
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "square-root-law", "safety-stock", "inventory"]
+
+equation_model_card:
+  emc_ref: "operations/square_root_law"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Safety stock requirements scale linearly with demand variability.
+    If demand doubles, safety stock doubles.
+  alternative_hypothesis: |
+    H₁: Safety stock scales as √demand per the Square Root Law.
+    If demand quadruples, safety stock only doubles.
+  expected_outcome: "reject"  # Scaling is square root
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  inventory_system:
+    type: "periodic_review"
+    review_period: 7  # days
+    lead_time: 14  # days
+    service_level: 0.95  # 95% fill rate
+
+  demand_scenarios:
+    - name: "baseline"
+      mean: 100
+      std: 20
+
+    - name: "2x_demand"
+      mean: 200
+      std: 40
+
+    - name: "4x_demand"
+      mean: 400
+      std: 80
+
+    - name: "16x_demand"
+      mean: 1600
+      std: 320
+
+  duration:
+    warmup: 100  # days
+    simulation: 1000  # days
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC9-SQRT"
+      name: "Square root scaling"
+      condition: "stock_4x / stock_1x in [1.8, 2.2]"
+      severity: "critical"
+      interpretation: "4x demand -> 2x stock (sqrt(4) = 2)"
+
+    - id: "TC9-NOT-LINEAR"
+      name: "Not linear scaling"
+      condition: "stock_4x / stock_1x < 3.0"
+      severity: "major"
+      interpretation: "Linear would predict 4x stock"
+
+    - id: "TC9-16X"
+      name: "16x demand check"
+      condition: "stock_16x / stock_1x in [3.6, 4.4]"
+      severity: "major"
+      interpretation: "16x demand -> 4x stock (sqrt(16) = 4)"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  analytical_formula:
+    safety_stock: "z * sigma_D * sqrt(L + R)"
+    variables:
+      z: "service_level_factor (1.645 for 95%)"
+      sigma_D: "demand_std_dev"
+      L: "lead_time"
+      R: "review_period"
+
+statistics:
+  regression_model: "log_log"
+  expected_slope: 0.5  # Square root law
+  tolerance: 0.1
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc9_square_root_law.md"
+  include:
+    - "scaling_plot"
+    - "log_log_regression"

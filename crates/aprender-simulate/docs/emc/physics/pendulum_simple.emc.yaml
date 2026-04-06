@@ -1,0 +1,180 @@
+# Equation Model Card (EMC) Schema v1.0
+# Simple Pendulum
+
+emc_version: "1.0"
+emc_id: "EMC-PHYS-004"
+
+identity:
+  name: "Simple Pendulum"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \frac{d^2\theta}{dt^2} + \frac{g}{L}\sin\theta = 0
+  plain_text: "d^2(theta)/dt^2 + (g/L)*sin(theta) = 0"
+  description: |
+    The simple pendulum equation describes angular motion of a point mass
+    on a massless rod under gravity. The full nonlinear equation has no
+    closed-form solution in elementary functions, but can be expressed
+    using elliptic integrals. For small angles, sin(theta) ~ theta.
+
+  variables:
+    - symbol: "theta"
+      description: "Angular displacement from vertical"
+      units: "rad"
+      type: "dependent"
+    - symbol: "t"
+      description: "Time"
+      units: "s"
+      type: "independent"
+    - symbol: "g"
+      description: "Gravitational acceleration"
+      units: "m/s^2"
+      type: "parameter"
+    - symbol: "L"
+      description: "Pendulum length"
+      units: "m"
+      type: "parameter"
+
+  equation_type: "ODE"
+  order: 2
+  linearity: "nonlinear"
+  homogeneity: "homogeneous"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Goldstein, H.", "Poole, C.", "Safko, J."]
+    title: "Classical Mechanics"
+    year: 2002
+    publisher: "Addison-Wesley"
+    edition: "3rd"
+    pages: "11-14"
+    isbn: "978-0201657029"
+
+  derivation_method: "Lagrangian mechanics"
+  derivation_summary: |
+    From L = T - V = (1/2)mL^2*theta_dot^2 + mgL*cos(theta),
+    the Euler-Lagrange equation yields:
+    mL^2*theta_ddot = -mgL*sin(theta)
+    => theta_ddot + (g/L)*sin(theta) = 0
+
+domain_of_validity:
+  parameters:
+    L:
+      min: 0.001
+      max: 1e6
+      units: "m"
+      physical_constraint: "L > 0"
+    g:
+      min: 0.0
+      max: 1e3
+      units: "m/s^2"
+      physical_constraint: "g >= 0"
+    theta_0:
+      min: -3.14159
+      max: 3.14159
+      units: "rad"
+      physical_constraint: "-pi < theta < pi"
+
+  assumptions:
+    - "Point mass (massless rod)"
+    - "No air resistance"
+    - "Rigid constraint"
+    - "Uniform gravitational field"
+    - "No friction at pivot"
+
+  limitations:
+    - description: "Chaos at high energy"
+      reference: "Near separatrix, sensitive to initial conditions"
+    - description: "Period depends on amplitude"
+      reference: "Not isochronous for large angles"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      T = 4\sqrt{\frac{L}{g}}K(k), \quad k = \sin(\theta_0/2)
+    parameters:
+      K: "Complete elliptic integral of first kind"
+      k: "Elliptic modulus from initial amplitude"
+
+  test_cases:
+    - name: "Small angle (linear)"
+      initial_conditions:
+        theta0: 0.1
+        omega0: 0.0
+      parameters:
+        L: 1.0
+        g: 9.81
+      expected_period: 2.006
+      tolerance: 0.001
+
+    - name: "Medium angle"
+      initial_conditions:
+        theta0: 0.5
+        omega0: 0.0
+      parameters:
+        L: 1.0
+        g: 9.81
+      expected_period: 2.043
+      tolerance: 0.01
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Stormer-Verlet"
+      order: 2
+      symplectic: true
+      energy_drift: "bounded"
+
+  stability_conditions:
+    - condition: "dt < 0.1 * sqrt(L/g)"
+      description: "CFL-like stability for explicit methods"
+
+  conserved_quantities:
+    - name: "Total energy"
+      expression: "E = (1/2)*L^2*omega^2 - g*L*cos(theta)"
+      tolerance: 1e-8
+
+verification_tests:
+  tests:
+    - id: "PEND-VT-001"
+      name: "Small angle period"
+      type: "numerical_vs_analytical"
+      tolerance: 0.001
+      description: "Verify period = 2*pi*sqrt(L/g) for small angles"
+
+    - id: "PEND-VT-002"
+      name: "Energy conservation"
+      type: "conservation_law"
+      tolerance: 1e-8
+      description: "Total energy constant for symplectic integrator"
+
+    - id: "PEND-VT-003"
+      name: "Large angle period correction"
+      type: "elliptic_integral"
+      tolerance: 0.01
+      description: "Period matches elliptic integral formula"
+
+falsification_criteria:
+  criteria:
+    - id: "PEND-FC-001"
+      name: "Energy drift"
+      condition: "|E(t) - E(0)| / |E(0)| > tolerance"
+      threshold: 1e-6
+      severity: "critical"
+
+    - id: "PEND-FC-002"
+      name: "Period error"
+      condition: "|T_sim - T_exact| / T_exact > tolerance"
+      threshold: 0.01
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/physics/pendulum.rs"
+  test_file: "tests/verification/pendulum_test.rs"
+  experiment_template: "examples/experiments/pendulum.yaml"

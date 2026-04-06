@@ -1,0 +1,166 @@
+# Equation Model Card (EMC) Schema v1.0
+# Logistic Regression
+
+emc_version: "1.0"
+emc_id: "EMC-ML-003"
+
+identity:
+  name: "Logistic Regression"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    P(Y=1|X) = \sigma(\mathbf{w}^T\mathbf{x} + b) = \frac{1}{1 + e^{-(\mathbf{w}^T\mathbf{x} + b)}}
+  plain_text: "P(Y=1|X) = 1 / (1 + exp(-(w'x + b)))"
+  description: |
+    Logistic regression models the probability of a binary outcome as
+    a logistic (sigmoid) function of a linear combination of features.
+    The parameters are typically estimated by maximum likelihood,
+    which is equivalent to minimizing cross-entropy loss.
+
+  variables:
+    - symbol: "w"
+      description: "Weight vector"
+      units: "1/feature_units"
+      type: "parameter"
+    - symbol: "b"
+      description: "Bias (intercept)"
+      units: "dimensionless"
+      type: "parameter"
+    - symbol: "x"
+      description: "Feature vector"
+      units: "feature_units"
+      type: "input"
+    - symbol: "sigma"
+      description: "Sigmoid function"
+      units: "probability"
+      type: "function"
+
+  equation_type: "classification"
+  order: 0
+  linearity: "nonlinear in x, linear in logit space"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Cox, D.R."]
+    title: "The Regression Analysis of Binary Sequences"
+    journal: "Journal of the Royal Statistical Society B"
+    year: 1958
+    volume: 20
+    issue: 2
+    pages: "215-242"
+
+  supporting_citations:
+    - authors: ["Hastie, T.", "Tibshirani, R.", "Friedman, J."]
+      title: "The Elements of Statistical Learning"
+      year: 2009
+      publisher: "Springer"
+      edition: "2nd"
+
+  derivation_method: "Maximum likelihood estimation"
+  derivation_summary: |
+    The log-likelihood is:
+    L(w,b) = sum(y_i * log(p_i) + (1-y_i) * log(1-p_i))
+    Setting gradients to zero gives no closed form, but
+    the Hessian is negative definite (convex optimization).
+
+domain_of_validity:
+  parameters:
+    features:
+      min: 1
+      max: null
+      physical_constraint: "At least one feature"
+    regularization:
+      min: 0.0
+      max: null
+      physical_constraint: "lambda >= 0 for L2 regularization"
+
+  assumptions:
+    - "Binary outcome Y in {0, 1}"
+    - "Linear decision boundary in feature space"
+    - "Observations are independent"
+    - "No perfect multicollinearity"
+
+  limitations:
+    - description: "Linear decision boundary only"
+      reference: "Add polynomial features for nonlinearity"
+    - description: "Assumes separability"
+      reference: "May not converge if perfectly separable"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      \mathbf{w}^* = \arg\min_{\mathbf{w}} \sum_{i=1}^n -y_i \log(\sigma(\mathbf{w}^T\mathbf{x}_i)) - (1-y_i)\log(1-\sigma(\mathbf{w}^T\mathbf{x}_i))
+    parameters:
+      w_star: "Optimal weights (found via iterative optimization)"
+
+  test_cases:
+    - name: "Linearly separable"
+      parameters:
+        n_samples: 100
+        n_features: 2
+        separable: true
+      expected:
+        accuracy: 1.0
+        loss: 0.0
+      tolerance: 0.01
+
+    - name: "XOR pattern"
+      parameters:
+        n_samples: 100
+        pattern: "xor"
+      expected:
+        accuracy: 0.5  # Cannot learn XOR
+      tolerance: 0.05
+
+verification_tests:
+  tests:
+    - id: "LR-VT-001"
+      name: "Gradient correctness"
+      type: "numerical_gradient"
+      tolerance: 1e-5
+      description: "Analytical gradient matches numerical"
+
+    - id: "LR-VT-002"
+      name: "Convergence"
+      type: "optimization"
+      tolerance: 1e-6
+      description: "Loss decreases monotonically"
+
+    - id: "LR-VT-003"
+      name: "Probability calibration"
+      type: "calibration"
+      tolerance: 0.05
+      description: "Predicted probabilities are well-calibrated"
+
+falsification_criteria:
+  criteria:
+    - id: "LR-FC-001"
+      name: "Non-convergence"
+      condition: "iterations > max_iter and ||grad|| > tol"
+      threshold: 1e-4
+      severity: "major"
+
+    - id: "LR-FC-002"
+      name: "Perfect separation"
+      condition: "any(|w| > 1e10)"
+      threshold: 1e10
+      severity: "major"
+      interpretation: "Coefficients diverge due to separability"
+
+    - id: "LR-FC-003"
+      name: "Probability bounds"
+      condition: "any(p < 0) or any(p > 1)"
+      threshold: 0.0
+      severity: "critical"
+
+implementation:
+  source_file: "src/domains/ml/logistic_regression.rs"
+  test_file: "tests/verification/logistic_regression_test.rs"
+  experiment_template: "examples/experiments/logistic_regression.yaml"

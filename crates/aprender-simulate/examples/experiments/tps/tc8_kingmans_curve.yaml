@@ -1,0 +1,93 @@
+# TPS Test Case 8: Kingman's Curve (Variability vs Utilization)
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-008"
+
+metadata:
+  name: "Kingman's Curve Validation"
+  description: |
+    Validate that queue waiting times follow Kingman's VUT formula,
+    showing exponential (not linear) growth with utilization.
+    This is the mathematical foundation for Mura (unevenness) as waste.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "kingman", "vut", "queueing", "mura"]
+
+equation_model_card:
+  emc_ref: "operations/kingmans_formula"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Queue waiting time increases linearly with utilization.
+  alternative_hypothesis: |
+    H₁: Waiting time follows the VUT equation, growing exponentially
+    (hockey stick curve) as utilization approaches 100%.
+  expected_outcome: "reject"  # Wait times are exponential
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  queue_type: "G/G/1"
+
+  service:
+    mean: 1.0
+    cv: 1.0  # Standard exponential-like variability
+
+  arrivals:
+    cv: 1.0
+
+  utilization_levels: [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 0.99]
+
+  duration:
+    warmup: 1000
+    simulation: 10000
+    replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC8-VUT"
+      name: "VUT formula fit"
+      condition: "R_squared_vut > 0.99"
+      severity: "critical"
+
+    - id: "TC8-HOCKEY"
+      name: "Hockey stick shape"
+      condition: "delta_wait[95%] / delta_wait[70%] > 5"
+      severity: "major"
+      interpretation: "Growth accelerates at high utilization"
+
+    - id: "TC8-LINEAR-REJECT"
+      name: "Linear model rejected"
+      condition: "R_squared_linear < 0.80"
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  analytical_comparison:
+    formula: "(rho / (1-rho)) * ((ca^2 + cs^2) / 2) * ts"
+    variables:
+      rho: "utilization"
+      ca: "cv_arrivals"
+      cs: "cv_service"
+      ts: "mean_service_time"
+
+statistics:
+  model_comparison:
+    models: ["linear", "vut_exponential"]
+    criterion: "aic"
+  alpha: 0.05
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc8_kingmans_curve.md"
+  include:
+    - "vut_curve_plot"
+    - "model_comparison"
+    - "residual_analysis"

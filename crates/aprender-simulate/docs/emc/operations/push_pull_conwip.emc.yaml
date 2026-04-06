@@ -1,0 +1,163 @@
+# Equation Model Card (EMC) Schema v1.0
+# Push/Pull/CONWIP WIP Control Systems
+
+emc_version: "1.0"
+emc_id: "EMC-OPS-005"
+
+identity:
+  name: "Push/Pull/CONWIP Systems"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \text{CONWIP: } WIP(t) \leq W_{max}
+    \text{Pull: } WIP_i(t) \leq K_i \quad \forall i
+    \text{Push: } WIP(t) = \text{unrestricted}
+  plain_text: "CONWIP caps system WIP; Kanban caps station WIP; Push has no WIP limits"
+  description: |
+    WIP control mechanisms determine how work is released to the production
+    system. The Hopp-Spearman theorem proves that Pull systems (WIP-limited)
+    outperform Push systems (unrestricted) in cycle time for a given throughput.
+
+  variables:
+    - symbol: "WIP"
+      description: "Work in process (total units in system)"
+      units: "units"
+      type: "state"
+    - symbol: "W_max"
+      description: "CONWIP limit (system-wide)"
+      units: "units"
+      type: "parameter"
+    - symbol: "K_i"
+      description: "Kanban limit at station i"
+      units: "units"
+      type: "parameter"
+    - symbol: "CT"
+      description: "Cycle time"
+      units: "time"
+      type: "output"
+    - symbol: "TH"
+      description: "Throughput"
+      units: "units/time"
+      type: "output"
+
+  equation_type: "control"
+  order: 0
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Hopp, W.J.", "Spearman, M.L."]
+    title: "To Pull or Not to Pull: What Is the Question?"
+    journal: "Manufacturing & Service Operations Management"
+    year: 2004
+    volume: 6
+    issue: 2
+    pages: "133-148"
+
+  supporting_citations:
+    - authors: ["Spearman, M.L.", "Woodruff, D.L.", "Hopp, W.J."]
+      title: "CONWIP: A pull alternative to kanban"
+      journal: "International Journal of Production Research"
+      year: 1990
+      volume: 28
+      issue: 5
+      pages: "879-894"
+
+  derivation_method: "Little's Law with WIP constraints"
+  derivation_summary: |
+    From Little's Law CT = WIP/TH, if WIP is bounded (Pull/CONWIP)
+    then CT is bounded. Push allows WIP to grow unboundedly during
+    variability spikes, causing CT explosion.
+
+domain_of_validity:
+  parameters:
+    wip_limit:
+      min: 1
+      max: null
+      physical_constraint: "W_max >= 1"
+    utilization:
+      min: 0.0
+      max: 1.0
+      physical_constraint: "rho < 1 for stability"
+
+  assumptions:
+    - "Stochastic arrivals and/or service"
+    - "Finite capacity servers"
+    - "FIFO processing within stations"
+    - "No blocking (infinite buffers) or CONWIP blocking"
+
+  limitations:
+    - description: "CONWIP requires global WIP tracking"
+      reference: "Needs information system"
+    - description: "Kanban requires balanced line"
+      reference: "Unbalanced lines benefit from DBR"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      CT_{pull} = \frac{W_{max}}{TH} \leq CT_{push}
+      \text{Variance: } Var(CT_{pull}) \ll Var(CT_{push})
+    parameters:
+      W_max: "CONWIP limit determines maximum CT"
+
+  test_cases:
+    - name: "TPS TC-1: Push vs Pull"
+      parameters:
+        stations: 5
+        arrival_rate: 4.5
+        processing_cv: 1.5
+        wip_cap: 10
+      expected:
+        push_wip: 24.5
+        pull_wip: 10.0
+        push_ct: 5.4
+        pull_ct: 2.2
+        throughput_diff: "<1%"
+      tolerance: 0.10
+
+verification_tests:
+  tests:
+    - id: "WIP-VT-001"
+      name: "CONWIP limit respected"
+      type: "constraint"
+      tolerance: 0
+      description: "WIP never exceeds W_max"
+
+    - id: "WIP-VT-002"
+      name: "CT bounded by WIP"
+      type: "littles_law"
+      tolerance: 0.05
+      description: "CT <= WIP_max / TH"
+
+    - id: "WIP-VT-003"
+      name: "Pull reduces variance"
+      type: "variance_comparison"
+      tolerance: 0.20
+      description: "Var(CT_pull) < Var(CT_push)"
+
+falsification_criteria:
+  criteria:
+    - id: "WIP-FC-001"
+      name: "WIP limit violation"
+      condition: "WIP > W_max"
+      threshold: 0
+      severity: "critical"
+
+    - id: "WIP-FC-002"
+      name: "Pull not superior"
+      condition: "CT_pull >= CT_push"
+      threshold: null
+      severity: "major"
+      interpretation: "Should reject H0 that Push=Pull"
+
+implementation:
+  source_file: "src/domains/operations/wip_control.rs"
+  test_file: "tests/verification/wip_control_test.rs"
+  experiment_template: "examples/experiments/push_vs_pull.yaml"

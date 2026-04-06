@@ -1,0 +1,17 @@
+# Code Owners for simular
+# These users will be requested for review on PRs
+
+# Default owners for everything
+* @paiml/simular-maintainers
+
+# Documentation
+docs/ @paiml/simular-maintainers
+*.md @paiml/simular-maintainers
+
+# Core simulation engine
+src/engine/ @paiml/simular-maintainers
+src/orbit/ @paiml/simular-maintainers
+
+# Benchmarks and tests
+benches/ @paiml/simular-maintainers
+tests/ @paiml/simular-maintainers

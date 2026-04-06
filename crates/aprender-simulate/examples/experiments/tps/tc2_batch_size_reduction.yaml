@@ -1,0 +1,93 @@
+# TPS Test Case 2: Batch Size Reduction & Cycle Time
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "TPS-TC-002"
+
+metadata:
+  name: "Batch Size Reduction with SMED"
+  description: |
+    Validate that small batches reduce cycle time when SMED is applied.
+    Mass production logic says large batches amortize setup costs.
+    TPS argues queue time reduction outweighs setup frequency increase.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["tps", "operations", "smed", "one-piece-flow", "batch-sizing"]
+
+equation_model_card:
+  emc_ref: "operations/batch_sizing_epei"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Reducing batch size increases the frequency of setups, thereby
+    reducing effective capacity and increasing total Cycle Time.
+  alternative_hypothesis: |
+    H₁: With SMED, small batches achieve lower cycle time without
+    capacity loss.
+  expected_outcome: "reject"  # Conditional on SMED
+
+reproducibility:
+  seed: 42
+  ieee_strict: true
+
+simulation:
+  scenarios:
+    - name: "mass_production"
+      batch_size: 100
+      setup_time: 30  # minutes
+      description: "Traditional large batch with long setup"
+
+    - name: "lean_with_smed"
+      batch_size: 10
+      setup_time: 3  # minutes (90% reduction via SMED)
+      description: "Small batch enabled by SMED"
+
+    - name: "lean_without_smed"
+      batch_size: 10
+      setup_time: 30  # minutes (no SMED - control group)
+      description: "Small batch without SMED - should fail"
+
+  processing:
+    unit_time: 1.0  # minutes per unit
+    cv: 0.3  # Low variability
+
+  demand:
+    rate: 4.0  # units/hour
+    distribution: "constant"
+
+  duration:
+    warmup: 100
+    simulation: 500
+    replications: 20
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "TC2-CT-SMED"
+      name: "CT reduction with SMED"
+      condition: "ct_lean_smed < ct_mass * 0.5"
+      severity: "major"
+
+    - id: "TC2-CT-NO-SMED"
+      name: "CT explosion without SMED"
+      condition: "ct_lean_no_smed > ct_mass * 2"
+      severity: "major"
+      interpretation: "Proves SMED necessity"
+
+    - id: "TC2-TH-SMED"
+      name: "Throughput maintained"
+      condition: "th_lean_smed >= th_mass * 0.95"
+      severity: "major"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+statistics:
+  comparison_test: "anova"
+  alpha: 0.05
+  post_hoc: "tukey_hsd"
+
+reporting:
+  format: "markdown"
+  output: "reports/tps/tc2_batch_size.md"

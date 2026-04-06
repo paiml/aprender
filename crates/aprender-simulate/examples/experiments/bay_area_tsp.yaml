@@ -1,0 +1,159 @@
+# California TSP Ground Truth Instance (OR-001)
+#
+# User-editable TSP instance - modify cities and distances freely.
+# This file follows the YAML-first architecture: change data here,
+# not in code.
+#
+# 20 California cities from Bay Area to Sacramento/Central Valley.
+# Provides meaningful optimization challenge (10-30 seconds to converge).
+#
+# Toyota Production System Compliance:
+#   - Jidoka: Zero edge crossings required (Lin-Kernighan 1973)
+#   - Muda: Stagnation detection enabled (configurable threshold)
+#   - Heijunka: Adaptive tick rate in TUI
+#   - Poka-Yoke: Input validation in YAML parser
+#
+# References (IEEE Style):
+#   [51] Feo & Resende, "GRASP," J. Global Optimization, 1995
+#   [52] Lin & Kernighan, "TSP Heuristics," Operations Research, 1973
+#   [56] Held & Karp, "TSP and MST," Operations Research, 1970
+#   See: docs/specifications/simple-or-example.md (OR-001 Spec)
+
+# Per SIMULAR-DEMO-002: DemoEngine requires simulation.type
+simulation:
+  type: tsp
+  name: "20-City California TSP"
+
+meta:
+  id: "TSP-CA-020"
+  version: "2.0.0"
+  description: "20-city California instance - Bay Area to Sacramento region"
+  source: "Google Maps (Dec 2024), approximate driving distances"
+  units: "miles"
+  optimal_known: null  # Unknown for 20 cities - let GRASP find it
+
+cities:
+  # Bay Area Core (0-5)
+  - id: 0
+    name: "San Francisco"
+    alias: "SF"
+    coords: { lat: 37.7749, lon: -122.4194 }
+  - id: 1
+    name: "Oakland"
+    alias: "OAK"
+    coords: { lat: 37.8044, lon: -122.2712 }
+  - id: 2
+    name: "San Jose"
+    alias: "SJ"
+    coords: { lat: 37.3382, lon: -121.8863 }
+  - id: 3
+    name: "Palo Alto"
+    alias: "PA"
+    coords: { lat: 37.4419, lon: -122.1430 }
+  - id: 4
+    name: "Berkeley"
+    alias: "BRK"
+    coords: { lat: 37.8716, lon: -122.2727 }
+  - id: 5
+    name: "Fremont"
+    alias: "FRE"
+    coords: { lat: 37.5485, lon: -121.9886 }
+
+  # South Bay / Peninsula (6-9)
+  - id: 6
+    name: "Santa Clara"
+    alias: "SCA"
+    coords: { lat: 37.3541, lon: -121.9552 }
+  - id: 7
+    name: "Mountain View"
+    alias: "MTV"
+    coords: { lat: 37.3861, lon: -122.0839 }
+  - id: 8
+    name: "Redwood City"
+    alias: "RWC"
+    coords: { lat: 37.4852, lon: -122.2364 }
+  - id: 9
+    name: "San Mateo"
+    alias: "SMO"
+    coords: { lat: 37.5630, lon: -122.3255 }
+
+  # East Bay (10-13)
+  - id: 10
+    name: "Concord"
+    alias: "CCR"
+    coords: { lat: 37.9779, lon: -122.0311 }
+  - id: 11
+    name: "Walnut Creek"
+    alias: "WCK"
+    coords: { lat: 37.9101, lon: -122.0652 }
+  - id: 12
+    name: "Richmond"
+    alias: "RIC"
+    coords: { lat: 37.9358, lon: -122.3477 }
+  - id: 13
+    name: "Livermore"
+    alias: "LIV"
+    coords: { lat: 37.6819, lon: -121.7680 }
+
+  # North Bay (14-16)
+  - id: 14
+    name: "Santa Rosa"
+    alias: "SRO"
+    coords: { lat: 38.4404, lon: -122.7141 }
+  - id: 15
+    name: "Napa"
+    alias: "NAP"
+    coords: { lat: 38.2975, lon: -122.2869 }
+  - id: 16
+    name: "Vallejo"
+    alias: "VLJ"
+    coords: { lat: 38.1041, lon: -122.2566 }
+
+  # Central Valley (17-19)
+  - id: 17
+    name: "Sacramento"
+    alias: "SAC"
+    coords: { lat: 38.5816, lon: -121.4944 }
+  - id: 18
+    name: "Stockton"
+    alias: "STK"
+    coords: { lat: 37.9577, lon: -121.2908 }
+  - id: 19
+    name: "Modesto"
+    alias: "MOD"
+    coords: { lat: 37.6391, lon: -120.9969 }
+
+# Distance Matrix (Row=From, Col=To) - 20x20
+# Symmetric matrix, approximate driving distances in miles
+# Order: SF, OAK, SJ, PA, BRK, FRE, SCA, MTV, RWC, SMO, CCR, WCK, RIC, LIV, SRO, NAP, VLJ, SAC, STK, MOD
+matrix:
+  #     SF  OAK  SJ   PA  BRK  FRE  SCA  MTV  RWC  SMO  CCR  WCK  RIC  LIV  SRO  NAP  VLJ  SAC  STK  MOD
+  - [   0,  12,  48,  35,  14,  42,  46,  38,  27,  20,  32,  28,  18,  48,  55,  50,  30,  88,  78,  92]  # SF
+  - [  12,   0,  42,  30,   4,  30,  40,  32,  22,  16,  24,  20,  10,  38,  58,  45,  26,  80,  65,  82]  # OAK
+  - [  48,  42,   0,  15,  46,  17,   5,   8,  22,  30,  52,  45,  48,  32,  95,  75,  58, 115,  68,  72]  # SJ
+  - [  35,  30,  15,   0,  32,  18,  12,   5,  12,  18,  42,  36,  38,  35,  82,  65,  48, 105,  72,  85]  # PA
+  - [  14,   4,  46,  32,   0,  32,  42,  35,  25,  18,  22,  18,   8,  40,  55,  42,  24,  78,  68,  85]  # BRK
+  - [  42,  30,  17,  18,  32,   0,  12,  15,  25,  32,  38,  32,  35,  22,  85,  68,  52, 100,  55,  65]  # FRE
+  - [  46,  40,   5,  12,  42,  12,   0,   6,  20,  28,  50,  42,  45,  28,  92,  72,  55, 112,  62,  68]  # SCA
+  - [  38,  32,   8,   5,  35,  15,   6,   0,  14,  22,  45,  38,  40,  32,  85,  68,  50, 108,  70,  78]  # MTV
+  - [  27,  22,  22,  12,  25,  25,  20,  14,   0,   8,  38,  32,  28,  42,  72,  58,  42,  98,  78,  88]  # RWC
+  - [  20,  16,  30,  18,  18,  32,  28,  22,   8,   0,  32,  26,  22,  45,  65,  52,  35,  92,  75,  88]  # SMO
+  - [  32,  24,  52,  42,  22,  38,  50,  45,  38,  32,   0,   8,  18,  28,  58,  38,  22,  62,  50,  65]  # CCR
+  - [  28,  20,  45,  36,  18,  32,  42,  38,  32,  26,   8,   0,  15,  25,  55,  35,  20,  60,  48,  62]  # WCK
+  - [  18,  10,  48,  38,   8,  35,  45,  40,  28,  22,  18,  15,   0,  42,  52,  40,  18,  75,  62,  78]  # RIC
+  - [  48,  38,  32,  35,  40,  22,  28,  32,  42,  45,  28,  25,  42,   0,  85,  62,  48,  72,  35,  45]  # LIV
+  - [  55,  58,  95,  82,  55,  85,  92,  85,  72,  65,  58,  55,  52,  85,   0,  32,  42,  78,  95, 108]  # SRO
+  - [  50,  45,  75,  65,  42,  68,  72,  68,  58,  52,  38,  35,  40,  62,  32,   0,  22,  58,  68,  82]  # NAP
+  - [  30,  26,  58,  48,  24,  52,  55,  50,  42,  35,  22,  20,  18,  48,  42,  22,   0,  58,  55,  70]  # VLJ
+  - [  88,  80, 115, 105,  78, 100, 112, 108,  98,  92,  62,  60,  75,  72,  78,  58,  58,   0,  48,  68]  # SAC
+  - [  78,  65,  68,  72,  68,  55,  62,  70,  78,  75,  50,  48,  62,  35,  95,  68,  55,  48,   0,  30]  # STK
+  - [  92,  82,  72,  85,  85,  65,  68,  78,  88,  88,  65,  62,  78,  45, 108,  82,  70,  68,  30,   0]  # MOD
+
+# Algorithm configuration (user-selectable)
+algorithm:
+  method: "grasp"  # Options: greedy, grasp, brute_force
+  params:
+    rcl_size: 3        # Restricted Candidate List size for GRASP
+    restarts: 100      # More restarts for larger instance
+    two_opt: true      # Enable 2-opt local search
+    seed: 42           # For reproducibility

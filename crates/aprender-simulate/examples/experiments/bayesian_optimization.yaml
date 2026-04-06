@@ -1,0 +1,123 @@
+# Bayesian Optimization Verification Experiment
+# EDD-compliant experiment specification
+
+experiment_version: "1.0"
+experiment_id: "EXP-BO-001"
+
+metadata:
+  name: "Bayesian Optimization Verification"
+  description: |
+    Verify GP surrogate and Expected Improvement acquisition function
+    on the Branin benchmark function.
+  author: "PAIML Engineering"
+  created: "2025-12-11"
+  tags: ["optimization", "bayesian", "gaussian-process", "verification"]
+
+equation_model_card:
+  emc_ref: "optimization/bayesian_optimization"
+  emc_version: "1.0.0"
+
+hypothesis:
+  null_hypothesis: |
+    H₀: Bayesian optimization with GP surrogate and Expected Improvement
+    fails to find global minimum of Branin function within 50 evaluations.
+  alternative_hypothesis: |
+    H₁: BO finds a point within 0.01 of global minimum value.
+  expected_outcome: "reject"  # BO should succeed
+
+reproducibility:
+  seed: 2718281828
+  ieee_strict: true
+
+simulation:
+  objective:
+    name: "branin"
+    # f(x,y) = a(y - bx² + cx - r)² + s(1-t)cos(x) + s
+    parameters:
+      a: 1.0
+      b: 0.12918450914398066  # 5.1/(4π²)
+      c: 1.5915494309189535   # 5/π
+      r: 6.0
+      s: 10.0
+      t: 0.039788735772973836 # 1/(8π)
+    bounds: [[-5, 10], [0, 15]]
+    global_minimum: 0.397887
+    global_minimizers:
+      - [-3.14159, 12.275]
+      - [3.14159, 2.275]
+      - [9.42478, 2.475]
+
+  surrogate:
+    type: "gaussian_process"
+    kernel: "matern_5_2"
+    noise: 1e-6
+    normalize_y: true
+
+  acquisition:
+    type: "expected_improvement"
+    xi: 0.01  # Exploration-exploitation tradeoff
+    optimizer: "l_bfgs_b"
+    n_restarts: 10
+
+  initial_design:
+    type: "latin_hypercube"
+    n_points: 5
+
+  budget: 50
+  replications: 30
+
+falsification:
+  import_from_emc: true
+  criteria:
+    - id: "BO-OPT"
+      name: "Optimization success"
+      condition: "best_observed - global_minimum < tolerance"
+      tolerance: 0.01
+      severity: "critical"
+
+    - id: "BO-REGRET"
+      name: "Simple regret"
+      condition: "simple_regret < 0.1"
+      severity: "major"
+
+    - id: "BO-CUMREGRET"
+      name: "Cumulative regret"
+      condition: "cumulative_regret / budget < 1.0"
+      severity: "minor"
+
+  jidoka:
+    enabled: true
+    stop_on_severity: "critical"
+
+verification:
+  gp_validation:
+    - name: "predictive_coverage"
+      description: "95% CI should contain true value ~95% of time"
+      expected_coverage: 0.95
+      tolerance: 0.05
+
+    - name: "nlpd"
+      description: "Negative log predictive density"
+      type: "scoring_rule"
+
+  acquisition_validation:
+    - name: "ei_positive"
+      description: "EI should be non-negative"
+      condition: "all(ei >= 0)"
+
+statistics:
+  success_rate:
+    threshold: 0.01
+    confidence: 0.95
+
+  convergence_curve:
+    type: "median_with_quantiles"
+    quantiles: [0.25, 0.75]
+
+reporting:
+  format: "markdown"
+  output: "reports/bayesian_optimization.md"
+  include:
+    - "convergence_curve"
+    - "gp_surface_plot"
+    - "acquisition_evolution"

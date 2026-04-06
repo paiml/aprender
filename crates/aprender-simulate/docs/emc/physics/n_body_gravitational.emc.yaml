@@ -1,0 +1,181 @@
+# Equation Model Card (EMC) Schema v1.0
+# N-Body Gravitational Problem
+
+emc_version: "1.0"
+emc_id: "EMC-PHYS-006"
+
+identity:
+  name: "N-Body Gravitational"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    m_i \ddot{\mathbf{r}}_i = -G \sum_{j \neq i} \frac{m_i m_j}{|\mathbf{r}_i - \mathbf{r}_j|^3}(\mathbf{r}_i - \mathbf{r}_j)
+  plain_text: "m_i * r_ddot_i = -G * sum_j(m_i*m_j/|r_i-r_j|^3 * (r_i-r_j))"
+  description: |
+    Newton's law of universal gravitation for N point masses.
+    For N >= 3, no general closed-form solution exists (Henri Poincare).
+    The system conserves total energy, momentum, and angular momentum.
+
+  variables:
+    - symbol: "r_i"
+      description: "Position vector of body i"
+      units: "m"
+      type: "dependent"
+    - symbol: "m_i"
+      description: "Mass of body i"
+      units: "kg"
+      type: "parameter"
+    - symbol: "G"
+      description: "Gravitational constant"
+      units: "m^3/(kg*s^2)"
+      type: "constant"
+      value: 6.67430e-11
+
+  equation_type: "ODE"
+  order: 2
+  linearity: "nonlinear"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["Newton, I."]
+    title: "Philosophiae Naturalis Principia Mathematica"
+    year: 1687
+    publisher: "Royal Society"
+
+  supporting_citations:
+    - authors: ["Hairer, E.", "Lubich, C.", "Wanner, G."]
+      title: "Geometric Numerical Integration"
+      year: 2006
+      publisher: "Springer"
+      doi: "10.1007/3-540-30666-8"
+
+  derivation_method: "Newton's laws"
+  derivation_summary: |
+    Each body experiences gravitational attraction from all others.
+    The inverse-square law F = GMm/r^2 summed vectorially yields
+    the equations of motion.
+
+domain_of_validity:
+  parameters:
+    masses:
+      min: 0.0
+      max: null
+      physical_constraint: "m_i > 0"
+    min_separation:
+      min: 1e-10
+      max: null
+      physical_constraint: "r_ij > 0 (no collisions)"
+
+  assumptions:
+    - "Point masses"
+    - "Newtonian gravity (no relativistic corrections)"
+    - "No other forces (radiation pressure, etc.)"
+    - "Instantaneous propagation of gravity"
+
+  limitations:
+    - description: "Chaotic for N >= 3"
+      reference: "Poincare's three-body problem"
+    - description: "Close encounters cause stiffness"
+      reference: "Require regularization techniques"
+    - description: "No relativistic effects"
+      reference: "GR needed for strong fields"
+
+analytical_solution:
+  general_solution:
+    latex: "No closed-form solution for N >= 3"
+    parameters: {}
+
+  test_cases:
+    - name: "Two-body circular orbit"
+      description: "Reduces to Kepler problem"
+      parameters:
+        n_bodies: 2
+        masses: [1.989e30, 5.972e24]  # Sun, Earth
+        initial_separation: 1.496e11  # 1 AU
+      expected:
+        period: 3.156e7  # 1 year
+      tolerance: 0.001
+
+    - name: "Figure-8 three-body"
+      description: "Moore (1993) periodic solution"
+      parameters:
+        n_bodies: 3
+        masses: [1.0, 1.0, 1.0]
+      expected:
+        period: 6.325
+      tolerance: 0.01
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Wisdom-Holman"
+      order: 2
+      symplectic: true
+      energy_drift: "bounded"
+    - name: "Leapfrog"
+      order: 2
+      symplectic: true
+    - name: "RK45"
+      order: 5
+      adaptive: true
+
+  stability_conditions:
+    - condition: "dt << min(r_ij) / max(v_i)"
+      description: "Resolve fastest encounter timescale"
+
+  conserved_quantities:
+    - name: "Total energy"
+      expression: "E = sum(T_i) + sum(V_ij)"
+      tolerance: 1e-10
+    - name: "Total momentum"
+      expression: "P = sum(m_i * v_i)"
+      tolerance: 1e-12
+    - name: "Angular momentum"
+      expression: "L = sum(r_i x (m_i * v_i))"
+      tolerance: 1e-10
+
+verification_tests:
+  tests:
+    - id: "NB-VT-001"
+      name: "Two-body Kepler"
+      type: "comparison"
+      tolerance: 1e-6
+      description: "Match analytical Kepler orbit"
+
+    - id: "NB-VT-002"
+      name: "Energy conservation"
+      type: "conservation_law"
+      tolerance: 1e-8
+      duration: "1000 orbital periods"
+
+    - id: "NB-VT-003"
+      name: "Momentum conservation"
+      type: "conservation_law"
+      tolerance: 1e-12
+      description: "Center of mass motion constant"
+
+falsification_criteria:
+  criteria:
+    - id: "NB-FC-001"
+      name: "Energy drift"
+      condition: "|E(t) - E(0)| / |E(0)| > tolerance"
+      threshold: 1e-6
+      severity: "critical"
+
+    - id: "NB-FC-002"
+      name: "Close encounter"
+      condition: "min(r_ij) < softening_length"
+      threshold: 1e-10
+      severity: "critical"
+      interpretation: "May need regularization"
+
+implementation:
+  source_file: "src/domains/physics/n_body.rs"
+  test_file: "tests/verification/n_body_test.rs"
+  experiment_template: "examples/experiments/n_body.yaml"

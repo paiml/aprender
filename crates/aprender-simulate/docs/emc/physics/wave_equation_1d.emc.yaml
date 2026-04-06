@@ -1,0 +1,193 @@
+# Equation Model Card (EMC) Schema v1.0
+# 1D Wave Equation
+
+emc_version: "1.0"
+emc_id: "EMC-PHYS-008"
+
+identity:
+  name: "1D Wave Equation"
+  version: "1.0.0"
+  authors:
+    - name: "PAIML Engineering"
+      affiliation: "Sovereign AI Stack"
+  created: "2025-12-11"
+  last_updated: "2025-12-11"
+  status: "production"
+
+governing_equation:
+  latex: |
+    \frac{\partial^2 u}{\partial t^2} = c^2 \frac{\partial^2 u}{\partial x^2}
+  plain_text: "d^2u/dt^2 = c^2 * d^2u/dx^2"
+  description: |
+    The one-dimensional wave equation describes propagation of waves
+    along a string or in other linear media. The general solution is
+    d'Alembert's formula: superposition of left and right-traveling waves.
+
+  variables:
+    - symbol: "u"
+      description: "Wave amplitude (displacement)"
+      units: "m"
+      type: "dependent"
+    - symbol: "x"
+      description: "Position along string"
+      units: "m"
+      type: "independent"
+    - symbol: "t"
+      description: "Time"
+      units: "s"
+      type: "independent"
+    - symbol: "c"
+      description: "Wave speed"
+      units: "m/s"
+      type: "parameter"
+
+  equation_type: "PDE"
+  order: 2
+  linearity: "linear"
+  homogeneity: "homogeneous"
+
+analytical_derivation:
+  primary_citation:
+    authors: ["d'Alembert, J."]
+    title: "Recherches sur la courbe que forme une corde tendue"
+    journal: "Histoire de l'academie royale des sciences"
+    year: 1747
+    pages: "214-219"
+
+  supporting_citations:
+    - authors: ["Strauss, W.A."]
+      title: "Partial Differential Equations: An Introduction"
+      year: 2007
+      publisher: "Wiley"
+      isbn: "978-0470054567"
+
+  derivation_method: "Newton's second law on string element"
+  derivation_summary: |
+    For a string with tension T and linear density rho:
+    F = T * (du/dx)|_{x+dx} - T * (du/dx)|_x = rho * dx * d^2u/dt^2
+    In limit: d^2u/dt^2 = (T/rho) * d^2u/dx^2
+    where c = sqrt(T/rho) is the wave speed.
+
+domain_of_validity:
+  parameters:
+    c:
+      min: 0.0
+      max: null
+      physical_constraint: "c > 0"
+    L:
+      min: 0.0
+      max: null
+      physical_constraint: "String length L > 0"
+
+  assumptions:
+    - "Small amplitude (linear restoring force)"
+    - "No damping"
+    - "Uniform string (constant c)"
+    - "Perfectly flexible string"
+    - "Planar motion"
+
+  boundary_conditions:
+    type: "dirichlet_or_neumann"
+    examples:
+      - "Fixed ends: u(0,t) = u(L,t) = 0"
+      - "Free ends: du/dx(0,t) = du/dx(L,t) = 0"
+      - "Periodic: u(0,t) = u(L,t)"
+
+  limitations:
+    - description: "No dispersion"
+      reference: "Nonlinear effects cause frequency-dependent speed"
+    - description: "No damping"
+      reference: "Real strings have energy loss"
+
+analytical_solution:
+  general_solution:
+    latex: |
+      u(x,t) = f(x-ct) + g(x+ct)
+    parameters:
+      f: "Right-traveling wave"
+      g: "Left-traveling wave"
+
+  test_cases:
+    - name: "Standing wave (fixed ends)"
+      initial_conditions:
+        u0: "sin(pi*x/L)"
+        v0: 0.0
+      parameters:
+        L: 1.0
+        c: 1.0
+      expected_solution: "sin(pi*x/L) * cos(pi*c*t/L)"
+      tolerance: 1e-6
+
+    - name: "Traveling Gaussian"
+      initial_conditions:
+        u0: "exp(-(x-0.5)^2/0.01)"
+        v0: "c * (x-0.5)/0.01 * exp(-(x-0.5)^2/0.01)"
+      expected:
+        shape_preserved: true
+      tolerance: 0.01
+
+numerical_stability:
+  recommended_integrators:
+    - name: "Finite Difference (FTCS)"
+      order: 2
+      cfl_condition: "c*dt/dx <= 1"
+    - name: "Leapfrog"
+      order: 2
+      energy_drift: "bounded"
+    - name: "Spectral (FFT)"
+      order: "infinite"
+      periodic_bc: true
+
+  stability_conditions:
+    - condition: "c * dt / dx <= 1"
+      description: "CFL condition for explicit methods"
+
+  conserved_quantities:
+    - name: "Total energy"
+      expression: "E = (1/2)*integral((du/dt)^2 + c^2*(du/dx)^2, dx)"
+      tolerance: 1e-8
+
+verification_tests:
+  tests:
+    - id: "WE-VT-001"
+      name: "Standing wave"
+      type: "numerical_vs_analytical"
+      tolerance: 1e-6
+      duration: "10 periods"
+
+    - id: "WE-VT-002"
+      name: "Energy conservation"
+      type: "conservation_law"
+      tolerance: 1e-8
+
+    - id: "WE-VT-003"
+      name: "Wave speed"
+      type: "propagation"
+      tolerance: 0.01
+      description: "Peak travels at speed c"
+
+    - id: "WE-VT-004"
+      name: "Convergence order"
+      type: "richardson_extrapolation"
+      expected_order: 2
+      dx_sequence: [0.1, 0.05, 0.025, 0.0125]
+
+falsification_criteria:
+  criteria:
+    - id: "WE-FC-001"
+      name: "CFL violation"
+      condition: "c * dt / dx > 1"
+      threshold: 1.0
+      severity: "critical"
+      interpretation: "Explicit scheme will be unstable"
+
+    - id: "WE-FC-002"
+      name: "Energy drift"
+      condition: "|E(t) - E(0)| / E(0) > tolerance"
+      threshold: 1e-6
+      severity: "major"
+
+implementation:
+  source_file: "src/domains/physics/wave_equation.rs"
+  test_file: "tests/verification/wave_equation_test.rs"
+  experiment_template: "examples/experiments/wave_equation.yaml"

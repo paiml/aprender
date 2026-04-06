@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TSP GRASP - EDD Demo | Simular</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #1a1a2e;
+            --bg-tertiary: #0f0f23;
+            --border: #333;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888;
+            --accent: #4ecdc4;
+            --accent-warn: #ffd93d;
+            --accent-error: #ff6b6b;
+            --probar: #ff6b6b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #16213e 100%);
+            padding: 0.75rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-left h1 {
+            font-size: 1.25rem;
+            color: var(--accent);
+        }
+
+        .header-left .emc-id {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 0.125rem;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: bold;
+        }
+
+        .badge-edd { background: var(--accent); color: var(--bg-primary); }
+        .badge-probar { background: var(--probar); color: var(--bg-primary); }
+
+        .tabs {
+            display: flex;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.75rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        main {
+            flex: 1;
+            display: none;
+            padding: 1rem;
+            gap: 1rem;
+            overflow: hidden;
+        }
+
+        main.active { display: grid; }
+
+        /* Simulation View */
+        #view-simulation {
+            grid-template-columns: 1fr 280px;
+        }
+
+        .canvas-container {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            position: relative;
+            min-height: 400px;
+        }
+
+        canvas { width: 100%; height: 100%; display: block; }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            overflow-y: auto;
+        }
+
+        .panel {
+            background: var(--bg-secondary);
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+        }
+
+        .panel h3 {
+            font-size: 0.7rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.375rem;
+            border-bottom: 1px solid var(--border);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            padding: 0.2rem 0;
+        }
+
+        .stat-label { color: var(--text-secondary); }
+        .stat-value { color: var(--text-primary); font-weight: 500; }
+        .stat-value.ok { color: var(--accent); }
+        .stat-value.warn { color: var(--accent-warn); }
+        .stat-value.error { color: var(--accent-error); }
+
+        .controls { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+
+        button {
+            background: #16213e;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+            padding: 0.375rem 0.75rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.7rem;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        select, input[type="range"] {
+            background: #16213e;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 0.25rem;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 0.7rem;
+        }
+
+        input[type="range"] { accent-color: var(--accent); }
+
+        /* EMC View */
+        #view-emc {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .yaml-container {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        .yaml-header {
+            background: var(--bg-secondary);
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+        }
+
+        .yaml-content {
+            padding: 0.75rem;
+            overflow: auto;
+            max-height: calc(100vh - 200px);
+            font-size: 0.65rem;
+            line-height: 1.4;
+        }
+
+        .yaml-content pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .yaml-key { color: var(--accent); }
+        .yaml-string { color: var(--accent-warn); }
+        .yaml-number { color: #a78bfa; }
+        .yaml-comment { color: var(--text-secondary); }
+
+        /* Probar View */
+        #view-probar {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .test-suite {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border: 1px solid var(--probar);
+            overflow: hidden;
+        }
+
+        .test-header {
+            background: var(--bg-secondary);
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .test-header h3 {
+            font-size: 0.75rem;
+            color: var(--probar);
+        }
+
+        .test-count {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+        }
+
+        .test-list {
+            padding: 0.5rem;
+            max-height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        .test-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem;
+            border-radius: 4px;
+            margin-bottom: 0.25rem;
+            font-size: 0.7rem;
+        }
+
+        .test-item:hover { background: var(--bg-secondary); }
+
+        .test-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.55rem;
+            font-weight: bold;
+        }
+
+        .test-icon.pass { background: var(--accent); color: var(--bg-primary); }
+        .test-icon.fail { background: var(--accent-error); color: white; }
+        .test-icon.pending { background: var(--border); color: var(--text-secondary); }
+
+        .invariant-list {
+            padding: 0.75rem;
+        }
+
+        .invariant-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.25rem 0;
+            font-size: 0.7rem;
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border);
+        }
+
+        .indicator.ok { background: var(--accent); }
+        .indicator.error { background: var(--accent-error); }
+
+        .log-container {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            max-height: 150px;
+            overflow-y: auto;
+            font-size: 0.6rem;
+        }
+
+        .log-entry {
+            padding: 0.25rem 0.5rem;
+            border-bottom: 1px solid var(--bg-secondary);
+        }
+
+        .log-entry.info { color: var(--text-secondary); }
+        .log-entry.pass { color: var(--accent); }
+        .log-entry.fail { color: var(--accent-error); }
+
+        footer {
+            background: var(--bg-secondary);
+            padding: 0.375rem 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        footer a { color: var(--accent); text-decoration: none; }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .loading-spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 0.75rem;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .equation-display {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .equation-name {
+            font-size: 0.6rem;
+            color: var(--accent);
+            margin-bottom: 0.25rem;
+        }
+
+        .equation-formula {
+            font-size: 0.75rem;
+            color: var(--accent-warn);
+            font-family: 'Times New Roman', serif;
+            font-style: italic;
+        }
+
+        .equation-value {
+            font-size: 0.65rem;
+            color: var(--text-secondary);
+            margin-top: 0.25rem;
+        }
+
+        .sparkline {
+            height: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            margin-top: 0.375rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-left">
+            <h1>TSP GRASP Demo</h1>
+            <div class="emc-id">EMC-OPT-003 | optimization/tsp_grasp v1.0.0</div>
+        </div>
+        <div class="header-right">
+            <span class="badge badge-edd">EDD</span>
+            <span class="badge badge-probar">PROBAR</span>
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab active" data-view="simulation">Simulation</button>
+        <button class="tab" data-view="emc">EMC (YAML)</button>
+        <button class="tab" data-view="probar">Probar Tests</button>
+    </div>
+
+    <!-- Simulation View -->
+    <main id="view-simulation" class="active">
+        <div class="canvas-container">
+            <canvas id="tsp-canvas"></canvas>
+            <div id="loading" class="loading">
+                <div class="loading-spinner"></div>
+                <div>Loading WASM...</div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <h3>Governing Equations</h3>
+                <div class="equation-display">
+                    <div class="equation-name">Tour Length</div>
+                    <div class="equation-formula">L(pi) = Sum d(pi_i, pi_i+1)</div>
+                    <div class="equation-value" id="eq-tour">L = --</div>
+                </div>
+                <div class="equation-display">
+                    <div class="equation-name">1-Tree Lower Bound</div>
+                    <div class="equation-formula">LB = MST + min edges</div>
+                    <div class="equation-value" id="eq-lb">LB = --</div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Statistics</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Cities</span>
+                    <span class="stat-value" id="stat-n">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Best Tour</span>
+                    <span class="stat-value ok" id="stat-best">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Lower Bound</span>
+                    <span class="stat-value" id="stat-lb">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Gap</span>
+                    <span class="stat-value" id="stat-gap">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Restarts</span>
+                    <span class="stat-value" id="stat-restarts">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">2-Opt Improvements</span>
+                    <span class="stat-value" id="stat-2opt">--</span>
+                </div>
+                <div class="sparkline">
+                    <canvas id="sparkline"></canvas>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Controls</h3>
+                <div class="controls">
+                    <button id="btn-play" style="background: var(--accent); color: var(--bg-primary);">Play</button>
+                    <button id="btn-step">Step</button>
+                    <button id="btn-run10">Run 10</button>
+                    <button id="btn-run100">Run 100</button>
+                    <button id="btn-reset">Reset</button>
+                </div>
+                <div class="stat-row" style="margin-top: 0.5rem;">
+                    <span class="stat-label">Cities</span>
+                    <input type="range" id="slider-n" min="5" max="50" value="25" style="width: 80px;">
+                    <span id="val-n">25</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h3>Falsification Status</h3>
+                <div class="stat-row">
+                    <span class="stat-label">Gap &lt;= 20%</span>
+                    <span class="stat-value" id="fals-gap">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">CV &lt;= 5%</span>
+                    <span class="stat-value" id="fals-cv">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value" id="fals-status">Pending</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- EMC YAML View (placeholder - populated by WASM) -->
+    <main id="view-emc">
+        <div class="yaml-container">
+            <div class="yaml-header">docs/emc/optimization/tsp_grasp.emc.yaml</div>
+            <div class="yaml-content" id="emc-yaml">
+                <pre>Loading EMC configuration...</pre>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel">
+                <h3>EMC Identity</h3>
+                <div class="stat-row">
+                    <span class="stat-label">ID</span>
+                    <span class="stat-value">EMC-OPT-003</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Name</span>
+                    <span class="stat-value">TSP GRASP with 2-Opt</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Version</span>
+                    <span class="stat-value">1.0.0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Status</span>
+                    <span class="stat-value ok">production</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Probar Tests View (placeholder) -->
+    <main id="view-probar">
+        <div class="test-suite">
+            <div class="test-header">
+                <h3>Probar Test Suite</h3>
+                <span class="test-count" id="probar-count">0/7 passed</span>
+            </div>
+            <div class="test-list" id="test-list">
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>Tour visits all cities exactly once</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>Tour forms closed loop</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>Best tour monotonically improves</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>2-opt only improves or maintains</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>Tour length &gt;= lower bound</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>Same seed produces same result</span>
+                </div>
+                <div class="test-item">
+                    <span class="test-icon pending">?</span>
+                    <span>All values are finite</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="panel" style="border-color: var(--probar);">
+                <h3 style="color: var(--probar);">Invariant Checker</h3>
+                <div class="invariant-list">
+                    <div class="invariant-item">
+                        <span class="indicator" id="inv-perm"></span>
+                        <span>Valid Permutation</span>
+                    </div>
+                    <div class="invariant-item">
+                        <span class="indicator" id="inv-triangle"></span>
+                        <span>Triangle Inequality</span>
+                    </div>
+                    <div class="invariant-item">
+                        <span class="indicator" id="inv-positive"></span>
+                        <span>Positive Distances</span>
+                    </div>
+                    <div class="invariant-item">
+                        <span class="indicator" id="inv-finite"></span>
+                        <span>Finite Values</span>
+                    </div>
+                    <div class="invariant-item">
+                        <span class="indicator" id="inv-bound"></span>
+                        <span>Above Lower Bound</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <span>Simular v0.2.0 | Zero-JS Architecture | EDD Compliant | Probar Testing</span>
+        <div>
+            <a href="index.html">Orbit</a> |
+            <a href="tsp.html">TSP</a>
+        </div>
+    </footer>
+
+    <!-- ONE LINE OF JAVASCRIPT - All logic in Rust/WASM -->
+    <script type="module">import init, { initTspApp } from './pkg/simular.js'; init().then(initTspApp);</script>
+</body>
+</html>
