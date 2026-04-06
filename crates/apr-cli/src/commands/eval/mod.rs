@@ -1258,6 +1258,15 @@ pub(crate) fn run_encrypt(
 
     let start = Instant::now();
 
+    // GH-643: Reject already-encrypted files
+    if input_path.extension().map_or(false, |ext| ext == "enc") {
+        return Err(CliError::ValidationFailed(
+            "Input file appears to already be encrypted (.enc extension). \
+             Use 'apr decrypt' to decrypt first."
+                .to_string(),
+        ));
+    }
+
     let key = derive_encryption_key(key_file)?;
     let plaintext = std::fs::read(input_path).map_err(|e| {
         CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display()))

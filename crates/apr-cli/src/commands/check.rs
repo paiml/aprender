@@ -459,7 +459,47 @@ fn run_real_checks_gguf(path: &Path, no_gpu: bool) -> Result<Vec<StageResult>, C
         check_gguf_lm_head(&mapped, model.config().vocab_size),
         check_logits_real(&model),
         check_sampler_real(&model),
+        // GH-648: Add data quality stage so check and validate agree.
+        // Previously check only tested structure (tensor names) while validate tested data.
+        check_gguf_data_quality(path),
     ])
+}
+
+/// GH-648: Run RosettaStone data-quality check so `check` and `validate` agree.
+/// Previously `check` tested only structure (tensor names), not data (NaN/zeros).
+#[cfg(feature = "inference")]
+fn check_gguf_data_quality(path: &Path) -> StageResult {
+    use aprender::format::rosetta::RosettaStone;
+    let rosetta = RosettaStone::new();
+    match rosetta.validate(path) {
+        Ok(report) => {
+            let issues = report.failed_tensor_count;
+            let all_zeros = report.all_zero_tensors.len();
+            if report.is_valid && all_zeros == 0 {
+                StageResult {
+                    name: "Data Quality",
+                    eli5: "No corrupt tensors",
+                    passed: true,
+                    details: Some(format!("{} tensors checked, 0 violations", report.tensors.len())),
+                }
+            } else {
+                StageResult {
+                    name: "Data Quality",
+                    eli5: "No corrupt tensors",
+                    passed: false,
+                    details: Some(format!(
+                        "{issues} failed, {all_zeros} all-zeros (run `apr validate` for details)"
+                    )),
+                }
+            }
+        }
+        Err(e) => StageResult {
+            name: "Data Quality",
+            eli5: "No corrupt tensors",
+            passed: false,
+            details: Some(format!("Validation failed: {e}")),
+        },
+    }
 }
 
 /// Run REAL validation for SafeTensors models (GH-305 P1)
