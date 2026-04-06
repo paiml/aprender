@@ -9,6 +9,9 @@ keywords = ["quantization", "gguf", "llm", "machine-learning", "neural-network"]
 categories = ["science", "algorithms", "compression"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_quant"
+
 [dependencies]
 half = "2.4"
 

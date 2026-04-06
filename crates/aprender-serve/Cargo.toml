@@ -26,8 +26,11 @@ rustdoc-args = ["--generate-link-to-definition"]
 
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("dhat-heap"))'] }
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+
+[lib]
+name = "realizar"
 
 [dependencies]
 # OUR ecosystem - SIMD/GPU compute primitives (we control this)

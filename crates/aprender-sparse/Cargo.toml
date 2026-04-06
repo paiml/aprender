@@ -9,6 +9,9 @@ keywords = ["sparse", "matrix", "spmv", "linear-algebra", "simd"]
 categories = ["science", "algorithms", "mathematics"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_sparse"
+
 [dependencies]
 thiserror = "2"
 

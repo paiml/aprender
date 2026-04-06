@@ -9,6 +9,9 @@ keywords = ["fft", "fourier", "signal-processing", "simd", "stockham"]
 categories = ["science", "algorithms", "mathematics"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_fft"
+
 [dependencies]
 thiserror = "2"
 

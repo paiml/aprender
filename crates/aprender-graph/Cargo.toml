@@ -11,6 +11,9 @@ categories = ["database", "algorithms", "data-structures"]
 rust-version = "1.75"
 readme = "README.md"
 
+[lib]
+name = "trueno_graph"
+
 [dependencies]
 # Data formats (columnar) - MVP uses Arrow/Parquet directly
 # Minimal features: drops arrow-csv, arrow-json (~fewer transitive deps)

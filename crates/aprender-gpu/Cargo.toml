@@ -78,8 +78,9 @@ metal = ["dep:manzana"]
 wasm-opt = false
 
 # Inherit workspace lints
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+
 
 [lib]
 name = "trueno_gpu"

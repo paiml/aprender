@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
-name = "aprender_simulate"
+name = "aprender-simulate"
 version = "0.3.2"
 edition = "2021"
 rust-version = "1.82.0"

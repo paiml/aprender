@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "presentar_layout"
+
 [dependencies]
 presentar-core = { workspace = true }
 serde = { workspace = true }

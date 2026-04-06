@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[lib]
+name = "trueno_zram_adaptive"
+
 [dependencies]
 trueno-zram-core.workspace = true
 thiserror.workspace = true

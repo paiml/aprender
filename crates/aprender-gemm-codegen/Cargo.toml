@@ -7,8 +7,9 @@ authors = ["Pragmatic AI Labs"]
 license = "MIT"
 description = "Compile-time GEMM microkernel code generation for trueno (sovereign, no external BLAS)"
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+
 
 [lib]
 proc-macro = true

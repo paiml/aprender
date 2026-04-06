@@ -11,19 +11,17 @@ keywords = ["testing", "wasm", "games", "cli", "automation"]
 categories = ["development-tools::testing", "command-line-utilities", "wasm"]
 
 [features]
-default = ["browser", "llm"]
+default = ["browser"]
 # Enable real browser control for live validation (requires chromium)
-browser = ["jugar-probar/browser"]
-# Enable LLM testing (correctness, load testing, reporting)
-llm = ["jugar-probar/llm"]
+browser = ["aprender-test-lib/browser"]
 
 [[bin]]
 name = "aprender-test-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Core library - exact version for verified release
-jugar-probar = { version = "=1.0.4" }
+# Core library (was: jugar-probar)
+aprender-test-lib = { path = "../aprender-test-lib" }
 
 # CLI framework
 clap = { workspace = true }

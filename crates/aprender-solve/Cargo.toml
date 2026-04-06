@@ -9,6 +9,9 @@ keywords = ["linear-algebra", "lu", "qr", "svd", "cholesky"]
 categories = ["science", "algorithms", "mathematics"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_solve"
+
 [dependencies]
 thiserror = "2"
 

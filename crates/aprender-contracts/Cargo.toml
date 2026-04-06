@@ -15,8 +15,11 @@ exclude = ["tests/", "benches/"]
 default = []
 kani = []
 
+[lib]
+name = "provable_contracts"
+
 [dependencies]
-aprender-contracts-macros = { workspace = true }
+provable-contracts-macros = { path = "../aprender-contracts-macros", package = "aprender-contracts-macros" }
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -36,5 +39,5 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "benchmarks"
 harness = false
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"

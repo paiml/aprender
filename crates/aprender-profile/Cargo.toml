@@ -29,6 +29,9 @@ exclude = [
 ]
 categories = ["development-tools::debugging", "development-tools::profiling"]
 
+[lib]
+name = "renacer"
+
 [dependencies]
 # CLI and argument parsing
 clap = { version = "4.5", default-features = false, features = ["derive", "cargo", "std", "help", "usage", "error-context", "suggestions"] }

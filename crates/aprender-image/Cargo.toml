@@ -9,6 +9,9 @@ keywords = ["image", "convolution", "edge-detection", "gaussian", "sobel"]
 categories = ["science", "algorithms", "multimedia::images"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_image"
+
 [dependencies]
 thiserror = "2"
 

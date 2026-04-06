@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
-name = "aprender_registry"
+name = "aprender-registry"
 version = "0.2.6"
 edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
@@ -99,8 +99,8 @@ strip = true
 inherits = "release"
 debug = true
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
 
 [package.metadata.docs.rs]
 all-features = true

@@ -12,8 +12,11 @@ readme = "README.md"
 keywords = ["testing", "code-generation", "transpiler", "verification", "synthetic-data"]
 categories = ["development-tools::testing", "compilers"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+
+[lib]
+name = "verificar"
 
 [dependencies]
 # CLI

@@ -9,6 +9,9 @@ keywords = ["rng", "random", "philox", "parallel", "counter-based"]
 categories = ["science", "algorithms", "mathematics"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_rand"
+
 [dependencies]
 thiserror = "2"
 

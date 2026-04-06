@@ -39,6 +39,9 @@ llm-types = []
 # LLM/API testing and load testing (includes llm-types + HTTP client)
 llm = ["llm-types", "dep:reqwest", "tokio", "futures"]
 
+[lib]
+name = "jugar_probar"
+
 [dependencies]
 thiserror = { workspace = true }
 serde = { workspace = true }

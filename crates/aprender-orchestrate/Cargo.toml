@@ -26,6 +26,9 @@ exclude = [
     "proptest-regressions/",
 ]
 
+[lib]
+name = "batuta"
+
 [dependencies]
 # Core dependencies (WASM-compatible)
 serde = { version = "1.0", features = ["derive"] }

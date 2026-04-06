@@ -10,12 +10,16 @@ readme = "README.md"
 keywords = ["ptx", "cuda", "gpu", "static-analysis", "debugging"]
 categories = ["development-tools::debugging", "development-tools::testing"]
 
+[lib]
+name = "trueno_ptx_debug"
+
 [dependencies]
 thiserror = "2.0"
 
 # Inherit workspace lints
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+
 
 [dev-dependencies]
 proptest = "1.9"

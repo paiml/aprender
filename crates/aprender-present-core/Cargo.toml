@@ -9,6 +9,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "presentar_core"
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

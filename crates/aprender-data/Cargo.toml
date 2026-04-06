@@ -1,6 +1,6 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
-name = "aprender_data"
+name = "aprender-data"
 version = "0.2.9"
 edition = "2021"
 authors = ["paiml"]

@@ -26,6 +26,9 @@ microvm = ["pepita", "tokio"]       # v2.0: MicroVM isolation with pepita
 simd = ["pepita"]                   # v2.0: SIMD acceleration with pepita
 full = ["cpu", "gpu", "remote", "remote-tls", "checkpoint", "tensor", "tui", "serverless", "microvm", "simd"]
 
+[lib]
+name = "repartir"
+
 [dependencies]
 # Core async runtime (industry standard, pure Rust)
 tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "net"], optional = true }

@@ -27,6 +27,9 @@ exclude = [
     "proptest-regressions/",
 ]
 
+[lib]
+name = "trueno_rag"
+
 [dependencies]
 # Core compute
 trueno = "0.17"

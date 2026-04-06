@@ -9,6 +9,9 @@ keywords = ["tensor", "einsum", "contraction", "linear-algebra", "ndarray"]
 categories = ["science", "algorithms", "mathematics"]
 authors = ["Trueno Engineering"]
 
+[lib]
+name = "trueno_tensor"
+
 [dependencies]
 thiserror = "2"
 

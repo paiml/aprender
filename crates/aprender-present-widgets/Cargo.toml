@@ -15,6 +15,9 @@ data-widgets = []      # Chart, DataCard, DataTable, ModelCard
 input-widgets = []     # Button, Checkbox, Select, Slider, TextInput, Toggle
 layout-widgets = []    # Column, Row, Stack, Container, Tabs
 
+[lib]
+name = "presentar_widgets"
+
 [dependencies]
 presentar-core = { workspace = true }
 presentar-yaml = { workspace = true }

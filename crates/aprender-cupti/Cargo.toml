@@ -8,6 +8,9 @@ repository = "https://github.com/paiml/trueno"
 keywords = ["cuda", "profiling", "gpu", "nvidia", "cupti"]
 categories = ["development-tools::profiling", "hardware-support"]
 
+[lib]
+name = "trueno_cupti"
+
 [dependencies]
 thiserror = "2"
 bitflags = "2"

@@ -9,6 +9,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "presentar_terminal"
+
 [dependencies]
 # Internal crates
 presentar-core = { workspace = true }

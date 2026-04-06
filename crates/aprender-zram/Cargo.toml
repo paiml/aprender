@@ -15,6 +15,9 @@ categories.workspace = true
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
 
+[lib]
+name = "trueno_zram"
+
 [dependencies]
 trueno-zram-core.workspace = true
 trueno-zram-adaptive = { workspace = true, optional = true }

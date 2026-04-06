@@ -10,6 +10,9 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lib]
+name = "trueno_zram_core"
+
 [dependencies]
 thiserror.workspace = true
 cudarc = { version = "0.18", optional = true, features = ["cuda-12080", "nvrtc"] }
@@ -42,5 +45,6 @@ nightly = []
 # Enable CUDA GPU acceleration
 cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
+

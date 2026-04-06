@@ -8,6 +8,9 @@ repository = "https://github.com/paiml/probar"
 keywords = ["javascript", "codegen", "dsl", "wasm", "webworker"]
 categories = ["development-tools", "wasm"]
 
+[lib]
+name = "probar_js_gen"
+
 [dependencies]
 thiserror = "2"
 blake3 = "1"

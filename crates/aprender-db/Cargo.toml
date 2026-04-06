@@ -11,6 +11,9 @@ keywords = ["database", "gpu", "simd", "analytics", "wasm"]
 categories = ["database", "science", "wasm"]
 rust-version.workspace = true
 
+[lib]
+name = "trueno_db"
+
 [dependencies]
 # Core compute (SIMD - always included)
 trueno = "0.17"  # SIMD-accelerated compute
