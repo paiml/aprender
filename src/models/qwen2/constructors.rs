@@ -4,6 +4,7 @@ impl Qwen2Model {
     /// Weights are initialized randomly. Use `load()` to load pre-trained weights.
     #[must_use]
     pub fn new(config: &Qwen2Config) -> Self {
+        contract_pre_swiglu_expansion!();
         let head_dim = config.hidden_size / config.num_attention_heads;
 
         Self {
@@ -101,6 +102,7 @@ impl Qwen2Model {
     /// - `lm_head.weight`
     #[must_use]
     pub fn weight_names(&self) -> Vec<String> {
+        contract_pre_total_parameters!();
         let mut names = Vec::new();
 
         // Embedding

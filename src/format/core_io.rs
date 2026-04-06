@@ -153,6 +153,7 @@ pub(crate) fn parse_and_validate_header(
     content: &[u8],
     expected_type: ModelType,
 ) -> Result<Header> {
+    contract_pre_header_size_validation!();
     let header = Header::from_bytes(&content[..HEADER_SIZE])?;
     if header.model_type != expected_type {
         return Err(AprenderError::FormatError {

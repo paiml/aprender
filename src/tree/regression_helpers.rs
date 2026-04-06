@@ -25,6 +25,7 @@ pub(super) fn variance_f32(y: &[f32]) -> f32 {
 
 /// Compute Mean Squared Error for a split.
 pub(super) fn compute_mse(y_left: &[f32], y_right: &[f32]) -> f32 {
+    contract_pre_mse_split!();
     let n_left = y_left.len() as f32;
     let n_right = y_right.len() as f32;
     let n_total = n_left + n_right;

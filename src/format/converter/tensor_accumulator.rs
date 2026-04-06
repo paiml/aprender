@@ -7,6 +7,7 @@ pub(crate) fn map_tensor_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     architecture: Architecture,
 ) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    contract_pre_name_bijection!();
     let result: BTreeMap<String, (Vec<f32>, Vec<usize>)> = tensors
         .iter()
         .map(|(name, data)| {

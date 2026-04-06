@@ -123,6 +123,7 @@ impl Embedding {
     #[allow(unused_variables)] // contract macro binds token_ids internally
     pub fn forward(&self, input_ids: &[u32]) -> Tensor {
         contract_pre_embedding_lookup!(input_ids);
+        contract_pre_inference_determinism!();
         let batch_size = 1;
         let mut output = vec![0.0f32; batch_size * input_ids.len() * self.hidden_size];
         self.forward_into(input_ids, &mut output);
@@ -139,6 +140,8 @@ impl Embedding {
     /// Get weight tensor reference.
     #[must_use]
     pub fn weight(&self) -> &Tensor {
+        contract_pre_q_projection!();
+        contract_pre_kv_projection!();
         &self.weight
     }
 }

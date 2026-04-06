@@ -354,6 +354,7 @@ pub(crate) fn quantize_tensors(
     tensors: &NativeF32Tensors,
     quant_type: &QuantizationType,
 ) -> Result<NativeF32Tensors> {
+    contract_pre_quantization_bounds!();
     let mut result = BTreeMap::new();
 
     for (name, (data, shape)) in tensors.as_ref() {

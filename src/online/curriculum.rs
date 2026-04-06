@@ -278,6 +278,7 @@ impl SelfPacedCurriculum {
 
     /// Get next batch of samples below current threshold
     pub fn next_batch(&mut self, batch_size: usize) -> Vec<&ScoredSample> {
+        contract_pre_streaming_data_loader!();
         let eligible: Vec<_> = self
             .samples
             .iter()

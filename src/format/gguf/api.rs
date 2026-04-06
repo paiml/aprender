@@ -118,6 +118,7 @@ impl GgufModelConfig {
     /// pipeline, not the inference validator). Realizar's `ValidatedModelConfig`
     /// is the hard gate.
     pub fn warn_out_of_bounds(&self) {
+        contract_pre_architecture_config_invariants!();
         Self::check_usize_bound(self.hidden_size, 1, 65_536, "hidden_size");
         Self::check_usize_bound(self.num_layers, 1, 256, "num_layers");
         Self::check_usize_bound(self.num_heads, 1, 256, "num_heads");

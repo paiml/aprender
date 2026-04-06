@@ -264,6 +264,7 @@ fn min_inter_cluster_distance(
 
 /// Computes the silhouette coefficient for a single point.
 fn silhouette_coefficient(a_i: f32, b_i: f32) -> f32 {
+    contract_pre_silhouette_coefficient!();
     let max_ab = a_i.max(b_i);
     if max_ab == 0.0 {
         0.0

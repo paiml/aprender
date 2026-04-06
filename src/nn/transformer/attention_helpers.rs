@@ -225,6 +225,7 @@ impl RotaryPositionEmbedding {
     /// Create `RoPE` with custom base frequency.
     #[must_use]
     pub fn with_base(head_dim: usize, max_seq_len: usize, base: f32) -> Self {
+        contract_pre_rope_position_encoding!();
         let half_dim = head_dim / 2;
         let mut cos_cache = vec![0.0; max_seq_len * half_dim];
         let mut sin_cache = vec![0.0; max_seq_len * half_dim];

@@ -28,6 +28,8 @@ pub fn is_valid_tensor_shape(dims: &[usize]) -> bool {
 /// #[requires(header.len() >= 4)]
 /// #[ensures(result.is_some() ==> result.unwrap() == 1 || result.unwrap() == 2)]
 pub fn validate_magic(header: &[u8]) -> Option<u8> {
+    contract_pre_magic_byte_validation!();
+    contract_pre_header_integrity!();
     if header.len() < 4 {
         return None;
     }

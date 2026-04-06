@@ -235,6 +235,7 @@ pub(crate) fn read_metadata_value(
     offset: usize,
     value_type: u32,
 ) -> Result<(GgufValue, usize)> {
+    contract_pre_metadata_kv_safety!();
     match value_type {
         0 | 1 | 7 => read_metadata_byte(data, offset, value_type),
         2 => {

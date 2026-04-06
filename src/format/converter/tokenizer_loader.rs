@@ -153,6 +153,7 @@ fn is_eos_token(content: &str) -> bool {
 /// this function loads directly from the provided path. Used for weights-only GGUF imports
 /// where the tokenizer is provided externally.
 pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option<GgufTokenizer> {
+    contract_pre_identity!();
     if !tokenizer_path.exists() {
         eprintln!(
             "[PMAT-232] External tokenizer not found: {}",

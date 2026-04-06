@@ -128,6 +128,8 @@ impl Qwen2BpeTokenizer {
     #[must_use]
     pub fn encode(&self, text: &str) -> Vec<u32> {
         contract_pre_encode!();
+        contract_pre_roundtrip_encoding!();
+        contract_pre_tokenizer_consistency!();
         self.base.encode(text)
     }
 

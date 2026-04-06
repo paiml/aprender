@@ -95,6 +95,7 @@ impl GenerationConfig {
     #[must_use]
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         contract_pre_temperature_bounds!();
+        contract_pre_seed_determinism!();
         self.temperature = temperature;
         self
     }
@@ -109,6 +110,7 @@ impl GenerationConfig {
     /// Set nucleus (top-p) sampling.
     #[must_use]
     pub fn with_top_p(mut self, top_p: f32) -> Self {
+        contract_pre_top_k_top_p_interaction!();
         self.top_p = Some(top_p);
         self
     }
