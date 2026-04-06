@@ -1,19 +1,8 @@
-[workspace]
-resolver = "2"
-
-[workspace.package]
-version = "0.8.6"
-edition = "2021"
-authors = ["Pragmatic AI Labs <contact@paiml.com>"]
-license = "MIT"
-repository = "https://github.com/paiml/realizar"
-rust-version = "1.89"
-
-[workspace.dependencies]
+# NOTE: Old [workspace] section removed — member of root paiml/aprender workspace.
 
 [package]
-name = "realizar"
-version = "0.8.6"
+name = "aprender-serve"
+version.workspace = true
 edition = "2021"
 rust-version = "1.89"
 authors = ["Pragmatic AI Labs <contact@paiml.com>"]
@@ -35,56 +24,7 @@ exclude = [
 all-features = true
 rustdoc-args = ["--generate-link-to-definition"]
 
-[workspace.lints.rust]
-# unsafe is expected: SIMD intrinsics (quantize/), mmap (gguf/model.rs), libc FFI (memory.rs)
-unsafe_code = "allow"
-unsafe_op_in_unsafe_fn = "warn"
-unreachable_pub = "allow"
-# Allow coverage cfg for cargo-llvm-cov
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(feature, values("dhat-heap"))'] }
-
-[workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "allow"
-expect_used = "allow"
-checked_conversions = "warn"
-redundant_clone = "allow"
-# Allow noisy lints in test code
-module_name_repetitions = "allow"
-must_use_candidate = "allow"
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
-similar_names = "allow"
-unreadable_literal = "allow"
-useless_vec = "allow"
-cast_precision_loss = "allow"
-cast_sign_loss = "allow"
-cast_possible_truncation = "allow"
-cast_possible_wrap = "allow"
-cast_lossless = "allow"
-float_cmp = "allow"
-missing_const_for_fn = "allow"
-significant_drop_tightening = "allow"
-redundant_pub_crate = "allow"
-option_if_let_else = "allow"
-unreachable_pub = "allow"
-too_many_lines = "allow"
-cognitive_complexity = "allow"
-uninlined_format_args = "allow"
-doc_markdown = "allow"
-wildcard_imports = "allow"
-enum_glob_use = "allow"
-items_after_statements = "allow"
-redundant_closure_for_method_calls = "allow"
-unnecessary_wraps = "allow"
-match_same_arms = "allow"
-match_wildcard_for_single_variants = "allow"
-needless_pass_by_value = "allow"
-unused_self = "allow"
-default_trait_access = "allow"
-no_effect_underscore_binding = "allow"
-manual_div_ceil = "allow"
 
 [lints]
 workspace = true
@@ -292,7 +232,7 @@ full = ["server", "cli", "gpu", "cuda", "registry"]  # Everything enabled
 minimal = []  # Only core inference engine
 
 [[bin]]
-name = "realizar"
+name = "aprender-serve"
 required-features = ["cli"]
 
 [[bin]]

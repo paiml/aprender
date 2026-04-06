@@ -30,6 +30,8 @@ members = [
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
     "crates/aprender-contracts-cli",
+    # --- APR-MONO Phase 2c: was realizar (inference server) ---
+    "crates/aprender-serve",
 ]
 exclude = ["fuzz"]
 resolver = "2"
