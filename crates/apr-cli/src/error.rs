@@ -135,7 +135,9 @@ pub fn resolve_model_path(
             for entry in entries.flatten() {
                 let p = entry.path();
                 // GH-668: Skip temp files (rosetta_temp.apr, etc.) to avoid inspecting stale artifacts
-                let is_temp = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
+                let is_temp = p
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
                 if !is_temp && p.extension().is_some_and(|ext| ext == "gguf") && p.is_file() {
                     return Ok(p);
                 }
@@ -145,7 +147,9 @@ pub fn resolve_model_path(
         if let Ok(entries) = std::fs::read_dir(path) {
             for entry in entries.flatten() {
                 let p = entry.path();
-                let is_temp = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
+                let is_temp = p
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
                 if !is_temp && p.extension().is_some_and(|ext| ext == "apr") && p.is_file() {
                     return Ok(p);
                 }
