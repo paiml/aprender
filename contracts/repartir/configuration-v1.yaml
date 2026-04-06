@@ -1,0 +1,49 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Repartir configuration — builder factory produces correctly initialized builder state
+  references:
+  - 'Gamma et al. (1994) Design Patterns, Builder Pattern'
+equations:
+  config:
+    formula: F() = builder where builder.is_empty() = true
+    domain: unit
+    codomain: Builder
+    invariants:
+    - Factory produces builder with no targets configured
+    - Factory produces builder with default strategy
+    - 'Multiple calls produce independent builders: mutating one does not affect another'
+    preconditions: []
+    lean_theorem: Theorems.Config_Factory
+proof_obligations:
+- type: invariant
+  property: Builder independence
+  formal: 'let b1 = builder(); let b2 = builder(); mutate(b1); b2 unchanged'
+  applies_to: config
+enforcement:
+  builder_independence:
+    description: Builder factory must produce independent instances
+    check: contract_tests::FALSIFY-RPC-001
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RPC-001
+  rule: Builder independence
+  prediction: Two builders from factory are independent — mutating one leaves the other unchanged
+  test: create two builders, add target to first, assert second has no targets
+  if_fails: Shared mutable state between builder instances (static or Rc)
+kani_harnesses:
+- id: KANI-RPC-001
+  obligation: Builder independence
+  property: Factory produces independent builders
+  bound: 4
+  strategy: exhaustive
+  harness: verify_builder_independence
+qa_gate:
+  id: F-RPC-001
+  name: Repartir Configuration Contract
+  description: Builder factory quality gate
+  checks:
+  - builder_independence
+  pass_criteria: All falsification tests pass
+  falsification: Use shared static Vec for targets to trigger FALSIFY-RPC-001

@@ -1,0 +1,101 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Alimentar serialization roundtrip — to_bytes/from_bytes codec preserves data integrity
+  references:
+  - 'Kleppmann (2017) Designing Data-Intensive Applications, Ch. 4 Encoding'
+equations:
+  serialize:
+    formula: S(value) = bytes where from_bytes(bytes) = value
+    domain: value ∈ T where T implements Serialize
+    codomain: Result<Vec<u8>, CodecError>
+    invariants:
+    - Output is non-empty for any serializable value
+    - 'Deterministic: S(v) = S(v) for all v'
+    - Byte length is bounded by O(size_of(value))
+    preconditions:
+    - value is a valid instance of T
+    lean_theorem: Theorems.Serialize
+  deserialize:
+    formula: D(bytes) = value where to_bytes(value) = bytes
+    domain: bytes ∈ Vec<u8> produced by serialize
+    codomain: Result<T, CodecError>
+    invariants:
+    - 'Roundtrip: from_bytes(to_bytes(v)) = v for all v'
+    - Invalid bytes produce Err, never panic
+    - Type tag mismatch returns descriptive error
+    preconditions:
+    - bytes.len() > 0
+    lean_theorem: Theorems.Deserialize
+proof_obligations:
+- type: invariant
+  property: Serialization roundtrip identity
+  formal: '∀ v: T: from_bytes(to_bytes(v)) = v'
+  applies_to: all
+- type: invariant
+  property: Deterministic serialization
+  formal: '∀ v: to_bytes(v) = to_bytes(v)'
+  applies_to: serialize
+- type: soundness
+  property: Invalid bytes never panic
+  formal: '∀ bytes: from_bytes(bytes) ∈ {Ok(_), Err(_)}'
+  applies_to: deserialize
+enforcement:
+  roundtrip_identity:
+    description: Serialize then deserialize must return original value
+    check: contract_tests::FALSIFY-AL-001
+    severity: ERROR
+  determinism:
+    description: Same value must always serialize to same bytes
+    check: contract_tests::FALSIFY-AL-002
+    severity: ERROR
+  no_panic_on_invalid:
+    description: Invalid bytes must return Err, not panic
+    check: contract_tests::FALSIFY-AL-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-AL-001
+  rule: Roundtrip identity
+  prediction: from_bytes(to_bytes(v)) = v for any serializable value v
+  test: proptest with random structs, serialize then deserialize, assert equality
+  if_fails: Field ordering mismatch or lossy encoding in codec
+- id: FALSIFY-AL-002
+  rule: Deterministic serialization
+  prediction: to_bytes(v) produces identical bytes on repeated calls
+  test: serialize same value 100 times, assert all outputs identical
+  if_fails: Non-deterministic field ordering or timestamp injection in serialization
+- id: FALSIFY-AL-003
+  rule: No panic on invalid bytes
+  prediction: from_bytes(random_bytes) returns Err for garbage input
+  test: proptest with random byte vectors, assert no panic
+  if_fails: Missing bounds check or unchecked index in deserializer
+kani_harnesses:
+- id: KANI-AL-001
+  obligation: Roundtrip identity
+  property: Serialize/deserialize roundtrip
+  bound: 16
+  strategy: exhaustive
+  harness: verify_roundtrip_identity
+- id: KANI-AL-002
+  obligation: Deterministic serialization
+  property: Same input produces same output
+  bound: 8
+  strategy: exhaustive
+  harness: verify_serialize_determinism
+- id: KANI-AL-003
+  obligation: No panic on invalid bytes
+  property: Deserialize never panics
+  bound: 32
+  strategy: exhaustive
+  harness: verify_deserialize_no_panic
+qa_gate:
+  id: F-AL-001
+  name: Alimentar Serialization Contract
+  description: Data codec integrity quality gate
+  checks:
+  - roundtrip_identity
+  - determinism
+  - no_panic_on_invalid
+  pass_criteria: All 3 falsification tests pass
+  falsification: Swap two fields in to_bytes encoding order to trigger FALSIFY-AL-001

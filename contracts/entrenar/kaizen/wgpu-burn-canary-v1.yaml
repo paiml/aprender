@@ -1,0 +1,68 @@
+contract: wgpu-burn-canary-v1
+version: 1.0.0
+status: pending
+kaizen: 174
+description: >
+  Cross-framework canary: validate trueno WGPU kernels against Burn framework
+  (independent Rust deep learning library with its own WGPU backend).
+  Stronger than self-comparison — proves our shaders match an independent implementation.
+
+references:
+  - "Burn: Deep Learning Framework in Rust (burn.dev, GitHub: tracel-ai/burn)"
+  - "Unsloth canary pattern: compare optimized vs reference with cosine similarity"
+
+invariants:
+
+- id: C-WGPU-BURN-001
+  description: >
+    Matmul: trueno GpuDevice::matmul matches burn::tensor matmul.
+    Same inputs, cosine similarity > 0.9999.
+  preconditions:
+  - Both frameworks use WGPU backend
+  - Same fp32 input tensors
+  postconditions:
+  - cosine_sim(trueno_output, burn_output) > 0.9999
+  - max_absolute_diff < 1e-4
+  verified_by:
+  - PENDING — test_burn_canary_matmul
+  severity: critical
+
+- id: C-WGPU-BURN-002
+  description: >
+    Softmax: trueno softmax matches burn::activation::softmax.
+  preconditions:
+  - Same fp32 input vector
+  postconditions:
+  - cosine_sim > 0.9999
+  - Both outputs sum to 1.0 (within eps)
+  verified_by:
+  - PENDING — test_burn_canary_softmax
+  severity: high
+
+- id: C-WGPU-BURN-003
+  description: >
+    Element-wise SiLU: trueno silu matches burn silu activation.
+  preconditions:
+  - Same fp32 input
+  postconditions:
+  - cosine_sim > 0.9999
+  verified_by:
+  - PENDING — test_burn_canary_silu
+  severity: medium
+
+- id: C-WGPU-BURN-004
+  description: >
+    End-to-end: trueno attention forward (QKV + softmax + output)
+    matches burn transformer attention within tolerance.
+  preconditions:
+  - Same weights, same input hidden states
+  postconditions:
+  - cosine_sim > 0.999 (looser due to op composition)
+  verified_by:
+  - PENDING — test_burn_canary_attention
+  severity: high
+
+affected_files:
+- path: examples/wgpu_burn_canary.rs
+  functions:
+  - 'run: cross-framework validation tests'

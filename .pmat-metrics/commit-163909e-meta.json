@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-027",
+  "prompt": "Write conv1d-kernel-v1.yaml contract (Tier 3, Whisper)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-18T17:02:05.599423712Z"
+}

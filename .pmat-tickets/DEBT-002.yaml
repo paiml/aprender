@@ -1,0 +1,6 @@
+id: DEBT-002
+title: "Spec session: override stale cache claims for PMAT-486/129 completion"
+type: debt
+priority: low
+status: accepted
+reason: "Multi-session spec work; cache staleness is expected during long-running spec updates"

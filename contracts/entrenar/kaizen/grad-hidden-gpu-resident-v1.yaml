@@ -1,0 +1,117 @@
+contract: C-GRADHIDDEN-001
+title: GPU-Resident grad_hidden in InstructPipeline Backward
+kaizen: KAIZEN-065
+parent: C-CAUSALXENT-001
+status: implemented
+date: 2026-03-04
+baseline:
+  grad_d2h_bytes: 5242880
+  grad_h2d_bytes: 5242880
+  total_pcie_bytes: 10485760
+  sync_points: 1
+  heap_allocs: 1
+  per_step_overhead_us: 1500
+target:
+  grad_d2h_bytes: 0
+  grad_h2d_bytes: 0
+  total_pcie_bytes: 0
+  sync_points: 0
+  heap_allocs: 0
+  per_step_savings_us: 1500
+api:
+  backward_nf4_gpu_blocks_gpu_resident: 'New method on InstructPipeline. Reads gradient directly from
+
+    training_state.grad_hidden_buf (written by lm_head backward GEMM).
+
+    Passes it to rms_norm_backward instead of grad_upload_buf.
+
+    Called from cuda_train_step''s GPU-resident path.
+
+    '
+  backward_nf4_gpu_blocks_loop: 'Extracted shared block-backward loop. Called by both CPU-upload
+
+    path (backward_nf4_gpu_blocks) and GPU-resident path
+
+    (backward_nf4_gpu_blocks_gpu_resident) after RMSNorm backward.
+
+    '
+  backward_nf4_gpu_blocks: 'Unchanged semantics — CPU fallback path. Uploads gradient from
+
+    CPU slice to grad_upload_buf, runs RMSNorm backward, then calls
+
+    backward_nf4_gpu_blocks_loop. Used by cuda_train_step_cpu_loss.
+
+    '
+safety:
+  stream_ordering: 'gemm_forward and rms_norm_backward execute on the same CudaStream.
+
+    CUDA stream semantics guarantee sequential execution: the GEMM
+
+    output in grad_hidden_buf is complete before rms_norm_backward
+
+    reads it. No explicit synchronization needed.
+
+    '
+  buffer_aliasing: 'grad_hidden_buf and grad_upload_buf are disjoint GPU buffers
+
+    (separate fields of InstructGpuTrainingState). The GPU-resident
+
+    path reads grad_hidden_buf; the CPU path writes grad_upload_buf.
+
+    No aliasing.
+
+    '
+  buffer_sizing: 'Both buffers are allocated as trainer.zeros(buf_size) where
+
+    buf_size = max_seq_len * hidden_size. Same dimensions.
+
+    RMSNorm backward uses seq_len parameter (≤ max_seq_len) to
+
+    bound access — trailing elements are irrelevant.
+
+    '
+  fallback_path: 'CPU fallback (cuda_train_step_cpu_loss) still calls
+
+    backward_nf4_gpu_blocks which uploads from CPU. If the GPU
+
+    GEMM fails, cuda_train_step returns loss without weight update.
+
+    '
+  borrow_safety: 'Upload + RMSNorm wrapped in scope block to release &mut borrows
+
+    on training_state before calling backward_nf4_gpu_blocks_loop.
+
+    Loop method re-borrows all fields independently.
+
+    '
+preconditions:
+- gemm_forward completed on same stream (grad_hidden_buf populated)
+- grad_hidden_buf.len() >= seq_len * hidden_size
+- blocks_output contains forward pass output (for RMSNorm backward)
+postconditions:
+- Zero PCIe traffic for gradient transfer between GEMM and backward
+- Zero stream.synchronize() between GEMM and backward
+- Identical gradient values — same buffer, same data, no transform
+- CPU fallback path unchanged
+invariants:
+- grad_hidden_buf contains GEMM output after lm_head backward
+- RMSNorm backward reads from grad_hidden_buf (GPU-resident) or grad_upload_buf (CPU path)
+- Block backward loop identical for both paths
+files:
+- path: entrenar/src/finetune/instruct_pipeline.rs
+  change: 'Added backward_nf4_gpu_blocks_gpu_resident (reads grad_hidden_buf directly).
+
+    Extracted backward_nf4_gpu_blocks_loop (shared block-backward loop).
+
+    Rewrote cuda_train_step step 3 to skip D2H download + sync.
+
+    backward_nf4_gpu_blocks refactored to scope borrows + call loop.
+
+    '
+qa_gate:
+  id: F-GHGR-001
+  name: grad-hidden-gpu-resident-v1 Contract
+  description: Quality gate for grad-hidden-gpu-resident-v1
+  checks:
+  - validation
+  - falsification

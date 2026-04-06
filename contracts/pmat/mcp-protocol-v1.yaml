@@ -1,0 +1,175 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: MCP protocol contracts — tool schema fidelity, session lifecycle, error mapping, idempotency
+  references:
+  - Model Context Protocol Specification (2024)
+  - JSON-RPC 2.0 Specification (jsonrpc.org)
+  - pmat MCP agent-facing boundary (pv-spec §32.4)
+equations:
+  tool_schema_fidelity:
+    formula: |
+      schema_match: (ToolDefinition, HandlerFn) -> bool
+        for-all field in schema.required: handler.accepts(field)
+        for-all field in handler.params: field in schema.properties
+    domain: All registered MCP tools
+    codomain: bool
+    invariants:
+    - Schema and handler are always in sync
+    - No phantom fields in schema that handler ignores
+    - No hidden params in handler that schema omits
+    preconditions:
+    - tool is registered in tools/list response
+    postconditions:
+    - schema.required is subset of handler.params
+    lean_theorem: Theorems.ToolSchemaFidelity
+  session_lifecycle:
+    formula: |
+      session: State x Method -> State
+        Uninitialized x initialize -> Initialized
+        Initialized   x tools/list -> Initialized
+        Initialized   x tools/call -> Initialized
+        Initialized   x shutdown   -> Closed
+        Uninitialized x tools/call -> Error
+        Closed        x *          -> Error
+    domain: MCP session state machine
+    codomain: Next state or error
+    invariants:
+    - initialize must precede tools/call
+    - Closed state is terminal (except for new session)
+    preconditions:
+    - method is a valid JSON-RPC method
+    postconditions:
+    - state transition follows defined edges only
+    lean_theorem: Theorems.SessionLifecycle
+  error_mapping_lossless:
+    formula: |
+      map_error: PmatError -> McpError
+        FileNotFound(p) -> McpError { code: -32602, message: contains(p) }
+        AnalysisError(e) -> McpError { code: -32603, message: contains(e) }
+        len(mcp_error.message) >= len(pmat_error.to_string())
+    domain: All PmatError variants
+    codomain: McpError with preserved diagnostic info
+    invariants:
+    - No lossy downcast of error information
+    - Every PmatError variant has an MCP mapping
+    preconditions:
+    - error is a valid PmatError variant
+    postconditions:
+    - mcp_error.message contains original error text
+    lean_theorem: Theorems.ErrorMappingLossless
+  idempotency:
+    formula: |
+      idempotent: Tool -> bool
+        analyze_*    => true  (read-only)
+        quality_gate => true  (read-only)
+        refactor_*   => false (mutates state)
+        tools_call(t, params) = tools_call(t, params) when idempotent(t)
+    domain: All registered MCP tools
+    codomain: bool classification
+    invariants:
+    - Read-only tools always return same result for same input
+    - Mutation tools are correctly classified as non-idempotent
+    preconditions:
+    - tool is registered
+    postconditions:
+    - idempotent(tool) => f(x) = f(x) for all x
+    lean_theorem: Theorems.ToolIdempotency
+proof_obligations:
+- type: completeness
+  property: Schema covers all handler params
+  formal: for-all tool schema(tool) is-superset-of handler_params(tool)
+  applies_to: all
+  lean:
+    theorem: Theorems.ToolSchemaFidelity
+    status: sorry
+- type: state_machine
+  property: Session lifecycle valid transitions
+  formal: No tools/call before initialize
+  applies_to: all
+  lean:
+    theorem: Theorems.SessionLifecycle
+    status: sorry
+- type: conservation
+  property: Error info preserved across mapping
+  formal: len(mcp_error.message) >= len(pmat_error.to_string())
+  applies_to: all
+  lean:
+    theorem: Theorems.ErrorMappingLossless
+    status: sorry
+- type: idempotency
+  property: Read-only tools are pure
+  formal: f(x) = f(x) for all read-only tools
+  applies_to: all
+  lean:
+    theorem: Theorems.ToolIdempotency
+    status: sorry
+- type: soundness
+  property: No phantom tools in discovery
+  formal: for-all tool in tools/list handler(tool) exists
+  applies_to: all
+  lean:
+    theorem: Theorems.NoPhantomTools
+    status: sorry
+falsification_tests:
+- id: FALSIFY-MCP-001
+  rule: Required field missing
+  prediction: Tool with required field missing returns -32602, not panic
+  test: Call analyze_complexity without path field
+  if_fails: Handler not validating required fields before use
+- id: FALSIFY-MCP-002
+  rule: Pre-initialize call
+  prediction: tools/call before initialize returns protocol error
+  test: Send tools/call to uninitialized session
+  if_fails: Session state not tracked or not checked
+- id: FALSIFY-MCP-003
+  rule: Unknown tool name
+  prediction: Unknown tool name returns -32601 (method not found)
+  test: Call tools/call with tool_name = "nonexistent_tool"
+  if_fails: Missing default handler for unknown tools
+- id: FALSIFY-MCP-004
+  rule: Concurrent idempotent calls
+  prediction: Concurrent tools/call on same project produces consistent results
+  test: 10 parallel analyze_complexity calls, assert all results equal
+  if_fails: Shared mutable state in analysis pipeline
+- id: FALSIFY-MCP-005
+  rule: Schema JSON validity
+  prediction: Tool schema inputSchema validates against JSON Schema Draft 7
+  test: Fetch all tool schemas, validate each against metaschema
+  if_fails: Hand-written schemas with invalid JSON Schema constructs
+kani_harnesses:
+- id: KANI-MCP-001
+  obligation: Schema covers all handler params
+  property: schema.required subset of handler.params
+  bound: 16
+  strategy: exhaustive
+- id: KANI-MCP-002
+  obligation: Session lifecycle valid
+  property: state machine has no invalid transitions
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MCP-003
+  obligation: Error info preserved
+  property: McpError message length >= PmatError message length
+  bound: 16
+  strategy: exhaustive
+- id: KANI-MCP-004
+  obligation: Read-only tools are pure
+  property: idempotent tools produce same result
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MCP-005
+  obligation: No phantom tools
+  property: every listed tool has a handler
+  bound: 16
+  strategy: exhaustive
+qa_gate:
+  id: F-MCP-001
+  name: mcp-protocol-v1 Contract
+  description: Quality gate for MCP protocol — schema, lifecycle, errors, idempotency
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass
+  falsification: FALSIFY-MCP-001 through FALSIFY-MCP-005

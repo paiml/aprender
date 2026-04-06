@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-114",
+  "prompt": "Add real bindings + critical_path for 17 sovereign stack repos at Grade F",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-28T11:01:28.986554581Z"
+}

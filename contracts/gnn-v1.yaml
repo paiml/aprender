@@ -1,0 +1,178 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Graph Neural Network layers and pooling operations
+  references:
+  - Kipf & Welling (2017) Semi-Supervised Classification with Graph Convolutional Networks
+  - Gilmer et al. (2017) Neural Message Passing for Quantum Chemistry
+equations:
+  gcn_aggregate:
+    formula: H^{l+1} = sigma(D_hat^{-1/2} * A_hat * D_hat^{-1/2} * H^{l} * W^{l})
+    domain: A_hat = A + I adjacency with self-loops, D_hat = degree matrix of A_hat, H in R^{n x d_in}, W in R^{d_in x d_out}
+    codomain: H' in R^{n x d_out}
+    invariants:
+    - Output has same number of nodes as input (n preserved)
+    - Output feature dimension equals weight matrix output dimension
+    - Self-loops ensure every node receives its own features
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Gcn_Aggregate
+  message_passing:
+    formula: h_i^{l+1} = U(h_i^{l}, aggregate_{j in N(i)} M(h_i, h_j))
+    domain: h_i in R^d node features, N(i) neighborhood of node i, M message function, U update function
+    codomain: h_i' in R^{d'} updated node features
+    invariants:
+    - Output has same number of nodes as input
+    - Each node is updated based only on its neighborhood (locality)
+    - Permutation equivariant with respect to node ordering
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Message_Passing
+  global_mean_pool:
+    formula: r = (1/|V|) * sum_{i in V} h_i
+    domain: h_i in R^d for i in V, |V| >= 1
+    codomain: r in R^d (graph-level embedding)
+    invariants:
+    - Output dimension equals node feature dimension
+    - Output is finite when all node features are finite
+    - 'Output is bounded: min(h) <= r_j <= max(h) for each dimension j'
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Global_Mean_Pool
+  global_max_pool:
+    formula: r_j = max_{i in V} h_{ij} for each feature dimension j
+    domain: h_i in R^d for i in V, |V| >= 1
+    codomain: r in R^d (graph-level embedding)
+    invariants:
+    - Output dimension equals node feature dimension
+    - Output is bounded by maximum node feature value per dimension
+    - r_j >= h_{ij} for all i (max is an upper bound)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Global_Max_Pool
+proof_obligations:
+- type: invariant
+  property: GCN preserves node count
+  formal: output.shape[0] == input.shape[0] for GCN forward
+  applies_to: all
+- type: invariant
+  property: Message passing preserves node count
+  formal: propagate(x, adj).shape[0] == x.shape[0]
+  applies_to: all
+- type: bound
+  property: Global mean pool output is finite
+  formal: 'forall j: r_j.is_finite() when all h_ij are finite'
+  applies_to: all
+- type: bound
+  property: Global max pool bounded by node features
+  formal: 'forall j: r_j <= max_{i in V}(h_{ij})'
+  applies_to: all
+- type: invariant
+  property: Pooling output dimension matches feature dimension
+  formal: pool(H).shape[1] == H.shape[1]
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-GNN-001
+  rule: GCN node count preservation
+  prediction: GCN output has same number of nodes as input
+  test: 'proptest: generate random adjacency and features, apply GCN, check output.shape[0] == input.shape[0]'
+  if_fails: GCN aggregation drops or duplicates nodes
+- id: FALSIFY-GNN-002
+  rule: Message passing node count preservation
+  prediction: Propagate preserves node count
+  test: 'proptest: generate random graph and features, apply message passing, check output node count'
+  if_fails: Message passing aggregation changes node set
+- id: FALSIFY-GNN-003
+  rule: Global mean pool finiteness
+  prediction: Pooled output is finite for finite inputs
+  test: 'proptest: generate random node features, apply global mean pool, check all values finite'
+  if_fails: Division by zero (empty graph) or overflow in summation
+- id: FALSIFY-GNN-004
+  rule: Global max pool upper bound
+  prediction: Each pooled feature <= max of corresponding node features
+  test: 'proptest: generate random node features, apply global max pool, check bound per dimension'
+  if_fails: Max pool introduces values exceeding node feature range
+- id: FALSIFY-GNN-005
+  rule: Pooling dimension preservation
+  prediction: Pool output has same feature dimension as input
+  test: 'proptest: generate random node features with various dimensions, apply pooling, check output dim'
+  if_fails: Pooling operation changes feature dimension
+- id: FALSIFY-GNN-006
+  rule: GCN output finiteness
+  prediction: GCN output is finite for finite inputs and weights
+  test: 'proptest: generate bounded random inputs and weights, apply GCN, check all outputs finite'
+  if_fails: Numerical instability in degree normalization or matmul
+enforcement:
+  node_count_gcn:
+    description: GCN must preserve node count
+    check: contract_tests::FALSIFY-GNN-001
+    severity: ERROR
+  node_count_mp:
+    description: Message passing must preserve node count
+    check: contract_tests::FALSIFY-GNN-002
+    severity: ERROR
+  pool_finite:
+    description: Global pooling must produce finite outputs
+    check: contract_tests::FALSIFY-GNN-003
+    severity: ERROR
+kani_harnesses:
+- id: KANI-GNN-001
+  obligation: GNN-INV-001
+  property: GCN forward preserves node count
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gcn_node_count
+- id: KANI-GNN-002
+  obligation: GNN-BND-001
+  property: Global mean pool output is finite for finite input
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mean_pool_finite
+- id: KANI-GNN-003
+  obligation: GNN-BND-002
+  property: Global max pool bounded by node features
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_max_pool_bounded
+- id: KANI-GNN_V1-004
+  obligation: GCN preserves node count
+  property: GCN preserves node count
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GNN_V1-005
+  obligation: Message passing preserves node count
+  property: Message passing preserves node count
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GNN_V1-006
+  obligation: Global mean pool output is finite
+  property: Global mean pool output is finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GNN_V1-007
+  obligation: Global max pool bounded by node features
+  property: Global max pool bounded by node features
+  bound: 8
+  strategy: stub_float
+- id: KANI-GNN_V1-008
+  obligation: Pooling output dimension matches feature dimension
+  property: Pooling output dimension matches feature dimension
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GNN-001
+  name: GNN Contract
+  description: Graph neural network layer and pooling correctness quality gate
+  checks:
+  - gcn_node_count
+  - message_passing_node_count
+  - mean_pool_finiteness
+  - max_pool_bound
+  - pooling_dimension
+  - gcn_finiteness
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: GCN aggregation drops nodes or pooling produces non-finite values

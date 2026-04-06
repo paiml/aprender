@@ -1,0 +1,107 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Shannon entropy bounds for model profiling and data analysis
+  references:
+  - Shannon (1948) A Mathematical Theory of Communication
+  - Qwen2.5-Coder Showcase Spec §11.5 — entropy-based profiling
+equations:
+  entropy:
+    formula: H(X) = -sum(p_i * log2(p_i)) for i in alphabet
+    domain: p_i >= 0, sum(p_i) = 1, 0 * log2(0) := 0
+    codomain: H(X) ∈ [0, log2(|alphabet|)]
+    invariants:
+    - H(X) >= 0 for all distributions
+    - H(X) = 0 iff X is deterministic (one p_i = 1)
+    - H(X) = log2(|alphabet|) iff X is uniform
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Entropy
+  uniform_entropy:
+    formula: H_uniform(k) = log2(k)
+    domain: k ∈ ℤ, k >= 1
+    codomain: H_uniform ∈ [0, ∞)
+    invariants:
+    - Strictly monotonically increasing in k
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Uniform_Entropy
+proof_obligations:
+- type: bound
+  property: Range bound
+  formal: 0 <= H(X) <= log2(256) = 8.0 for byte data
+  applies_to: all
+- type: invariant
+  property: Constant input zero entropy
+  formal: H([c, c, ..., c]) = 0.0 for any constant byte c
+  applies_to: all
+- type: monotonicity
+  property: Uniform entropy monotonic
+  formal: k1 < k2 => H_uniform(k1) < H_uniform(k2)
+  applies_to: all
+- type: equivalence
+  property: SIMD entropy equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-SE-001
+  rule: Range bound
+  prediction: Entropy of random byte distribution in [0, 8]
+  test: proptest with random byte sequences
+  if_fails: Entropy calculation overflow or sign error
+- id: FALSIFY-SE-002
+  rule: Zero entropy
+  prediction: Constant input yields exactly 0.0
+  test: proptest with constant byte arrays
+  if_fails: Edge case in 0*log(0) convention
+- id: FALSIFY-SE-003
+  rule: Monotonicity
+  prediction: More symbols => higher uniform entropy
+  test: proptest comparing H_uniform(k) for k1 < k2
+  if_fails: log2 implementation error
+- id: FALSIFY-SE-004
+  rule: SIMD entropy equivalence
+  prediction: SIMD entropy matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD entropy computation:SIMD entropy calculation diverges'
+kani_harnesses:
+- id: KANI-SE-001
+  obligation: SE-BND-001
+  property: Entropy non-negative for bounded distributions
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_entropy_nonneg
+- id: KANI-SHANNO-002
+  obligation: Range bound
+  property: Range bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-SHANNO-003
+  obligation: Constant input zero entropy
+  property: Constant input zero entropy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SHANNO-004
+  obligation: Uniform entropy monotonic
+  property: Uniform entropy monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SHANNO-005
+  obligation: SIMD entropy equivalence
+  property: SIMD entropy equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SE-001
+  name: Shannon Entropy Contract
+  description: Entropy computation quality gate
+  checks:
+  - range_bound
+  - zero_entropy
+  - monotonicity
+  pass_criteria: All 4 falsification tests pass
+  falsification: Pass non-normalized distribution to trigger range violation

@@ -1,0 +1,144 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Ranking metrics -- Hit@K, Reciprocal Rank, MRR, and NDCG@K
+  references:
+  - Manning, Raghavan, Schutze (2008) Introduction to Information Retrieval, Ch. 8
+  - Jarvelin & Kekalainen (2002) Cumulated Gain-Based Evaluation of IR, TOIS
+equations:
+  hit_at_k:
+    formula: hit@k = 1 if relevant item in top-k results, 0 otherwise
+    domain: ranked list of items, relevant item set, k >= 1
+    codomain: hit@k in {0, 1}
+    invariants:
+    - 'hit@k is binary: exactly 0 or 1'
+    - hit@k is monotone non-decreasing in k (hit@k <= hit@(k+1))
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Hit_At_K
+  reciprocal_rank:
+    formula: RR = 1 / rank_of_first_relevant_item, or 0 if none relevant
+    domain: ranked list, relevant item set
+    codomain: RR in [0, 1]
+    invariants:
+    - RR in [0, 1]
+    - RR = 1 iff first item is relevant
+    - RR = 0 iff no relevant item in list
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Reciprocal_Rank
+  mrr:
+    formula: MRR = (1/|Q|) * sum_{q=1}^{|Q|} RR_q
+    domain: Q queries, each with ranked list and relevant items
+    codomain: MRR in [0, 1]
+    invariants:
+    - MRR in [0, 1] (average of values in [0,1])
+    - MRR = 1 iff all queries have first item relevant
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Mrr
+  ndcg_at_k:
+    formula: NDCG@k = DCG@k / IDCG@k, where DCG@k = sum_{i=1}^{k} rel_i / log2(i+1)
+    domain: ranked list with relevance scores, k >= 1
+    codomain: NDCG@k in [0, 1]
+    invariants:
+    - NDCG@k in [0, 1]
+    - NDCG@k = 1 for perfect ranking (items sorted by relevance)
+    - NDCG@k = 0 when all items have zero relevance
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Ndcg_At_K
+proof_obligations:
+- type: bound
+  property: All metrics in [0, 1]
+  formal: hit@k in {0,1}, RR in [0,1], MRR in [0,1], NDCG@k in [0,1]
+  applies_to: all
+- type: invariant
+  property: NDCG perfect ranking
+  formal: NDCG@k = 1.0 when items are sorted by decreasing relevance
+  applies_to: all
+- type: invariant
+  property: hit@k binary
+  formal: hit@k in {0, 1} for all k and all ranked lists
+  applies_to: all
+- type: invariant
+  property: MRR bounded
+  formal: 0 <= MRR <= 1 for any set of queries
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-RANK-001
+  rule: hit@k binary
+  prediction: hit@k returns exactly 0 or 1
+  test: 'proptest: random ranked lists and relevance sets, compute hit@k, check in {0, 1}'
+  if_fails: hit@k returning fractional or unbounded value
+- id: FALSIFY-RANK-002
+  rule: MRR in [0, 1]
+  prediction: MRR in [0, 1] for any query set
+  test: 'proptest: random query-result pairs, compute MRR, check 0 <= MRR <= 1'
+  if_fails: Division error or reciprocal rank exceeding 1
+- id: FALSIFY-RANK-003
+  rule: NDCG perfect ranking
+  prediction: NDCG@k = 1.0 for perfectly sorted ranking
+  test: 'proptest: generate relevance scores, sort descending, compute NDCG@k, check = 1.0'
+  if_fails: DCG/IDCG computation mismatch or log base error
+- id: FALSIFY-RANK-004
+  rule: NDCG in [0, 1]
+  prediction: NDCG@k in [0, 1] for any ranking and relevance scores
+  test: 'proptest: random rankings and non-negative relevance scores, compute NDCG, check bounds'
+  if_fails: IDCG computed incorrectly or division by zero when all relevance = 0
+enforcement:
+  hit_binary:
+    description: hit@k must return exactly 0 or 1
+    check: contract_tests::FALSIFY-RANK-001
+    severity: ERROR
+  ndcg_bounds:
+    description: NDCG must be in [0, 1]
+    check: contract_tests::FALSIFY-RANK-004
+    severity: ERROR
+kani_harnesses:
+- id: KANI-RANK-001
+  obligation: RANK-BND-001
+  property: All ranking metrics bounded in [0, 1]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ranking_metrics_bounded
+- id: KANI-RANK-002
+  obligation: RANK-INV-001
+  property: hit@k returns exactly 0 or 1
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_hit_at_k_binary
+- id: KANI-METRIC-003
+  obligation: All metrics in [0, 1]
+  property: All metrics in [0, 1]
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-004
+  obligation: NDCG perfect ranking
+  property: NDCG perfect ranking
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-005
+  obligation: hit@k binary
+  property: hit@k binary
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-006
+  obligation: MRR bounded
+  property: MRR bounded
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-RANK-001
+  name: Ranking Metrics Contract
+  description: Ranking metrics correctness quality gate
+  checks:
+  - hit_binary
+  - mrr_bounded
+  - ndcg_perfect
+  - ndcg_bounded
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: NDCG exceeds 1.0 due to IDCG computation using wrong sort order

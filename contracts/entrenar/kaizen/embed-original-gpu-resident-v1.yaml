@@ -1,0 +1,100 @@
+contract: C-EMBEDGPU-001
+title: GPU-Resident Non-Transposed Embed in InstructPipeline
+kaizen: KAIZEN-068
+parent: C-GRADHIDDEN-001
+status: implemented
+date: 2026-03-04
+baseline:
+  embed_h2d_bytes_per_step: 1555783680
+  cuMemAlloc_per_step: 1
+  cuMemFree_per_step: 1
+  per_step_overhead_us: 58000
+target:
+  embed_h2d_bytes_per_step: 0
+  cuMemAlloc_per_step: 0
+  cuMemFree_per_step: 0
+  per_step_savings_us: 58000
+  additional_vram_bytes: 1555783680
+vram_analysis:
+  nf4_model_weights: 1300000000
+  lora_adapters: 5900000
+  training_state_buffers: 256000000
+  layer_inputs: 188000000
+  logits_buf: 311296000
+  embed_transposed: 1555783680
+  embed_original: 1555783680
+  total_estimated: 5172763360
+  available_vram: 25769803776
+  headroom_pct: 81.3
+api:
+  embed_original: 'New field on InstructGpuTrainingState. GpuBuffer<f32> of size vocab_size × hidden_size,
+
+    uploaded once from model.embed_tokens.weight during try_init_gpu_training.
+
+    '
+  cuda_train_step: 'Uses training.embed_original instead of trainer.upload(embed_slice).
+
+    Eliminates per-step CPU→GPU transfer of ~1.45GB.
+
+    '
+  cuda_train_step_cpu_loss: 'Same change — uses training.embed_original instead of per-step upload.
+
+    '
+safety:
+  buffer_sizing: 'embed_original allocated via trainer.upload(embed_slice) where embed_slice
+
+    has vocab_size × hidden_size elements. Same dimensions as the per-step upload
+
+    it replaces. GEMM reads seq_len × vocab_size from logits_buf, multiplies by
+
+    embed_original [vocab_size × hidden_size], writes seq_len × hidden_size to
+
+    grad_hidden_buf. seq_len ≤ max_seq_len — all within bounds.
+
+    '
+  data_freshness: 'Embedding weights are frozen during NF4 QLoRA training (only LoRA adapters
+
+    are trainable). The embed_original buffer never needs updating after init.
+
+    This is safe because NF4 training does not modify base model weights.
+
+    '
+  buffer_aliasing: 'embed_original and embed_transposed are disjoint GPU buffers — different
+
+    data layouts, allocated separately. No aliasing possible.
+
+    '
+  backward_compatibility: 'cuda_train_step_cpu_loss fallback path also uses embed_original, so the
+
+    CPU loss path gets the same speedup. No functional change.
+
+    '
+preconditions:
+- model.embed_tokens.weight is contiguous and has vocab_size × hidden_size elements
+- CUDA device has sufficient VRAM for both embed layouts (~2.9GB for Qwen3-4B)
+postconditions:
+- Zero PCIe traffic for embed transfer during training step
+- embed_original contains same data as model.embed_tokens.weight (uploaded once at init)
+- lm_head backward GEMM uses GPU-resident embed_original
+invariants:
+- embed_original data is immutable during training (frozen base weights)
+- embed_transposed and embed_original represent same matrix in different layouts
+- Both backward paths (GPU-resident and CPU-loss) use embed_original
+files:
+- path: entrenar/src/finetune/instruct_pipeline.rs
+  change: 'Added embed_original field to InstructGpuTrainingState.
+
+    try_init_gpu_training: uploads embed_original alongside embed_transposed.
+
+    cuda_train_step: uses training.embed_original (no per-step upload).
+
+    cuda_train_step_cpu_loss: uses training.embed_original (no per-step upload).
+
+    '
+qa_gate:
+  id: F-EOGR-001
+  name: embed-original-gpu-resident-v1 Contract
+  description: Quality gate for embed-original-gpu-resident-v1
+  checks:
+  - validation
+  - falsification

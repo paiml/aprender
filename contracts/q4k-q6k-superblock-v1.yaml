@@ -1,0 +1,180 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Q4K and Q6K quantization superblock layout and dequantization formula
+  references:
+  - GGML Q4_K_M/Q6_K format specification
+  - Qwen2.5-Coder Showcase Spec Appendix F, §11.5
+  - Qwen3 Performance Parity Spec — Dot Product Algebra
+equations:
+  q4k_superblock:
+    formula: sizeof(Q4K_superblock) = 2(d) + 2(dmin) + 12(scales) + 128(quants) = 144 bytes
+    domain: 256 elements per superblock
+    invariants:
+    - 144 bytes encodes exactly 256 elements
+    - 'Effective bits per weight: 144*8/256 = 4.5'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Q4K_Superblock
+  q6k_superblock:
+    formula: sizeof(Q6K_superblock) = 128(ql) + 64(qh) + 16(scales) + 2(d) = 210 bytes
+    domain: 256 elements per superblock
+    invariants:
+    - 210 bytes encodes exactly 256 elements
+    - 'Effective bits per weight: 210*8/256 = 6.5625'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Q6K_Superblock
+  total_bytes:
+    formula: total_bytes(rows, cols) = rows * ceil(cols / 256) * block_size
+    domain: rows > 0, cols > 0, block_size ∈ {144, 210}
+    invariants:
+    - total_bytes proportional to rows
+    - total_bytes monotonically increases with cols
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Total_Bytes
+  dequantization:
+    formula: x_i = d * s_j * q_i - dmin * m_j
+    domain: d,dmin ∈ f16, s_j,m_j ∈ uint6, q_i ∈ uint4/uint6
+    invariants:
+    - Output is finite for valid superblock
+    - has_dmin=false => offset term = 0
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Dequantization
+  bsum:
+    formula: bsum_j = sum(q_i for i in block_j)
+    domain: Block of quantized values
+    invariants:
+    - bsum depends only on input x, not on weight W
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Bsum
+proof_obligations:
+- type: invariant
+  property: Q4K superblock size
+  formal: 2 + 2 + 12 + 128 = 144
+  applies_to: all
+- type: invariant
+  property: Q6K superblock size
+  formal: 128 + 64 + 16 + 2 = 210
+  applies_to: all
+- type: monotonicity
+  property: Total bytes monotonic
+  formal: cols1 < cols2 => total_bytes(r, cols1) <= total_bytes(r, cols2)
+  applies_to: all
+- type: invariant
+  property: Dequant produces finite
+  formal: x_i is finite for valid superblock inputs
+  applies_to: all
+- type: invariant
+  property: Offset vanishing
+  formal: has_dmin=false => offset_term = 0
+  applies_to: all
+- type: invariant
+  property: bsum weight independence
+  formal: bsum depends on x only
+  applies_to: all
+- type: equivalence
+  property: SIMD dequant equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-QS-001
+  rule: Superblock sizes
+  prediction: Q4K=144, Q6K=210
+  test: Static assertion
+  if_fails: Field size constant wrong
+- id: FALSIFY-QS-002
+  rule: Total bytes monotonic
+  prediction: More cols => more bytes
+  test: proptest with random dimensions
+  if_fails: ceil rounding bug
+- id: FALSIFY-QS-003
+  rule: Dequant finite
+  prediction: All dequantized values finite
+  test: proptest with random valid superblock fields
+  if_fails: NaN from scale overflow
+- id: FALSIFY-QS-004
+  rule: Offset vanishing
+  prediction: Scale-only format has zero offset term
+  test: 'Deterministic: verify Q6K offset == 0'
+  if_fails: Offset term present in scale-only format
+- id: FALSIFY-QS-005
+  rule: bsum weight independence
+  prediction: bsums depend only on activations, not weights
+  test: 'proptest: change weights, verify bsums unchanged'
+  if_fails: bsum incorrectly depends on weight values
+- id: FALSIFY-QS-006
+  rule: Byte layout consistency
+  prediction: Superblock byte count matches format spec
+  test: 'Deterministic: sizeof matches documented layout'
+  if_fails: Padding or alignment error in superblock
+- id: FALSIFY-QS-007
+  rule: SIMD dequant equivalence
+  prediction: SIMD dequantization matches scalar
+  test: 'proptest: compare scalar vs SIMD dequant output'
+  if_fails: SIMD path produces different dequant values
+kani_harnesses:
+- id: KANI-QS-001
+  obligation: QS-INV-001
+  property: Superblock size constants correct
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_superblock_sizes
+- id: KANI-Q4K_Q6-002
+  obligation: Q4K superblock size
+  property: Q4K superblock size
+  bound: 8
+  strategy: exhaustive
+- id: KANI-Q4K_Q6-003
+  obligation: Q6K superblock size
+  property: Q6K superblock size
+  bound: 8
+  strategy: exhaustive
+- id: KANI-Q4K_Q6-004
+  obligation: Total bytes monotonic
+  property: Total bytes monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-Q4K_Q6-005
+  obligation: Dequant produces finite
+  property: Dequant produces finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-Q4K_Q6-006
+  obligation: Offset vanishing
+  property: Offset vanishing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-Q4K_Q6-007
+  obligation: bsum weight independence
+  property: bsum weight independence
+  bound: 8
+  strategy: stub_float
+- id: KANI-Q4K_Q6-008
+  obligation: SIMD dequant equivalence
+  property: SIMD dequant equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QS-001
+  name: Q4K/Q6K Superblock Contract
+  description: Quantization layout quality gate
+  checks:
+  - q4k_size
+  - q6k_size
+  - total_bytes_monotonic
+  - dequant_finite
+  - offset_vanishing
+  - bsum_independence
+  pass_criteria: All 7 falsification tests pass
+  falsification: Change Q4K block size to 143 to break element count

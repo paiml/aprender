@@ -1,0 +1,130 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: >
+    BLIS GEMM contract — matrix multiplication correctness across dispatch
+    paths (scalar, AVX2 8x6, AVX-512 16x8, direct rowmajor, small strided).
+    Covers compute.rs, elementwise.rs, microkernels/, packing.rs.
+  references:
+  - 'trueno/src/blis/compute.rs — gemm_blis(), gemm_direct_rowmajor(), gemm_small_strided_avx2()'
+  - 'trueno/src/blis/elementwise.rs — add/sub/mul/silu/gelu AVX2/AVX-512'
+  - 'trueno/src/blis/norms.rs — rms_norm_avx2(), layer_norm_avx2()'
+  - 'trueno/src/blis/softmax.rs — softmax_avx2()'
+  - 'trueno/src/blis/gemv.rs — gemv_avx2(), gemv_tiled_avx2()'
+  - 'Van Zee & Van de Geijn (2015). BLIS: A Framework for Rapidly Instantiating BLAS Functionality'
+  registry: true
+  depends_on:
+  - avx512-blis-v1
+
+equations:
+  gemm_correctness:
+    formula: |
+      gemm_blis(m, n, k, a, b, c): (usize, usize, usize, &[f32], &[f32], &mut [f32]) -> Result
+        Postcondition: c[i][j] = sum(a[i][p] * b[p][j]) for p in 0..k
+        Must match scalar reference implementation within f32 epsilon
+    domain: Matrices A(m×k), B(k×n)
+    codomain: Matrix C(m×n)
+    invariants:
+    - Output matches gemm_reference within 1e-4 relative error
+    - Works for all m,n,k > 0 including non-aligned dimensions
+    - AVX2 and AVX-512 paths produce same result as scalar
+    preconditions:
+    - m > 0 && n > 0 && k > 0
+    - a.len() == m * k && b.len() == k * n
+    postconditions:
+    - result.len() == m * n
+    - result.iter().all(|v| v.is_finite())
+    tolerance: 1.0e-4
+    lean_theorem: Theorems.GemmCorrectness
+
+  elementwise_parity:
+    formula: |
+      For each op in {add, sub, mul, silu, gelu}:
+        op_avx2(a, b) == op_scalar(a, b) within f32 epsilon
+        op_avx512(a, b) == op_scalar(a, b) within f32 epsilon
+    domain: Two f32 vectors, elementwise operation
+    codomain: f32 result vector
+    invariants:
+    - All SIMD paths match scalar reference
+    - Non-aligned lengths handled correctly (remainder elements)
+    preconditions:
+    - a.len() == b.len()
+    postconditions:
+    - result.iter().all(|v| v.is_finite())
+    - result.len() == a.len()
+    lean_theorem: Theorems.ElementwiseParity
+
+  norm_correctness:
+    formula: |
+      rms_norm(x, w, eps) = w * x / sqrt(mean(x^2) + eps)
+      layer_norm(x, w, b, eps) = w * (x - mean) / sqrt(var + eps) + b
+    invariants:
+    - Output is finite (no NaN/Inf)
+    - AVX2 path matches scalar within 1e-5
+
+  gemv_correctness:
+    formula: |
+      gemv(a, x, y): (Matrix, Vector, &mut Vector)
+        y[i] = sum(a[i][j] * x[j]) for j in 0..cols
+    invariants:
+    - Output matches scalar reference within 1e-4
+    - Works for non-aligned dimensions
+
+falsification_tests:
+- id: FALSIFY-BLIS-001
+  rule: gemm_correctness
+  prediction: gemm_blis matches gemm_reference for various sizes
+  if_fails: BLIS GEMM kernel has incorrect accumulation or tiling logic
+- id: FALSIFY-BLIS-002
+  rule: gemm_correctness
+  prediction: Non-aligned dimensions (e.g., 7x13x5) produce correct output
+  if_fails: BLIS kernel handles non-aligned tail elements incorrectly
+- id: FALSIFY-BLIS-003
+  rule: elementwise_parity
+  prediction: SiLU AVX2 matches scalar
+  if_fails: AVX2 SiLU approximation diverges from scalar reference
+- id: FALSIFY-BLIS-004
+  rule: norm_correctness
+  prediction: RMS norm output is finite and correct
+  if_fails: RMS norm kernel produces NaN or Inf for valid inputs
+- id: FALSIFY-BLIS-005
+  rule: gemv_correctness
+  prediction: GEMV matches scalar for non-aligned sizes
+  if_fails: GEMV kernel mishandles non-aligned tail elements
+- id: FALSIFY-BLIS-006
+  rule: gemm_correctness
+  prediction: gemm_direct_rowmajor matches reference
+  if_fails: Row-major GEMM kernel has incorrect stride or accumulation
+- id: FALSIFY-BLIS-007
+  rule: elementwise_parity
+  prediction: add_avx512 matches scalar
+  if_fails: AVX-512 add kernel diverges from scalar reference
+- id: FALSIFY-BLIS-008
+  rule: norm_correctness
+  prediction: layer_norm AVX2 matches scalar
+  if_fails: Layer norm AVX2 kernel diverges from scalar reference
+proof_obligations:
+- type: invariant
+  property: GEMM numerical correctness
+  formal: '∀ A,B,C: |gemm_blis(A,B) - gemm_ref(A,B)| < 1e-4'
+  tolerance: 1.0e-4
+  applies_to: gemm_correctness
+  lean:
+    theorem: Theorems.GemmCorrectness
+    status: sorry
+- type: invariant
+  property: Elementwise parity
+  formal: '∀ x: |silu_avx2(x) - silu_scalar(x)| < 1e-5'
+  tolerance: 1.0e-5
+  applies_to: elementwise_parity
+  lean:
+    theorem: Theorems.ElementwiseParity
+    status: sorry
+kani_harnesses:
+- id: KANI-BLIS-001
+  obligation: GEMM numerical correctness
+  property: output matches reference within tolerance
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gemm_correctness

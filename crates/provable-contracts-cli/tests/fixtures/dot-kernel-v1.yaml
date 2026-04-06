@@ -1,0 +1,62 @@
+metadata:
+  version: "1.0.0"
+  description: "Dot product kernel — inner product"
+  references:
+    - "Golub & Van Loan (2013) Matrix Computations"
+
+equations:
+  dot:
+    formula: "y = Σ x_i · w_i"
+    domain: "x ∈ ℝ^n, w ∈ ℝ^n"
+    codomain: "y ∈ ℝ"
+    invariants:
+      - "dot(x, 0) = 0"
+      - "dot(α·x, w) = α·dot(x, w)"
+
+proof_obligations:
+  - type: linearity
+    property: "Scalar linearity"
+    formal: "dot(α·x, w) = α·dot(x, w)"
+    applies_to: all
+  - type: invariant
+    property: "Zero annihilation"
+    formal: "dot(x, 0) = 0"
+    applies_to: all
+  - type: equivalence
+    property: "SIMD matches scalar"
+    tolerance: 4.0
+    applies_to: simd
+
+kernel_structure:
+  phases:
+    - name: multiply
+      description: "Element-wise x_i * w_i"
+      invariant: "prod_i = x_i * w_i"
+    - name: reduce
+      description: "Sum all products"
+      invariant: "y = Σ prod_i"
+
+simd_dispatch:
+  dot:
+    scalar: dot_scalar
+    avx2: dot_avx2
+
+falsification_tests:
+  - id: FALSIFY-DOT-001
+    rule: "Linearity"
+    prediction: "dot(α·x, w) = α·dot(x, w) within tolerance"
+    if_fails: "FMA ordering breaks associativity"
+
+kani_harnesses:
+  - id: KANI-DOT-001
+    obligation: DOT-LIN-001
+    property: "Linearity for small vectors"
+    bound: 8
+    strategy: stub_float
+
+qa_gate:
+  id: F-DOT-001
+  name: "Dot Product Contract"
+  checks:
+    - "linearity"
+  pass_criteria: "All 1 falsification tests pass"

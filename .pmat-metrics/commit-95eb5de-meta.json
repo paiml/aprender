@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-078",
+  "prompt": "CB-1300: contract mandate for all paiml repos >10K LOC + pmat self-enforcement",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T14:55:50.437868498Z"
+}

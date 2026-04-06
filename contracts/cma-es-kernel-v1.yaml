@@ -1,0 +1,182 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: CMA-ES kernel — covariance matrix adaptation evolution strategy
+  references:
+  - 'Hansen (2016) The CMA Evolution Strategy: A Tutorial'
+  - Hansen & Ostermeier (2001) Completely Derandomized Self-Adaptation in Evolution Strategies
+equations:
+  sample:
+    formula: x_i = m + sigma * N(0, C) for i = 1..lambda
+    domain: m in R^d, sigma in R_>0, C in R^{d x d} positive definite, lambda >= 2
+    codomain: x_i in R^d
+    invariants:
+    - sigma > 0 (positive step size)
+    - C is symmetric positive definite
+    - Samples distributed as N(m, sigma^2 * C)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Sample
+  mean_update:
+    formula: m_{t+1} = sum_{i=1}^{mu} w_i * x_{i:lambda}
+    domain: x_{i:lambda} sorted by fitness, w_i > 0, sum(w_i) = 1
+    codomain: m_{t+1} in R^d
+    invariants:
+    - New mean is weighted average of best mu individuals
+    - Weights sum to 1 (convex combination)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Mean_Update
+  covariance_update:
+    formula: C_{t+1} = (1-c1-cmu)*C_t + c1*p_c*p_c^T + cmu*sum(w_i*(x_i-m)*(x_i-m)^T/sigma^2)
+    domain: C_t positive definite, c1 >= 0, cmu >= 0, c1+cmu <= 1
+    codomain: C_{t+1} positive definite
+    invariants:
+    - C remains symmetric positive definite
+    - Update is convex combination preserving positive definiteness
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Covariance_Update
+proof_obligations:
+- type: bound
+  property: Step size positive
+  formal: sigma > 0 at every generation
+  applies_to: all
+- type: invariant
+  property: Covariance positive definite
+  formal: eigenvalues(C) > 0 at every generation
+  applies_to: all
+- type: invariant
+  property: Weights sum to 1
+  formal: '|sum(w_i) - 1.0| < eps for recombination weights'
+  tolerance: 1.0e-10
+  applies_to: all
+- type: invariant
+  property: Covariance symmetry
+  formal: C = C^T at every generation
+  tolerance: 1.0e-10
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: sample_population
+    description: Generate lambda candidates from N(m, sigma^2*C)
+    invariant: sigma > 0 and C positive definite
+  - name: evaluate_sort
+    description: Evaluate fitness and sort population
+    invariant: Sorted by fitness value
+  - name: update_mean
+    description: Weighted recombination of mu best
+    invariant: Weights sum to 1
+  - name: update_paths
+    description: Update evolution paths p_sigma and p_c
+    invariant: Path lengths bounded
+  - name: update_covariance
+    description: Rank-mu and rank-one update of C
+    invariant: C remains positive definite
+  - name: update_step_size
+    description: CSA step-size adaptation
+    invariant: sigma > 0
+simd_dispatch:
+  cma_sample:
+    scalar: cma_sample_scalar
+    avx2: cma_sample_avx2
+    ptx: cma_es_ptx
+enforcement:
+  step_size:
+    description: Step size must remain positive
+    check: contract_tests::FALSIFY-CMA-001
+    severity: ERROR
+  covariance_validity:
+    description: Covariance matrix must stay positive definite
+    check: contract_tests::FALSIFY-CMA-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CMA-001
+  rule: Step size positivity
+  prediction: sigma > 0 after 1000 generations
+  test: proptest running 1000 generations on sphere function
+  if_fails: Step-size adaptation drives sigma to zero or negative
+- id: FALSIFY-CMA-002
+  rule: Covariance positive definiteness
+  prediction: min(eigenvalues(C)) > 0 after 100 generations
+  test: proptest checking eigenvalues after covariance updates
+  if_fails: Rank update introduces negative eigenvalues
+- id: FALSIFY-CMA-003
+  rule: Weight normalization
+  prediction: '|sum(w_i) - 1.0| < 1e-10'
+  test: proptest checking weights for various lambda values
+  if_fails: Weight computation formula incorrect
+- id: FALSIFY-CMA-004
+  rule: Covariance symmetry
+  prediction: '|C - C^T| < 1e-10 at every generation'
+  test: proptest checking symmetry after updates
+  if_fails: Asymmetric update in rank-one or rank-mu
+- id: FALSIFY-CMA-005
+  rule: SIMD equivalence
+  prediction: '|sample_avx2(m,sigma,C) - sample_scalar(m,sigma,C)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD sampling
+  if_fails: SIMD Cholesky decomposition or matmul differs
+- id: FALSIFY-CMA-006
+  rule: Boundary - dimension 1
+  prediction: CMA-ES reduces to (1+1)-ES behavior in 1D
+  test: proptest with d=1 on quadratic function
+  if_fails: Edge case in covariance matrix for scalar
+kani_harnesses:
+- id: KANI-CMA-001
+  obligation: CMA-BND-001
+  property: Step size remains positive for small problems
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cma_sigma_positive
+- id: KANI-CMA-002
+  obligation: CMA-INV-001
+  property: Weights sum to 1
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cma_weights_normalized
+- id: KANI-CMA_ES-003
+  obligation: Step size positive
+  property: Step size positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CMA_ES-004
+  obligation: Covariance positive definite
+  property: Covariance positive definite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CMA_ES-005
+  obligation: Weights sum to 1
+  property: Weights sum to 1
+  bound: 8
+  strategy: stub_float
+- id: KANI-CMA_ES-006
+  obligation: Covariance symmetry
+  property: Covariance symmetry
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CMA_ES-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CMA-001
+  name: CMA-ES Contract
+  description: Covariance matrix adaptation evolution strategy quality gate
+  checks:
+  - step_size_positivity
+  - covariance_validity
+  - weight_normalization
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Skip positive-definiteness check in covariance update

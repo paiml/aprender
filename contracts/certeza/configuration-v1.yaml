@@ -1,0 +1,101 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Certeza validation — bounds checking for size and index validation in quality gates
+  references:
+  - 'NIST SP 800-53 (2020) Security and Privacy Controls, SI-10 Input Validation'
+equations:
+  validate_size:
+    formula: V_s(size, min, max) = ok iff min <= size <= max
+    domain: size ∈ usize, min ∈ usize, max ∈ usize where min <= max
+    codomain: Result<(), ValidationError>
+    invariants:
+    - Returns Ok for size within [min, max] inclusive
+    - Returns Err for size outside bounds
+    - 'Boundary exact: V_s(min, min, max) = Ok ∧ V_s(max, min, max) = Ok'
+    preconditions:
+    - min <= max
+    lean_theorem: Theorems.Validate_Size
+  validate_index:
+    formula: V_i(index, len) = ok iff index < len
+    domain: index ∈ usize, len ∈ usize
+    codomain: Result<(), ValidationError>
+    invariants:
+    - Returns Ok for index in [0, len)
+    - Returns Err for index >= len
+    - 'Zero-length: V_i(0, 0) = Err (empty collection has no valid index)'
+    preconditions:
+    - true (all usize inputs accepted)
+    lean_theorem: Theorems.Validate_Index
+proof_obligations:
+- type: invariant
+  property: Size validation boundary correctness
+  formal: '∀ size, min, max: (min <= max) → (validate_size(size, min, max).is_ok() ↔ min <= size <= max)'
+  applies_to: validate_size
+- type: invariant
+  property: Index validation strict upper bound
+  formal: '∀ index, len: validate_index(index, len).is_ok() ↔ index < len'
+  applies_to: validate_index
+- type: bound
+  property: Empty collection rejects all indices
+  formal: '∀ index: validate_index(index, 0) = Err(_)'
+  applies_to: validate_index
+enforcement:
+  size_boundary:
+    description: Size validation must accept exact boundary values
+    check: contract_tests::FALSIFY-CZ-001
+    severity: ERROR
+  index_upper_bound:
+    description: Index validation must reject index >= len
+    check: contract_tests::FALSIFY-CZ-002
+    severity: ERROR
+  empty_collection:
+    description: Empty collection must reject all indices
+    check: contract_tests::FALSIFY-CZ-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CZ-001
+  rule: Size boundary correctness
+  prediction: validate_size(min, min, max) = Ok and validate_size(max, min, max) = Ok
+  test: proptest boundary values (min, max, min-1, max+1) for random ranges
+  if_fails: Off-by-one in comparison operator (< vs <=)
+- id: FALSIFY-CZ-002
+  rule: Index strict upper bound
+  prediction: validate_index(len, len) = Err for any len > 0
+  test: proptest with index = len for random lengths
+  if_fails: Using <= instead of < in index comparison
+- id: FALSIFY-CZ-003
+  rule: Empty collection rejection
+  prediction: validate_index(0, 0) = Err
+  test: call validate_index(0, 0) directly
+  if_fails: Special-casing index 0 without checking len
+kani_harnesses:
+- id: KANI-CZ-001
+  obligation: Size boundary correctness
+  property: validate_size iff min <= size <= max
+  bound: 16
+  strategy: exhaustive
+  harness: verify_validate_size
+- id: KANI-CZ-002
+  obligation: Index strict upper bound
+  property: validate_index iff index < len
+  bound: 16
+  strategy: exhaustive
+  harness: verify_validate_index
+- id: KANI-CZ-003
+  obligation: Empty collection rejection
+  property: validate_index(_, 0) always Err
+  bound: 8
+  strategy: exhaustive
+  harness: verify_empty_collection
+qa_gate:
+  id: F-CZ-001
+  name: Certeza Validation Contract
+  description: Bounds validation quality gate
+  checks:
+  - size_boundary
+  - index_upper_bound
+  - empty_collection
+  pass_criteria: All 3 falsification tests pass
+  falsification: Change < to <= in validate_index to trigger FALSIFY-CZ-002

@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Media pipeline contract — encode/decode roundtrip, codec dispatch, frame integrity
+  references:
+  - 'Richardson (2010) The H.264 Advanced Video Compression Standard'
+  - 'Sullivan et al. (2012) Overview of the High Efficiency Video Coding Standard'
+equations:
+  encode_decode_roundtrip:
+    formula: '∀ frame F: decode(encode(F)) ≈ F within PSNR threshold'
+    domain: F ∈ VideoFrame or AudioSample
+    codomain: Result<Frame>
+    invariants:
+    - 'Lossy codecs: PSNR(original, decoded) > threshold_db'
+    - 'Audio: sample rate and channel count preserved through encode/decode'
+    - Encoder available check gates codec selection
+    preconditions:
+    - frame data is valid (non-empty, correct dimensions)
+    - encoder is available (encoder_available returns true)
+    lean_theorem: Theorems.Encode_Decode_Roundtrip
+  codec_dispatch:
+    formula: D(format) = resolve_encoder(format) → Encoder
+    domain: format ∈ {H264, HEVC, Audio}
+    codomain: Result<Encoder>
+    invariants:
+    - 'resolve_encoder returns valid encoder or Err'
+    - 'validate_encoder confirms encoder produces valid output'
+    - GPU encoders preferred when available, CPU fallback
+    preconditions:
+    - format is a supported codec
+    lean_theorem: Theorems.Codec_Dispatch
+  frame_integrity:
+    formula: '∀ packet P: decode_video_frame(P).dimensions = P.stream.dimensions'
+    domain: P ∈ EncodedPacket
+    codomain: Result<VideoFrame>
+    invariants:
+    - Decoded frame dimensions match stream metadata
+    - Audio packet decode preserves sample count
+    - AVFrame conversion preserves pixel format
+    preconditions:
+    - packet belongs to a valid stream
+    lean_theorem: Theorems.Frame_Integrity
+proof_obligations:
+- type: invariant
+  property: Encode-decode quality threshold
+  formal: '∀ F: PSNR(F, decode(encode(F))) > 30.0'
+  applies_to: encode_decode_roundtrip
+- type: invariant
+  property: Codec dispatch validity
+  formal: '∀ fmt: resolve_encoder(fmt).is_ok() → validate_encoder(resolve_encoder(fmt)).is_ok()'
+  applies_to: codec_dispatch
+- type: invariant
+  property: Frame dimension preservation
+  formal: '∀ P: decode(P).width = P.stream.width ∧ decode(P).height = P.stream.height'
+  applies_to: frame_integrity
+enforcement:
+  quality_threshold:
+    description: Encoded then decoded frames meet minimum PSNR
+    check: contract_tests::FALSIFY-RMDP-001
+    severity: ERROR
+  dispatch_validity:
+    description: Resolved encoders pass validation
+    check: contract_tests::FALSIFY-RMDP-002
+    severity: ERROR
+  dimension_preservation:
+    description: Decoded frames preserve original dimensions
+    check: contract_tests::FALSIFY-RMDP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RMDP-001
+  rule: Quality threshold
+  prediction: encode then decode a test frame yields PSNR > 30 dB
+  test: encode/decode 100 random frames at default quality, measure PSNR
+  if_fails: Encoder quality parameter misconfigured or codec bug
+- id: FALSIFY-RMDP-002
+  rule: Dispatch validity
+  prediction: resolve_encoder succeeds only for available codecs and validate_encoder confirms
+  test: enumerate all codec formats, verify resolve/validate consistency
+  if_fails: resolve_encoder returns encoder that fails validation
+- id: FALSIFY-RMDP-003
+  rule: Dimension preservation
+  prediction: decode_video_frame output matches stream dimensions
+  test: encode at 5 resolutions, decode, compare dimensions
+  if_fails: Decoder ignores stream metadata or scales incorrectly
+kani_harnesses:
+- id: KANI-RMDP-001
+  obligation: Quality threshold
+  property: PSNR above minimum
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quality_threshold
+- id: KANI-RMDP-002
+  obligation: Dispatch validity
+  property: resolved encoders are valid
+  bound: 8
+  strategy: exhaustive
+  harness: verify_dispatch_validity
+- id: KANI-RMDP-003
+  obligation: Dimension preservation
+  property: frame dimensions preserved
+  bound: 8
+  strategy: exhaustive
+  harness: verify_dimension_preservation
+qa_gate:
+  id: F-RMDP-001
+  name: Media Pipeline Contract
+  description: Encode/decode roundtrip, codec dispatch, and frame integrity quality gate
+  checks:
+  - quality_threshold
+  - dispatch_validity
+  - dimension_preservation
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return hardcoded 640x480 dimensions from decoder ignoring stream

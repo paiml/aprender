@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Generalized Linear Models -- Poisson, Gamma, and Binomial regression with canonical link functions
+  references:
+  - Nelder & Wedderburn (1972) Generalized Linear Models, JRSS
+  - McCullagh & Nelder (1989) Generalized Linear Models, 2nd ed.
+equations:
+  poisson_link:
+    formula: g(mu) = ln(mu), g^{-1}(eta) = exp(eta)
+    domain: mu > 0 (Poisson mean), eta in R (linear predictor)
+    codomain: g(mu) in R, g^{-1}(eta) > 0
+    invariants:
+    - Link function is strictly monotone (bijective)
+    - exp(eta) > 0 for all eta (mean always positive)
+    - g(g^{-1}(eta)) = eta (inverse round-trip)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Poisson_Link
+  gamma_link:
+    formula: g(mu) = 1/mu, g^{-1}(eta) = 1/eta
+    domain: mu > 0 (Gamma mean), eta > 0 (linear predictor restricted)
+    codomain: g(mu) > 0, g^{-1}(eta) > 0
+    invariants:
+    - Link function is strictly monotone on (0, inf)
+    - Predicted mean always positive
+    - g(g^{-1}(eta)) = eta for eta > 0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gamma_Link
+  binomial_link:
+    formula: g(p) = ln(p/(1-p)), g^{-1}(eta) = 1/(1+exp(-eta))
+    domain: p in (0, 1), eta in R
+    codomain: g(p) in R, g^{-1}(eta) in (0, 1)
+    invariants:
+    - Logit maps (0,1) to R bijectively
+    - Predicted probability always in (0, 1)
+    - g(g^{-1}(eta)) = eta (inverse round-trip)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Binomial_Link
+  irls_fit:
+    formula: beta^{(k+1)} = (X^T W^{(k)} X)^{-1} X^T W^{(k)} z^{(k)}
+    domain: X in R^{n x p}, W diagonal weights, z working response
+    codomain: beta in R^p
+    invariants:
+    - 'Deviance decreases monotonically: D(beta^{(k+1)}) <= D(beta^{(k)})'
+    - Converges when ||beta^{(k+1)} - beta^{(k)}|| < tol
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Irls_Fit
+proof_obligations:
+- type: invariant
+  property: Link function invertible
+  formal: g(g^{-1}(eta)) = eta for all eta in domain
+  applies_to: all
+- type: bound
+  property: Predicted mean in valid range
+  formal: 'Poisson: mu > 0, Gamma: mu > 0, Binomial: 0 < p < 1'
+  applies_to: all
+- type: invariant
+  property: IRLS convergence
+  formal: D^{(k+1)} <= D^{(k)} (deviance non-increasing)
+  applies_to: all
+- type: invariant
+  property: Predictions finite
+  formal: 'forall i: |y_hat_i| < infinity for bounded input'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-GLM-001
+  rule: Link function round-trip
+  prediction: g(g^{-1}(eta)) = eta within floating-point tolerance
+  test: 'proptest: random eta values, apply link then inverse, check round-trip'
+  if_fails: Link or inverse link implementation error
+- id: FALSIFY-GLM-002
+  rule: Predicted mean in valid range
+  prediction: Poisson mu > 0, Gamma mu > 0, Binomial p in (0,1)
+  test: 'proptest: fit each GLM family on valid data, check predicted means in domain'
+  if_fails: Inverse link not constraining output range
+- id: FALSIFY-GLM-003
+  rule: IRLS convergence
+  prediction: Deviance decreases or stays same across IRLS iterations
+  test: 'proptest: fit GLM, record deviance per iteration, check monotone non-increasing'
+  if_fails: IRLS weight or working response computation error
+- id: FALSIFY-GLM-004
+  rule: Prediction finiteness
+  prediction: All predictions are finite for bounded input data
+  test: 'proptest: fit GLM on bounded data, predict, check all values finite'
+  if_fails: Numerical overflow in exp() or division by zero in reciprocal link
+enforcement:
+  link_roundtrip:
+    description: Link functions must be exactly invertible
+    check: contract_tests::FALSIFY-GLM-001
+    severity: ERROR
+  mean_range:
+    description: Predicted means must be in valid range for the distribution family
+    check: contract_tests::FALSIFY-GLM-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-GLM-001
+  obligation: GLM-INV-001
+  property: Link function round-trip is identity
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_link_roundtrip
+- id: KANI-GLM-002
+  obligation: GLM-BND-001
+  property: Predicted mean in valid range for each family
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mean_valid_range
+- id: KANI-GLM_V1-003
+  obligation: Link function invertible
+  property: Link function invertible
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GLM_V1-004
+  obligation: Predicted mean in valid range
+  property: Predicted mean in valid range
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GLM_V1-005
+  obligation: IRLS convergence
+  property: IRLS convergence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GLM_V1-006
+  obligation: Predictions finite
+  property: Predictions finite
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GLM-001
+  name: GLM Contract
+  description: Generalized Linear Models correctness quality gate
+  checks:
+  - link_roundtrip
+  - mean_valid_range
+  - irls_convergence
+  - prediction_finiteness
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Poisson link produces negative predicted mean via numerical overflow

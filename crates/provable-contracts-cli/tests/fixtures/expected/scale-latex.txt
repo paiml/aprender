@@ -1,0 +1,19 @@
+% Equations for scale-kernel-v1
+\section{Equations: scale-kernel-v1}
+
+\subsection{scale}
+\label{eq:scale}
+
+\begin{equation}
+  y_i = \alpha · x_i + \beta
+\end{equation}
+
+\textbf{Domain:} $x \in \mathbb{R}^n, \alpha \in \mathbb{R}, \beta \in \mathbb{R}$
+
+\textbf{Codomain:} $y \in \mathbb{R}^n$
+
+\textbf{Invariants:}
+\begin{itemize}
+  \item $y finite when x finite$
+\end{itemize}
+

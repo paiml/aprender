@@ -1,0 +1,41 @@
+metadata:
+  version: 1.0.0
+  description: Generic configuration contract — common Rust API pattern
+  references:
+  - 'Rust API Guidelines: https://rust-lang.github.io/api-guidelines/'
+equations:
+  configuration:
+    formula: "Config::load(path) -> Result<Config, ConfigError> with defaults + override"
+    domain: "Layered configuration: defaults < file < env < CLI"
+    invariants:
+    - "Config is always valid after load() succeeds (no partial state)"
+    - "Unknown keys are rejected, not silently ignored"
+    - "Serde roundtrip: serialize(deserialize(bytes)) == bytes"
+    preconditions:
+    - "path.exists() || default config is defined"
+    - "file content is valid TOML/YAML (schema-validated)"
+    postconditions:
+    - "all required fields have values (from defaults or file)"
+    - "numeric fields are within documented bounds"
+    lean_theorem: Theorems.Configuration
+proof_obligations:
+- type: invariant
+  property: configuration correctness
+falsification_tests:
+- id: FALSIFY-GEN-001
+  rule: configuration contract
+  prediction: Function follows configuration pattern
+  if_fails: Implementation deviates from pattern
+kani_harnesses:
+- id: KANI-GEN-001
+  obligation: configuration correctness
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+qa_gate:
+  id: F-CV-001
+  name: configuration-v1 Contract
+  description: Quality gate for Generic configuration contract — common Rust API pattern
+  checks:
+  - validation
+  - falsification

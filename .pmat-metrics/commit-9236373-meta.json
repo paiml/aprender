@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-004",
+  "prompt": "Implement Kani harness generator from YAML contracts",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-18T13:49:00.852805331Z"
+}

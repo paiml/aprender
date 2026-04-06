@@ -1,0 +1,76 @@
+metadata:
+  version: 3.0.0
+  created: '2026-03-01'
+  author: PAIML Engineering
+  description: WGPU forward pass — RMSNorm correctness, GEMV dispatch, softmax accuracy
+  references:
+  - Legacy contract migrated to v2 schema
+  - 'PMAT-324: RMSNorm measurement 4.77e-7'
+  - 'PMAT-346: GEMV params.n bug fix'
+equations:
+  rmsnorm_correctness:
+    description: WGSL RMSNorm within 1e-5 of CPU
+    formula: '|rmsnorm_gpu(x) - rmsnorm_cpu(x)| < 1e-5 for all x'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Rmsnorm_Correctness
+  gemv_dispatch:
+    description: M=1 uses GEMV with Params{n,k}, M>1 uses tiled GEMM with Dims{M,K,N}
+    formula: 'dispatch(M) = if M == 1 then GEMV(n,k) else GEMM(M,K,N)'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Gemv_Dispatch
+  gemv_params_safety:
+    description: GEMV params.n must equal output dimension, not batch size m
+    formula: 'when m == 1: params.n == output_dim (not batch_size)'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Gemv_Params_Safety
+  buffer_size_safety:
+    description: Intermediate buffers must accommodate max usage across all passes
+    formula: 'attn_out_buf.size >= max(hidden_dim, intermediate_dim)'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Buffer_Size_Safety
+  weight_transpose:
+    description: Matmul shader expects B in [K,N] layout; upload_weight_transposed converts [N,K]
+    formula: 'transpose([N,K]) -> [K,N] for matmul compatibility'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Weight_Transpose
+  dequant_correctness:
+    description: Q4K->F32 dequant preserves semantics
+    formula: '|dequant(quant(x)) - x| < epsilon for all x in valid range'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Dequant_Correctness
+  gpu_bias_rope_order:
+    description: Bias must be applied BEFORE RoPE (they don't commute)
+    formula: 'forward_layer order: GEMV -> bias_add -> RoPE -> attention (non-commutative)'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Gpu_Bias_Rope_Order
+  gpu_attention:
+    description: 'Single-submit: attention runs on GPU with KV cache, no Q/K/V readback'
+    formula: 'forward_layer uses 1 GPU submit; KV cache is GPU-resident (no readback)'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Gpu_Attention
+  q4k_fused_gemv:
+    description: Fused Q4K dequant+GEMV on GPU — 4× bandwidth vs F32 GEMV
+    formula: 'fused_q4k_gemv(x, w_q4k) ≈ gemv(x, dequant(w_q4k)) within ULP tolerance'
+    preconditions:
+    - '!input.is_empty()'
+    lean_theorem: Theorems.Q4K_Fused_Gemv
+postconditions:
+- name: performance_target
+  threshold: 25.0
+  unit: tok/s
+  measurement: 0.72 (PMAT-358, W5700X with GPU bias+RoPE)
+qa_gate:
+  id: F-WFPV-001
+  name: wgpu-forward-pass-v1 Contract
+  description: Quality gate for wgpu-forward-pass-v1
+  checks:
+  - validation
+  - falsification

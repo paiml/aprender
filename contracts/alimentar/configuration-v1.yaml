@@ -1,0 +1,59 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Alimentar configuration — constructor validates invariants and produces consistent state
+  references:
+  - 'Gamma et al. (1994) Design Patterns, Builder Pattern'
+equations:
+  config:
+    formula: C(params) = config where config.is_valid() = true
+    domain: params ∈ ConfigParams
+    codomain: Result<Config, ConfigError>
+    invariants:
+    - Successfully constructed config always passes validation
+    - Default config is valid
+    - 'Idempotent validation: validate(validate(c)) = validate(c)'
+    preconditions:
+    - params contains all required fields
+    lean_theorem: Theorems.Config_Valid
+proof_obligations:
+- type: invariant
+  property: Constructor produces valid config
+  formal: '∀ params: Config::new(params).is_ok() → Config::new(params).unwrap().is_valid()'
+  applies_to: config
+- type: invariant
+  property: Default config is valid
+  formal: Config::default().is_valid() = true
+  applies_to: config
+enforcement:
+  constructor_validity:
+    description: Config::new must only return valid configurations
+    check: contract_tests::FALSIFY-ALC-001
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-ALC-001
+  rule: Constructor validity
+  prediction: Config::new(params).unwrap().is_valid() = true for any valid params
+  test: proptest with random valid parameter combinations
+  if_fails: Missing validation in constructor allows invalid state
+- id: FALSIFY-ALC-002
+  rule: Threshold invariants
+  prediction: Invalid thresholds (min > max) rejected at construction
+  test: Config::new with min=100, max=0, verify error returned
+  if_fails: Threshold validation missing or inverted
+kani_harnesses:
+- id: KANI-ALC-001
+  obligation: Constructor validity
+  property: new() only returns valid configs
+  bound: 8
+  strategy: exhaustive
+  harness: verify_config_constructor
+qa_gate:
+  id: F-ALC-001
+  name: Alimentar Configuration Contract
+  description: Configuration validity quality gate
+  checks:
+  - constructor_validity
+  pass_criteria: All falsification tests pass
+  falsification: Remove a required field check from new() to trigger FALSIFY-ALC-001

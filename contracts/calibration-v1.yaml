@@ -1,0 +1,207 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Calibration metrics — evaluation and correction of probabilistic predictions
+  references:
+  - Naeini, Cooper & Hauskrecht (2015) Obtaining Well Calibrated Probabilities Using Bayesian Binning into Quantiles
+  - Guo et al. (2017) On Calibration of Modern Neural Networks
+  - Platt (1999) Probabilistic Outputs for Support Vector Machines
+equations:
+  expected_calibration_error:
+    formula: ECE = Σ_b (|B_b|/n) |acc(B_b) - conf(B_b)|
+    domain: probabilities ∈ [0,1]ⁿ, labels ∈ {0,1}ⁿ, n_bins ≥ 1
+    codomain: ECE ∈ [0, 1]
+    invariants:
+    - ECE ∈ [0, 1] (weighted average of absolute differences, each in [0,1])
+    - ECE = 0 for perfectly calibrated predictions
+    - ECE monotone in calibration deviation
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Expected_Calibration_Error
+  maximum_calibration_error:
+    formula: MCE = max_b |acc(B_b) - conf(B_b)|
+    domain: probabilities ∈ [0,1]ⁿ, labels ∈ {0,1}ⁿ, n_bins ≥ 1
+    codomain: MCE ∈ [0, 1]
+    invariants:
+    - MCE ∈ [0, 1] (absolute difference of values in [0,1])
+    - MCE ≥ ECE (max ≥ weighted average)
+    - MCE = 0 for perfectly calibrated predictions
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Maximum_Calibration_Error
+  platt_scaling:
+    formula: σ(Af + B) where A,B = argmin -Σ[t_i log(σ(Af_i+B)) + (1-t_i)log(1-σ(Af_i+B))]
+    domain: f ∈ ℝⁿ (logits), labels ∈ {0,1}ⁿ
+    codomain: calibrated_probs ∈ (0, 1)ⁿ
+    invariants:
+    - Output probabilities ∈ (0, 1)
+    - 'Monotone: f_i > f_j and A > 0 ⟹ σ(Af_i+B) > σ(Af_j+B)'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Platt_Scaling
+  isotonic_regression:
+    formula: ĝ = argmin_{g monotone} Σ(g(f_i) - y_i)²
+    domain: f ∈ [0,1]ⁿ (probabilities), labels ∈ {0,1}ⁿ
+    codomain: calibrated_probs ∈ [0, 1]ⁿ
+    invariants:
+    - Output is monotone non-decreasing
+    - Output ∈ [0, 1]
+    - Isotonic fit minimizes sum of squared residuals among monotone functions
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Isotonic_Regression
+  reliability_diagram:
+    formula: 'For each bin b: (mean_confidence(B_b), mean_accuracy(B_b))'
+    domain: probabilities ∈ [0,1]ⁿ, labels ∈ {0,1}ⁿ, n_bins ≥ 1
+    codomain: 'bins: Vec<(confidence ∈ [0,1], accuracy ∈ [0,1])>'
+    invariants:
+    - Bin confidence ∈ [0, 1]
+    - Bin accuracy ∈ [0, 1]
+    - 'Perfect calibration: all bins lie on the diagonal (confidence ≈ accuracy)'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Reliability_Diagram
+proof_obligations:
+- type: bound
+  property: ECE bounded
+  formal: ECE ∈ [0, 1] for all valid probability-label pairs
+  applies_to: all
+- type: bound
+  property: MCE bounded
+  formal: MCE ∈ [0, 1] for all valid probability-label pairs
+  applies_to: all
+- type: invariant
+  property: MCE dominates ECE
+  formal: MCE ≥ ECE for any binning
+  applies_to: all
+- type: invariant
+  property: Perfect calibration zero error
+  formal: perfectly calibrated ⟹ ECE = 0 ∧ MCE = 0
+  applies_to: all
+- type: bound
+  property: Platt output bounded
+  formal: σ(Af+B) ∈ (0, 1) for all f ∈ ℝ
+  applies_to: all
+- type: invariant
+  property: Isotonic monotonicity
+  formal: f_i ≤ f_j ⟹ ĝ(f_i) ≤ ĝ(f_j)
+  applies_to: all
+- type: bound
+  property: Reliability bin bounds
+  formal: confidence, accuracy ∈ [0, 1] for all bins
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CAL-001
+  rule: ECE bounded
+  prediction: ECE ∈ [0, 1] for random probabilities and labels
+  test: proptest with random [0,1] probs and binary labels, n_bins=5..20
+  if_fails: Bin weight normalization error
+- id: FALSIFY-CAL-002
+  rule: MCE bounded
+  prediction: MCE ∈ [0, 1] for random probabilities and labels
+  test: proptest with random [0,1] probs and binary labels
+  if_fails: Max over empty bins or unnormalized
+- id: FALSIFY-CAL-003
+  rule: MCE dominates ECE
+  prediction: MCE ≥ ECE for same inputs
+  test: proptest with shared inputs computing both metrics
+  if_fails: Different binning used for ECE vs MCE
+- id: FALSIFY-CAL-004
+  rule: Perfect calibration zero
+  prediction: ECE ≈ 0 and MCE ≈ 0 when predictions match empirical frequencies
+  test: proptest constructing perfectly calibrated bins
+  if_fails: Off-by-one in bin boundary or floating point accumulation
+- id: FALSIFY-CAL-005
+  rule: Platt output bounded
+  prediction: All Platt-scaled outputs in (0, 1)
+  test: proptest with extreme logits [-100, 100]
+  if_fails: Sigmoid overflow/underflow
+- id: FALSIFY-CAL-006
+  rule: Isotonic monotonicity
+  prediction: Isotonic regression output is monotone non-decreasing
+  test: proptest with random probability-label pairs, fit isotonic, check ordering
+  if_fails: Isotonic regression solver violated monotonicity constraint
+- id: FALSIFY-CAL-007
+  rule: Reliability bin bounds
+  prediction: All bin (confidence, accuracy) pairs in [0,1]²
+  test: proptest with random inputs
+  if_fails: Division by zero in empty bins
+enforcement:
+  bounded:
+    description: ECE and MCE must be in [0, 1]
+    check: contract_tests::FALSIFY-CAL-001, FALSIFY-CAL-002
+    severity: ERROR
+  dominance:
+    description: MCE must dominate ECE
+    check: contract_tests::FALSIFY-CAL-003
+    severity: ERROR
+kani_harnesses:
+- id: KANI-CAL-001
+  obligation: CAL-BND-001
+  property: ECE bounded in [0, 1] for all valid inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ece_bounded
+- id: KANI-CAL-002
+  obligation: CAL-BND-002
+  property: MCE bounded in [0, 1] for all valid inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_mce_bounded
+- id: KANI-CALIBR-003
+  obligation: ECE bounded
+  property: ECE bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-CALIBR-004
+  obligation: MCE bounded
+  property: MCE bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-CALIBR-005
+  obligation: MCE dominates ECE
+  property: MCE dominates ECE
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CALIBR-006
+  obligation: Perfect calibration zero error
+  property: Perfect calibration zero error
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CALIBR-007
+  obligation: Platt output bounded
+  property: Platt output bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-CALIBR-008
+  obligation: Isotonic monotonicity
+  property: Isotonic monotonicity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CALIBR-009
+  obligation: Reliability bin bounds
+  property: Reliability bin bounds
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-CAL-001
+  name: Calibration Metrics Contract
+  description: Calibration metric correctness quality gate
+  checks:
+  - ece_bounded
+  - mce_bounded
+  - mce_dominates_ece
+  - perfect_calibration_zero
+  - platt_bounded
+  - isotonic_monotonicity
+  - reliability_bounded
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
+  falsification: Omit bin normalization or allow empty-bin division

@@ -1,0 +1,88 @@
+contract: C-LPTX-001
+title: Lazy PTX Generation for Cached Kernel Modules
+kaizen: KAIZEN-058
+parent: C-PREWARM-001
+status: implemented
+date: 2026-03-04
+baseline:
+  ptx_generations_per_step: 1000+
+  ptx_string_size_avg_bytes: 2048
+  wasted_alloc_per_step_bytes: 2097152
+  cache_hit_rate: 100%
+target:
+  ptx_generations_per_step: 0
+  ptx_string_size_avg_bytes: 0
+  wasted_alloc_per_step_bytes: 0
+  cache_hit_rate: 100%
+api:
+  get_cached: 'New method on ForwardKernelCache, KernelCache, and OptimKernelCache.
+
+    Returns Option<&mut CudaModule> from HashMap lookup.
+
+    No PTX generation, no target validation — pure HashMap::get_mut.
+
+    '
+  get_or_compile: 'Unchanged — still available for cold-path (pre-warm, first-time compilation).
+
+    Now only called on cache miss (None from get_cached).
+
+    '
+safety:
+  cache_consistency: 'get_cached returns a module that was previously compiled by get_or_compile.
+
+    The module''s PTX was target-validated at compilation time (F-PTX-001).
+
+    No risk of target mismatch since the module was already validated.
+
+    '
+  cold_start: 'If get_cached returns None (pre-warm missed a shape), the function
+
+    falls back to the original get_or_compile path. Zero behavioral change.
+
+    '
+  pre_warm_guarantee: 'C-PREWARM-001 pre-warms all shapes used during training.
+
+    get_cached should always hit. If it misses, get_or_compile handles it.
+
+    '
+preconditions:
+- Kernel cache initialized (init_*_kernel_cache called)
+- Pre-warm completed for model dimensions (C-PREWARM-001)
+postconditions:
+- Kernel launch behavior identical — same module, same kernel, same config
+- Zero PTX String allocations on cache hit path
+- Cold-start path (cache miss) works identically to pre-KAIZEN-058
+invariants:
+- get_or_compile unchanged — existing callers unaffected
+- Pre-warm functions unchanged — still use get_or_compile to populate cache
+- 34 kernel launch functions updated — all use get_cached-first pattern
+files:
+- path: entrenar/src/autograd/cuda_forward/cache.rs
+  change: Added get_cached() to ForwardKernelCache
+- path: entrenar/src/autograd/cuda_backward/cache.rs
+  change: Added get_cached() to KernelCache
+- path: entrenar/src/autograd/cuda_optim.rs
+  change: Added get_cached() to OptimKernelCache + updated 5 launch functions
+- path: entrenar/src/autograd/cuda_forward/matmul.rs
+  change: 'Updated 5 launch functions: fused_swiglu, gemm, batched_4d_gemm, nf4_gemm, bf16_gemm'
+- path: entrenar/src/autograd/cuda_forward/activations.rs
+  change: 'Updated 5 launch functions: relu, softmax, gelu, silu, batched_softmax'
+- path: entrenar/src/autograd/cuda_forward/elementwise.rs
+  change: 'Updated 6 launch functions: residual_add, elementwise_mul, scale, i2b, transpose, b2i'
+- path: entrenar/src/autograd/cuda_forward/normalization.rs
+  change: 'Updated 2 launch functions: layer_norm, rms_norm'
+- path: entrenar/src/autograd/cuda_forward/bf16_cast.rs
+  change: 'Updated 2 launch functions: f32_to_bf16, bf16_to_f32'
+- path: entrenar/src/autograd/cuda_backward/gemm.rs
+  change: 'Updated 2 launch functions: gemm_backward_a, gemm_backward_b'
+- path: entrenar/src/autograd/cuda_backward/elementwise.rs
+  change: 'Updated 3 launch functions: relu_backward, gelu_backward, silu_backward'
+- path: entrenar/src/autograd/cuda_backward/structured.rs
+  change: 'Updated 4 launch functions: softmax, batched_softmax, rms_norm, layer_norm backward'
+qa_gate:
+  id: F-LPCV-001
+  name: lazy-ptx-cache-v1 Contract
+  description: Quality gate for lazy-ptx-cache-v1
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,200 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: "LongRunning CLI commands — graceful shutdown, resource cleanup, signal handling"
+  references:
+  - 'POSIX.1-2017 Signal Handling (IEEE Std 1003.1-2017)'
+  - 'aprender GH-690: LongRunning commands need graceful_shutdown + resource_cleanup'
+  - 'aprender GH-471: apr serve GPU hangs on large MoE models'
+  - 'apr-cli/src/commands/serve/ — server lifecycle'
+  - 'apr-cli/src/commands/run.rs — inference loop'
+  depends_on:
+  - cli-dispatch-v1
+  - apr-serve-v1
+longrunning_commands:
+  - run
+  - serve
+  - chat
+  - tui
+  - canary
+  - trace
+  - pull
+  - probar
+  - monitor
+equations:
+  graceful_shutdown:
+    formula: |
+      ∀ cmd ∈ LongRunningCommands:
+        signal(SIGTERM) → drain_in_flight()
+                        → release_resources()
+                        → exit(0)
+        ∧ timeout(drain, 30s) → force_exit(1)
+    domain: (cmd ∈ LongRunningCommands, signal ∈ {SIGTERM, SIGINT, SIGHUP})
+    codomain: CleanExit (resources released, no zombie processes)
+    invariants:
+    - SIGTERM triggers graceful drain (finish current request/token)
+    - SIGINT triggers immediate stop (discard in-flight work)
+    - Drain timeout is 30 seconds (configurable via --shutdown-timeout)
+    - Force exit after timeout to prevent hanging
+    - No zombie child processes after exit
+    preconditions:
+    - Command is running (process exists)
+    postconditions:
+    - "All GPU contexts released (cudaDeviceReset or equivalent)"
+    - "All TCP sockets closed"
+    - "All temp files deleted"
+    - "Thread pool joined (no dangling threads)"
+    lean_theorem: Theorems.Graceful_Shutdown
+  resource_cleanup:
+    formula: |
+      ∀ cmd ∈ LongRunningCommands:
+        resources_held(cmd) = {gpu_ctx, tcp_sockets, temp_files, mmap_regions, threads}
+        exit(cmd) → ∀ r ∈ resources_held: released(r)
+    domain: (cmd ∈ LongRunningCommands, resources ∈ Set<Resource>)
+    codomain: All resources released
+    invariants:
+    - GPU context released via RAII guard (not manual free)
+    - TCP listeners dropped (port available for next process)
+    - Memory-mapped regions unmapped
+    - Temp files in /tmp/apr-* cleaned up
+    - Thread pool shutdown with join timeout
+    preconditions:
+    - Command has acquired resources during execution
+    postconditions:
+    - "GPU memory usage returns to pre-command baseline"
+    - "No /tmp/apr-* files from this process remain"
+    - "Port is available for rebinding"
+    lean_theorem: Theorems.Resource_Cleanup
+  concurrent_isolation:
+    formula: |
+      ∀ r1, r2 ∈ ConcurrentRequests(serve):
+        kv_cache(r1) ∩ kv_cache(r2) = ∅
+        ∧ model_weights are immutable (shared, not cloned)
+        ∧ output(r1) is independent of timing(r2)
+    domain: (r1, r2 ∈ HttpRequest, serve ∈ ServeCommand)
+    codomain: Independent responses (no cross-contamination)
+    invariants:
+    - Per-request KV cache allocation (no shared mutable state)
+    - Model weights are read-only Arc<Tensor> (zero-copy sharing)
+    - Request ordering does not affect individual request output
+    - OOM from one request does not crash server
+    preconditions:
+    - serve command is in Ready state
+    - Model loaded successfully
+    postconditions:
+    - "Each request gets fresh KV cache"
+    - "Model weights unchanged after any number of requests"
+    lean_theorem: Theorems.Concurrent_Isolation
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate model path, check GPU availability, bind port
+  - name: execute
+    description: Long-running event loop (inference, serve, interactive)
+  - name: verify_output
+    description: Graceful shutdown, resource cleanup, exit code
+
+proof_obligations:
+- type: invariant
+  property: Graceful shutdown on SIGTERM
+  formal: '∀ cmd: signal(SIGTERM) → eventually(exit) ∧ all_resources_released'
+  applies_to: graceful_shutdown
+- type: invariant
+  property: No resource leaks on exit
+  formal: '∀ cmd, exit: resources_held_after == ∅'
+  applies_to: resource_cleanup
+- type: invariant
+  property: Per-request KV cache isolation
+  formal: '∀ r1, r2: kv_cache(r1) ∩ kv_cache(r2) = ∅'
+  applies_to: concurrent_isolation
+
+falsification_tests:
+- id: FALSIFY-LR-001
+  rule: Graceful shutdown on SIGTERM
+  prediction: serve exits cleanly within 5 seconds of SIGTERM
+  test: |
+    #[test]
+    fn falsify_lr_001_serve_sigterm_shutdown() {
+        use std::time::{Duration, Instant};
+        let mut child = std::process::Command::new("apr")
+            .args(&["serve", "test-model.gguf", "--port", "0"])
+            .spawn()
+            .expect("Failed to spawn serve");
+        std::thread::sleep(Duration::from_secs(2));
+        // Send SIGTERM
+        unsafe { libc::kill(child.id() as i32, libc::SIGTERM); }
+        let start = Instant::now();
+        let status = child.wait().expect("Failed to wait");
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(5),
+            "Serve took {}s to exit after SIGTERM (expected <5s)", elapsed.as_secs());
+        assert!(status.success() || status.code() == Some(0),
+            "Serve should exit 0 on graceful SIGTERM");
+    }
+  if_fails: Server hangs on SIGTERM — GPU context not released, port still bound
+- id: FALSIFY-LR-002
+  rule: No resource leaks on exit
+  prediction: No /tmp/apr-* files after run completes
+  test: |
+    #[test]
+    fn falsify_lr_002_no_temp_file_leak() {
+        let before: Vec<_> = glob::glob("/tmp/apr-*")
+            .unwrap().filter_map(|e| e.ok()).collect();
+        let _ = std::process::Command::new("apr")
+            .args(&["run", "test-model.gguf", "--prompt", "Hello", "--max-tokens", "1"])
+            .output();
+        let after: Vec<_> = glob::glob("/tmp/apr-*")
+            .unwrap().filter_map(|e| e.ok()).collect();
+        let leaked: Vec<_> = after.iter()
+            .filter(|f| !before.contains(f)).collect();
+        assert!(leaked.is_empty(),
+            "Temp files leaked after run: {:?}", leaked);
+    }
+  if_fails: Temp files not cleaned up via RAII guard
+- id: FALSIFY-LR-003
+  rule: Per-request KV cache isolation
+  prediction: Two concurrent requests produce independent outputs
+  test: |
+    #[tokio::test]
+    async fn falsify_lr_003_concurrent_isolation() {
+        let client = reqwest::Client::new();
+        let req1 = client.post("http://127.0.0.1:8080/v1/chat/completions")
+            .json(&serde_json::json!({"messages": [{"role": "user", "content": "Say A"}], "max_tokens": 5}));
+        let req2 = client.post("http://127.0.0.1:8080/v1/chat/completions")
+            .json(&serde_json::json!({"messages": [{"role": "user", "content": "Say B"}], "max_tokens": 5}));
+        let (r1, r2) = tokio::join!(req1.send(), req2.send());
+        let b1: serde_json::Value = r1.unwrap().json().await.unwrap();
+        let b2: serde_json::Value = r2.unwrap().json().await.unwrap();
+        // Responses should be different (different prompts)
+        assert_ne!(b1["choices"][0]["message"]["content"],
+                   b2["choices"][0]["message"]["content"],
+            "Concurrent requests produced identical output — possible KV cache sharing");
+    }
+  if_fails: KV cache shared between requests — cross-contamination
+
+kani_harnesses:
+- id: KANI-LR-001
+  obligation: Graceful shutdown on SIGTERM
+  property: Signal handler transitions to Draining state
+  bound: 4
+  strategy: exhaustive
+  harness: verify_shutdown_state_machine
+- id: KANI-LR-002
+  obligation: No resource leaks on exit
+  property: All acquired resources are released on every exit path
+  bound: 8
+  strategy: exhaustive
+  harness: verify_resource_cleanup
+
+qa_gate:
+  id: F-LR-GATE
+  name: LongRunning Command Contract
+  description: Graceful shutdown + resource cleanup gate for long-running apr commands
+  checks:
+  - graceful_shutdown
+  - resource_cleanup
+  - concurrent_isolation
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove SIGTERM handler to cause hanging on shutdown

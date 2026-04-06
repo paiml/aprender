@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-023",
+  "prompt": "Write cross-entropy-kernel-v1.yaml contract (Tier 2)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-18T16:46:58.430321470Z"
+}

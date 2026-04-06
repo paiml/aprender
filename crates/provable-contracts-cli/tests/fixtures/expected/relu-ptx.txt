@@ -1,0 +1,43 @@
+//
+// PTX kernel stub: relu-kernel-v1
+// ReLU activation — rectified linear unit
+// Equation relu: y_i = max(0, x_i)
+//
+
+.version 8.5
+.target sm_90
+.address_size 64
+
+.visible .entry relu(
+    .param .u64 input,
+    .param .u64 output,
+    .param .u32 n
+)
+{
+    .reg .u32 %tid, %n;
+    .reg .u64 %in_ptr, %out_ptr;
+    .reg .f32 %val, %acc;
+
+    ld.param.u64 %in_ptr, [input];
+    ld.param.u64 %out_ptr, [output];
+    ld.param.u32 %n, [n];
+
+    mov.u32 %tid, %ctaid.x;
+    mad.lo.u32 %tid, %tid, %ntid.x, %tid.x;
+
+    // Phase 1: compare
+    // Compare each x_i against zero
+    // Invariant: mask_i = (x_i > 0)
+
+    // Phase 2: select
+    // Select x_i if positive, else zero
+    // Invariant: y_i = mask_i ? x_i : 0
+
+    // Proof obligations:
+    //   [invariant] Non-negativity
+    //   [bound] Output bounded below by zero
+    //   [idempotency] Idempotent application
+    //   [equivalence] SIMD matches scalar
+
+    ret;
+}

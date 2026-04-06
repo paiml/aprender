@@ -1,0 +1,189 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Metaheuristic optimization algorithms -- SA, GA, PSO
+  references:
+  - Kirkpatrick et al. (1983) Optimization by Simulated Annealing
+  - Deb & Agrawal (1995) Simulated Binary Crossover for Continuous Search Space
+  - Kennedy & Eberhart (1995) Particle Swarm Optimization
+equations:
+  sa_acceptance:
+    formula: P(accept) = 1 if Delta_E < 0, else exp(-Delta_E / T)
+    domain: Delta_E in R, T > 0
+    codomain: P in (0, 1]
+    invariants:
+    - Improving moves (Delta_E < 0) are always accepted
+    - Acceptance probability decreases as temperature decreases
+    - Acceptance probability is always positive (never exactly 0)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Sa_Acceptance
+  ga_crossover:
+    formula: child = 0.5 * [(1 + beta) * parent_1 + (1 - beta) * parent_2]
+    domain: parent_1, parent_2 within search space bounds, beta >= 0 (spread factor)
+    codomain: child within search space bounds (clamped if necessary)
+    invariants:
+    - Children are deterministic given parents and beta
+    - beta = 1 produces midpoint of parents
+    - Children are clamped to search space bounds
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Ga_Crossover
+  pso_velocity:
+    formula: v_{t+1} = w * v_t + c1 * r1 * (p_best - x_t) + c2 * r2 * (g_best - x_t)
+    domain: x_t, v_t, p_best, g_best in R^d, w in [0, 1], c1 > 0, c2 > 0, r1, r2 in [0, 1]
+    codomain: v_{t+1} in R^d (clamped to v_max)
+    invariants:
+    - Velocity is clamped to [-v_max, v_max] per dimension
+    - Inertia weight w dampens previous velocity
+    - Cognitive (c1) and social (c2) terms attract toward best positions
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Pso_Velocity
+  best_monotone:
+    formula: f(x*_{t+1}) <= f(x*_t) for minimization
+    domain: 'optimization history: sequence of best-so-far objective values'
+    codomain: boolean invariant (always true)
+    invariants:
+    - Best-so-far value never increases (monotone non-increasing)
+    - Applies to SA, GA, and PSO independently
+    - Holds regardless of algorithm parameters
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Best_Monotone
+proof_obligations:
+- type: invariant
+  property: Best objective non-increasing across iterations
+  formal: 'forall t: best_val[t+1] <= best_val[t]'
+  applies_to: all
+- type: bound
+  property: SA best improves or stays same
+  formal: final_best <= initial_best after SA run
+  applies_to: all
+- type: bound
+  property: GA best improves or stays same
+  formal: final_best <= initial_best after GA run
+  applies_to: all
+- type: bound
+  property: PSO best improves or stays same
+  formal: final_best <= initial_best after PSO run
+  applies_to: all
+- type: bound
+  property: SA acceptance probability in (0, 1]
+  formal: 'forall Delta_E, T > 0: 0 < P(accept) <= 1'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MH-001
+  rule: Best objective monotonicity
+  prediction: best_val[t+1] <= best_val[t] for all iterations across SA, GA, PSO
+  test: 'proptest: run each algorithm on random objective, check best_val is non-increasing'
+  if_fails: Best-so-far tracking not properly maintained
+- id: FALSIFY-MH-002
+  rule: SA best value improvement
+  prediction: SA final_best <= initial_best
+  test: 'proptest: run SA on random objectives with various temperatures, check final <= initial'
+  if_fails: SA acceptance criterion or best tracking is broken
+- id: FALSIFY-MH-003
+  rule: GA best value improvement
+  prediction: GA final_best <= initial_best
+  test: 'proptest: run GA on random objectives with various population sizes, check final <= initial'
+  if_fails: GA elitism or selection mechanism loses best solution
+- id: FALSIFY-MH-004
+  rule: PSO best value improvement
+  prediction: PSO final_best <= initial_best
+  test: 'proptest: run PSO on random objectives with various swarm sizes, check final <= initial'
+  if_fails: PSO global best update mechanism loses best solution
+- id: FALSIFY-MH-005
+  rule: SA acceptance probability bounds
+  prediction: 0 < P(accept) <= 1 for all Delta_E and T > 0
+  test: 'proptest: generate random Delta_E and T > 0, compute acceptance probability, check bounds'
+  if_fails: Acceptance probability computation overflow or underflow
+- id: FALSIFY-MH-006
+  rule: PSO velocity clamping
+  prediction: '|v_i| <= v_max for all dimensions after velocity update'
+  test: 'proptest: generate random velocities and positions, update, check clamping'
+  if_fails: Velocity clamping not applied after update
+- id: FALSIFY-MH-007
+  rule: GA crossover bounds
+  prediction: Children within search space bounds after SBX crossover
+  test: 'proptest: generate random parents within bounds, apply SBX, check children within bounds'
+  if_fails: SBX crossover produces out-of-bounds children without clamping
+enforcement:
+  best_monotone:
+    description: Best-so-far objective must never increase
+    check: contract_tests::FALSIFY-MH-001
+    severity: ERROR
+  sa_acceptance:
+    description: SA acceptance probability must be in (0, 1]
+    check: contract_tests::FALSIFY-MH-005
+    severity: ERROR
+  pso_velocity:
+    description: PSO velocity must be clamped to v_max
+    check: contract_tests::FALSIFY-MH-006
+    severity: ERROR
+kani_harnesses:
+- id: KANI-MH-001
+  obligation: MH-INV-001
+  property: Best-so-far value is monotone non-increasing
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_best_monotone
+- id: KANI-MH-002
+  obligation: MH-BND-001
+  property: SA acceptance probability in (0, 1]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_sa_acceptance_bounds
+- id: KANI-MH-003
+  obligation: MH-BND-002
+  property: PSO velocity clamped to v_max
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_pso_velocity_clamped
+- id: KANI-METAHE-004
+  obligation: Best objective non-increasing across iterations
+  property: Best objective non-increasing across iterations
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METAHE-005
+  obligation: SA best improves or stays same
+  property: SA best improves or stays same
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METAHE-006
+  obligation: GA best improves or stays same
+  property: GA best improves or stays same
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METAHE-007
+  obligation: PSO best improves or stays same
+  property: PSO best improves or stays same
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METAHE-008
+  obligation: SA acceptance probability in (0, 1]
+  property: SA acceptance probability in (0, 1]
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-MH-001
+  name: Metaheuristics Contract
+  description: Metaheuristic optimization correctness quality gate
+  checks:
+  - best_monotonicity
+  - sa_improvement
+  - ga_improvement
+  - pso_improvement
+  - sa_acceptance_bounds
+  - pso_velocity_clamping
+  - ga_crossover_bounds
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
+  falsification: Best-so-far tracking loses the best solution during optimization

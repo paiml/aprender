@@ -1,0 +1,209 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Attention scaling — 1/√d_k normalization, numerical stability, and softmax saturation
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need — scaled dot-product
+  - Henry et al. (2020) Query-Key Normalization for Transformers
+  - Qwen3.5 Technical Report — QK-norm + 1/sqrt(d_k) scaling
+  depends_on:
+  - softmax-kernel-v1
+  - qk-norm-v1
+equations:
+  scaled_dot_product:
+    formula: score(Q, K) = Q @ K^T / √d_k
+    domain: Q ∈ R^{n × d_k}, K ∈ R^{m × d_k}
+    invariants:
+    - 'Output shape: [n, m]'
+    - Scaling by 1/√d_k prevents variance growth
+    - Symmetric in Q[i] and K[j] up to scaling
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Scaled_Dot_Product
+  variance_preservation:
+    formula: Var(score_ij) ≈ 1 when Q,K ~ N(0,1)
+    domain: Entries of Q and K i.i.d. standard normal
+    invariants:
+    - 'Without scaling: Var(Q@K^T)_ij = d_k'
+    - 'With scaling: Var(score)_ij ≈ 1'
+    - Scaling prevents softmax saturation
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Variance_Preservation
+  softmax_saturation:
+    formula: entropy(softmax(scores)) → 0 as max(scores) → ∞
+    domain: Pre-softmax attention scores
+    invariants:
+    - Large unscaled scores cause near-one-hot attention
+    - Scaling keeps scores moderate → meaningful attention distribution
+    - QK-norm further stabilizes by bounding ||Q||, ||K||
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Softmax_Saturation
+  score_bound_with_qknorm:
+    formula: '|score_ij| <= √d_k (after QK-norm)'
+    domain: QK-norm ensures ||q_i|| ≈ 1, ||k_j|| ≈ 1
+    invariants:
+    - 'Cauchy-Schwarz: |q·k| <= ||q|| * ||k|| ≈ 1'
+    - 'After 1/√d_k scaling: |score_ij| <= 1/√d_k * d_k = √d_k'
+    - Practical bound much tighter due to unit norms
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Score_Bound_With_Qknorm
+  attention_entropy:
+    formula: H(attn_i) = -Σ_j attn_ij * log(attn_ij)
+    domain: Entropy of attention distribution for query i
+    invariants:
+    - H >= 0
+    - H = 0 iff attention is one-hot
+    - H <= log(m) (uniform attention)
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Attention_Entropy
+  numerical_stability:
+    formula: softmax(x - max(x)) = softmax(x)
+    domain: Max-subtraction trick for numerical stability
+    invariants:
+    - Subtracting max prevents exp overflow
+    - Result mathematically identical
+    - All intermediate values <= 0 after subtraction
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Numerical_Stability
+proof_obligations:
+- type: invariant
+  property: Score shape correctness
+  formal: shape(Q @ K^T / √d_k) = [n, m]
+  applies_to: all
+- type: invariant
+  property: Variance preservation
+  formal: Var(score_ij) ≈ 1 for unit-variance inputs
+  tolerance: 0.5
+  applies_to: all
+- type: bound
+  property: Score bound with QK-norm
+  formal: '|score_ij| <= √d_k after QK-norm and scaling'
+  applies_to: all
+- type: bound
+  property: Attention entropy non-negative
+  formal: '∀i: H(attn_i) >= 0'
+  applies_to: all
+- type: bound
+  property: Attention entropy upper bound
+  formal: '∀i: H(attn_i) <= log(m)'
+  applies_to: all
+- type: invariant
+  property: Max-subtraction equivalence
+  formal: softmax(x - max(x)) = softmax(x)
+  tolerance: 1.0e-07
+  applies_to: all
+- type: equivalence
+  property: Scaling prevents saturation
+  formal: H(softmax(QK^T/√d_k)) > H(softmax(QK^T)) for large d_k
+  tolerance: 0.01
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ASCL-001
+  rule: Scaling factor
+  prediction: Division by √d_k applied
+  test: 'proptest: score variance ≈ 1 for random Q,K'
+  if_fails: Missing or wrong scaling factor
+- id: FALSIFY-ASCL-002
+  rule: Score bound
+  prediction: '|score_ij| <= √d_k with QK-norm'
+  test: 'proptest: unit-norm Q,K, check score magnitudes'
+  if_fails: QK-norm not applied or bound formula wrong
+- id: FALSIFY-ASCL-003
+  rule: Entropy non-negative
+  prediction: H(attn) >= 0 always
+  test: proptest with random score matrices
+  if_fails: Log of zero or numerical underflow
+- id: FALSIFY-ASCL-004
+  rule: Max-subtraction equivalence
+  prediction: softmax(x - max(x)) == softmax(x)
+  test: 'proptest: compare with and without max subtraction'
+  if_fails: Implementation doesn't use max-subtraction
+- id: FALSIFY-ASCL-005
+  rule: Saturation prevention
+  prediction: Scaled attention has higher entropy than unscaled
+  test: proptest with d_k in [64, 256]
+  if_fails: Scaling not effective for chosen d_k
+- id: FALSIFY-ASCL-006
+  rule: Shape correctness
+  prediction: score shape is [n_queries, n_keys]
+  test: proptest with random n and m
+  if_fails: Transposition error in Q @ K^T
+- id: FALSIFY-ASCL-007
+  rule: Entropy upper bound
+  prediction: H(attn_i) <= log(m) for m keys
+  test: 'proptest: verify H <= log(m) for random score matrices'
+  if_fails: Softmax normalization error breaks entropy bound
+kani_harnesses:
+- id: KANI-ASCL-001
+  obligation: ASCL-BND-001
+  property: Score bound and entropy bounds
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_score_bounds
+- id: KANI-ASCL-002
+  obligation: ASCL-INV-001
+  property: Max-subtraction invariance
+  bound: 16
+  strategy: stub_float
+  harness: verify_max_subtraction
+- id: KANI-ATTENT-003
+  obligation: Score shape correctness
+  property: Score shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-004
+  obligation: Variance preservation
+  property: Variance preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-005
+  obligation: Score bound with QK-norm
+  property: Score bound with QK-norm
+  bound: 8
+  strategy: stub_float
+- id: KANI-ATTENT-006
+  obligation: Attention entropy non-negative
+  property: Attention entropy non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-007
+  obligation: Attention entropy upper bound
+  property: Attention entropy upper bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-ATTENT-008
+  obligation: Max-subtraction equivalence
+  property: Max-subtraction equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-009
+  obligation: Scaling prevents saturation
+  property: Scaling prevents saturation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ASCL-001
+  name: Attention Scaling Contract
+  description: Numerical stability and scaling quality gate
+  checks:
+  - scaled_dot_product
+  - variance_preservation
+  - softmax_saturation
+  - score_bound_with_qknorm
+  - attention_entropy
+  - numerical_stability
+  pass_criteria: All 7 falsification tests pass
+  falsification: Remove 1/√d_k scaling to trigger softmax saturation

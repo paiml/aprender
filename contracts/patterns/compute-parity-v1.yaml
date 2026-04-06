@@ -1,0 +1,178 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Compute parity — SIMD-scalar parity, GPU-CPU parity, and backend dispatch completeness cross-cutting patterns
+  kind: pattern
+  references:
+  - 'Liu et al. (2023). Minotaur: SIMD-Oriented Synthesizing Superoptimizer. arXiv:2306.00229'
+  - 'Taneja et al. (2024). LLM-Vectorizer: Verified Loop Vectorization via Alive2. arXiv:2406.04693'
+  - 'Dubey et al. (2025). Volta: Equivalence Checking of ML GPU Kernels. arXiv:2511.12638'
+  - 'Chatterjee et al. (2025). ProofWright: Agentic Formal Verification of CUDA. arXiv:2511.12294'
+  - 'Liew et al. (2022). Provable GPU Data-Race Freedom via Memory Access Protocols. arXiv:2203.12878'
+  - 'Jacobson et al. (2024). HiRace: Accurate Source-Level GPU Race Checking. arXiv:2401.04701'
+  - 'Abraham & Okoli (2026). Universal GPU ISA: Cross-Vendor Computational Primitives. arXiv:2603.28793'
+  - 'Chakraborty et al. (2025). GPUMC: Stateless Model Checker for GPU Weak Memory. arXiv:2505.20207'
+  - 'Khattak & Mikaitis (2025). Accurate Models of NVIDIA Tensor Cores. arXiv:2512.07004'
+  - 'Xie et al. (2024). FPRev: Revealing FP Accumulation Orders. arXiv:2411.00442'
+  - 'Shanmugavelu et al. (2024). FP Non-Associativity Impacts on Reproducibility. arXiv:2408.05148'
+  applies_to:
+  - trueno (SIMD dispatch)
+  - realizar (GPU inference)
+  - aprender (backend selection)
+equations:
+  simd_scalar_parity:
+    formula: |
+      parity: (f_scalar, f_simd, x) -> bool
+        |f_scalar(x) - f_simd(x)| <= ULP_TOLERANCE * epsilon_format
+        Where:
+          epsilon_f32 = 2^{-23} approx 1.19e-7
+          epsilon_f16 = 2^{-10} approx 9.77e-4
+          ULP_TOLERANCE = sqrt(n) for n-element reductions (FMA reassociation)
+    domain: x in R^n, n <= MAX_VECTOR_LEN
+    codomain: bool (parity within tolerance)
+    invariants:
+    - Scalar is the reference implementation (ground truth)
+    - SIMD may reassociate FMA operations (different rounding)
+    - Tolerance is derived from arithmetic, not guessed
+    preconditions:
+    - x contains no NaN or Inf (unless testing those paths)
+    - f_scalar and f_simd compute the same mathematical function
+    postconditions:
+    - max element-wise error <= ULP_TOLERANCE * epsilon_format
+    tolerance_table:
+      element_wise:
+        operations: relu, sigmoid
+        n: 1
+        tolerance: 0 ULP
+        rationale: No reassociation
+      dot_product:
+        operations: dot
+        n: n
+        tolerance: sqrt(n) * epsilon
+        rationale: FMA reassociation
+      softmax:
+        operations: softmax
+        n: n
+        tolerance: n * epsilon
+        rationale: exp + division chain
+      matmul:
+        operations: matmul (M x K x N)
+        n: K
+        tolerance: sqrt(K) * epsilon
+        rationale: Reduction dimension
+      layer_norm:
+        operations: layernorm, rmsnorm
+        n: n
+        tolerance: 2 * sqrt(n) * epsilon
+        rationale: sqrt + division
+    lean_theorem: Theorems.SimdScalarParity
+  gpu_cpu_parity:
+    formula: |
+      parity: (f_cpu, f_gpu, x) -> bool
+        |f_cpu(x) - f_gpu(x)| <= GPU_TOLERANCE * epsilon_format
+        Where GPU_TOLERANCE = max(ULP_TOLERANCE, WARP_REASSOCIATION_BOUND)
+        WARP_REASSOCIATION_BOUND = log2(WARP_SIZE) * epsilon for reductions
+    domain: x in R^n, n <= MAX_TENSOR_SIZE
+    codomain: bool (parity within GPU tolerance)
+    invariants:
+    - CPU (scalar or SIMD) is reference; GPU must match
+    - GPU may have wider reassociation window (warp-level reduce)
+    - Different GPU architectures may have different rounding
+    - PTX must match WGPU within 1 ULP (same hardware, different frontend)
+    preconditions:
+    - x contains no NaN or Inf
+    - GPU device is available and enumerated
+    postconditions:
+    - max element-wise error <= GPU_TOLERANCE * epsilon_format
+    lean_theorem: Theorems.GpuCpuParity
+  backend_dispatch_complete:
+    formula: |
+      dispatch: (Operation, Backend) -> Impl
+        forall op in OperationSet, forall backend in {Scalar, AVX2, NEON, WGPU, CUDA, PTX}:
+          if backend.is_available() then dispatch(op, backend) exists
+        Fallback: unavailable backend -> scalar (never panic)
+    domain: (Operation, Backend) pairs
+    codomain: Impl (always resolves, never None)
+    invariants:
+    - Every operation has scalar fallback
+    - 'Runtime detection: CPUID for SIMD, device enumeration for GPU'
+    - No compile-time only dispatch (must handle runtime absence)
+    preconditions:
+    - Scalar backend is always available
+    postconditions:
+    - dispatch never returns None; always falls back to scalar
+    lean_theorem: Theorems.BackendDispatchComplete
+proof_obligations:
+- type: equivalence
+  property: SIMD output matches scalar within ULP tolerance
+  formal: 'forall x: |f_scalar(x) - f_simd(x)| <= ULP_TOLERANCE * epsilon_format'
+  applies_to: simd_scalar_parity
+- type: equivalence
+  property: GPU output matches CPU within GPU tolerance
+  formal: 'forall x: |f_cpu(x) - f_gpu(x)| <= GPU_TOLERANCE * epsilon_format'
+  applies_to: gpu_cpu_parity
+- type: completeness
+  property: Every operation dispatches on every available backend
+  formal: 'forall op, backend: available(backend) -> exists dispatch(op, backend)'
+  applies_to: backend_dispatch_complete
+- type: soundness
+  property: Scalar fallback always exists
+  formal: 'forall op: dispatch(op, Scalar) is defined'
+  applies_to: backend_dispatch_complete
+falsification_tests:
+- id: FALSIFY-CPY-001
+  rule: SIMD-scalar parity
+  prediction: AVX2 and scalar produce element-wise identical results within ULP tolerance
+  test: Property test with 10K random vectors, compare scalar vs AVX2, assert max ULP error within bound
+  if_fails: SIMD implementation has incorrect FMA reassociation or missing operation
+- id: FALSIFY-CPY-002
+  rule: SIMD-scalar parity (NEON)
+  prediction: NEON and scalar produce element-wise identical results within ULP tolerance
+  test: Property test with 10K random vectors on ARM, compare scalar vs NEON
+  if_fails: NEON intrinsic mismatch — different operation semantics than AVX2
+- id: FALSIFY-CPY-003
+  rule: GPU-CPU parity
+  prediction: WGPU compute shader matches CPU within GPU tolerance
+  test: Run matmul on CPU and WGPU with 1K random matrices, compare max element-wise error
+  if_fails: Warp-level reduction reassociation exceeds bound — increase GPU_TOLERANCE or fix kernel
+- id: FALSIFY-CPY-004
+  rule: Backend dispatch completeness
+  prediction: Disabling AVX2 at runtime falls back to scalar (not panic)
+  test: Mock CPUID to report no AVX2, run all operations, verify scalar output
+  if_fails: Missing scalar fallback — dispatch panics on unavailable backend
+- id: FALSIFY-CPY-005
+  rule: PTX-WGPU parity
+  prediction: PTX and WGPU produce results within 1 ULP on same hardware
+  test: Run same kernel via PTX and WGPU, compare outputs element-wise
+  if_fails: Frontend difference — PTX and WGPU compiling to different GPU instructions
+kani_harnesses:
+- id: KANI-CPY-001
+  obligation: SIMD-scalar parity
+  property: Element-wise error within ULP tolerance for all inputs
+  bound: 8
+  strategy: exhaustive
+  harness: verify_simd_scalar_parity
+- id: KANI-CPY-002
+  obligation: Backend dispatch completeness
+  property: Dispatch resolves for all operation-backend pairs
+  bound: 16
+  strategy: exhaustive
+  harness: verify_dispatch_completeness
+- id: KANI-CPY-003
+  obligation: Scalar fallback existence
+  property: Every operation has a scalar implementation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_scalar_fallback
+qa_gate:
+  id: F-CPY-001
+  name: Compute Parity Contract
+  description: SIMD-scalar parity, GPU-CPU parity, and backend dispatch completeness quality gate
+  checks:
+  - simd_scalar_parity
+  - gpu_cpu_parity
+  - backend_dispatch_completeness
+  - scalar_fallback
+  pass_criteria: All 5 falsification tests pass and max ULP error within derived bounds
+  falsification: Replace SIMD reduction with incorrect accumulation order; expect ULP violation

@@ -1,0 +1,111 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Render primitives contract — drawing, layout, and terminal rendering correctness
+  references:
+  - 'Bresenham (1965) Algorithm for computer control of a digital plotter'
+  - 'Squarified Treemaps (Bruls et al., 2000)'
+equations:
+  draw_bounds:
+    formula: '∀ primitive(x, y, ...): 0 <= x < width ∧ 0 <= y < height'
+    domain: buffer ∈ R^{width × height}, coordinates ∈ (usize, usize)
+    codomain: mutated buffer
+    invariants:
+    - No writes outside buffer bounds
+    - 'draw_point(x, y) only modifies pixel (x, y)'
+    - draw_rect fills exactly (x2-x1) * (y2-y1) pixels
+    - draw_circle_outline pixels are within radius ± 1 of center
+    preconditions:
+    - width > 0 && height > 0
+    - coordinates within buffer dimensions
+    lean_theorem: Theorems.Draw_Bounds
+  line_connectivity:
+    formula: draw_line(x1, y1, x2, y2) produces 8-connected pixel path from (x1,y1) to (x2,y2)
+    domain: (x1, y1), (x2, y2) ∈ buffer coordinates
+    codomain: mutated buffer with connected path
+    invariants:
+    - Start pixel (x1, y1) is drawn
+    - End pixel (x2, y2) is drawn
+    - Adjacent drawn pixels differ by at most 1 in each dimension
+    - 'Anti-aliased variant (draw_line_aa) covers same path'
+    preconditions:
+    - all coordinates within buffer bounds
+    lean_theorem: Theorems.Line_Connectivity
+  layout_area_conservation:
+    formula: '∀ treemap layout: Σ area(child) = area(parent)'
+    domain: tree of weighted nodes
+    codomain: Vec<Rect> layout assignments
+    invariants:
+    - Total child area equals parent area (no gaps, no overlap)
+    - Each node gets area proportional to its weight
+    - All rects have positive width and height
+    preconditions:
+    - all weights > 0
+    - parent rect has positive area
+    lean_theorem: Theorems.Layout_Area_Conservation
+proof_obligations:
+- type: invariant
+  property: No out-of-bounds writes
+  formal: '∀ draw op: modified pixels ⊆ {(x,y) : 0 <= x < w, 0 <= y < h}'
+  applies_to: draw_bounds
+- type: invariant
+  property: Line endpoints drawn
+  formal: '∀ (x1,y1,x2,y2): pixel(x1,y1) ∧ pixel(x2,y2) after draw_line'
+  applies_to: line_connectivity
+- type: invariant
+  property: Area conservation
+  formal: '∀ layout: |Σ area(children) - area(parent)| < epsilon'
+  applies_to: layout_area_conservation
+enforcement:
+  bounds_safety:
+    description: All draw operations stay within buffer bounds
+    check: contract_tests::FALSIFY-RP-001
+    severity: ERROR
+  line_endpoints:
+    description: Line drawing includes both endpoints
+    check: contract_tests::FALSIFY-RP-002
+    severity: ERROR
+  area_conservation:
+    description: Treemap layout conserves total area
+    check: contract_tests::FALSIFY-RP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RP-001
+  rule: Bounds safety
+  prediction: drawing at boundary coordinates does not panic or write OOB
+  test: proptest draw_rect and draw_circle at buffer edges
+  if_fails: Off-by-one in bounds check for draw primitives
+- id: FALSIFY-RP-002
+  rule: Line endpoints
+  prediction: draw_line(x1,y1,x2,y2) sets pixels at both (x1,y1) and (x2,y2)
+  test: proptest with random coordinate pairs, check endpoint pixels
+  if_fails: Bresenham loop terminates one step early
+- id: FALSIFY-RP-003
+  rule: Area conservation
+  prediction: sum of child rect areas equals parent rect area within 1 pixel
+  test: layout trees with 2-20 children, verify area sum
+  if_fails: Rounding error accumulation in squarified treemap
+kani_harnesses:
+- id: KANI-RP-001
+  obligation: Bounds safety
+  property: no OOB buffer access
+  bound: 16
+  strategy: exhaustive
+  harness: verify_draw_bounds
+- id: KANI-RP-002
+  obligation: Line endpoints
+  property: both endpoints set
+  bound: 8
+  strategy: exhaustive
+  harness: verify_line_endpoints
+qa_gate:
+  id: F-RP-001
+  name: Render Primitives Contract
+  description: Drawing, layout, and rendering correctness gate
+  checks:
+  - bounds_safety
+  - line_endpoints
+  - area_conservation
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip bounds check in draw_rect for right/bottom edge

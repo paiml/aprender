@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Bias addition kernel — broadcast bias vector over batch dimension
+  references:
+  - Standard neural network practice — affine transformation bias term
+equations:
+  bias_add:
+    formula: y[b, i] = x[b, i] + bias[i] for all b in [0, B), i in [0, D)
+    domain: x in R^{B x D}, bias in R^D
+    codomain: y in R^{B x D}
+    invariants:
+    - 'Output shape equals input shape: shape(y) = shape(x) = (B, D)'
+    - 'Zero-bias identity: y = x when bias = 0'
+    - 'Additivity: bias_add(bias_add(x, b1), b2) = bias_add(x, b1 + b2)'
+    - 'Broadcast: same bias vector applied to every batch element'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Bias_Add
+proof_obligations:
+- type: invariant
+  property: Shape preservation
+  formal: shape(bias_add(x, bias)) = shape(x) = (B, D)
+  applies_to: all
+- type: invariant
+  property: Zero-bias identity
+  formal: bias_add(x, 0) = x for all x
+  applies_to: all
+- type: invariant
+  property: Additivity
+  formal: bias_add(bias_add(x, b1), b2) = bias_add(x, b1 + b2)
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  tolerance: 0.0
+  formal: '|bias_add_avx2(x, b) - bias_add_scalar(x, b)| = 0 (exact for addition)'
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: broadcast_bias
+    description: Replicate bias vector D across batch dimension B
+    invariant: bias_expanded[b, i] = bias[i] for all b
+  - name: elementwise_add
+    description: Add expanded bias to input element-wise
+    invariant: y[b, i] = x[b, i] + bias[i]
+simd_dispatch:
+  bias_add:
+    scalar: bias_add_scalar
+    avx2: bias_add_avx2
+    ptx: bias_add_ptx
+enforcement:
+  shape_preservation:
+    description: Output shape must match input shape
+    check: contract_tests::FALSIFY-BA-001
+    severity: ERROR
+  zero_identity:
+    description: Zero bias must produce identity
+    check: contract_tests::FALSIFY-BA-002
+    severity: ERROR
+  additivity:
+    description: Two bias additions must equal single addition of sum
+    check: contract_tests::FALSIFY-BA-003
+    severity: ERROR
+  simd_equivalence:
+    description: SIMD result must exactly match scalar
+    check: contract_tests::FALSIFY-BA-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-BA-001
+  rule: Shape preservation
+  prediction: shape(bias_add(x, bias)) = shape(x) for B in 1..64, D in 1..256
+  test: proptest with random batch and feature dimensions
+  if_fails: Output buffer allocated with wrong dimensions
+- id: FALSIFY-BA-002
+  rule: Zero-bias identity
+  prediction: bias_add(x, zeros(D)) = x bitwise for all x
+  test: proptest with random x and zero bias, verify bitwise equality
+  if_fails: Bias addition modifies input even when bias is zero
+- id: FALSIFY-BA-003
+  rule: Additivity
+  prediction: bias_add(bias_add(x, b1), b2) = bias_add(x, b1 + b2) within 0 ULP
+  test: proptest with random x, b1, b2; compare double-apply vs single-apply
+  if_fails: Floating-point addition order differs between paths
+- id: FALSIFY-BA-004
+  rule: SIMD equivalence
+  prediction: bias_add_avx2(x, b) = bias_add_scalar(x, b) exactly
+  test: proptest comparing scalar vs SIMD output element-wise
+  if_fails: SIMD lane ordering or alignment differs from scalar
+kani_harnesses:
+- id: KANI-BA-001
+  obligation: BA-INV-001
+  property: Zero-bias produces identity
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_bias_add_zero_identity
+- id: KANI-BA-002
+  obligation: BA-INV-002
+  property: Additivity of bias addition
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_bias_add_additivity
+- id: KANI-BIAS_A-003
+  obligation: Shape preservation
+  property: Shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BIAS_A-004
+  obligation: Zero-bias identity
+  property: Zero-bias identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BIAS_A-005
+  obligation: Additivity
+  property: Additivity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BIAS_A-006
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-BA-001
+  name: Bias Add Contract
+  description: Broadcast bias addition quality gate
+  checks:
+  - shape_preservation
+  - zero_identity
+  - additivity
+  - simd_equivalence
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Apply bias without broadcast to corrupt batch elements beyond first

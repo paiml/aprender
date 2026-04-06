@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-127",
+  "prompt": "Prove and score all 18 sovereign stack repos — full test + pv score audit",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-29T07:11:16.745194467Z"
+}

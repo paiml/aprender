@@ -1,0 +1,328 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    NF4 backward tensor core GEMM — WMMA 16×16×16 backward kernel with inline
+    NF4 dequantization in shared memory.
+
+    Gap analysis (five-whys):
+    1. Training at 194 tok/s vs 6,628 tok/s unsloth (34x gap)
+    2. GPU at 12.2% efficiency, 84.6% kernel launch overhead
+    3. Forward path has NF4 tensor core GEMM (PMAT-479), backward does NOT
+    4. Backward uses generic cuBLAS GEMM on pre-dequantized weights (separate dequant kernel + GEMM)
+    5. ROOT CAUSE: No NF4-specific backward tensor core kernel exists in trueno
+
+    Backward GEMM for NF4 QLoRA training computes:
+      grad_A = grad_output @ B_nf4^T  (input gradient)
+    where B_nf4 is a frozen NF4-quantized weight matrix. The transpose means
+    we dequantize B column-major into shared memory, then run WMMA mma.sync.
+
+    Forward kernel (nf4_tensor_core.rs): C[M,N] = A[M,K] @ dequant(B_nf4[K,N])
+    Backward kernel (this contract):     grad_A[M,K] = grad_out[M,N] @ dequant(B_nf4[K,N])^T
+
+    The key difference is B is transposed: we read B_nf4 rows for forward,
+    but B_nf4 columns for backward. NF4 packing is row-major, so backward
+    needs stride-based column extraction from packed 4-bit storage.
+
+    Impact: Eliminates separate dequant kernel + generic GEMM. Single fused kernel
+    per backward projection. 28 layers × 7 projections = 196 fewer kernel launches
+    per training step.
+  pmat: [PMAT-481, PMAT-484]
+  references:
+    - "nf4-tensor-core-gemm-v1.yaml — forward NF4 TC GEMM (trueno, PMAT-479)"
+    - "Markidis et al. (2018) NVIDIA Tensor Core Programmability, Performance & Precision. arXiv:1803.04014"
+    - "Dettmers et al. (2023) QLoRA: Efficient Finetuning of Quantized LLMs. arXiv:2305.14314"
+  depends_on:
+    - "nf4-tensor-core-gemm-v1.yaml"
+
+equations:
+  backward_a_gemm:
+    formula: |
+      grad_A[m,k] = sum_{n=0}^{N-1} grad_out[m,n] * dequant(B_nf4[k,n])
+
+      Equivalently: grad_A = grad_out @ B^T
+      where B[k,n] = nf4_lut[B_nf4_packed[k,n]] * scale[k // block_size]
+
+      Matrix dimensions (Qwen 1.5B):
+        Q/K/V projection backward: grad_out[S, H] @ W_qkv[H, H]^T → grad_A[S, H]
+          where H=1536 (or D_kv=256 for K/V with GQA)
+        Gate/Up projection backward: grad_out[S, I] @ W_gate[I, H]^T → grad_A[S, H]
+          where I=4608 (intermediate_size)
+        Down projection backward: grad_out[S, H] @ W_down[H, I]^T → grad_A[S, I]
+    domain: M=batch*seq_len, K=output_dim, N=input_dim (transposed from forward)
+    codomain: grad_A in R^{M×K} (FP32)
+    invariants:
+      - '|tc_grad_A - cublas_grad_A|_inf < 1e-3 (numerical parity with cuBLAS baseline)'
+      - 'No NaN in output when input has no NaN'
+    preconditions:
+      - 'M, K, N > 0'
+      - 'B_nf4 packed as uint8 with 2 values per byte (row-major)'
+      - 'scales array has ceil(K*N / block_size) entries'
+    postconditions:
+      - result.len() == m * k
+      - result.iter().all(|v| v.is_finite())
+
+  wmma_backward_tile:
+    formula: |
+      Per-tile computation (16×16×16):
+        For each K-block kb in 0..ceil(N/16):
+          Phase 1: Load grad_out[tile_m, kb*16..(kb+1)*16] → SHMEM_A[16×16] as FP16
+          Phase 2: Dequant B_nf4[tile_k, kb*16..(kb+1)*16] → SHMEM_B[16×16] as FP16
+                   (NOTE: B is transposed — we load B columns, which are B_nf4 rows
+                    when B_nf4 is stored row-major as [K, N])
+          Phase 3: frag_c += wmma::mma(frag_a=SHMEM_A, frag_b=SHMEM_B^T, frag_c)
+          Phase 4: Store frag_c to grad_A[tile_m, tile_k] as FP32
+
+      Grid: (ceil(K/16), ceil(M/16)) — one warp per 16×16 output tile
+      Block: 32 threads (1 warp)
+      SHMEM: 1024 bytes (512B A + 512B B)
+    domain: tile_m in [0, ceil(M/16)), tile_k in [0, ceil(K/16))
+    invariants:
+      - 'SHMEM usage <= 1024 bytes per block (fits any sm_70+ GPU)'
+      - 'Thread count = 32 (single warp, no sync needed within tile)'
+      - 'Boundary tiles zero-pad when M%16 != 0 or K%16 != 0 or N%16 != 0'
+
+  nf4_column_dequant:
+    formula: |
+      For backward, we need B^T — accessing columns of B_nf4[K, N].
+      Since B_nf4 is packed row-major (2 values per byte, K rows of N values):
+        To read column n of B_nf4:
+          for k in 0..K:
+            byte_idx = k * (N / 2) + n / 2
+            nibble = if n % 2 == 0 { B_nf4[byte_idx] & 0x0F } else { B_nf4[byte_idx] >> 4 }
+            B_col[k] = nf4_lut[nibble] * scales[k * N + n) // block_size]
+
+      This is strided access — worse than forward's sequential row access.
+      Mitigation: Load full 16-row tile of B_nf4 into SHMEM, then transpose in SHMEM.
+      This converts strided global reads into sequential global reads + SHMEM transpose.
+    domain: Column index n in [0, N), row indices k in [0, K)
+    invariants:
+      - 'Dequantized values match forward path dequantization exactly'
+      - 'NF4 LUT lookup uses register-based binary tree (19 selp instructions)'
+
+  fused_pair_backward:
+    formula: |
+      Gate+Up fused backward:
+        [grad_gate, grad_up] = grad_ffn @ [W_gate, W_up]^T
+        Both share grad_ffn input — single DRAM load.
+        Output: two [M, H] buffers written in one kernel.
+
+      K+V fused backward:
+        [grad_k, grad_v] = grad_attn @ [W_k, W_v]^T
+        Both share grad_attn input — single DRAM load.
+        Output: two [M, D_kv] buffers.
+
+      DRAM savings (Qwen 1.5B):
+        Gate+Up: avoid reloading grad_ffn[S, 4608] = S×4608×2 = 9.0 KB/token
+        K+V: avoid reloading grad_attn[S, 1536] = S×1536×2 = 3.0 KB/token
+        Per step (S=512, 28 layers): ~(9.0+3.0)×512×28 = ~168 MB saved
+    domain: Fusible projection pairs sharing input activation
+    invariants:
+      - '|fused_grad - unfused_grad|_inf < 1e-3'
+      - 'Fused kernel launch count = 1 per pair (vs 2 unfused)'
+
+proof_obligations:
+  - type: equivalence
+    property: Numerical parity with cuBLAS backward
+    formal: '|tc_backward_grad - cublas_backward_grad|_inf < 1e-3 for all projections'
+    applies_to: all 7 backward projection GEMMs
+    tolerance: 1.0e-3
+    lean:
+      theorem: Theorems.NumericalParity
+      status: sorry
+
+  - type: invariant
+    property: No NaN propagation from valid inputs
+    formal: 'forall m,k: is_finite(grad_out[m,:]) AND is_finite(B_nf4_dequant[:,:]) => is_finite(grad_A[m,k])'
+    applies_to: all backward GEMMs
+    lean:
+      theorem: Theorems.NoNanPropagation
+      status: sorry
+
+  - type: bound
+    property: Kernel launch reduction
+    formal: 'tc_backward_launches <= cublas_backward_launches * 0.5'
+    applies_to: full backward pass (28 layers)
+    lean:
+      theorem: Theorems.LaunchReduction
+      status: sorry
+
+  - type: bound
+    property: DRAM traffic reduction vs separate dequant+GEMM
+    formal: 'tc_backward_dram < (dequant_dram + cublas_dram) * 0.70'
+    applies_to: per-layer backward
+    lean:
+      theorem: Theorems.DramReduction
+      status: sorry
+
+  - type: equivalence
+    property: Loss convergence parity
+    formal: '|tc_loss[t] - cublas_loss[t]| < 0.05 for t in [0, 100]'
+    applies_to: 100-step training comparison
+    lean:
+      theorem: Theorems.LossConvergence
+      status: sorry
+
+falsification_tests:
+  - id: F-NBTC-001
+    rule: Numerical parity
+    prediction: >
+      NF4 TC backward produces same gradients as cuBLAS backward within 1e-3.
+      Run 10 steps with NF4_TC_BWD=0, capture layer gradients.
+      Run 10 steps with NF4_TC_BWD=1, capture same.
+    test: Max |tc_grad - cublas_grad| < 1e-3 per element across all layers
+    if_fails: Accumulation order in WMMA differs from cuBLAS — check FP16 rounding
+
+  - id: F-NBTC-002
+    rule: No NaN from valid inputs
+    prediction: >
+      With seeded valid inputs (no NaN in grad_out or weights), TC backward
+      produces zero NaN values in output gradients.
+    test: Run 20 steps, count NaN in grad_A per layer. Must be zero.
+    if_fails: FP16 overflow in WMMA accumulation — check magnitude range
+
+  - id: F-NBTC-003
+    rule: Kernel launch reduction
+    prediction: >
+      TC backward uses <= 50% of kernel launches vs cuBLAS backward.
+      cuBLAS: 7 dequant + 7 GEMM = 14 launches/layer × 28 = 392 total.
+      TC: 7 fused launches/layer × 28 = 196 total (50% reduction).
+    test: Profile with CUDA events, count kernel launches per step
+    if_fails: Some projections falling back to cuBLAS — check dispatch logic
+
+  - id: F-NBTC-004
+    rule: Throughput improvement
+    prediction: >
+      TC backward is >= 30% faster than cuBLAS backward (wall time).
+      Fewer launches + no separate dequant = less overhead.
+    test: 20-step benchmark, compare backward wall time
+    if_fails: SHMEM column transpose overhead negates launch savings — optimize tile loading
+
+  - id: F-NBTC-005
+    rule: DRAM traffic reduction
+    prediction: >
+      TC backward reads NF4 weights directly (no intermediate FP16 buffer).
+      Saves K×N×2 bytes per GEMM (dequant output buffer eliminated).
+      For down_proj: 1536×4608×2 = 14.2 MB/layer × 28 = 397 MB/step saved.
+    test: Compare peak VRAM and DRAM bandwidth via cuMemGetInfo
+    if_fails: SHMEM spill or register pressure causing extra DRAM traffic
+
+  - id: F-NBTC-006
+    rule: Loss convergence
+    prediction: TC backward training converges to same loss as cuBLAS backward
+    test: >
+      100-step training run: TC loss curve vs cuBLAS loss curve.
+      Max divergence < 0.05 at every step.
+    if_fails: Gradient precision degradation accumulating — widen FP32 accumulator
+
+  - id: F-NBTC-007
+    rule: Fused pair speedup
+    prediction: >
+      Fused Gate+Up TC backward is >= 20% faster than two separate TC backward calls.
+      Shared grad_ffn load eliminates one full DRAM read of [M, I] matrix.
+    test: Compare fused vs unfused backward wall time for FFN layer
+    if_fails: Fusion kernel has higher register pressure or lower occupancy
+
+kani_harnesses:
+  - id: KANI-NBTC-001
+    obligation: Numerical parity with cuBLAS backward
+    property: TC backward matches cuBLAS backward within tolerance
+    bound: 8
+    strategy: stub_float
+    harness: verify_nf4_tc_backward_parity
+    solver: cadical
+
+  - id: KANI-NBTC-002
+    obligation: No NaN propagation from valid inputs
+    property: Finite inputs produce finite outputs
+    bound: 16
+    strategy: exhaustive
+    harness: verify_nf4_tc_backward_no_nan
+    solver: cadical
+
+  - id: KANI-NBTC-003
+    obligation: Kernel launch reduction
+    property: TC path uses fewer launches than cuBLAS path
+    bound: 8
+    strategy: exhaustive
+    harness: verify_launch_count_reduction
+    solver: cadical
+
+  - id: KANI-NBTC-004
+    obligation: DRAM traffic reduction vs separate dequant+GEMM
+    property: Fused dequant+GEMM reads less DRAM than separate
+    bound: 8
+    strategy: stub_float
+    harness: verify_dram_reduction
+    solver: cadical
+
+  - id: KANI-NBTC-005
+    obligation: Loss convergence parity
+    property: TC training loss matches cuBLAS training loss
+    bound: 8
+    strategy: stub_float
+    harness: verify_loss_convergence_parity
+    solver: cadical
+
+  - id: KANI-NBTC-006
+    obligation: Fused pair backward equivalence
+    property: Fused Gate+Up backward matches separate Gate + separate Up
+    bound: 8
+    strategy: stub_float
+    harness: verify_fused_pair_backward_parity
+    solver: cadical
+
+  - id: KANI-NBTC-007
+    obligation: Column dequantization correctness
+    property: Strided NF4 column extraction matches row-major dequant then transpose
+    bound: 16
+    strategy: exhaustive
+    harness: verify_nf4_column_dequant
+    solver: cadical
+
+implementation_requirements:
+  trueno_changes:
+    - description: Nf4TensorCoreGemmBackwardAKernel in trueno-gpu
+      detail: >
+        New kernel struct in trueno-gpu/src/kernels/quantize/ (or backward/).
+        Implements grad_A = grad_out @ dequant(B_nf4)^T using WMMA 16×16×16.
+        Key difference from forward: B is transposed, requiring column-wise
+        NF4 dequantization. Use SHMEM tile-then-transpose strategy.
+    - description: Fused pair backward kernel variant
+      detail: >
+        FusedNf4BackwardPairKernel that computes [grad_1, grad_2] = grad_shared @ [W_1, W_2]^T
+        in a single kernel launch. Analog of FusedNf4GateUpGemmKernel for backward.
+    - description: PTX emission and compilation
+      detail: >
+        Extend PtxKernel builder with backward-specific WMMA load patterns
+        (transpose flag for fragment_b). Add to kernel registry for sm_70+.
+
+  entrenar_changes:
+    - description: NF4 TC backward dispatch in cuda_block.rs
+      detail: >
+        When NF4_TC_GEMM=1, backward_nf4_ffn and backward_nf4_attention
+        should use Nf4TensorCoreGemmBackwardAKernel instead of
+        gemm_backward_a_fp16_dispatch. Add env var NF4_TC_BWD_GEMM=1 toggle.
+    - description: Fused pair backward wiring
+      detail: >
+        Wire FusedNf4BackwardPairKernel for Gate+Up and K+V backward pairs.
+        Replace two gemm_backward_a_fp16_dispatch calls with one fused call.
+    - description: Per-op profiling integration
+      detail: >
+        Add OP_TC_BWD_GEMM and OP_FUSED_TC_BWD metrics to StepProfiler.
+        Report TC backward vs cuBLAS backward times for A/B comparison.
+
+qa_gate:
+  id: F-NBTC-001
+  name: nf4-backward-tensor-core-gemm-v1 Contract
+  checks:
+    - numerical_parity
+    - nan_safety
+    - launch_reduction
+    - throughput_improvement
+    - dram_reduction
+    - loss_convergence
+    - fused_pair_speedup
+  pass_criteria: All 7 falsification tests pass

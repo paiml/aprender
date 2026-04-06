@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-081",
+  "prompt": "apr-model-qa-playbook: integrate MQS into PVScore pipeline",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T14:55:11.222789182Z"
+}

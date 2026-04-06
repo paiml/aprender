@@ -1,0 +1,452 @@
+use super::*;
+
+#[allow(dead_code)]
+fn test_contract() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/softmax-kernel-v1.yaml")
+}
+
+fn contracts_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
+}
+
+#[test]
+fn dispatch_query_semantic() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "softmax".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 3,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_literal() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "RMSNorm".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: true,
+        case_sensitive: false,
+        limit: 5,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "json".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_with_score() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "attention".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 2,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: true,
+        graph: true,
+        paper: true,
+        proof_status: true,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_with_proof_status() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "softmax".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 2,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: true,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_with_binding() {
+    let binding =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/aprender/binding.yaml");
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "softmax".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 2,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: true,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: Some(binding),
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_markdown_format() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "rmsnorm".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 3,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: true,
+        graph: false,
+        paper: true,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "markdown".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_exit_code_success() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "softmax".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 3,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: true,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_exit_code_no_match() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "zzz_nonexistent_query_zzz".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: true,
+        case_sensitive: false,
+        limit: 3,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: true,
+    }));
+    assert!(result.is_err());
+}
+
+#[test]
+fn dispatch_query_min_level() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "softmax".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 3,
+        obligation: None,
+        min_score: None,
+        min_level: Some("L3".to_string()),
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_tier_filter() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "kernel".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 20,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: Some(1),
+        class: None,
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "text".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}
+
+#[test]
+fn dispatch_query_class_filter() {
+    let result = run_command(Commands::Query(query_args::QueryArgs {
+        query: "attention".to_string(),
+        contract_dir: contracts_dir(),
+        regex: false,
+        literal: false,
+        case_sensitive: false,
+        limit: 10,
+        obligation: None,
+        min_score: None,
+        min_level: None,
+        depends_on: None,
+        depended_by: None,
+        unproven: false,
+        score: false,
+        graph: false,
+        paper: false,
+        proof_status: false,
+        binding_info: false,
+        binding_gaps: false,
+        diff: false,
+        pagerank: false,
+        call_sites: false,
+        violations: false,
+        coverage_map: false,
+        project: None,
+        include_project: None,
+        tier: None,
+        class: Some('A'),
+        kind: None,
+        all_projects: false,
+        rebuild_index: false,
+        binding: None,
+        format: "json".to_string(),
+        exit_code: false,
+    }));
+    assert!(result.is_ok());
+}

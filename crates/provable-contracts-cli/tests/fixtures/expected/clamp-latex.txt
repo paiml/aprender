@@ -1,0 +1,21 @@
+% Equations for clamp-kernel-v1
+\section{Equations: clamp-kernel-v1}
+
+\subsection{clamp}
+\label{eq:clamp}
+
+\begin{equation}
+  y_i = min(max(x_i, lo), hi)
+\end{equation}
+
+\textbf{Domain:} $x \in \mathbb{R}^n, lo \leq hi$
+
+\textbf{Codomain:} $y \in [lo, hi]^n$
+
+\textbf{Invariants:}
+\begin{itemize}
+  \item $lo \leq y_i \leq hi for all i$
+  \item $clamp(clamp(x)) = clamp(x)$
+  \item $x_i \leq x_j \to y_i \leq y_j$
+\end{itemize}
+

@@ -1,0 +1,213 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Proper attention backward contract — fixes the broken no-op backward that
+    causes NaN cascade, loss stuck at 16.8, and ~40% missing backward compute.
+
+    Five-whys root cause:
+    1. Training at 194 tok/s vs 6,628 tok/s (34x gap), loss 16.8 not converging
+    2. 7/20 backward steps produce NaN → skipped (throughput inflated)
+    3. grad_k and grad_v contain stale forward data (uninitialized)
+    4. backward_nf4_attention_mechanism returns without computing anything
+    5. ROOT CAUSE: Attention backward was never implemented — code comments say
+       "that's wrong" but grad_V/grad_K computation was never added
+
+    The current implementation (cuda_block.rs:4223-4310):
+    - Converts grad_attn_out to batched layout
+    - Copies it to scratch.q as approximate grad_Q
+    - Returns WITHOUT computing grad_V, grad_K, or softmax backward
+    - grad_k/grad_v contain garbage → RoPE backward on garbage → NaN cascade
+
+    Correct backward (mirror of forward):
+    Forward: attn_out = softmax(Q @ K^T / √d) @ V
+    Backward:
+      1. grad_V = attn_weights^T @ grad_attn_out
+      2. grad_scores = grad_attn_out @ V^T
+      3. grad_raw = softmax_backward(grad_scores, attn_weights)
+      4. grad_raw *= 1/√d
+      5. grad_Q = grad_raw @ K
+      6. grad_K = grad_raw^T @ Q
+  pmat: [PMAT-486]
+  references:
+    - "Vaswani et al. (2017) Attention Is All You Need. arXiv:1706.03762"
+    - "Dao et al. (2022) FlashAttention: Fast and Memory-Efficient Exact Attention. arXiv:2205.14135"
+    - "per-operation-training-profiling-v1.yaml — per-op measurement contract"
+    - "training-step-profiling-v1.yaml — phase-level profiling contract"
+
+equations:
+  attention_backward_grad_v:
+    formula: |
+      grad_V[h,s,d] = sum_{t=0}^{S-1} attn_weights[h,t,s] * grad_attn_out[h,t,d]
+      Equivalently: grad_V = attn_weights^T @ grad_attn_out
+      Shape: [NH, S, S]^T @ [NH, S, HD] → [NH, S, HD]
+      For GQA (N_kv < N_h): accumulate across Q heads sharing same KV head.
+    domain: attn_weights from softmax output, grad_attn_out from O projection backward
+    invariants:
+      - '|grad_V| < 1e6 (no gradient explosion)'
+      - 'grad_V = 0 when attn_weights = 0 (causal mask respected)'
+
+  attention_backward_grad_scores:
+    formula: |
+      grad_scores[h,i,j] = sum_{d=0}^{HD-1} grad_attn_out[h,i,d] * V[h,j,d]
+      Equivalently: grad_scores = grad_attn_out @ V^T
+      Shape: [NH, S, HD] @ [NH, HD, S] → [NH, S, S]
+    domain: grad_attn_out, V from forward activation checkpointing
+    invariants:
+      - 'grad_scores[i,j] = 0 when V[j,:] = 0'
+
+  softmax_backward:
+    formula: |
+      Given s = softmax output, ds = grad_scores:
+      grad_raw[i] = s[i] * (ds[i] - sum_j(ds[j] * s[j]))
+      Applied per-row (each row is a probability distribution).
+      This is the Jacobian-vector product: diag(s) - s*s^T applied to ds.
+    domain: s = attn_weights [NH, S, S], ds = grad_scores [NH, S, S]
+    invariants:
+      - 'sum(grad_raw[i,:]) ≈ 0 for each row (softmax gradient sums to zero)'
+      - 'grad_raw[i,j] = 0 where causal mask applied (j > i)'
+
+  attention_backward_grad_qk:
+    formula: |
+      grad_Q = grad_raw @ K  →  [NH, S, S] @ [NH, S, HD] → [NH, S, HD]
+      grad_K = grad_raw^T @ Q  →  [NH, S, S]^T @ [NH, S, HD] → [NH, S, HD]
+      For GQA: K/V heads receive accumulated gradients from their Q head group.
+    domain: grad_raw from softmax backward, Q/K from forward (RoPE-applied)
+    invariants:
+      - grad_Q and grad_K finite when all inputs finite
+
+proof_obligations:
+  - type: equivalence
+    property: Gradient correctness vs finite-difference
+    formal: '|analytical_grad - fd_grad| / |fd_grad| < 1e-3 for Q, K, V'
+    applies_to: all backward computations
+
+  - type: invariant
+    property: No NaN in backward output
+    formal: 'is_finite(grad_Q) AND is_finite(grad_K) AND is_finite(grad_V) when inputs finite'
+    applies_to: all backward steps
+
+  - type: bound
+    property: Loss convergence improvement
+    formal: 'loss_with_attn_bwd[100] < loss_without_attn_bwd[100] (proper backward converges better)'
+    applies_to: 100-step training comparison
+
+  - type: invariant
+    property: NaN backward skip elimination
+    formal: 'nan_backward_skips == 0 with proper attention backward'
+    applies_to: 20-step canary run
+
+  - type: equivalence
+    property: GQA gradient accumulation correctness
+    formal: 'grad_kv_head[g] = sum_{h in group(g)} grad_qh[h] for GQA grouping'
+    applies_to: models with num_kv_heads < num_heads
+
+falsification_tests:
+  - id: F-ABW-001
+    rule: NaN elimination
+    prediction: >
+      With proper attention backward, 20-step training produces ZERO NaN backward skips
+      (was 7/20 with no-op backward).
+    test: Run canary-apr with attention backward, count NaN skips
+    if_fails: NaN source is elsewhere (gradient explosion in other layer)
+
+  - id: F-ABW-002
+    rule: Loss convergence
+    prediction: >
+      Loss drops below 10.0 within 100 steps (was stuck at 16.8 with no-op backward).
+    test: Run 100-step training, check final loss < 10.0
+    if_fails: Learning rate too high or other gradient path corrupted
+
+  - id: F-ABW-003
+    rule: V LoRA receives gradients
+    prediction: >
+      V LoRA adapter weights change during training (were static with no-op backward).
+    test: Compare V LoRA B matrix before/after 10 steps, max delta > 1e-6
+    if_fails: V gradient path still broken downstream of attention backward
+
+  - id: F-ABW-004
+    rule: Throughput maintained or improved
+    prediction: >
+      Throughput >= 150 tok/s (may increase because NaN skip overhead eliminated,
+      or decrease slightly because more compute per step).
+    test: Compare canary-apr throughput with and without attention backward
+    if_fails: Attention backward adds too much overhead — optimize GEMM dispatch
+
+  - id: F-ABW-005
+    rule: Gradient finite-difference parity
+    prediction: >
+      Analytical gradient matches finite-difference within 1e-3 relative error
+      for a single attention layer on small inputs (S=16, NH=2, HD=4).
+    test: Compute FD gradient, compare to backward output
+    if_fails: Math error in backward computation — check transpose/scale
+
+  - id: F-ABW-006
+    rule: GQA gradient accumulation
+    prediction: >
+      For GQA (12 Q heads, 2 KV heads), each KV gradient = sum of 6 Q-head contributions.
+      grad_k_head_0 = sum(grad_from_q_heads_0_through_5).
+    test: Run with num_kv_heads=num_heads (no GQA), verify same result as explicit sum
+    if_fails: GQA reduction logic incorrect
+
+kani_harnesses:
+  - id: KANI-ABW-001
+    obligation: No NaN in backward output
+    property: Finite inputs produce finite outputs
+    bound: 8
+    strategy: stub_float
+    harness: verify_attention_backward_no_nan
+    solver: cadical
+
+  - id: KANI-ABW-002
+    obligation: NaN backward skip elimination
+    property: No NaN skips with proper backward
+    bound: 8
+    strategy: stub_float
+    harness: verify_zero_nan_skips
+    solver: cadical
+
+  - id: KANI-ABW-003
+    obligation: GQA gradient accumulation correctness
+    property: GQA reduction sums correctly
+    bound: 16
+    strategy: exhaustive
+    harness: verify_gqa_gradient_reduction
+    solver: cadical
+
+implementation_requirements:
+  entrenar_changes:
+    - description: Implement proper backward_nf4_attention_mechanism
+      detail: >
+        Replace the no-op with real computation using existing cuBLAS batched GEMM:
+        1. grad_V = attn_weights^T @ grad_attn_out (batched_4d_gemm)
+        2. grad_scores = grad_attn_out @ V^T (batched_4d_gemm + transpose)
+        3. softmax_backward(grad_scores, attn_weights) → grad_raw
+        4. grad_raw *= scale (1/√d)
+        5. grad_Q = grad_raw @ K (batched_4d_gemm)
+        6. grad_K = grad_raw^T @ Q (batched_4d_gemm)
+        All intermediates available from activation checkpointing.
+    - description: Add grad_attn_scores scratch buffer
+      detail: >
+        CudaBlockScratch needs [NH * S * S] buffer for intermediate attention
+        score gradients. For Qwen 1.5B (NH=12, S=512): 12 MB.
+    - description: Handle GQA gradient accumulation
+      detail: >
+        When num_kv_heads < num_heads, K/V gradients must be accumulated across
+        Q heads sharing the same KV head. Use scatter_add or explicit loop.
+    - description: Zero grad_k/grad_v as safety net
+      detail: >
+        Even with proper backward, zero K/V gradients before computation to prevent
+        stale data contamination if backward fails partway through.
+
+qa_gate:
+  id: F-ABW-001
+  name: attention-backward-v1 Contract
+  checks:
+    - nan_elimination
+    - loss_convergence
+    - v_lora_gradients
+    - throughput_maintained
+    - fd_parity
+    - gqa_accumulation
+  pass_criteria: All 6 falsification tests pass

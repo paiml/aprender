@@ -1,0 +1,191 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: Online softmax — single-pass max+sum via running normalizer (Milakov & Gimelshein 2018)
+  references:
+  - Milakov & Gimelshein (2018) Online normalizer calculation for softmax
+  - Rabe & Staats (2022) Self-attention Does Not Need O(n²) Memory
+  depends_on:
+  - softmax-kernel-v1.yaml
+equations:
+  online_normalizer:
+    formula: "Online update rule (streaming max + sum_exp):\n  Given running state (m_{i-1}, d_{i-1}) and new score x_i:\n\
+      \    m_i = max(m_{i-1}, x_i)\n    d_i = d_{i-1} · exp(m_{i-1} - m_i) + exp(x_i - m_i)\nFinal: softmax(x)_j = exp(x_j\
+      \ - m_n) / d_n\n"
+    domain: x ∈ ℝ^n, n ≥ 1
+    codomain: σ(x) ∈ (0,1)^n, Σ σ(x)_i = 1
+    invariants:
+    - d_i > 0 for all i (sum of positive exponentials)
+    - m_i = max(x_1, ..., x_i)
+    - d_i = Σ_{j=1}^{i} exp(x_j - m_i)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Online_Normalizer
+  standard_softmax:
+    formula: σ(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))
+    domain: x ∈ ℝ^n
+    codomain: (0,1)^n
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Standard_Softmax
+proof_obligations:
+- type: loop_invariant
+  property: Running max tracks true max of elements seen
+  formal: '∀k ≤ i: m_i ≥ x_k ∧ m_i = max(x_1, ..., x_i)'
+  applies_to_phase: online_scan
+- type: loop_invariant
+  property: Running sum_exp is correct partial sum
+  formal: d_i = Σ_{j=1}^{i} exp(x_j - m_i)
+  applies_to_phase: online_scan
+- type: loop_variant
+  property: Remaining elements decreases each iteration
+  formal: V(state) = n - i, V ≥ 0, V strictly decreasing
+  applies_to_phase: online_scan
+- type: old_state
+  property: Normalizer update preserves equivalence to full recomputation
+  formal: d_i = old(d_{i-1}) · exp(old(m_{i-1}) - m_i) + exp(x_i - m_i)
+- type: equivalence
+  property: Online matches standard softmax
+  formal: '|online_softmax(x) - standard_softmax(x)| < ε element-wise'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Output sums to 1
+  formal: '|Σ σ(x)_i - 1.0| < ε'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: All outputs strictly positive
+  formal: σ(x)_i > 0 for all i
+  applies_to: all
+- type: monotonicity
+  property: Order preservation
+  formal: x_i > x_j ⟹ σ(x)_i > σ(x)_j
+  applies_to: all
+- type: invariant
+  property: Shift invariance
+  formal: softmax(x + c) = softmax(x) for any scalar c
+  applies_to: all
+- type: invariant
+  property: Two-pass (not three)
+  formal: 'Reads scores array exactly twice: once for online max+sum, once for normalize'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: online_scan
+    description: Single pass computing running (max, sum_exp) pair
+    invariant: 'After processing x_1..x_i: m = max(x_1..x_i), d = Σ exp(x_j - m)'
+  - name: normalize
+    description: Single pass computing weights[j] = exp(scores[j] - m) / d
+    invariant: Each weight computed from final (m, d) state
+falsification_tests:
+- id: FALSIFY-OSM-001
+  rule: Equivalence to standard softmax
+  prediction: '|online_softmax(x) - standard_softmax(x)| < 1e-5 element-wise'
+  test: proptest with random f32 vectors, lengths 1..4096
+  if_fails: Online normalizer update has numerical drift
+- id: FALSIFY-OSM-002
+  rule: Sum-to-one
+  prediction: '|Σ online_softmax(x)_i - 1.0| < 1e-6'
+  test: proptest with random vectors including extreme ranges
+  if_fails: Normalizer denominator computation error
+- id: FALSIFY-OSM-003
+  rule: Positivity
+  prediction: online_softmax(x)_i > 0 for all i
+  test: proptest including vectors with large negative values
+  if_fails: Underflow in exp() not handled
+- id: FALSIFY-OSM-004
+  rule: Shift invariance
+  prediction: '|online_softmax(x + c) - online_softmax(x)| < 1e-6'
+  test: proptest with random shift c in [-1000, 1000]
+  if_fails: Max subtraction not properly applied
+- id: FALSIFY-OSM-005
+  rule: Decoder attention dimensions
+  prediction: Correct for kv_len in {1, 6, 64, 448, 1500}
+  test: deterministic test with Whisper self-attn and cross-attn dimensions
+  if_fails: Edge case at specific sequence lengths
+- id: FALSIFY-OSM-006
+  rule: Single-element softmax
+  prediction: online_softmax([x]) = [1.0] for any finite x
+  test: exact equality test
+  if_fails: Base case handling
+- id: FALSIFY-OSM-007
+  rule: Loop invariant — running max
+  prediction: After processing x_1..x_i, m_i = max(x_1..x_i)
+  test: Instrument online_scan loop, assert invariant at each step for random vectors
+  if_fails: Running max not updated correctly when new element is smaller
+- id: FALSIFY-OSM-008
+  rule: Loop variant — termination
+  prediction: Loop counter advances by exactly 1 per iteration, terminates at n
+  test: Verify n - i strictly decreasing and reaches 0
+  if_fails: Off-by-one in loop bounds or infinite loop
+- id: FALSIFY-OSM-009
+  rule: Old state — normalizer update
+  prediction: d_i computed from old d_{i-1} matches full recomputation Σ exp(x_j - m_i)
+  test: 'proptest: compute d both ways at each step, assert equality within ε'
+  if_fails: Normalizer rescaling factor exp(m_{i-1} - m_i) incorrect
+- id: FALSIFY-OSM-010
+  rule: Loop invariant — partial sum correctness
+  prediction: d_i = Σ_{j=1}^{i} exp(x_j - m_i) holds after processing each element
+  test: Instrument scan loop, recompute partial sum from scratch at each step
+  if_fails: Running sum accumulation diverges from recomputed sum
+kani_harnesses:
+- id: online-softmax-v1-kani-001
+  obligation: Online matches standard softmax
+  bound: 8
+  strategy: bounded_int
+- id: KANI-ONLINE-002
+  obligation: Running max tracks true max of elements seen
+  property: Running max tracks true max of elements seen
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-003
+  obligation: Running sum_exp is correct partial sum
+  property: Running sum_exp is correct partial sum
+  bound: 8
+  strategy: stub_float
+- id: KANI-ONLINE-004
+  obligation: Remaining elements decreases each iteration
+  property: Remaining elements decreases each iteration
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-005
+  obligation: Normalizer update preserves equivalence to full recomputation
+  property: Normalizer update preserves equivalence to full recomputation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-006
+  obligation: Output sums to 1
+  property: Output sums to 1
+  bound: 8
+  strategy: stub_float
+- id: KANI-ONLINE-007
+  obligation: All outputs strictly positive
+  property: All outputs strictly positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-008
+  obligation: Order preservation
+  property: Order preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-009
+  obligation: Shift invariance
+  property: Shift invariance
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ONLINE-010
+  obligation: Two-pass (not three)
+  property: Two-pass (not three)
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-OSV-001
+  name: online-softmax-v1 Contract
+  description: 'Quality gate for Online softmax — single-pass max+sum via running normalizer '
+  checks:
+  - validation
+  - falsification

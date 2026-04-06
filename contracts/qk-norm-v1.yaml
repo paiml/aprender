@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: QK normalization — per-head RMSNorm applied to Q and K before attention
+  references:
+  - Henry et al. (2020) Query-Key Normalization for Transformers
+  - Qwen3 Technical Report — QK normalization for training stability
+  - Zhang & Sennrich (2019) Root Mean Square Layer Normalization
+  depends_on:
+  - rmsnorm-kernel-v1
+equations:
+  qk_rmsnorm:
+    formula: Q_norm = RMSNorm(Q) = Q / sqrt(mean(Q²) + ε) * weight
+    domain: Q ∈ ℝ^{head_dim}, weight ∈ ℝ^{head_dim}, ε > 0
+    codomain: Q_norm ∈ ℝ^{head_dim}
+    invariants:
+    - RMS(output / weight) ≈ 1.0 when weight = 1
+    - '|output_i| <= |weight_i| * sqrt(d_k) / sqrt(ε) (bounded amplitude)'
+    - RMSNorm(0) = 0 (zero-stability)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Qk_Rmsnorm
+proof_obligations:
+- type: invariant
+  property: Unit RMS after normalization
+  formal: RMS(RMSNorm(x, 1)) ≈ 1.0
+  tolerance: 0.1
+  applies_to: all
+- type: bound
+  property: Output amplitude bounded
+  formal: '|output_i| <= |weight_i| * sqrt(d_k / ε)'
+  applies_to: all
+- type: invariant
+  property: Idempotent with unit weight
+  formal: RMSNorm(RMSNorm(x, 1), 1) ≈ RMSNorm(x, 1)
+  tolerance: 0.001
+  applies_to: all
+- type: invariant
+  property: Zero-input stability
+  formal: RMSNorm(0, w) = 0
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: invariant
+  property: Per-head independence
+  formal: RMSNorm([h1;h2;...]) = [RMSNorm(h1); RMSNorm(h2); ...]
+  tolerance: 0.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QKN-001
+  rule: Unit RMS
+  prediction: RMS of normalized output ≈ 1.0 with unit weight
+  test: proptest with random vectors, RMSNorm without affine
+  if_fails: Normalization denominator incorrect
+- id: FALSIFY-QKN-002
+  rule: Bounded amplitude
+  prediction: Output bounded by weight * sqrt(d_k/eps)
+  test: proptest verifying element-wise bounds
+  if_fails: Missing eps guard in denominator
+- id: FALSIFY-QKN-003
+  rule: Idempotent
+  prediction: Double-applying RMSNorm ≈ single application
+  test: proptest comparing single vs double application
+  if_fails: Normalization not convergent
+- id: FALSIFY-QKN-004
+  rule: Zero-stability
+  prediction: RMSNorm(0) = 0
+  test: direct assertion on zero input
+  if_fails: Division by zero not handled by eps
+- id: FALSIFY-QKN-005
+  rule: SIMD scalar equivalence
+  prediction: SIMD QK-norm matches scalar within 8 ULP
+  test: 'proptest: compare scalar vs SIMD QK-norm output'
+  if_fails: SIMD normalization diverges beyond ULP tolerance
+- id: FALSIFY-QKN-006
+  rule: Cross-backend equivalence
+  prediction: GPU per-head RMSNorm algorithm (rsqrt.approx) matches CPU RMSNorm::forward
+  test: proptest comparing GPU reference simulation vs CPU at Qwen3-8B dimensions
+  if_fails: GPU kernel diverges from CPU — check argument order, head count, or rsqrt precision
+- id: FALSIFY-QKN-007
+  rule: Per-head independence
+  prediction: Normalizing N heads produces same result as normalizing each head independently
+  test: proptest comparing batch per-head vs individual head normalization
+  if_fails: Head slicing or offset computation incorrect in GPU kernel
+kani_harnesses:
+- id: KANI-QKN-001
+  obligation: QKN-INV-001
+  property: RMSNorm output finite for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_qk_norm_finite
+- id: KANI-QKN-002
+  obligation: QKN-INV-004
+  property: Zero input produces zero output (eps-guarded)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_qk_norm_zero_stability
+- id: KANI-QK_NOR-003
+  obligation: Unit RMS after normalization
+  property: Unit RMS after normalization
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-004
+  obligation: Output amplitude bounded
+  property: Output amplitude bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-QK_NOR-005
+  obligation: Idempotent with unit weight
+  property: Idempotent with unit weight
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-006
+  obligation: Zero-input stability
+  property: Zero-input stability
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-008
+  obligation: GPU kernel matches CPU reference
+  property: GPU kernel matches CPU reference
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QK_NOR-009
+  obligation: Per-head independence
+  property: Per-head independence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QKN-001
+  name: QK Normalization Contract
+  description: Per-head QK RMSNorm quality gate
+  checks:
+  - unit_rms
+  - bounded_amplitude
+  - idempotent
+  - zero_stability
+  pass_criteria: All 7 falsification tests pass
+  falsification: Set eps=0 to trigger division by zero

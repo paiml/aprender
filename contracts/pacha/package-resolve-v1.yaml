@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Package resolution contract — dependency pull, recipe run tracking, registry listing
+  references:
+  - 'Cox (2019) Surviving Software Dependencies'
+  - 'Abate et al. (2012) Dependency Solving Is Still Hard'
+equations:
+  pull_resolve:
+    formula: P(name, version) = fetch(registry, name, version) → local_cache
+    domain: name ∈ String, version ∈ SemVer
+    codomain: Result<Path>
+    invariants:
+    - 'Idempotent: P(n,v); P(n,v) yields same local path'
+    - pull_quiet produces no stdout output
+    - with_auto_pull only fetches if not cached
+    preconditions:
+    - '!name.is_empty()'
+    - version is valid semver
+    lean_theorem: Theorems.Pull_Resolve
+  run_tracking:
+    formula: R(recipe, params) = {id, status, metrics, timestamp}
+    domain: recipe ∈ Recipe, params ∈ Map<String, Value>
+    codomain: RunRecord
+    invariants:
+    - 'Run IDs are unique: ∀ r1, r2: r1.id ≠ r2.id if r1 ≠ r2'
+    - 'Monotonic timestamps: start_run(t1); start_run(t2) → t1 < t2'
+    - list_runs returns runs in reverse chronological order
+    preconditions:
+    - recipe exists in registry
+    lean_theorem: Theorems.Run_Tracking
+  registry_list:
+    formula: L(type) = sorted(registry.entries(type))
+    domain: type ∈ {model, dataset, recipe}
+    codomain: Vec<Entry>
+    invariants:
+    - list_models returns all registered models
+    - list_datasets returns all registered datasets
+    - list_recipes returns all registered recipes
+    preconditions:
+    - registry database is initialized
+    lean_theorem: Theorems.Registry_List
+proof_obligations:
+- type: invariant
+  property: Pull idempotency
+  formal: '∀ n, v: pull(n, v).path = pull(n, v).path'
+  applies_to: pull_resolve
+- type: invariant
+  property: Run ID uniqueness
+  formal: '∀ r1, r2: start_run() → r1.id ≠ r2.id'
+  applies_to: run_tracking
+- type: invariant
+  property: Listing completeness
+  formal: '∀ e ∈ registry: e ∈ list(e.type)'
+  applies_to: registry_list
+enforcement:
+  pull_idempotency:
+    description: Pulling same package twice yields same local path
+    check: contract_tests::FALSIFY-PCH-001
+    severity: ERROR
+  run_uniqueness:
+    description: Each run gets a unique ID
+    check: contract_tests::FALSIFY-PCH-002
+    severity: ERROR
+  list_completeness:
+    description: Listing returns all registered entries
+    check: contract_tests::FALSIFY-PCH-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PCH-001
+  rule: Pull idempotency
+  prediction: pull(n, v) called twice returns same path both times
+  test: pull a package, pull again, compare paths
+  if_fails: Cache invalidation bug or non-deterministic path generation
+- id: FALSIFY-PCH-002
+  rule: Run ID uniqueness
+  prediction: 100 concurrent start_run calls produce 100 distinct IDs
+  test: spawn 100 tasks calling start_run, collect IDs into HashSet
+  if_fails: ID generator has collision or race condition
+- id: FALSIFY-PCH-003
+  rule: Listing completeness
+  prediction: insert N entries then list returns exactly N entries
+  test: insert 50 models, verify list_models().len() == 50
+  if_fails: Insert or list has filtering bug
+kani_harnesses:
+- id: KANI-PCH-001
+  obligation: Pull idempotency
+  property: pull returns consistent path
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pull_idempotency
+- id: KANI-PCH-002
+  obligation: Run ID uniqueness
+  property: run IDs are unique
+  bound: 16
+  strategy: exhaustive
+  harness: verify_run_id_uniqueness
+- id: KANI-PCH-003
+  obligation: Listing completeness
+  property: list returns all inserted entries
+  bound: 8
+  strategy: exhaustive
+  harness: verify_list_completeness
+qa_gate:
+  id: F-PCH-001
+  name: Package Resolution Contract
+  description: Pull, run tracking, and registry listing quality gate
+  checks:
+  - pull_idempotency
+  - run_uniqueness
+  - list_completeness
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return random UUID instead of content-addressed path in pull

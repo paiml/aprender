@@ -1,0 +1,207 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Content-addressed store — derivation determinism, closure completeness, purity monotonicity, FAR roundtrip, GC safety
+  references:
+  - 'Dolstra (2006) The Purely Functional Software Deployment Model'
+  - 'O''Connor et al. (2019) BLAKE3: One function, fast everywhere'
+equations:
+  derivation_determinism:
+    formula: derive(d₁) = derive(d₂) when d₁.inputs = d₂.inputs ∧ d₁.builder = d₂.builder ∧ d₁.env = d₂.env
+    domain: d ∈ Derivation
+    codomain: StorePath
+    invariants:
+    - Same inputs always produce same store path
+    - 'StorePath.hash = BLAKE3(canonical_serialize(derivation))'
+    - 'Deterministic: derive(d) = derive(d) for all d'
+    preconditions:
+    - '!d.inputs.is_empty() || !d.builder.is_empty()'
+    - d.builder.len() > 0
+    lean_theorem: Theorems.Derivation_Determinism
+  closure_completeness:
+    formula: '∀ ref in entry.references: ref ∈ closure(entry) ∧ closure(ref) ⊆ closure(entry)'
+    domain: entry ∈ StoreEntry
+    codomain: Set<StorePath>
+    invariants:
+    - Closure contains all transitive references
+    - Closure is the least fixed point of the reference relation
+    - 'Self-referential: entry.path ∈ closure(entry)'
+    preconditions:
+    - entry.path.hash is valid BLAKE3 hash
+    lean_theorem: Theorems.Closure_Completeness
+  purity_monotonicity:
+    formula: 'purity(d) = max(purity(input) for input in d.inputs) ∪ d.own_purity'
+    domain: d ∈ Derivation
+    codomain: PurityLevel ∈ {Pure(0), NetworkAccess(1), Impure(2), Unrestricted(3)}
+    invariants:
+    - 'Higher purity level is more restrictive: Pure < NetworkAccess < Impure < Unrestricted'
+    - Purity propagates upward through dependency chain
+    - 'Pure derivation with impure input escalates: purity(d) ≥ max(purity(input_i))'
+    preconditions:
+    - d.inputs all have assigned purity levels
+    lean_theorem: Theorems.Purity_Monotonicity
+  far_archive_roundtrip:
+    formula: unpack(pack(dir)) = dir
+    domain: dir ∈ Directory
+    codomain: bool
+    invariants:
+    - 'Byte-for-byte identity: unpack(pack(dir)) = dir'
+    - 'Preserves: permissions, ownership, symlinks, timestamps'
+    - '∀ file in dir: hash(file_before) = hash(file_after)'
+    preconditions:
+    - dir.exists()
+    - dir.is_dir()
+    lean_theorem: Theorems.Far_Archive_Roundtrip
+  gc_safety:
+    formula: '∀ path in closure(root) for root in RootSet: path ∈ gc(store)'
+    domain: (store ∈ Store, roots ∈ RootSet)
+    codomain: Store
+    invariants:
+    - GC never removes live store paths
+    - Only removes paths not reachable from any root
+    - 'Monotonic: gc(store) ⊆ store'
+    preconditions:
+    - roots ⊆ store.paths
+    lean_theorem: Theorems.GC_Safety
+proof_obligations:
+- type: determinism
+  property: Derivation deterministic
+  formal: 'd₁ = d₂ → derive(d₁) = derive(d₂)'
+  applies_to: all
+- type: completeness
+  property: Closure is transitive
+  formal: 'ref ∈ closure(x) ∧ ref'' ∈ closure(ref) → ref'' ∈ closure(x)'
+  applies_to: all
+- type: monotonicity
+  property: Purity propagates upward
+  formal: 'purity(d) ≥ max(purity(input_i))'
+  applies_to: all
+- type: roundtrip
+  property: FAR identity
+  formal: unpack(pack(dir)) = dir
+  applies_to: all
+- type: conservation
+  property: GC preserves live paths
+  formal: '∀ live path: path ∈ gc(store)'
+  applies_to: all
+- type: precondition
+  property: Store path hash valid
+  formal: StorePath.hash = BLAKE3(canonical_serialize(derivation))
+  applies_to: all
+enforcement:
+  derivation_determinism:
+    description: Same inputs must always produce same store path
+    check: contract_tests::FALSIFY-CAS-001
+    severity: ERROR
+  closure_completeness:
+    description: Closure must contain all transitive references
+    check: contract_tests::FALSIFY-CAS-004
+    severity: ERROR
+  purity_monotonicity:
+    description: Purity level must propagate upward through dependencies
+    check: contract_tests::FALSIFY-CAS-009
+    severity: ERROR
+  far_roundtrip:
+    description: FAR pack/unpack must be identity
+    check: contract_tests::FALSIFY-CAS-005
+    severity: ERROR
+  gc_safety:
+    description: GC must never remove live store paths
+    check: contract_tests::FALSIFY-CAS-008
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CAS-001
+  rule: Derivation determinism
+  prediction: Two derivations with same inputs produce identical store path
+  test: proptest with identical derivation pairs
+  if_fails: Non-deterministic serialization in derive()
+- id: FALSIFY-CAS-002
+  rule: Derivation sensitivity
+  prediction: Two derivations with different env produce different store path
+  test: proptest with derivations differing only in env
+  if_fails: Environment not included in hash computation
+- id: FALSIFY-CAS-003
+  rule: Closure base case
+  prediction: Closure of a path with no references is {self}
+  test: construct StoreEntry with empty references, verify closure = {self}
+  if_fails: Closure computation misses self-inclusion
+- id: FALSIFY-CAS-004
+  rule: Closure transitivity
+  prediction: Closure of A→B→C includes all three paths
+  test: construct chain A→B→C, verify all in closure(A)
+  if_fails: Closure not computing transitive hull
+- id: FALSIFY-CAS-005
+  rule: FAR permission preservation
+  prediction: FAR roundtrip preserves file permissions (0o755 vs 0o644)
+  test: create files with specific permissions, pack/unpack, compare
+  if_fails: Permission metadata lost during FAR serialization
+- id: FALSIFY-CAS-006
+  rule: FAR symlink preservation
+  prediction: FAR roundtrip preserves symlink targets
+  test: create symlinks, pack/unpack, verify targets unchanged
+  if_fails: Symlinks dereferenced during pack instead of preserved
+- id: FALSIFY-CAS-007
+  rule: GC empty roots
+  prediction: GC with empty root set removes all paths
+  test: populate store, gc with empty roots, verify store empty
+  if_fails: GC retains paths without root reference
+- id: FALSIFY-CAS-008
+  rule: GC full roots
+  prediction: GC with full root set removes nothing
+  test: populate store, gc with all paths as roots, verify unchanged
+  if_fails: GC incorrectly removes rooted paths
+- id: FALSIFY-CAS-009
+  rule: Purity escalation
+  prediction: Pure derivation with impure input escalates to impure
+  test: create Pure derivation with Impure(2) input, verify output is Impure(2)
+  if_fails: Purity not propagating through dependency chain
+kani_harnesses:
+- id: KANI-CAS-001
+  obligation: Derivation deterministic
+  property: derive(d) = derive(d) for all d
+  bound: 8
+  strategy: exhaustive
+  harness: verify_derivation_determinism
+- id: KANI-CAS-002
+  obligation: Closure is transitive
+  property: Closure transitivity
+  bound: 16
+  strategy: exhaustive
+  harness: verify_closure_transitivity
+- id: KANI-CAS-003
+  obligation: Purity propagates upward
+  property: Purity monotonicity
+  bound: 8
+  strategy: exhaustive
+  harness: verify_purity_monotonicity
+- id: KANI-CAS-004
+  obligation: FAR identity
+  property: FAR roundtrip
+  bound: 16
+  strategy: exhaustive
+  harness: verify_far_roundtrip
+- id: KANI-CAS-005
+  obligation: GC preserves live paths
+  property: GC safety
+  bound: 16
+  strategy: exhaustive
+  harness: verify_gc_safety
+- id: KANI-CAS-006
+  obligation: Store path hash valid
+  property: Store path hash format
+  bound: 8
+  strategy: exhaustive
+  harness: verify_store_path_hash
+qa_gate:
+  id: F-CAS-001
+  name: Store CAS Contract
+  description: Content-addressed storage quality gate
+  checks:
+  - derivation_determinism
+  - closure_completeness
+  - purity_monotonicity
+  - far_roundtrip
+  - gc_safety
+  pass_criteria: All 9 falsification tests pass
+  falsification: Remove BLAKE3 hash from derivation serialization

@@ -1,0 +1,437 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Format safety contract — magic byte validation, header integrity,
+    provenance enforcement, strict mode, and dtype coercion safety for
+    GGUF/SafeTensors/APR import/export. This is the security surface
+    of apr-cli: untrusted model files from the internet must not crash,
+    corrupt memory, or bypass provenance checks.
+  references:
+  - 'apr-cli/src/commands/import.rs — import_model(), enforce_provenance flag'
+  - 'apr-cli/src/commands/export.rs — export_model()'
+  - 'apr-cli/src/commands/convert.rs — convert_model()'
+  - 'aprender/src/gguf/ — GGUF reader/writer, magic byte validation'
+  - 'aprender/src/safetensors/ — SafeTensors reader, header validation'
+  - 'APR-SPEC §4.3 — Binary format safety requirements'
+  depends_on:
+  - apr-model-lifecycle-v1
+  - model-format-conversion-v1
+
+equations:
+  magic_byte_validation:
+    formula: |
+      detect_format(bytes): &[u8] -> Result<ModelFormat, FormatError>
+        GGUF:        bytes[0..4] == b"GGUF"
+        SafeTensors: first 8 bytes are little-endian u64 header length
+        APR:         bytes[0..4] == b"APR\x02" (v2 magic)
+        Unknown:     return Err(UnknownFormat)
+      Never panics on truncated input (< 4 bytes -> UnknownFormat)
+    domain: Any byte slice (including empty, truncated, adversarial)
+    codomain: Result<ModelFormat, FormatError>
+    invariants:
+    - Never panics on any input (including empty slice)
+    - Deterministic (same bytes -> same format)
+    - No heap allocation for detection (stack-only)
+    preconditions:
+    - bytes is a valid slice (may be empty)
+    postconditions:
+    - result is one of {GGUF, SafeTensors, APR, Err(UnknownFormat)}
+    - bytes.len() < 4 => result is Err
+    lean_theorem: Theorems.MagicByteValidation
+
+  header_integrity:
+    formula: |
+      validate_header(reader): ModelReader -> Result<Header, HeaderError>
+        GGUF: version in {2, 3}, tensor_count > 0, metadata_kv_count < 65536
+        SafeTensors: header_len < file_size, JSON parses, no overlap in data_offsets
+        APR: schema_version <= SUPPORTED_VERSION, CRC32 matches
+      Rejects headers that would cause OOM (e.g., tensor_count == u64::MAX)
+    domain: Opened model file with valid magic bytes
+    codomain: Result<Header, HeaderError>
+    invariants:
+    - OOM-safe (bounded allocation based on file size, not header claims)
+    - No read past file boundary (all offsets validated against file size)
+    - CRC32 checked before trusting any field (APR only)
+    preconditions:
+    - file has valid magic bytes
+    - file is readable
+    postconditions:
+    - header.tensor_count <= MAX_TENSORS (bounded)
+    - all tensor data offsets within file bounds
+    lean_theorem: Theorems.HeaderIntegrity
+
+  provenance_enforcement:
+    formula: |
+      enforce_provenance(model, flag): (Model, bool) -> Result<(), ProvenanceError>
+        When --enforce-provenance is true:
+          model.metadata must contain base_model_hash
+          hash must be verifiable against known model registry
+          Missing hash -> hard error (exit 5)
+        When false: skip check (explicit opt-out)
+    domain: Model with optional provenance metadata, enforcement flag
+    codomain: Result<(), ProvenanceError>
+    invariants:
+    - Default is enforce (opt-out requires explicit flag)
+    - Missing hash is always an error when enforced
+    - Hash verification is constant-time (no timing side channel)
+    preconditions:
+    - model is loaded and header is valid
+    postconditions:
+    - enforced && no_hash => Err(MissingProvenance)
+    - not_enforced => Ok(()) regardless of hash
+    lean_theorem: Theorems.ProvenanceEnforcement
+
+  strict_import_validation:
+    formula: |
+      strict_validate(model): Model -> Result<(), StrictError>
+        When --strict is true:
+          Every tensor shape matches architecture config exactly
+          No tensor has NaN or Inf values
+          Tensor byte count matches dtype * product(shape)
+          No unused bytes between tensors (no padding waste > 4KB)
+        When false: warn but continue
+    domain: Loaded model with all tensors accessible
+    codomain: Result<(), StrictError>
+    invariants:
+    - Strict mode never modifies the model (read-only validation)
+    - Every failure includes the specific tensor name and expected vs actual
+    preconditions:
+    - model is loaded
+    postconditions:
+    - strict && any_nan => Err
+    - strict && shape_mismatch => Err
+    lean_theorem: Theorems.StrictImportValidation
+
+  dtype_coercion_safety:
+    formula: |
+      coerce_dtype(tensor, target): (Tensor, DType) -> Result<Tensor, CoercionError>
+        F32 -> F16: clamp to F16 range, warn on overflow
+        F32 -> BF16: preserve exponent range, reduce mantissa
+        F32 -> Q4_0: blockwise quantize (block_size=32)
+        F16 -> F32: lossless widening
+        Rejects: Q4_0 -> F16 (must go through F32 first)
+    domain: Tensor with source dtype, target dtype
+    codomain: Result<Tensor, CoercionError>
+    invariants:
+    - Widening conversions are lossless (F16->F32)
+    - Narrowing conversions are lossy but bounded
+    - No silent overflow (F32::MAX -> F16 must warn/error)
+    - Shape preserved across all conversions
+    preconditions:
+    - source tensor is finite (no NaN/Inf)
+    - target dtype is a supported conversion from source
+    postconditions:
+    - result.shape == input.shape
+    - result.dtype == target
+    - "widening => result values == input values"
+    lean_theorem: Theorems.DtypeCoercionSafety
+
+  validate_exit_code_consistency:
+    formula: |
+      validate(model) -> (ValidationResult, ExitCode)
+        VALID: exit 0
+        INVALID: exit != 0
+        validate and check must agree on the result:
+          validate(m) == INVALID => check(m) reports failures
+          validate(m) == VALID => check(m) reports no failures
+    domain: Model file with valid format
+    codomain: (ValidationResult, ExitCode) where result and code are consistent
+    invariants:
+    - INVALID result always exits non-zero (GH-647)
+    - validate and check produce consistent verdicts (GH-648)
+    - "Not-implemented stages do not count as passing (GH-650)"
+    preconditions:
+    - model file exists
+    postconditions:
+    - result == INVALID => exit_code != 0
+    - validate(m).verdict == check(m).verdict
+    lean_theorem: Theorems.ValidateExitCodeConsistency
+
+  flag_integrity:
+    formula: |
+      read_flags(header): Header -> FormatFlags
+        encrypted = header.encryption_field != 0
+        compressed = header.compression_field != 0
+        signed = header.signature_field != empty
+      Flags must reflect actual file state:
+        !has_encryption_layer(file) => flags.encrypted == false
+    domain: Parsed model header
+    codomain: FormatFlags struct
+    invariants:
+    - Unencrypted files report encrypted=false (GH-653)
+    - Flag values derived from actual header fields, not defaults
+    - Inconsistent flags trigger warning (encrypted=true but no encryption layer)
+    preconditions:
+    - header parsed successfully
+    postconditions:
+    - flags.encrypted matches actual encryption state
+    - flags.compressed matches actual compression state
+    lean_theorem: Theorems.FlagIntegrity
+
+  metadata_completeness:
+    formula: |
+      inspect_metadata(model): Model -> MetadataMap
+        GGUF models have up to 26 standard metadata keys
+        inspect --json must expose ALL available keys
+        Keys: architecture, quantization_version, context_length,
+              embedding_length, block_count, attention.head_count,
+              attention.head_count_kv, vocab_size, ...
+    domain: Loaded model with parsed GGUF metadata
+    codomain: MetadataMap with all available keys
+    invariants:
+    - All metadata keys present in GGUF are exposed (not just 4) (GH-660)
+    - Missing keys are absent from output (not present with null/empty)
+    - JSON output matches human-readable output in content
+    preconditions:
+    - model is valid GGUF with parseable metadata
+    postconditions:
+    - output.keys.len() >= model.metadata.keys.len()
+    lean_theorem: Theorems.MetadataCompleteness
+
+  truncation_detection:
+    formula: |
+      detect_truncation(file): Path -> Result<(), TruncationError>
+        Compare actual file size against expected size from header:
+          expected = header_size + sum(tensor_bytes)
+        Mismatch -> TruncationError with expected vs actual
+    domain: Path to model file
+    codomain: Result<(), TruncationError>
+    invariants:
+    - Detects both truncation (too short) and corruption (too long)
+    - Works for all supported formats (GGUF, SafeTensors, APR)
+    preconditions:
+    - file exists and is readable
+    - header is parseable
+    postconditions:
+    - actual_size == expected_size => Ok
+    - actual_size != expected_size => Err with both sizes
+    lean_theorem: Theorems.TruncationDetection
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Detect format via magic bytes, validate header integrity
+  - name: execute
+    description: Enforce provenance, strict validation, dtype coercion
+  - name: verify_output
+    description: Verify truncation detection, shape preservation, read-only invariants
+
+proof_obligations:
+- type: invariant
+  property: Magic byte detection never panics
+  formal: "for all bytes: detect_format(bytes) does not panic"
+  applies_to: magic_byte_validation
+  lean:
+    theorem: Theorems.MagicByteValidation
+    status: sorry
+- type: bound
+  property: Header allocation is bounded
+  formal: "alloc_size(header) <= file_size + OVERHEAD_CAP"
+  tolerance: 1e-6
+  applies_to: header_integrity
+  lean:
+    theorem: Theorems.HeaderIntegrity
+    status: sorry
+- type: postcondition
+  property: Provenance blocks when enforced and missing
+  formal: "enforce && !has_hash => Err(MissingProvenance)"
+  applies_to: provenance_enforcement
+  lean:
+    theorem: Theorems.ProvenanceEnforcement
+    status: sorry
+- type: invariant
+  property: Dtype coercion preserves shape
+  formal: coerce(tensor, dtype).shape == tensor.shape
+  applies_to: dtype_coercion_safety
+  lean:
+    theorem: Theorems.DtypeCoercionSafety
+    status: sorry
+- type: postcondition
+  property: Truncation detected
+  formal: "actual_size != expected_size => Err"
+  applies_to: truncation_detection
+  lean:
+    theorem: Theorems.TruncationDetection
+    status: sorry
+- type: invariant
+  property: Strict validation is read-only
+  formal: hash(model_before) == hash(model_after) for strict_validate(model)
+  applies_to: strict_import_validation
+  lean:
+    theorem: Theorems.StrictImportValidation
+    status: sorry
+- type: invariant
+  property: INVALID validation exits non-zero
+  formal: 'validate(m) == INVALID => exit_code != 0'
+  applies_to: validate_exit_code_consistency
+  lean:
+    theorem: Theorems.ValidateExitCodeConsistency
+    status: sorry
+- type: invariant
+  property: Unencrypted files report encrypted=false
+  formal: '!has_encryption_layer(f) => flags(f).encrypted == false'
+  applies_to: flag_integrity
+  lean:
+    theorem: Theorems.FlagIntegrity
+    status: sorry
+- type: postcondition
+  property: All GGUF metadata keys exposed
+  formal: 'inspect(m).keys.len() >= m.metadata.keys.len()'
+  applies_to: metadata_completeness
+  lean:
+    theorem: Theorems.MetadataCompleteness
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-FMT-001
+  rule: Magic byte detection never panics
+  prediction: Empty file returns Err(UnknownFormat), not panic
+  test: Create 0-byte file, call detect_format
+  if_fails: Index out of bounds on empty slice
+- id: FALSIFY-FMT-002
+  rule: Magic byte detection never panics
+  prediction: 3-byte file returns Err(UnknownFormat)
+  test: Create file with only b"GGU" (truncated GGUF magic)
+  if_fails: Reads past buffer boundary
+- id: FALSIFY-FMT-003
+  rule: Header allocation is bounded
+  prediction: GGUF header claiming 2^64 tensors does not cause OOM
+  test: Craft GGUF with tensor_count = u64::MAX, open with reader
+  if_fails: Reader allocates Vec with capacity u64::MAX
+- id: FALSIFY-FMT-004
+  rule: Provenance blocks when enforced and missing
+  prediction: --enforce-provenance on model without hash returns exit 5
+  test: Import model without provenance hash, assert error
+  if_fails: Provenance check skipped or returns wrong exit code
+- id: FALSIFY-FMT-005
+  rule: Dtype coercion preserves shape
+  prediction: Quantizing [768, 3072] tensor to Q4_0 preserves [768, 3072] shape
+  test: Quantize tensor, assert shape unchanged
+  if_fails: Quantization reshapes tensor (block-size dimension added)
+- id: FALSIFY-FMT-006
+  rule: Truncation detected
+  prediction: File truncated at 50% is rejected by import
+  test: Truncate valid model file, attempt import
+  if_fails: Partial model loaded silently (reads garbage tensors)
+- id: FALSIFY-FMT-007
+  rule: Strict import rejects NaN tensors
+  prediction: --strict import of model with NaN weight returns error
+  test: Inject NaN into model weight tensor, import with --strict
+  if_fails: NaN detection not wired to strict validation path
+- id: FALSIFY-FMT-008
+  rule: No silent F32 overflow in F16 coercion
+  prediction: F32 value 100000.0 produces warning or error when coerced to F16
+  test: Create tensor with F32::MAX, coerce to F16
+  if_fails: Silent overflow to F16::INFINITY without warning
+- id: FALSIFY-FMT-009
+  rule: INVALID validation exits non-zero
+  prediction: apr validate on corrupt model exits != 0
+  test: |
+    #[test]
+    fn falsify_fmt_009_invalid_exits_nonzero() {
+        let tmp = std::env::temp_dir().join("fmt-test-corrupt.gguf");
+        std::fs::write(&tmp, b"GGUF\x03\x00\x00\x00GARBAGE_TENSOR_DATA").unwrap();
+        let output = std::process::Command::new("apr")
+            .args(&["validate", tmp.to_str().unwrap()])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_ne!(code, 0,
+            "apr validate exits 0 on INVALID model — must exit non-zero (GH-647)");
+        std::fs::remove_file(&tmp).ok();
+    }
+  if_fails: validate reports INVALID but exits 0 (GH-647)
+- id: FALSIFY-FMT-010
+  rule: Unencrypted files report encrypted=false
+  prediction: apr debug on plain APR file shows encrypted=false
+  test: |
+    Create unencrypted APR file, run apr debug, parse flags.
+    encrypted, compressed, signed must all be false.
+  if_fails: Debug shows 'compressed, signed, encrypted' flags on unencrypted file (GH-653)
+- id: FALSIFY-FMT-011
+  rule: All GGUF metadata keys exposed
+  prediction: apr inspect --json exposes all 26 standard GGUF metadata keys
+  test: |
+    Load well-known GGUF model, count keys in inspect --json output.
+    Must expose >= 20 keys (not just 4).
+  if_fails: inspect --json exposes only 4 of 26 GGUF metadata keys (GH-660)
+
+kani_harnesses:
+- id: KANI-FMT-001
+  obligation: Magic byte detection never panics
+  property: "for all byte slices: no panic"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_magic_no_panic
+- id: KANI-FMT-002
+  obligation: Header allocation is bounded
+  property: alloc < file_size + cap
+  bound: 16
+  strategy: bounded_int
+  harness: verify_header_alloc_bounded
+- id: KANI-FMT-003
+  obligation: Dtype coercion preserves shape
+  property: output.shape == input.shape
+  bound: 8
+  strategy: exhaustive
+  harness: verify_coercion_shape
+- id: KANI-FMT-004
+  obligation: Truncation detected
+  property: "size mismatch => Err"
+  bound: 8
+  strategy: exhaustive
+  harness: verify_truncation_detected
+- id: KANI-FMT-005
+  obligation: Provenance blocks when enforced and missing
+  property: "enforce && !hash => Err"
+  bound: 4
+  strategy: exhaustive
+  harness: verify_provenance_enforcement
+- id: KANI-FMT-006
+  obligation: Strict validation is read-only
+  property: no model mutation
+  bound: 4
+  strategy: exhaustive
+  harness: verify_strict_readonly
+- id: KANI-FMT-007
+  obligation: INVALID validation exits non-zero
+  property: 'validate(m) == INVALID => exit != 0'
+  bound: 8
+  strategy: exhaustive
+  harness: verify_validate_exit_code
+- id: KANI-FMT-008
+  obligation: Unencrypted files report encrypted=false
+  property: 'no_encryption => flags.encrypted == false'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_flag_integrity
+- id: KANI-FMT-009
+  obligation: All GGUF metadata keys exposed
+  property: 'inspect.keys.len() >= model.metadata.keys.len()'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_metadata_completeness
+
+qa_gate:
+  id: F-FMT-GATE
+  name: Format Safety Contract
+  description: Quality gate for model format parsing security
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 11 falsification tests pass
+  falsification: FALSIFY-FMT-001 through FALSIFY-FMT-011
+
+toyota_way_principles:
+  jidoka: >
+    Any format validation failure stops the pipeline immediately.
+    Truncated files, OOM headers, and NaN tensors are hard errors.
+    No silent fallback to "best effort" loading.
+  poka_yoke: >
+    Magic bytes prevent format confusion. CRC32 (APR) prevents bit rot.
+    --enforce-provenance is default-on. --strict rejects silently-bad models.
+  genchi_genbutsu: >
+    Falsification tests use real malformed files: truncated, OOM headers,
+    NaN-injected, provenance-stripped. Not mocks.

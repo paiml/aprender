@@ -1,0 +1,71 @@
+---
+# Baseline: CUDA Transformer Trainer Profile (KAIZEN-047)
+# Measured on RTX 4090, 2026-03-04
+#
+# Model: 350M-class (24L, 1024H, 16 heads, intermediate=4096, vocab=32000)
+# Sequence length: 128
+# Steps: 20 (steady-state, excludes first JIT step)
+# Build: release, --features cuda
+
+hardware:
+  gpu: "NVIDIA GeForce RTX 4090"
+  vram_gb: 25.2
+  pcie: "Gen4 x16"
+
+model:
+  hidden_size: 1024
+  intermediate_size: 4096
+  num_hidden_layers: 24
+  num_attention_heads: 16
+  vocab_size: 32000
+  max_seq_len: 128
+
+results:
+  steps: 20
+  avg_step_ms: 447.6
+  p50_step_ms: 442.0
+  p95_step_ms: 492.6
+
+  phases:
+    embed:     { pct: 0.0,  avg_ms: 0.03 }
+    h2d:       { pct: 0.1,  avg_ms: 0.32 }
+    forward:   { pct: 17.3, avg_ms: 77.37 }
+    norm_lm:   { pct: 5.6,  avg_ms: 25.23 }
+    loss:      { pct: 9.1,  avg_ms: 40.65 }
+    grad_h2d:  { pct: 0.3,  avg_ms: 1.36 }
+    lm_bwd:    { pct: 20.7, avg_ms: 92.77 }
+    norm_bwd:  { pct: 0.3,  avg_ms: 1.14 }
+    blk_bwd:   { pct: 13.7, avg_ms: 61.37 }
+    embed_bwd: { pct: 32.6, avg_ms: 145.99 }
+    opt:       { pct: 0.0,  avg_ms: 0.00 }
+    other:     { pct: 0.3,  avg_ms: 1.42 }
+
+analysis:
+  top_bottlenecks:
+    - phase: embed_bwd
+      pct: 32.6
+      root_cause: "CPU scatter-add into 32K×1024 embedding weight gradient"
+      optimization: "Move embedding gradient accumulation to GPU (cuBLAS scatter-add or custom kernel)"
+      estimated_savings_pct: 25-30
+
+    - phase: lm_bwd
+      pct: 20.7
+      root_cause: "LM head backward (2 GEMMs on V×H matrix) + stream.synchronize() for gradient clipping"
+      optimization: "GPU-side gradient L2 norm (eliminate sync + CPU download for clip_scale)"
+      estimated_savings_pct: 5-10
+
+    - phase: loss
+      pct: 9.1
+      root_cause: "CPU softmax over 128×32000 = 4M elements"
+      optimization: "Move cross-entropy + softmax backward to GPU"
+      estimated_savings_pct: 7-9
+
+  not_bottlenecks:
+    - "h2d transfers: 0.6% — pre-allocating GPU buffers was low-ROI"
+    - "norm_bwd: 0.3% — RMSNorm backward is negligible"
+    - "embed forward: 0.0% — CPU embedding lookup is fast"
+
+  previous_kaizen_impact:
+    KAIZEN-044: "host-buffer-reuse: saved CPU alloc churn, but CPU alloc was <1% of step"
+    KAIZEN-045: "backward-scratch-prealloc: saved cuMemAlloc, but GPU alloc was <1% of step"
+    KAIZEN-046: "instruct-clone-removal: saved String clones, not in this hot path"

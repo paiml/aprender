@@ -1,0 +1,176 @@
+version: 1.0.0
+target_crate: duende-core
+bindings:
+# === Daemon Lifecycle ===
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: init
+  module_path: duende_core::daemon::Daemon
+  status: implemented
+  notes: Validates config, allocates resources, fail-fast on misconfiguration
+
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: run
+  module_path: duende_core::daemon::Daemon
+  status: implemented
+  notes: Main execution loop, checks should_shutdown(), returns ExitReason
+
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: shutdown
+  module_path: duende_core::daemon::Daemon
+  status: implemented
+  notes: Graceful shutdown within timeout, releases resources
+
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: is_terminal
+  module_path: duende_core::types::DaemonStatus
+  status: implemented
+  notes: Returns true for Stopped and Failed states only
+
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: is_active
+  module_path: duende_core::types::DaemonStatus
+  status: implemented
+  notes: Returns true for Running and Paused states only
+
+- contract: agent-orchestration-v1.yaml
+  equation: daemon_lifecycle
+  function: can_signal
+  module_path: duende_core::types::DaemonStatus
+  status: implemented
+  notes: Returns true for Running, Paused, Stopping states
+
+# === Signal Handling ===
+- contract: agent-orchestration-v1.yaml
+  equation: signal_handling
+  function: try_recv_signal
+  module_path: duende_core::daemon::DaemonContext
+  status: implemented
+  notes: Non-blocking signal receive, auto-sets shutdown for Term|Int|Quit
+
+- contract: agent-orchestration-v1.yaml
+  equation: signal_handling
+  function: recv_signal
+  module_path: duende_core::daemon::DaemonContext
+  status: implemented
+  notes: Async blocking signal receive, auto-sets shutdown for termination signals
+
+- contract: agent-orchestration-v1.yaml
+  equation: signal_handling
+  function: as_i32
+  module_path: duende_core::types::Signal
+  status: implemented
+  notes: Bijective mapping from Signal to Unix signal number
+
+- contract: agent-orchestration-v1.yaml
+  equation: signal_handling
+  function: from_i32
+  module_path: duende_core::types::Signal
+  status: implemented
+  notes: Returns Some(Signal) for valid numbers, None otherwise
+
+# === Restart Policy ===
+- contract: agent-orchestration-v1.yaml
+  equation: restart_policy
+  function: should_restart
+  module_path: duende_core::manager::RestartPolicy
+  status: implemented
+  notes: Policy-based restart decision from ExitReason and restart count
+
+- contract: agent-orchestration-v1.yaml
+  equation: restart_policy
+  function: restart_delay
+  module_path: duende_core::manager::RestartPolicy
+  status: implemented
+  notes: Returns delay before restart, 1s default or exponential backoff
+
+- contract: agent-orchestration-v1.yaml
+  equation: restart_policy
+  function: delay_for
+  module_path: duende_core::manager::BackoffConfig
+  status: implemented
+  notes: Exponential backoff clamped to max_delay
+
+# === RED Metrics ===
+- contract: agent-orchestration-v1.yaml
+  equation: red_metrics
+  function: record_request
+  module_path: duende_core::metrics::DaemonMetrics
+  status: implemented
+  notes: Atomic increment of request counter
+
+- contract: agent-orchestration-v1.yaml
+  equation: red_metrics
+  function: error_rate
+  module_path: duende_core::metrics::DaemonMetrics
+  status: implemented
+  notes: errors / requests, 0.0 when no requests
+
+- contract: agent-orchestration-v1.yaml
+  equation: red_metrics
+  function: snapshot
+  module_path: duende_core::metrics::DaemonMetrics
+  status: implemented
+  notes: Point-in-time snapshot of all metric counters
+
+- contract: agent-orchestration-v1.yaml
+  equation: red_metrics
+  function: duration_avg
+  module_path: duende_core::metrics::DaemonMetrics
+  status: implemented
+  notes: Average duration, Duration::ZERO when no recordings
+
+# === Manager Registration ===
+- contract: agent-orchestration-v1.yaml
+  equation: manager_registration
+  function: register
+  module_path: duende_core::manager::DaemonManager
+  status: implemented
+  notes: Registers daemon with unique ID check, returns DaemonId
+
+- contract: agent-orchestration-v1.yaml
+  equation: manager_registration
+  function: unregister
+  module_path: duende_core::manager::DaemonManager
+  status: implemented
+  notes: Removes daemon if not active, errors on active or not found
+
+- contract: agent-orchestration-v1.yaml
+  equation: manager_registration
+  function: count
+  module_path: duende_core::manager::DaemonManager
+  status: implemented
+  notes: Returns number of registered daemons
+
+- contract: agent-orchestration-v1.yaml
+  equation: manager_registration
+  function: shutdown_all
+  module_path: duende_core::manager::DaemonManager
+  status: implemented
+  notes: Sends Term signal to all daemons, tolerates individual failures
+
+# === Error Classification ===
+- contract: agent-orchestration-v1.yaml
+  equation: error_classification
+  function: is_recoverable
+  module_path: duende_core::error::DaemonError
+  status: implemented
+  notes: HealthCheck, ResourceLimit, PolicyViolation are recoverable
+
+- contract: agent-orchestration-v1.yaml
+  equation: error_classification
+  function: is_fatal
+  module_path: duende_core::error::DaemonError
+  status: implemented
+  notes: Init and Internal errors are fatal
+
+critical_path:
+- daemon_lifecycle
+- signal_handling
+- restart_policy
+- red_metrics
+- manager_registration

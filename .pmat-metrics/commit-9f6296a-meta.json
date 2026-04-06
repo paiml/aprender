@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-061",
+  "prompt": "Add Qwen2 and Qwen3 model-specific contracts",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-20T08:06:38.002160893Z"
+}

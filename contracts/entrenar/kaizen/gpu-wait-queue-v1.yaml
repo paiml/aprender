@@ -1,0 +1,175 @@
+---
+# Contract: GPU Wait Queue (GPU-SHARE-003)
+#
+# Polling-based wait-for-VRAM when GPU is busy. Jobs block until
+# sufficient VRAM becomes available or timeout expires.
+#
+# Five-Whys:
+#   Why 1: User launches second QLoRA job while first is running — gets OOM error
+#   Why 2: VRAM guard correctly rejects, but user must manually retry
+#   Why 3: No queuing mechanism — jobs are reject-or-succeed
+#   Why 4: Training jobs are long-running — user wants fire-and-forget
+#   Why 5: Need --wait-gpu flag that polls ledger until VRAM frees up
+
+contract: gpu-wait-queue-v1
+version: "1.0.0"
+status: draft
+depends_on:
+  - "vram-ledger-v1.yaml"
+  - "vram-guard-v1.yaml"
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Polling-based VRAM wait queue with timeout and progress reporting"
+  references:
+    - "GPU Sharing Spec v2 §1.2 — Wait-and-Retry Mode"
+    - "Exponential backoff — standard retry pattern"
+
+equations:
+  poll_interval:
+    formula: "interval = min(base_interval × 2^attempt, max_interval)"
+    lean_theorem: Theorems.Poll_Interval
+    domain: "base_interval = 30s, max_interval = 300s, attempt ∈ [0, ∞)"
+    codomain: "interval ∈ [30s, 300s]"
+    invariants:
+      - "Exponential backoff reduces flock contention under high load"
+      - "Capped at 5 minutes to maintain user responsiveness"
+      - "First poll is immediate (attempt=0, interval=30s)"
+
+  timeout_bound:
+    formula: "total_wait <= timeout"
+    lean_theorem: Theorems.Timeout_Bound
+    domain: "timeout = 3600s (default), configurable via --timeout"
+    codomain: "Result<Reservation, GpuError::Timeout>"
+    invariants:
+      - "Uses Instant::now() (monotonic), not SystemTime"
+      - "Timeout checked BEFORE each poll sleep, not after"
+      - "GpuError::Timeout includes budget_mb and available_mb for diagnostics"
+
+  fairness_via_expiry:
+    formula: "If job A waits, job B holds reservation with lease L, then A succeeds within max(L, timeout)"
+    lean_theorem: Theorems.Fairness_Via_Expiry
+    domain: "A: waiting job, B: holding job, L: lease_duration"
+    invariants:
+      - "Not strict FIFO — first job to poll after VRAM frees wins"
+      - "Acceptable: N<=3 concurrent waiters, flock serializes"
+      - "Lease expiry guarantees progress if holding job crashes"
+
+  progress_report:
+    formula: "report every poll: needed_mb, available_mb, reserved_mb, wait_elapsed, timeout_remaining"
+    lean_theorem: Theorems.Progress_Report
+    domain: "stderr"
+    invariants:
+      - "Human-readable format with time elapsed and remaining"
+      - "Machine-parseable when --json flag set"
+
+proof_obligations:
+  - type: bound
+    property: "Timeout guarantee"
+    formal: "wait_for_vram() returns within timeout + max_interval (worst case: sleep starts just before timeout)"
+    applies_to: all
+
+  - type: invariant
+    property: "Progress under lease expiry"
+    formal: "If total free VRAM >= budget_mb after all expired leases pruned, wait_for_vram() succeeds"
+    applies_to: all
+
+  - type: bound
+    property: "Poll interval bounded"
+    formal: "Sleep duration per iteration ∈ [base_interval, max_interval]"
+    applies_to: all
+
+  - type: invariant
+    property: "Dead PID cleanup on each poll"
+    formal: "Each poll iteration calls ledger.prune_dead() before checking capacity"
+    applies_to: all
+
+  - type: invariant
+    property: "No busy-wait"
+    formal: "CPU usage during wait < 1% (sleeping between polls)"
+    applies_to: all
+
+  - type: invariant
+    property: "Graceful interrupt"
+    formal: "SIGINT during wait_for_vram() propagates — no zombie wait loops"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-WQ-001
+    rule: "Timeout guarantee"
+    prediction: "wait_for_vram(budget=total, timeout=5s) returns Err(Timeout) within 6s"
+    test: "Pre-fill ledger to capacity. Call wait_for_vram with 5s timeout. Measure wall-clock."
+    if_fails: "Timeout check not performed before sleep, or max_interval exceeds timeout"
+
+  - id: FALSIFY-WQ-002
+    rule: "Progress under lease expiry"
+    prediction: "Job waiting for VRAM succeeds after holding job's lease expires"
+    test: "Reservation with lease=2s. Wait job with budget fitting in freed space. Wait succeeds within 3 poll cycles."
+    if_fails: "Lease expiry not checked during poll, or prune_dead not called"
+
+  - id: FALSIFY-WQ-003
+    rule: "Poll interval bounded"
+    prediction: "After 10 poll iterations, interval does not exceed max_interval"
+    test: "Mock ledger always full. Run wait_for_vram with large timeout. Capture sleep durations via profiler."
+    if_fails: "Exponential backoff not capped"
+
+  - id: FALSIFY-WQ-004
+    rule: "Dead PID cleanup during poll"
+    prediction: "Waiting job succeeds after holding job's PID dies"
+    test: "Fork holder that reserves and exits. Waiter calls wait_for_vram. Succeeds on next poll."
+    if_fails: "prune_dead() not called in poll loop"
+
+  - id: FALSIFY-WQ-005
+    rule: "No busy-wait"
+    prediction: "CPU usage < 1% during 30s wait"
+    test: "Monitor /proc/self/stat utime during wait_for_vram with 30s budget. User CPU < 300ms."
+    if_fails: "Sleep missing or poll interval too short"
+
+  - id: FALSIFY-WQ-006
+    rule: "Graceful interrupt"
+    prediction: "SIGINT during wait causes immediate return with appropriate error"
+    test: "Start wait_for_vram in thread, send SIGINT after 2s. Function returns within 1s of signal."
+    if_fails: "Sleep not interruptible or signal handler not installed"
+
+affected_files:
+  - path: "src/gpu/wait.rs"
+    functions:
+      - "wait_for_vram: poll loop with exponential backoff"
+      - "WaitConfig: timeout, base_interval, max_interval"
+    change: "New module: polling wait queue for VRAM availability"
+
+  - path: "src/gpu/ledger.rs"
+    functions:
+      - "VramLedger::available_mb: ledger-aware free VRAM query"
+    change: "Add helper for wait loop to query available budget"
+
+qa_gate:
+  id: F-WQ-001
+  name: "GPU Wait Queue Contract"
+  description: "Polling-based VRAM wait with timeout and progress reporting"
+  checks:
+    - "timeout_guarantee"
+    - "progress_under_lease_expiry"
+    - "poll_interval_bounded"
+    - "dead_pid_cleanup_during_poll"
+    - "no_busy_wait"
+
+profiling:
+  brick_phases:
+    - name: "wait_poll"
+      description: "Single poll iteration (lock + read + check + unlock)"
+    - name: "wait_sleep"
+      description: "Thread::sleep duration between polls"
+    - name: "wait_total"
+      description: "Total wall-clock from first poll to reservation acquired"
+
+tracing:
+  trace_steps:
+    - name: "WaitPoll"
+      metadata: "attempt={n} needed={budget_mb}MB available={avail_mb}MB"
+    - name: "WaitSuccess"
+      metadata: "waited={elapsed_s}s attempts={n}"
+    - name: "WaitTimeout"
+      metadata: "timeout={timeout_s}s needed={budget_mb}MB available={avail_mb}MB"

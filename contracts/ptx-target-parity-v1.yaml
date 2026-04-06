@@ -1,0 +1,137 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-08'
+  author: PAIML Engineering
+  description: PTX target must match device compute capability — no hardcoded SM targets in runtime kernel generation
+  references:
+  - 'PMAT-044: Batched decode state corruption from PTX JIT error 700'
+  - trueno-gpu Kernel trait (src/kernels/mod.rs) — emit_ptx_for_target()
+  - realizar CudaKernels (src/cuda/kernel_generator.rs) — sm_target field
+  - realizar GpuProfile (src/cuda/gpu_profile.rs) — sm_target from compute_capability()
+  - CUDA PTX ISA — .target directive must be <= device SM version for JIT compilation
+equations:
+  target_parity:
+    formula: ptx_target == device_compute_capability
+    domain: ptx_target in {sm_70, sm_75, sm_80, sm_86, sm_87, sm_89, sm_90, ...}, device_cc from cuDeviceGetAttribute
+    codomain: Boolean
+    invariants:
+    - Every PTX module loaded at runtime has .target matching the device
+    - CudaKernels.sm_target is set from GpuProfile.sm_target at executor init
+    - GpuProfile.sm_target is set from context.compute_capability() at executor init
+    - No runtime PTX generation path calls emit_ptx() (hardcoded sm_70)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Target_Parity
+  no_hardcoded_targets:
+    formula: count(emit_ptx() calls in executor/) == 0
+    domain: All .rs files in src/cuda/executor/
+    invariants:
+    - All kernel PTX uses emit_ptx_for_target(sm_target) or generate_ptx(kernel_type)
+    - generate_ptx() reads sm_target from CudaKernels struct, never hardcodes
+    - Raw PTX string literals may use sm_70 only for basic instructions (no SM-specific features)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.No_Hardcoded_Targets
+  jit_compilation_success:
+    formula: cuModuleLoadDataEx(ptx, target=device_sm) returns CUDA_SUCCESS
+    domain: All PTX modules loaded during model serving
+    invariants:
+    - Error 700 (CUDA_ERROR_INVALID_SOURCE) must never occur at runtime
+    - Error 222 (CUDA_ERROR_INVALID_PTX) must never occur at runtime
+    - PTX JIT failure corrupts CUDA context — all subsequent requests fail silently
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Jit_Compilation_Success
+proof_obligations:
+- type: invariant
+  property: Target parity
+  formal: 'for all kernel K loaded at runtime: K.ptx_target == executor.gpu_profile.sm_target'
+  applies_to: all
+- type: invariant
+  property: No hardcoded emit_ptx in executor
+  formal: grep -c 'emit_ptx()' src/cuda/executor/**/*.rs == 0
+  applies_to: all
+- type: invariant
+  property: CudaKernels constructed with device target
+  formal: CudaKernels::with_target(gpu_profile.sm_target) at executor init
+  applies_to: all
+- type: invariant
+  property: JIT success for all kernels
+  formal: 'for all K: compile_ptx(K.ptx) == Ok(_)'
+  applies_to: all
+kani_harnesses:
+- id: KANI-PTP-001
+  obligation: PTP-INV-001
+  property: sm_target format valid
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_sm_target_format
+- id: KANI-PTP-002
+  obligation: PTP-INV-002
+  property: No emit_ptx in generate path
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_no_hardcoded_emit
+- id: KANI-PTX_TA-003
+  obligation: Target parity
+  property: Target parity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PTX_TA-004
+  obligation: No hardcoded emit_ptx in executor
+  property: No hardcoded emit_ptx in executor
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PTX_TA-005
+  obligation: CudaKernels constructed with device target
+  property: CudaKernels constructed with device target
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PTX_TA-006
+  obligation: JIT success for all kernels
+  property: JIT success for all kernels
+  bound: 8
+  strategy: exhaustive
+falsification_tests:
+- id: FALSIFY-PTP-001
+  rule: No hardcoded emit_ptx in executor runtime path
+  prediction: Zero occurrences of .emit_ptx() in src/cuda/executor/
+  test: grep -r '\.emit_ptx()' src/cuda/executor/ | wc -l == 0
+  if_fails: Kernel PTX will use sm_70 instead of device target — JIT error 700 on some GPUs
+- id: FALSIFY-PTP-002
+  rule: CudaKernels uses device target
+  prediction: CudaKernels::with_target() called with gpu_profile.sm_target
+  test: grep 'CudaKernels::new()' src/cuda/executor/core.rs returns 0 matches
+  if_fails: CudaKernels defaults to sm_70 — all generated PTX targets wrong SM version
+- id: FALSIFY-PTP-003
+  rule: generate_ptx threads target
+  prediction: 'All generate_*_ptx helper functions accept target: &str parameter'
+  test: 'grep ''fn generate_.*_ptx(kernel_type: &KernelType)'' returns 0 matches (all should have target param)'
+  if_fails: Helper function generates PTX with hardcoded target — target param dropped in refactor
+- id: FALSIFY-PTP-004
+  rule: PTX JIT success on multi-GPU fleet
+  prediction: apr serve starts without PTX JIT errors on sm_87 (Jetson) and sm_89 (4060/4090)
+  test: Deploy with VERBOSE=1, grep server log for 'PTX.*failed' — 0 matches
+  if_fails: PTX targets wrong SM — JIT error 700 corrupts CUDA context, all requests return 0 tokens
+- id: FALSIFY-PTP-005
+  rule: Batched→single transition preserves correctness
+  prediction: c=4 batch followed by c=1 request produces >0 output tokens
+  test: probador load c=4 for 10s, then c=1 for 10s — verify c=1 avg_tokens > 0
+  if_fails: 'State corruption: stale CUDA graph, non-zero batched_kv_stride, or PTX JIT failure'
+qa_gate:
+  id: F-PTP-001
+  name: PTX Target Parity Contract
+  description: Ensures all runtime PTX matches device compute capability — no hardcoded SM targets
+  checks:
+  - no_hardcoded_emit_ptx
+  - cuda_kernels_with_target
+  - generate_ptx_threads_target
+  - ptx_jit_success_multi_gpu
+  - batched_single_transition
+  pass_criteria: All 5 falsification tests pass (PTP-001 through PTP-005)
+  falsification: Revert CudaKernels to ::new() to break PTP-002; add .emit_ptx() call to break PTP-001

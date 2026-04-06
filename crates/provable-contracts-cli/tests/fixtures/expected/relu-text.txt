@@ -1,0 +1,11 @@
+Equations for relu-kernel-v1
+======================================================
+
+  relu
+    formula:  y_i = max(0, x_i)
+    domain:   x ∈ ℝ^n
+    codomain: y ∈ [0, ∞)^n
+    invariants:
+      - y_i ≥ 0 for all i
+      - relu(relu(x)) = relu(x)
+

@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-090",
+  "prompt": "entrenar: A-score enforcement — binding coverage 76%→90%",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T16:23:10.259109955Z"
+}

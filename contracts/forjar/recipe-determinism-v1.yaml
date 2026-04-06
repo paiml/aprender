@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-24'
+  author: PAIML Engineering
+  description: Recipe determinism — deterministic expansion and input validation
+  references:
+  - Dolstra (2006) The Purely Functional Software Deployment Model (Nix thesis)
+equations:
+  expand_recipe:
+    formula: expand(id, recipe, machine, inputs, ext_deps) = namespaced resources
+      with resolved templates
+    domain: recipe_id ∈ String, recipe_file ∈ RecipeFile, machine ∈ MachineTarget,
+      inputs ∈ HashMap, ext_deps ∈ [String]
+    codomain: Result<IndexMap<String, Resource>, String>
+    invariants:
+    - 'Deterministic: same inputs → same expanded resources'
+    - All resource IDs are namespaced as '{recipe_id}/{resource_name}'
+    - External deps only injected into first resource
+    - Machine target propagated to all inner resources
+    preconditions:
+    - '!config.is_empty()'
+    - '!recipe_name.is_empty()'
+    lean_theorem: Theorems.Expand_Recipe
+  validate_inputs:
+    formula: validate(recipe, provided) = type-checked resolved inputs or Err
+    domain: recipe ∈ RecipeMetadata, provided ∈ HashMap<String, Value>
+    codomain: Result<HashMap<String, String>, String>
+    invariants:
+    - Missing required input → Err
+    - Default values used when input not provided
+    - 'Type validation: int respects min/max, path starts with /, enum in choices'
+    preconditions:
+    - inputs.len() > 0
+    - '!recipe_name.is_empty()'
+    lean_theorem: Theorems.Validate_Inputs
+  validate_input_type:
+    formula: validate_type(name, type, value, decl) = Ok(string_val) | Err(msg)
+    domain: name ∈ String, type ∈ {string, int, bool, path, enum}, value ∈ Value,
+      decl ∈ RecipeInput
+    codomain: Result<String, String>
+    invariants:
+    - int with value < min → Err
+    - int with value > max → Err
+    - path not starting with / → Err
+    - enum value not in non-empty choices → Err
+    preconditions:
+    - '!input_name.is_empty()'
+    - '!expected_type.is_empty()'
+    lean_theorem: Theorems.Validate_Input_Type
+proof_obligations:
+- type: invariant
+  property: Expansion determinism
+  formal: '∀ inputs: expand(id, r, m, inputs, deps) = expand(id, r, m, inputs, deps)'
+  applies_to: all
+- type: bound
+  property: Integer bounds enforced
+  formal: '∀ n, decl: decl.min ≤ n ≤ decl.max ⟹ Ok(_); n < decl.min ∨ n > decl.max
+    ⟹ Err(_)'
+  applies_to: all
+- type: invariant
+  property: Path validation
+  formal: '∀ s: validate_input_type(''path'', s) = Ok(_) ⟹ s.starts_with(''/'')'
+  applies_to: all
+- type: invariant
+  property: External deps placement
+  formal: Only first resource in expansion receives external_depends_on
+  applies_to: all
+enforcement:
+  determinism:
+    description: Same inputs must always produce same expansion
+    check: contract_tests::FALSIFY-RD-001
+    severity: ERROR
+  int_bounds:
+    description: Integer inputs must respect min/max bounds
+    check: contract_tests::FALSIFY-RD-002
+    severity: ERROR
+  path_validation:
+    description: Path inputs must be absolute
+    check: contract_tests::FALSIFY-RD-003
+    severity: ERROR
+  external_deps:
+    description: External deps only on first resource
+    check: contract_tests::FALSIFY-RD-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RD-001
+  rule: Determinism
+  prediction: expand_recipe(same args) = expand_recipe(same args)
+  test: proptest with random inputs, call twice
+  if_fails: Non-deterministic iteration in IndexMap or HashMap
+- id: FALSIFY-RD-002
+  rule: Integer bounds
+  prediction: validate_int rejects values outside [min, max]
+  test: proptest with random integers and random bounds
+  if_fails: Bound comparison uses wrong operator
+- id: FALSIFY-RD-003
+  rule: Path validation
+  prediction: validate_input_type('path', s) rejects non-absolute paths
+  test: proptest with random non-absolute path strings
+  if_fails: Missing starts_with('/') check
+- id: FALSIFY-RD-004
+  rule: External deps placement
+  prediction: Only first expanded resource has external deps
+  test: proptest with random external dep lists
+  if_fails: External deps injected into wrong resource
+kani_harnesses:
+- id: KANI-RD-001
+  obligation: Expansion determinism
+  strategy: bounded_int
+  solver: cadical
+  bound: 8
+  description: Call expand twice with same args and verify identical output
+- id: KANI-RD-002
+  obligation: Integer bounds enforced
+  strategy: bounded_int
+  solver: cadical
+  bound: 16
+  description: Verify validate_int rejects out-of-range values
+- id: KANI-RD-003
+  obligation: Path validation
+  strategy: bounded_int
+  solver: cadical
+  bound: 8
+  description: Verify validate_input_type rejects non-absolute paths
+- id: KANI-RD-004
+  obligation: External deps placement
+  strategy: bounded_int
+  solver: cadical
+  bound: 8
+  description: Verify only first resource gets external_depends_on
+qa_gate:
+  id: F-RD-001
+  name: Recipe Determinism Contract
+  description: Deterministic recipe expansion quality gate
+  checks:
+  - determinism
+  - int_bounds
+  - path_validation
+  - external_deps
+  pass_criteria: All 4 falsification tests pass
+  falsification: Remove alphabetical ordering from expanded resources

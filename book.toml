@@ -1,0 +1,19 @@
+[book]
+title = "provable-contracts"
+authors = ["PAIML Engineering"]
+language = "en"
+src = "book/src"
+
+[build]
+build-dir = "book/html"
+
+[preprocessor.katex]
+after = ["links"]
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+default-theme = "navy"
+git-repository-url = "https://github.com/paiml/provable-contracts"
+additional-js = ["mermaid.min.js", "mermaid-init.js"]

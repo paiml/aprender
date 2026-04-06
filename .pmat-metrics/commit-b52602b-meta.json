@@ -1,0 +1,31 @@
+{
+  "sha": "b52602b",
+  "timestamp": "2026-03-25T16:00:04.266135602+00:00",
+  "composite": 64.70967988156937,
+  "grade": "D",
+  "sub_scores": {
+    "rps": 55.31962316863486,
+    "comply": 58.0,
+    "coverage": 50.0,
+    "muda_inv": 96.04444444444445,
+    "evoscore": 50.0,
+    "dbc": 93.89005681818182,
+    "file_health": 100.0,
+    "pv_lint": 42.50254589951512
+  },
+  "rps_categories": {
+    "Reproducibility": 42.66666666666667,
+    "Testing Excellence": 25.0,
+    "GPU/SIMD Quality": 0.0,
+    "Rust Tooling & CI/CD": 51.53846153846153,
+    "Dependency Health": 50.0,
+    "Documentation": 53.333333333333336,
+    "Performance & Benchmarking": 30.0,
+    "Formal Verification": 43.73469322481007,
+    "Known Defects": 100.0,
+    "Build Performance": 80.0,
+    "Code Quality": 76.92307692307693
+  },
+  "comply_errors": 3,
+  "comply_warnings": 4
+}

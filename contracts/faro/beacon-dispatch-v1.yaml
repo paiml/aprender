@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Spanish-language search engine — crawl, index, rank pipeline correctness
+  references:
+  - 'Robertson & Zaragoza (2009) The Probabilistic Relevance Framework: BM25 and Beyond'
+  - 'Koster (1996) A Method for Web Robots Control (robots.txt)'
+equations:
+  bm25_ranking:
+    formula: 'score(q, d) = sum_{t in q} IDF(t) * (tf(t,d) * (k1+1)) / (tf(t,d) + k1 * (1 - b + b * |d|/avgdl))'
+    domain: query ∈ String, document ∈ Document, corpus ∈ Index
+    codomain: f64 where score >= 0.0
+    invariants:
+    - 'Non-negative: score >= 0.0 for all query-document pairs'
+    - 'Monotonic in tf: more occurrences of query term never decrease score'
+    - 'Empty query yields score 0.0'
+    - 'Document not containing any query term yields score 0.0'
+    preconditions:
+    - k1 > 0.0 (typically 1.2)
+    - 0.0 <= b <= 1.0 (typically 0.75)
+    - avgdl > 0.0
+    lean_theorem: Theorems.BM25_Ranking
+  robots_compliance:
+    formula: 'allowed(url, rules) = !(exists rule in rules: rule.disallows(url.path))'
+    domain: url ∈ Url, rules ∈ RobotsTxt
+    codomain: bool
+    invariants:
+    - 'Disallow / blocks all paths'
+    - 'Empty rules allows all paths'
+    - 'Most specific rule wins'
+    - 'Crawl-delay is respected when present'
+    preconditions:
+    - url is valid and absolute
+    - rules parsed from robots.txt without error
+    lean_theorem: Theorems.Robots_Compliance
+  index_insert_retrieve:
+    formula: 'retrieve(insert(index, doc)) ⊇ {doc} for any query matching doc content'
+    domain: index ∈ Index, doc ∈ Document
+    codomain: Vec<SearchResult>
+    invariants:
+    - 'Inserted document is findable by its content terms'
+    - 'Index size increases by 1 after insert'
+    - 'Duplicate document (same URL) updates, does not double-count'
+    preconditions:
+    - doc.content is non-empty
+    - doc.url is valid
+    lean_theorem: Theorems.Index_Insert_Retrieve
+  tokenize_normalization:
+    formula: 'tokenize(text) = normalize(split(lowercase(nfd(text))))'
+    domain: text ∈ String (UTF-8, any language)
+    codomain: Vec<String> where all tokens are lowercase, NFC-normalized
+    invariants:
+    - 'Empty text yields empty token list'
+    - 'Tokens are lowercase after normalization'
+    - 'Stop words removed when configured'
+    - 'Accented characters normalized via Unicode NFD/NFC'
+    - 'Token count <= word count of input'
+    preconditions:
+    - text is valid UTF-8
+    - TokenizerConfig specifies language (es, ca, gl, eu)
+    postconditions:
+    - All returned tokens have length >= min_length and <= max_length
+    - No token contains whitespace
+    lean_theorem: Theorems.Tokenize_Normalization
+proof_obligations:
+- type: invariant
+  property: BM25 score is non-negative
+  formal: '∀ q, d: bm25(q, d) >= 0.0'
+  applies_to: bm25_ranking
+- type: invariant
+  property: Robots.txt compliance
+  formal: '∀ url, rules: disallow_match(url, rules) => !crawl(url)'
+  applies_to: robots_compliance
+- type: invariant
+  property: Index insert-retrieve round trip
+  formal: '∀ doc: doc ∈ retrieve(insert(index, doc), terms(doc))'
+  applies_to: index_insert_retrieve
+enforcement:
+  bm25_nonneg:
+    description: BM25 scores must be non-negative
+    check: contract_tests::FALSIFY-FAR-001
+    severity: ERROR
+  robots_respect:
+    description: Crawler must respect robots.txt disallow rules
+    check: contract_tests::FALSIFY-FAR-002
+    severity: ERROR
+  index_roundtrip:
+    description: Inserted documents must be retrievable
+    check: contract_tests::FALSIFY-FAR-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-FAR-001
+  rule: BM25 non-negativity
+  prediction: bm25(q, d) >= 0.0 for any query and document
+  test: proptest with random queries and documents, verify score >= 0.0
+  if_fails: Negative IDF for very common terms or arithmetic underflow
+- id: FALSIFY-FAR-002
+  rule: Robots compliance
+  prediction: URLs matching Disallow rules are never fetched
+  test: construct robots.txt with Disallow patterns, verify crawler skips them
+  if_fails: Path matching logic ignores robots.txt or fails on edge cases
+- id: FALSIFY-FAR-003
+  rule: Index insert-retrieve roundtrip
+  prediction: After inserting doc d, search for terms in d returns d in results
+  test: insert 100 random documents, search for each by its unique term
+  if_fails: Tokenization or index update bug drops document from results
+- id: FALSIFY-FAR-004
+  rule: Empty query returns no results
+  prediction: bm25("", d) = 0.0 for all documents
+  test: search with empty query string, verify empty result set
+  if_fails: Missing empty-query guard in search pipeline
+kani_harnesses:
+- id: KANI-FAR-001
+  obligation: BM25 non-negativity
+  property: Score is always >= 0.0
+  bound: 16
+  strategy: exhaustive
+  harness: verify_bm25_nonneg
+- id: KANI-FAR-002
+  obligation: Robots compliance
+  property: Disallow rules block matching URLs
+  bound: 8
+  strategy: exhaustive
+  harness: verify_robots_compliance
+- id: KANI-FAR-003
+  obligation: Index insert-retrieve round trip
+  property: Inserted document is retrievable
+  bound: 8
+  strategy: exhaustive
+  harness: verify_index_roundtrip
+qa_gate:
+  id: F-FAR-001
+  name: Beacon Dispatch Contract
+  description: Search engine crawl-index-rank pipeline quality gate
+  checks:
+  - bm25_nonneg
+  - robots_respect
+  - index_roundtrip
+  pass_criteria: All 4 falsification tests pass
+  falsification: Set k1 to -1.0 and verify BM25 non-negativity test catches it

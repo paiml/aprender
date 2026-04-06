@@ -1,0 +1,172 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: PagedAttention block table invariants — virtual memory-inspired KV cache management for efficient LLM serving
+    with copy-on-write fork semantics
+  references:
+  - Kwon et al. (2023) Efficient Memory Management for Large Language Model Serving with PagedAttention. SOSP. arXiv:2309.06180
+  - vLLM project — https://github.com/vllm-project/vllm
+  - 'Dao et al. (2022) FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness'
+  depends_on:
+  - paged-kv-cache-v1
+  - flash-attention-v1
+  - attention-kernel-v1
+equations:
+  block_allocation:
+    formula: "Physical block allocation for logical KV cache pages:\n  For a sequence of length S with block size B:\n   \
+      \ num_logical_blocks = ceil(S / B)\n    For each logical block l_i (i = 0..num_logical_blocks-1):\n      physical_block[i]\
+      \ = allocate_from_free_pool()\n    block_table[seq_id] = [physical_block[0], ..., physical_block[n-1]]\n  KV data for\
+      \ position p stored at:\n    physical_addr = block_table[seq_id][p / B] * B + (p mod B)\n"
+    domain: S ∈ ℤ+ — sequence length; B ∈ {16, 32, 64, 128} — block size; free_pool ⊂ [0, total_blocks)
+    codomain: block_table[seq_id] ∈ [0, total_blocks)^{ceil(S/B)}
+    invariants:
+    - Each allocated physical block is removed from free pool
+    - free_blocks + allocated_blocks = total_blocks (conservation)
+    - Block table grows incrementally as sequence length increases
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Block_Allocation
+  block_table_lookup:
+    formula: "Translate logical position to physical memory address:\n  Given sequence seq_id and token position pos:\n  \
+      \  logical_block_idx = pos / B  (integer division)\n    block_offset = pos mod B\n    physical_block_id = block_table[seq_id][logical_block_idx]\n\
+      \    physical_slot = physical_block_id * B + block_offset\n  Read K[pos] from kv_cache[physical_slot].key\n  Read V[pos]\
+      \ from kv_cache[physical_slot].value\n"
+    domain: seq_id ∈ active_sequences; pos ∈ [0, seq_len(seq_id)); B = block_size
+    codomain: physical_slot ∈ [0, total_blocks * B)
+    invariants:
+    - 'Bijective for active sequences: distinct (seq_id, pos) maps to distinct physical_slot'
+    - physical_slot < total_blocks * B (within allocated memory)
+    - Lookup is O(1) — single table index + arithmetic
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Block_Table_Lookup
+  copy_on_write:
+    formula: "Fork sequence with copy-on-write (CoW) block sharing:\n  fork(parent_seq, child_seq):\n    child.block_table\
+      \ = copy(parent.block_table)  (shallow copy — same physical blocks)\n    For each shared block b:\n      ref_count[b]\
+      \ += 1\n  On write to position p in child_seq:\n    If ref_count[block_table[child][p/B]] > 1:\n      new_block = allocate_from_free_pool()\n\
+      \      copy_block_data(old_block, new_block)\n      block_table[child][p/B] = new_block\n      ref_count[old_block]\
+      \ -= 1\n"
+    domain: 'parent_seq, child_seq ∈ active_sequences; ref_count: block_id -> ℤ+'
+    codomain: Updated block_table and ref_count
+    invariants:
+    - 'After fork: parent and child share all blocks; ref_count incremented'
+    - 'After CoW write: modified block is exclusive to writer (ref_count == 1)'
+    - Unmodified blocks remain shared (memory efficient)
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Copy_On_Write
+proof_obligations:
+- type: invariant
+  property: No two active sequences share a mutable block
+  formal: If ref_count[b] > 1 then block b is read-only; writes trigger CoW
+  applies_to: all
+- type: bound
+  property: Physical block index within bounds
+  formal: block_table[seq][i] < total_blocks for all active seq and valid i
+  applies_to: all
+- type: equivalence
+  property: Paged attention output equals standard attention output
+  formal: '|PagedAttn(Q, KV_paged, block_table) - StdAttn(Q, KV_contiguous)| < epsilon'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Block pool conservation
+  formal: free_blocks + sum(allocated_per_seq) = total_blocks at all times
+  applies_to: all
+- type: invariant
+  property: Reference count consistency
+  formal: 'ref_count[b] == |{seq : b in block_table[seq]}| for all blocks b'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: block_table_setup
+    description: Allocate physical blocks for each sequence's logical blocks
+    invariant: Each sequence has ceil(seq_len/B) entries in its block table; all block IDs valid
+  - name: gather_kv
+    description: Use block table to gather K, V vectors from non-contiguous physical blocks
+    invariant: All seq_len positions mapped to valid physical slots; no out-of-bounds access
+  - name: compute_attention
+    description: Compute scaled dot-product attention using gathered K, V
+    invariant: Attention output identical to contiguous-memory attention given same K, V data
+  - name: cow_on_write
+    description: Copy-on-write when appending new tokens to a forked sequence's shared block
+    invariant: 'After CoW: writer has exclusive block; other sequences unaffected; data preserved'
+falsification_tests:
+- id: FALSIFY-PA-001
+  rule: Paged attention equivalence to standard attention
+  prediction: '|paged_attn(Q, KV, block_table) - std_attn(Q, KV_contiguous)| < 1e-5'
+  test: 'proptest: generate random Q, K, V; scatter into paged layout; compute both paged and contiguous attention; compare'
+  if_fails: Block-boundary crossing corrupts KV gather; attention sees wrong K/V data at page boundaries
+- id: FALSIFY-PA-002
+  rule: No mutable block sharing
+  prediction: After fork + write to child, modified block has ref_count == 1
+  test: Fork parent sequence; write new token to child; verify child's modified block is exclusive and parent's data unchanged
+  if_fails: CoW not triggered on write; parent data corrupted by child's append
+- id: FALSIFY-PA-003
+  rule: Physical block index bounds
+  prediction: block_table[seq][i] < total_blocks for all sequences and positions
+  test: 'proptest: allocate and free blocks in random order; at each step verify all block table entries in [0, total_blocks)'
+  if_fails: Free-list corruption returns invalid block ID; off-by-one in pool management
+- id: FALSIFY-PA-004
+  rule: Block pool conservation
+  prediction: free + allocated = total after any sequence of alloc/free/fork/cow operations
+  test: 'proptest: random sequence of operations (alloc, free, fork, append); verify conservation invariant after each operation'
+  if_fails: Block leak on free (not returned to pool) or double-allocation
+- id: FALSIFY-PA-005
+  rule: CoW data integrity
+  prediction: After CoW, new block contains exact copy of old block data
+  test: Write known pattern to parent block; fork; trigger CoW in child; verify child's new block has identical data
+  if_fails: Block copy omitted or partial; new block contains stale/zero data
+kani_harnesses:
+- id: KANI-PA-001
+  obligation: Block index bounds
+  property: block_table[seq][i] < total_blocks for bounded allocation sequences
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_block_index_bounds
+- id: KANI-PA-002
+  obligation: Block pool conservation
+  property: free + allocated = total after bounded alloc/free sequences
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_pool_conservation
+- id: KANI-PA-003
+  obligation: Reference count consistency
+  property: ref_count[b] matches actual sharing count for bounded fork sequences
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_refcount_consistency
+- id: KANI-PAGED_-004
+  obligation: No two active sequences share a mutable block
+  property: No two active sequences share a mutable block
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PAGED_-005
+  obligation: Physical block index within bounds
+  property: Physical block index within bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-PAGED_-006
+  obligation: Paged attention output equals standard attention output
+  property: Paged attention output equals standard attention output
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-PA-001
+  name: PagedAttention Contract
+  description: Block-table paged attention with copy-on-write correctness
+  checks:
+  - attention_equivalence
+  - mutable_block_exclusivity
+  - block_index_bounds
+  - pool_conservation
+  - cow_data_integrity
+  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  falsification: Skip CoW check on write to shared block; corrupt parent sequence data

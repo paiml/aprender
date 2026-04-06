@@ -1,0 +1,98 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: Compliance check — run all quality gates (TDG, lint, deny, tests) and
+    aggregate pass/fail
+  references:
+  - pmat comply check — quality gate aggregation
+  - PMAT DbC v5.0 — Popperian falsification protocol
+equations:
+  run_checks:
+    formula: "run_all_checks: ProjectPath -> Result<ComplianceReport, CheckError>\n\
+      \  ComplianceReport {\n    gates: Vec<GateResult>,\n    overall_pass: bool,\n\
+      \    score: f64,\n  }\n  Where GateResult = { name: String, status: Pass | Fail\
+      \ | Skip, evidence: String }\n  Gates executed: [format, check, clippy, test,\
+      \ coverage, deny, lint, satd]\n"
+    domain: ProjectPath pointing to a valid Cargo workspace
+    codomain: Result<ComplianceReport, CheckError>
+    invariants:
+    - overall_pass = true iff all non-skipped gates have status Pass
+    - Gate execution order is deterministic
+    - Failed gate captures evidence string for diagnostics
+    preconditions:
+    - '!config.is_empty()'
+    - '!path.is_empty()'
+    postconditions:
+    - report.gates.len() >= 1
+    - report.score >= 0.0 && report.score <= 1.0
+    - report.overall_pass == report.gates.iter().all(|g| g.status != Fail)
+    lean_theorem: Theorems.Run_Checks
+  aggregate_score:
+    formula: "score: Vec<GateResult> -> f64\n  score = passed_gates / total_non_skipped_gates\n"
+    domain: Vec<GateResult> with at least one non-skipped gate
+    codomain: score in [0.0, 1.0]
+    invariants:
+    - Score is 1.0 iff all gates pass
+    - Score is 0.0 iff all gates fail
+    preconditions:
+    - '!config.is_empty()'
+    - checks.len() > 0
+    postconditions:
+    - score >= 0.0 && score <= 1.0
+    - all_pass => score == 1.0
+    - all_fail => score == 0.0
+    lean_theorem: Theorems.Aggregate_Score
+proof_obligations:
+- type: postcondition
+  property: Overall pass consistency
+  formal: overall_pass = true <=> all non-skipped gates passed
+  applies_to: all
+- type: invariant
+  property: Score bounded
+  formal: 0.0 <= score <= 1.0
+  applies_to: all
+- type: precondition
+  property: Valid project path
+  formal: ProjectPath contains Cargo.toml
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-COMPLY-001
+  rule: All pass implies score one
+  prediction: When all gates pass, score must be 1.0
+  test: Unit test with all-pass gate vector
+  if_fails: Score calculation not counting skipped gates correctly
+- id: FALSIFY-COMPLY-002
+  rule: All fail implies score zero
+  prediction: When all gates fail, score must be 0.0
+  test: Unit test with all-fail gate vector
+  if_fails: Score calculation has off-by-one or denominator error
+- id: FALSIFY-COMPLY-003
+  rule: Partial fail consistency
+  prediction: overall_pass=false when any non-skipped gate fails
+  test: proptest with mixed pass/fail/skip vectors
+  if_fails: overall_pass ignoring some gate statuses
+kani_harnesses:
+- id: KANI-COMPLY-001
+  obligation: Score bounded
+  property: 0.0 <= compliance score <= 1.0
+  bound: 16
+  strategy: exhaustive
+- id: KANI-COMPLY-002
+  obligation: Overall pass consistency
+  property: overall_pass iff all non-skipped gates passed
+  bound: 8
+  strategy: exhaustive
+- id: KANI-COMPLY-003
+  obligation: Valid project path
+  property: Valid project path
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CCV-001
+  name: comply-check-v1 Contract
+  description: Quality gate for Compliance check — run all quality gates (TDG, lint,
+    deny, t
+  checks:
+  - validation
+  - falsification

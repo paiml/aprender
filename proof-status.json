@@ -1,0 +1,1417 @@
+{
+  "schema_version": "1.0.0",
+  "timestamp": "1775125487Z",
+  "contracts": [
+    {
+      "stem": "absolute-position-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "activation-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 2,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "active-learning-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "adamw-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 11,
+      "falsification_tests": 11,
+      "kani_harnesses": 14,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "alibi-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "apr-format-invariants-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "arch-constraints-v1",
+      "proof_level": "L3",
+      "obligations": 2,
+      "falsification_tests": 3,
+      "kani_harnesses": 2,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "architecture-requirements-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 12,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "arima-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "attention-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "attention-scaling-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "avx2-fma-dot-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "backend-dispatch-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "batched-beam-search-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "batchnorm-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "bayesian-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "bias-add-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "bidirectional-attention-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "bpe-tokenization-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "builder-pattern-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "calibration-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "classification-finetune-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "classifier-pipeline-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "cma-es-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "codebert-tokenizer-validation-v1",
+      "proof_level": "L3",
+      "obligations": 2,
+      "falsification_tests": 5,
+      "kani_harnesses": 2,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "configuration-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "continuous-batching-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 9,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 7
+    },
+    {
+      "stem": "conv1d-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "conversation-generation-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "cpp-type-preservation-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 7,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "cpu-q4k-activation-quant-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "cpu-work-stealing-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "cross-entropy-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 2,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "cuda-kernel-safety-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 4,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "decision-tree-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "display-format-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "dpo-loss-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "drift-detection-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "dropout-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "embedding-algebra-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "embedding-lookup-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "encoder-forward-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "error-handling-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "f16-conversion-v1",
+      "proof_level": "L4",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "flash-attention-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "format-parity-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "fp8-interchange-v1",
+      "proof_level": "L4",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "fused-qkv-projection-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "gated-delta-net-v1",
+      "proof_level": "L4",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "gbm-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "gelu-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "gguf-cpu-cache-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "glm-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "gnn-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "gpu-context-health-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "gpu-decode-profiling-v1",
+      "proof_level": "L3",
+      "obligations": 14,
+      "falsification_tests": 15,
+      "kani_harnesses": 16,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 9
+    },
+    {
+      "stem": "gpu-multi-backend-parity-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 7,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "gpu-weight-residency-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "gqa-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 9,
+      "kani_harnesses": 11,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "graph-centrality-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 8,
+      "kani_harnesses": 11,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "hybrid-layer-dispatch-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "ica-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "inference-pipeline-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "int8-symmetric-quant-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "iterator-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "kernel-launch-budget-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "kmeans-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "kv-cache-equivalence-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "kv-cache-sizing-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "layernorm-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 2,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "lbfgs-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "learned-position-embedding-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "linear-models-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "linear-probe-classifier-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "linear-projection-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "lora-algebra-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "loss-functions-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "matmul-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "metaheuristics-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 7,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "metrics-classification-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 8,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "metrics-clustering-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "metrics-ranking-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "metrics-regression-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "model-config-algebra-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "model-metadata-bounds-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "mqs-scoring-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "naive-bayes-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "online-softmax-v1",
+      "proof_level": "L3",
+      "obligations": 10,
+      "falsification_tests": 10,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "optimization-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "paged-attention-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "paged-kv-cache-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "pagerank-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "pca-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "performance-grading-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "preprocessing-normalization-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "ptx-target-parity-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "q4k-q6k-superblock-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "qk-norm-apr-loader-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "qk-norm-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "quantization-ordering-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "qwen2-e2e-verification-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen2-shapes-v1",
+      "proof_level": "L3",
+      "obligations": 9,
+      "falsification_tests": 9,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen3-e2e-verification-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen3-shapes-v1",
+      "proof_level": "L3",
+      "obligations": 9,
+      "falsification_tests": 9,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen35-e2e-verification-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen35-hybrid-forward-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "qwen35-shapes-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "qwen3moe-e2e-verification-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 7
+    },
+    {
+      "stem": "qwen3moe-shapes-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 8,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 7
+    },
+    {
+      "stem": "random-forest-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "rmsnorm-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 8,
+      "kani_harnesses": 10,
+      "lean_proved": 2,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "roofline-model-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "rope-extrapolation-v1",
+      "proof_level": "L3",
+      "obligations": 8,
+      "falsification_tests": 8,
+      "kani_harnesses": 10,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 6
+    },
+    {
+      "stem": "rope-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "safetensors-cpu-dispatch-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "sampling-algorithms-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "serialization-v1",
+      "proof_level": "L3",
+      "obligations": 1,
+      "falsification_tests": 1,
+      "kani_harnesses": 1,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "shannon-entropy-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "silu-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 8,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "sliding-window-attention-v1",
+      "proof_level": "L3",
+      "obligations": 7,
+      "falsification_tests": 7,
+      "kani_harnesses": 9,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "softmax-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 9,
+      "falsification_tests": 9,
+      "kani_harnesses": 12,
+      "lean_proved": 5,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "special-tokens-registry-v1",
+      "proof_level": "L1",
+      "obligations": 4,
+      "falsification_tests": 2,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "speculative-decoding-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 5,
+      "kani_harnesses": 8,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "ssm-kernel-v1",
+      "proof_level": "L3",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    },
+    {
+      "stem": "streaming-tpot-v1",
+      "proof_level": "L3",
+      "obligations": 3,
+      "falsification_tests": 3,
+      "kani_harnesses": 3,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "svm-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 4
+    },
+    {
+      "stem": "swiglu-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 4,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 1,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "tensor-inventory-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "tensor-names-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 7,
+      "kani_harnesses": 4,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 2
+    },
+    {
+      "stem": "tensor-shape-flow-v1",
+      "proof_level": "L3",
+      "obligations": 6,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 5
+    },
+    {
+      "stem": "tied-embeddings-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 6,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "transpose-kernel-v1",
+      "proof_level": "L4",
+      "obligations": 5,
+      "falsification_tests": 6,
+      "kani_harnesses": 7,
+      "lean_proved": 2,
+      "bindings_implemented": 0,
+      "bindings_total": 1
+    },
+    {
+      "stem": "validated-tensor-v1",
+      "proof_level": "L3",
+      "obligations": 4,
+      "falsification_tests": 4,
+      "kani_harnesses": 5,
+      "lean_proved": 0,
+      "bindings_implemented": 0,
+      "bindings_total": 3
+    }
+  ],
+  "kernel_classes": [
+    {
+      "label": "A",
+      "description": "GQA+RMSNorm+SiLU+SwiGLU+RoPE",
+      "contract_stems": [
+        "rmsnorm-kernel-v1",
+        "silu-kernel-v1",
+        "swiglu-kernel-v1",
+        "rope-kernel-v1",
+        "gqa-kernel-v1",
+        "softmax-kernel-v1",
+        "matmul-kernel-v1"
+      ],
+      "min_proof_level": "L3",
+      "all_bound": false
+    },
+    {
+      "label": "B",
+      "description": "MHA+LayerNorm+GELU+AbsPos",
+      "contract_stems": [
+        "layernorm-kernel-v1",
+        "gelu-kernel-v1",
+        "attention-kernel-v1",
+        "softmax-kernel-v1",
+        "matmul-kernel-v1",
+        "absolute-position-v1"
+      ],
+      "min_proof_level": "L3",
+      "all_bound": false
+    },
+    {
+      "label": "C",
+      "description": "MHA+LayerNorm+GELU+ALiBi",
+      "contract_stems": [
+        "layernorm-kernel-v1",
+        "gelu-kernel-v1",
+        "attention-kernel-v1",
+        "softmax-kernel-v1",
+        "alibi-kernel-v1",
+        "matmul-kernel-v1"
+      ],
+      "min_proof_level": "L3",
+      "all_bound": false
+    },
+    {
+      "label": "D",
+      "description": "LayerNorm+GELU+SiLU+GQA",
+      "contract_stems": [
+        "layernorm-kernel-v1",
+        "gelu-kernel-v1",
+        "silu-kernel-v1",
+        "gqa-kernel-v1",
+        "softmax-kernel-v1",
+        "matmul-kernel-v1"
+      ],
+      "min_proof_level": "L3",
+      "all_bound": false
+    },
+    {
+      "label": "E",
+      "description": "RMSNorm+SwiGLU+GQA",
+      "contract_stems": [
+        "rmsnorm-kernel-v1",
+        "swiglu-kernel-v1",
+        "gqa-kernel-v1",
+        "softmax-kernel-v1",
+        "matmul-kernel-v1"
+      ],
+      "min_proof_level": "L3",
+      "all_bound": false
+    }
+  ],
+  "totals": {
+    "contracts": 133,
+    "obligations": 685,
+    "falsification_tests": 726,
+    "kani_harnesses": 873,
+    "lean_proved": 21,
+    "bindings_implemented": 0,
+    "bindings_total": 435
+  }
+}

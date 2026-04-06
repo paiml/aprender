@@ -1,0 +1,67 @@
+contract: C-CFWDSCRATCH-001
+title: Pre-allocated Forward Ping-Pong Buffers in ClassifyPipeline
+kaizen: KAIZEN-060
+parent: C-GPUTRAINIT-002
+status: implemented
+date: 2026-03-04
+baseline:
+  cuMemAlloc_per_forward: 2
+  cuMemFree_per_forward: 2
+  cpu_alloc_per_forward: 1
+  per_forward_overhead_us: 20
+  per_epoch_overhead_s: 0.56
+target:
+  cuMemAlloc_per_forward: 0
+  cuMemFree_per_forward: 0
+  cpu_alloc_per_forward: 0
+  per_forward_overhead_us: 0
+  one_time_cost_bytes: 2621440
+api:
+  fwd_scratch_a_b: 'New fields on GpuTrainingState: fwd_scratch_a, fwd_scratch_b.
+
+    Both GpuBuffer<f32> sized to max_seq_len * hidden_size.
+
+    Allocated once during GpuTrainingState::init_training_state().
+
+    '
+  forward_hidden_cuda_training: 'Rewritten to use pre-allocated ping-pong buffers.
+
+    Upload via copy_from_host_at (partial write into pre-allocated buffer).
+
+    Ping-pong via raw pointers (same pattern as cuda_trainer.rs KAIZEN-053).
+
+    '
+safety:
+  buffer_sizing: 'fwd_scratch_a/b are max_seq_len * hidden_size — sufficient for any seq_len <= max_seq_len.
+
+    copy_from_host_at writes only seq_len * hidden_size elements at offset 0.
+
+    Remaining buffer contents are irrelevant (kernels use seq_len parameter).
+
+    '
+  ping_pong_safety: 'Raw pointers used for disjoint field access (same pattern as cuda_trainer.rs).
+
+    scratch_a_ptr and scratch_b_ptr point to different struct fields.
+
+    Only one is written per iteration; the other is read-only.
+
+    '
+preconditions:
+- GpuTrainingState initialized (fwd_scratch_a/b allocated)
+- token_ids.len() <= max_seq_len
+postconditions:
+- Forward pass behavior identical — same GEMM, same activations, same output
+- Zero per-call GPU memory allocations during forward pass
+invariants:
+- fwd_scratch_a/b never reallocated after construction
+- Inference-only path unchanged (no GpuTrainingState)
+files:
+- path: entrenar/src/finetune/classify_pipeline.rs
+  change: Added fwd_scratch_a/b to GpuTrainingState, rewrote forward_hidden_cuda_training
+qa_gate:
+  id: F-CFSV-001
+  name: classify-fwd-scratch-v1 Contract
+  description: Quality gate for classify-fwd-scratch-v1
+  checks:
+  - validation
+  - falsification

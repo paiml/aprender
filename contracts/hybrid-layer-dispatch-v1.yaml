@@ -1,0 +1,181 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Qwen3.5 hybrid attention layer dispatch and linear attention invariants
+  references:
+  - Qwen3.5 Fine-Tune Spec — hybrid architecture
+  - Yang et al. (2024) Gated Linear Attention
+  depends_on:
+  - model-config-algebra-v1
+equations:
+  hybrid_dispatch:
+    formula: dispatch(i) = layer_types[i] where layer_types ∈ {'attention', 'linear'}^L
+    domain: i ∈ [0, L)
+    invariants:
+    - len(layer_types) == num_hidden_layers
+    - Pure function of layer index
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Hybrid_Dispatch
+  linear_associativity:
+    formula: (V @ K^T) @ Q == V @ (K^T @ Q)
+    domain: Conformable matrices
+    invariants:
+    - Matrix multiplication is associative
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Linear_Associativity
+  linear_no_softmax:
+    formula: linear_attn(Q, K, V) != softmax(Q @ K^T) @ V
+    domain: Linear attention path
+    invariants:
+    - Linear attention does NOT use softmax
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Linear_No_Softmax
+  linear_shapes:
+    formula: K_dim = n_k * d_k, V_dim = n_v * d_v
+    domain: n_k may != n_v, d_k may != d_v
+    invariants:
+    - K and V head counts can differ
+    - Output still matches hidden_dim after O projection
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Linear_Shapes
+  head_grouping:
+    formula: n_v % n_k == 0
+    domain: n_v >= n_k
+    invariants:
+    - V heads are integer multiple of K heads
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Head_Grouping
+  conv1d_causal:
+    formula: len(causal_conv1d(x, kernel_size=k)) == len(x)
+    domain: x ∈ ℝ^T, padding = k - 1
+    invariants:
+    - Output length equals input length (causal padding)
+    - Output at position t depends only on x[t-k+1..t]
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Conv1D_Causal
+proof_obligations:
+- type: invariant
+  property: Exhaustive partition
+  formal: len(layer_types) == L, each entry in {attention, linear}
+  applies_to: all
+- type: invariant
+  property: Matrix associativity
+  formal: (A @ B) @ C == A @ (B @ C) within numerical tolerance
+  applies_to: all
+- type: invariant
+  property: Head grouping exact
+  formal: n_v % n_k == 0 for valid configs
+  applies_to: all
+- type: invariant
+  property: Residual shape preservation
+  formal: O_proj output dim == hidden_dim
+  applies_to: all
+- type: invariant
+  property: Conv1d causal output length
+  formal: output_len == input_len with padding = kernel_size - 1
+  applies_to: all
+- type: equivalence
+  property: SIMD linear attention equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-HL-001
+  rule: Exhaustive partition
+  prediction: Every layer has exactly one type
+  test: proptest with random layer type arrays
+  if_fails: Missing or duplicate layer assignment
+- id: FALSIFY-HL-002
+  rule: Matrix associativity
+  prediction: Two groupings yield same result within tolerance
+  test: proptest with small random matrices
+  if_fails: Numerical instability in matmul
+- id: FALSIFY-HL-003
+  rule: Head grouping exact
+  prediction: n_v divisible by n_k for all valid configs
+  test: 'proptest: n_v, n_k in [1, 32], verify n_v % n_k == 0'
+  if_fails: Head grouping constraint not enforced
+- id: FALSIFY-HL-004
+  rule: Residual shape preservation
+  prediction: O_proj output dim == hidden_dim
+  test: proptest with random hidden_dim and head configs
+  if_fails: O projection output size != hidden_dim
+- id: FALSIFY-HL-005
+  rule: Conv1d causal
+  prediction: Padded conv1d preserves sequence length
+  test: proptest with random sequences and kernel sizes
+  if_fails: Padding calculation error
+- id: FALSIFY-HL-006
+  rule: SIMD linear attention equivalence
+  prediction: SIMD linear attention matches scalar
+  test: 'proptest: compare scalar vs SIMD linear attention'
+  if_fails: SIMD path diverges from scalar reference
+kani_harnesses:
+- id: KANI-HL-001
+  obligation: HL-INV-001
+  property: Layer partition exhaustive
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_layer_partition
+- id: KANI-HL-002
+  obligation: HL-INV-005
+  property: Causal conv1d output length equals input length
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_conv1d_causal_length
+- id: KANI-HYBRID-003
+  obligation: Exhaustive partition
+  property: Exhaustive partition
+  bound: 8
+  strategy: exhaustive
+- id: KANI-HYBRID-004
+  obligation: Matrix associativity
+  property: Matrix associativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-HYBRID-005
+  obligation: Head grouping exact
+  property: Head grouping exact
+  bound: 8
+  strategy: exhaustive
+- id: KANI-HYBRID-006
+  obligation: Residual shape preservation
+  property: Residual shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-HYBRID-007
+  obligation: Conv1d causal output length
+  property: Conv1d causal output length
+  bound: 8
+  strategy: exhaustive
+- id: KANI-HYBRID-008
+  obligation: SIMD linear attention equivalence
+  property: SIMD linear attention equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-HL-001
+  name: Hybrid Layer Dispatch Contract
+  description: Qwen3.5 hybrid architecture quality gate
+  checks:
+  - exhaustive_partition
+  - matrix_associativity
+  - head_grouping
+  - residual_preservation
+  - conv1d_causal
+  pass_criteria: All 6 falsification tests pass
+  falsification: Set n_v not divisible by n_k to break grouping

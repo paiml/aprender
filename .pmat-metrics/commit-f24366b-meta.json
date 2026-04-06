@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-134",
+  "prompt": "Rewrite YAML preconditions: replace 507 !is_empty() with domain-specific checks",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-29T10:35:02.395607194Z"
+}

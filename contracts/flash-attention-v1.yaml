@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Flash Attention — IO-aware exact attention with tiling
+  references:
+  - 'Dao et al. (2022) FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness'
+  - 'Dao (2023) FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning'
+  depends_on:
+  - softmax-kernel-v1
+equations:
+  flash_attention:
+    formula: FlashAttn(Q, K, V) = softmax(QK^T / √d_k) · V (computed in tiles)
+    domain: Q ∈ ℝ^{N×d}, K ∈ ℝ^{N×d}, V ∈ ℝ^{N×d}
+    codomain: ℝ^{N×d}
+    invariants:
+    - Output = standard attention output (exact, not approximate)
+    - Memory usage O(N) not O(N²)
+    - 'Online softmax: running max and sum across tiles'
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Flash_Attention
+proof_obligations:
+- type: equivalence
+  property: Matches standard attention
+  formal: '|FlashAttn(Q,K,V) - StdAttn(Q,K,V)| < ε'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Online softmax correctness
+  formal: Tiled softmax = full softmax
+  applies_to: all
+- type: invariant
+  property: Tile coverage
+  formal: All (i,j) pairs processed exactly once
+  applies_to: all
+- type: conservation
+  property: Attention weight conservation
+  formal: Each output row is weighted mean of V rows
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: outer_loop
+    description: Iterate over query tiles (blocks of rows)
+    invariant: All query rows covered
+  - name: inner_loop
+    description: Iterate over key/value tiles
+    invariant: All KV pairs scored against current Q tile
+  - name: online_softmax
+    description: Update running max and sum for numerically stable softmax
+    invariant: Running max >= all seen scores
+  - name: accumulate
+    description: Rescale and accumulate output tile
+    invariant: Rescaling preserves running normalization
+falsification_tests:
+- id: FALSIFY-FA-001
+  rule: Equivalence to standard attention
+  prediction: '|flash_attn(Q,K,V) - std_attn(Q,K,V)| < 1e-5'
+  test: proptest with small random matrices
+  if_fails: Online softmax rescaling error
+- id: FALSIFY-FA-002
+  rule: Online softmax
+  prediction: Tiled softmax matches full softmax
+  test: proptest comparing tiled vs full softmax
+  if_fails: Max tracking across tiles incorrect
+- id: FALSIFY-FA-003
+  rule: Weight normalization
+  prediction: Flash attention weight rows sum to 1.0
+  test: proptest checking implicit weight sums
+  if_fails: Rescaling factor error in tile accumulation
+- id: FALSIFY-FA-004
+  rule: Single tile
+  prediction: When N ≤ tile_size, matches standard attention exactly
+  test: direct test with small inputs
+  if_fails: Edge case in tile loop bounds
+kani_harnesses:
+- id: KANI-FA-001
+  obligation: FA-EQ-001
+  property: Online softmax matches full softmax for 2 tiles
+  bound: 4
+  strategy: stub_float
+  harness: verify_online_softmax_2tiles
+- id: KANI-FLASH_-002
+  obligation: Matches standard attention
+  property: Matches standard attention
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FLASH_-003
+  obligation: Online softmax correctness
+  property: Online softmax correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FLASH_-004
+  obligation: Tile coverage
+  property: Tile coverage
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FLASH_-005
+  obligation: Attention weight conservation
+  property: Attention weight conservation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-FA-001
+  name: Flash Attention Contract
+  checks:
+  - equivalence
+  - online_softmax
+  - weight_normalization
+  pass_criteria: All 4 falsification tests pass
+  falsification: Skip rescaling step in tile accumulation
+simd_dispatch:
+  flash_attention:
+    scalar: flash_attention_scalar
+    avx2: flash_attention_avx2
+    ptx: flash_attention_ptx

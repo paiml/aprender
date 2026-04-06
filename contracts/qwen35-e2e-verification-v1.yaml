@@ -1,0 +1,215 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Qwen3.5 end-to-end verification — composing all kernel contracts into
+    a complete model proof
+  references:
+  - Qwen3.5 Technical Report — full model architecture
+  - Vaswani et al. (2017) Attention Is All You Need
+  - Yang et al. (2024) Gated Delta Networks
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  depends_on:
+  - qwen35-hybrid-forward-v1
+  - qwen35-shapes-v1
+  - inference-pipeline-v1
+  - embedding-algebra-v1
+  - sliding-window-attention-v1
+  - rope-extrapolation-v1
+  - attention-scaling-v1
+  - kv-cache-sizing-v1
+equations:
+  model_parameter_count:
+    formula: P = V*d + L*(d_attn + d_ffn + d_norm) + d_final
+    domain: V=vocab, d=hidden, L=layers, d_attn/d_ffn/d_norm=per-layer params
+    invariants:
+    - Total ≈ 9.05B for Qwen3.5-9B
+    - Embedding dominates for large V
+    - Per-layer cost linear in d^2
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Model_Parameter_Count
+  flops_per_token:
+    formula: F ≈ 2*P (forward pass) for dense compute
+    domain: Approximate FLOPs per token for autoregressive generation
+    invariants:
+    - Linear in P
+    - Attention FLOP component is O(seq_len * d)
+    - GDN FLOP component is O(d^2) per token (no quadratic)
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Flops_Per_Token
+  memory_breakdown:
+    formula: M = M_weights + M_kv + M_activations
+    domain: Total GPU memory during inference
+    invariants:
+    - M_weights depends on quantization (Q4K < Q6K < F16 < F32)
+    - M_kv grows linearly with sequence length
+    - M_activations bounded by batch_size * seq_len * d
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Memory_Breakdown
+  throughput_model:
+    formula: tok/s = min(bandwidth / bytes_per_token, compute / flops_per_token)
+    domain: Roofline-limited throughput
+    invariants:
+    - Memory-bound for small batch (typical inference)
+    - Compute-bound for large batch or long prefill
+    - GDN layers reduce attention bottleneck
+    preconditions:
+    - 'input.len() > 0'
+    - batch_size > 0
+    lean_theorem: Theorems.Throughput_Model
+  verification_ladder:
+    formula: coverage(contract_set) = verified_obligations / total_obligations
+    domain: Fraction of proof obligations with passing tests or Kani proofs
+    invariants:
+    - coverage ∈ [0, 1]
+    - coverage = 1 means all obligations verified
+    - 'Each layer adds: attention/GDN + FFN + 2*RMSNorm obligations'
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Verification_Ladder
+  contract_composition:
+    formula: model_contract = compose(embedding, L × block, final_norm, unembed)
+    domain: Full model as composition of verified components
+    invariants:
+    - Each component independently verified
+    - Composition preserves shape invariants
+    - Residual stream provides compositional proof structure
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Contract_Composition
+proof_obligations:
+- type: invariant
+  property: Parameter count matches architecture
+  formal: P(Qwen3.5-9B) ∈ [9.0B, 9.2B]
+  applies_to: all
+- type: bound
+  property: FLOPs bounded by 2P
+  formal: F <= 2 * P + O(seq_len * d * L)
+  applies_to: all
+- type: ordering
+  property: Quantization memory ordering
+  formal: M(Q4K) < M(Q6K) < M(F16) < M(F32)
+  applies_to: all
+- type: monotonicity
+  property: Throughput increases with bandwidth
+  formal: bw1 < bw2 → tok_s(bw1) <= tok_s(bw2)
+  applies_to: all
+- type: bound
+  property: Verification coverage at 100%
+  formal: coverage(qwen35_contracts) = 1.0
+  applies_to: all
+- type: invariant
+  property: Compositional proof structure
+  formal: '∀l: shape(block_l(x)) = shape(x)'
+  applies_to: all
+- type: conservation
+  property: 'End-to-end shape: tokens in → logits out'
+  formal: shape(model(tokens)) = [seq_len, V]
+  tolerance: 0.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QE2E-001
+  rule: Parameter count
+  prediction: Total params ≈ 9.05B
+  test: 'Deterministic: sum all parameter shapes'
+  if_fails: Architecture config mismatch
+- id: FALSIFY-QE2E-002
+  rule: FLOPs estimate
+  prediction: 2P FLOPs per forward token
+  test: Deterministic with Qwen3.5-9B constants
+  if_fails: Missing layer in FLOP count
+- id: FALSIFY-QE2E-003
+  rule: Memory ordering
+  prediction: Q4K < Q6K < F16 < F32 memory
+  test: proptest with random tensor dimensions
+  if_fails: Quantization byte formula wrong
+- id: FALSIFY-QE2E-004
+  rule: Throughput roofline
+  prediction: tok/s bounded by bandwidth and compute
+  test: proptest with random hardware specs
+  if_fails: Roofline formula error
+- id: FALSIFY-QE2E-005
+  rule: Coverage completeness
+  prediction: All obligations have test or proof
+  test: pv coverage --binding check
+  if_fails: Missing obligation coverage
+- id: FALSIFY-QE2E-006
+  rule: Compositional proof structure
+  prediction: 'Each block preserves shape: shape(block_l(x)) = shape(x)'
+  test: 'proptest: verify shape(block(x)) = shape(x) for random blocks'
+  if_fails: Block l breaks shape invariant
+- id: FALSIFY-QE2E-007
+  rule: End-to-end shape conservation
+  prediction: tokens → [seq_len, d] → ... → [seq_len, V]
+  test: 'proptest: trace shapes through mock pipeline'
+  if_fails: Shape break in layer composition
+kani_harnesses:
+- id: KANI-QE2E-001
+  obligation: QE2E-INV-001
+  property: Parameter count within expected range
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_parameter_count
+- id: KANI-QE2E-002
+  obligation: QE2E-ORD-001
+  property: Quantization memory ordering
+  bound: 4
+  strategy: bounded_int
+  harness: verify_quant_ordering
+- id: KANI-QWEN35-003
+  obligation: Parameter count matches architecture
+  property: Parameter count matches architecture
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-004
+  obligation: FLOPs bounded by 2P
+  property: FLOPs bounded by 2P
+  bound: 8
+  strategy: stub_float
+- id: KANI-QWEN35-005
+  obligation: Quantization memory ordering
+  property: Quantization memory ordering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-006
+  obligation: Throughput increases with bandwidth
+  property: Throughput increases with bandwidth
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-007
+  obligation: Verification coverage at 100%
+  property: Verification coverage at 100%
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-008
+  obligation: Compositional proof structure
+  property: Compositional proof structure
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-009
+  obligation: 'End-to-end shape: tokens in → logits out'
+  property: 'End-to-end shape: tokens in → logits out'
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QE2E-001
+  name: Qwen3.5 End-to-End Verification
+  description: Full model verification composition quality gate
+  checks:
+  - model_parameter_count
+  - flops_per_token
+  - memory_breakdown
+  - throughput_model
+  - verification_ladder
+  - contract_composition
+  pass_criteria: All 7 falsification tests pass + 100% obligation coverage
+  falsification: Remove one layer from parameter count to break total

@@ -1,0 +1,1063 @@
+{
+  "work_item_id": "PMAT-050",
+  "created_at": "2026-02-19T15:23:33.230908242Z",
+  "baseline_commit": "96227407b472112ca73a4a702aba4a2091ed69a1",
+  "baseline_tdg": 0.0,
+  "baseline_coverage": 0.0,
+  "baseline_rust_score": 0.0,
+  "baseline_file_manifest": {
+    "files": {
+      "crates/provable-contracts/src/kernels/mod.rs": {
+        "content_hash": "94fffb9aee7c0a9bca4fa3db70f6670a2c18f674296e67c61b3f7b9a94745743",
+        "lines": 84,
+        "functions": 3,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/softmax.rs": {
+        "content_hash": "566c7d13288c4dd338feee29a8eb94ccfe1b939088349484b0f46d8cd621beec",
+        "lines": 552,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/gated_delta_net.rs": {
+        "content_hash": "bc4888e4171ae326bb5745c8ca0f6a27e6b4632557fe056752bb4e2d1ac17644",
+        "lines": 341,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/ssm.rs": {
+        "content_hash": "5f16103564cac59ca05476027b22d6d74061f6c1e18ed87ea931d390611fdc49",
+        "lines": 329,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/tests/common/mod.rs": {
+        "content_hash": "beb665612fbd5ce6dd5b5ca31ec17c88f03fe3d917f85c80d282ade26e66c0af",
+        "lines": 108,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/examples/lean_codegen.rs": {
+        "content_hash": "0d9afe4e61d243533f43acf8ebf2367384fe59ae4e1297be0532de46f1e90800",
+        "lines": 42,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/activation.rs": {
+        "content_hash": "a1f0921ecdfd219cdeeb28858c30139cf54c96eb6d4efaaf92b1244fdc2f3d88",
+        "lines": 554,
+        "functions": 32,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/examples/scaffold.rs": {
+        "content_hash": "286885a75f7db71160769e6a6ae43904fbb84f65f935d9ac162045ae6658c8b2",
+        "lines": 30,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/diff.rs": {
+        "content_hash": "45bf542c5fd0cba2b0be54d14da33afe44cc9aef1b7d761db430fa2cd3a2f189",
+        "lines": 529,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/batchnorm.rs": {
+        "content_hash": "af79e911a28e18b72736d7d5753571df4f61fc972a2cee7f4feb2dabb067c9b5",
+        "lines": 773,
+        "functions": 23,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/layernorm.rs": {
+        "content_hash": "cbf9a04abed3245b729b51f82eba40d40b416f8105ff6537952e56bda1dd8711",
+        "lines": 615,
+        "functions": 25,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/absolute_position.rs": {
+        "content_hash": "c8bad7b0cd767c1881b1cd949ad4dec7f2acce2fcf9de581d2e30901e248e73f",
+        "lines": 224,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/generate.rs": {
+        "content_hash": "076988fff82a7deca465ff92ee138a0c6291080ad65043bed068fec7aae7aa59",
+        "lines": 264,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/scaffold/mod.rs": {
+        "content_hash": "c60d99f668710259f97be8fa5df6c4e2a8566c54d0a18153ba1c23bc196ea13f",
+        "lines": 146,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/probar_gen/patterns.rs": {
+        "content_hash": "21194e4bb80220d8188dd17ab59c9d5f0d7f5f2611b5ee3a7bd216b8f1c9be23",
+        "lines": 221,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/dropout.rs": {
+        "content_hash": "80d5bc642bb8bde4c9c58e44f49b2cd9d5c3630894c370ef51841281b3fd6ebb",
+        "lines": 272,
+        "functions": 18,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/tests/kani_harness_generation.rs": {
+        "content_hash": "5d8291765280a0d3f3c50a337af2391ed8654e71f1600cf7c587576517bd6f4f",
+        "lines": 209,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/tests/validate_contracts.rs": {
+        "content_hash": "4e034f3b3278273b627a663529e1e04279c941809874072c0742875b39e08eb2",
+        "lines": 267,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/examples/pipeline.rs": {
+        "content_hash": "2a9ae4a36536dd44cd27ca2a0b2911c0df04b44d32e8d965618ffa868b346077",
+        "lines": 99,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/probar_gen/wired.rs": {
+        "content_hash": "3991a53af6f0f8d2effa72e0ae6012f9cf4b8559819a8b3456e5a32db7ec393f",
+        "lines": 1319,
+        "functions": 47,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/examples/lean_status.rs": {
+        "content_hash": "657ad98d51a5ce7c3b30ae5397fa1ad665efe2672ba1366a4406660dbd04b747",
+        "lines": 61,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/tied_embeddings.rs": {
+        "content_hash": "8858f03ff98ee6a618bbd84c6ab3ee6721d58705ceca98d072fb5278724bf87e",
+        "lines": 227,
+        "functions": 12,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/adamw.rs": {
+        "content_hash": "5c1a4e8ece963420146ff1ed008f2cfefd61b0ea558ed3f1abbd542d1f48452c",
+        "lines": 487,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts-cli/src/commands/status.rs": {
+        "content_hash": "d529832099eaf829d1ac8096250ef595435c938fcbd552f81ba8994d5b8ef9fc",
+        "lines": 28,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/graph.rs": {
+        "content_hash": "d00b52ba7053f1e2c9d258f332443d9afff2f58e9df751896807f8efff8e6602",
+        "lines": 314,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kani_gen/mod.rs": {
+        "content_hash": "d841892b2b55e82634fbb995b523d36b7e88d82e6b401b7abf346891b9787df5",
+        "lines": 331,
+        "functions": 19,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/error.rs": {
+        "content_hash": "c2a279d5413c266e8d3cd4d3ef8fe7011637cd1ce7641a5f6839d86c4666e9db",
+        "lines": 139,
+        "functions": 9,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/kani.rs": {
+        "content_hash": "49b15a1ff295bb3e33e4765c8eff47b0d462cbe5a47408a2fe65186e1ea2d155",
+        "lines": 10,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/gqa.rs": {
+        "content_hash": "9efdcda7dd3a9e2e421ee128287c3675d7cf6fbf9e9f84d24b6b574ece53ad74",
+        "lines": 638,
+        "functions": 17,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/silu_standalone.rs": {
+        "content_hash": "4c10e513c84628e254ae8bc9d7fe98f380d22d9895f4d27dacf50e989b34c492",
+        "lines": 420,
+        "functions": 25,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/linear.rs": {
+        "content_hash": "aa8dcd3893221de6150f56767ea240a05e651831c146fdf47abf41ac6e3c32c3",
+        "lines": 292,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/cross_entropy.rs": {
+        "content_hash": "1738f2fe7a86f709565f8d4ac59fd18b63b9ef00358c8c5910f03d68d6869a46",
+        "lines": 587,
+        "functions": 35,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/binding.rs": {
+        "content_hash": "8d73aeb58bbfbec6a504f1c858c78ff562f54c8f8f01ec8ef603059446688cd2",
+        "lines": 175,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kani_gen/strategies.rs": {
+        "content_hash": "eaf945210b659924e7be9b3122f4e56a226bbff2995f28af10cd8cdbd4201233",
+        "lines": 191,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/latex.rs": {
+        "content_hash": "897463d27d30223df003a9603d65ff0a1497c27b2e98288b4c7253747621b6eb",
+        "lines": 200,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/coverage.rs": {
+        "content_hash": "f6df94a3708970328e2c154a6d741c3a7cf478abb66cd7500597c5f7c5b379ac",
+        "lines": 357,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/html/highlight.js": {
+        "content_hash": "abc7f01d0ce8c64e4ba9e131d651e48ae1a567b2a1254fea8aab03502288de58",
+        "lines": 54,
+        "functions": 49,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts-cli/tests/cli_integration.rs": {
+        "content_hash": "e593d0eb2a08b44aa29467b6a3c8f0a34719c5cddbfed0fc94aed2f1e7ca4664",
+        "lines": 938,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/schema/types.rs": {
+        "content_hash": "203fed73f5fd192454c552730b68f3e3fcf9029f57acb407381bfd708aa74fd0",
+        "lines": 331,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/tests/falsify_cross_kernel.rs": {
+        "content_hash": "9de9944378edfeb64fb1f140237ac7ded1dc1d68612421cb2b1e77d6644cbe1c",
+        "lines": 1269,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/lib.rs": {
+        "content_hash": "35044d6d854d1ac85ce3bbfbb211e2d63ef3a9d20498882286f1db24f6555c1c",
+        "lines": 41,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/graph.rs": {
+        "content_hash": "52f44f1491124b1a3c9a8951cfe7990890b954904898e2ec58d756bb2cf62278",
+        "lines": 262,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/probar.rs": {
+        "content_hash": "5deca5a8f69ff854b263482e864ec9c16eedf17a4fda11092484183998759d0b",
+        "lines": 25,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/lbfgs.rs": {
+        "content_hash": "f3610f4b2502e483b3d24bf4120cc02688ed5fc1d2421e012bb9bd2aa189cd12",
+        "lines": 328,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts-cli/src/commands/generate.rs": {
+        "content_hash": "a126efcce1d76c0e5f9775c6fcb298a44aa52f858de9395eb4502d9f6df12db2",
+        "lines": 41,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/sampling.rs": {
+        "content_hash": "453d9b3dfc9d4c0304bd6faf8b563cfff9008a3c0a80fde9ff2557708c1b4f27",
+        "lines": 351,
+        "functions": 25,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/tests/probar_test_generation.rs": {
+        "content_hash": "3d7b3ae67b649da4eb32d441f0c2c09bfde28bdcd57d0e1e2756337c97f7ba49",
+        "lines": 158,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/examples/codegen.rs": {
+        "content_hash": "7f7fed4cf20bbf41dfbe13991ebaeaed84419668eb98ee67136c837b5b751e15",
+        "lines": 61,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/validate.rs": {
+        "content_hash": "3209675f133e7981f6eaf6433ec3a6c17eec5ef5d214f20b2cd671c0b0e0e74f",
+        "lines": 31,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/coverage.rs": {
+        "content_hash": "da47328d8999a94f45689a88c30a159adae869e545add82434e7d4fb3c210005",
+        "lines": 84,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/f16_convert.rs": {
+        "content_hash": "8ecca345ba54a553c59748c7f3073ddf95deda315c944ac0ceaaa968c9e68284",
+        "lines": 316,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/rope.rs": {
+        "content_hash": "97f90f6eef63fdebc3d7a2c7c66cf948c848df1fef4cf2f431b357b9c83a9aba",
+        "lines": 471,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "book/html/searcher.js": {
+        "content_hash": "9289822a2feee1c578b4593e918333147ad9f68dc3ffa75edc38b68d04e57807",
+        "lines": 483,
+        "functions": 20,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts-cli/src/commands/equations.rs": {
+        "content_hash": "4146b6240f9f53a6120614af8ee1c75ce055bcdeaf1d06fb7c6364dfbf08de68",
+        "lines": 280,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/html/elasticlunr.min.js": {
+        "content_hash": "ef4e11c157b1e2e89782d30bd726f2d5ff7834ea5e26ad02474325f8b1f126c9",
+        "lines": 10,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts/src/kernels/bias_add.rs": {
+        "content_hash": "0f1c0d3cf8e4d929dd3ec027a31541b4d65bb79860231bf53e5eee8ad0e184aa",
+        "lines": 251,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "book/html/searchindex.js": {
+        "content_hash": "20abccd4aba21afa13531927d902de3bd653abe1ec611d0948eee32b5ffb173f",
+        "lines": 1,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts-cli/src/commands/audit.rs": {
+        "content_hash": "dd05c20824e411088f570cbf6fb01bbc3731aeac5b814dff62c499bcb30ba2a4",
+        "lines": 84,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/probar_gen/mod.rs": {
+        "content_hash": "de3ac15a035da9e81b16cf050ce0c821f5c8e76493e5a83a10d768193ff51b9f",
+        "lines": 371,
+        "functions": 18,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/lean_gen/mod.rs": {
+        "content_hash": "80a43f7b4b2416c5e59c0145bd8830e2a647ef431d89f65192f2aadfea117262",
+        "lines": 457,
+        "functions": 12,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/kmeans.rs": {
+        "content_hash": "5ba81ebab19ae38808f1f1900142e36f630e9bd67444f33ba739d620f521287f",
+        "lines": 480,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/swiglu.rs": {
+        "content_hash": "76d716942bc02628bfbff3a2f2e424993406330e2bced6cbc0d80d12e583405f",
+        "lines": 354,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/kani_proofs.rs": {
+        "content_hash": "28483b2df547deb5a2f38dfd8c87abd45a24aa0616f87b7d05e27930477eb134",
+        "lines": 1490,
+        "functions": 53,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/build_helper.rs": {
+        "content_hash": "10794a5ca3e49408c73e59670ec9b3586dee9a1ab11a2a5f131393f2a5079e47",
+        "lines": 214,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/html/clipboard.min.js": {
+        "content_hash": "1626706afc88d95ebe1173b553ec732c6dc82a576989315fdf5e7779af738a44",
+        "lines": 7,
+        "functions": 10,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "book/html/toc.js": {
+        "content_hash": "b26cc7c2b11dbd628c8cb66b55525e9ef25bbb166f4bba83aae36df6edda981c",
+        "lines": 70,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts-cli/src/commands/scaffold.rs": {
+        "content_hash": "e244f641ac2d304f711aae3db8a497f4b04c4ab26e44d05ff31fae3c6991efb6",
+        "lines": 15,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/attention.rs": {
+        "content_hash": "840909ce26637abfeb2c28b94a7e96d3396b97ceb769b545c0efe8ef02776907",
+        "lines": 525,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/tests/falsify_optimizer_sequence.rs": {
+        "content_hash": "5ca18fb5aa439a99f391da8e6848dbce472fda4fc3fddd17af65a1f73cf6cf42",
+        "lines": 1487,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts-cli/src/commands/lean.rs": {
+        "content_hash": "6bb3111ae7cba2b058f2db3dda42bdfdd05e230536a3cc2db4ebdec35b7985b5",
+        "lines": 39,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/book_gen/page.rs": {
+        "content_hash": "0e1fe38854afc61f183f2c5a2b16c048b0b28d7da5c1ad94e786d289d1d0e236",
+        "lines": 466,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/src/commands/lean_status.rs": {
+        "content_hash": "384a9b2690cedbec25b171b78a046a191331da1dd57c138421b47f865f107192",
+        "lines": 45,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/tests/falsify_matrix_attention.rs": {
+        "content_hash": "2f04095896f7c7e42e441b40d9a1a3cb63864b5615fad080ece007c3b1b5b63a",
+        "lines": 712,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/kernels/alibi.rs": {
+        "content_hash": "d81cb3ab6466ba89ce65db47644c5534aa43801b2366c46b5f1bb63f6a47af11",
+        "lines": 274,
+        "functions": 15,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/matmul.rs": {
+        "content_hash": "0ae921ce9ab4ff3860490fcdf0d906c82ad83ea56f3062169c127eea230fb067",
+        "lines": 469,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts-cli/src/commands/diff.rs": {
+        "content_hash": "2dd16767944d9bea08328c9dc39798fab31e1ea8d5b107473a6dea53e37e7136",
+        "lines": 41,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/examples/audit.rs": {
+        "content_hash": "422fbcc012f28dcaa826f8531b06323cb3a11d1f09417ba11e9933f52d8ab037",
+        "lines": 86,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "book/html/book.js": {
+        "content_hash": "f0cc07d85c8323c5fd3192aa303947ce5c1ed532049fa33d207d314f32956048",
+        "lines": 690,
+        "functions": 67,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts/src/book_gen/mod.rs": {
+        "content_hash": "481d4661a2d4bb80ac9445d104e77db013d47cc285ddaf92edb2b0bc9391eb2b",
+        "lines": 10,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/cma_es.rs": {
+        "content_hash": "0046d6df867d41217aebbae4e94b8abd9f3e58738ecdf6dd04126eddfc98462e",
+        "lines": 313,
+        "functions": 14,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/audit/mod.rs": {
+        "content_hash": "52d43dfb2ce1cb9e12edacdda9b3afd6db64fab164bad3678bc608911e1fff76",
+        "lines": 519,
+        "functions": 12,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/ulp.rs": {
+        "content_hash": "80e4da45b82131a8c2b663ce39e274b2e9fd74a82d83f4a260c9dcce8803124d",
+        "lines": 108,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/conv1d.rs": {
+        "content_hash": "8c38ec22a059b5c226019b26fcfc770c67e8d6708362bd3c2c7400ebaca10250",
+        "lines": 409,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/flash_attention.rs": {
+        "content_hash": "3100e6420ea08c092aa62b09700a3383e7ffb3d4889cd810a4a3dc6772a295c9",
+        "lines": 701,
+        "functions": 22,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "book/html/mark.min.js": {
+        "content_hash": "09e88c2cfaf23ea8a37b5681433eafea97033af632ecc948c8c1ee9944647743",
+        "lines": 7,
+        "functions": 6,
+        "max_complexity": 0,
+        "category": "TypeScriptSource"
+      },
+      "crates/provable-contracts-cli/src/main.rs": {
+        "content_hash": "dbd583ecf9fc93a558fc60a248802649973402840e3d6f7613b5f978cf5c0cdf",
+        "lines": 272,
+        "functions": 11,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/ops.rs": {
+        "content_hash": "bfb19cb9a76acbafcc20950dc8709d281af106a76a9061de6c6970f09a6fca7c",
+        "lines": 178,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/tests/falsify_normalization.rs": {
+        "content_hash": "ffd3772649f467dcccf0bb5c50740d206638c9fc617e28ae8986ebd055597051",
+        "lines": 666,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/tests/falsify_activation_gated.rs": {
+        "content_hash": "b04b422cf82a9a4cc972845c9bc824536a93f8209b13898b2c098c80884ec24f",
+        "lines": 650,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/kernels/rmsnorm.rs": {
+        "content_hash": "bbc3c7d36e976a80f06337762b9d4ea88ef7554e6c5254ce846a800bdc98a4ec",
+        "lines": 485,
+        "functions": 24,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts-cli/src/commands/book.rs": {
+        "content_hash": "c12d055dcb8539ba10524d9aad6e2d465970c9d374a42d1ebe57ae3cd5591d2a",
+        "lines": 70,
+        "functions": 1,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/tests/ground_truth.rs": {
+        "content_hash": "265291c0d1f21231b553eb3a3a8b9fee56aeef18f88ae89e318ddfea5aa9681d",
+        "lines": 481,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/schema/mod.rs": {
+        "content_hash": "a4be3da35323ae0bc6178f7488101a9888406529fd6b029aa6d9440b78d04dad",
+        "lines": 7,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/examples/validate.rs": {
+        "content_hash": "7e14522b7815af63fb49a5df0d3ce6c2f6fcca746535c0acf51367b806e85d42",
+        "lines": 71,
+        "functions": 2,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-cli/tests/book_coverage.rs": {
+        "content_hash": "cea7cc3b20fff82fae5ef102f585d387b47829c44d9b5dede7a71df614521167",
+        "lines": 65,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "TestCode"
+      },
+      "crates/provable-contracts/src/book_gen/summary.rs": {
+        "content_hash": "d59db01eada4a5fee74e8dddd6f3ce10cde9906cacca88e0156285fd6b0ea36f",
+        "lines": 110,
+        "functions": 5,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/embedding.rs": {
+        "content_hash": "0709c11ffcaca722e47e939446f36a72183b0b035edbeb1c3e2a95e7b501e50b",
+        "lines": 218,
+        "functions": 13,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts/src/kernels/gelu.rs": {
+        "content_hash": "024cc8c5b4b905853c7e304192b015851a92bd0c441ffc5017b92c8ac88537fe",
+        "lines": 94,
+        "functions": 7,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/kernels/pagerank.rs": {
+        "content_hash": "aff74c855f3fe23163388f5ba37a45121135cd7cf235d8b0731f846c83578708",
+        "lines": 358,
+        "functions": 16,
+        "max_complexity": 0,
+        "category": "SimdAvx"
+      },
+      "crates/provable-contracts-cli/src/commands/mod.rs": {
+        "content_hash": "d02b44dca9815bafc364d706ad7d1f899af1318f4541ba65cf221376a0c8a08b",
+        "lines": 14,
+        "functions": 0,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/validator.rs": {
+        "content_hash": "24945b1ef7a742607ee7175ee96e501a1173cdb76fba69fd5bdae59f44eeec34",
+        "lines": 490,
+        "functions": 21,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts/src/schema/parser.rs": {
+        "content_hash": "01f08f39be94a6340843ea12e4dfd790fe78f910a8b88d92ef52dca655bf5b5e",
+        "lines": 228,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      },
+      "crates/provable-contracts-macros/src/lib.rs": {
+        "content_hash": "c07f55b739fca3c76efaaaf43c3e03e195b67bf3284dcf70df48c992fb4f2174",
+        "lines": 227,
+        "functions": 8,
+        "max_complexity": 0,
+        "category": "RustSource"
+      }
+    },
+    "coverage_required": [
+      "crates/provable-contracts-macros/src/lib.rs",
+      "crates/provable-contracts-cli/src/commands/status.rs",
+      "crates/provable-contracts-cli/src/commands/kani.rs",
+      "crates/provable-contracts-cli/src/commands/graph.rs",
+      "crates/provable-contracts-cli/src/commands/audit.rs",
+      "crates/provable-contracts-cli/src/commands/diff.rs",
+      "crates/provable-contracts-cli/src/commands/mod.rs",
+      "crates/provable-contracts-cli/src/commands/generate.rs",
+      "crates/provable-contracts-cli/src/commands/validate.rs",
+      "crates/provable-contracts-cli/src/commands/scaffold.rs",
+      "crates/provable-contracts-cli/src/commands/equations.rs",
+      "crates/provable-contracts-cli/src/commands/book.rs",
+      "crates/provable-contracts-cli/src/commands/lean.rs",
+      "crates/provable-contracts-cli/src/commands/coverage.rs",
+      "crates/provable-contracts-cli/src/commands/lean_status.rs",
+      "crates/provable-contracts-cli/src/commands/probar.rs",
+      "crates/provable-contracts-cli/src/main.rs",
+      "crates/provable-contracts/src/binding.rs",
+      "crates/provable-contracts/src/graph.rs",
+      "crates/provable-contracts/src/scaffold/mod.rs",
+      "crates/provable-contracts/src/diff.rs",
+      "crates/provable-contracts/src/latex.rs",
+      "crates/provable-contracts/src/schema/validator.rs",
+      "crates/provable-contracts/src/schema/mod.rs",
+      "crates/provable-contracts/src/schema/parser.rs",
+      "crates/provable-contracts/src/schema/types.rs",
+      "crates/provable-contracts/src/generate.rs",
+      "crates/provable-contracts/src/build_helper.rs",
+      "crates/provable-contracts/src/kani_gen/strategies.rs",
+      "crates/provable-contracts/src/kani_gen/mod.rs",
+      "crates/provable-contracts/src/coverage.rs",
+      "crates/provable-contracts/src/audit/mod.rs",
+      "crates/provable-contracts/src/error.rs",
+      "crates/provable-contracts/src/book_gen/mod.rs",
+      "crates/provable-contracts/src/book_gen/summary.rs",
+      "crates/provable-contracts/src/book_gen/page.rs",
+      "crates/provable-contracts/src/lib.rs",
+      "crates/provable-contracts/src/lean_gen/mod.rs",
+      "crates/provable-contracts/src/probar_gen/mod.rs",
+      "crates/provable-contracts/src/probar_gen/wired.rs",
+      "crates/provable-contracts/src/probar_gen/patterns.rs",
+      "crates/provable-contracts/src/kernels/activation.rs",
+      "crates/provable-contracts/src/kernels/rmsnorm.rs",
+      "crates/provable-contracts/src/kernels/dropout.rs",
+      "crates/provable-contracts/src/kernels/flash_attention.rs",
+      "crates/provable-contracts/src/kernels/mod.rs",
+      "crates/provable-contracts/src/kernels/attention.rs",
+      "crates/provable-contracts/src/kernels/adamw.rs",
+      "crates/provable-contracts/src/kernels/bias_add.rs",
+      "crates/provable-contracts/src/kernels/embedding.rs",
+      "crates/provable-contracts/src/kernels/rope.rs",
+      "crates/provable-contracts/src/kernels/gqa.rs",
+      "crates/provable-contracts/src/kernels/sampling.rs",
+      "crates/provable-contracts/src/kernels/alibi.rs",
+      "crates/provable-contracts/src/kernels/cma_es.rs",
+      "crates/provable-contracts/src/kernels/silu_standalone.rs",
+      "crates/provable-contracts/src/kernels/gelu.rs",
+      "crates/provable-contracts/src/kernels/linear.rs",
+      "crates/provable-contracts/src/kernels/softmax.rs",
+      "crates/provable-contracts/src/kernels/ops.rs",
+      "crates/provable-contracts/src/kernels/matmul.rs",
+      "crates/provable-contracts/src/kernels/lbfgs.rs",
+      "crates/provable-contracts/src/kernels/f16_convert.rs",
+      "crates/provable-contracts/src/kernels/batchnorm.rs",
+      "crates/provable-contracts/src/kernels/layernorm.rs",
+      "crates/provable-contracts/src/kernels/kmeans.rs",
+      "crates/provable-contracts/src/kernels/pagerank.rs",
+      "crates/provable-contracts/src/kernels/ulp.rs",
+      "crates/provable-contracts/src/kernels/gated_delta_net.rs",
+      "crates/provable-contracts/src/kernels/conv1d.rs",
+      "crates/provable-contracts/src/kernels/cross_entropy.rs",
+      "crates/provable-contracts/src/kernels/absolute_position.rs",
+      "crates/provable-contracts/src/kernels/tied_embeddings.rs",
+      "crates/provable-contracts/src/kernels/swiglu.rs",
+      "crates/provable-contracts/src/kernels/kani_proofs.rs",
+      "crates/provable-contracts/src/kernels/ssm.rs",
+      "crates/provable-contracts/examples/audit.rs",
+      "crates/provable-contracts/examples/codegen.rs",
+      "crates/provable-contracts/examples/lean_codegen.rs",
+      "crates/provable-contracts/examples/validate.rs",
+      "crates/provable-contracts/examples/scaffold.rs",
+      "crates/provable-contracts/examples/pipeline.rs",
+      "crates/provable-contracts/examples/lean_status.rs"
+    ],
+    "manifest_hash": "7623492bc0fb8d325fc49bb3297a26f2bffbe4a56adb17bcde747294be270c57"
+  },
+  "thresholds": {
+    "min_coverage_pct": 95.0,
+    "min_per_file_coverage_pct": 95.0,
+    "max_tdg_regression": 0.0,
+    "max_function_complexity": 20,
+    "max_file_lines": 500,
+    "min_spec_score": 95,
+    "require_github_sync": true,
+    "require_spec_update": true,
+    "require_roadmap_update": true,
+    "block_on_new_satd": true,
+    "block_on_new_dead_code": true,
+    "require_lint_pass": true,
+    "max_fix_chain": 3,
+    "block_on_untested_variants": true,
+    "block_on_cross_crate_failure": false,
+    "block_on_regression": false
+  },
+  "claims": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "falsification_method": "ManifestIntegrity",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "falsification_method": "MetaFalsification",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "falsification_method": "CoverageGaming",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "falsification_method": "DifferentialCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 100.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "falsification_method": "AbsoluteCoverage",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "falsification_method": "TdgRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "falsification_method": "ComplexityRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 20.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "falsification_method": "SupplyChainIntegrity",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "falsification_method": "FileSizeRegression",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 500.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "falsification_method": "SpecQuality",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 95.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "falsification_method": "GitHubSync",
+      "evidence_required": {
+        "GitState": {
+          "unpushed_commits": 0,
+          "dirty_files": 0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "falsification_method": "ExamplesCompile",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "falsification_method": "BookValidation",
+      "evidence_required": {
+        "CounterExample": {
+          "details": ""
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "falsification_method": "SatdDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "falsification_method": "DeadCodeDetection",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "falsification_method": "PerFileCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "falsification_method": "LintPass",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "falsification_method": "VariantCoverage",
+      "evidence_required": {
+        "FileList": []
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "falsification_method": "FixChainLimit",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 3.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "falsification_method": "CrossCrateParity",
+      "evidence_required": {
+        "BooleanCheck": false
+      },
+      "result": null,
+      "override_info": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "falsification_method": "RegressionGate",
+      "evidence_required": {
+        "NumericComparison": {
+          "actual": 0.0,
+          "threshold": 0.0
+        }
+      },
+      "result": null,
+      "override_info": null
+    }
+  ]
+}

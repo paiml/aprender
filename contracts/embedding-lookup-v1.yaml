@@ -1,0 +1,131 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Embedding lookup — table lookup mapping token IDs to dense vectors
+  references:
+  - Mikolov et al. (2013) Efficient Estimation of Word Representations in Vector Space
+  - Vaswani et al. (2017) Attention Is All You Need
+equations:
+  embedding_lookup:
+    formula: output[i] = W[token_ids[i]]  for i in 0..seq_len
+    domain: token_ids[i] in {0, 1, ..., vocab_size - 1}, W in R^{vocab_size x d_model}
+    codomain: output in R^{seq_len x d_model}
+    invariants:
+    - output.shape = (seq_len, d_model) for any valid input sequence
+    - token_ids[i] >= 0 and token_ids[i] < vocab_size (no out-of-bounds)
+    - 'Deterministic: same token_ids and W always produce the same output'
+    - All output elements are finite (no NaN, no Inf)
+    preconditions:
+    - token_ids.iter().all(|&id| (id as usize) < vocab_size)
+    - vocab_size > 0
+    lean_theorem: Theorems.Embedding_Lookup
+    postconditions:
+    - result.len() == token_ids.len() * embed_dim
+    - result.iter().all(|v| v.is_finite())
+proof_obligations:
+- type: bound
+  property: Output shape correctness
+  formal: output.shape = (seq_len, d_model) for token_ids.len() = seq_len
+  applies_to: all
+- type: bound
+  property: Out-of-bounds panic freedom
+  formal: token_ids[i] < vocab_size for all i implies no panic
+  applies_to: all
+- type: invariant
+  property: Deterministic output
+  formal: lookup(W, ids) = lookup(W, ids) for identical W and ids
+  applies_to: all
+- type: bound
+  property: Finite output
+  formal: W[j][k] is finite implies output[i][k] is finite for all i, k
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: validate_indices
+    description: Assert all token_ids are within [0, vocab_size)
+    invariant: token_ids[i] < vocab_size for all i
+  - name: gather_rows
+    description: Gather embedding rows W[token_ids[i]] into output buffer
+    invariant: output[i] = W[token_ids[i]]
+simd_dispatch:
+  embedding_lookup:
+    scalar: embedding_lookup_scalar
+    avx2: embedding_lookup_avx2
+    ptx: embedding_lookup_ptx
+enforcement:
+  output_shape:
+    description: Output must have shape (seq_len, d_model)
+    check: contract_tests::FALSIFY-EM-001
+    severity: ERROR
+  oob_safety:
+    description: Out-of-bounds token IDs must not cause panics
+    check: contract_tests::FALSIFY-EM-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-EM-001
+  rule: Output shape correctness
+  prediction: output.shape = (seq_len, d_model) for any valid seq_len
+  test: proptest with random seq_len in [1, 512] and d_model in {64, 128, 256}
+  if_fails: Allocation or reshape does not match expected dimensions
+- id: FALSIFY-EM-002
+  rule: Out-of-bounds panic freedom
+  prediction: No panic when all token_ids < vocab_size; controlled error otherwise
+  test: proptest with token_ids near vocab_size boundary
+  if_fails: Missing bounds check on token index
+- id: FALSIFY-EM-003
+  rule: Deterministic output
+  prediction: Two calls with identical W and token_ids produce bit-identical output
+  test: call lookup twice, assert bitwise equality
+  if_fails: Non-determinism from uninitialized memory or concurrency
+- id: FALSIFY-EM-004
+  rule: Finite output
+  prediction: All output elements are finite when all W elements are finite
+  test: proptest with finite embedding table, check output is_finite()
+  if_fails: Copying introduces NaN or Inf through uninitialized buffer
+kani_harnesses:
+- id: KANI-EM-001
+  obligation: EM-SHP-001
+  property: Embedding lookup output shape equals (seq_len, d_model)
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_embedding_output_shape
+- id: KANI-EM-002
+  obligation: EM-SAF-001
+  property: No out-of-bounds access when token_ids < vocab_size
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_embedding_index_safety
+- id: KANI-EMBEDD-003
+  obligation: Output shape correctness
+  property: Output shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-004
+  obligation: Out-of-bounds panic freedom
+  property: Out-of-bounds panic freedom
+  bound: 8
+  strategy: stub_float
+- id: KANI-EMBEDD-005
+  obligation: Deterministic output
+  property: Deterministic output
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-006
+  obligation: Finite output
+  property: Finite output
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-EM-001
+  name: Embedding Lookup Contract
+  description: Token-to-vector embedding table lookup quality gate
+  checks:
+  - output_shape
+  - oob_safety
+  - determinism
+  - finite_output
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Replace lookup with zero vector regardless of token_id

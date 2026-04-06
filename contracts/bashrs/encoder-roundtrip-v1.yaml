@@ -1,0 +1,216 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: 'Shell encoder roundtrip correctness — the codegen/emitter that converts AST back to shell must be invertible:
+    parse(emit(ast)) produces a semantically equivalent AST'
+  references:
+  - IEEE Std 1003.1-2017 Shell Command Language (POSIX.1-2017 Section 2)
+  - Greenberg et al. (2021) POSIX Shell Surprising Semantics. USENIX ATC
+  - Adams & Might (2014) Parsing with Derivatives. ICFP — invertibility of grammar-based encoders
+  depends_on:
+  - parser-soundness-v1
+equations:
+  emit_purified:
+    formula: "emit_purified: BashAst -> String\n  Generates purified POSIX sh from a parsed bash AST:\n    1. Emit #!/bin/sh\
+      \ shebang (transform from #!/bin/bash)\n    2. Traverse statements recursively, emitting indented shell code\n    3.\
+      \ Quote all variables for injection safety\n    4. Ensure deterministic output (no $RANDOM, no timestamps)\n    5. Ensure\
+      \ idempotent operations (mkdir -p, rm -f)\n  Output is a valid POSIX sh script string.\n"
+    domain: ast in BashAst (valid parsed bash AST)
+    codomain: purified_source in UTF-8 string (valid POSIX sh script)
+    invariants:
+    - 'Output always starts with #!/bin/sh shebang'
+    - All variables in output are properly quoted (${VAR} form)
+    - Output is syntactically valid POSIX sh (can be re-parsed)
+    - 'Indentation is consistent: 4 spaces per nesting level'
+    preconditions:
+    - '!input.is_empty()'
+    - vocab_size > 0
+    lean_theorem: Theorems.Emit_Purified
+  emit_posix:
+    formula: "emit_posix: ShellIR -> Result<String, Error>\n  Generates POSIX shell from the intermediate representation:\n\
+      \    Handles: ShellIR::Command, Assignment, If, While, For, Case, Function,\n             Pipeline, Subshell, Sequence,\
+      \ Arithmetic, ...\n  Uses escape functions for safe output:\n    - escape_shell_string(s): Escapes special characters\
+      \ in string literals\n    - escape_variable_name(v): Ensures variable name is valid identifier\n    - escape_command_name(c):\
+      \ Prevents command name injection\n  Arithmetic expressions respect operator precedence (POSIX/C ordering).\n"
+    domain: ir in ShellIR (intermediate representation from Rust AST transpilation)
+    codomain: Result<String, Error> — valid POSIX sh source or structured error
+    invariants:
+    - 'Escape functions are idempotent: escape(escape(s)) == escape(s)'
+    - 'Arithmetic precedence matches C standard: *, /, % > +, - > <<, >> > & > ^ > |'
+    - 'Logical constant folding is sound: try_fold_logical(LogicalAnd(true, x)) == x'
+    preconditions:
+    - '!input.is_empty()'
+    - vocab_size > 0
+    lean_theorem: Theorems.Emit_Posix
+  roundtrip:
+    formula: "Roundtrip property for the purifier pipeline:\n  parse(emit_purified(parse(source))) ~= parse(source)\nWhere\
+      \ ~= denotes semantic equivalence:\n  - Same statements in same order\n  - Same variable names and values\n  - Same\
+      \ control flow structure\n  - Whitespace and comments may differ\n  - Shebang normalized to #!/bin/sh\nFor the IR pipeline:\n\
+      \  parse_rust(emit_posix(lower(parse_rust(rust_source)))) ~= parse_rust(rust_source)\n"
+    domain: source in valid bash/POSIX script string
+    codomain: Boolean — true if roundtrip holds
+    invariants:
+    - 'Roundtrip holds for all constructs: assignments, commands, if/elif/else, for, while, until, case, functions, pipelines,
+      redirects'
+    - Variable quoting may be added but never changes semantics
+    - Bashisms are purified to POSIX equivalents (semantic-preserving transformation)
+    preconditions:
+    - '!input.is_empty()'
+    - vocab_size > 0
+    lean_theorem: Theorems.Roundtrip
+proof_obligations:
+- type: roundtrip
+  property: Parse-emit-parse equivalence for purifier
+  formal: 'For all valid bash source s: parse(emit_purified(parse(s))) ~= parse(s) up to whitespace and comments'
+  applies_to: all
+- type: invariant
+  property: Emitted output is valid POSIX sh
+  formal: 'For all ast in BashAst: parse(emit_purified(ast)) = Ok(_) — output always re-parseable'
+  applies_to: all
+- type: invariant
+  property: Escape idempotence
+  formal: escape_shell_string(escape_shell_string(s)) == escape_shell_string(s) for all s
+  applies_to: all
+- type: invariant
+  property: Variable preservation
+  formal: 'For all assignments in ast: variable name appears verbatim in emit_purified(ast) output'
+  applies_to: all
+- type: invariant
+  property: Control flow structure preservation
+  formal: count_if(ast) == count_if(parse(emit_purified(ast))) and count_for(ast) == count_for(parse(emit_purified(ast)))
+  applies_to: all
+- type: bound
+  property: Output size bounded
+  formal: '|emit_purified(ast)| <= C * |ast| for constant C (linear blowup, no exponential expansion)'
+  applies_to: all
+- type: invariant
+  property: Arithmetic precedence correctness
+  formal: 'Parenthesization in emitted arithmetic matches C/POSIX precedence: no incorrect grouping'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: ast_traversal
+    description: Recursive descent over BashAst or ShellIR, emitting shell text per node
+    invariant: Every AST node is visited exactly once; no silent drops
+  - name: escape_application
+    description: Apply escape functions to string literals, variable names, and command names
+    invariant: Escape functions are total and idempotent; no double-escaping
+  - name: indentation
+    description: Manage indentation depth during recursive emission
+    invariant: Depth increases by 1 for each nesting level; pre-computed cache for depths 0-8
+  - name: operator_precedence
+    description: Parenthesize arithmetic expressions based on precedence table
+    invariant: Child expressions with lower precedence than parent are always wrapped in parens; right-associativity handled
+falsification_tests:
+- id: FALSIFY-ERT-001
+  rule: Assignment roundtrip
+  prediction: parse(emit(parse('VAR=value'))) preserves variable name and value
+  test: 'proptest: generate random valid variable names and values; build Assignment AST; emit and re-parse; assert name and
+    value match'
+  if_fails: Escape function corrupts variable name or value; quoting changes semantics
+- id: FALSIFY-ERT-002
+  rule: If/elif/else roundtrip
+  prediction: parse(emit(parse(if_script))) preserves condition, then-block, elif-blocks, and else-block structure
+  test: Build multi-branch If AST with nested elif; emit; re-parse; assert structural equality
+  if_fails: unwrap_single_if() incorrectly flattens or duplicates elif branches
+- id: FALSIFY-ERT-003
+  rule: For loop roundtrip
+  prediction: parse(emit(parse('for x in a b c; do echo $x; done'))) preserves variable, items, and body
+  test: Build For AST with various item lists; emit; re-parse; assert structural equality
+  if_fails: Item list quoting changes word splitting semantics
+- id: FALSIFY-ERT-004
+  rule: Pipeline roundtrip
+  prediction: parse(emit(parse('cmd1 | cmd2 | cmd3'))) preserves pipeline stages and order
+  test: Build Pipeline AST with 1-5 stages; emit; re-parse; assert same stage count and command names
+  if_fails: Pipeline operator emission loses stages or reorders commands
+- id: FALSIFY-ERT-005
+  rule: Escape idempotence
+  prediction: escape_shell_string(escape_shell_string(s)) == escape_shell_string(s) for all strings
+  test: 'proptest: generate strings with shell metacharacters ($, `, \, ", !, {, }, |); apply escape twice; assert equality
+    with single escape'
+  if_fails: Escape function double-escapes backslashes or dollar signs
+- id: FALSIFY-ERT-006
+  rule: Arithmetic precedence
+  prediction: Emitted arithmetic expressions evaluate to same value as AST representation
+  test: Build nested ArithmeticOp trees with mixed precedence (Add containing Mul, BitOr containing Shl); emit; verify parenthesization
+    matches C precedence
+  if_fails: arithmetic_precedence() table or needs_arithmetic_parens() logic is incorrect
+- id: FALSIFY-ERT-007
+  rule: Heredoc roundtrip
+  prediction: parse(emit(parse(heredoc_script))) preserves heredoc delimiter and content
+  test: Build scripts with heredocs containing special characters; emit; re-parse; assert content equality
+  if_fails: Heredoc content escaping corrupts embedded variables or newlines
+- id: FALSIFY-ERT-008
+  rule: Logical constant folding soundness
+  prediction: try_fold_logical(LogicalAnd(Bool(true), Bool(false))) == Some(false)
+  test: Enumerate all 2-operand logical combinations (true/false x And/Or/Not); verify fold result matches truth table
+  if_fails: try_fold_logical() has incorrect boolean logic in And/Or/Not branches
+kani_harnesses:
+- id: KANI-ERT-001
+  obligation: Escape idempotence
+  property: escape_shell_string(escape_shell_string(s)) == escape_shell_string(s) for bounded strings
+  bound: 32
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_escape_idempotent
+- id: KANI-ERT-002
+  obligation: Arithmetic precedence correctness
+  property: needs_arithmetic_parens() returns true iff child_prec < parent_prec or (equal and right child)
+  bound: 10
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_arithmetic_precedence
+- id: KANI-ERT-003
+  obligation: Logical fold soundness
+  property: try_fold_logical() matches standard boolean algebra for all 2-depth trees
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_logical_fold
+- id: KANI-ERT-004
+  obligation: Indent cache correctness
+  property: get_indent(n) == repeat('    ', n) for all n in [0, 8]
+  bound: 9
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_indent_cache
+- id: KANI-ENCODE-005
+  obligation: Parse-emit-parse equivalence for purifier
+  property: Parse-emit-parse equivalence for purifier
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ENCODE-006
+  obligation: Emitted output is valid POSIX sh
+  property: Emitted output is valid POSIX sh
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ENCODE-007
+  obligation: Variable preservation
+  property: Variable preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ENCODE-008
+  obligation: Control flow structure preservation
+  property: Control flow structure preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ENCODE-009
+  obligation: Output size bounded
+  property: Output size bounded
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-ERT-001
+  name: Encoder Roundtrip Contract
+  description: Shell encoder produces valid output that roundtrips through the parser preserving semantics
+  checks:
+  - assignment_roundtrip
+  - control_flow_roundtrip
+  - pipeline_roundtrip
+  - escape_idempotence
+  - arithmetic_precedence
+  - heredoc_roundtrip
+  - logical_fold
+  pass_criteria: All 8 falsification tests pass + 4 Kani harnesses verify
+  falsification: Break escape_shell_string() by removing backslash escaping to corrupt roundtrip on strings with metacharacters

@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Matrix multiplication kernel — general and quantized variants
+  references:
+  - Goto & van de Geijn (2008) Anatomy of High-Performance Matrix Multiplication
+  - 'Dettmers et al. (2022) LLM.int8(): 8-bit Matrix Multiplication for Transformers'
+equations:
+  matmul:
+    formula: C_{ij} = Σ_k A_{ik} · B_{kj}
+    domain: A ∈ ℝ^{m×p}, B ∈ ℝ^{p×n}
+    codomain: C ∈ ℝ^{m×n}
+    invariants:
+    - C has shape (m, n)
+    - 'Matmul is associative: (AB)C = A(BC)'
+    - 'Matmul distributes over addition: A(B+C) = AB + AC'
+    preconditions:
+    - a.len() == m * k
+    - b.len() == k * n
+    - m > 0 && k > 0 && n > 0
+    lean_theorem: Theorems.Matmul
+    postconditions:
+    - result.len() == m * n
+    - result.iter().all(|v| v.is_finite())
+  quantized_dot:
+    formula: q_dot(a, b, s_a, s_b) = s_a · s_b · Σ_k a_k · b_k
+    domain: a, b ∈ ℤ^n (int8), s_a, s_b ∈ ℝ (scales)
+    codomain: ℝ
+    invariants:
+    - '|q_dot - f32_dot| ≤ quantization_error_bound'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Quantized_Dot
+proof_obligations:
+- type: invariant
+  property: Output shape correctness
+  formal: shape(A @ B) = (rows(A), cols(B))
+  applies_to: all
+- type: associativity
+  property: Matmul associativity
+  formal: '|(AB)C - A(BC)| < ε (within floating point)'
+  tolerance: 0.0001
+  applies_to: all
+- type: linearity
+  property: Matmul distributes
+  formal: '|A(B+C) - AB - AC| < ε'
+  tolerance: 0.0001
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  tolerance: 4.0
+  applies_to: simd
+- type: bound
+  property: Quantized error bounded
+  formal: '|q_dot(a,b) - dot(dequant(a), dequant(b))| ≤ bound'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: tile_partition
+    description: Partition matrices into tiles for cache efficiency
+    invariant: All elements covered exactly once
+  - name: micro_kernel
+    description: Compute C_tile += A_panel × B_panel
+    invariant: Accumulation is exact (fused multiply-add)
+  - name: store_result
+    description: Write tile results to output matrix
+    invariant: No overlap in output tiles
+falsification_tests:
+- id: FALSIFY-MM-001
+  rule: Shape correctness
+  prediction: matmul(A[m,p], B[p,n]) has shape [m,n]
+  test: proptest with random dimensions
+  if_fails: Dimension transposition error
+- id: FALSIFY-MM-002
+  rule: Numerical accuracy
+  prediction: '|matmul(A,B) - reference_matmul(A,B)| < 1e-4'
+  test: proptest comparing tiled vs naive implementations
+  if_fails: Accumulation order or tiling error
+- id: FALSIFY-MM-003
+  rule: SIMD equivalence
+  prediction: '|matmul_avx2(A,B) - matmul_scalar(A,B)| < 4 ULP'
+  test: proptest comparing implementations
+  if_fails: SIMD FMA ordering differs
+- id: FALSIFY-MM-004
+  rule: Quantized accuracy
+  prediction: '|q_dot(a,b) - float_dot(a,b)| within quantization bound'
+  test: proptest with int8 vectors and scales
+  if_fails: Scale factor application error
+- id: FALSIFY-MM-005
+  rule: Identity matrix
+  prediction: matmul(A, I) = A and matmul(I, B) = B
+  test: proptest with identity matrices
+  if_fails: Off-by-one in loop bounds
+kani_harnesses:
+- id: KANI-MM-001
+  obligation: MM-INV-001
+  property: Quantized dot product error bounded
+  bound: 8
+  strategy: exhaustive
+  harness: verify_quantized_dot_bounded
+- id: KANI-MATMUL-002
+  obligation: Output shape correctness
+  property: Output shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MATMUL-003
+  obligation: Matmul associativity
+  property: Matmul associativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MATMUL-004
+  obligation: Matmul distributes
+  property: Matmul distributes
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MATMUL-005
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MATMUL-006
+  obligation: Quantized error bounded
+  property: Quantized error bounded
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-MM-001
+  name: Matmul Contract
+  checks:
+  - shape_correctness
+  - numerical_accuracy
+  - simd_equivalence
+  pass_criteria: All 5 falsification tests pass
+  falsification: Swap row/column indices in inner loop
+simd_dispatch:
+  matmul:
+    scalar: matmul_scalar
+    avx2: matmul_avx2
+    ptx: matmul_ptx

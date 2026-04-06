@@ -1,0 +1,266 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: >
+    Parity profiling system — cross-runtime training performance comparison
+    with CUPTI-grade GPU kernel timing.
+
+    Gap analysis (five-whys):
+    1. 47 upstream fixes shipped but zero scientifically measured
+    2. APR profiling uses CPU Instant::now() — measures dispatch, not GPU execution
+    3. PyTorch/unsloth canaries have ZERO profiling (one wall-clock per step)
+    4. No common schema for cross-runtime comparison
+    5. ROOT CAUSE: No parity profiling infrastructure exists
+
+    Solution: Three-layer profiling architecture:
+    - Layer 1 (System): renacer CUPTI kernel tracing — ground-truth GPU timing
+    - Layer 2 (Framework): torch.profiler for PyTorch/unsloth, StepProfiler for APR
+    - Layer 3 (Analysis): probar TrainingScorecard parity mode — cross-runtime comparison
+
+    Research basis:
+    - SKIP framework (arXiv:2504.11750): System-aware profiler using CUPTI for GPU kernel events
+    - PyGraph (arXiv:2503.19779): CUDA Graph profiling identifies CPU-side launch bottleneck
+    - Hoefler & Belli SC'15: Statistical rigor for benchmarking (median, CI, wall coverage)
+    - CUPTI Python API: kernel-level timing for training profiling
+  pmat: [PMAT-487]
+  references:
+    - "Hoefler & Belli (2015) Scientific Benchmarking of Parallel Computing Systems. SC'15"
+    - "arXiv:2504.11750 — SKIP: System-Aware Kernel Inference Profiler (CUPTI-based)"
+    - "arXiv:2503.19779 — PyGraph: Robust Compiler Support for CUDA Graphs in PyTorch"
+    - "arXiv:2407.08608 — FlashAttention-3: Fast and Accurate Attention with Asynchrony"
+    - "NVIDIA CUPTI documentation — Activity API for kernel-level timing"
+    - "PyTorch torch.profiler documentation — activities=[CPU, CUDA]"
+    - "training-step-scorecard-v1.yaml — probar grading + bottleneck classification"
+    - "per-operation-training-profiling-v1.yaml — entrenar StepProfiler contract"
+
+equations:
+  parity_profile_schema:
+    formula: |
+      ParityProfile = {
+        "_schema": "parity-profile-v1",
+        "runtime": "apr" | "pytorch" | "unsloth",
+        "steps_profiled": N,
+        "step_time_ms": {"mean": F, "p50": F, "p95": F, "p99": F},
+        "phases": {
+          "forward_ms":   {"mean": F, "pct": F},
+          "backward_ms":  {"mean": F, "pct": F},
+          "optimizer_ms": {"mean": F, "pct": F},
+          "data_ms":      {"mean": F, "pct": F}
+        },
+        "ops": {
+          "attention_ms":    {"mean": F, "pct": F},
+          "ffn_ms":          {"mean": F, "pct": F},
+          "norm_ms":         {"mean": F, "pct": F},
+          "embed_ms":        {"mean": F, "pct": F},
+          "projection_ms":   {"mean": F, "pct": F}
+        },
+        "hardware": {
+          "kernel_launches_per_step": I,
+          "gpu_utilization_pct": F,
+          "memory_bandwidth_gbps": F,
+          "compute_tflops": F,
+          "peak_vram_mb": I
+        }
+      }
+    domain: All runtimes emit this schema
+    invariants:
+      - sum(phases.pct) in [90.0, 100.0] (wall coverage >= 90%)
+      - All numeric values finite and non-negative
+      - kernel_launches_per_step > 0
+
+  parity_delta:
+    formula: |
+      For metrics m in {forward_ms, backward_ms, attention_ms, ffn_ms, ...}:
+        delta[m] = (apr[m] - baseline[m]) / baseline[m]
+      where baseline = min(pytorch[m], unsloth[m])
+
+      Parity achieved when |delta[m]| < 0.10 for all m (within 10%).
+      Gap identified when delta[m] > 0.50 (APR 50%+ slower).
+    domain: Two or more runtime profiles on same hardware
+    invariants:
+      - delta is defined only when baseline > 0
+      - Parity threshold configurable (default 10%)
+
+  cupti_kernel_timing:
+    formula: |
+      For each CUDA kernel launch in a training step:
+        kernel_time_us = end_timestamp - start_timestamp  (CUPTI Activity API)
+        launch_overhead_us = kernel_start - api_call_start  (dispatch latency)
+        total_launch_overhead = sum(launch_overhead_us) for all kernels
+
+      Contrast with CPU-side timing:
+        cpu_dispatch_time = Instant::now() delta (what StepProfiler measures)
+        gpu_kernel_time = CUPTI kernel_time_us (actual GPU work)
+        overhead_ratio = total_launch_overhead / step_wall_time
+    domain: CUPTI Activity records from renacer trace capture
+    invariants:
+      - gpu_kernel_time <= cpu_dispatch_time (GPU work subset of CPU dispatch)
+      - overhead_ratio in [0.0, 1.0]
+
+  torch_profiler_integration:
+    formula: |
+      For PyTorch/unsloth canaries:
+        with torch.profiler.profile(
+          activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+          schedule=schedule(wait=1, warmup=2, active=N),
+          with_flops=True
+        ) as prof:
+          for step in training_steps:
+            train_step()
+            prof.step()
+
+      Aggregation: prof.key_averages(group_by_input_shape=True)
+      Kernel-to-op mapping:
+        "aten::mm", "aten::bmm" → projection/ffn (by shape)
+        "triton_*attention*" → attention
+        "aten::layer_norm", "aten::rms_norm" → norm
+        "aten::embedding" → embed
+    domain: PyTorch 2.x with CUDA backend
+    invariants:
+      - Profiler overhead < 15% of step time (with_stack=False)
+      - At least 5 steps profiled after warmup
+
+proof_obligations:
+  - type: equivalence
+    property: Schema consistency across runtimes
+    formal: 'all three runtimes emit valid parity-profile-v1 JSON'
+    applies_to: apr, pytorch, unsloth canaries
+
+  - type: invariant
+    property: Wall coverage threshold
+    formal: 'sum(phases.pct) >= 90.0 for all profiled runs'
+    applies_to: all runtimes
+
+  - type: bound
+    property: CUPTI vs CPU timing divergence
+    formal: 'gpu_kernel_time / cpu_dispatch_time < 0.50 when launch_overhead > 50%'
+    applies_to: APR runtime (validates 84.6% overhead claim)
+
+  - type: invariant
+    property: Profiler overhead bounded
+    formal: 'profiled_step_time / unprofiled_step_time < 1.15'
+    applies_to: all runtimes
+
+falsification_tests:
+  - id: F-PAR-001
+    rule: Schema validation
+    prediction: All three canaries emit valid parity-profile-v1 JSON
+    test: Run each canary with --profile, validate JSON against schema
+    if_fails: Missing fields or wrong types in output
+
+  - id: F-PAR-002
+    rule: Phase decomposition accuracy
+    prediction: sum(phases) accounts for >= 90% of step_time for all runtimes
+    test: Verify wall coverage >= 90% for 10 profiled steps
+    if_fails: Missing phase instrumentation
+
+  - id: F-PAR-003
+    rule: CUPTI validates CPU timing
+    prediction: >
+      For APR: CUPTI kernel_time < StepProfiler Instant time for each op.
+      The difference = kernel launch overhead (expected 84.6% based on profile-yoga-20260402).
+    test: Run renacer CUPTI trace alongside StepProfiler, compare per-op
+    if_fails: StepProfiler timing not correlated with actual GPU work
+
+  - id: F-PAR-004
+    rule: Parity delta identifies known gaps
+    prediction: >
+      APR attention_ms / unsloth attention_ms > 5.0 (known: no fused attention).
+      APR kernel_launches_per_step / unsloth kernel_launches_per_step > 3.0.
+    test: Run parity report on same hardware, check delta magnitudes
+    if_fails: Profiling granularity insufficient to distinguish runtimes
+
+  - id: F-PAR-005
+    rule: Profiler overhead bounded
+    prediction: Profiled step_time < 1.15 * unprofiled step_time for all runtimes
+    test: Compare profiled vs unprofiled 20-step runs
+    if_fails: Profiling too expensive — reduce sampling or use deferred sync
+
+  - id: F-PAR-006
+    rule: torch.profiler captures kernel-level detail
+    prediction: >
+      For unsloth: key_averages shows Triton fused attention kernel.
+      For pytorch: key_averages shows cuBLAS sgemm kernels.
+    test: Verify kernel names appear in profiler output
+    if_fails: torch.profiler not capturing CUDA kernels — check activities config
+
+kani_harnesses:
+  - id: KANI-PAR-001
+    obligation: Schema consistency across runtimes
+    property: JSON schema validation
+    bound: 8
+    strategy: exhaustive
+    harness: verify_parity_schema
+    solver: cadical
+
+  - id: KANI-PAR-002
+    obligation: Wall coverage threshold
+    property: Phase percentages sum >= 90
+    bound: 8
+    strategy: stub_float
+    harness: verify_wall_coverage
+    solver: cadical
+
+  - id: KANI-PAR-003
+    obligation: Profiler overhead bounded
+    property: Overhead < 15%
+    bound: 8
+    strategy: stub_float
+    harness: verify_profiler_overhead
+    solver: cadical
+
+implementation_requirements:
+  canary_changes:
+    - description: Add --profile flag to PyTorch canary
+      detail: >
+        Wrap 10 post-warmup steps in torch.profiler.profile(activities=[CPU, CUDA]).
+        Aggregate key_averages, map kernel names to parity schema ops.
+        Emit "profile" section in canary JSON matching parity-profile-v1.
+    - description: Add --profile flag to unsloth canary
+      detail: >
+        Add ProfilerCallback to HuggingFace SFTTrainer.
+        Same schema output as PyTorch canary.
+    - description: Enhance APR canary profiling
+      detail: >
+        Map existing StepProfiler phases to parity schema.
+        Add kernel_launches_per_step from CUDA events or renacer.
+
+  probar_changes:
+    - description: ParityComparison mode in TrainingScorecard
+      detail: >
+        New function: compute_parity_scorecard(profiles: &[ParityProfile])
+        Produces delta analysis between runtimes, identifies top-3 gaps.
+    - description: Parity report Markdown output
+      detail: >
+        Side-by-side table: APR vs PyTorch vs unsloth for each metric.
+        Highlight cells where APR is >50% slower (gap).
+
+  renacer_changes:
+    - description: CUPTI training trace capture mode
+      detail: >
+        Add --training flag to renacer trace that captures CUPTI Activity
+        records for a training step. Output kernel-level timing JSON.
+    - description: Golden trace comparison for training
+      detail: >
+        Extend renacer validate with training trace baseline.
+        Detect kernel launch count regressions.
+
+  sovereign_stack_permanent:
+    - description: batuta oracle update
+      detail: >
+        Add probar capability "training_parity_profiling".
+        Add renacer capability "cupti_training_trace".
+        Add integration pattern probar→renacer for profiling.
+
+qa_gate:
+  id: F-PAR-001
+  name: parity-profiling-system-v1 Contract
+  checks:
+    - schema_validation
+    - phase_decomposition
+    - cupti_validation
+    - parity_delta
+    - profiler_overhead
+    - torch_profiler_kernels
+  pass_criteria: All 6 falsification tests pass

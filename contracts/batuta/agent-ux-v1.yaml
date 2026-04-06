@@ -1,0 +1,272 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: Agent UX correctness — Brick rendering, pixel coverage, frame budget, accessibility, state machine
+  references:
+  - 'presentar-terminal 0.3: CellBuffer, DiffRenderer, Brick trait'
+  - 'probar 1.0: PixelCoverageTracker, FalsificationGate, playbook state machines'
+  - 'WCAG 2.1 Level AA: contrast ratio 4.5:1'
+  - 'Nielsen (1994): Usability Engineering — 100ms/1s/10s response time thresholds'
+  depends_on:
+  - agent-loop-v1
+  - streaming-tpot-v1
+equations:
+  streaming_responsiveness:
+    formula: |
+      ttft_displayed = t(first_char_on_terminal) - t(user_pressed_enter)
+      ttft_displayed <= 2.0s when streaming enabled
+    domain: Agent TUI with SSE streaming active
+    invariants:
+    - First token renders within 2s (Nielsen 1994 feedback threshold)
+    - Per-token render < 100ms (Brick MaxLatencyMs assertion)
+    - Token ordering preserved (no out-of-order display)
+    preconditions:
+    - streaming_enabled == true
+    - provider.supports_streaming() == true
+    postconditions:
+    - terminal_output.len() > 0
+    lean_theorem: Theorems.Streaming_Responsiveness
+  frame_budget:
+    formula: |
+      frame_time(brick_house) = sum(brick.render_time for brick in panels)
+      frame_time(brick_house) <= 16ms
+    domain: 6-panel agent TUI, presentar-terminal CellBuffer
+    invariants:
+    - Total frame time <= 16ms (60fps)
+    - No individual Brick exceeds its allocation
+    - Jidoka fires if any Brick fails verification
+    preconditions:
+    - panels.len() > 0
+    - panels.iter().all(|p| p.budget_ms() > 0)
+    postconditions:
+    - frame_time <= Duration::from_millis(16)
+    lean_theorem: Theorems.Frame_Budget
+  brick_verification:
+    formula: |
+      can_render(brick) = brick.verify().passed()
+      render(panel) = if can_render(brick) then draw(brick) else skip
+    domain: Brick trait, presentar-core
+    invariants:
+    - Invalid state never rendered (Jidoka)
+    - Verification runs before every render call
+    - Failed verification produces diagnostic (not silent skip)
+    preconditions:
+    - brick.assertions().len() > 0
+    postconditions:
+    - rendered == can_render(brick)
+    lean_theorem: Theorems.Brick_Verification
+  pixel_coverage:
+    formula: |
+      coverage(test_suite) = |cells_touched| / |total_cells|
+      coverage(test_suite) >= 0.80
+    domain: PixelCoverageTracker grid over terminal
+    invariants:
+    - All 6 panels have at least one test exercising their region
+    - Coverage measured across all terminal sizes (20x10 to 200x60)
+    - Cold spots (0% coverage) flagged in heatmap
+    preconditions:
+    - grid_width > 0
+    - grid_height > 0
+    postconditions:
+    - coverage >= 0.80
+    lean_theorem: Theorems.Pixel_Coverage
+  contrast_accessibility:
+    formula: |
+      contrast_ratio(foreground, background) >= 4.5 for normal text
+      contrast_ratio(foreground, background) >= 7.0 for warning text
+    domain: All text elements in agent TUI panels
+    invariants:
+    - WCAG 2.1 Level AA compliance on all panels
+    - AAA (7.0) for sandbox violation warnings
+    - Color mode fallback preserves contrast (TrueColor -> 256 -> 16 -> Mono)
+    preconditions:
+    - foreground != background
+    postconditions:
+    - contrast_ratio >= 4.5
+    lean_theorem: Theorems.Contrast_Accessibility
+  layout_correctness:
+    formula: |
+      for all terminal sizes (w, h) where w >= 20, h >= 10:
+        overlap(panels) = 0
+        AND union(panels) covers visible area
+    domain: Adaptive layout engine, 5 detail levels
+    invariants:
+    - No panel overlaps another at any terminal size
+    - Layout degrades gracefully (Full -> Compact -> Minimal)
+    - Resize event re-layouts within 1 frame (16ms)
+    preconditions:
+    - terminal_width >= 20
+    - terminal_height >= 10
+    lean_theorem: Theorems.Layout_Correctness
+  cost_display_accuracy:
+    formula: |
+      |displayed_cost - actual_cost| / actual_cost < 0.05
+    domain: CostDashboardPanel, per-turn and cumulative
+    invariants:
+    - Displayed cost within 5% of actual
+    - Cost is non-negative
+    - Cumulative cost monotonically increases
+    postconditions:
+    - displayed_cost >= 0.0
+    - displayed_cost.is_finite()
+    lean_theorem: Theorems.Cost_Display_Accuracy
+  state_machine_validity:
+    formula: |
+      for all states S in agent_fsm:
+        reachable(S) from initial state
+      for all transitions T in agent_fsm:
+        deterministic(T)
+      forbidden_transitions are unreachable
+    domain: Agent loop FSM (7 states, probar playbook)
+    invariants:
+    - No dead states (all reachable from idle)
+    - No non-deterministic transitions
+    - Forbidden transitions provably unreachable
+    - Mutation score >= 100% (M1-M5)
+    lean_theorem: Theorems.State_Machine_Validity
+proof_obligations:
+- type: bound
+  property: Streaming TTFT within 2s
+  formal: ttft_displayed <= 2.0s
+  applies_to: all
+- type: bound
+  property: Frame budget 16ms
+  formal: frame_time <= 16ms for all frames
+  applies_to: all
+- type: invariant
+  property: Brick Jidoka enforcement
+  formal: invalid state => not rendered
+  applies_to: all
+- type: bound
+  property: Pixel coverage >= 80%
+  formal: coverage >= 0.80 across test suite
+  applies_to: all
+- type: bound
+  property: WCAG AA contrast
+  formal: contrast_ratio >= 4.5 for all text
+  applies_to: all
+- type: invariant
+  property: Layout no-overlap
+  formal: overlap(panels) == 0 for all terminal sizes
+  applies_to: all
+- type: bound
+  property: Cost display accuracy
+  formal: "abs(displayed - actual) / actual < 0.05"
+  applies_to: all
+- type: completeness
+  property: State machine reachability
+  formal: all states reachable from initial
+  applies_to: all
+- type: determinism
+  property: State machine determinism
+  formal: each (state, event) pair has exactly one transition
+  applies_to: all
+- type: soundness
+  property: Mutation testing kills all mutants
+  formal: mutation_score == 1.0 for M1-M5
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-UX-001
+  rule: Streaming responsiveness
+  prediction: First token renders within 2s of user input
+  test: probar FalsificationGate, 100 trials, <1% rejection
+  if_fails: SSE streaming broken or provider TTFT too high
+- id: FALSIFY-UX-002
+  rule: Frame budget
+  prediction: No frame exceeds 16ms over 10K frames
+  test: BrickHouse budget report, <1% violation rate
+  if_fails: TUI too slow for 60fps — user sees lag
+- id: FALSIFY-UX-003
+  rule: Brick Jidoka
+  prediction: Invalid state (negative cost) never rendered
+  test: Set cost=-1.0, assert can_render() returns false
+  if_fails: Invalid data shown to user — trust erosion
+- id: FALSIFY-UX-004
+  rule: Pixel coverage
+  prediction: Test suite covers >= 80% of terminal cells
+  test: PixelCoverageTracker across all TUI states, assert >= 0.80
+  if_fails: Untested UI regions — latent rendering bugs
+- id: FALSIFY-UX-005
+  rule: WCAG AA contrast
+  prediction: All text has contrast ratio >= 4.5
+  test: probar A11yChecker on all 6 panels across all themes
+  if_fails: Accessibility violation — users with low vision cannot read
+- id: FALSIFY-UX-006
+  rule: Layout no-overlap
+  prediction: No panel overlaps at any terminal size 20x10 to 200x60
+  test: Pixel coverage sweep across 50 terminal sizes, assert 0 overlap pixels
+  if_fails: Layout engine bug — panels corrupt each other
+- id: FALSIFY-UX-007
+  rule: Cost display accuracy
+  prediction: Displayed cost within 5% of actual for 1000 turns
+  test: probar FalsificationGate, compare displayed vs actual
+  if_fails: Users see wrong cost numbers — budget decisions on bad data
+- id: FALSIFY-UX-008
+  rule: State machine validity
+  prediction: All forbidden transitions are unreachable
+  test: probador playbook --validate, assert 0 forbidden paths
+  if_fails: Agent can enter invalid state via bug
+- id: FALSIFY-UX-009
+  rule: Mutation testing completeness
+  prediction: All M1-M5 mutations killed by test suite
+  test: probador playbook --mutate, assert 100% kill rate
+  if_fails: Tests are too weak — mutations survive undetected
+- id: FALSIFY-UX-010
+  rule: Visual regression stability
+  prediction: TUI snapshots match baselines (SSIM > 0.99)
+  test: probar VisualRegressionTest on 6 baseline states
+  if_fails: Unintended visual change — UI drift
+kani_harnesses:
+- id: KANI-UX-001
+  obligation: Frame budget 16ms
+  property: Total brick render time bounded
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_frame_budget
+- id: KANI-UX-002
+  obligation: Brick Jidoka enforcement
+  property: Invalid state blocks rendering
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_brick_jidoka
+- id: KANI-UX-003
+  obligation: Layout no-overlap
+  property: Panel regions do not intersect
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_layout_no_overlap
+- id: KANI-UX-004
+  obligation: State machine determinism
+  property: Each (state, event) pair has one transition
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_fsm_determinism
+- id: KANI-UX-005
+  obligation: Cost display accuracy
+  property: Displayed cost bounded by actual +/- 5%
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cost_accuracy
+qa_gate:
+  id: F-UX-001
+  name: Agent UX Contract
+  description: TUI rendering, Brick verification, pixel coverage, accessibility, state machine
+  checks:
+  - streaming_responsiveness
+  - frame_budget
+  - brick_jidoka
+  - pixel_coverage
+  - wcag_aa_contrast
+  - layout_no_overlap
+  - cost_display_accuracy
+  - state_machine_validity
+  - mutation_testing_completeness
+  - visual_regression_stability
+  pass_criteria: All 10 falsification tests pass + 5 Kani harnesses verify
+  falsification: Probar pixel coverage heatmap + BrickHouse budget + playbook mutations

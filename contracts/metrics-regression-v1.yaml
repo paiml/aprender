@@ -1,0 +1,188 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Regression metrics — error measurement for continuous predictions
+  references:
+  - Draper & Smith (1998) Applied Regression Analysis
+  - Hastie, Tibshirani & Friedman (2009) Elements of Statistical Learning
+equations:
+  r_squared:
+    formula: R² = 1 - Σ(yᵢ - ŷᵢ)² / Σ(yᵢ - ȳ)²
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1, Var(y) > 0
+    codomain: R² ∈ (-∞, 1]
+    invariants:
+    - R² ≤ 1.0 (upper bound from Cauchy-Schwarz)
+    - R² = 1.0 iff ŷᵢ = yᵢ for all i (perfect fit)
+    - R² = 0.0 iff ŷᵢ = ȳ for all i (predict mean)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.R_Squared
+  mse:
+    formula: MSE = (1/n) Σ(yᵢ - ŷᵢ)²
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: MSE ∈ [0, ∞)
+    invariants:
+    - MSE ≥ 0 (non-negativity from squared terms)
+    - MSE = 0 iff ŷᵢ = yᵢ for all i
+    - MSE(y, ŷ) = MSE(ŷ, y) (symmetry)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Mse
+  mae:
+    formula: MAE = (1/n) Σ|yᵢ - ŷᵢ|
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: MAE ∈ [0, ∞)
+    invariants:
+    - MAE ≥ 0 (non-negativity from absolute value)
+    - MAE = 0 iff ŷᵢ = yᵢ for all i
+    - MAE ≤ RMSE (Jensen's inequality)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Mae
+  rmse:
+    formula: RMSE = √MSE = √((1/n) Σ(yᵢ - ŷᵢ)²)
+    domain: y, ŷ ∈ ℝⁿ, n ≥ 1
+    codomain: RMSE ∈ [0, ∞)
+    invariants:
+    - RMSE ≥ 0
+    - RMSE ≥ MAE (Jensen's inequality)
+    - RMSE = 0 iff MSE = 0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Rmse
+proof_obligations:
+- type: bound
+  property: R² upper bound
+  formal: R² ≤ 1.0 for all y, ŷ with Var(y) > 0
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: MSE non-negativity
+  formal: MSE ≥ 0 for all y, ŷ
+  applies_to: all
+- type: invariant
+  property: MAE-RMSE ordering (Jensen's inequality)
+  formal: MAE(y, ŷ) ≤ RMSE(y, ŷ) for all y, ŷ
+  applies_to: all
+- type: equivalence
+  property: Perfect prediction identity
+  formal: R² = 1 ∧ MSE = 0 ∧ MAE = 0 ∧ RMSE = 0 when ŷ = y
+  applies_to: all
+- type: invariant
+  property: MSE symmetry
+  formal: MSE(y, ŷ) = MSE(ŷ, y)
+  applies_to: all
+- type: bound
+  property: MAE non-negativity
+  formal: MAE ≥ 0 for all y, ŷ
+  applies_to: all
+- type: bound
+  property: RMSE non-negativity
+  formal: RMSE ≥ 0 for all y, ŷ
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-RM-001
+  rule: R² upper bound
+  prediction: R² ≤ 1.0 for random y, ŷ ∈ [-1000, 1000]ⁿ
+  test: proptest with 10000 random vector pairs, n=2..128
+  if_fails: Division by zero or sign error in SS computation
+- id: FALSIFY-RM-002
+  rule: MSE non-negativity
+  prediction: MSE ≥ 0 for all inputs
+  test: proptest with extreme values
+  if_fails: Arithmetic overflow in squared difference
+- id: FALSIFY-RM-003
+  rule: MAE ≤ RMSE (Jensen's inequality)
+  prediction: MAE ≤ RMSE for random inputs
+  test: proptest comparing MAE and RMSE on same inputs
+  if_fails: Implementation violates Jensen's inequality
+- id: FALSIFY-RM-004
+  rule: Perfect prediction identity
+  prediction: 'When ŷ = y: R²=1, MSE=0, MAE=0, RMSE=0'
+  test: proptest with y = ŷ for random vectors
+  if_fails: Floating-point error accumulation
+- id: FALSIFY-RM-005
+  rule: MSE symmetry
+  prediction: MSE(y, ŷ) = MSE(ŷ, y)
+  test: proptest comparing MSE in both argument orders
+  if_fails: Argument order dependence in implementation
+- id: FALSIFY-RM-006
+  rule: MAE non-negativity
+  prediction: MAE ≥ 0 for all y, ŷ ∈ [-1000, 1000]ⁿ
+  test: proptest with 10000 random vector pairs, n=2..128
+  if_fails: Sign error or underflow in absolute difference accumulation
+- id: FALSIFY-RM-007
+  rule: RMSE non-negativity
+  prediction: RMSE ≥ 0 for all y, ŷ ∈ [-1000, 1000]ⁿ
+  test: proptest with 10000 random vector pairs, n=2..128
+  if_fails: Negative value from sqrt or arithmetic overflow in squared sum
+kani_harnesses:
+- id: KANI-RM-001
+  obligation: '1'
+  bound: 4
+  strategy: stub_float
+- id: KANI-RM-002
+  obligation: '2'
+  bound: 4
+  strategy: stub_float
+- id: KANI-METRIC-003
+  obligation: R² upper bound
+  property: R² upper bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-004
+  obligation: MSE non-negativity
+  property: MSE non-negativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-005
+  obligation: MAE-RMSE ordering (Jensen's inequality)
+  property: MAE-RMSE ordering (Jensen's inequality)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-006
+  obligation: Perfect prediction identity
+  property: Perfect prediction identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-007
+  obligation: MSE symmetry
+  property: MSE symmetry
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-008
+  obligation: MAE non-negativity
+  property: MAE non-negativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-009
+  obligation: RMSE non-negativity
+  property: RMSE non-negativity
+  bound: 8
+  strategy: exhaustive
+enforcement:
+  upper_bound:
+    description: R² must not exceed 1.0
+    check: contract_tests::FALSIFY-RM-001
+    severity: ERROR
+  non_negativity:
+    description: MSE, MAE, RMSE must be non-negative
+    check: contract_tests::FALSIFY-RM-002
+    severity: ERROR
+qa_gate:
+  id: F-RM-001
+  name: Regression Metrics Contract
+  description: Regression metric correctness quality gate
+  checks:
+  - r_squared_upper_bound
+  - mse_non_negativity
+  - mae_rmse_ordering
+  - perfect_prediction
+  - mse_symmetry
+  pass_criteria: All 7 falsification tests pass
+  falsification: Swap numerator/denominator in R² formula

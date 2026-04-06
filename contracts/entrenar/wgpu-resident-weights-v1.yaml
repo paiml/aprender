@@ -1,0 +1,194 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: GPU-resident FFN weights for wgpu training — zero H2D per forward pass
+  registry: true
+  references:
+  - cuda-classify-training-v1.yaml (CUDA equivalent)
+  - 'KAIZEN-015: wgpu FFN weights re-uploaded every forward pass'
+  depends_on:
+  - cuda-classify-training-v1
+weight_residency:
+  upload:
+  - id: C-WGPU-RESIDENT-001
+    name: One-time weight upload
+    description: 'WgpuForwardPass::with_resident_weights() uploads all FFN weights
+
+      (w_gate, w_up, w_down) for every transformer layer to GPU memory
+
+      exactly ONCE at construction. Subsequent forward passes reference
+
+      these GPU buffers via Arc<wgpu::Buffer> with zero H2D transfer.
+
+      '
+    severity: P0
+    critical: true
+  - id: C-WGPU-RESIDENT-002
+    name: Frozen weight invariant
+    description: 'GPU-resident FFN weights are frozen during LoRA fine-tuning.
+
+      Only LoRA adapters (CPU-resident) and the classifier head are
+
+      updated by the optimizer. The GPU buffers are read-only after
+
+      construction. This is correct because QLoRA freezes the base model.
+
+      '
+    severity: P0
+    critical: true
+  - id: C-WGPU-RESIDENT-003
+    name: Graceful fallback
+    description: 'If with_resident_weights() fails (e.g., insufficient GPU VRAM),
+
+      the pipeline falls back to new_default() which uploads per call.
+
+      If that also fails, falls back to CPU-only forward pass.
+
+      No panic at any stage — always degrades gracefully.
+
+      '
+    severity: P0
+    critical: true
+  buffer_management:
+  - id: C-BATCH-IMPORT-001
+    name: Buffer import zero-copy
+    description: 'GpuCommandBatch::import_buffer() registers a pre-existing
+
+      Arc<wgpu::Buffer> without any data transfer. The imported buffer
+
+      is marked as pre-existing (gpu_buffer: Some) so execute() skips
+
+      buffer creation. Arc ensures the buffer outlives the batch.
+
+      '
+    severity: P1
+    critical: true
+  - id: C-BATCH-IMPORT-002
+    name: Execute skips imported buffers
+    description: 'During GpuCommandBatch::execute(), the buffer creation loop
+
+      skips entries where gpu_buffer.is_some(). This preserves imported
+
+      buffers and avoids creating duplicate allocations.
+
+      '
+    severity: P1
+    critical: true
+  vram_budget:
+  - id: C-WGPU-VRAM-001
+    name: VRAM budget for Qwen3-4B
+    description: 'For Qwen3-4B (hidden=2560, intermediate=13824, 36 layers):
+
+      - w_gate: 2560 × 13824 × 4 = 135 MB per layer
+
+      - w_up: same = 135 MB
+
+      - w_down: 13824 × 2560 × 4 = 135 MB
+
+      - Per layer: 405 MB
+
+      - 36 layers: 14.6 GB total
+
+      Must fit within GPU VRAM (W5700X: 8 GB per GPU).
+
+      FAILS for Qwen3-4B fp32 on 8 GB GPU — requires quantization
+
+      or model sharding for 4B+ models.
+
+      '
+    severity: P1
+    critical: false
+performance:
+- id: C-WGPU-PERF-001
+  name: Zero H2D per forward
+  description: 'When using with_resident_weights(), the forward_ffn_gpu() method
+
+    performs zero host-to-device transfers for weight data. Only the
+
+    input hidden states (seq_len × hidden_size × 4 bytes ≈ 1.2 MB for
+
+    batch_size=8, seq_len=128, hidden=2560) are uploaded per call.
+
+    '
+  measurement: Count H2D transfers in wgpu trace
+  target: 0 weight H2D transfers per forward pass
+- id: C-WGPU-PERF-002
+  name: Construction upload amortization
+  description: 'The one-time weight upload at construction amortizes over all
+
+    training steps. For 718 steps × 3 epochs = 2,154 forward passes,
+
+    amortized upload cost = construction_time / 2154.
+
+    '
+  target: < 0.01 seconds amortized per forward pass
+proof_obligations:
+- id: PO-WGPU-RESIDENT-001
+  name: One-time upload invariant
+  property: 'For all WgpuForwardPass instances created via with_resident_weights():
+    weight buffers are uploaded exactly once at construction time. Subsequent
+    forward_ffn_gpu() calls perform zero H2D transfers for weight data.'
+  type: invariant
+  severity: P0
+  status: specified
+- id: PO-WGPU-RESIDENT-002
+  name: Frozen weight immutability
+  property: 'For all GPU-resident weight buffers: no write operation occurs
+    after construction. The buffers are read-only for the entire lifetime
+    of the WgpuForwardPass instance, preserving base model integrity
+    during LoRA fine-tuning.'
+  type: invariant
+  severity: P0
+  status: specified
+- id: PO-WGPU-RESIDENT-003
+  name: Graceful degradation chain
+  property: 'For all failure modes: with_resident_weights() failure falls back
+    to new_default() (per-call upload); new_default() failure falls back
+    to CPU-only forward pass. No panic occurs at any stage.'
+  type: invariant
+  severity: P0
+  status: specified
+kani_harnesses:
+- id: KH-WGPU-RESIDENT-001
+  name: verify_zero_h2d_after_construction
+  description: 'Create a WgpuForwardPass with resident weights, run N forward
+    passes, and verify that the H2D transfer count for weight buffers
+    remains at exactly the initial upload count (no additional transfers).'
+  obligation: PO-WGPU-RESIDENT-001
+  bound: 8
+  status: specified
+- id: KH-WGPU-RESIDENT-002
+  name: verify_fallback_no_panic
+  description: 'Simulate GPU VRAM exhaustion during with_resident_weights();
+    verify that the fallback chain completes without panic and returns
+    a functional (possibly CPU-only) forward pass instance.'
+  obligation: PO-WGPU-RESIDENT-003
+  bound: 8
+  status: specified
+falsification_tests:
+- id: FT-WGPU-RESIDENT-001
+  rule: Zero H2D transfer after construction
+  prediction: 100 forward passes create zero new weight buffer allocations
+  test: Run 100 passes, instrument buffer creation, assert zero new
+  if_fails: Weights being re-uploaded per forward pass
+- id: FT-WGPU-RESIDENT-002
+  rule: Graceful OOM fallback
+  prediction: OOM in create_buffer_init falls back to CPU without panic
+  test: Mock OOM, verify with_resident_weights returns Err, new_default succeeds
+  if_fails: Missing fallback chain or panic on device failure
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - num_weights > 0
+    - device_id >= 0
+    lean_theorem: Theorems.Identity
+qa_gate:
+  id: F-WRWV-001
+  name: wgpu-resident-weights-v1 Contract
+  description: Quality gate for GPU-resident FFN weights for wgpu training — zero
+    H2D per fo
+  checks:
+  - validation
+  - falsification

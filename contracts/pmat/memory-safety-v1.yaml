@@ -1,0 +1,107 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Memory management contracts — LRU eviction, arena lifecycle, index memory budget
+  references:
+  - O'Neil et al. (1993). The LRU-K Page Replacement Algorithm. SIGMOD
+  - pmat memory boundary (pv-spec §32.8)
+equations:
+  lru_eviction_correctness:
+    formula: |
+      lru: (Cache, Capacity) -> bool
+        cache.len() <= capacity always
+        Evicted entries have refcount = 0
+    domain: LRU cache with any capacity > 0
+    codomain: bool (capacity invariant)
+    invariants:
+    - Cache size never exceeds capacity
+    - Evicted entries fully freed
+    preconditions:
+    - capacity > 0
+    postconditions:
+    - cache.len() <= capacity
+    lean_theorem: Theorems.LruEvictionCorrectness
+  arena_lifecycle:
+    formula: |
+      arena: Arena -> bool
+        for-all obj in arena.allocated: obj.lifetime is-subset-of arena.lifetime
+        drop(arena) => all objects freed
+    domain: Arena allocator with allocated objects
+    codomain: bool (lifetime invariant)
+    invariants:
+    - No object outlives its arena
+    - Arena drop releases all allocations
+    preconditions:
+    - arena is valid and not dropped
+    postconditions:
+    - 'after drop(arena): all allocations freed'
+    lean_theorem: Theorems.ArenaLifecycle
+  index_memory_budget:
+    formula: |
+      load_index: (Path, Budget) -> Result<Index, OOM>
+        peak_memory(load) <= budget
+        If exceeds: returns Err(OOM), does not panic
+    domain: Index load with memory budget
+    codomain: Result bounded by budget
+    invariants:
+    - Peak memory does not exceed budget
+    - Budget violation returns error, not panic/OOM-kill
+    preconditions:
+    - budget > 0
+    - path exists
+    postconditions:
+    - peak_memory <= budget
+    lean_theorem: Theorems.IndexMemoryBudget
+proof_obligations:
+- type: bound
+  property: LRU capacity invariant
+  formal: cache.len() <= capacity
+  applies_to: all
+- type: frame
+  property: Arena lifetime containment
+  formal: drop(arena) frees all allocations
+  applies_to: all
+- type: bound
+  property: Memory budget honored
+  formal: peak_memory <= budget
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MEM-001
+  rule: LRU eviction on full cache
+  prediction: LRU cache at capacity evicts LRU entry on insert
+  test: Fill cache to capacity, insert new, verify LRU evicted
+  if_fails: Eviction not triggered or wrong entry evicted
+- id: FALSIFY-MEM-002
+  rule: Memory budget enforcement
+  prediction: Loading 50MB index with 40MB budget returns error
+  test: Set budget to 40MB, attempt load of 50MB index
+  if_fails: Budget not checked during load, leads to OOM
+- id: FALSIFY-MEM-003
+  rule: Arena cleanup
+  prediction: Arena drop releases all temp strings (no leak under dhat)
+  test: Allocate 10K strings in arena, drop, verify with dhat
+  if_fails: Arena not calling destructors on contained objects
+kani_harnesses:
+- id: KANI-MEM-001
+  obligation: LRU capacity invariant
+  property: cache.len() <= capacity after any operation
+  bound: 16
+  strategy: exhaustive
+- id: KANI-MEM-002
+  obligation: Arena lifetime
+  property: all objects freed on drop
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEM-003
+  obligation: Memory budget
+  property: peak_memory <= budget
+  bound: 8
+  strategy: bounded_int
+qa_gate:
+  id: F-MEM-001
+  name: memory-safety-v1 Contract
+  description: Quality gate for memory management
+  checks:
+  - validation
+  - falsification

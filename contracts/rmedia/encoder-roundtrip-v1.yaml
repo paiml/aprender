@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Media encoder roundtrip integrity — encode/decode preserves frame data within codec tolerance
+  references:
+  - 'ITU-T H.264 (2003) Advanced Video Coding'
+  - 'ITU-T H.265 (2013) High Efficiency Video Coding'
+equations:
+  encode:
+    formula: E(frame, codec) = bitstream where decode(bitstream, codec) ≈ frame within PSNR threshold
+    domain: frame ∈ AVFrame, codec ∈ {H264, HEVC}
+    codomain: Result<Vec<u8>, EncoderError>
+    invariants:
+    - Encoder selection is deterministic for a given codec and hardware
+    - Output bitstream is non-empty on success
+    - 'Encoder availability check is consistent: available(codec) → encode(frame, codec) succeeds'
+    preconditions:
+    - frame.width > 0 && frame.height > 0
+    - frame.pixel_format is supported by codec
+    lean_theorem: Theorems.Encode_Roundtrip
+  decode:
+    formula: D(bitstream, codec) = frame where PSNR(original, frame) >= threshold
+    domain: bitstream ∈ Vec<u8>, codec ∈ {H264, HEVC}
+    codomain: Result<AVFrame, DecoderError>
+    invariants:
+    - Decoded frame dimensions match encoded frame dimensions
+    - 'Deterministic: D(b, c) = D(b, c) for same bitstream'
+    - Audio decode preserves sample count within codec frame size
+    preconditions:
+    - bitstream.len() > 0
+    - bitstream contains valid codec header
+    lean_theorem: Theorems.Decode_Frame
+  encoder_resolution:
+    formula: R(codec) = encoder where validate_encoder(encoder) = true
+    domain: codec ∈ {H264, HEVC}
+    codomain: Option<Encoder>
+    invariants:
+    - resolve_encoder returns None only when encoder_available returns false
+    - validate_encoder(resolve_encoder(codec).unwrap()) = true
+    preconditions:
+    - GPU driver is loaded
+    lean_theorem: Theorems.Encoder_Resolution
+proof_obligations:
+- type: invariant
+  property: Encode output is non-empty on success
+  formal: '∀ frame, codec: encode(frame, codec).is_ok() → encode(frame, codec).unwrap().len() > 0'
+  applies_to: encode
+- type: invariant
+  property: Decode preserves frame dimensions
+  formal: '∀ frame, codec: decode(encode(frame, codec), codec).dimensions() = frame.dimensions()'
+  applies_to: decode
+- type: invariant
+  property: Encoder availability implies encode success
+  formal: '∀ codec: encoder_available(codec) → encode(valid_frame, codec).is_ok()'
+  applies_to: encoder_resolution
+enforcement:
+  non_empty_output:
+    description: Encoded bitstream must be non-empty on success
+    check: contract_tests::FALSIFY-RM-001
+    severity: ERROR
+  dimension_preservation:
+    description: Decoded frame dimensions must match original
+    check: contract_tests::FALSIFY-RM-002
+    severity: ERROR
+  availability_consistency:
+    description: Encoder availability must be consistent with encode success
+    check: contract_tests::FALSIFY-RM-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RM-001
+  rule: Non-empty encode output
+  prediction: encode(frame, codec) produces non-empty bitstream for valid frames
+  test: proptest with random valid frames across H264 and HEVC codecs
+  if_fails: Encoder silently drops frames or returns empty buffer
+- id: FALSIFY-RM-002
+  rule: Dimension preservation
+  prediction: decode(encode(frame)) preserves width and height
+  test: roundtrip test with known frame dimensions
+  if_fails: Codec rescaling or padding bug in encoder/decoder pipeline
+- id: FALSIFY-RM-003
+  rule: Availability consistency
+  prediction: encoder_available(codec) = true implies resolve_encoder(codec).is_some()
+  test: enumerate all codec variants and check availability vs resolution
+  if_fails: Race condition or stale capability cache in GPU encoder detection
+kani_harnesses:
+- id: KANI-RM-001
+  obligation: Non-empty encode output
+  property: Encoded bitstream length > 0 on success
+  bound: 16
+  strategy: exhaustive
+  harness: verify_encode_non_empty
+- id: KANI-RM-002
+  obligation: Dimension preservation
+  property: Decoded frame dimensions match encoded
+  bound: 8
+  strategy: exhaustive
+  harness: verify_dimension_preservation
+- id: KANI-RM-003
+  obligation: Availability consistency
+  property: Encoder availability implies resolution success
+  bound: 4
+  strategy: exhaustive
+  harness: verify_encoder_availability
+qa_gate:
+  id: F-RM-001
+  name: Media Encoder Roundtrip Contract
+  description: Encode/decode pipeline integrity quality gate
+  checks:
+  - non_empty_output
+  - dimension_preservation
+  - availability_consistency
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return empty Vec from encode to trigger FALSIFY-RM-001

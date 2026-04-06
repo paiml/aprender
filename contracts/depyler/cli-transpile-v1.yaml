@@ -1,0 +1,228 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: CLI transpilation dispatch boundary contract — depyler CLI accepts
+    Python source files and produces deterministic, valid Rust output with structured
+    exit codes and error reporting
+  references:
+  - POSIX.1-2017 Section 2.8.2 — Exit Status for Utilities
+  - arXiv:2006.03511 — Unsupervised Translation of Programming Languages (TransCoder)
+  - IEEE 1003.1 — Standard exit code conventions (0=success, 1=error, 2=usage)
+  depends_on:
+  - type-preservation-v1
+  - semantic-equivalence-v1
+equations:
+  exit_code_dispatch:
+    formula: |
+      exit_code: (args, filesystem) -> u8
+        Given CLI invocation `depyler transpile <source> [--output <dest>]`:
+          0 = transpilation succeeded, valid Rust written to output
+          1 = transpilation error (unsupported syntax, codegen failure, rustfmt reject)
+          2 = invalid input (file not found, not valid Python, bad CLI args)
+        Exit code is a pure function of (args, filesystem state) — no randomness.
+    domain: 'args: Vec<String> validated by clap; filesystem: read-only view of source path'
+    codomain: u8 in {0, 1, 2}
+    invariants:
+    - Exit 0 implies output file exists and contains valid Rust
+    - Exit 1 implies source was valid Python but transpilation failed
+    - Exit 2 implies source file missing, unreadable, or not parseable as Python
+    - No exit code outside {0, 1, 2} is ever produced
+    preconditions:
+    - args.len() >= 2
+    - 'args[0] == "transpile"'
+    lean_theorem: Theorems.Exit_Code_Dispatch
+  output_validity:
+    formula: |
+      output_validity: rust_source -> bool
+        The generated Rust source is syntactically valid:
+          syn::parse_file(rust_source).is_ok() == true
+        And format-stable:
+          rustfmt(rust_source) parses without error
+        The output is a complete Rust source file with necessary use statements.
+    domain: 'rust_source: String produced by codegen phase'
+    codomain: bool (true iff syn-parseable and rustfmt-stable)
+    invariants:
+    - Every successful transpilation (exit 0) produces syn-parseable Rust
+    - Output contains no raw Python syntax tokens
+    - Output is UTF-8 encoded with no interior NUL bytes
+    preconditions:
+    - '!rust_source.is_empty()'
+    - rust_source.len() <= 10_000_000
+    lean_theorem: Theorems.Output_Validity
+  input_validation:
+    formula: |
+      input_validation: (path, contents) -> Result<PythonAst, CliError>
+        Validates that:
+          1. path exists on filesystem and is a regular file
+          2. file is valid UTF-8
+          3. contents parse as valid Python via rustpython-parser
+        Returns structured CliError with source location on failure.
+    domain: 'path: PathBuf; contents: Vec<u8> from fs::read'
+    codomain: Result<PythonAst, CliError> where CliError carries exit code 2
+    invariants:
+    - Non-existent path produces CliError with exit code 2
+    - Binary file (invalid UTF-8) produces CliError with exit code 2
+    - Syntactically invalid Python produces CliError with exit code 2 and parse error location
+    - Valid Python file always produces Ok(PythonAst)
+    preconditions:
+    - '!path.as_os_str().is_empty()'
+    lean_theorem: Theorems.Input_Validation
+  transpilation_determinism:
+    formula: |
+      determinism: forall source in ValidPython:
+        depyler_transpile(source, config) = depyler_transpile(source, config)
+      Same Python source with same configuration always produces byte-identical Rust output.
+      No timestamps, random IDs, or process-dependent values in output.
+    domain: 'source: String (valid Python); config: TranspileConfig'
+    codomain: String (Rust source) — byte-identical across invocations
+    invariants:
+    - Output contains no timestamps, PIDs, or random values
+    - Output is invariant across runs on same platform
+    - Output ordering of top-level items matches input ordering
+    - Generated variable names are deterministic (no gensym counters that reset)
+    preconditions:
+    - '!source.is_empty()'
+    - '!config.is_empty()'
+    lean_theorem: Theorems.Transpilation_Determinism
+proof_obligations:
+- type: postcondition
+  property: Exit 0 implies valid Rust output
+  formal: 'exit_code(args, fs) == 0 => syn::parse_file(output).is_ok()'
+  applies_to: all
+- type: postcondition
+  property: Exit 2 implies input rejection before transpilation
+  formal: 'exit_code(args, fs) == 2 => no codegen phase executed'
+  applies_to: all
+- type: invariant
+  property: Exit code totality
+  formal: 'forall args, fs: exit_code(args, fs) in {0, 1, 2}'
+  applies_to: all
+- type: invariant
+  property: Deterministic output
+  formal: 'forall src, cfg: transpile(src, cfg) == transpile(src, cfg)'
+  applies_to: all
+- type: invariant
+  property: No partial output on failure
+  formal: 'exit_code != 0 => output file is not created or is empty'
+  applies_to: all
+- type: ordering
+  property: Validation before transpilation
+  formal: input_validation(path) must complete before codegen(ast) begins
+  applies_to: all
+enforcement:
+  exit_code_range:
+    description: CLI exit code must be in {0, 1, 2}
+    check: contract_tests::FALSIFY-DT-001
+    severity: ERROR
+  output_parseable:
+    description: Exit 0 output must be syn-parseable Rust
+    check: contract_tests::FALSIFY-DT-002
+    severity: ERROR
+  input_rejection:
+    description: Invalid input must produce exit code 2
+    check: contract_tests::FALSIFY-DT-003
+    severity: ERROR
+  determinism:
+    description: Same input must produce byte-identical output
+    check: contract_tests::FALSIFY-DT-004
+    severity: ERROR
+  no_partial_output:
+    description: Failed transpilation must not leave partial output files
+    check: contract_tests::FALSIFY-DT-005
+    severity: ERROR
+  validation_ordering:
+    description: Input validation must complete before codegen begins
+    check: contract_tests::FALSIFY-DT-006
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-DT-001
+  rule: Exit code totality
+  prediction: All CLI invocations produce exit code in {0, 1, 2}
+  test: 'proptest: random valid/invalid file paths and contents; assert process::exit
+    in {0, 1, 2}'
+  if_fails: Unhandled panic or uncaught error produces exit code 101 (Rust panic default)
+- id: FALSIFY-DT-002
+  rule: Exit 0 implies valid Rust
+  prediction: Every successful transpilation produces syn-parseable output
+  test: 'Corpus test: transpile 50+ valid Python files from test suite; for each exit-0
+    result, parse output with syn::parse_file and assert Ok'
+  if_fails: Codegen emits malformed Rust (unclosed braces, invalid tokens, missing
+    semicolons)
+- id: FALSIFY-DT-003
+  rule: Invalid input produces exit 2
+  prediction: Non-existent file, binary file, and syntax-error Python all produce exit
+    code 2
+  test: 'Unit test: invoke CLI with /nonexistent.py, /dev/urandom (first 1KB), and
+    "def f(\n" (incomplete); assert exit code 2 for each'
+  if_fails: Error path catches wrong exception type or falls through to exit code 1
+- id: FALSIFY-DT-004
+  rule: Deterministic output
+  prediction: Running depyler transpile on the same file twice produces byte-identical
+    output
+  test: 'proptest: generate random valid Python functions; transpile each twice; assert
+    output_1 == output_2 byte-for-byte'
+  if_fails: Non-deterministic HashMap iteration in codegen, or timestamp/counter in
+    generated comments
+- id: FALSIFY-DT-005
+  rule: No partial output on failure
+  prediction: When transpilation fails (exit code 1 or 2), the output file is either
+    not created or is empty
+  test: 'Unit test: invoke depyler transpile on a Python file with unsupported syntax
+    (e.g., async generators); assert exit code != 0 AND output file either does not
+    exist or has zero bytes'
+  if_fails: Codegen writes partial Rust output before encountering unsupported AST
+    node, leaving corrupt file on disk
+- id: FALSIFY-DT-006
+  rule: Validation before transpilation
+  prediction: Input validation (file existence, UTF-8, Python parse) completes before
+    any codegen phase begins
+  test: 'Ordering test: instrument codegen entry point with a probe; invoke depyler
+    transpile on /nonexistent.py; assert exit code == 2 AND codegen probe was never
+    triggered'
+  if_fails: Eager codegen pipeline starts before input validation, causing confusing
+    errors or partial work on invalid input
+kani_harnesses:
+- id: KANI-DT-001
+  obligation: Exit code totality
+  property: exit_code return value is always in {0, 1, 2}
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_exit_code_range
+- id: KANI-DT-002
+  obligation: Exit 0 implies valid Rust output
+  property: Successful transpilation always produces syn-parseable Rust source
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_success_output_valid
+- id: KANI-DT-003
+  obligation: No partial output on failure
+  property: Non-zero exit code implies output file not written
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_no_partial_output
+- id: KANI-DT-004
+  obligation: Deterministic output
+  property: Two invocations with identical input produce identical output bytes
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_determinism
+qa_gate:
+  id: F-DT-001
+  name: CLI Transpile Dispatch Contract
+  description: Depyler CLI boundary contract ensuring structured exit codes, valid
+    output, input validation, and deterministic transpilation
+  checks:
+  - exit_code_range
+  - output_parseable
+  - input_rejection
+  - determinism
+  - no_partial_output
+  - validation_ordering
+  pass_criteria: All 6 falsification tests pass + 4 Kani harnesses verify
+  falsification: Remove input validation gate to allow binary files through, breaking
+    exit code 2 contract

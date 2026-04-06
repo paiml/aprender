@@ -1,0 +1,153 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Transpiler correctness — type-preservation, semantic-equivalence, and transpile-determinism cross-cutting patterns
+  kind: pattern
+  references:
+  - 'Lerner et al. (2003). Automated Soundness Proofs for Dataflow Analyses and Transformations. POPL'
+  - 'Yang et al. (2011). Finding and Understanding Bugs in C Compilers. PLDI (Csmith)'
+  - 'Leroy (2009). CompCert: Formal Verification of a Realistic Compiler. CACM'
+  - 'Nandi et al. (2021). Synthesizing Structured CAD Models via Equality Saturation. PLDI'
+  - 'Sotoudeh & Thakur (2019). Verifying Semantic Equivalence of Translated Programs. arXiv:1911.07671'
+  applies_to:
+  - depyler (Python -> Rust)
+  - decy (C++ -> Rust)
+  - bashrs (Bash/Makefile linting)
+  - ruchy (Ruby -> Rust)
+equations:
+  type_preservation:
+    formula: |
+      types: (Source, Target) -> bool
+        forall expression e in source:
+          type(transpile(e)) is compatible with type(e)
+        Where compatible means:
+          Python int -> Rust i64 (or BigInt for unbounded)
+          Python float -> Rust f64
+          Python str -> Rust String
+          Python list[T] -> Rust Vec<T>
+          Python dict[K,V] -> Rust HashMap<K,V>
+          Python None -> Rust Option<T>::None
+    domain: Source program that type-checks in source language
+    codomain: bool (types preserved)
+    invariants:
+    - No implicit type narrowing (Python int has arbitrary precision)
+    - Optional types preserved (None -> Option)
+    - Collection types preserve element types recursively
+    preconditions:
+    - Source program type-checks in source language
+    postconditions:
+    - Target program type-checks in target language (rustc / gcc)
+    lean_theorem: Theorems.TypePreservation
+  semantic_equivalence:
+    formula: |
+      equiv: (Source, Target, Input) -> bool
+        forall input i in domain(source):
+          observe(run(source, i)) = observe(run(target, i))
+        Where observe captures:
+          - Return value
+          - stdout/stderr output
+          - Exit code
+          - File system mutations
+          - Network I/O (if deterministic)
+    domain: (Source, Target) program pair with shared input domain
+    codomain: bool (semantically equivalent)
+    invariants:
+    - Terminating programs produce identical output
+    - Non-terminating programs diverge at same inputs
+    - Side effects are preserved (file writes, exit codes)
+    preconditions:
+    - Source program is well-formed
+    - Input is in the domain of the source program
+    postconditions:
+    - Target output = source output for all tested inputs
+    lean_theorem: Theorems.SemanticEquivalence
+  transpile_determinism:
+    formula: |
+      deterministic: Source -> bool
+        transpile(source) = transpile(source) always
+        No HashMap iteration order leakage
+        No timestamp or PID in generated code
+    domain: Source program
+    codomain: bool (deterministic transpilation)
+    invariants:
+    - Byte-identical output across runs
+    - Debug and release builds produce same output
+    - No HashMap iteration order in output (BTreeMap or sorted)
+    preconditions:
+    - Source program is syntactically valid
+    postconditions:
+    - BLAKE3(output_1) = BLAKE3(output_2) for same input
+    lean_theorem: Theorems.TranspileDeterminism
+proof_obligations:
+- type: equivalence
+  property: Type mapping is compatible across languages
+  formal: 'forall e: type(transpile(e)) is compatible with type(e)'
+  applies_to: type_preservation
+- type: equivalence
+  property: Observable behavior is identical
+  formal: 'forall i: observe(run(source, i)) = observe(run(target, i))'
+  applies_to: semantic_equivalence
+- type: determinism
+  property: Same source always produces byte-identical target
+  formal: 'forall s: transpile(s) = transpile(s)'
+  applies_to: transpile_determinism
+- type: soundness
+  property: Target type-checks if source type-checks
+  formal: 'type_checks(source) -> type_checks(transpile(source))'
+  applies_to: type_preservation
+falsification_tests:
+- id: FALSIFY-TRC-001
+  rule: Type preservation
+  prediction: Every Python type maps to a compatible Rust type
+  test: Transpile 100 type-annotated Python functions, compile Rust output with rustc, assert zero type errors
+  if_fails: Type mapping incomplete — missing case in type translation table
+- id: FALSIFY-TRC-002
+  rule: Semantic equivalence
+  prediction: Source and target produce identical output for 10K random inputs
+  test: Property-based testing with random inputs, run Python source and Rust target, diff stdout
+  if_fails: Semantic divergence — operator precedence, integer overflow, or float rounding difference
+- id: FALSIFY-TRC-003
+  rule: Transpile determinism
+  prediction: Two runs of transpiler on same source produce byte-identical output
+  test: Transpile same file twice, compare BLAKE3 hashes of output
+  if_fails: HashMap iteration order leaking into output — use BTreeMap or sort before emit
+- id: FALSIFY-TRC-004
+  rule: Transpile determinism (cross-build)
+  prediction: Debug and release builds produce identical transpiler output
+  test: Build transpiler in debug and release, transpile same source, diff output
+  if_fails: Optimization-dependent HashMap ordering — same bug class as pmat CommitEmbedder
+- id: FALSIFY-TRC-005
+  rule: Edge case semantic equivalence
+  prediction: Integer overflow, empty collections, and None propagation match source behavior
+  test: Targeted test suite with edge cases (maxint + 1, empty list, None chains)
+  if_fails: Missing edge case handling — i64 overflow where Python has arbitrary precision
+kani_harnesses:
+- id: KANI-TRC-001
+  obligation: Type preservation
+  property: Type mapping produces valid target types
+  bound: 8
+  strategy: exhaustive
+  harness: verify_type_preservation
+- id: KANI-TRC-002
+  obligation: Transpile determinism
+  property: Transpiler output is deterministic
+  bound: 4
+  strategy: exhaustive
+  harness: verify_transpile_determinism
+- id: KANI-TRC-003
+  obligation: Semantic equivalence for arithmetic
+  property: Arithmetic operations produce equivalent results
+  bound: 16
+  strategy: exhaustive
+  harness: verify_arithmetic_equivalence
+qa_gate:
+  id: F-TRC-001
+  name: Transpiler Correctness Contract
+  description: Type preservation, semantic equivalence, and transpile determinism quality gate
+  checks:
+  - type_preservation
+  - semantic_equivalence
+  - transpile_determinism
+  pass_criteria: All 5 falsification tests pass and rustc accepts all transpiled output
+  falsification: Swap type mapping for int/float; expect rustc type error in transpiled output

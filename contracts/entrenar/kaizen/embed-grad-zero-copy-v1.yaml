@@ -1,0 +1,79 @@
+contract: embed-grad-zero-copy-v1
+version: 1.0.0
+status: implementing
+kaizen: 048
+measured_baseline:
+  source: baselines/entrenar/cuda-trainer-profile-350m-rtx4090.yaml
+  model: 350M (24L, 1024H, vocab=32000)
+  embed_bwd_avg_ms: 145.99
+  embed_bwd_pct: 32.6
+  step_avg_ms: 447.6
+  clone_bytes_per_step: 402653184
+invariants:
+- id: C-EMBED-ZERO-001
+  description: embed_backward performs zero heap allocations in steady state
+  preconditions:
+  - Embedding gradient already initialized (non-first step)
+  - embed_backward() called with valid input_ids and hidden_size
+  postconditions:
+  - No Array1::clone() calls
+  - No vec![] or Array1::zeros() allocations
+  - Gradient modified in-place via grad_cell().borrow_mut()
+  verified_by:
+  - 'Code review: no .clone() or .grad() calls in embed_backward'
+  - 'Profiler re-measurement: embed_bwd < 5ms'
+- id: C-EMBED-ZERO-002
+  description: First-step initialization allocates exactly once
+  preconditions:
+  - Embedding gradient is None (first call)
+  postconditions:
+  - Exactly one Array1::zeros(vocab_size * hidden_size) allocation
+  - Subsequent steps reuse this buffer via borrow_mut()
+  verified_by:
+  - 'Code review: is_none() check via borrow(), not grad()'
+- id: C-EMBED-ZERO-003
+  description: Numerical equivalence preserved
+  preconditions:
+  - Same input_ids, embed_grad_data, and gradient state
+  postconditions:
+  - Gradient values identical to clone-based implementation
+  - Gradient clipping behavior unchanged
+  - AdamW optimizer sees identical gradient values
+  verified_by:
+  - Existing test suite passes
+  - cargo test on transformer_trainer module
+- id: C-EMBED-GRAD-001-PRESERVED
+  description: Activation gradient clipping preserved (safety net)
+  preconditions:
+  - max_grad_norm configured
+  postconditions:
+  - L2 norm computed on embed_grad_data (download buffer)
+  - Clipping applied before scatter-add
+  - last_embed_grad_norm updated for observability
+  verified_by:
+  - 'Code review: clipping logic unchanged'
+affected_files:
+- path: src/train/transformer_trainer/cuda_trainer.rs
+  functions:
+  - 'embed_backward: replace clone+set_grad with grad_cell().borrow_mut() in-place'
+  change: Eliminate 3 × 128MB gradient clones per step
+estimated_impact:
+  embed_bwd_before_ms: 145.99
+  embed_bwd_after_ms: <1.0
+  step_before_ms: 447.6
+  step_after_ms: ~302
+  speedup: ~32%
+policy: 'VALIDATION: After implementation, re-run profiler with --large flag.
+
+  embed_bwd must drop below 5ms (was 145.99ms).
+
+  If it doesn''t, investigate remaining allocation sources.
+
+  '
+qa_gate:
+  id: F-EGZC-001
+  name: embed-grad-zero-copy-v1 Contract
+  description: Quality gate for embed-grad-zero-copy-v1
+  checks:
+  - validation
+  - falsification

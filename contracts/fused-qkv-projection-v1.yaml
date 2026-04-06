@@ -1,0 +1,158 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: Fused QKV projection — concatenated weight matrix for single-matvec attention projection
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need
+  - 'Whisper decoder: pre-norm transformer with separate Q/K/V weight matrices'
+  depends_on:
+  - linear-projection-v1.yaml
+  - layernorm-kernel-v1.yaml
+equations:
+  separate_qkv:
+    formula: "Standard (3 separate matvecs):\n  normed = LayerNorm(x)\n  q = W_q @ normed + b_q    (d_model → d_model)\n \
+      \ k = W_k @ normed + b_k    (d_model → d_model)\n  v = W_v @ normed + b_v    (d_model → d_model)\n"
+    domain: x ∈ ℝ^{d_model}
+    codomain: q, k, v ∈ ℝ^{d_model}
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Separate_Qkv
+  fused_qkv:
+    formula: "Fused (1 matvec with concatenated weights):\n  W_qkv = [W_q; W_k; W_v]   ∈ ℝ^{3·d_model × d_model}\n  b_qkv\
+      \ = [b_q; b_k; b_v]   ∈ ℝ^{3·d_model}\n  normed = LayerNorm(x)\n  qkv = W_qkv @ normed + b_qkv    (d_model → 3·d_model)\n\
+      \  q = qkv[0..d_model]\n  k = qkv[d_model..2·d_model]\n  v = qkv[2·d_model..3·d_model]\n"
+    domain: x ∈ ℝ^{d_model}
+    codomain: q, k, v ∈ ℝ^{d_model} (sliced from ℝ^{3·d_model})
+    invariants:
+    - W_qkv rows [0..d) = W_q rows, [d..2d) = W_k rows, [2d..3d) = W_v rows
+    - Contiguous memory layout for prefetch-friendly sequential access
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Fused_Qkv
+  shared_q8_qkv:
+    formula: "Shared Q8_1 activation quantization (PMAT-054A):\n  normed = RMSNorm(x)                                    \
+      \  # same input\n  q8 = Q8Quantize(normed)                                   # quantize ONCE\n  q = DP4A_GEMV(W_q, q8)\
+      \                                    # reuse q8\n  k = DP4A_GEMV(W_k, q8)                                    # reuse\
+      \ q8\n  v = DP4A_GEMV(W_v, q8)                                    # reuse q8\n\nvs baseline (3 independent calls):\n\
+      \  q8_q = Q8Quantize(normed); q = DP4A_GEMV(W_q, q8_q)      # quantize 1\n  q8_k = Q8Quantize(normed); k = DP4A_GEMV(W_k,\
+      \ q8_k)      # quantize 2\n  q8_v = Q8Quantize(normed); v = DP4A_GEMV(W_v, q8_v)      # quantize 3\n"
+    domain: normed ∈ ℝ^{M × d_model}, M ∈ [2, 8]
+    codomain: q ∈ ℝ^{M × q_dim}, k, v ∈ ℝ^{M × kv_dim}
+    invariants:
+    - Output identical to separate path (Q8Quantize is deterministic for same input)
+    - Saves 2 Q8Quantize kernel launches per layer (56 per token at 28 layers)
+    - Q8_1 buffer reused across all 3 GEMV — no redundant allocations
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Shared_Q8_Qkv
+proof_obligations:
+- type: equivalence
+  property: Fused matches separate QKV
+  formal: '|fused_qkv(x) - separate_qkv(x)| < ε element-wise'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: Output dimension correct
+  formal: len(qkv) = 3 * d_model
+  applies_to: all
+- type: invariant
+  property: Weight concatenation preserves values
+  formal: W_qkv[i*d..(i+1)*d, :] = W_i for i ∈ {q,k,v}
+  applies_to: all
+- type: invariant
+  property: Bias concatenation preserves values
+  formal: b_qkv[i*d..(i+1)*d] = b_i for i ∈ {q,k,v}
+  applies_to: all
+- type: invariant
+  property: Single matvec call
+  formal: Exactly one tiled_matvec_f16_into call for Q+K+V combined
+  applies_to: all
+- type: equivalence
+  property: Shared Q8_1 matches separate quantization (PMAT-054A)
+  formal: '|shared_q8_qkv(x) - separate_qkv(x)| = 0 (exact, no FP rounding diff)'
+  tolerance: 0.0
+  applies_to: shared_q8_qkv
+kernel_structure:
+  phases:
+  - name: weight_fusion
+    description: 'At load time: concatenate W_q, W_k, W_v into contiguous W_qkv'
+    invariant: W_qkv layout matches concatenation spec
+  - name: projection
+    description: 'At inference: single matvec producing 3·d_model output, then slice'
+    invariant: q = qkv[0..d], k = qkv[d..2d], v = qkv[2d..3d]
+falsification_tests:
+- id: FALSIFY-QKV-001
+  rule: Equivalence to separate projections
+  prediction: '|fused_qkv(x) - [w_q@x; w_k@x; w_v@x]| < 1e-6 element-wise'
+  test: deterministic test with Whisper tiny dimensions (d_model=384)
+  if_fails: Weight concatenation order or slicing error
+- id: FALSIFY-QKV-002
+  rule: Weight layout verification
+  prediction: W_qkv[0..d*d] = W_q.flatten(), W_qkv[d*d..2*d*d] = W_k.flatten()
+  test: byte-level comparison after fusion
+  if_fails: Row-major vs column-major confusion in concatenation
+- id: FALSIFY-QKV-003
+  rule: Bias correctness
+  prediction: b_qkv[0..d] = b_q, b_qkv[d..2d] = b_k, b_qkv[2d..3d] = b_v
+  test: exact equality test
+  if_fails: Bias vector ordering error
+- id: FALSIFY-QKV-004
+  rule: Whisper-specific dimensions
+  prediction: Correct for d_model ∈ {384, 512, 768, 1024, 1280}
+  test: deterministic test with all Whisper model sizes
+  if_fails: Dimension-specific edge case
+- id: FALSIFY-QKV-005
+  rule: Shared Q8_1 equivalence (PMAT-054A)
+  prediction: batched_qkv_dp4a output == 3× batched_hw_dp4a_q4k_gemv_into output
+  test: Run both paths with same input, assert element-wise equality
+  if_fails: Q8_1 buffer corruption between GEMV launches or workspace aliasing
+- id: FALSIFY-QKV-006
+  rule: Shared Q8_1 buffer not clobbered between GEMV launches
+  prediction: Q8_1 buffer contents identical before each of the 3 GEMV launches
+  test: Copy Q8 buffer after quantize, compare before each GEMV launch
+  if_fails: GEMV kernel writes to Q8 input buffer (read-only violation)
+kani_harnesses:
+- id: KANI-QKV-001
+  obligation: Fused matches separate QKV
+  property: Q8Quantize(x) == Q8Quantize(x) for same input (deterministic)
+  bound: 32
+  strategy: exhaustive
+  harness: verify_q8_quantize_deterministic
+- id: KANI-QKV-002
+  obligation: Shared Q8_1 matches separate quantization (PMAT-054A)
+  property: shared_q8_qkv(x) == separate_qkv(x) element-wise
+  bound: 32
+  strategy: exhaustive
+  harness: verify_shared_q8_equivalence
+- id: KANI-QKV-003
+  obligation: Output dimension correct
+  property: GEMV kernel does not modify Q8 input buffer
+  bound: 32
+  strategy: exhaustive
+  harness: verify_q8_buffer_readonly
+- id: KANI-FUSED_-004
+  obligation: Weight concatenation preserves values
+  property: Weight concatenation preserves values
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FUSED_-005
+  obligation: Bias concatenation preserves values
+  property: Bias concatenation preserves values
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FUSED_-006
+  obligation: Single matvec call
+  property: Single matvec call
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-FQPV-001
+  name: fused-qkv-projection-v1 Contract
+  description: Quality gate for Fused QKV projection — concatenated weight matrix for single
+  checks:
+  - validation
+  - falsification

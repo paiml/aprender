@@ -1,0 +1,108 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Compression roundtrip contract — lossless compress/decompress identity and ratio bounds
+  references:
+  - 'Collet (2013) LZ4: Extremely Fast Compression'
+  - 'Collet & Turner (2018) Smaller and Faster Data Compression with Zstandard'
+equations:
+  roundtrip_identity:
+    formula: '∀ data: decompress(compress(data)) = data'
+    domain: data ∈ [u8], len > 0
+    codomain: Result<Vec<u8>, CompressionError>
+    invariants:
+    - 'Lossless: decompressed data is bit-identical to original'
+    - Works for all codec paths (zstd, lz4, simd variants)
+    - 'Batch roundtrip: decompress_batch(compress_batch(data)) = data'
+    preconditions:
+    - data.len() > 0
+    - data.len() <= max_buffer_size
+    lean_theorem: Theorems.Roundtrip_Identity
+  compression_ratio:
+    formula: ratio = compressed_size / original_size where 0 < ratio
+    domain: data ∈ [u8]
+    codomain: f64 > 0.0
+    invariants:
+    - Ratio is always positive (compressed output is non-empty)
+    - 'Incompressible data: ratio <= 1.0 + overhead (small constant)'
+    - compression_ratio() function returns consistent value
+    preconditions:
+    - data.len() > 0
+    lean_theorem: Theorems.Compression_Ratio
+  page_state:
+    formula: 'page.is_compressed() ↔ page ≠ uncompressed(page.data)'
+    domain: Page with compressed or uncompressed state
+    codomain: bool
+    invariants:
+    - 'is_compressed() and uncompressed() are consistent: uncompressed page is not compressed'
+    - Compressed page decompresses to original data
+    - Page state is immutable after creation
+    preconditions:
+    - page is initialized
+    lean_theorem: Theorems.Page_State
+proof_obligations:
+- type: invariant
+  property: Roundtrip identity
+  formal: '∀ data: decompress(compress(data)) = data'
+  applies_to: roundtrip_identity
+- type: invariant
+  property: Positive ratio
+  formal: '∀ data: compression_ratio(data) > 0.0'
+  applies_to: compression_ratio
+- type: invariant
+  property: Page state consistency
+  formal: '∀ page: is_compressed(uncompressed(data)) = false'
+  applies_to: page_state
+enforcement:
+  roundtrip:
+    description: Decompress of compress yields original data
+    check: contract_tests::FALSIFY-CR-001
+    severity: ERROR
+  ratio_positive:
+    description: Compression ratio is always positive
+    check: contract_tests::FALSIFY-CR-002
+    severity: ERROR
+  page_consistency:
+    description: Page compressed state matches actual state
+    check: contract_tests::FALSIFY-CR-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CR-001
+  rule: Roundtrip identity
+  prediction: decompress(compress(data)) == data for any byte sequence
+  test: proptest with random byte vectors (1B to 1MB), all codecs
+  if_fails: Codec implementation truncates or corrupts trailing bytes
+- id: FALSIFY-CR-002
+  rule: Positive ratio
+  prediction: compression_ratio always returns value > 0.0
+  test: proptest with empty-like and incompressible data
+  if_fails: Division by zero when compressed size is 0 or original is 0
+- id: FALSIFY-CR-003
+  rule: Page state consistency
+  prediction: uncompressed page reports is_compressed() = false
+  test: create pages in both states, verify is_compressed matches
+  if_fails: State flag not updated during decompression
+kani_harnesses:
+- id: KANI-CR-001
+  obligation: Roundtrip identity
+  property: compress then decompress is identity
+  bound: 32
+  strategy: exhaustive
+  harness: verify_roundtrip_identity
+- id: KANI-CR-002
+  obligation: Positive ratio
+  property: ratio > 0
+  bound: 8
+  strategy: exhaustive
+  harness: verify_ratio_positive
+qa_gate:
+  id: F-CR-001
+  name: Compression Roundtrip Contract
+  description: Lossless compression correctness quality gate
+  checks:
+  - roundtrip
+  - ratio_positive
+  - page_consistency
+  pass_criteria: All 3 falsification tests pass
+  falsification: Truncate last byte in compress output

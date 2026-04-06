@@ -1,0 +1,282 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Per-operation training profiling contract — scientific decomposition of each
+    transformer layer into individual GPU operations (GEMM, RMSNorm, attention, FFN).
+
+    Extends training-step-profiling-v1.yaml which provides per-layer timing.
+    This contract goes one level deeper: within each layer, what operation dominates?
+
+    Root cause (five-whys):
+    1. APR 34x slower than unsloth (194 vs 6,628 tok/s on yoga RTX 4060L)
+    2. Per-layer profiling (PMAT-480) shows layers are slow but not WHY
+    3. Each layer has 7 GEMMs + 2 RMSNorms + attention + FFN — which dominates?
+    4. Without per-op timing, optimizations are untargeted (shipped 37 fixes blind)
+    5. ROOT CAUSE: No per-operation instrumentation inside transformer block
+
+    This contract defines the measurement protocol for entrenar#328.
+
+    Scientific methodology: Hoefler & Belli SC'15 — report median, CI, wall coverage.
+  pmat: [PMAT-483]
+  references:
+    - "training-step-profiling-v1.yaml — per-layer profiling contract (12 falsification tests)"
+    - "entrenar StepProfiler: step_profiler.rs — 11 phases + per-layer timing"
+    - "trueno BrickProfiler: src/brick/profiler/mod.rs — 23 brick types"
+    - "entrenar#328 — BrickProfiler per-operation integration (OPEN)"
+
+equations:
+  layer_forward_decomposition:
+    formula: |
+      layer_fwd[i] = rmsnorm_attn + qkv_gemm + attention_score + softmax + attn_output +
+                      o_proj_gemm + residual_add + rmsnorm_ffn + gate_gemm + up_gemm +
+                      silu_mul + down_gemm + residual_add
+      Simplified (grouped by operation type):
+        gemm_time = qkv_gemm + o_proj_gemm + gate_gemm + up_gemm + down_gemm  (5 forward GEMMs)
+        norm_time = rmsnorm_attn + rmsnorm_ffn                                 (2 RMSNorms)
+        attn_time = attention_score + softmax + attn_output                    (attention compute)
+        misc_time = silu_mul + residual_add                                    (element-wise)
+      NF4 path adds:
+        dequant_time = nf4_dequantize per GEMM (integrated in fused kernels)
+    domain: All times in microseconds per layer per step
+    invariants:
+      - gemm_time / layer_fwd >= 0.50 (GEMMs should dominate forward — if not, launch overhead)
+      - norm_time / layer_fwd < 0.15 (RMSNorm should be < 15% of layer)
+      - sum(ops) / layer_fwd >= 0.85 (per-op coverage >= 85% of layer wall time)
+
+  layer_backward_decomposition:
+    formula: |
+      layer_bwd[i] = down_bwd + silu_bwd + gate_up_bwd + rmsnorm_ffn_bwd +
+                      o_proj_bwd + attn_bwd + qkv_bwd + rmsnorm_attn_bwd +
+                      lora_update (if LoRA enabled)
+      Grouped:
+        gemm_bwd_time = down_bwd + gate_up_bwd + o_proj_bwd + qkv_bwd  (4 backward GEMMs)
+        attn_bwd_time = attn_bwd                                        (attention backward)
+        norm_bwd_time = rmsnorm_ffn_bwd + rmsnorm_attn_bwd              (norm backward)
+        lora_time = lora_update                                          (LoRA weight update)
+    domain: All times in microseconds per layer per step
+    invariants:
+      - layer_bwd >= layer_fwd * 1.5 (backward >= 1.5x forward)
+      - gemm_bwd_time / layer_bwd >= 0.40 (GEMMs should dominate backward too)
+
+  json_profiling_output:
+    formula: |
+      EntrenarJSON = {
+        "profiler": {
+          "steps": N,
+          "avg_step_ms": F,
+          "wall_coverage": F,
+          "phases": {
+            "embed": {"total_ms": F, "pct": F, "avg_ms": F},
+            ...11 phases...
+          },
+          "per_layer": [
+            {
+              "layer": I,
+              "fwd_ms": F, "bwd_ms": F,
+              "ops": {
+                "qkv_gemm": F, "attention": F, "o_proj": F,
+                "gate_gemm": F, "up_gemm": F, "silu": F, "down_gemm": F,
+                "rmsnorm_attn": F, "rmsnorm_ffn": F, "lora_update": F
+              }
+            }
+          ],
+          "hotspot_layers": [I],
+          "bottleneck": "memory_bw" | "compute" | "launch" | "transfer"
+        }
+      }
+    domain: F = float, I = int, N >= 1
+    invariants:
+      - wall_coverage in [0.0, 1.0]
+      - len(per_layer) == num_model_layers (28 for Qwen 1.5B)
+      - sum(phase.pct) <= 100.0
+
+  bottleneck_classification:
+    formula: |
+      Given measured step data:
+        gemm_pct = total GEMM time / step time
+        transfer_pct = (h2d + d2h) / step time
+        launch_count = num_kernel_launches
+        compute_util = measured_flops / peak_flops
+
+      IF transfer_pct > 0.30: bottleneck = "transfer"
+      ELIF gemm_pct < 0.30 AND launch_count > 500: bottleneck = "launch"
+      ELIF compute_util > 0.50: bottleneck = "compute"
+      ELSE: bottleneck = "memory_bw"
+    domain: All percentages in [0.0, 1.0]
+    invariants:
+      - Exactly one bottleneck classification per measurement
+
+falsification_tests:
+  - id: F-POP-001
+    rule: Per-op coverage
+    prediction: Per-op coverage >= 85% of layer forward time
+    test: >
+      Run 20-step training with per-op profiling enabled.
+      For each layer: sum(op_times) / layer_fwd_time >= 0.85.
+    if_fails: Missing instrumentation in some operation within the layer
+
+  - id: F-POP-002
+    rule: GEMM dominance
+    prediction: GEMMs dominate forward pass (>= 50% of layer time)
+    test: >
+      For a representative layer (layer 14): gemm_time / layer_fwd >= 0.50.
+      If not, kernel launch overhead or memory stalls dominate.
+    if_fails: >
+      If gemm_pct < 0.30, likely memory BW bound (fp32 dequant overhead).
+      If gemm_pct 0.30-0.50, likely kernel launch overhead (1288 launches/step).
+
+  - id: F-POP-003
+    rule: Fused NF4 FFN speedup
+    prediction: Fused NF4 Gate+Up reduces FFN GEMM time vs unfused
+    test: >
+      Compare NF4_FUSED_GEMM=0 vs NF4_FUSED_GEMM=1:
+      fused(gate_gemm + up_gemm) < unfused(gate_gemm) + unfused(up_gemm).
+      Fused should be >= 15% faster (one DRAM load vs two).
+    if_fails: Fused kernel not activating or regression in fused path
+
+  - id: F-POP-004
+    rule: NF4 tensor core speedup
+    prediction: NF4 tensor core GEMM reduces GEMM time vs cuBLAS
+    test: >
+      Compare NF4_TC_GEMM=0 vs NF4_TC_GEMM=1:
+      tc(qkv_gemm) < cublas(qkv_gemm) * 0.50 (tensor core >= 2x faster).
+    if_fails: WMMA tiles not fully utilized or SHMEM bandwidth limited
+
+  - id: F-POP-005
+    rule: RMSNorm overhead
+    prediction: RMSNorm is < 15% of layer forward time
+    test: >
+      (rmsnorm_attn + rmsnorm_ffn) / layer_fwd < 0.15 for all layers.
+    if_fails: RMSNorm implementation inefficient — consider fused RMSNorm+GEMM (already shipped in PMAT-475)
+
+  - id: F-POP-006
+    rule: Backward GEMM ratio
+    prediction: Backward GEMM time >= forward GEMM time * 1.5
+    test: >
+      gemm_bwd_time / gemm_fwd_time >= 1.5 for representative layer.
+      (Backward computes dL/dX and dL/dW — 2 GEMMs per forward GEMM.)
+    if_fails: Backward may be skipping gradients (NaN cascade) or missing operations
+
+  - id: F-POP-007
+    rule: JSON completeness
+    prediction: JSON profiling output is parseable and complete
+    test: >
+      Run with --profile-interval=1 --json.
+      Parse JSON from stderr/stdout. Verify:
+      - "profiler" key exists
+      - "per_layer" array has 28 entries (Qwen 1.5B)
+      - "wall_coverage" >= 0.85
+      - Each layer has "ops" dict with all 10 operation keys
+    if_fails: JSON output format mismatch — fix entrenar StepProfiler output
+
+  - id: F-POP-008
+    rule: Bottleneck classification
+    prediction: Bottleneck classification matches manual nsys analysis
+    test: >
+      Run nsys profile alongside per-op profiling.
+      Manual analysis: identify top-3 kernels by wall time.
+      Automated classification should agree with manual finding.
+    if_fails: Classification heuristics need tuning — adjust thresholds
+
+proof_obligations:
+  - type: invariant
+    property: Per-op coverage threshold
+    formal: sum(op_times) / layer_fwd_time >= 0.85
+    applies_to: all layers
+  - type: invariant
+    property: GEMM dominance in forward
+    formal: gemm_time / layer_fwd >= 0.50
+    applies_to: representative layer (14)
+  - type: monotonicity
+    property: Backward >= 1.5x forward per layer
+    formal: layer_bwd >= layer_fwd * 1.5
+    applies_to: all layers
+  - type: invariant
+    property: JSON completeness
+    formal: len(per_layer) == num_model_layers AND all(has_ops(layer))
+    applies_to: all profiled runs
+  - type: equivalence
+    property: Fused vs unfused loss parity
+    formal: '|fused_loss - unfused_loss| < 1e-5'
+    applies_to: fusion toggling tests
+
+kani_harnesses:
+  - id: KANI-POP-001
+    obligation: Per-op coverage threshold
+    property: Per-op coverage threshold
+    bound: 8
+    strategy: stub_float
+  - id: KANI-POP-002
+    obligation: GEMM dominance in forward
+    property: GEMM dominance in forward
+    bound: 8
+    strategy: stub_float
+  - id: KANI-POP-003
+    obligation: Backward >= 1.5x forward per layer
+    property: Backward >= 1.5x forward per layer
+    bound: 8
+    strategy: stub_float
+  - id: KANI-POP-004
+    obligation: JSON completeness
+    property: JSON completeness
+    bound: 8
+    strategy: exhaustive
+  - id: KANI-POP-005
+    obligation: Fused vs unfused loss parity
+    property: Fused vs unfused loss parity
+    bound: 8
+    strategy: stub_float
+
+implementation_requirements:
+  entrenar_changes:
+    - description: Add per-operation timing to CudaNf4TransformerBlock::forward
+      detail: >
+        Wrap each operation with begin_op()/end_op() calls:
+        - qkv_gemm, attention, o_proj, gate_gemm, up_gemm, silu, down_gemm
+        - rmsnorm_attn, rmsnorm_ffn
+        Use Instant::now() pairs (no GPU sync — measures CPU dispatch latency).
+    - description: Add per-operation timing to backward pass
+      detail: >
+        Same instrumentation for backward GEMMs and norm backward.
+        Track LoRA weight update time separately.
+    - description: Add JSON profiling output mode
+      detail: >
+        When --json flag is set with --profile-interval > 0:
+        Emit structured JSON to stderr containing phases, per-layer, per-op data.
+        Format matches json_profiling_output equation above.
+    - description: Add bottleneck classification
+      detail: >
+        Analyze per-op data to classify: memory_bw, compute, launch, transfer.
+        Include classification in JSON output.
+
+  canary_changes:
+    - description: Parse JSON profiling from entrenar output
+      detail: >
+        Update canaries/apr/train.py to parse structured JSON profiling.
+        Include full profiling breakdown in canary result JSON.
+    - description: Validate profiling data in score.py
+      detail: >
+        Add profiling checks: wall_coverage >= 0.90, per-layer count == 28,
+        JSON parseable and complete.
+
+  probar_changes:
+    - description: TrainingStepScorecard (PMAT-485)
+      detail: >
+        New scoring module in probar that consumes per-op JSON data
+        and produces graded scorecard with bottleneck identification.
+
+qa_gate:
+  id: F-POP-001
+  name: per-operation-training-profiling-v1 Contract
+  checks:
+    - per_op_coverage
+    - gemm_dominance
+    - fused_comparison
+    - tensor_core_comparison
+    - rmsnorm_overhead
+    - backward_gemm_ratio
+    - json_completeness
+    - bottleneck_classification
+  pass_criteria: All 8 falsification tests pass

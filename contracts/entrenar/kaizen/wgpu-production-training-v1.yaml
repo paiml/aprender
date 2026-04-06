@@ -1,0 +1,136 @@
+contract: wgpu-production-training-v1
+version: 1.0.0
+status: pending
+kaizen: 203
+description: >
+  Production-quality QLoRA training on WGPU. Four fixes to transform
+  proof-of-concept (loss=3.09 plateau) into a valid shell safety model.
+  Based on Hu et al. (2021) LoRA backward math and HuggingFace PEFT patterns.
+
+references:
+  - "Hu et al., LoRA: Low-Rank Adaptation of Large Language Models (arXiv:2106.09685, 2021)"
+  - "Dettmers et al., QLoRA: Efficient Finetuning of Quantized LLMs (arXiv:2305.14314, 2023)"
+  - "HuggingFace PEFT: peft/tuners/lora/layer.py — autograd-based LoRA backward"
+  - "Unsloth LoRA hyperparameters guide (unsloth.ai/docs)"
+
+invariants:
+
+# === Fix 1: Real LoRA backward through attention ===
+
+- id: C-WGPU-LORA-BWD-001
+  description: >
+    LoRA Q backward computes real dL/dA and dL/dB from attention gradients.
+    Forward: q = Wx + (α/r) * BAx where A[r,h], B[q_dim,r].
+    Backward: dL/dB = (α/r) * grad_q^T @ h_cached (Hu et al. Eq. 4).
+    dL/dA = (α/r) * (B^T @ grad_q)^T @ x.
+  preconditions:
+  - grad_hidden from layer above is finite
+  - Attention cache available (Q, K, V, attn_weights, context, h_cached)
+  - O projection weight available for grad_context computation
+  postconditions:
+  - grad_A has non-zero norm (gradient flows through attention)
+  - grad_B has non-zero norm
+  - All gradient values finite
+  - grad_A shape = [rank, hidden_size], grad_B shape = [q_dim, rank]
+  verified_by:
+  - PENDING — test_lora_backward_real_gradients
+  severity: critical
+
+- id: C-WGPU-LORA-BWD-002
+  description: >
+    Attention backward produces grad_q and grad_v from grad_context
+    through softmax Jacobian-vector product and causal mask.
+    grad_v[ki] = sum_qi(attn_weights[qi,ki] * grad_context[qi]).
+    grad_q[qi] = sum_ki(softmax_bwd(grad_scores) * k[ki]) * scale.
+  preconditions:
+  - grad_context from O projection backward is finite
+  - Cached attn_weights (post-softmax) available per head
+  - Cached K, V available
+  postconditions:
+  - grad_q norm > 0 (gradient flows through Q path)
+  - grad_v norm > 0 (gradient flows through V path)
+  - Causal mask respected (no gradient from future positions)
+  verified_by:
+  - PENDING — test_attention_backward_gradient_flow
+  severity: critical
+
+- id: C-WGPU-LORA-BWD-003
+  description: >
+    LoRA V backward uses real grad_v (not constant proxy).
+    Same formulas as Q but applied to V projection path.
+  preconditions:
+  - grad_v from attention backward is finite and non-zero
+  postconditions:
+  - LoRA V adapter weights change after AdamW step
+  - Gradient magnitudes are data-dependent (not constant)
+  verified_by:
+  - PENDING — test_lora_v_backward_data_dependent
+  severity: high
+
+# === Fix 2: Sequence length 128 ===
+
+- id: C-WGPU-SEQLEN-001
+  description: >
+    Training with seq_len=128 fits in 16GB VRAM and produces lower loss
+    than seq_len=32. Shell scripts average 50-200 tokens; 128 captures
+    most single-command patterns.
+  preconditions:
+  - AMD W5700X with 16GB VRAM
+  - Activation memory per layer < 400MB at seq_len=128
+  postconditions:
+  - Training completes without OOM
+  - Loss at step 100 is lower than seq_len=32 run at same step
+  verified_by:
+  - PENDING — run with --seq-len 128
+  severity: high
+
+# === Fix 3: Gradient accumulation ===
+
+- id: C-WGPU-GRADACC-001
+  description: >
+    Accumulate gradients over N micro-batches before AdamW step.
+    Effective batch_size = N. Divide accumulated grad by N before optimizer.
+    AdamW sees averaged gradient, not per-sample gradient.
+    Reduces outlier impact (the step-4 loss spike from 14→68).
+  preconditions:
+  - N = accumulation_steps (default 4)
+  - Gradients stored as running sum across micro-batches
+  postconditions:
+  - AdamW called every N steps (not every step)
+  - Accumulated gradient divided by N before optimizer
+  - Loss trajectory smoother than batch_size=1
+  verified_by:
+  - PENDING — test_gradient_accumulation_averages_correctly
+  severity: high
+
+# === Fix 4: Multi-epoch training ===
+
+- id: C-WGPU-EPOCH-001
+  description: >
+    Support multiple training epochs with data shuffling.
+    Save best checkpoint by validation loss (not just periodic).
+  preconditions:
+  - epochs parameter > 1
+  - Data can be shuffled between epochs
+  postconditions:
+  - Each epoch processes all examples
+  - Data order differs between epochs (seeded shuffle)
+  - Best checkpoint tracked by lowest loss
+  verified_by:
+  - PENDING — test_multi_epoch_shuffles_data
+  severity: medium
+
+affected_files:
+- path: src/train/transformer_trainer/wgpu_backward.rs
+  functions:
+  - 'backward_through_layers: real attention backward + LoRA gradients'
+  - 'attention_backward: grad_q, grad_v from grad_context through softmax'
+- path: src/train/transformer_trainer/wgpu_attention.rs
+  functions:
+  - 'attention_forward: return AttentionCache for backward'
+- path: src/train/transformer_trainer/wgpu_trainer.rs
+  functions:
+  - 'full_train_step: gradient accumulation, cache attention activations'
+- path: src/train/transformer_trainer/wgpu_runner.rs
+  functions:
+  - 'run_wgpu_training: multi-epoch loop, data shuffle, best checkpoint'

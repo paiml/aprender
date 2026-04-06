@@ -1,0 +1,97 @@
+contract: pre-tokenize-instruct-v1
+version: 1.0.0
+status: implemented
+kaizen: 029
+invariants:
+- id: C-PRETOK-INST-001
+  description: Token IDs computed once at InstructTrainer construction, reused across all epochs
+  preconditions:
+  - InstructSample has non-empty instruction and response text
+  - Pipeline has a BPE tokenizer OR falls back to byte-level encoding
+  postconditions:
+  - train_prepared.len() == train_data.len()
+  - val_prepared.len() == val_data.len()
+  - Token IDs identical to what pipeline.tokenize() would produce on same input
+  - No tokenize() calls during train() epoch loop
+  invariants:
+  - train_prepared shuffled in sync with train_data (same Fisher-Yates swap sequence)
+  - val_prepared frozen across epochs (never shuffled)
+  - PreparedSample derives Clone for epoch snapshot
+  verified_by:
+  - instruct_trainer tests (5 passed, 0 failures)
+  - finetune tests (316 passed, 0 regressions)
+  - cargo check (clean compilation)
+- id: C-PRETOK-INST-002
+  description: Byte-level fallback when no BPE tokenizer configured
+  preconditions:
+  - pipeline.has_tokenizer() returns false
+  postconditions:
+  - prompt_ids = prompt_text.bytes().map(u32::from).collect()
+  - response_ids = response_text.bytes().map(u32::from).collect()
+  - No panic from missing tokenizer
+  verified_by:
+  - test_trainer_creation (uses tiny model without BPE)
+  - test_trainer_train (full training loop without BPE)
+affected_files:
+- path: src/finetune/instruct_trainer.rs
+  functions:
+  - 'PreparedSample (added #[derive(Clone)])'
+  - InstructTrainer::new (pre-tokenizes at construction)
+  - InstructTrainer::train (uses pre-tokenized snapshots)
+  - InstructTrainer::shuffle_train (swaps train_prepared in sync)
+  - InstructTrainer::prepare_samples_static (new static method with fallback)
+  change: '- PreparedSample now derives Clone
+
+    - Added train_prepared and val_prepared fields to InstructTrainer
+
+    - Constructor pre-tokenizes both sets via prepare_samples_static()
+
+    - train() uses self.train_prepared.clone() per epoch instead of re-tokenizing
+
+    - validate uses self.val_prepared directly (no clone needed)
+
+    - shuffle_train() swaps train_prepared in sync with train_data
+
+    '
+companion_kaizen:
+- id: '030'
+  description: 'batch_encode padding: Vec::resize replaces push loop'
+  file: src/tokenizer/hf.rs
+  change: tokens.resize(pad_to, self.pad_id) replaces while loop with push
+performance_note: 'For instruct fine-tuning (e.g., 1000 samples, 3 epochs):
+
+
+  Before (per epoch):
+
+  - Training: 800 samples x tokenize(prompt) + tokenize(response) = 1600 BPE encodes
+
+  - Validation: 200 samples x tokenize(prompt) + tokenize(response) = 400 BPE encodes
+
+  - Total: 2000 x 3 = 6000 BPE encodes over full training
+
+  - Plus: Vec<InstructSample> clone per epoch (String allocations)
+
+
+  After:
+
+  - Pre-tokenize: 2000 BPE encodes (once at construction)
+
+  - Training: Vec<PreparedSample> clone per epoch (Vec<u32> much cheaper than String)
+
+  - Validation: zero copies (iterate pre-tokenized val_prepared by reference)
+
+  - Total: 2000 BPE encodes over full training (3x reduction for 3 epochs)
+
+
+  BPE encoding cost: ~50-200us per sample (merge loop + hash lookups)
+
+  Savings scale linearly with epoch count
+
+  '
+qa_gate:
+  id: F-PTIV-001
+  name: pre-tokenize-instruct-v1 Contract
+  description: Quality gate for pre-tokenize-instruct-v1
+  checks:
+  - validation
+  - falsification

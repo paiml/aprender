@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-079",
+  "prompt": "bashrs: initial contracts for shell parser + safety classifier",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T14:41:36.632740664Z"
+}

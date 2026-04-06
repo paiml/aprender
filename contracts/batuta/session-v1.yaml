@@ -1,0 +1,184 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: |
+    Session persistence contract — JSONL session storage for apr code.
+    Sessions are stored at ~/.apr/sessions/{id}/ with manifest.json and
+    messages.jsonl. Append-only message log, JSON manifest for metadata.
+
+    Motivated by PMAT-123 (session persistence), PMAT-129 (resume),
+    PMAT-165 (auto-resume with age filter).
+  references:
+  - 'PMAT-123: Session persistence implementation'
+  - 'PMAT-129: --resume and --project CLI flags'
+  - 'PMAT-165: Auto-resume with 24h age filter'
+  - 'apr-code.md §6: Session Management'
+  depends_on:
+  - apr-code-v1
+
+equations:
+  jsonl_roundtrip:
+    formula: |
+      forall messages M:
+        resume(persist(session_with(M))).messages == M
+      where equality means:
+        - Same count: output.len() == input.len()
+        - Same content: output[i].content == input[i].content
+        - Same role: output[i].role == input[i].role
+    domain: Vec<Message> with role ∈ {User, Assistant, System, ToolCall, ToolResult}
+    codomain: Vec<Message> after persist→resume roundtrip
+    invariants:
+    - No message loss on roundtrip
+    - No message duplication
+    - Message ordering preserved
+    - Content bytes preserved exactly (no normalization)
+    preconditions:
+    - messages.len() > 0
+    postconditions:
+    - resumed.messages == original.messages
+    lean_theorem: Theorems.Jsonl_Roundtrip
+    notes: |
+      JSONL format: one JSON object per line. Append-only writes via
+      OpenOptions::append(true). No read-modify-write cycle.
+
+  manifest_serde:
+    formula: |
+      forall manifest M:
+        serde_json::from_str(serde_json::to_string(M)) == M
+      where equality covers:
+        - session_id preserved
+        - agent_name preserved
+        - cwd preserved
+        - created timestamp preserved
+        - turn_count preserved
+    domain: SessionManifest struct
+    codomain: SessionManifest after JSON roundtrip
+    invariants:
+    - All fields survive serialization
+    - Timestamps in ISO 8601 format
+    - Optional fields correctly handled (None → absent, not null)
+    preconditions:
+    - manifest.session_id is non-empty
+    postconditions:
+    - deserialized == original
+    lean_theorem: Theorems.Manifest_Serde
+
+  age_filter:
+    formula: |
+      find_recent_for_cwd(cwd, max_age=24h) returns:
+        Some(session) if exists session S where:
+          S.cwd == cwd AND
+          S.created > now() - 24h AND
+          S is newest such session
+        None otherwise
+    domain: (PathBuf, Duration) — cwd and max age
+    codomain: Option<SessionManifest>
+    invariants:
+    - Sessions older than max_age are never returned
+    - Newest matching session is preferred
+    - cwd matching is exact (not prefix)
+    preconditions:
+    - cwd is a valid directory path
+    postconditions:
+    - returned session satisfies both cwd and age constraints
+    lean_theorem: Theorems.Age_Filter
+    notes: |
+      PMAT-165: Without age filter, 3-week-old sessions would be offered.
+      24h default prevents stale context from confusing users.
+
+  append_only:
+    formula: |
+      forall session S, time t1 < t2:
+        S.messages_at(t2).starts_with(S.messages_at(t1))
+    domain: Session message log over time
+    codomain: Monotonically growing Vec<Message>
+    invariants:
+    - Messages are only appended, never mutated or deleted
+    - Partial writes (crash mid-append) truncate cleanly on resume
+    - No message in the log is ever modified after write
+    preconditions:
+    - Session exists and is writable
+    postconditions:
+    - Log grows monotonically
+    lean_theorem: Theorems.Append_Only
+
+proof_obligations:
+- type: roundtrip
+  property: Messages survive persist-resume
+  formal: resume(persist(M)) == M
+  applies_to: jsonl_roundtrip
+- type: roundtrip
+  property: Manifest fields survive JSON
+  formal: deser(ser(manifest)) == manifest
+  applies_to: manifest_serde
+- type: postcondition
+  property: Age filter respects 24h boundary
+  formal: returned.created > now() - 24h
+  applies_to: age_filter
+- type: invariant
+  property: Message log grows monotonically
+  formal: messages(t2).starts_with(messages(t1))
+  applies_to: append_only
+
+falsification_tests:
+- id: FALSIFY-SESSION-001
+  rule: JSONL roundtrip preserves message count
+  prediction: Message count identical after persist→resume
+  test: |
+    Create session with 5 messages (user, assistant, tool_call, tool_result, assistant).
+    Persist via append_messages(). Resume via Session::resume().
+    Assert resumed.messages.len() == 5.
+  file: src/agent/session.rs
+  if_fails: Messages lost on resume, conversation context incomplete
+
+- id: FALSIFY-SESSION-002
+  rule: JSONL roundtrip preserves all messages
+  prediction: Every message content byte-identical after roundtrip
+  test: |
+    Create session with messages containing special chars, newlines, unicode.
+    Persist and resume.
+    Assert each message content matches original.
+  file: src/agent/session.rs
+  if_fails: Message content corrupted on persist, silent data loss
+
+- id: FALSIFY-SESSION-003
+  rule: Manifest serde roundtrip
+  prediction: Session ID, turn count, cwd survive JSON roundtrip
+  test: |
+    Create manifest with specific id="test-abc", turns=12, cwd="/tmp/project".
+    Serialize to JSON, deserialize back.
+    Assert all fields match.
+  file: src/agent/session.rs
+  if_fails: Session metadata lost, cannot resume correct session
+
+- id: FALSIFY-SESSION-004
+  rule: Age filter respects 24h boundary
+  prediction: Sessions older than 24h never returned by find_recent_for_cwd
+  test: |
+    Create two sessions for same cwd:
+    - Session A: created 25 hours ago
+    - Session B: created 1 hour ago
+    Call find_recent_for_cwd(cwd, 24h).
+    Assert returns Session B (not A).
+    Create only Session A. Assert returns None.
+  file: src/agent/session.rs
+  if_fails: Stale sessions offered for resume, confusing user with outdated context
+
+qa_gate:
+  id: F-SESSION-001
+  name: Session Contract
+  description: JSONL session persistence correctness
+  checks:
+  - jsonl_roundtrip
+  - manifest_serde
+  - age_filter
+  - append_only
+  pass_criteria: All 4 falsification tests pass
+  falsification: Unit tests with temp directories
+kani_harnesses:
+- id: KANI-SESSION-001
+  obligation: Messages survive persist-resume
+  property: JSONL roundtrip preserves message count and content
+  bound: 8
+  strategy: exhaustive

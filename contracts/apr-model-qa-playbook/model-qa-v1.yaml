@@ -1,0 +1,113 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Model QA contract — MQS scoring, grade assignment, regression detection, report formatting
+  references:
+  - 'Breck et al. (2017) The ML Test Score: A Rubric for ML Production Readiness'
+  - 'Sculley et al. (2015) Hidden Technical Debt in Machine Learning Systems'
+equations:
+  mqs_scoring:
+    formula: MQS(model) = Σ w_i * score_i(model) where Σ w_i = 1.0
+    domain: model ∈ ModelEvidence
+    codomain: f64 ∈ [0.0, 100.0]
+    invariants:
+    - 'Bounded: 0.0 <= MQS <= 100.0'
+    - 'Deterministic: MQS(m) = MQS(m) for same evidence'
+    - 'Monotonic: improving any sub-score cannot decrease MQS'
+    preconditions:
+    - model evidence is complete (all required fields present)
+    lean_theorem: Theorems.MQS_Scoring
+  grade_assignment:
+    formula: 'G(score) = A if score >= 90, B if >= 80, C if >= 70, D if >= 60, F otherwise'
+    domain: score ∈ f64
+    codomain: Grade ∈ {A, B, C, D, F}
+    invariants:
+    - 'Total function: every score maps to exactly one grade'
+    - 'Monotonic: higher score → same or better grade'
+    - Grade boundaries are inclusive on lower bound
+    preconditions:
+    - score ∈ [0.0, 100.0]
+    lean_theorem: Theorems.Grade_Assignment
+  regression_detection:
+    formula: detect_regression(current, baseline) = {metric | current[metric] < baseline[metric] - tolerance}
+    domain: current ∈ MQSReport, baseline ∈ MQSReport
+    codomain: Vec<RegressionFinding>
+    invariants:
+    - No regressions reported for identical reports
+    - All degraded metrics above tolerance are reported
+    - Improvements are not flagged as regressions
+    preconditions:
+    - both reports have matching metric sets
+    lean_theorem: Theorems.Regression_Detection
+proof_obligations:
+- type: invariant
+  property: MQS score bounds
+  formal: '∀ m: 0.0 <= calculate_mqs(m) <= 100.0'
+  applies_to: mqs_scoring
+- type: invariant
+  property: Grade monotonicity
+  formal: '∀ s1, s2: s1 >= s2 → grade(s1) >= grade(s2)'
+  applies_to: grade_assignment
+- type: invariant
+  property: Regression reflexivity
+  formal: '∀ r: detect_regression(r, r) = []'
+  applies_to: regression_detection
+enforcement:
+  score_bounds:
+    description: MQS score always in [0, 100] range
+    check: contract_tests::FALSIFY-MQAV-001
+    severity: ERROR
+  grade_monotonicity:
+    description: Higher score never produces worse grade
+    check: contract_tests::FALSIFY-MQAV-002
+    severity: ERROR
+  regression_reflexivity:
+    description: No regressions detected when comparing report to itself
+    check: contract_tests::FALSIFY-MQAV-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-MQAV-001
+  rule: MQS score bounds
+  prediction: calculate_mqs returns value in [0.0, 100.0] for any valid evidence
+  test: proptest with random evidence fields, verify bounds
+  if_fails: Weight sum exceeds 1.0 or sub-score exceeds its maximum
+- id: FALSIFY-MQAV-002
+  rule: Grade monotonicity
+  prediction: score 91 gets A, 89 gets B (never A < B for higher score)
+  test: sweep scores 0-100 in 0.1 increments, verify grade is monotonically non-decreasing
+  if_fails: Grade boundary comparison uses wrong operator
+- id: FALSIFY-MQAV-003
+  rule: Regression reflexivity
+  prediction: detect_regression(report, report) returns empty list
+  test: generate 100 random reports, self-compare each
+  if_fails: Floating-point comparison lacks tolerance for identical values
+kani_harnesses:
+- id: KANI-MQAV-001
+  obligation: MQS score bounds
+  property: score in [0, 100]
+  bound: 16
+  strategy: exhaustive
+  harness: verify_mqs_bounds
+- id: KANI-MQAV-002
+  obligation: Grade monotonicity
+  property: grade is monotonic
+  bound: 8
+  strategy: exhaustive
+  harness: verify_grade_monotonicity
+- id: KANI-MQAV-003
+  obligation: Regression reflexivity
+  property: self-comparison yields no regressions
+  bound: 8
+  strategy: exhaustive
+  harness: verify_regression_reflexivity
+qa_gate:
+  id: F-MQAV-001
+  name: Model QA Contract
+  description: MQS scoring, grade assignment, and regression detection quality gate
+  checks:
+  - score_bounds
+  - grade_monotonicity
+  - regression_reflexivity
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove weight normalization in calculate_mqs allowing sum > 100

@@ -1,0 +1,28 @@
+version: 1.0.0
+target_crate: verificar
+bindings:
+- contract: verification-engine-v1.yaml
+  equation: generator_coverage
+  module_path: verificar::generator::Generator::generate
+  function: generate
+  signature: 'fn generate(&self, strategy: SamplingStrategy, count: usize) -> Vec<TestCase>'
+  status: implemented
+  notes: Combinatorial program generation with coverage-guided, random, and exhaustive strategies
+- contract: verification-engine-v1.yaml
+  equation: mutation_soundness
+  module_path: verificar::mutator
+  function: mutate
+  signature: 'fn mutate(program: &AST, operator: MutationOperator) -> AST'
+  status: implemented
+  notes: Supports AOR, ROR, LOR, BSR, UOI, SDL operators
+- contract: verification-engine-v1.yaml
+  equation: oracle_verdict
+  module_path: verificar::oracle
+  function: verify
+  signature: 'fn verify(source: &str, expected: &str) -> Verdict'
+  status: implemented
+  notes: Sandbox execution with timeout, I/O diff comparison
+critical_path:
+- generator_coverage
+- mutation_soundness
+- oracle_verdict

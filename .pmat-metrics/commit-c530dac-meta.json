@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-103",
+  "prompt": "Fix pv codegen: binding-aware generation with real pre/postconditions",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T18:19:44.574759108Z"
+}

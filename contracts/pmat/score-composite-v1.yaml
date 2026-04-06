@@ -1,0 +1,109 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: Composite score — geometric mean of quality dimensions for codebase-level grading
+  references:
+  - pmat quality-gate — composite quality scoring
+  - 'Fleming & Wallace (1986) How Not to Lie with Statistics: Geometric Mean'
+equations:
+  geometric_mean:
+    formula: "compute_composite_score: Vec<DimensionScore> -> CompositeScore\n  CompositeScore = (product(d_i for d_i in dimensions))^(1/n)\n\
+      \  Where n = len(dimensions), d_i in (0.0, 100.0]\n  Dimensions: [TDG, Coverage, Complexity, SATD, Lint, Deny, TestPass,\
+      \ DocCoverage]\n"
+    domain: Vec<DimensionScore> where each d_i in (0.0, 100.0], len >= 1
+    codomain: CompositeScore in (0.0, 100.0]
+    invariants:
+    - Geometric mean <= arithmetic mean (AM-GM inequality)
+    - If any dimension is 0, composite is 0
+    - If all dimensions equal v, composite equals v
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    postconditions:
+    - result >= 0.0 && result <= 100.0
+    - result <= arithmetic_mean(input)
+    - any_zero(input) => result == 0.0
+    lean_theorem: Theorems.Geometric_Mean
+  grade_from_score:
+    formula: "grade: CompositeScore -> ProjectGrade\n  A if composite >= 90\n  B if composite >= 80\n  C if composite >= 70\n\
+      \  D if composite >= 60\n  F otherwise\n"
+    domain: CompositeScore in [0.0, 100.0]
+    codomain: ProjectGrade in {A, B, C, D, F}
+    invariants:
+    - Grade is monotonically non-decreasing with composite score
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    postconditions:
+    - result in {A, B, C, D, F}
+    - score >= 90.0 => result == A
+    - score < 60.0 => result == F
+    lean_theorem: Theorems.Grade_From_Score
+proof_obligations:
+- type: bound
+  property: Composite bounded
+  formal: 0.0 <= geometric_mean(dims) <= 100.0
+  applies_to: all
+- type: invariant
+  property: AM-GM inequality
+  formal: geometric_mean(dims) <= arithmetic_mean(dims)
+  applies_to: all
+- type: equivalence
+  property: Uniform dimensions
+  formal: all d_i = v => geometric_mean = v
+  tolerance: 0.0001
+  applies_to: all
+- type: postcondition
+  property: Zero propagation
+  formal: any d_i = 0 => geometric_mean = 0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SCORE-001
+  rule: AM-GM holds
+  prediction: Geometric mean never exceeds arithmetic mean
+  test: proptest with random dimension vectors
+  if_fails: Geometric mean implementation incorrect
+- id: FALSIFY-SCORE-002
+  rule: Uniform identity
+  prediction: All equal dimensions produce that value as composite
+  test: proptest with uniform vectors of varying length
+  if_fails: nth-root calculation error
+- id: FALSIFY-SCORE-003
+  rule: Zero propagation
+  prediction: Single zero dimension zeroes entire composite
+  test: Unit test with one zero in dimension vector
+  if_fails: Zero not propagated through product
+- id: FALSIFY-SCORE-004
+  rule: Score bounded
+  prediction: Composite always in [0, 100] for inputs in [0, 100]
+  test: proptest with boundary values
+  if_fails: Overflow or domain violation in geometric mean
+kani_harnesses:
+- id: KANI-SCORE-001
+  obligation: Composite bounded
+  property: 0.0 <= geometric_mean(dims) <= 100.0
+  bound: 16
+  strategy: exhaustive
+- id: KANI-SCORE-002
+  obligation: AM-GM inequality
+  property: geometric_mean <= arithmetic_mean for all dimension vectors
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SCORE_-003
+  obligation: Uniform dimensions
+  property: Uniform dimensions
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SCORE_-004
+  obligation: Zero propagation
+  property: Zero propagation
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SCV-001
+  name: score-composite-v1 Contract
+  description: Quality gate for Composite score — geometric mean of quality dimensions for c
+  checks:
+  - validation
+  - falsification

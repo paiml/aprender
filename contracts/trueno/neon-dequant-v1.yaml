@@ -1,0 +1,160 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    NEON aarch64 dequantization contract — Q4K, Q6K, Q8_0 dequant on
+    ARM processors (Apple Silicon, Jetson Orin, Graviton). Prevents
+    all-zeros output from NEON intrinsic misuse (GH-646).
+  references:
+  - 'Arm Architecture Reference Manual — NEON SIMD intrinsics'
+  - 'trueno/src/backends/neon/ops/ — NEON dequant implementation'
+  - 'trueno/src/backends/q4k/dequant.rs — Q4K dequantization'
+  - 'paiml/aprender#646 — Jetson Orin Nano Q6_K all-zeros bug'
+  depends_on:
+  - avx2-fma-dot-v1
+
+equations:
+  neon_q4k_dequant:
+    formula: |
+      dequant_q4k_neon(block): Q4KBlock -> [f32; 32]
+        scale = f16_to_f32(block.d)
+        min_val = f16_to_f32(block.dmin)
+        For each nibble pair in block.qs:
+          output[i] = scale * (nibble & 0xF) - min_val
+        NEON: vld1q_u8 load, vshrq/vandq extract nibbles,
+              vcvtq_f32_s32 convert, vfmaq_f32 scale+offset
+    domain: Q4K quantized block (34 bytes)
+    codomain: 32 dequantized f32 values
+    invariants:
+    - Output contains at least one non-zero value for non-zero input (GH-646)
+    - Output is finite (no NaN/Inf from dequant)
+    - NEON result matches scalar dequant within f32 epsilon
+    preconditions:
+    - block.d != 0 (scale factor non-zero)
+    postconditions:
+    - result.iter().any(|v| *v != 0.0) when block has non-zero weights
+    - result.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.NeonQ4kDequant
+
+  neon_q6k_dequant:
+    formula: |
+      dequant_q6k_neon(block): Q6KBlock -> [f32; 256]
+        scale = f16_to_f32(block.d)
+        For each 6-bit value in block.ql/qh:
+          val = ((ql & 0xF) | ((qh & 3) << 4)) - 32
+          output[i] = scale * val
+    domain: Q6K quantized block
+    codomain: 256 dequantized f32 values
+    invariants:
+    - 6-bit extraction uses correct bit masks (GH-646 root cause)
+    - NEON vld1q + vshrq + vorrq bit assembly matches scalar
+    - No signed/unsigned confusion in 6-bit to i8 conversion
+    preconditions:
+    - block.d != 0
+    postconditions:
+    - result.iter().any(|v| *v != 0.0) when block has non-zero weights
+    - result.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.NeonQ6kDequant
+
+  neon_scalar_equivalence:
+    formula: |
+      forall block B, quant_type Q in {Q4K, Q6K, Q8_0}:
+        |dequant_neon(B, Q) - dequant_scalar(B, Q)| < epsilon
+      where epsilon = f32::EPSILON * max(|dequant_scalar(B, Q)|)
+    domain: Any quantized block
+    codomain: bool (equivalence within tolerance)
+    invariants:
+    - NEON and scalar produce identical results for all quant types
+    - Tolerance accounts for FMA rounding differences
+    preconditions:
+    - block is well-formed
+    postconditions:
+    - max absolute difference < epsilon per element
+    tolerance: 1.0e-5
+    lean_theorem: Theorems.NeonScalarEquivalence
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify block has valid scale factor, correct byte count
+  - name: execute
+    description: NEON dequantization with vld1q/vfmaq/vcvtq intrinsics
+  - name: verify_output
+    description: Check non-zero output, finiteness, scalar parity
+
+proof_obligations:
+- type: invariant
+  property: Non-zero output for non-zero input
+  formal: 'block.has_nonzero_weights() => output.any(|v| v != 0.0)'
+  applies_to: neon_q4k_dequant
+  lean:
+    theorem: Theorems.NeonQ4kDequant
+    status: sorry
+- type: invariant
+  property: Q6K 6-bit extraction correct
+  formal: 'val = ((ql & 0xF) | ((qh & 3) << 4)) - 32, val in [-32, 31]'
+  applies_to: neon_q6k_dequant
+  lean:
+    theorem: Theorems.NeonQ6kDequant
+    status: sorry
+- type: equivalence
+  property: NEON matches scalar dequant
+  formal: '|neon - scalar| < epsilon per element'
+  tolerance: 1.0e-5
+  applies_to: neon_scalar_equivalence
+  lean:
+    theorem: Theorems.NeonScalarEquivalence
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-NEON-001
+  rule: Q6K non-zero output
+  prediction: Q6K block with non-zero weights produces non-zero f32 output on aarch64
+  test: |
+    Create Q6K block with known weights, dequant on NEON.
+    Assert output.iter().any(|v| *v != 0.0).
+  if_fails: NEON dequantization produces all-zeros (GH-646)
+- id: FALSIFY-NEON-002
+  rule: NEON matches scalar
+  prediction: NEON Q4K dequant matches scalar within epsilon
+  test: |
+    Dequant same block with both NEON and scalar paths.
+    Assert max |diff| < 1e-5.
+  if_fails: NEON intrinsic bug produces different values than scalar
+- id: FALSIFY-NEON-003
+  rule: Q4K finiteness
+  prediction: All Q4K dequant outputs are finite (no NaN/Inf)
+  test: |
+    Dequant 1000 random blocks. Assert all outputs finite.
+  if_fails: Dequant produces NaN from division by zero or overflow
+
+kani_harnesses:
+- id: KANI-NEON-001
+  obligation: Non-zero output for non-zero input
+  property: 'nonzero block => nonzero output'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_neon_nonzero
+- id: KANI-NEON-002
+  obligation: Q6K 6-bit extraction correct
+  property: 'val in [-32, 31]'
+  bound: 64
+  strategy: exhaustive
+  harness: verify_q6k_extraction
+- id: KANI-NEON-003
+  obligation: NEON matches scalar dequant
+  property: '|neon - scalar| < epsilon'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_neon_scalar_parity
+
+qa_gate:
+  id: F-NEON-GATE
+  name: NEON Dequantization Contract
+  description: Quality gate for aarch64 NEON dequantization correctness
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 3 falsification tests pass

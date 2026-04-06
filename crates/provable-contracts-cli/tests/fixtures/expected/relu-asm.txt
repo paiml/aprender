@@ -1,0 +1,38 @@
+//
+// x86-64 AVX2 stub: relu-kernel-v1
+// ReLU activation — rectified linear unit
+// Equation relu: y_i = max(0, x_i)
+//
+
+.intel_syntax noprefix
+.text
+.globl relu_avx2
+.p2align 4
+
+relu_avx2:
+    push rbp
+    mov rbp, rsp
+    // rdi = input ptr, rsi = output ptr, edx = n
+
+    // AVX2 registers: ymm x 16
+    vxorps ymm0, ymm0, ymm0
+    vxorps ymm1, ymm1, ymm1
+    vxorps ymm2, ymm2, ymm2
+    vxorps ymm3, ymm3, ymm3
+
+    // Phase 1: compare
+    // Compare each x_i against zero
+    // Invariant: mask_i = (x_i > 0)
+
+    // Phase 2: select
+    // Select x_i if positive, else zero
+    // Invariant: y_i = mask_i ? x_i : 0
+
+    // Proof obligations:
+    //   [invariant] Non-negativity
+    //   [bound] Output bounded below by zero
+    //   [idempotency] Idempotent application
+    //   [equivalence] SIMD matches scalar
+
+    pop rbp
+    ret

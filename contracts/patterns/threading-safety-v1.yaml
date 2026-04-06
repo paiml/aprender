@@ -1,0 +1,118 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Threading safety — lock-ordering and data-race-freedom cross-cutting patterns
+  kind: pattern
+  references:
+  - 'Lamport (1978). Time, Clocks, and the Ordering of Events. CACM 21(7)'
+  - 'Flanagan & Freund (2009). FastTrack: Efficient and Precise Dynamic Race Detection. PLDI'
+  - 'Jung et al. (2020). RustBelt meets Relaxed Memory. POPL'
+  - 'Zhao & Sanan (2023). Rely-guarantee Concurrent Memory Management. arXiv:2309.09997'
+  - 'Antonino et al. (2022). Pattern-based Deadlock-Freedom Analysis. arXiv:2207.08854'
+  - 'Wu et al. (2023). Model Checking Race-Freedom under SC-DRF. arXiv:2305.18198'
+  - 'Jacobs & Fasse (2025). Modular Verification of Rust Arc. arXiv:2505.00449'
+  - 'Pearce et al. (2025). RustMC: Stateless Model Checker for Rust. arXiv:2502.06293'
+  - 'Ayoun et al. (2024). Gillian-Rust: Hybrid Semi-automated Verification. arXiv:2403.15122'
+  applies_to:
+  - pmat (DashMap in index)
+  - forjar (state lock + config lock)
+  - trueno (graph + cache)
+equations:
+  lock_order_invariant:
+    formula: |
+      lock_order: (Mutex<A>, Mutex<B>) -> bool
+        forall thread t: if t.holds(A) and t.acquires(B) then order(A) < order(B)
+        Violated: A.lock() then B.lock() where order(A) > order(B)
+    domain: All lockable resources in process
+    codomain: bool (deadlock-free)
+    invariants:
+    - Lock acquisition follows total order (no cycles in wait-for graph)
+    - 'Documented lock levels: L0 (index), L1 (cache), L2 (state), L3 (IO)'
+    - Lock level annotations on all Mutex/RwLock fields
+    preconditions:
+    - All lockable resources have assigned levels
+    - Lock levels are documented in struct-level comments
+    postconditions:
+    - No deadlock reachable from any interleaving
+    - Wait-for graph is acyclic at every program point
+    lean_theorem: Theorems.LockOrderInvariant
+  race_freedom:
+    formula: |
+      race_free: Program -> bool
+        forall memory location m, forall concurrent accesses (a1, a2) to m:
+          a1.is_write or a2.is_write -> synchronized(a1, a2)
+    domain: Program with shared mutable state
+    codomain: bool (race-free)
+    invariants:
+    - All shared mutable state behind Mutex, RwLock, or atomic
+    - No raw pointer aliasing across thread boundaries
+    - DashMap entries not held across await points
+    preconditions:
+    - Program compiles under Rust borrow checker (Send + Sync)
+    postconditions:
+    - MIRI detects zero data races under any scheduling
+    lean_theorem: Theorems.RaceFreedom
+proof_obligations:
+- type: ordering
+  property: Lock acquisition follows total order
+  formal: 'forall t1, t2: if t1.holds(A) and t1.acquires(B) then order(A) < order(B)'
+  applies_to: lock_order_invariant
+- type: soundness
+  property: No data races under any scheduling
+  formal: 'forall m, a1, a2: concurrent(a1, a2) and (write(a1) or write(a2)) -> synchronized(a1, a2)'
+  applies_to: race_freedom
+- type: invariant
+  property: Wait-for graph is always acyclic
+  formal: 'forall states S: is_acyclic(wait_for_graph(S))'
+  applies_to: lock_order_invariant
+falsification_tests:
+- id: FALSIFY-THR-001
+  rule: Lock ordering
+  prediction: 100 threads acquiring locks A,B in both orders never deadlock
+  test: Spawn 100 threads, half acquire A then B, half acquire B then A; detect panic or timeout within 5s
+  if_fails: Lock ordering violation — missing level annotation or wrong acquisition order
+- id: FALSIFY-THR-002
+  rule: Data race freedom
+  prediction: MIRI detects zero data races with preemption rate 0.1
+  test: 'cargo +nightly miri test with -Zmiri-preemption-rate=0.1'
+  if_fails: Shared mutable state not behind synchronization primitive
+- id: FALSIFY-THR-003
+  rule: DashMap safety
+  prediction: No DashMap entry held across await points
+  test: Static analysis — grep for DashMap get/get_mut followed by .await before drop
+  if_fails: DashMap deadlock — entry guard held across yield point
+- id: FALSIFY-THR-004
+  rule: Lock level documentation
+  prediction: Every Mutex/RwLock field has documented lock level L0-L3
+  test: Audit all struct definitions containing Mutex/RwLock for level annotations
+  if_fails: Missing lock level documentation — ordering cannot be verified
+kani_harnesses:
+- id: KANI-THR-001
+  obligation: Lock ordering total order
+  property: No deadlock in two-lock acquisition
+  bound: 4
+  strategy: exhaustive
+  harness: verify_lock_order_no_deadlock
+- id: KANI-THR-002
+  obligation: Race freedom
+  property: All shared writes are synchronized
+  bound: 8
+  strategy: exhaustive
+  harness: verify_race_freedom
+- id: KANI-THR-003
+  obligation: Wait-for graph acyclicity
+  property: Wait-for graph has no cycles for any interleaving
+  bound: 4
+  strategy: exhaustive
+  harness: verify_wait_for_acyclic
+qa_gate:
+  id: F-THR-001
+  name: Threading Safety Contract
+  description: Lock ordering and data race freedom quality gate
+  checks:
+  - lock_ordering
+  - race_freedom
+  - lock_documentation
+  pass_criteria: All 4 falsification tests pass and MIRI reports zero races
+  falsification: Acquire two locks in reverse order; expect deadlock detection

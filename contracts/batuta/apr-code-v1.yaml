@@ -1,0 +1,278 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: apr code agentic coding assistant — sovereignty, tool safety, session integrity, config compliance
+  references:
+  - 'Claude Code: claude.ai/code (reference UX)'
+  - 'CCX-RS: anton-abyzov/ccx-rs (multi-provider Rust agent)'
+  - 'Fault-Tolerant Sandboxing: arXiv:2512.12806'
+  - 'HAICOSYSTEM: arXiv:2409.16427'
+  depends_on:
+  - agent-loop-v1
+  - provider-routing-v1
+  - agent-ux-v1
+  - streaming-tpot-v1
+equations:
+  sovereignty_guarantee:
+    formula: |
+      offline_mode(session) =>
+        network_syscalls(session) == 0
+        AND provider(session) ∈ {realizar}
+        AND tools(session) ∩ {web_fetch, web_search} == ∅
+    domain: Session with --offline or --sovereign flag
+    invariants:
+    - Zero connect(), sendto(), recvfrom() syscalls (renacer verified)
+    - All inference via local realizar engine
+    - No DNS lookups, no HTTP requests, no WebSocket
+    preconditions:
+    - offline == true OR tier == Sovereign
+    postconditions:
+    - renacer_trace.network_events.len() == 0
+    lean_theorem: Theorems.Sovereignty_Guarantee
+  tool_safety:
+    formula: |
+      execute(tool_call) requires:
+        capability(tool) ∈ session.allowed_capabilities
+        AND pre_hooks(tool_call).all(|h| h != Block)
+        AND sandbox.allows(tool_call.path, tool_call.action)
+    domain: Every tool call in agent loop
+    invariants:
+    - Three-layer enforcement (capability + hook + sandbox)
+    - Blocked tool calls produce user-visible explanation
+    - No tool executes without all three layers passing
+    preconditions:
+    - session.capabilities.len() > 0
+    postconditions:
+    - executed == (capability_ok AND hook_ok AND sandbox_ok)
+    lean_theorem: Theorems.Tool_Safety
+  session_integrity:
+    formula: |
+      resume(persist(session, turn_N)) ≈ session at turn_N
+      where ≈ means:
+        messages[0..N] byte-identical
+        context re-compacted if needed
+        memory re-fetched from substrate
+    domain: JSONL session persistence
+    invariants:
+    - No message loss or duplication on resume
+    - Crash mid-write truncates cleanly (no corruption)
+    - Resumed session functionally equivalent to uninterrupted
+    preconditions:
+    - session.messages.len() > 0
+    postconditions:
+    - resumed.messages.len() >= original.messages.len() - 1
+    lean_theorem: Theorems.Session_Integrity
+  apr_md_compliance:
+    formula: |
+      for each instruction I in APR.md:
+        agent.behavior satisfies I
+      blocked_tools(APR.md) ∩ executed_tools(session) == ∅
+    domain: APR.md / CLAUDE.md project config
+    invariants:
+    - Blocked tools are never executed
+    - Build commands from APR.md used for cargo/test operations
+    - Coding standards from APR.md included in system prompt
+    preconditions:
+    - apr_md exists and is parseable
+    postconditions:
+    - violated_instructions.len() == 0
+    lean_theorem: Theorems.Apr_Md_Compliance
+  no_model_error:
+    formula: |
+      if no_local_model_found:
+        display_error(reason)
+        AND display_download_instructions("apr pull <model>")
+        AND exit(5)
+    domain: Local model discovery (Sovereign only — no remote fallback)
+    invariants:
+    - Never silently fall back to MockDriver in production
+    - Error message includes exact download command
+    - Exit code 5 = no model available
+    postconditions:
+    - user_sees_actionable_error OR model_loaded
+    lean_theorem: Theorems.Model_Fallback
+  single_binary:
+    formula: |
+      apr_code_works(machine) requires:
+        rust_binary("apr") present
+        AND no_npm AND no_python AND no_docker
+    domain: Clean machine with only apr binary
+    invariants:
+    - Single static binary sufficient for full functionality
+    - No runtime dependencies beyond OS (libc, kernel)
+    - WASM features degrade gracefully if browser unavailable
+    lean_theorem: Theorems.Single_Binary
+  apr_model_validity:
+    formula: |
+      load_model(path) requires:
+        IF is_apr(path):
+          has_embedded_tokenizer(path) == true
+          AND has_valid_magic(path) == true
+          AND metadata.vocab_size > 0
+        ELSE IF is_gguf(path):
+          gguf_magic_valid(path) == true
+    domain: Model loading boundary (RealizarDriver::new)
+    invariants:
+    - APR models without embedded tokenizer rejected at load time (Jidoka)
+    - Error message includes exact re-conversion command
+    - GGUF models validated for magic bytes
+    - No invalid model propagates to inference loop
+    preconditions:
+    - path.exists() == true
+    - file_size > 0
+    postconditions:
+    - model_valid OR user_sees_actionable_error
+    - never reaches inference with broken tokenizer
+    lean_theorem: Theorems.Apr_Model_Validity
+  startup_latency:
+    formula: |
+      t(first_prompt_displayed) - t(apr_code_invoked) <= 2.0s
+    domain: Cold start on NVMe with 1000-file project
+    invariants:
+    - Project indexing is async (does not block prompt)
+    - Model loading is lazy (on first inference, not startup)
+    - APR.md parsing completes within 100ms
+    preconditions:
+    - project.file_count <= 10000
+    postconditions:
+    - startup_time <= Duration::from_secs(2)
+    lean_theorem: Theorems.Startup_Latency
+proof_obligations:
+- type: invariant
+  property: Sovereign mode zero network
+  formal: offline => network_syscalls == 0
+  applies_to: all
+- type: invariant
+  property: Three-layer tool safety
+  formal: execute requires capability AND hook AND sandbox
+  applies_to: all
+- type: roundtrip
+  property: Session persist-resume lossless
+  formal: resume(persist(s)) ≈ s
+  applies_to: all
+- type: postcondition
+  property: APR.md blocked tools respected
+  formal: blocked_tools ∩ executed_tools == ∅
+  applies_to: all
+- type: postcondition
+  property: Model fallback notifies user
+  formal: model_changed => user_notified
+  applies_to: all
+- type: invariant
+  property: Single binary, no external deps
+  formal: works without npm, python, docker
+  applies_to: all
+- type: bound
+  property: Startup latency under 2s
+  formal: startup_time <= 2.0s
+  applies_to: all
+- type: frame
+  property: APR.md instructions in system prompt
+  formal: system_prompt contains apr_md.instructions
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-AC-001
+  rule: Sovereignty guarantee
+  prediction: --offline produces zero network syscalls
+  test: renacer trace full session under --offline; assert zero connect/sendto
+  if_fails: Sovereignty broken — air-gap deployment unusable
+- id: FALSIFY-AC-002
+  rule: Tool safety
+  prediction: Blocked tool in APR.md never executes
+  test: Block web_fetch in APR.md; agent attempts web fetch; assert blocked
+  if_fails: APR.md config ignored — trust broken
+- id: FALSIFY-AC-003
+  rule: Session integrity
+  prediction: Resume after crash produces no duplicate messages
+  test: Write 100 messages, kill -9 mid-write, resume, assert no duplicates
+  if_fails: Crash recovery corrupts session — user loses work
+- id: FALSIFY-AC-004
+  rule: No model error
+  prediction: Missing model produces actionable error with download instructions
+  test: Run apr code with no models installed; assert error contains "apr pull"
+  if_fails: User stuck with no path to fix — silent MockDriver fallback
+- id: FALSIFY-AC-005
+  rule: Single binary
+  prediction: apr code works on clean machine with only apr binary
+  test: Docker container with only apr binary + libc; run apr code --offline
+  if_fails: Hidden dependency — packaging broken
+- id: FALSIFY-AC-006
+  rule: Startup latency
+  prediction: Cold start with 1000-file project < 2s
+  test: Benchmark on batuta repo (4000+ files); assert startup < 2s
+  if_fails: Too slow — users won't adopt over Claude Code
+- id: FALSIFY-AC-007
+  rule: Local quality
+  prediction: 7B local model completes >40% of basic coding tasks
+  test: 50-task benchmark (file edits, renames, test fixes) with Qwen2.5-Coder 7B
+  if_fails: Sovereign tier unusable — need larger default or cloud fallback
+- id: FALSIFY-AC-008
+  rule: APR model validity
+  prediction: APR file without embedded tokenizer rejected at load time with actionable error
+  test: Create APR file without tokenizer data; load via RealizarDriver::new(); assert error before REPL starts; assert error contains "apr convert"
+  if_fails: Broken APR model propagates to inference — user sees opaque tokenizer error instead of clear fix instructions (Jidoka violation)
+- id: FALSIFY-AC-009
+  rule: pmat query superiority
+  prediction: pmat query finds more relevant results than grep for code tasks
+  test: 50 code search queries; compare relevance (human-rated) pmat vs grep
+  if_fails: Stack-native tools don't justify complexity over grep
+kani_harnesses:
+- id: KANI-AC-001
+  obligation: Sovereign mode zero network
+  property: offline flag blocks all network paths
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_sovereignty_zero_network
+- id: KANI-AC-002
+  obligation: Three-layer tool safety
+  property: Tool execution requires all three layers
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_tool_safety_layers
+- id: KANI-AC-003
+  obligation: APR.md blocked tools respected
+  property: Blocked tool set disjoint from executed set
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_blocked_tools
+- id: KANI-AC-004
+  obligation: No model produces actionable error
+  property: Missing model exits with error, never silent fallback
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_no_model_error
+- id: KANI-AC-005
+  obligation: APR model validity at load boundary
+  property: APR without tokenizer never reaches inference
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_apr_model_validity
+- id: KANI-AC-006
+  obligation: Startup latency under 2s
+  property: No blocking operation in startup path
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_startup_nonblocking
+qa_gate:
+  id: F-AC-001
+  name: apr code Contract
+  description: Agentic coding assistant — sovereignty, safety, integrity, compliance
+  checks:
+  - sovereignty_zero_network
+  - tool_safety_three_layers
+  - session_persist_resume
+  - apr_md_compliance
+  - no_model_actionable_error
+  - apr_model_validity
+  - single_binary_no_deps
+  - startup_latency
+  - local_quality_benchmark
+  pass_criteria: All 9 falsification tests pass + 6 Kani harnesses verify
+  falsification: renacer syscall trace + clean-room Docker + coding benchmark

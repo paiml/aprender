@@ -1,0 +1,121 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Plugin lifecycle — state machine transitions, permission scoping, schema validation
+  references:
+  - 'Gamma et al. (1994) Design Patterns, State pattern'
+  - 'WASI Preview 2 (2024) Component Model permissions'
+equations:
+  lifecycle_state_machine:
+    formula: 'Discovered → Loaded → Initialized → Running → Stopped; Any → Error; Error → Discovered'
+    domain: (state ∈ PluginState, event ∈ Event)
+    codomain: Result<PluginState, InvalidTransition>
+    invariants:
+    - 'No skip: Discovered → Running is INVALID'
+    - 'Any state can transition to Error on failure'
+    - 'Error → Discovered on reload (recovery path)'
+    - 'Stopped is terminal unless reloaded'
+    preconditions:
+    - state is a valid PluginState variant
+    - event is a valid lifecycle event
+    lean_theorem: Theorems.Lifecycle_State_Machine
+  permission_scoping:
+    formula: 'operation.requires ⊆ plugin.manifest.permissions → Ok; otherwise → Err(PermissionDenied)'
+    domain: (plugin ∈ Plugin, operation ∈ Operation)
+    codomain: Result<(), PermissionDenied>
+    invariants:
+    - Plugin cannot exceed declared permissions
+    - Permission check is subset comparison
+    - Empty permission set means no operations allowed
+    preconditions:
+    - plugin.manifest.permissions is non-null
+    - operation.requires is non-null
+    lean_theorem: Theorems.Permission_Scoping
+  schema_validation:
+    formula: '∀ required in schema.inputs: required.name ∈ inputs ∧ type(input.value) matches schema type'
+    domain: (schema ∈ PluginSchema, inputs ∈ Inputs)
+    codomain: Result<ValidInputs, SchemaError>
+    invariants:
+    - All required inputs must be present
+    - All input values must match declared types
+    - Extra inputs not in schema are rejected
+    preconditions:
+    - schema.inputs.len() > 0
+    lean_theorem: Theorems.Schema_Validation
+proof_obligations:
+- type: state_machine
+  property: Valid transitions
+  formal: 'No skip, Error recoverable via reload'
+  applies_to: all
+- type: precondition
+  property: Permission enforcement
+  formal: operation.requires ⊆ declared
+  applies_to: all
+- type: soundness
+  property: Schema validation
+  formal: 'required inputs present, types match'
+  applies_to: all
+enforcement:
+  state_machine:
+    description: Plugin state transitions must follow defined lifecycle
+    check: contract_tests::FALSIFY-PLG-002
+    severity: ERROR
+  permission_scoping:
+    description: Plugin cannot exceed declared permissions
+    check: contract_tests::FALSIFY-PLG-001
+    severity: ERROR
+  schema_validation:
+    description: Plugin inputs must match manifest schema
+    check: contract_tests::FALSIFY-PLG-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PLG-001
+  rule: Permission enforcement
+  prediction: Plugin without Network permission cannot make HTTP request
+  test: create plugin without Network, attempt HTTP call, verify PermissionDenied
+  if_fails: Permission check bypassed or not enforced
+- id: FALSIFY-PLG-002
+  rule: State machine ordering
+  prediction: Plugin in Discovered state cannot execute (must initialize first)
+  test: attempt to run plugin in Discovered state, verify InvalidTransition
+  if_fails: State machine allows skip transitions
+- id: FALSIFY-PLG-003
+  rule: Input validation
+  prediction: Plugin with missing required input returns SchemaError
+  test: create plugin schema with required input, omit it, verify SchemaError
+  if_fails: Required input check missing or silently defaults
+- id: FALSIFY-PLG-004
+  rule: Error recovery
+  prediction: Plugin failure transitions to Error, not crash
+  test: trigger failure in Running plugin, verify state is Error not panic
+  if_fails: Plugin failure propagates as panic instead of state transition
+kani_harnesses:
+- id: KANI-PLG-001
+  obligation: Valid transitions
+  property: Lifecycle state machine
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lifecycle_transitions
+- id: KANI-PLG-002
+  obligation: Permission enforcement
+  property: Permission scoping
+  bound: 8
+  strategy: exhaustive
+  harness: verify_permission_scoping
+- id: KANI-PLG-003
+  obligation: Schema validation
+  property: Schema soundness
+  bound: 8
+  strategy: exhaustive
+  harness: verify_schema_validation
+qa_gate:
+  id: F-PLG-001
+  name: Plugin Lifecycle Contract
+  description: Plugin lifecycle management quality gate
+  checks:
+  - state_machine
+  - permission_scoping
+  - schema_validation
+  pass_criteria: All 4 falsification tests pass
+  falsification: Allow direct Discovered → Running transition

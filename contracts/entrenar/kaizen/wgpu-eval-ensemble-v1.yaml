@@ -1,0 +1,36 @@
+contract: wgpu-eval-ensemble-v1
+version: 1.0.0
+status: pending
+kaizen: 174
+description: >
+  Ensemble eval combining lm_head-only + full-forward scores.
+  Plus length-normalized scoring to reduce false positives on long safe scripts.
+  Target: MCC > 0.70 (current best: 0.5972 full-forward, 0.6416 lm_head).
+
+invariants:
+
+- id: C-WGPU-ENSEMBLE-001
+  description: >
+    Ensemble score = lm_head_loss + alpha * full_forward_inverted_loss.
+    MCC(ensemble) > max(MCC(lm_head), MCC(full_forward)).
+  preconditions:
+  - Both lm_head and full-forward scores available per entry
+  postconditions:
+  - Ensemble MCC strictly greater than either individual method
+  verified_by:
+  - PENDING
+  severity: critical
+
+- id: C-WGPU-LENGTHNORM-001
+  description: >
+    Length-normalized loss = total_loss / seq_len.
+    Reduces FP from long safe scripts that accumulate high total loss.
+    Safe entries with >50 tokens should have lower normalized loss.
+  preconditions:
+  - Per-entry token count available
+  postconditions:
+  - FP count reduced compared to raw scoring
+  - std of safe class decreases after normalization
+  verified_by:
+  - PENDING
+  severity: high

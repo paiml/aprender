@@ -1,0 +1,212 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Qwen3.5 hybrid forward pass — attention/GDN layer interleaving with
+    numerical stability
+  references:
+  - Qwen3.5 Technical Report — hybrid architecture layer schedule
+  - Yang et al. (2024) Gated Delta Networks
+  - Zhang & Sennrich (2019) Root Mean Square Layer Normalization
+  depends_on:
+  - attention-kernel-v1
+  - gated-delta-net-v1
+  - rmsnorm-kernel-v1
+  - swiglu-kernel-v1
+  - qk-norm-v1
+  - hybrid-layer-dispatch-v1
+equations:
+  attention_sublayer:
+    formula: y = x + attn(qk_norm(q_proj(rmsnorm(x))), kv_proj(rmsnorm(x)))
+    domain: x ∈ R^{seq_len × d_model}, attention layer with QK-norm
+    invariants:
+    - shape(y) = shape(x)
+    - QK-norm applied before attention score computation
+    - Residual connection preserves gradient flow
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Attention_Sublayer
+  gdn_sublayer:
+    formula: y = x + gdn(conv1d(rmsnorm(x)))
+    domain: x ∈ R^{seq_len × d_model}, linear attention layer
+    invariants:
+    - shape(y) = shape(x)
+    - Causal conv1d before GDN recurrence
+    - Residual connection preserves gradient flow
+    preconditions:
+    - 'input.len() > 0'
+    - hidden_size > 0
+    lean_theorem: Theorems.Gdn_Sublayer
+  ffn_sublayer:
+    formula: y = x + swiglu(rmsnorm(x))
+    domain: x ∈ R^{seq_len × d_model}, shared across both layer types
+    invariants:
+    - shape(y) = shape(x)
+    - SwiGLU uses gate/up projections
+    - Down projection restores d_model dimension
+    preconditions:
+    - 'input.len() > 0'
+    - hidden_size > 0
+    lean_theorem: Theorems.Ffn_Sublayer
+  hybrid_block:
+    formula: block_l(x) = ffn_sublayer(attn_or_gdn_sublayer_l(x))
+    domain: Complete transformer block at layer l
+    invariants:
+    - Always attention_sublayer OR gdn_sublayer, never both
+    - FFN sublayer is identical regardless of attention type
+    - Output shape equals input shape
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Hybrid_Block
+  activation_magnitude:
+    formula: '||h_l||_inf <= M * ||h_0||_inf for some bound M'
+    domain: Hidden state magnitude through L layers
+    invariants:
+    - Magnitude bounded (no explosion)
+    - Magnitude non-zero (no vanishing)
+    - RMSNorm prevents unbounded growth per layer
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Activation_Magnitude
+  gradient_flow:
+    formula: ∂L/∂h_0 = Σ_l (∂L/∂h_l * ∂h_l/∂h_0) with skip connections
+    domain: Gradient through residual stream
+    invariants:
+    - Direct gradient path through residual (identity Jacobian)
+    - Each sublayer adds gradient contribution
+    - QK-norm stabilizes attention gradient
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gradient_Flow
+proof_obligations:
+- type: invariant
+  property: Attention sublayer shape preservation
+  formal: '∀x: shape(attention_sublayer(x)) = shape(x)'
+  applies_to: all
+- type: invariant
+  property: GDN sublayer shape preservation
+  formal: '∀x: shape(gdn_sublayer(x)) = shape(x)'
+  applies_to: all
+- type: invariant
+  property: FFN sublayer shape preservation
+  formal: '∀x: shape(ffn_sublayer(x)) = shape(x)'
+  applies_to: all
+- type: invariant
+  property: Block outputs from exactly one attention type
+  formal: '∀l: is_attention(l) XOR is_gdn(l)'
+  applies_to: all
+- type: bound
+  property: Activation magnitude bounded
+  formal: '∀l: ||h_l||_inf <= M for finite M'
+  applies_to: all
+- type: invariant
+  property: RMSNorm precedes each sublayer
+  formal: 'pre-norm architecture: norm before attention/GDN and before FFN'
+  applies_to: all
+- type: conservation
+  property: Residual identity component
+  formal: h_{l+1} - h_l = sublayer(norm(h_l))
+  tolerance: 1.0e-06
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QHF-001
+  rule: Attention sublayer shape
+  prediction: Output shape equals input shape
+  test: proptest with random d_model and seq_len
+  if_fails: Projection dimension mismatch in attention
+- id: FALSIFY-QHF-002
+  rule: GDN sublayer shape
+  prediction: Output shape equals input shape
+  test: proptest with random d_model and seq_len
+  if_fails: GDN state dimension mismatch
+- id: FALSIFY-QHF-003
+  rule: FFN sublayer shape
+  prediction: Output shape equals input shape
+  test: 'proptest: SwiGLU intermediate 3x then back to d_model'
+  if_fails: Down projection wrong dimension
+- id: FALSIFY-QHF-004
+  rule: Exclusive layer type
+  prediction: Each layer is attention XOR GDN
+  test: 'proptest: verify layer_type exhaustive partition'
+  if_fails: Layer assigned both types
+- id: FALSIFY-QHF-005
+  rule: Activation stability
+  prediction: No NaN/Inf after 48 layers
+  test: 'proptest: random input through mock layer stack'
+  if_fails: Numerical instability in deep composition
+- id: FALSIFY-QHF-006
+  rule: RMSNorm pre-normalization
+  prediction: RMSNorm applied before attention/GDN and before FFN
+  test: 'proptest: verify norm(h) fed to sublayer, not raw h'
+  if_fails: Missing pre-norm before sublayer
+- id: FALSIFY-QHF-007
+  rule: Residual stream correctness
+  prediction: h_{l+1} - h_l = sublayer(norm(h_l))
+  test: 'proptest: verify residual arithmetic'
+  if_fails: Residual not purely additive
+kani_harnesses:
+- id: KANI-QHF-001
+  obligation: QHF-INV-001
+  property: Shape preservation through hybrid block
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_hybrid_block_shapes
+- id: KANI-QHF-002
+  obligation: QHF-INV-002
+  property: Layer type exclusivity
+  bound: 48
+  strategy: exhaustive
+  harness: verify_layer_type_partition
+- id: KANI-QWEN35-003
+  obligation: Attention sublayer shape preservation
+  property: Attention sublayer shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-004
+  obligation: GDN sublayer shape preservation
+  property: GDN sublayer shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-005
+  obligation: FFN sublayer shape preservation
+  property: FFN sublayer shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-006
+  obligation: Block outputs from exactly one attention type
+  property: Block outputs from exactly one attention type
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-007
+  obligation: Activation magnitude bounded
+  property: Activation magnitude bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-QWEN35-008
+  obligation: RMSNorm precedes each sublayer
+  property: RMSNorm precedes each sublayer
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-009
+  obligation: Residual identity component
+  property: Residual identity component
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QHF-001
+  name: Qwen3.5 Hybrid Forward Contract
+  description: Hybrid attention/GDN forward pass quality gate
+  checks:
+  - attention_sublayer
+  - gdn_sublayer
+  - ffn_sublayer
+  - hybrid_block
+  - activation_magnitude
+  - gradient_flow
+  pass_criteria: All 7 falsification tests pass
+  falsification: Remove RMSNorm before attention to trigger gradient explosion

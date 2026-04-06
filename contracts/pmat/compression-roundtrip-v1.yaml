@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Compression roundtrip contracts — LZ4 identity, SQLite migration lossless
+  references:
+  - LZ4 Frame Format Description (github.com/lz4/lz4)
+  - pmat compression boundary (pv-spec §32.11)
+equations:
+  lz4_roundtrip:
+    formula: |
+      lz4: Vec<u8> -> bool
+        decompress(compress(data)) = data
+        len(compressed) <= len(data) + header_overhead
+    domain: Any byte sequence
+    codomain: bool (identity roundtrip)
+    invariants:
+    - Compress then decompress is identity
+    - Compressed size bounded by input size + overhead
+    preconditions:
+    - data is any valid byte sequence (including empty)
+    postconditions:
+    - decompressed output = original input byte-for-byte
+    lean_theorem: Theorems.Lz4Roundtrip
+  sqlite_migration:
+    formula: |
+      migrate: (DB_v1, Schema_v2) -> DB_v2
+        for-all row in DB_v1: row in DB_v2
+        new_columns have default values
+    domain: SQLite database with schema version upgrade
+    codomain: Migrated database with all data preserved
+    invariants:
+    - Row count preserved exactly
+    - Existing column values unchanged
+    - New columns have defined defaults
+    preconditions:
+    - DB_v1 is valid SQLite database
+    - Schema_v2 is compatible upgrade
+    postconditions:
+    - row_count(v2) = row_count(v1)
+    lean_theorem: Theorems.SqliteMigration
+proof_obligations:
+- type: roundtrip
+  property: LZ4 compress/decompress identity
+  formal: decompress(compress(x)) = x for all x
+  applies_to: all
+- type: conservation
+  property: Migration preserves all rows
+  formal: row_count(v1) = row_count(v2)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CMP-001
+  rule: Empty data roundtrip
+  prediction: Empty data LZ4 roundtrip produces empty data
+  test: Compress empty vec, decompress, assert empty
+  if_fails: Empty input edge case not handled
+- id: FALSIFY-CMP-002
+  rule: Large data roundtrip
+  prediction: 50MB index LZ4 roundtrip matches byte-for-byte
+  test: Compress 50MB data, decompress, compare checksums
+  if_fails: Buffer overflow or truncation on large inputs
+- id: FALSIFY-CMP-003
+  rule: Migration row preservation
+  prediction: SQLite v1->v2 migration preserves function count exactly
+  test: Migrate 1000-function DB, assert count unchanged
+  if_fails: Migration dropping rows or duplicate key conflicts
+kani_harnesses:
+- id: KANI-CMP-001
+  obligation: LZ4 roundtrip identity
+  property: decompress(compress(x)) = x
+  bound: 16
+  strategy: exhaustive
+- id: KANI-CMP-002
+  obligation: Migration row conservation
+  property: row_count preserved
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CMP-001
+  name: compression-roundtrip-v1 Contract
+  description: Quality gate for compression and migration
+  checks:
+  - validation
+  - falsification

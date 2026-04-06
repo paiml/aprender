@@ -1,0 +1,73 @@
+version: 1.0.0
+target_crate: rmedia
+critical_path:
+- encode
+- decode
+- transcode
+- mux
+bindings:
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: h264_encoder
+  module_path: rmedia::crates::rmedia-io::src::gpu::h264_encoder
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: hevc_encoder
+  module_path: rmedia::crates::rmedia-io::src::gpu::hevc_encoder
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: encoder_available
+  module_path: rmedia::crates::rmedia-io::src::gpu::encoder_available
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: resolve_encoder
+  module_path: rmedia::crates::rmedia-io::src::gpu::resolve_encoder
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: validate_encoder
+  module_path: rmedia::crates::rmedia-io::src::gpu::validate_encoder
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: encode_histogram
+  module_path: rmedia::crates::rmedia-io::src::encoder::encode_histogram
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: encode_audio
+  module_path: rmedia::crates::rmedia-io::src::encoder::encode_audio
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: encode_avframe
+  module_path: rmedia::crates::rmedia-io::src::encoder::encode_avframe
+  status: implemented
+- contract: encoder-roundtrip-v1.yaml
+  equation: encode
+  function: encode_audio_data
+  module_path: rmedia::crates::rmedia-io::src::encoder::encode_audio_data
+  status: implemented
+- contract: gpu-decode-profiling-v1.yaml
+  equation: decode
+  function: decode_video_frame
+  module_path: rmedia::crates::rmedia-io::src::decoder::decode_video_frame
+  status: implemented
+- contract: gpu-decode-profiling-v1.yaml
+  equation: decode
+  function: decode_video_avframe
+  module_path: rmedia::crates::rmedia-io::src::decoder::decode_video_avframe
+  status: implemented
+- contract: gpu-decode-profiling-v1.yaml
+  equation: decode
+  function: decode_audio_packet
+  module_path: rmedia::crates::rmedia-io::src::decoder::decode_audio_packet
+  status: implemented
+- contract: gpu-decode-profiling-v1.yaml
+  equation: decode
+  function: decode_audio
+  module_path: rmedia::crates::rmedia-io::src::decoder::decode_audio
+  status: implemented

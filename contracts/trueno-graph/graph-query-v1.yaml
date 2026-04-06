@@ -1,0 +1,104 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Graph query contract — graph traversal, PageRank convergence, BFS correctness
+  references:
+  - 'Page et al. (1999) The PageRank Citation Ranking: Bringing Order to the Web'
+  - 'Cormen et al. (2009) Introduction to Algorithms, BFS/DFS'
+equations:
+  pagerank_convergence:
+    formula: PR(v) = (1-d)/N + d * Σ_{u→v} PR(u)/out_degree(u)
+    domain: G ∈ Graph, d ∈ f64 (damping factor, typically 0.85)
+    codomain: Vec<f64> where sum ≈ 1.0
+    invariants:
+    - 'Convergence: ||PR_{n+1} - PR_n||_1 < epsilon after finite iterations'
+    - 'Normalization: Σ PR(v) ≈ 1.0 within epsilon'
+    - 'Non-negative: PR(v) >= 0 for all v'
+    preconditions:
+    - graph has at least 1 node
+    - damping_factor in (0.0, 1.0)
+    - epsilon > 0.0
+    lean_theorem: Theorems.PageRank_Convergence
+  bfs_correctness:
+    formula: BFS(G, source) = {(v, dist(source, v)) | v reachable from source}
+    domain: G ∈ Graph, source ∈ NodeId
+    codomain: Vec<(NodeId, usize)>
+    invariants:
+    - All reachable nodes discovered
+    - 'Shortest path: dist(s, v) = min path length from s to v'
+    - Unreachable nodes not in result
+    preconditions:
+    - source is a valid node in G
+    lean_theorem: Theorems.BFS_Correctness
+proof_obligations:
+- type: invariant
+  property: PageRank convergence
+  formal: '∃ n: ||PR_{n+1} - PR_n||_1 < epsilon'
+  applies_to: pagerank_convergence
+- type: invariant
+  property: PageRank normalization
+  formal: '|Σ PR(v) - 1.0| < epsilon'
+  applies_to: pagerank_convergence
+- type: invariant
+  property: BFS shortest path
+  formal: '∀ v ∈ BFS(G, s): dist(s, v) = shortest_path(G, s, v)'
+  applies_to: bfs_correctness
+enforcement:
+  convergence:
+    description: PageRank converges within max iterations
+    check: contract_tests::FALSIFY-TGRP-001
+    severity: ERROR
+  normalization:
+    description: PageRank vector sums to approximately 1.0
+    check: contract_tests::FALSIFY-TGRP-002
+    severity: ERROR
+  shortest_path:
+    description: BFS returns shortest path distances
+    check: contract_tests::FALSIFY-TGRP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TGRP-001
+  rule: PageRank convergence
+  prediction: PageRank converges (L1 norm < 1e-6) within 100 iterations
+  test: run on 10 random graphs (10-1000 nodes), verify convergence
+  if_fails: Damping factor application or iteration logic has bug
+- id: FALSIFY-TGRP-002
+  rule: PageRank normalization
+  prediction: sum of all PageRank scores is within 1e-4 of 1.0
+  test: compute PageRank on 50 random graphs, check sum
+  if_fails: Dangling node handling incorrect or normalization step missing
+- id: FALSIFY-TGRP-003
+  rule: BFS shortest path
+  prediction: BFS distances match Dijkstra on unweighted graph for all node pairs
+  test: generate 100 random graphs, compare BFS vs brute-force shortest paths
+  if_fails: BFS queue processing order or visited tracking has bug
+kani_harnesses:
+- id: KANI-TGRP-001
+  obligation: PageRank convergence
+  property: PageRank converges
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pagerank_convergence
+- id: KANI-TGRP-002
+  obligation: PageRank normalization
+  property: PageRank sums to 1
+  bound: 8
+  strategy: exhaustive
+  harness: verify_pagerank_normalization
+- id: KANI-TGRP-003
+  obligation: BFS shortest path
+  property: BFS returns shortest paths
+  bound: 16
+  strategy: exhaustive
+  harness: verify_bfs_shortest_path
+qa_gate:
+  id: F-TGRP-001
+  name: Graph Query Contract
+  description: Graph traversal and PageRank correctness quality gate
+  checks:
+  - convergence
+  - normalization
+  - shortest_path
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip damping factor in PageRank iteration

@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-038",
+  "prompt": "Extend schema enums to support all contract variants (bounded_int, ordering, converter)",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-18T20:56:31.575295212Z"
+}

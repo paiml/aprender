@@ -1,0 +1,99 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-24'
+  author: PAIML Engineering
+  description: Codegen dispatch completeness — every Phase 1 resource type handled
+  references:
+  - Forjar spec §6.3 Shell Generation Pipeline
+equations:
+  check_script:
+    formula: check_script(r) = dispatch(r.type) where dispatch covers {Package, File,
+      Service, Mount}
+    domain: r ∈ Resource where r.type ∈ {Package, File, Service, Mount}
+    codomain: Result<String, String>
+    invariants:
+    - Returns Ok for all Phase 1 types
+    - Returns Err for non-Phase-1 types
+    - Output is non-empty shell script
+    preconditions:
+    - '!config.is_empty()'
+    - '!script.is_empty()'
+    lean_theorem: Theorems.Check_Script
+  apply_script:
+    formula: apply_script(r) = dispatch(r.type) where dispatch covers {Package, File,
+      Service, Mount}
+    domain: r ∈ Resource where r.type ∈ {Package, File, Service, Mount}
+    codomain: Result<String, String>
+    invariants:
+    - Returns Ok for all Phase 1 types
+    - Returns Err for non-Phase-1 types
+    - Output is non-empty shell script
+    preconditions:
+    - '!config.is_empty()'
+    - '!script.is_empty()'
+    lean_theorem: Theorems.Apply_Script
+  state_query_script:
+    formula: state_query_script(r) = dispatch(r.type) where dispatch covers {Package,
+      File, Service, Mount}
+    domain: r ∈ Resource where r.type ∈ {Package, File, Service, Mount}
+    codomain: Result<String, String>
+    invariants:
+    - Returns Ok for all Phase 1 types
+    - Returns Err for non-Phase-1 types
+    preconditions:
+    - '!config.is_empty()'
+    - '!script.is_empty()'
+    lean_theorem: Theorems.State_Query_Script
+proof_obligations:
+- type: completeness
+  property: All Phase 1 types dispatched
+  formal: '∀ t ∈ {Package, File, Service, Mount}: check_script(r{type=t}) = Ok(_)'
+  applies_to: all
+- type: symmetry
+  property: Dispatch is symmetric across three functions
+  formal: '∀ t: check_script(r{type=t}).is_ok() ⟺ apply_script(r{type=t}).is_ok()
+    ⟺ state_query_script(r{type=t}).is_ok()'
+  applies_to: all
+enforcement:
+  completeness:
+    description: All Phase 1 resource types must be handled
+    check: contract_tests::FALSIFY-CD-001
+    severity: ERROR
+  symmetry:
+    description: All three functions must handle same set of types
+    check: contract_tests::FALSIFY-CD-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CD-001
+  rule: Completeness
+  prediction: check_script, apply_script, state_query_script return Ok for Package,
+    File, Service, Mount
+  test: iterate over all Phase 1 types, verify Ok
+  if_fails: Missing match arm in dispatch
+- id: FALSIFY-CD-002
+  rule: Symmetry
+  prediction: If check_script(r).is_ok() then apply_script(r).is_ok() and state_query_script(r).is_ok()
+  test: iterate over all ResourceType variants, verify symmetry
+  if_fails: Asymmetric dispatch — one function handles type that others don't
+kani_harnesses:
+- id: KANI-CD-001
+  obligation: All Phase 1 types dispatched
+  strategy: exhaustive
+  solver: cadical
+  bound: 4
+  description: Enumerate all ResourceType variants and verify dispatch returns Ok
+- id: KANI-CD-002
+  obligation: Dispatch is symmetric across three functions
+  strategy: exhaustive
+  solver: cadical
+  bound: 4
+  description: For each type, verify check/apply/state_query agree on Ok/Err
+qa_gate:
+  id: F-CD-001
+  name: Codegen Dispatch Contract
+  description: Script generation dispatch completeness quality gate
+  checks:
+  - completeness
+  - symmetry
+  pass_criteria: All 2 falsification tests pass
+  falsification: Remove Mount arm from apply_script

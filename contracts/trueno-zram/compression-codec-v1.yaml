@@ -1,0 +1,115 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Compression codec contract — compress/decompress roundtrip, SIMD parity, throughput bounds
+  references:
+  - 'Collet (2013) LZ4 — Extremely fast compression'
+  - 'Collet & Turner (2018) Zstandard Compression RFC 8478'
+equations:
+  roundtrip_identity:
+    formula: '∀ data: decompress(compress(data)) = data'
+    domain: data ∈ [u8], len > 0
+    codomain: Result<Vec<u8>>
+    invariants:
+    - 'Lossless: decompress(compress(d)) = d for all d'
+    - 'compress(d).len() <= d.len() + overhead (bounded expansion)'
+    - is_compressed correctly identifies compressed pages
+    preconditions:
+    - '!data.is_empty()'
+    - data.len() <= MAX_PAGE_SIZE
+    lean_theorem: Theorems.Roundtrip_Identity
+  simd_scalar_parity:
+    formula: compress_simd(d) ≡ compress(d) (decompressible to same output)
+    domain: data ∈ [u8]
+    codomain: Vec<u8>
+    invariants:
+    - 'SIMD and scalar produce cross-compatible streams'
+    - 'decompress_simd(compress(d)) = d'
+    - 'decompress(compress_simd(d)) = d'
+    preconditions:
+    - data.len() > 0
+    lean_theorem: Theorems.SIMD_Scalar_Parity
+  batch_correctness:
+    formula: '∀ batch B: decompress_batch(compress_batch(B)) = B element-wise'
+    domain: B ∈ [Vec<u8>]
+    codomain: Result<Vec<Vec<u8>>>
+    invariants:
+    - Batch preserves element count and order
+    - GPU and CPU batch paths produce identical results
+    - Parallel decompression matches serial
+    preconditions:
+    - B.len() > 0
+    - all elements non-empty
+    lean_theorem: Theorems.Batch_Correctness
+proof_obligations:
+- type: invariant
+  property: Roundtrip identity
+  formal: '∀ d: decompress(compress(d)) = d'
+  applies_to: roundtrip_identity
+- type: invariant
+  property: SIMD-scalar cross-compatibility
+  formal: '∀ d: decompress_simd(compress(d)) = decompress(compress_simd(d)) = d'
+  applies_to: simd_scalar_parity
+- type: invariant
+  property: Batch element preservation
+  formal: '∀ B, i: decompress_batch(compress_batch(B))[i] = B[i]'
+  applies_to: batch_correctness
+enforcement:
+  roundtrip:
+    description: Compress then decompress returns original data
+    check: contract_tests::FALSIFY-TZRM-001
+    severity: ERROR
+  simd_parity:
+    description: SIMD and scalar paths produce compatible output
+    check: contract_tests::FALSIFY-TZRM-002
+    severity: ERROR
+  batch_element:
+    description: Batch compression preserves element count and content
+    check: contract_tests::FALSIFY-TZRM-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TZRM-001
+  rule: Roundtrip identity
+  prediction: decompress(compress(d)) = d for random byte vectors up to 1MB
+  test: proptest with 1000 random byte vectors of varying sizes
+  if_fails: Codec truncates trailing bytes or corrupts during compression
+- id: FALSIFY-TZRM-002
+  rule: SIMD-scalar parity
+  prediction: decompress_simd(compress(d)) = d and decompress(compress_simd(d)) = d
+  test: cross-test SIMD and scalar paths on 500 random inputs
+  if_fails: SIMD path has alignment or instruction-level deviation
+- id: FALSIFY-TZRM-003
+  rule: Batch element preservation
+  prediction: compress_batch then decompress_batch returns same elements in order
+  test: batch of 100 random buffers, roundtrip, compare element-wise
+  if_fails: Batch framing corrupts element boundaries
+kani_harnesses:
+- id: KANI-TZRM-001
+  obligation: Roundtrip identity
+  property: compress/decompress roundtrip
+  bound: 32
+  strategy: exhaustive
+  harness: verify_roundtrip_identity
+- id: KANI-TZRM-002
+  obligation: SIMD-scalar parity
+  property: SIMD and scalar cross-compatible
+  bound: 16
+  strategy: exhaustive
+  harness: verify_simd_scalar_parity
+- id: KANI-TZRM-003
+  obligation: Batch element preservation
+  property: batch roundtrip preserves elements
+  bound: 8
+  strategy: exhaustive
+  harness: verify_batch_roundtrip
+qa_gate:
+  id: F-TZRM-001
+  name: Compression Codec Contract
+  description: Roundtrip identity, SIMD parity, and batch correctness quality gate
+  checks:
+  - roundtrip
+  - simd_parity
+  - batch_element
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip last 4 bytes during decompression

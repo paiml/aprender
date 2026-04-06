@@ -1,0 +1,2463 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/provable-contracts
+roadmap:
+- id: PMAT-001
+  github_issue: null
+  item_type: task
+  title: Initialize Rust crate with lib + CLI binary targets
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-18T13:25:40Z
+  updated: 2026-02-18T13:47:29.900954047+00:00
+  spec: null
+  acceptance_criteria:
+  - Set up Cargo.toml with both library and binary targets. Library exposes contract parsing, validation, and Kani harness generation. CLI provides contract validation, scaffold generation, and compliance checking.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - infrastructure
+  - rust
+  notes: null
+- id: PMAT-002
+  github_issue: null
+  item_type: task
+  title: Implement YAML contract schema parser and validator
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-18T13:25:47Z
+  updated: 2026-02-18T13:48:17.029341555+00:00
+  spec: null
+  acceptance_criteria:
+  - Parse contract YAML files (metadata, equations, proof_obligations, kernel_structure, simd_dispatch, enforcement, falsification_tests, kani_harnesses, qa_gate). Validate required fields, cross-references, and consistency. Expose as provable_contracts::schema module.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - library
+  - parser
+  notes: null
+- id: PMAT-003
+  github_issue: null
+  item_type: task
+  title: Implement Rust trait scaffold generator from YAML contracts
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:25:53Z
+  updated: 2026-02-18T13:48:38.240883980+00:00
+  spec: null
+  acceptance_criteria:
+  - Given a parsed YAML contract, generate Rust trait definition with proof obligations as doc-comments, failing test stubs (contract_tests.rs), and Kani harness stubs (kani_proofs.rs). Phase 3 of the pipeline.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - library
+  - codegen
+  notes: null
+- id: PMAT-004
+  github_issue: null
+  item_type: task
+  title: Implement Kani harness generator from YAML contracts
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:26:00Z
+  updated: 2026-02-18T13:49:00.850363385+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Generate #[kani::proof] harnesses from kani_harnesses section of YAML contracts. Handle three strategies: exhaustive (integer), stub_float (transcendentals), compositional (stub_verified). Generate appropriate kani::any(), kani::assume(), kani::unwind attributes.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - library
+  - kani
+  - verification
+  notes: null
+- id: PMAT-005
+  github_issue: null
+  item_type: task
+  title: 'Build CLI: provable-contracts validate/scaffold/verify commands'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:26:07Z
+  updated: 2026-02-18T13:49:17.118869484+00:00
+  spec: null
+  acceptance_criteria:
+  - 'CLI binary with subcommands: (1) validate - check YAML contract against schema, (2) scaffold - generate Rust trait + test stubs + Kani harnesses, (3) verify - run cargo kani on generated harnesses, (4) status - show which obligations have Level 3 vs Level 4 coverage, (5) audit - trace paper→equation→contract→test→proof chain.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - cli
+  - ux
+  notes: null
+- id: PMAT-006
+  github_issue: null
+  item_type: task
+  title: Write softmax-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:26:15Z
+  updated: 2026-02-18T13:52:24.979955747+00:00
+  spec: null
+  acceptance_criteria:
+  - 'First provable contract from paper. Source: Bridle 1990, Goodfellow et al. 2016. Extract equations, proof obligations (SM-INV-001 through SM-MON-001), SIMD dispatch table, falsification tests, and Kani harness definitions. Include MATH.md with full derivation.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-007
+  github_issue: null
+  item_type: task
+  title: Write rmsnorm-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:26:22Z
+  updated: 2026-02-18T13:52:29.214637943+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Source: Zhang & Sennrich 2019 (arXiv:1910.10683). Extract RMSNorm equation, proof obligations (RMS-INV-001, RMS-EQV-001), kernel phases (sum_of_squares, rms, normalize, scale), SIMD dispatch, Kani harnesses. Include MATH.md.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-008
+  github_issue: null
+  item_type: task
+  title: Write rope-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:26:28Z
+  updated: 2026-02-18T13:52:33.679091700+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Source: Su et al. 2021 (arXiv:2104.09864). Extract RoPE equation, proof obligations (rotation structure, periodicity, position encoding), SIMD dispatch, Kani harnesses for rotation correctness.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-009
+  github_issue: null
+  item_type: task
+  title: Write activation-kernel-v1.yaml contract (Tier 1 - SwiGLU/GeGLU)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:26:34Z
+  updated: 2026-02-18T13:52:38.098566130+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Source: Shazeer 2020 (arXiv:2002.05202). Extract SwiGLU equation, proof obligations (gate structure, activation bounds), SIMD dispatch, Kani harnesses.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-010
+  github_issue: null
+  item_type: task
+  title: Write attention-kernel-v1.yaml contract (Tier 2)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:26:40Z
+  updated: 2026-02-18T13:52:43.133524298+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Source: Vaswani et al. 2017 (arXiv:1706.03762). Depends on softmax-kernel-v1 and matmul-kernel-v1. Extract attention equation, proof obligations (weight normalization, V-linearity, shape correctness), compositional Kani proofs via stub_verified.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-011
+  github_issue: null
+  item_type: task
+  title: Write matmul-kernel-v1.yaml contract (Tier 2)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:26:46Z
+  updated: 2026-02-18T13:52:48.488635374+00:00
+  spec: null
+  acceptance_criteria:
+  - Standard linear algebra GEMM/GEMV. Extract matrix multiply equations, proof obligations (associativity structural, shape propagation, accumulation bounds), SIMD dispatch, Kani harnesses for index bounds and shape correctness.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-012
+  github_issue: null
+  item_type: task
+  title: Write flash-attention-v1.yaml contract (Tier 2)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T13:26:53Z
+  updated: 2026-02-18T13:52:53.608817457+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Source: Dao et al. 2022 (arXiv:2205.14135). Tiled attention with online softmax. Depends on attention-kernel-v1. Extract tiling equations, proof obligations (online softmax equivalence, memory bounds), Kani harnesses for tile correctness.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-013
+  github_issue: null
+  item_type: task
+  title: Achieve full pmat comply compliance
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:27:00Z
+  updated: 2026-02-18T13:54:57.821071314+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Fix all pmat comply warnings: add .pmat-metrics.toml, configure CI (.github/workflows/), enable O(1) hooks, add CLAUDE.md with pmat query instructions, fix markdown line lengths (CB-904).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - quality
+  - compliance
+  notes: null
+- id: PMAT-014
+  github_issue: null
+  item_type: task
+  title: Migrate existing aprender contracts to provable-contracts repo
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:27:09Z
+  updated: 2026-02-18T13:55:56.671711382+00:00
+  spec: null
+  acceptance_criteria:
+  - Move quantized-dot-product-v1.yaml, tensor-layout-v1.yaml, layer-parity-v1.yaml, kernel-fusion-v1.yaml from aprender/contracts/ to provable-contracts/contracts/. Update aprender to consume from provable-contracts crate. Preserve git history via subtree or copy.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - migration
+  - contracts
+  notes: null
+- id: PMAT-015
+  github_issue: null
+  item_type: task
+  title: Add Kani verification backend integration tests
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T13:27:17Z
+  updated: 2026-02-18T14:11:01.275446799+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Install kani-verifier in CI. Write integration tests that run cargo kani on sample contracts. Verify concrete playback generates reproducible test cases. Test all three strategies: exhaustive, stub_float, compositional.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - testing
+  - kani
+  - verification
+  notes: null
+- id: PMAT-016
+  github_issue: null
+  item_type: task
+  title: Implement probar property test generator from YAML contracts
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T13:27:24Z
+  updated: 2026-02-18T14:11:36.462330219+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Generate probar property-based tests from proof_obligations section of YAML contracts. Map obligation types to test patterns: invariant→property, equivalence→comparison, bound→range_check, monotonicity→ordered_pair, linearity→metamorphic.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - library
+  - testing
+  - probar
+  notes: null
+- id: PMAT-017
+  github_issue: null
+  item_type: task
+  title: Publish provable-contracts to crates.io
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T13:27:31Z
+  updated: 2026-02-19T09:15:50Z
+  spec: null
+  acceptance_criteria:
+  - Prepare for crates.io publication. Add proper metadata (description, license, repository, keywords, categories). Ensure lib.rs has public API docs. Version 0.1.0 with lib + CLI.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - release
+  - crates-io
+  notes: null
+- id: PMAT-018
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-018'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T14:45:49.264362634+00:00
+  updated: 2026-02-18T14:50:11.213172107+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-019
+  github_issue: null
+  item_type: task
+  title: Write swiglu-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T16:40:10Z
+  updated: 2026-02-18T16:45:50.973552327+00:00
+  spec: null
+  acceptance_criteria:
+  - 'SwiGLU kernel contract from Shazeer (2020). SwiGLU(x,W,V,b,c) = SiLU(xW+b) ⊙ (xV+c). Obligations: zero-input invariant, fused-unfused equivalence, magnitude bound, SIMD parity.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-020
+  github_issue: null
+  item_type: task
+  title: Write gqa-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T16:40:12Z
+  updated: 2026-02-18T16:46:24.387770384+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Grouped Query Attention contract from Ainslie et al. (2023). KV head broadcasting with num_kv_heads < num_heads. Obligations: weight normalization, GQA=MHA equivalence when kv_heads=num_heads, output convexity, SIMD parity.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-021
+  github_issue: null
+  item_type: task
+  title: Write layernorm-kernel-v1.yaml contract (Tier 1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T16:40:15Z
+  updated: 2026-02-18T16:46:37.873231965+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Layer Normalization contract from Ba et al. (2016). LN(x)_i = gamma_i * (x_i - mu) / sqrt(sigma^2 + eps) + beta_i. Obligations: centering, standardization, denominator positive, SIMD parity, idempotency.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier1
+  notes: null
+- id: PMAT-022
+  github_issue: null
+  item_type: task
+  title: Write silu-kernel-v1.yaml contract (Tier 2)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:40:16Z
+  updated: 2026-02-18T16:46:48.475669401+00:00
+  spec: null
+  acceptance_criteria:
+  - 'SiLU/Swish activation contract from Ramachandran et al. (2017), Elfwing et al. (2018). SiLU(x) = x * sigma(x). Obligations: SiLU(0)=0, global minimum bound, monotonicity for x>0, SIMD parity.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-023
+  github_issue: null
+  item_type: task
+  title: Write cross-entropy-kernel-v1.yaml contract (Tier 2)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:40:19Z
+  updated: 2026-02-18T16:46:58.428239546+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Cross-entropy loss contract. CE(p,q) = -sum(p_i * log(q_i)). Implemented as log-sum-exp for stability. Obligations: non-negativity, entropy identity, finite outputs, LogSoftmax+NLL equivalence.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-024
+  github_issue: null
+  item_type: task
+  title: Write adamw-kernel-v1.yaml contract (Tier 2)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:40:21Z
+  updated: 2026-02-18T16:47:08.326016616+00:00
+  spec: null
+  acceptance_criteria:
+  - 'AdamW optimizer contract from Loshchilov & Hutter (2017). Decoupled weight decay applied AFTER Adam update. Obligations: decoupled application, bias-corrected moments finite, monotone loss decrease on convex.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - contract
+  - kernel
+  - tier2
+  notes: null
+- id: PMAT-025
+  github_issue: null
+  item_type: task
+  title: Update binding.yaml with 6 new kernel contract bindings
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T16:48:27Z
+  updated: 2026-02-18T17:01:40.992502182+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-026
+  github_issue: null
+  item_type: task
+  title: Write ssm-kernel-v1.yaml contract (Tier 3, Mamba)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:48:28Z
+  updated: 2026-02-18T17:01:51.914686880+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-027
+  github_issue: null
+  item_type: task
+  title: Write conv1d-kernel-v1.yaml contract (Tier 3, Whisper)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:48:30Z
+  updated: 2026-02-18T17:02:05.597637939+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-028
+  github_issue: null
+  item_type: task
+  title: Write batchnorm-kernel-v1.yaml contract (Tier 3)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T16:48:31Z
+  updated: 2026-02-18T17:02:09.881966463+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-029
+  github_issue: null
+  item_type: task
+  title: Write kmeans-kernel-v1.yaml contract (Tier 3, classical ML)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T16:48:32Z
+  updated: 2026-02-18T17:02:14.216300769+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-030
+  github_issue: null
+  item_type: task
+  title: Write pagerank-kernel-v1.yaml contract (Tier 3, classical ML)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T16:48:33Z
+  updated: 2026-02-18T17:02:18.713089227+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-031
+  github_issue: null
+  item_type: task
+  title: Write lbfgs-kernel-v1.yaml contract (Tier 3, optimization)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T16:48:34Z
+  updated: 2026-02-18T17:02:23.487869681+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-032
+  github_issue: null
+  item_type: task
+  title: Write cma-es-kernel-v1.yaml contract (Tier 3, metaheuristics)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-18T16:48:35Z
+  updated: 2026-02-18T17:02:28.119551569+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-033
+  github_issue: null
+  item_type: task
+  title: 'Update kernel-contracts.md spec: reflect completed Tier 1/2/3 contracts, update gap analysis'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T16:48:36Z
+  updated: 2026-02-18T17:02:32.348992155+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-034
+  github_issue: null
+  item_type: task
+  title: Implement pv diff — contract drift detection
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T17:53:17Z
+  updated: 2026-02-18T18:15:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-035
+  github_issue: null
+  item_type: task
+  title: Implement pv coverage — cross-contract obligation coverage report
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T17:53:19Z
+  updated: 2026-02-18T18:15:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-036
+  github_issue: null
+  item_type: task
+  title: Implement pv generate — end-to-end codegen to disk
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T17:53:20Z
+  updated: 2026-02-18T18:15:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-037
+  github_issue: null
+  item_type: task
+  title: Implement contract composition with depends_on and pv graph
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T17:53:21Z
+  updated: 2026-02-18T18:15:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-038
+  github_issue: null
+  item_type: task
+  title: Extend schema enums to support all contract variants (bounded_int, ordering, converter)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T20:14:50Z
+  updated: 2026-02-18T20:56:31.573115752+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-039
+  github_issue: null
+  item_type: task
+  title: Add binding entries for newly-parseable contracts
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T20:14:52Z
+  updated: 2026-02-18T20:57:00.645170891+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-040
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-040'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T20:36:52.703484081+00:00
+  updated: 2026-02-18T20:57:15.190416565+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-041
+  github_issue: null
+  item_type: task
+  title: 'Qwen 3.5 kaizen: schema fixes and contract quality'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T07:37:23Z
+  updated: 2026-02-19T07:50:30.123134261+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-042
+  github_issue: null
+  item_type: task
+  title: Add pv equations --format ptx for PTX/CUDA kernel codegen
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T08:13:29Z
+  updated: 2026-02-19T09:15:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-043
+  github_issue: null
+  item_type: task
+  title: Add pv book command with KaTeX + Mermaid mdBook pages for all contracts
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T09:12:50Z
+  updated: 2026-02-19T09:15:15Z
+  spec: null
+  acceptance_criteria:
+  - Move math_to_latex to library crate, create book_gen module with page generator and SUMMARY.md updater, add pv book CLI subcommand, configure book.toml with katex+mermaid preprocessors, add enforcement test, integrate book page generation into generate command
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - cli
+  - documentation
+  - book
+  notes: null
+- id: PMAT-044
+  github_issue: null
+  item_type: task
+  title: Add match arm test coverage for CLI command dispatch
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-19T09:14:07Z
+  updated: 2026-02-19T09:28:44Z
+  spec: null
+  acceptance_criteria:
+  - Pre-existing untested match arms in equations.rs::from_str other, graph.rs::from_str other, and main.rs CLI dispatch variants
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - testing
+  - debt
+  notes: null
+- id: PMAT-045
+  github_issue: null
+  item_type: task
+  title: 'Phase 7 M1: Extend YAML schema with lean proof block and verification_summary'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T13:06:13Z
+  updated: 2026-02-19T14:02:00+00:00
+  spec: null
+  acceptance_criteria:
+  - Add optional lean block to ProofObligation (theorem, module, status, depends_on, mathlib_imports, notes). Add VerificationSummary to Contract. Refs phase7-lean-integration spec.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase7
+  - lean4
+  - schema
+  notes: null
+- id: PMAT-046
+  github_issue: null
+  item_type: task
+  title: 'Phase 7 M1: Implement pv lean CLI command for Lean 4 codegen'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T13:06:19Z
+  updated: 2026-02-19T14:00:17.359529343+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement pv lean <contract.yaml> [--output-dir <dir>] command. Generates Lean 4 definition files and sorry theorem stubs from contract YAML. Refs phase7-lean-integration spec Milestone 1.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase7
+  - lean4
+  - cli
+  notes: null
+- id: PMAT-047
+  github_issue: null
+  item_type: task
+  title: 'Phase 7 M1: Implement pv lean-status CLI command'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T13:06:21Z
+  updated: 2026-02-19T14:00:34.961429822+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement pv lean-status [<contract.yaml> | <dir>] command. Tabular report of Lean proof status (proved/sorry/wip/n-a) per contract. Refs phase7-lean-integration spec.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase7
+  - lean4
+  - cli
+  notes: null
+- id: PMAT-048
+  github_issue: null
+  item_type: task
+  title: 'Phase 7 M1: Lean 4 project scaffold with lakefile and Basic.lean'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T13:06:24Z
+  updated: 2026-02-19T14:00:49.400985995+00:00
+  spec: null
+  acceptance_criteria:
+  - Create lean/ directory with lakefile.lean, lean-toolchain, ProvableContracts/Basic.lean with shared defs (Vector, Tensor, notation). Refs phase7-lean-integration spec Milestone 1.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase7
+  - lean4
+  notes: null
+- id: PMAT-049
+  github_issue: null
+  item_type: task
+  title: GELU kernel contract (GH-1)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:24.027774055+00:00
+  spec: null
+  acceptance_criteria:
+  - Create gelu-kernel-v1.yaml with proof obligations, falsification tests, Kani harnesses
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-050
+  github_issue: null
+  item_type: task
+  title: ALiBi positional encoding kernel (GH-2)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:33.885826140+00:00
+  spec: null
+  acceptance_criteria:
+  - Create alibi-kernel-v1.yaml + alibi.rs for Falcon/BLOOM
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-051
+  github_issue: null
+  item_type: task
+  title: Absolute position embeddings kernel (GH-3)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:43.755137004+00:00
+  spec: null
+  acceptance_criteria:
+  - Create absolute-position-v1.yaml + absolute_position.rs for GPT-2/Phi
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-052
+  github_issue: null
+  item_type: task
+  title: Embedding lookup kernel (GH-4)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:46.109369985+00:00
+  spec: null
+  acceptance_criteria:
+  - Create embedding-lookup-v1.yaml + embedding.rs for all architectures
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-053
+  github_issue: null
+  item_type: task
+  title: Linear projection kernel (GH-5)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:56.152649471+00:00
+  spec: null
+  acceptance_criteria:
+  - Create linear-projection-v1.yaml + linear.rs for all architectures
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-054
+  github_issue: null
+  item_type: task
+  title: Sampling algorithms kernel (GH-6)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:23:57.606065498+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement sampling.rs for existing sampling-algorithms-v1.yaml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-055
+  github_issue: null
+  item_type: task
+  title: Tied embeddings + bias-add kernels (GH-7)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:24:04.358011272+00:00
+  spec: null
+  acceptance_criteria:
+  - Create tied-embeddings-v1.yaml + bias-add-v1.yaml + implementations
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-056
+  github_issue: null
+  item_type: task
+  title: Dropout kernel (GH-8)
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:24:05.895566831+00:00
+  spec: null
+  acceptance_criteria:
+  - Create dropout-v1.yaml + dropout.rs
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-057
+  github_issue: null
+  item_type: task
+  title: F16 conversion kernel (GH-9)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T14:37:55Z
+  updated: 2026-02-19T15:24:07.529932538+00:00
+  spec: null
+  acceptance_criteria:
+  - Implement f16_convert.rs for existing f16-conversion-v1.yaml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-058
+  github_issue: null
+  item_type: task
+  title: Proof status module and CLI for cross-repo MQS integration
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T16:18:11Z
+  updated: 2026-02-19T16:37:50Z
+  spec: null
+  acceptance_criteria:
+  - Add proof_status module with L1-L5 level assessment, kernel class mapping (A-E), and pv proof-status CLI command for JSON bridge to apr-model-qa-playbook MQS scoring.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-059
+  github_issue: null
+  item_type: task
+  title: 'Pre-existing: deny/lint cache staleness and match-arm coverage detection'
+  status: completed
+  priority: low
+  assigned_to: null
+  created: 2026-02-19T16:37:00Z
+  updated: 2026-03-27T15:10:41.862124106+00:00
+  spec: null
+  acceptance_criteria:
+  - 'pmat work complete falsification checks #8, #17, #18 have limitations: deny/lint cache ages against contract start time, and match arm coverage detection doesn''t find tests in the same file''s #[cfg(test)] module. All tests exist (dispatch_validate, dispatch_scaffold, etc.). All 6 CLI command dispatch arms are covered.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-060
+  github_issue: null
+  item_type: task
+  title: Prove three softmax theorems in Lean 4 (CB-1050)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T16:49:29Z
+  updated: 2026-03-07T16:33:36.011413535+00:00
+  spec: null
+  acceptance_criteria:
+  - Replace sorry stubs with complete proofs for softmax_pos, partition_of_unity, and monotone theorems.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-061
+  github_issue: null
+  item_type: task
+  title: Add Qwen2 and Qwen3 model-specific contracts
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-20T08:03:09Z
+  updated: 2026-02-20T08:06:37.997684099+00:00
+  spec: null
+  acceptance_criteria:
+  - Scaffold qwen2-shapes-v1, qwen2-e2e-verification-v1, qwen3-shapes-v1, qwen3-e2e-verification-v1 contracts to close coverage gaps for Qwen2.5 and Qwen3 model families
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-062
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-062'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-21T08:23:51.644468463+00:00
+  updated: 2026-02-21T08:40:20.555844998+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Add Qwen3-235B-A22B MoE model-specific contracts and artifacts
+  github_issue: null
+  item_type: task
+  title: 'New task: Add Qwen3-235B-A22B MoE model-specific contracts and artifacts'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-21T14:46:06.255201426+00:00
+  updated: 2026-02-21T14:46:56.199370456+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-063
+  github_issue: null
+  item_type: task
+  title: APR checkpoint contract v1.0.0 (F-CKPT-001..018)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-01T11:48:17Z
+  updated: 2026-03-07T16:34:56.481860354+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-064
+  github_issue: null
+  item_type: task
+  title: SSC encoder contracts for bashrs v11
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-05T11:21:35Z
+  updated: 2026-03-07T16:34:00.756354437+00:00
+  spec: null
+  acceptance_criteria:
+  - '4 YAML contracts: bidirectional-attention, learned-position-embedding, encoder-forward, linear-probe-classifier'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-065
+  github_issue: null
+  item_type: task
+  title: Implement pv score and pv query CLI commands
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-06T16:56:53Z
+  updated: 2026-03-06T23:35:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-066
+  github_issue: null
+  item_type: task
+  title: 'pv query Phase 5: --project, --include-project, --all-projects, --rebuild-index, commit refs'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T08:35:39Z
+  updated: 2026-03-07T16:34:28.385869277+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-067
+  github_issue: null
+  item_type: task
+  title: Entrenar binding registry
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T12:15:11Z
+  updated: 2026-03-07T12:30:43.601371509+00:00
+  spec: null
+  acceptance_criteria:
+  - Create contracts/entrenar/binding.yaml mapping 37 contracts to entrenar functions
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - binding
+  - entrenar
+  - integration
+  notes: null
+- id: PMAT-068
+  github_issue: null
+  item_type: task
+  title: Trueno binding registry
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T12:15:17Z
+  updated: 2026-03-07T12:31:20.522730878+00:00
+  spec: null
+  acceptance_criteria:
+  - Create contracts/trueno/binding.yaml mapping 8 contracts to trueno BLIS/GPU functions
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - binding
+  - trueno
+  - integration
+  notes: null
+- id: PMAT-069
+  github_issue: null
+  item_type: task
+  title: Realizar contract extraction and binding registry
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T12:15:18Z
+  updated: 2026-03-07T12:31:50.494101404+00:00
+  spec: null
+  acceptance_criteria:
+  - Create contracts/realizar/ directory with dedicated contracts and binding.yaml from 62 realizar references
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - binding
+  - realizar
+  - integration
+  notes: null
+- id: PMAT-070
+  github_issue: null
+  item_type: task
+  title: Downstream integration GH issues per repo
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-07T12:15:19Z
+  updated: 2026-03-07T12:32:19.953859344+00:00
+  spec: null
+  acceptance_criteria:
+  - Create GitHub issues in paiml/entrenar, paiml/trueno, paiml/realizar, paiml/aprender for Level 3 contract integration
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - integration
+  - github
+  notes: null
+- id: PMAT-071
+  github_issue: null
+  item_type: task
+  title: 'Entrenar Level 2-3: build.rs binding verification + #[contract] annotations'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T12:49:54Z
+  updated: 2026-03-07T12:55:05.423192869+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-072
+  github_issue: null
+  item_type: task
+  title: 'Trueno Level 2-3: build.rs binding verification + #[contract] annotations'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T12:49:54Z
+  updated: 2026-03-07T12:55:43.533356973+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-073
+  github_issue: null
+  item_type: task
+  title: Implement pv lint quality gates (SARIF, diff-aware, suppression, config)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T17:42:27Z
+  updated: 2026-03-07T18:16:54.841026042+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-074
+  github_issue: null
+  item_type: task
+  title: Wire up lint cache and baseline suppression (Phases 3 complement)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-07T18:17:31Z
+  updated: 2026-03-07T18:23:17.683515280+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-075
+  github_issue: null
+  item_type: task
+  title: pre-commit hook missing cargo fmt gate — repeated CI format failures
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-07T22:06:28Z
+  updated: 2026-03-27T15:08:19.679507636+00:00
+  spec: null
+  acceptance_criteria:
+  - The PMAT-generated pre-commit hook does not run 'cargo fmt --check'. Commits 889d387, 14a078a, e0b8e3e all pushed unformatted code, requiring manual fmt fix commits. Blocked by PMAT-509 (pmat must add fmt to hook template). After PMAT-509 ships, run 'pmat hooks install' to get the updated hook.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-076
+  github_issue: null
+  item_type: task
+  title: 'KANI-WIRE: Wire Kani harnesses to actual kernel functions'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-22T08:33:20Z
+  updated: 2026-03-22T10:11:48Z
+  spec: null
+  acceptance_criteria:
+  - 'Connect the 45 scaffolded Kani #[kani::proof] harnesses to call actual kernel functions instead of unimplemented!(). Start with 3 softmax harnesses as template, then replicate across domains. Use stub_float strategy with Lean-proven transcendental stubs.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-077
+  github_issue: null
+  item_type: task
+  title: 'Implement Eiffel DbC spec: pv explain, obligation types, CI contracts job'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-22T11:56:07Z
+  updated: 2026-03-27T14:42:16.883654145+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-078
+  github_issue: null
+  item_type: task
+  title: 'CB-1300: contract mandate for all paiml repos >10K LOC + pmat self-enforcement'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-24T17:13:18Z
+  updated: 2026-03-27T14:55:50.435331402+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-079
+  github_issue: null
+  item_type: task
+  title: 'bashrs: initial contracts for shell parser + safety classifier'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-24T17:13:18Z
+  updated: 2026-03-27T14:41:36.630122996+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-080
+  github_issue: null
+  item_type: task
+  title: 'depyler: type-preservation + semantic-equivalence contracts'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-24T17:13:18Z
+  updated: 2026-03-27T14:41:56.621918015+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-081
+  github_issue: null
+  item_type: task
+  title: 'apr-model-qa-playbook: integrate MQS into PVScore pipeline'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-24T17:13:18Z
+  updated: 2026-03-27T14:55:11.220167588+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-082
+  github_issue: null
+  item_type: task
+  title: Add preconditions to top-impact kernel equations (PV-ENF-001 reduction)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T15:21:37Z
+  updated: 2026-03-27T15:25:54.229274488+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-083
+  github_issue: null
+  item_type: task
+  title: Expand Kani harness coverage on top-5 impact contracts
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T15:21:38Z
+  updated: 2026-03-27T15:28:37.021492324+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-084
+  github_issue: null
+  item_type: task
+  title: Add lean_theorem pointers for existing Lean-proved equations
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-27T15:21:39Z
+  updated: 2026-03-27T15:26:23.676290422+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-085
+  github_issue: null
+  item_type: task
+  title: Add qa_gate to 22 contracts missing SCHEMA-013 + fix 3 AUD-003 missing obligations
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-27T15:41:15Z
+  updated: 2026-03-27T15:43:15.154166373+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-086
+  github_issue: null
+  item_type: task
+  title: 'Push contract scores from B to A: fix registries + Kani gaps + drift'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T15:54:43Z
+  updated: 2026-03-27T16:02:44.737157896+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-087
+  github_issue: null
+  item_type: task
+  title: 'Spec v2.1.0: fix 5 falsified numbers + Section 25 Full Enforcement Mandate'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T16:14:09Z
+  updated: 2026-03-27T16:15:42.919673079+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-088
+  github_issue: null
+  item_type: task
+  title: 'aprender: A-score enforcement — binding coverage 87%→90%+'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:22:28.795383397+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-089
+  github_issue: null
+  item_type: task
+  title: 'trueno: A-score enforcement — trait tests + binding coverage 21%→90%'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:22:47.023297447+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-090
+  github_issue: null
+  item_type: task
+  title: 'entrenar: A-score enforcement — binding coverage 76%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:23:10.256112947+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-091
+  github_issue: null
+  item_type: task
+  title: 'realizar: A-score enforcement — binding coverage 78%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:23:30.717739939+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-092
+  github_issue: null
+  item_type: task
+  title: 'forjar: A-score enforcement — binding coverage 50%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:23:49.286225758+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-093
+  github_issue: null
+  item_type: task
+  title: 'bashrs: A-score enforcement — binding coverage 55%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:24:07.886858971+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-094
+  github_issue: null
+  item_type: task
+  title: 'depyler: A-score enforcement — binding coverage 64%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:24:26.763539671+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-095
+  github_issue: null
+  item_type: task
+  title: 'pmat: A-score self-enforcement — binding coverage 64%→90%'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:24:45.070315563+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-096
+  github_issue: null
+  item_type: task
+  title: 'apr-model-qa-playbook: A-score enforcement — binding coverage 2%→90%'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T16:14:56Z
+  updated: 2026-03-27T16:25:03.538270+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-097
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 26: Cross-Repo Compositional Contracts + two-tier architecture docs'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T17:01:24Z
+  updated: 2026-03-27T17:03:40.458980028+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-098
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 26 update: arXiv citations + batuta oracle + sovereign stack pipeline map'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T17:30:13Z
+  updated: 2026-03-27T17:31:54.905911362+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-099
+  github_issue: null
+  item_type: task
+  title: Implement pv pipeline CLI command — cross-repo contract validation
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T17:43:05Z
+  updated: 2026-03-27T17:50:28.291667234+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-100
+  github_issue: null
+  item_type: task
+  title: Create inference-forward-v1 pipeline contract YAML (trueno→realizar→aprender)
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T17:43:05Z
+  updated: 2026-03-27T17:50:09.110250704+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-101
+  github_issue: null
+  item_type: task
+  title: Create binding.yaml for 16 missing sovereign stack repos
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-27T17:43:05Z
+  updated: 2026-03-27T17:52:31.570972542+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-102
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 27: The One Way — unified contract enforcement via Rust nightly contracts'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T18:10:16Z
+  updated: 2026-03-27T18:13:44.901079402+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-103
+  github_issue: null
+  item_type: task
+  title: 'Fix pv codegen: binding-aware generation with real pre/postconditions'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T18:17:11Z
+  updated: 2026-03-27T18:19:44.571560858+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-104
+  github_issue: null
+  item_type: task
+  title: 'Dogfood pv codegen on trueno: generate, include, compile'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T18:21:43Z
+  updated: 2026-03-27T18:32:18.094118835+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-105
+  github_issue: null
+  item_type: task
+  title: 'Fix 3 bugs: --exit-code not working (score, query), roofline 0-params'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-27T22:51:03Z
+  updated: 2026-03-27T22:54:10.929328670+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-106
+  github_issue: null
+  item_type: task
+  title: 'Spec v2.2.0: honest integration numbers + strip ghost binding inflation'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T08:11:45Z
+  updated: 2026-03-28T08:15:03.028121237+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-107
+  github_issue: null
+  item_type: task
+  title: Option C scoring fix + pmat comply integration guide in spec
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T09:22:54Z
+  updated: 2026-03-28T09:26:54.733319560+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-108
+  github_issue: null
+  item_type: task
+  title: Fix pv score to recurse into contract subdirectories
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T09:28:24Z
+  updated: 2026-03-28T09:36:20.876746238+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-109
+  github_issue: null
+  item_type: task
+  title: Fix unparseable YAML contracts blocking B→A for trueno/entrenar/bashrs/depyler
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T09:37:59Z
+  updated: 2026-03-28T09:47:47.102400213+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-110
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 28: Correctness + Completeness two-dimension enforcement model'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T10:01:07Z
+  updated: 2026-03-28T10:03:26.157458926+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-111
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 28 correction: CD2 ratio falsified, use CB-1202 critical path instead'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T10:07:06Z
+  updated: 2026-03-28T10:09:15.796634898+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-112
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 28 v3: domain-aware critical path keywords'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T10:11:59Z
+  updated: 2026-03-28T10:13:50.583049406+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-113
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 28 v4 + implement: critical_path in binding.yaml + CD2'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T10:20:30Z
+  updated: 2026-03-28T10:28:25.390154050+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-114
+  github_issue: null
+  item_type: task
+  title: Add real bindings + critical_path for 17 sovereign stack repos at Grade F
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T10:57:38Z
+  updated: 2026-03-28T11:01:28.983269768+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-115
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-115'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-28T10:57:38.478749321+00:00
+  updated: 2026-03-28T11:59:50.714422901+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-116
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 29: Asset Contracts — data invariants for tensors, models, media, docs'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T11:34:19Z
+  updated: 2026-03-28T11:36:33.236281897+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-117
+  github_issue: null
+  item_type: task
+  title: 'Spec Section 29 update: asset type registry with extension mapping'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-28T11:38:56Z
+  updated: 2026-03-28T11:40:10.422312495+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-118
+  github_issue: null
+  item_type: task
+  title: 'Spec: connect asset contracts with trueno BrickLayer tracing + apr-cli load_model'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T11:41:24Z
+  updated: 2026-03-28T11:43:06.598639855+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-119
+  github_issue: null
+  item_type: task
+  title: 'Fix Section 29: mark runtime integration as PROPOSED, not implemented'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T11:55:51Z
+  updated: 2026-03-28T11:57:34.293224657+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-120
+  github_issue: null
+  item_type: task
+  title: Dogfood pv codegen into trueno, aprender, entrenar, realizar — add contract enforcement
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T12:05:09Z
+  updated: 2026-03-28T12:20:02.244596892+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-121
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-121'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-28T12:05:09.157384098+00:00
+  updated: 2026-03-28T12:25:11.579830858+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-122
+  github_issue: null
+  item_type: task
+  title: Add real contract call sites to entrenar, realizar, forjar, bashrs, depyler
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-28T12:33:57Z
+  updated: 2026-03-28T12:42:58.604524533+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-123
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-123'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-28T12:33:57.050560928+00:00
+  updated: 2026-03-28T16:24:21.619441715+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-124
+  github_issue: null
+  item_type: task
+  title: 'Fix pv coverage recursion + spec v2.3.0 (GH #58)'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T16:37:07Z
+  updated: 2026-03-28T16:39:19.359824998+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-125
+  github_issue: null
+  item_type: task
+  title: Dogfood pv on all sovereign stack repos — full codegen + call sites
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T16:47:46Z
+  updated: 2026-03-28T17:06:40.132273093+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-126
+  github_issue: null
+  item_type: task
+  title: 'Fix known limitations: contract assertion placement + test failures across repos'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-28T20:38:24Z
+  updated: 2026-03-28T21:06:58.762502853+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-127
+  github_issue: null
+  item_type: task
+  title: Prove and score all 18 sovereign stack repos — full test + pv score audit
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-03-29T07:04:46Z
+  updated: 2026-03-29T07:11:16.742106241+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-128
+  github_issue: null
+  item_type: task
+  title: Upgrade all 16 Grade B repos to Grade A (≥0.90)
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T07:12:46Z
+  updated: 2026-03-29T07:17:31.695553103+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-129
+  github_issue: null
+  item_type: task
+  title: 'Spec v2.4.0: real contract enforcement — preconditions, postconditions, per-binding assertions'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T07:22:12Z
+  updated: 2026-04-06T07:19:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-130
+  github_issue: null
+  item_type: task
+  title: Fix codegen to emit real YAML preconditions + dogfood on all repos
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T07:34:39Z
+  updated: 2026-03-29T07:48:55.576865988+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-131
+  github_issue: null
+  item_type: task
+  title: Wire domain-specific contract macros into upstream repos + full test verification
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T07:49:36Z
+  updated: 2026-03-29T08:21:36.284053772+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-132
+  github_issue: null
+  item_type: task
+  title: 'Fix remaining gaps: ruchy opcode table + E0→E1 upgrades + spec falsify'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T08:25:37Z
+  updated: 2026-03-29T08:40:19.353852515+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-133
+  github_issue: null
+  item_type: task
+  title: 'Implement pv coverage --enforcement: penetration × quality × detection'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T09:19:13Z
+  updated: 2026-03-29T09:24:55.581996768+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-134
+  github_issue: null
+  item_type: task
+  title: 'Rewrite YAML preconditions: replace 507 !is_empty() with domain-specific checks'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-03-29T10:23:30Z
+  updated: 2026-03-29T10:35:02.392171079+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-135
+  github_issue: null
+  item_type: task
+  title: Fix work-dbc-v1 lifecycle states and expand contract
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-03T11:54:35Z
+  updated: 2026-04-06T07:57:39Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-486
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-486'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-04-04T06:30:40.990434556+00:00
+  updated: 2026-04-05T19:52:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-487
+  github_issue: null
+  item_type: task
+  title: 'P0: Compositional shape verification — add assumes/guarantees to Equation, COMPOSITION-001 lint gate, pv verify-pipeline'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-05T14:04:29Z
+  updated: 2026-04-06T07:30:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-488
+  github_issue: null
+  item_type: task
+  title: Add ContractKind enum — first-class non-kernel YAML in contracts/
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-05T15:13:21Z
+  updated: 2026-04-05T19:52:48Z
+  spec: null
+  acceptance_criteria:
+  - Replaces metadata.registry bool with metadata.kind enum (Kernel/Registry/ModelFamily/Pattern/Schema). Non-kernel kinds exempt from PROVABILITY-001 and kernel lint gates. Unblocks aprender model-families/*.yaml.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-489
+  github_issue: null
+  item_type: task
+  title: 'Strengthen aprender contracts: CLI exit codes, serve error handling, format validation, architecture detection (Refs GH-627..676)'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-05T19:42:38Z
+  updated: 2026-04-05T19:52:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-490
+  github_issue: null
+  item_type: task
+  title: 'Kernel tier D→C: inject call sites into realizar and entrenar'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-06T08:53:18Z
+  updated: 2026-04-06T09:03:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-491
+  github_issue: null
+  item_type: task
+  title: 'Spec v2.9.0: document GPU backend, CLI sampling, work-dbc contracts + fleet metrics'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-06T09:20:45Z
+  updated: 2026-04-06T09:22:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-492
+  github_issue: null
+  item_type: task
+  title: 'GH-67: IEEE 754 float_tolerance schema + binding coverage + schema migration'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-06T09:25:02Z
+  updated: 2026-04-06T09:41:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-493
+  github_issue: null
+  item_type: task
+  title: 'Aprender CLI contract enforcement: close GH-674 ghost bindings + inject CLI call sites'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-04-06T10:13:53Z
+  updated: 2026-04-06T10:17:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-494
+  github_issue: null
+  item_type: task
+  title: 'Trueno SIMD/PTX contract suite: NEON, parity matrix, PTX codegen, quant roundtrip, D→B upgrade'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-04-06T11:04:58Z
+  updated: 2026-04-06T11:11:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

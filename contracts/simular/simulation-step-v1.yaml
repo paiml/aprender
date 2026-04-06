@@ -1,0 +1,108 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Simulation step contract — discrete time stepping, state evolution, audit trail
+  references:
+  - 'Fujimoto (2000) Parallel and Distributed Simulation Systems'
+equations:
+  step_monotonicity:
+    formula: '∀ t: time(step(t+1)) > time(step(t))'
+    domain: t ∈ N, simulation state S_t
+    codomain: S_{t+1} with updated clock
+    invariants:
+    - Time strictly increases per step
+    - step_count increments by 1
+    - 'Substep multiplier: Δt_sub = Δt / substep_multiplier'
+    preconditions:
+    - t < max_steps
+    - timestep_secs > 0.0
+    lean_theorem: Theorems.Step_Monotonicity
+  audit_completeness:
+    formula: '∀ step_id ∈ [0, step_count): record_step(step_id) is recoverable'
+    domain: step_id ∈ usize
+    codomain: Result<StepRecord, AuditError>
+    invariants:
+    - 'All recorded steps retrievable: find_by_step_id never returns None for valid ID'
+    - 'seek(step_id) positions audit cursor correctly'
+    - step_forward advances by exactly 1 step
+    preconditions:
+    - step_id < step_count()
+    lean_theorem: Theorems.Audit_Completeness
+  simulate_convergence:
+    formula: simulate_path(params) → trajectory where energy is bounded
+    domain: params ∈ SimulationParams
+    codomain: Vec<StateSnapshot>
+    invariants:
+    - Energy conservation (Hamiltonian systems) within tolerance
+    - Orbit simulations return to near-initial state after full period
+    - Portfolio simulation paths have non-negative time axis
+    preconditions:
+    - params.dt > 0.0
+    - params.steps > 0
+    lean_theorem: Theorems.Simulate_Convergence
+proof_obligations:
+- type: invariant
+  property: Time monotonicity
+  formal: '∀ i < j: time(step_i) < time(step_j)'
+  applies_to: step_monotonicity
+- type: invariant
+  property: Audit round-trip
+  formal: '∀ id < count: find_by_step_id(record_step(id).id) = Some(record)'
+  applies_to: audit_completeness
+- type: invariant
+  property: Energy bound
+  formal: '∀ t: |E(t) - E(0)| < tolerance (for conservative systems)'
+  applies_to: simulate_convergence
+enforcement:
+  time_monotonic:
+    description: Simulation clock strictly increases each step
+    check: contract_tests::FALSIFY-SS-001
+    severity: ERROR
+  audit_roundtrip:
+    description: All recorded steps are retrievable by ID
+    check: contract_tests::FALSIFY-SS-002
+    severity: ERROR
+  energy_bound:
+    description: Conservative system energy stays within tolerance
+    check: contract_tests::FALSIFY-SS-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SS-001
+  rule: Time monotonicity
+  prediction: simulation time strictly increases after each step call
+  test: run 1000 steps, verify time[i] < time[i+1] for all i
+  if_fails: Clock reset on substep boundary or overflow
+- id: FALSIFY-SS-002
+  rule: Audit round-trip
+  prediction: every recorded step is retrievable via find_by_step_id
+  test: record 100 steps, retrieve each by ID, compare
+  if_fails: Audit log truncation or ID collision
+- id: FALSIFY-SS-003
+  rule: Energy conservation
+  prediction: harmonic oscillator energy drift < 1e-6 per period
+  test: run_periods(10) on harmonic oscillator, measure energy drift
+  if_fails: Integration scheme not symplectic or dt too large
+kani_harnesses:
+- id: KANI-SS-001
+  obligation: Time monotonicity
+  property: clock strictly increases
+  bound: 16
+  strategy: exhaustive
+  harness: verify_time_monotonic
+- id: KANI-SS-002
+  obligation: Audit round-trip
+  property: record then find returns same step
+  bound: 8
+  strategy: exhaustive
+  harness: verify_audit_roundtrip
+qa_gate:
+  id: F-SS-001
+  name: Simulation Step Contract
+  description: Time stepping, audit, and convergence quality gate
+  checks:
+  - time_monotonic
+  - audit_roundtrip
+  - energy_bound
+  pass_criteria: All 3 falsification tests pass
+  falsification: Reset simulation clock to 0 on substep boundary

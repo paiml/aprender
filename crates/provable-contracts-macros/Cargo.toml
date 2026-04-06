@@ -1,0 +1,25 @@
+[package]
+name = "provable-contracts-macros"
+description = "Proc macros for compile-time contract enforcement — #[contract] attribute"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["verification", "contracts", "proc-macro", "compile-time"]
+categories = ["development-tools::testing"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+trybuild = "1"
+
+[lints]
+workspace = true

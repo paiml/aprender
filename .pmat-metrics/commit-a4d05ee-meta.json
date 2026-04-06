@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-099",
+  "prompt": "Implement pv pipeline CLI command — cross-repo contract validation",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T17:50:28.294525142Z"
+}

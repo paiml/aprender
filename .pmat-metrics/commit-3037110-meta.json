@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-109",
+  "prompt": "Fix unparseable YAML contracts blocking B→A for trueno/entrenar/bashrs/depyler",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-28T09:47:47.105320120Z"
+}

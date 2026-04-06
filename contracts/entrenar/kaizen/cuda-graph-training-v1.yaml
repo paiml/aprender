@@ -1,0 +1,201 @@
+contract: cuda-graph-training-v1
+title: CUDA Graph Capture for NF4 Training Forward Pass (Tier 3 Parity)
+kaizen: KAIZEN-070
+parent: apr-training-parity-v1
+status: planned
+date: 2026-04-03
+
+# =============================================================================
+# CONTEXT: After Tier 2 (FP16 GEMM, ~390 tok/s), kernel launch overhead is the
+# next bottleneck. apr profile showed 84.2% kernel launch overhead on inference.
+# Training has MORE launches (forward + backward + optimizer per step).
+# =============================================================================
+# Current state: 588 kernel launches per forward × ~5μs overhead = ~3ms/fwd
+# With backward: ~1200 launches × ~5μs = ~6ms overhead per step
+# At 194 tok/s, step time is ~10ms — 60% is launch overhead!
+#
+# CUDA graphs capture the entire 28-layer forward pass and replay it with
+# a single driver call, eliminating all intermediate launch overhead.
+# Expected: 3-6x throughput improvement → 600-1200 tok/s
+
+baseline:
+  kernel_launches_per_forward: 588
+  kernel_launches_per_step: 1200
+  launch_overhead_us_per_kernel: 5
+  total_launch_overhead_ms: 6
+  step_time_ms: 10
+  measured_tok_s: 194
+  launch_overhead_pct: 60
+  source: "apr profile --granular (2026-04-02)"
+
+target:
+  kernel_launches_per_forward: 1  # Single graph replay
+  total_launch_overhead_ms: 0.005  # ~5μs for one replay
+  expected_step_time_ms: 4  # Compute-only (no launch overhead)
+  expected_tok_s: 1200
+  expected_improvement: "3-6x (eliminate 60% launch overhead)"
+
+hypotheses:
+  - id: H-GRAPH-001
+    name: "CUDA graphs eliminate kernel launch overhead"
+    prediction: >
+      Capturing the 28-layer NF4 forward into a CUDA graph and replaying
+      reduces step time from ~10ms to ~4ms (compute-only). Throughput
+      improves from 194 to ~1200 tok/s.
+    falsification_test: >
+      Run: apr finetune with --cuda-graph flag.
+      Measure: step_time_ms and tokens_per_sec.
+      If tok/s < 400: FALSIFIED — launch overhead is NOT the bottleneck.
+      Next: profile memory-bandwidth per-kernel with nsight compute.
+    status: UNTESTED
+
+  - id: H-GRAPH-002
+    name: "NF4 forward is graph-capturable"
+    prediction: >
+      All 588 kernels in the NF4 forward path can be captured into a
+      CUDA graph. No host-side branches, no dynamic shapes, no cuBLAS
+      workspace allocation during capture.
+    falsification_test: >
+      Attempt graph capture with cudaGraphCreate + stream capture.
+      If capture fails: FALSIFIED — identify the non-capturable operation.
+      Common blockers: cudaMalloc during capture, host-device sync points,
+      dynamic kernel selection (NF4_FUSED_GEMM env check).
+    status: UNTESTED
+
+  - id: H-GRAPH-003
+    name: "Graph replay maintains training convergence"
+    prediction: >
+      CUDA graph replay produces identical forward outputs to non-graph path.
+      Loss trajectory matches within floating-point epsilon.
+    falsification_test: >
+      Compare loss curves: graph vs non-graph over 20 steps.
+      If max_step_divergence > 0.001: FALSIFIED — graph replay introduces
+      numerical difference (possible cause: stream ordering change).
+    status: UNTESTED
+
+invariants:
+  - id: C-GRAPH-001
+    description: Graph captures exactly one forward pass (28 layers)
+    preconditions:
+      - All GPU buffers pre-allocated (no cudaMalloc during capture)
+      - seq_len fixed for the graph lifetime
+      - cuBLAS workspace pre-allocated (PMAT-063)
+    postconditions:
+      - Graph node count >= 588 (all kernels captured)
+      - Single cudaGraphLaunch replaces 588 cuLaunchKernel calls
+
+  - id: C-GRAPH-002
+    description: Graph is invalidated when shapes change
+    preconditions:
+      - seq_len changes between batches (padding difference)
+    postconditions:
+      - Graph re-captured for new seq_len
+      - Re-capture cost amortized over batch lifetime
+
+  - id: C-GRAPH-003
+    description: Backward pass uses separate graph (or no graph)
+    preconditions:
+      - Backward pass may have dynamic branches (LoRA vs frozen)
+    postconditions:
+      - Forward graph replay + separate backward execution
+      - Or: separate forward+backward graphs for each LoRA config
+
+implementation_plan:
+  - step: 1
+    description: "Pre-allocate all GPU buffers at fixed shapes"
+    file: entrenar/src/transformer/cuda_block.rs
+    change: >
+      CudaBlockScratch allocated at max_seq_len. No dynamic allocation
+      during forward. Already partially done (PMAT-453 scratch zeroing).
+
+  - step: 2
+    description: "Remove host-side branches from forward path"
+    file: entrenar/src/transformer/cuda_block.rs
+    change: >
+      NF4_FUSED_GEMM env check moved to block construction time (not per-forward).
+      All kernel dispatch paths determined at init, not per-step.
+
+  - step: 3
+    description: "Add CUDA stream capture around forward pass"
+    file: entrenar/src/finetune/instruct_pipeline.rs
+    change: >
+      cudaStreamBeginCapture before first forward call.
+      cudaStreamEndCapture after last layer. cudaGraphInstantiate.
+      Subsequent steps: cudaGraphLaunch (single call replaces 588 launches).
+
+  - step: 4
+    description: "Graph lifecycle management"
+    file: entrenar/src/train/transformer_trainer/cuda_trainer.rs
+    change: >
+      Cache graph by (seq_len, batch_size) key. Invalidate on shape change.
+      Re-capture cost ~1ms (amortized over 100+ replays).
+
+falsification_tests:
+  - id: FALSIFY-GRAPH-001
+    rule: H-GRAPH-001 (launch overhead eliminated)
+    prediction: tokens_per_sec > 600 with CUDA graphs
+    test: |
+      def test_graph_throughput():
+          result = run_apr_canary(cuda_graph=True)
+          assert result["metrics"]["tokens_per_sec"] > 600
+    if_fails: Launch overhead is not the bottleneck — profile compute
+
+  - id: FALSIFY-GRAPH-002
+    rule: H-GRAPH-002 (forward is capturable)
+    prediction: Graph capture succeeds without error
+    test: |
+      def test_graph_capture():
+          result = run_apr_canary(cuda_graph=True)
+          assert "graph_capture_failed" not in result.get("error", "")
+    if_fails: Identify non-capturable operation and remove it
+
+  - id: FALSIFY-GRAPH-003
+    rule: H-GRAPH-003 (convergence maintained)
+    prediction: loss divergence < 0.001 vs non-graph path
+    test: |
+      def test_graph_convergence():
+          r_graph = run_apr_canary(cuda_graph=True, steps=20)
+          r_plain = run_apr_canary(cuda_graph=False, steps=20)
+          div = abs(r_graph["metrics"]["final_loss"] - r_plain["metrics"]["final_loss"])
+          assert div < 0.001
+    if_fails: Graph replay introduces numerical error
+
+proof_obligations:
+  - type: invariant
+    property: All kernels captured in graph
+    formal: "graph.node_count >= 588"
+    applies_to: all
+  - type: invariant
+    property: Graph invalidated on shape change
+    formal: "seq_len != cached_seq_len => graph.recapture()"
+    applies_to: all
+  - type: equivalence
+    property: Graph output matches non-graph output
+    formal: "|forward_graph(x) - forward_plain(x)| < eps element-wise"
+    applies_to: all
+
+kani_harnesses:
+  - id: KANI-GRAPH-001
+    obligation: Graph captures all kernels
+    strategy: bounded_int
+    solver: cadical
+    bound: 8
+  - id: KANI-GRAPH-002
+    obligation: Shape invalidation
+    strategy: exhaustive
+    solver: cadical
+    bound: 8
+  - id: KANI-GRAPH-003
+    obligation: Output equivalence
+    strategy: bounded_int
+    solver: cadical
+    bound: 16
+
+qa_gate:
+  id: F-CGV-001
+  name: cuda-graph-training-v1 Contract
+  description: Quality gate for CUDA graph training (Tier 3 parity)
+  checks:
+    - hypothesis_falsification
+    - throughput_gate
+    - convergence_gate

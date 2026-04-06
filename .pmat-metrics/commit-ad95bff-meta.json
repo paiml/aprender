@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-105",
+  "prompt": "Fix 3 bugs: --exit-code not working (score, query), roofline 0-params",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T22:54:10.932421720Z"
+}

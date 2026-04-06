@@ -1,0 +1,11 @@
+Equations for dot-kernel-v1
+=====================================================
+
+  dot
+    formula:  y = Σ x_i · w_i
+    domain:   x ∈ ℝ^n, w ∈ ℝ^n
+    codomain: y ∈ ℝ
+    invariants:
+      - dot(x, 0) = 0
+      - dot(α·x, w) = α·dot(x, w)
+

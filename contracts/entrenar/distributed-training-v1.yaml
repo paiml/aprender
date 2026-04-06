@@ -1,0 +1,367 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: Heterogeneous distributed training across CUDA + wgpu backends
+  registry: true
+  references:
+  - distributed-training-spec.md v1.0.0 (SPEC-DIST-2026-001)
+  - cuda-classify-training-v1.yaml (CUDA backend contract)
+  - qlora-hyperparameters-v1.yaml (HP constraints)
+  - batch-training-v1.yaml (single-device training)
+  depends_on:
+  - cuda-classify-training-v1
+  - qlora-hyperparameters-v1
+  - batch-training-v1
+data_parallel:
+  weight_consistency:
+  - id: F-DP-001
+    name: AllReduce weight consistency
+    description: 'After AllReduce and optimizer step, all workers hold identical LoRA weights.
+
+      This is the fundamental invariant of synchronous data parallelism (R1 §3.1).
+
+      Weights diverge without sync — FALSIFY-DP-001 proves this.
+
+      '
+    severity: P0
+    critical: true
+    postcondition: '∀i,j ∈ workers: weights_i == weights_j after sync'
+    reference: R1 §3.1, R5 §4.2
+  sharding:
+  - id: F-DP-002
+    name: Sharding completeness and disjointness
+    description: 'Data sharding covers all samples exactly once per step.
+
+      No sample appears in two shards; no sample is missing.
+
+      Union of all shards equals the original batch (R5 §4.1).
+
+      '
+    severity: P0
+    critical: true
+    precondition: samples.len() >= num_workers
+    postcondition: ∪ shards = samples AND shards are disjoint
+    invariant: sum(shard.len()) == samples.len()
+    reference: R5 §4.1
+  gradient_stability:
+  - id: F-DP-003
+    name: Gradient averaging numerical stability
+    description: 'Averaged gradient preserves numerical stability (R5 §4.2).
+
+      If all per-worker gradients are finite, the averaged gradient is finite.
+
+      If any gradient contains NaN/Inf, training halts immediately (Jidoka).
+
+      '
+    severity: P0
+    critical: true
+    postcondition: avg_grad = (1/N) × Σ grad_i is finite when all grad_i finite
+    invariant: NaN detection triggers immediate halt
+    reference: R5 §4.2
+  backend_fallback:
+  - id: F-DP-004
+    name: Backend fallback chain
+    description: 'forward_hidden_dispatch() always produces a finite tensor regardless
+
+      of GPU availability. Fallback chain: CUDA → wgpu → CPU (trueno SIMD).
+
+      No panic — graceful degradation (R6 §3.3).
+
+      '
+    severity: P0
+    critical: true
+    postcondition: forward_hidden_dispatch() returns finite tensor on any hardware
+    invariant: CUDA failure → wgpu attempt → CPU fallback → always succeeds
+    reference: R6 §3.3
+  loss_equivalence:
+  - id: F-DP-005
+    name: Multi-GPU loss equivalence
+    description: 'Multi-GPU training converges to same loss as single-GPU within tolerance.
+
+      1% tolerance accounts for floating-point non-associativity in gradient
+
+      averaging (R1 §4.3). Verified by proptest over random seeds.
+
+      '
+    severity: P1
+    postcondition: '|loss_multi - loss_single| < 0.01 × |loss_single| at step 100+'
+    tolerance: 0.01
+    reference: R1 §4.3
+  fault_tolerance:
+  - id: F-DP-006
+    name: Worker fault tolerance
+    description: 'Training continues when a worker disconnects (R4 §3.2).
+
+      Remaining workers redistribute shards and continue.
+
+      Loss recovers to pre-failure trajectory within 50 steps.
+
+      '
+    severity: P1
+    postcondition: Remaining workers continue with adjusted sharding
+    invariant: Loss recovers within 50 steps of worker drop
+    reference: R4 §3.2
+wgpu_batch:
+- id: F-WGPU-001
+  name: Batched matmul GPU/CPU parity
+  description: 'GpuCommandBatch::matmul() produces results matching CPU matmul
+
+    within fp32 tolerance. WGSL compute shader uses 16×16 workgroups
+
+    with 4-binding layout (A, B, C storage + dims uniform).
+
+    '
+  severity: P0
+  critical: true
+  postcondition: ‖C_gpu - C_cpu‖∞ < 1e-4
+  invariant: No NaN/Inf in output; dimensions preserved
+  tolerance: 1e-4
+  reference: WGSL spec, R5 §2
+heterogeneous:
+- id: F-HET-001
+  name: Mixed backend training
+  description: 'Workers with different backends (CUDA + wgpu + CPU) produce compatible
+
+    gradients that can be averaged. The gradient tensor layout is identical
+
+    regardless of forward pass backend.
+
+    '
+  severity: P0
+  critical: true
+  postcondition: grad.shape identical across all backends
+  invariant: Backend-independent gradient tensor format
+- id: F-HET-002
+  name: Heterogeneous memory budget
+  description: 'Each worker independently manages GPU memory within its VRAM budget.
+
+    Qwen3-4B fp32: ~1,052 MB per GPU. NF4/QLoRA: ~171 MB per GPU.
+
+    Both fit in 8GB VRAM (Radeon W5700X) with room for batch > 1.
+
+    '
+  severity: P1
+  postcondition: peak_vram <= device.vram_total
+  reference: R2 (QLoRA memory budget)
+equations:
+  gradient_allreduce:
+    formula: "Given N workers, each producing gradient g_i for parameters θ:\n  g_avg = (1/N) × Σᵢ g_i\n  θ_{t+1} = AdamW(θ_t,\
+      \ g_avg, lr, β₁, β₂)\n"
+    domain: g_i ∈ R^P where P = trainable_params
+    invariants:
+    - g_avg computed identically on all workers (deterministic order)
+    - AdamW moments (m, v) identical across workers
+    reference: R1 §3.1, R5 §4.2
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Gradient_Allreduce
+  sharding:
+    formula: "Given B samples and N workers:\n  shard_size = B ÷ N\n  shard_i = samples[i×shard_size .. (i+1)×shard_size]\
+      \  for i < N-1\n  shard_{N-1} = samples[(N-1)×shard_size .. B]\nInvariant: Σ |shard_i| = B\n"
+    domain: B >= N, N >= 1
+    reference: R5 §4.1
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Sharding
+  weighted_loss:
+    formula: "Given per-worker results {(loss_i, n_i)} where n_i = |shard_i|:\n  loss_total = Σᵢ (loss_i × n_i) / Σᵢ n_i\n\
+      NOT the same as mean(loss_i) when shards have unequal size.\n"
+    domain: loss_i ∈ R, n_i ∈ Z+
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Weighted_Loss
+  swiglu_ffn:
+    formula: "Given x ∈ R^{seq × hidden}:\n  gate = x @ W_gate\n  up   = x @ W_up\n  ffn  = (swish(gate) ⊙ up) @ W_down\n\
+      Where swish(x) = x × σ(x)\n"
+    domain: W_gate, W_up ∈ R^{hidden × intermediate}, W_down ∈ R^{intermediate × hidden}
+    note: Computed as 5 batched GPU operations in single execute() call
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Swiglu_Ffn
+  lora_gradient_size:
+    formula: 'Trainable params = layers × 2 matrices × (hidden × rank) + head
+
+      Qwen3-4B rank-16: 24 × 2 × 2 × (896 × 16) + (896 × 2 + 2) = 1,378,050
+
+      Wire size: 1,378,050 × 4 bytes = ~5.3 MB
+
+      '
+    reference: R3 (LoRA), R2 (QLoRA)
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Lora_Gradient_Size
+falsification_tests:
+- id: FALSIFY-DP-001
+  rule: F-DP-001 (Weight consistency)
+  prediction: Without sync, weights diverge within 10 steps
+  test: "#[test]\nfn falsify_dp_001_weights_diverge_without_sync() {\n    let mut coord = DataParallelCoordinator::new(&config,\
+    \ classify, &[0, 1]);\n    // Train WITHOUT calling sync_lora_weights_from_primary\n    // Verify weights diverge\n  \
+    \  let w0 = coord.pipelines[0].lora_a_data();\n    let w1 = coord.pipelines[1].lora_a_data();\n    assert_ne!(w0, w1,\
+    \ \"Without sync, weights MUST diverge\");\n}\n"
+  if_fails: AllReduce sync is unnecessary (weights stay identical without it)
+- id: FALSIFY-DP-002
+  rule: F-DP-002 (Sharding completeness)
+  prediction: No sample lost or duplicated across shards
+  test: "#[test]\nfn falsify_dp_002_no_sample_lost_or_duplicated() {\n    let samples: Vec<_> = (0..100).map(|i| sample(i)).collect();\n\
+    \    let shards = shard_samples(&samples, 3);\n    let total: usize = shards.iter().map(|s| s.len()).sum();\n    assert_eq!(total,\
+    \ 100);\n    let mut seen = HashSet::new();\n    for shard in &shards {\n        for s in shard { assert!(seen.insert(&s.input));\
+    \ }\n    }\n}\n"
+  if_fails: Sharding algorithm drops or duplicates samples
+- id: FALSIFY-DP-003
+  rule: F-DP-003 (Gradient stability)
+  prediction: NaN in gradient propagates through averaging
+  test: "#[test]\nfn falsify_dp_003_nan_gradient_detected() {\n    let grads = vec![vec![1.0, 2.0], vec![f32::NAN, 2.0]];\n\
+    \    let avg = average_gradients(&grads);\n    assert!(avg.iter().any(|v| v.is_nan()));\n}\n"
+  if_fails: NaN silently absorbed during averaging
+- id: FALSIFY-DP-004
+  rule: F-DP-004 (Backend fallback)
+  prediction: CPU fallback produces finite output
+  test: "#[test]\nfn falsify_dp_004_cpu_fallback_matches_gpu() {\n    let pipeline = ClassifyPipeline::new(&config, classify);\n\
+    \    let ids = vec![1u32, 2, 3, 4, 5];\n    let hidden = pipeline.model.forward_hidden(&ids);\n    assert!(hidden.data().iter().all(|v|\
+    \ v.is_finite()));\n}\n"
+  if_fails: CPU path broken by GPU feature additions
+- id: FALSIFY-DP-005
+  rule: F-DP-005 (Loss equivalence)
+  prediction: Multi-GPU loss within 1% of single-GPU
+  test: "proptest! {\n    #[test]\n    fn falsify_dp_005_loss_equivalence(seed in 0u64..1000) {\n        let samples = gen_samples(seed,\
+    \ 50);\n        let loss_1 = train_single(&samples);\n        let loss_2 = train_parallel(&samples, 2);\n        let tol\
+    \ = 0.01 * loss_1.abs().max(1e-6);\n        prop_assert!((loss_1 - loss_2).abs() < tol);\n    }\n}\n"
+  if_fails: Gradient averaging introduces unacceptable numerical drift
+- id: FALSIFY-WGPU-001
+  rule: F-WGPU-001 (Batched matmul correctness)
+  prediction: GPU matmul matches CPU within 1e-4
+  test: "#[test]\nfn falsify_wgpu_001_matmul_parity() {\n    let a = random_matrix(64, 128);\n    let b = random_matrix(128,\
+    \ 32);\n    let cpu_result = cpu_matmul(&a, &b, 64, 128, 32);\n    let gpu_result = gpu_batch_matmul(&a, &b, 64, 128,\
+    \ 32);\n    let max_diff = cpu_result.iter().zip(gpu_result.iter())\n        .map(|(c, g)| (c - g).abs()).fold(0.0f32,\
+    \ f32::max);\n    assert!(max_diff < 1e-4, \"max diff: {max_diff}\");\n}\n"
+  if_fails: WGSL shader accumulation differs from CPU beyond tolerance
+- id: FALSIFY-HET-001
+  rule: F-HET-001 (Mixed backend training)
+  prediction: Gradient shapes identical across backends
+  test: "#[test]\nfn falsify_het_001_gradient_shape_consistency() {\n    // CPU pipeline grad shape\n    let cpu_pipe = ClassifyPipeline::new(&config,\
+    \ classify.clone());\n    let cpu_grad_count = cpu_pipe.trainable_param_count();\n    // wgpu pipeline (if available)\
+    \ grad shape\n    let wgpu_pipe = ClassifyPipeline::new_with_device(&config, classify, ComputeDevice::Wgpu { adapter_index:\
+    \ 0 });\n    let wgpu_grad_count = wgpu_pipe.trainable_param_count();\n    assert_eq!(cpu_grad_count, wgpu_grad_count);\n\
+    }\n"
+  if_fails: Backend changes gradient tensor layout
+implementation_steps:
+- id: STEP-1
+  name: Phase 1 — Single-machine multi-GPU (COMPLETE)
+  description: "trueno: GpuDevice::new_with_adapter_index(), GpuCommandBatch::matmul(),\n        GpuDevicePool, execute_matmul_op()\n\
+    entrenar: ComputeDevice::Wgpu, WgpuForwardPass, forward_hidden_dispatch(),\n          DataParallelCoordinator\naprender:\
+    \ --gpus, --gpu-backend CLI flags\n"
+  status: complete
+  files:
+  - trueno/src/backends/gpu/device/mod.rs
+  - trueno/src/backends/gpu/batch/mod.rs
+  - trueno/src/backends/gpu/batch/execute/dispatch.rs
+  - trueno/src/backends/gpu/pool.rs
+  - entrenar/src/finetune/device.rs
+  - entrenar/src/transformer/wgpu_block.rs
+  - entrenar/src/finetune/classify_pipeline.rs
+  - entrenar/src/finetune/data_parallel.rs
+  - aprender/crates/apr-cli/src/commands/finetune.rs
+  - aprender/crates/apr-cli/src/dispatch.rs
+- id: STEP-2
+  name: Phase 2 — Multi-node heterogeneous training
+  description: "entrenar: DistributedConfig, GradientServer (TCP AllReduce),\n          WorkerClient, NodeDiscovery (heartbeat,\
+    \ join/leave)\naprender: --nodes, --role, --bind, --coordinator CLI flags\nforjar: gpu-training.yaml recipe for provisioning\n"
+  status: in_progress
+  files:
+  - entrenar/src/finetune/distributed.rs
+  - entrenar/src/finetune/gradient_server.rs
+  - entrenar/src/finetune/worker_client.rs
+  - entrenar/src/finetune/discovery.rs
+  - aprender/crates/apr-cli/src/commands/finetune.rs
+- id: STEP-3
+  name: Phase 3 — DiLoCo local SGD (FUTURE)
+  description: 'LocalSGDTrainer with H inner optimizer steps before AllReduce.
+
+    OuterOptimizer with Nesterov momentum on pseudo-gradients (R4 §2.1).
+
+    Default H=500 per R4 results (500x less communication).
+
+    '
+  status: planned
+  reference: R4 (DiLoCo)
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — Training halts on first NaN/Inf gradient.
+
+    Don''t average garbage. GradientServer validates all incoming gradients before
+
+    reduction. Halt is immediate, not after the step completes.
+
+    '
+  poka_yoke: '"Mistake-proofing" — validate_export() blocks training on malformed data.
+
+    Type system prevents backend mismatch (ComputeDevice enum).
+
+    Sharding function has compile-time invariant: sum(shard_lens) == total.
+
+    '
+  genchi_genbutsu: '"Go and see" — Profile real wgpu matmul latency on actual W5700X hardware.
+
+    Measure PCIe transfer time, don''t estimate. Run falsification tests on
+
+    both intel (AMD) and lambda (NVIDIA) machines.
+
+    '
+  kaizen: '"Continuous improvement" — Phase 1 → Phase 2 → Phase 3 incremental delivery.
+
+    Each phase validated before next begins. No big bang deployment.
+
+    '
+  heijunka: '"Production leveling" — Balance shard sizes across heterogeneous workers.
+
+    Oversample minority class before sharding (safe=93.5%, unsafe=6.5%).
+
+    Workers with faster GPUs could handle larger shards (future).
+
+    '
+  andon: '"Stop the line" — TrainingStateWriter emits real-time metrics.
+
+    Workers report health via heartbeat. Coordinator raises alert on
+
+    gradient divergence > 10x expected magnitude.
+
+    '
+qa_gate:
+  id: F-DIST-GATE
+  name: Distributed Training Contract
+  description: Heterogeneous multi-GPU/multi-node training quality gate
+  checks:
+  - weight_consistency
+  - sharding_completeness
+  - gradient_stability
+  - backend_fallback
+  - loss_equivalence
+  - batched_matmul_parity
+  - mixed_backend_gradients
+  - worker_fault_tolerance
+  pass_criteria: 'Phase 1: F-DP-001..004, F-WGPU-001, F-HET-001 pass (P0 contracts)
+
+    Phase 2: F-DP-005..006 pass (P1 contracts, require multi-node)
+
+    '
+  falsification: 'Kill one worker mid-AllReduce to verify fault tolerance.
+
+    Inject NaN into one worker''s gradient to verify Jidoka halt.
+
+    Run same data on 1 vs 2 GPUs to verify loss equivalence.
+
+    '
+proof_obligations:
+- type: invariant
+  property: g_avg computed identically on all workers (deterministic order)
+  formal: g_avg computed identically on all workers (deterministic order)
+  applies_to: all
+- type: invariant
+  property: AdamW moments (m, v) identical across workers
+  formal: AdamW moments (m, v) identical across workers
+  applies_to: all

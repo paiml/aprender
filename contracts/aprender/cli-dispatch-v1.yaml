@@ -1,0 +1,377 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: CLI argument parsing, subcommand dispatch completeness, exit codes, output format fidelity
+  registry: true
+  references:
+  - 'POSIX.1-2017 Utility Conventions (IEEE Std 1003.1-2017, Section 12)'
+  - 'GNU Coding Standards — Exit Status'
+  - 'apr-cli/src/error.rs — CliError exit_code() mapping'
+  - 'apr-cli/src/dispatch.rs — dispatch_core_command()'
+  depends_on: []
+cli_config:
+  binary_name: apr
+  subcommands:
+  # Core operations (14)
+  - run
+  - check
+  - serve
+  - inspect
+  - debug
+  - validate
+  - lint
+  - explain
+  - canary
+  - trace
+  - tensors
+  - diff
+  - chat
+  - tui
+  # Model management (7)
+  - import
+  - export
+  - pull
+  - list
+  - rm
+  - convert
+  - compile
+  # Model transformation (5)
+  - quantize
+  - merge
+  - prune
+  - distill
+  - publish
+  # Analysis & profiling (8)
+  - eval
+  - bench
+  - profile
+  - parity
+  - ptx
+  - ptx-map
+  - flow
+  - tree
+  # Data & pipeline (4)
+  - data
+  - tokenize
+  - pipeline
+  - diagnose
+  # Quality & testing (5)
+  - qa
+  - qualify
+  - probar
+  - compare-hf
+  - showcase
+  # Specialized (7)
+  - hex
+  - cbtop
+  - rosetta
+  - oracle
+  - decrypt
+  - encrypt
+  - gpu
+  # Agent (1, feature-gated: code)
+  - code
+  # Extended (added PMAT-187)
+  - train
+  - tune
+  - monitor
+  - tools
+  - ls
+  - show
+  - view
+  exit_codes:
+    success: 0
+    general_error: 1
+    file_not_found: 3
+    invalid_format: 4
+    validation_failed: 5
+    model_load_failed: 6
+    io_error: 7
+    inference_failed: 8
+    feature_disabled: 9
+    network_error: 10
+    http_not_found: 11
+  output_formats:
+  - text
+  - json
+  - yaml
+  - csv
+  - srt
+  - vtt
+equations:
+  dispatch_completeness:
+    formula: |
+      dispatch(cmd) = match cmd {
+        c if c ∈ SubcommandSet → handler(c),
+        _ → Err(UnknownCommand)
+      }
+      ∀ c ∈ Commands::variants(): ∃ handler(c)
+    domain: cmd ∈ String (from clap parse)
+    codomain: Result<(), CliError>
+    invariants:
+    - Every Commands variant has a dispatch arm (no unreachable_patterns)
+    - Unknown subcommand returns non-zero exit code via clap
+    - Dispatch is total — no silent no-op for valid subcommands
+    preconditions:
+    - args.len() >= 2 (binary name + subcommand)
+    lean_theorem: Theorems.Dispatch_Completeness
+  exit_code_semantics:
+    formula: |
+      exit_code(Ok(())) = 0
+      exit_code(Err(e)) = e.exit_code()
+      where exit_code: CliError → {1, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+    domain: Result<(), CliError>
+    codomain: u8 ∈ {0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11}
+    invariants:
+    - Success always returns 0
+    - Distinct error classes map to distinct non-zero codes
+    - No exit code collision between error variants
+    - Exit codes are stable across versions (semver)
+    preconditions:
+    - CliError variant is well-formed
+    lean_theorem: Theorems.Exit_Code_Semantics
+  output_format_fidelity:
+    formula: |
+      format(result, "json") ∈ ValidJSON
+      format(result, "yaml") ∈ ValidYAML
+      format(result, "csv")  ∈ ValidCSV (RFC 4180)
+      format(result, "text") ∈ UTF-8
+    domain: (result ∈ CommandOutput, fmt ∈ {"json", "yaml", "csv", "text"})
+    codomain: String (parseable by respective parser)
+    invariants:
+    - JSON output is valid per RFC 8259 (parseable by serde_json)
+    - YAML output is valid per YAML 1.2 (parseable by serde_yaml)
+    - CSV output is valid per RFC 4180 (parseable by csv crate)
+    - Text output is valid UTF-8 (no partial sequences)
+    - --json flag overrides --format for all subcommands
+    preconditions:
+    - format ∈ {"json", "yaml", "csv", "text", "srt", "vtt"}
+    lean_theorem: Theorems.Output_Format_Fidelity
+  feature_gated_dispatch:
+    formula: |
+      dispatch(Code { .. }) requires cfg(feature = "code")
+        => batuta::agent::code::cmd_code(model, project, resume, prompt, print, max_turns, manifest)
+      dispatch(Code { .. }) without feature "code"
+        => compile-time exclusion (variant absent from enum)
+    domain: Commands::Code variant (PMAT-182)
+    codomain: Result<(), CliError>
+    invariants:
+    - Code command dispatches to batuta::agent::code::cmd_code()
+    - Without "code" feature, Code variant does not exist in binary
+    - Error mapped via CliError::Aprender(e.to_string())
+    - code feature is in default features (always available in standard build)
+    preconditions:
+    - feature "code" enabled at compile time
+    - batuta crate available as dependency
+    postconditions:
+    - cmd_code() receives all CLI args faithfully (no dropped fields)
+    lean_theorem: Theorems.Feature_Gated_Dispatch
+  idempotent_inspection:
+    formula: |
+      ∀ cmd ∈ {check, inspect, debug, validate, lint, explain, list}:
+        state_before(cmd(args)) = state_after(cmd(args))
+    domain: Inspection commands (read-only)
+    codomain: No side effects on filesystem or model state
+    invariants:
+    - Inspection commands are pure readers — no file mutation
+    - Running twice produces identical output for same input
+    - No temporary files left behind
+    preconditions:
+    - Input files exist and are readable
+    lean_theorem: Theorems.Idempotent_Inspection
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Parse CLI arguments via clap, validate subcommand and flags
+  - name: execute
+    description: Dispatch to command handler, format output per --json/--yaml/--csv
+  - name: verify_output
+    description: Map result to exit code, verify output format fidelity
+
+proof_obligations:
+- type: invariant
+  property: Every Commands variant has a dispatch handler
+  formal: '∀ v ∈ Commands::variants(): dispatch(v) ≠ unreachable!()'
+  applies_to: dispatch_completeness
+- type: invariant
+  property: Exit codes are injective (no collisions)
+  formal: '∀ e1, e2 ∈ CliError: e1 ≠ e2 → exit_code(e1) ≠ exit_code(e2) (by variant class)'
+  applies_to: exit_code_semantics
+- type: invariant
+  property: JSON output is always parseable
+  formal: '∀ r: serde_json::from_str(format(r, "json")).is_ok()'
+  tolerance: 1e-6
+  applies_to: output_format_fidelity
+- type: invariant
+  property: Inspection commands have no side effects
+  formal: '∀ cmd ∈ ReadOnlySet: fs_snapshot_before == fs_snapshot_after'
+  applies_to: idempotent_inspection
+falsification_tests:
+- id: FALSIFY-CLI-001
+  rule: Every Commands variant has a dispatch handler
+  prediction: Every subcommand dispatches to a handler (no panic, no silent drop)
+  test: |
+    #[test]
+    fn falsify_cli_001_dispatch_completeness() {
+        // Verify all Commands variants are covered in dispatch
+        // by attempting to parse and dispatch each known subcommand
+        let subcommands = vec![
+            "check", "run", "inspect", "debug", "validate",
+            "lint", "explain", "export", "convert", "quantize",
+            "merge", "list", "rm",
+        ];
+        for cmd in &subcommands {
+            let result = std::process::Command::new("apr")
+                .arg(cmd)
+                .arg("--help")
+                .output();
+            assert!(result.is_ok(), "Subcommand '{}' not recognized", cmd);
+            let out = result.unwrap();
+            assert!(out.status.success(), "apr {} --help failed", cmd);
+        }
+    }
+  if_fails: A subcommand variant exists in the enum but has no dispatch arm
+- id: FALSIFY-CLI-002
+  rule: Exit codes are injective (no collisions)
+  prediction: FileNotFound returns exit code 3, not 1
+  test: |
+    #[test]
+    fn falsify_cli_002_exit_code_file_not_found() {
+        let output = std::process::Command::new("apr")
+            .args(&["check", "/nonexistent/model.gguf"])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(code, 3, "FileNotFound should return exit code 3, got {}", code);
+    }
+  if_fails: Exit code mapping incorrect — CliError::exit_code() not wired to process exit
+- id: FALSIFY-CLI-005
+  rule: Code subcommand dispatches to batuta (PMAT-182)
+  prediction: apr code --help returns 0 and shows "Sovereign AI coding assistant"
+  test: |
+    #[test]
+    fn falsify_cli_005_code_dispatch_wired() {
+        let output = std::process::Command::new("apr")
+            .args(&["code", "--help"])
+            .output()
+            .expect("Failed to run apr");
+        assert!(output.status.success(), "apr code --help should succeed");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Sovereign AI"),
+            "apr code --help must mention 'Sovereign AI': {}", stdout);
+        assert!(stdout.contains("--model"),
+            "apr code must accept --model flag");
+        assert!(stdout.contains("--resume"),
+            "apr code must accept --resume flag");
+    }
+  if_fails: Code subcommand not wired in commands_enum.rs or dispatch.rs (PMAT-182)
+- id: FALSIFY-CLI-006
+  rule: Feature-gated code requires batuta dependency
+  prediction: Code variant exists only when code feature is enabled
+  test: |
+    #[test]
+    fn falsify_cli_006_code_feature_gate() {
+        // Compile-time check: this test only compiles with "code" feature
+        #[cfg(feature = "code")]
+        {
+            // Verify the type exists and can be referenced
+            let _: fn(Option<std::path::PathBuf>, std::path::PathBuf,
+                      Option<Option<String>>, Vec<String>, bool, u32,
+                      Option<std::path::PathBuf>) -> anyhow::Result<()>
+                = batuta::agent::code::cmd_code;
+        }
+    }
+  if_fails: batuta dependency missing or cmd_code function signature changed
+- id: FALSIFY-CLI-003
+  rule: JSON output is always parseable
+  prediction: --json flag produces valid JSON on stdout
+  test: |
+    #[test]
+    fn falsify_cli_003_json_output_parseable() {
+        let output = std::process::Command::new("apr")
+            .args(&["check", "test-model.gguf", "--json"])
+            .output()
+            .expect("Failed to run apr");
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let parsed: serde_json::Result<serde_json::Value> =
+                serde_json::from_str(&stdout);
+            assert!(parsed.is_ok(),
+                "JSON output not parseable: {}", stdout);
+        }
+    }
+  if_fails: JSON serialization produces invalid JSON (unescaped strings, trailing comma)
+- id: FALSIFY-CLI-004
+  rule: Inspection commands have no side effects
+  prediction: Running check twice on same file produces identical output
+  test: |
+    #[test]
+    fn falsify_cli_004_idempotent_check() {
+        let run = || {
+            std::process::Command::new("apr")
+                .args(&["check", "test-model.gguf", "--json"])
+                .output()
+                .expect("Failed to run apr")
+        };
+        let out1 = run();
+        let out2 = run();
+        assert_eq!(out1.stdout, out2.stdout,
+            "check command produced different output on second run");
+        assert_eq!(out1.status.code(), out2.status.code(),
+            "check command returned different exit code on second run");
+    }
+  if_fails: Inspection command has hidden state mutation or non-deterministic output
+kani_harnesses:
+- id: KANI-CLI-001
+  obligation: Exit codes are injective (no collisions)
+  property: No two CliError variants share the same exit code
+  bound: 11
+  strategy: exhaustive
+  harness: verify_exit_code_uniqueness
+- id: KANI-CLI-002
+  obligation: Every Commands variant has a dispatch handler
+  property: All Commands variants handled
+  bound: 30
+  strategy: exhaustive
+  harness: verify_dispatch_total
+- id: KANI-CLI-003
+  obligation: JSON output is always parseable
+  property: format(r, "json") always produces valid JSON
+  bound: 8
+  strategy: stub_float
+  harness: verify_json_output_parseable
+- id: KANI-CLI-004
+  obligation: Inspection commands have no side effects
+  property: read-only commands do not mutate filesystem state
+  bound: 8
+  strategy: exhaustive
+  harness: verify_inspection_idempotent
+qa_gate:
+  id: F-CLI-GATE
+  name: CLI Dispatch Contract
+  description: CLI argument parsing and dispatch quality gate for apr binary
+  checks:
+  - dispatch_completeness
+  - exit_code_semantics
+  - output_format_fidelity
+  - idempotent_inspection
+  pass_criteria: All 4 falsification tests pass
+  falsification: Comment out a dispatch arm to trigger unreachable panic
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — clap validates all arguments before
+    dispatch. Invalid flags halt with a descriptive error and non-zero exit
+    code before any model loading or computation begins.
+  poka_yoke: >
+    "Mistake-proofing" — exit codes are defined as constants in CliError::exit_code().
+    The type system prevents returning raw integers. Adding a new CliError variant
+    without an exit_code arm is a compile error (non-exhaustive match).
+  genchi_genbutsu: >
+    "Go and see" — falsification tests invoke the real apr binary as a subprocess,
+    capturing actual exit codes and stdout. No mocked CLI dispatch.
+  kaizen: >
+    "Continuous improvement" — new subcommands added to Commands enum automatically
+    require a dispatch arm (compiler enforces). Exit code space reserved for future
+    error categories.

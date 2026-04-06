@@ -1,0 +1,116 @@
+contract: C-GPUNORM-001
+title: GPU RMSNorm Forward for InstructPipeline
+kaizen: KAIZEN-066
+parent: C-GRADHIDDEN-001
+status: implemented
+date: 2026-03-04
+baseline:
+  blocks_output_d2h_bytes: 5242880
+  normed_hidden_h2d_bytes: 5242880
+  total_pcie_bytes: 10485760
+  cpu_rmsnorm_us: 200
+  heap_allocs: 3
+  sync_points: 1
+target:
+  blocks_output_d2h_bytes: 0
+  normed_hidden_h2d_bytes: 0
+  total_pcie_bytes: 0
+  cpu_rmsnorm_us: 0
+  heap_allocs: 0
+  sync_points: 0
+  per_step_savings_us: 1700
+api:
+  rms_norm_forward: 'New wrapper in cuda_backward/structured.rs. Takes input, gamma, output
+
+    GPU buffers + batch_size, hidden_size, stream. Uses
+
+    BatchedVectorizedRmsNormKernel from trueno-gpu/kernels/layernorm.
+
+    Grid=(1, batch_size, 1), Block=(256,1,1), 32 bytes shared mem.
+
+    '
+  forward_cuda_training: 'Changed return type from Option<Vec<f32>> to Option<()>.
+
+    After block forward, calls rms_norm_forward to write directly
+
+    to lm_head_hidden_buf. Falls back to CPU RMSNorm on kernel failure.
+
+    '
+  forward_logits_gpu: 'Training path: forward_cuda_training writes to lm_head_hidden_buf,
+
+    no upload needed. Inference path: CPU RMSNorm + upload (unchanged).
+
+    '
+  forward_logits_gpu_resident: 'Same restructuring as forward_logits_gpu — training path skips upload.
+
+    '
+safety:
+  stream_ordering: 'Block forward, blocks_output D2D copy, and rms_norm_forward all execute
+
+    on the same CudaStream. CUDA stream semantics guarantee sequential
+
+    execution. No explicit sync needed.
+
+    '
+  buffer_sizing: 'final_output (fwd_scratch_a/b): max_seq_len * hidden_size elements.
+
+    lm_head_hidden_buf: max_seq_len * hidden_size elements.
+
+    final_norm_weight: hidden_size elements.
+
+    BatchedVectorizedRmsNormKernel reads batch_size*hidden_size from input,
+
+    writes batch_size*hidden_size to output, reads hidden_size from gamma.
+
+    batch_size = seq_len <= max_seq_len — all within bounds.
+
+    '
+  numerical_equivalence: 'GPU RMSNorm uses rsqrt(mean(x^2) + eps) * gamma, same formula as CPU.
+
+    FP32 warp-shuffle reduction may produce slightly different rounding
+
+    vs CPU sequential sum, but within standard fp32 precision bounds.
+
+    For training, this is acceptable (loss convergence unchanged).
+
+    '
+  fallback_path: 'If GPU RMSNorm kernel launch fails, falls back to original path:
+
+    stream.synchronize() → download → CPU RMSNorm → upload.
+
+    Training continues with CPU fallback.
+
+    '
+preconditions:
+- Block forward completed on same stream (final_output populated)
+- final_norm_weight uploaded to GPU (from model.norm.weight)
+- lm_head_hidden_buf allocated with >= seq_len * hidden_size elements
+- KERNEL_CACHE initialized
+postconditions:
+- lm_head_hidden_buf contains RMSNorm(block_output) * gamma
+- Zero PCIe traffic for norm computation
+- blocks_output saved for RMSNorm backward (unchanged)
+invariants:
+- Block output stays GPU-resident through norm and GEMM
+- Inference path unchanged (CPU RMSNorm + upload)
+- CPU fallback available if GPU kernel fails
+files:
+- path: entrenar/src/autograd/cuda_backward/structured.rs
+  change: Added rms_norm_forward wrapper using BatchedVectorizedRmsNormKernel
+- path: entrenar/src/autograd/cuda_backward/mod.rs
+  change: Exported rms_norm_forward
+- path: entrenar/src/finetune/instruct_pipeline.rs
+  change: 'forward_cuda_training: return type Option<()>, GPU RMSNorm, CPU fallback.
+
+    forward_logits_gpu: training path skips upload.
+
+    forward_logits_gpu_resident: training path skips upload.
+
+    '
+qa_gate:
+  id: F-GRFV-001
+  name: gpu-rmsnorm-forward-v1 Contract
+  description: Quality gate for gpu-rmsnorm-forward-v1
+  checks:
+  - validation
+  - falsification

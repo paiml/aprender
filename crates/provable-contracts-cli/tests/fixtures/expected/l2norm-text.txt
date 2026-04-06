@@ -1,0 +1,12 @@
+Equations for l2norm-kernel-v1
+========================================================
+
+  l2norm
+    formula:  ||x|| = sqrt(Σ x_i²)
+    domain:   x ∈ ℝ^n
+    codomain: [0, ∞)
+    invariants:
+      - ||x|| ≥ 0
+      - ||α·x|| = |α|·||x||
+      - ||0|| = 0
+

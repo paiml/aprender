@@ -1,0 +1,426 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: CUDA-accelerated classification training for shell safety classifier
+  references:
+  - shell-safety-inference.md v2.2.0 (bashrs spec, Section 14)
+  - batch-training-v1.yaml (parent contract)
+  - qwen2-weight-loading-v1.yaml (weight loading dependency)
+  - ENT-147..ENT-152 (CUDA transformer block implementation)
+  depends_on:
+  - batch-training-v1
+  - qwen2-weight-loading-v1
+  - tokenizer-loading-v1
+device_dispatch:
+  detection:
+  - id: F-CUDA-001
+    name: Auto-detect GPU
+    description: 'ComputeDevice::auto_detect() returns Cuda{device_id: 0} when nvidia-smi
+
+      reports a GPU with >= 6GB VRAM. Returns Cpu otherwise.
+
+      '
+    severity: P0
+    critical: true
+  - id: F-CUDA-002
+    name: Feature gate compilation
+    description: 'All CUDA code paths are gated behind #[cfg(feature = "cuda")].
+
+      Without the feature, ClassifyPipeline uses CPU-only Transformer.
+
+      With the feature AND a GPU present, ClassifyPipeline uses CudaTransformerBlock.
+
+      '
+    severity: P0
+    critical: true
+  - id: F-CUDA-003
+    name: Graceful CPU fallback
+    description: 'When compiled with feature = "cuda" but no GPU is present at runtime,
+
+      ClassifyPipeline falls back to CPU Transformer with a warning message.
+
+      No panic, no error — just slower execution.
+
+      '
+    severity: P0
+    critical: true
+weight_upload:
+- id: F-CUDA-004
+  name: Weight upload fidelity
+  description: 'Weights uploaded to GPU via GpuBuffer::from_host() must round-trip
+    exactly.
+
+    download(upload(w)) == w for all weight tensors (f32 precision preserved).
+
+    '
+  severity: P0
+  critical: true
+  tolerance: 0.0
+- id: F-CUDA-005
+  name: Layer-weight correspondence
+  description: "CudaTransformerBlock[i] receives weights from Transformer.layers[i].\n\
+    Specifically:\n  cuda_block.input_norm_weight <- layer.input_norm.weight\n  cuda_block.w_q\
+    \ <- layer.self_attn.w_q\n  cuda_block.w_k <- layer.self_attn.w_k\n  cuda_block.w_v\
+    \ <- layer.self_attn.w_v\n  cuda_block.w_o <- layer.self_attn.w_o\n  cuda_block.post_attn_norm_weight\
+    \ <- layer.post_attn_norm.weight\n  cuda_block.w_gate <- layer.ffn.w_gate\n  cuda_block.w_up\
+    \ <- layer.ffn.w_up\n  cuda_block.w_down <- layer.ffn.w_down\n"
+  severity: P0
+  critical: true
+- id: F-CUDA-006
+  name: All layers uploaded
+  description: 'len(cuda_blocks) == model.config.num_hidden_layers.
+
+    No layer skipped, no layer duplicated.
+
+    '
+  severity: P0
+  critical: true
+forward_parity:
+- id: F-CUDA-007
+  name: GPU/CPU forward parity
+  description: 'For the same input token_ids, the hidden states produced by the GPU
+    path
+
+    must match the CPU path within floating-point tolerance.
+
+    |gpu_hidden[i] - cpu_hidden[i]| < tolerance for all i.
+
+    '
+  severity: P0
+  critical: true
+  tolerance: 1e-3
+  note: 'Tolerance is 1e-3 (not 1e-6) because GPU GEMM may use different accumulation
+
+    order than CPU ndarray matmul, causing small numerical differences.
+
+    '
+- id: F-CUDA-008
+  name: Embedding on CPU
+  description: 'Token embedding always runs on CPU (small operation, not worth GPU
+    transfer).
+
+    Embedded tensor is then uploaded to GPU for transformer layers.
+
+    '
+  severity: P1
+- id: F-CUDA-009
+  name: Classification head on CPU
+  description: 'Mean pooling and classification head (matmul + bias + softmax) run
+    on CPU
+
+    after downloading the final hidden states from GPU. This is a small operation
+
+    (hidden_size -> num_classes) and avoids GPU kernel launch overhead.
+
+    '
+  severity: P1
+training_invariants:
+- id: F-CUDA-010
+  name: Loss equivalence
+  description: 'For the same initial weights and training data, GPU training produces
+
+    loss values within tolerance of CPU training at each step.
+
+    '
+  severity: P0
+  critical: true
+  tolerance: 1e-2
+  note: Wider tolerance due to different GEMM accumulation order
+- id: F-CUDA-011
+  name: GPU memory bounded
+  description: 'Peak GPU memory usage for Qwen2.5-Coder-0.5B classification training
+
+    must be <= 4GB (well within RTX 4090''s 24GB).
+
+    Components: model weights (~1GB f32) + scratch buffers (~0.5GB) + activations
+    (~0.5GB).
+
+    '
+  severity: P1
+- id: F-CUDA-012
+  name: No GPU memory leak
+  description: 'After training completes, all GPU memory is freed.
+
+    GpuBuffer Drop impls release CUDA memory via cuMemFree.
+
+    '
+  severity: P0
+  critical: true
+performance:
+- id: F-CUDA-013
+  name: GPU speedup
+  description: 'GPU forward pass for a single sample (512 tokens, Qwen2.5-0.5B) must
+    be
+
+    at least 5x faster than CPU forward pass. Expected: 10-50x for RTX 4090.
+
+    '
+  severity: P1
+  min_speedup: 5.0
+- id: F-CUDA-014
+  name: Batch throughput
+  description: 'GPU training throughput for batch_size=32 must exceed 100 samples/second
+
+    on RTX 4090 with Qwen2.5-Coder-0.5B.
+
+    '
+  severity: P2
+  min_throughput_sps: 100
+equations:
+  gpu_forward:
+    formula: 'H_gpu = cuda_layers(embed(token_ids))
+
+      H_cpu = cpu_layers(embed(token_ids))
+
+      ||H_gpu - H_cpu||_inf < epsilon
+
+      '
+    domain: token_ids in [0, vocab_size), seq_len in [1, max_seq_len]
+    invariants:
+    - Same embedding function (CPU)
+    - Same layer computations (different hardware)
+    - Bounded numerical divergence
+    preconditions:
+    - '!config.is_empty()'
+    - batch_size > 0
+    lean_theorem: Theorems.Gpu_Forward
+  weight_roundtrip:
+    formula: 'download(upload(W)) == W
+
+      where upload = GpuBuffer::from_host, download = copy_to_host
+
+      '
+    domain: W in R^n (f32)
+    invariants:
+    - f32 precision preserved exactly
+    - No quantization or compression
+    preconditions:
+    - '!data.is_empty()'
+    - weights.len() > 0
+    lean_theorem: Theorems.Weight_Roundtrip
+  device_dispatch:
+    formula: "device = if compiled_with_cuda && gpu_available && vram >= 6GB\n   \
+      \      then Cuda{0}\n         else Cpu\n"
+    domain: Runtime environment
+    invariants:
+    - Deterministic function of environment
+    - No side effects
+    preconditions:
+    - '!config.is_empty()'
+    - device_id >= 0
+    lean_theorem: Theorems.Device_Dispatch
+proof_obligations:
+- type: equivalence
+  property: GPU/CPU forward parity
+  formal: '||H_gpu - H_cpu||_inf < 1e-3'
+  tolerance: 1e-3
+  applies_to: gpu_forward
+- type: invariant
+  property: Weight round-trip fidelity
+  formal: download(upload(W)) == W for all f32 tensors
+  applies_to: weight_roundtrip
+- type: completeness
+  property: Device dispatch covers all cases
+  formal: auto_detect returns Cuda or Cpu deterministically
+  applies_to: device_dispatch
+kani_harnesses:
+- id: KANI-CUDA-001
+  obligation: GPU/CPU forward parity
+  strategy: stub_float
+  solver: cadical
+  bound: 16
+  description: Verify bounded hidden state divergence between GPU and CPU paths
+- id: KANI-CUDA-002
+  obligation: Weight round-trip fidelity
+  strategy: bounded_int
+  solver: cadical
+  bound: 32
+  description: Verify f32 weight values survive upload-download round trip
+- id: KANI-CUDA-003
+  obligation: Device dispatch covers all cases
+  strategy: exhaustive
+  solver: cadical
+  bound: 4
+  description: Enumerate all device detection conditions
+falsification_tests:
+- id: FALSIFY-CUDA-001
+  rule: F-CUDA-001 (Auto-detect GPU)
+  prediction: ComputeDevice::auto_detect() returns Cuda on GPU machine
+  test: "#[test]\n#[cfg(feature = \"cuda\")]\nfn falsify_cuda_001_auto_detect() {\n\
+    \    if !ComputeDevice::cuda_available() { return; }\n    let device = ComputeDevice::auto_detect();\n\
+    \    assert!(device.is_cuda(),\n            \"FALSIFIED: GPU available but auto_detect\
+    \ returned CPU\");\n}\n"
+  if_fails: nvidia-smi detection broken or VRAM threshold too high
+- id: FALSIFY-CUDA-002
+  rule: F-CUDA-002 (Feature gate)
+  prediction: No CUDA code compiles without feature flag
+  test: "#[test]\n#[cfg(not(feature = \"cuda\"))]\nfn falsify_cuda_002_no_cuda_without_feature()\
+    \ {\n    let trainer = CudaTrainer::new();\n    assert!(trainer.is_err(),\n  \
+    \          \"FALSIFIED: CudaTrainer created without cuda feature\");\n}\n"
+  if_fails: Feature gate not applied to CudaTrainer
+- id: FALSIFY-CUDA-003
+  rule: F-CUDA-004 (Weight upload fidelity)
+  prediction: Weights survive GPU round-trip exactly
+  test: "#[test]\n#[cfg(feature = \"cuda\")]\nfn falsify_cuda_003_weight_roundtrip()\
+    \ {\n    if !cuda_training_available() { return; }\n    let trainer = CudaTrainer::new().unwrap();\n\
+    \    let weights: Vec<f32> = (0..1024).map(|i| (i as f32 * 0.001).sin()).collect();\n\
+    \    let gpu_buf = trainer.upload(&weights).unwrap();\n    let downloaded = trainer.download(&gpu_buf).unwrap();\n\
+    \    assert_eq!(weights, downloaded,\n               \"FALSIFIED: weights differ\
+    \ after GPU round-trip\");\n}\n"
+  if_fails: GPU buffer copy corrupts data
+- id: FALSIFY-CUDA-004
+  rule: F-CUDA-006 (All layers uploaded)
+  prediction: Number of CUDA blocks matches model layer count
+  test: "#[test]\n#[cfg(feature = \"cuda\")]\nfn falsify_cuda_004_all_layers_uploaded()\
+    \ {\n    if !cuda_training_available() { return; }\n    let config = TransformerConfig::tiny();\n\
+    \    let pipeline = ClassifyPipeline::from_pretrained_cuda(\n        &tiny_safetensors_dir(),\
+    \ &config, ClassifyConfig::default()\n    ).unwrap();\n    assert_eq!(pipeline.cuda_blocks_count(),\
+    \ config.num_hidden_layers,\n               \"FALSIFIED: CUDA block count != layer\
+    \ count\");\n}\n"
+  if_fails: Layer upload loop skips or duplicates layers
+- id: FALSIFY-CUDA-005
+  rule: F-CUDA-007 (GPU/CPU forward parity)
+  prediction: GPU hidden states match CPU within 1e-3
+  test: "#[test]\n#[cfg(feature = \"cuda\")]\nfn falsify_cuda_005_forward_parity()\
+    \ {\n    if !cuda_training_available() { return; }\n    let config = TransformerConfig::tiny();\n\
+    \    let tokens = vec![1u32, 2, 3, 4, 5];\n\n    let cpu_pipeline = ClassifyPipeline::new(&config,\
+    \ ClassifyConfig::default());\n    let cpu_hidden = cpu_pipeline.model.forward_hidden(&tokens);\n\
+    \n    let gpu_pipeline = ClassifyPipeline::from_pretrained_cuda(\n        &tiny_safetensors_dir(),\
+    \ &config, ClassifyConfig::default()\n    ).unwrap();\n    let gpu_hidden = gpu_pipeline.forward_hidden_cuda(&tokens);\n\
+    \n    for (i, (cpu, gpu)) in cpu_hidden.data().iter()\n        .zip(gpu_hidden.iter()).enumerate()\
+    \ {\n        assert!((cpu - gpu).abs() < 1e-3,\n                \"FALSIFIED: parity\
+    \ at [{}]: cpu={}, gpu={}\", i, cpu, gpu);\n    }\n}\n"
+  if_fails: CUDA GEMM produces different results than CPU matmul
+- id: FALSIFY-CUDA-006
+  rule: F-CUDA-003 (Graceful CPU fallback)
+  prediction: Pipeline works on CPU when GPU unavailable
+  test: "#[test]\nfn falsify_cuda_006_cpu_fallback() {\n    let config = TransformerConfig::tiny();\n\
+    \    let classify_config = ClassifyConfig::default();\n    let mut pipeline =\
+    \ ClassifyPipeline::new(&config, classify_config);\n    let loss = pipeline.train_step(&[1,\
+    \ 2, 3], 0);\n    assert!(loss.is_finite(),\n            \"FALSIFIED: CPU fallback\
+    \ produces non-finite loss\");\n}\n"
+  if_fails: CPU path broken by CUDA feature additions
+- id: FALSIFY-CUDA-007
+  rule: F-CUDA-010 (Loss equivalence)
+  prediction: GPU and CPU produce similar loss for same inputs
+  test: "#[test]\n#[cfg(feature = \"cuda\")]\nfn falsify_cuda_007_loss_equivalence()\
+    \ {\n    if !cuda_training_available() { return; }\n    let config = TransformerConfig::tiny();\n\
+    \    let samples = make_test_samples();\n\n    let mut cpu_pipeline = ClassifyPipeline::new(&config,\
+    \ ClassifyConfig::default());\n    let cpu_result = cpu_pipeline.train_batch(&samples);\n\
+    \n    let mut gpu_pipeline = ClassifyPipeline::from_pretrained_cuda(\n       \
+    \ &tiny_safetensors_dir(), &config, ClassifyConfig::default()\n    ).unwrap();\n\
+    \    let gpu_result = gpu_pipeline.train_batch(&samples);\n\n    assert!((cpu_result.avg_loss\
+    \ - gpu_result.avg_loss).abs() < 0.01,\n            \"FALSIFIED: loss divergence\
+    \ {} vs {}\",\n            cpu_result.avg_loss, gpu_result.avg_loss);\n}\n"
+  if_fails: GPU training produces fundamentally different loss landscape
+implementation_steps:
+- id: STEP-1
+  name: Add CUDA fields to ClassifyPipeline
+  description: "Add feature-gated fields:\n  #[cfg(feature = \"cuda\")]\n  cuda_trainer:\
+    \ Option<CudaTrainer>,\n  #[cfg(feature = \"cuda\")]\n  cuda_blocks: Option<Vec<CudaTransformerBlock>>,\n"
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-2
+  name: Implement GPU weight upload
+  description: 'In from_pretrained(), when cuda feature enabled and GPU available:
+
+    1. Create CudaTrainer
+
+    2. For each Transformer layer, extract weight slices
+
+    3. Create CudaTransformerBlock with those weights
+
+    4. Store in cuda_blocks
+
+    '
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-3
+  name: Implement GPU forward_hidden
+  description: 'Add forward_hidden_dispatch() that:
+
+    1. If cuda_blocks is Some: embed on CPU, upload, run GPU layers, download
+
+    2. If cuda_blocks is None: use existing CPU Transformer.forward_hidden()
+
+    '
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-4
+  name: Wire GPU path into training loop
+  description: 'Replace self.model.forward_hidden(token_ids) calls in
+
+    forward_backward_single() and forward_only() with forward_hidden_dispatch()
+
+    '
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-5
+  name: Update summary() with device info
+  description: 'Show "Device: CUDA:0 (RTX 4090, 24GB)" or "Device: CPU" in pipeline
+    summary
+
+    '
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-6
+  name: Add falsification tests
+  description: Implement all 7 FALSIFY-CUDA tests
+  files:
+  - entrenar/src/finetune/classify_pipeline.rs
+- id: STEP-7
+  name: Build and run
+  description: 'cargo build -p entrenar --features cuda --release
+
+    cargo build -p apr-cli --features entrenar/cuda --release
+
+    Run training on RTX 4090 with Qwen2.5-Coder-0.5B + 26K corpus
+
+    '
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — GPU training detects NaN/Inf in hidden
+    states
+
+    after each forward pass and halts immediately. No corrupt gradients propagate.
+
+    CudaTrainer.synchronize() catches CUDA kernel errors eagerly.
+
+    '
+  poka_yoke: '"Mistake-proofing" — Feature gate #[cfg(feature = "cuda")] prevents
+    CUDA code
+
+    from leaking into CPU-only builds. Weight upload validates tensor sizes before
+
+    GPU transfer. auto_detect() checks VRAM >= 6GB before enabling GPU path.
+
+    '
+  genchi_genbutsu: '"Go and see" — Forward parity test (FALSIFY-CUDA-005) runs the
+    same tokens
+
+    through both CPU and GPU paths with real weights, comparing actual hidden
+
+    state values. Not mocked, not approximated.
+
+    '
+  kaizen: '"Continuous improvement" — GPU path is additive: existing CPU path unchanged.
+
+    CUDA blocks are Optional — the pipeline degrades gracefully. Performance
+
+    measured and compared across hardware configurations.
+
+    '
+qa_gate:
+  id: F-CUDA-GATE
+  name: CUDA Classification Training Contract
+  description: GPU-accelerated classification fine-tuning quality gate
+  checks:
+  - auto_detect_gpu
+  - feature_gate
+  - weight_roundtrip
+  - all_layers_uploaded
+  - forward_parity
+  - cpu_fallback
+  - loss_equivalence
+  pass_criteria: All 7 falsification tests pass
+  falsification: Swap two layer weights during upload to break forward parity

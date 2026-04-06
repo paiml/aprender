@@ -1,0 +1,12 @@
+# PMAT Quality Thresholds for provable-contracts
+# See: pmat comply check
+
+[thresholds]
+min_coverage = 95.0
+min_mutation_score = 80.0
+max_complexity = 15
+min_tdg_grade = "A"
+
+[quality_gates]
+strict = true
+block_on_regression = true

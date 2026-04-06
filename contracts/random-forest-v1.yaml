@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Random Forest -- bagged ensemble of decision trees with feature subsampling
+  references:
+  - Breiman (2001) Random Forests, Machine Learning 45(1)
+  - Hastie, Tibshirani, Friedman (2009) ESL, Ch. 15
+equations:
+  bootstrap_sample:
+    formula: 'D_b = {(x_{i_j}, y_{i_j}) : j=1..n, i_j ~ Uniform(1,n)} (sample with replacement)'
+    domain: D = {(x_i, y_i)}_{i=1}^n, n >= 1
+    codomain: D_b with |D_b| = n (same size as original)
+    invariants:
+    - '|D_b| = n (bootstrap sample has same size as original)'
+    - Each element of D_b drawn from D (no out-of-distribution samples)
+    - With fixed seed, bootstrap is deterministic
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Bootstrap_Sample
+  majority_vote:
+    formula: y_hat = argmax_c sum_{b=1}^{B} I(h_b(x) = c)
+    domain: x in R^d, ensemble of B trees {h_1, ..., h_B}
+    codomain: y_hat in {class labels}
+    invariants:
+    - y_hat is one of the training labels
+    - Each tree contributes exactly one vote
+    - Ties broken deterministically
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Majority_Vote
+  predict:
+    formula: y_hat_i = majority_vote(h_1(x_i), ..., h_B(x_i)) for classification
+    domain: X in R^{m x d}, fitted forest of B trees
+    codomain: y_hat in {training labels}^m
+    invariants:
+    - All predictions are training labels (closed over label set)
+    - Number of predictions equals number of input samples
+    - Deterministic with same seed
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Predict
+  ensemble_size:
+    formula: B = n_estimators (user-specified number of trees)
+    domain: n_estimators >= 1
+    codomain: forest contains exactly B trees
+    invariants:
+    - Number of fitted trees equals n_estimators
+    - Each tree fitted on an independent bootstrap sample
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ensemble_Size
+proof_obligations:
+- type: invariant
+  property: Predictions in label range
+  formal: predict(x) in {labels seen in training} for all x
+  applies_to: all
+- type: invariant
+  property: Deterministic with same seed
+  formal: predict(X, seed=s) = predict(X, seed=s) for all X
+  applies_to: all
+- type: invariant
+  property: Ensemble size respected
+  formal: '|forest.trees| = n_estimators'
+  applies_to: all
+- type: invariant
+  property: Prediction length matches input
+  formal: '|predict(X)| = |X| (number of rows)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-RF-001
+  rule: Predictions in label range
+  prediction: All predictions are labels seen during training
+  test: 'proptest: fit RandomForest on random labeled data, predict, check all labels in training set'
+  if_fails: Tree leaf prediction not constrained to training labels
+- id: FALSIFY-RF-002
+  rule: Deterministic with seed
+  prediction: Same seed produces identical predictions
+  test: 'proptest: fit and predict twice with same seed, compare predictions element-wise'
+  if_fails: Random state not properly seeded or thread-dependent ordering
+- id: FALSIFY-RF-003
+  rule: Ensemble size
+  prediction: Forest contains exactly n_estimators trees
+  test: 'proptest: fit with random n_estimators, check forest.trees.len() = n_estimators'
+  if_fails: Tree construction loop off-by-one or early termination
+- id: FALSIFY-RF-004
+  rule: Prediction length
+  prediction: Number of predictions equals number of input samples
+  test: 'proptest: random X with m rows, predict, check output length = m'
+  if_fails: Prediction loop skipping or duplicating samples
+enforcement:
+  label_range:
+    description: Predictions must be in the training label set
+    check: contract_tests::FALSIFY-RF-001
+    severity: ERROR
+  deterministic:
+    description: Same seed must produce identical results
+    check: contract_tests::FALSIFY-RF-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-RF-001
+  obligation: RF-INV-001
+  property: Predictions are in the training label set
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_predictions_in_label_range
+- id: KANI-RF-002
+  obligation: RF-INV-002
+  property: Ensemble contains exactly n_estimators trees
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ensemble_size
+- id: KANI-RANDOM-003
+  obligation: Predictions in label range
+  property: Predictions in label range
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RANDOM-004
+  obligation: Deterministic with same seed
+  property: Deterministic with same seed
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RANDOM-005
+  obligation: Ensemble size respected
+  property: Ensemble size respected
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RANDOM-006
+  obligation: Prediction length matches input
+  property: Prediction length matches input
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-RF-001
+  name: Random Forest Contract
+  description: Random Forest correctness quality gate
+  checks:
+  - predictions_in_label_range
+  - deterministic_with_seed
+  - ensemble_size
+  - prediction_length
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Majority vote produces label not in training set due to uninitialized leaf node

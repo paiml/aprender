@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-025",
+  "prompt": "Update binding.yaml with 6 new kernel contract bindings",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-18T17:01:40.994417902Z"
+}

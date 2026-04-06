@@ -1,0 +1,88 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: Benchmark client must support SSE streaming for TPOT measurement
+  references:
+  - 'qwen-coder-deploy bench-results-v2: TPOT 0.0ms everywhere — no streaming'
+  - 'MLPerf Inference: TTFT and TPOT are mandatory metrics'
+  - 'vLLM benchmarks: uses streaming for per-token timing'
+  - probar loadtest.rs — current non-streaming client
+  depends_on:
+  - inference-pipeline-v1.yaml
+equations:
+  tpot_definition:
+    formula: "TPOT (Time Per Output Token):\n  tpot_i = t(token_i) - t(token_{i-1})   for i > 1\n  TTFT = t(token_1) - t(request_sent)\
+      \     (first token)\n\nPer-request TPOT:\n  tpot_mean = (t(last_token) - t(first_token)) / (n_tokens - 1)\n\nRelationship\
+      \ to end-to-end latency:\n  latency = TTFT + (n_tokens - 1) × tpot_mean\n\nSSE stream format (OpenAI compatible):\n\
+      \  data: {\"choices\":[{\"delta\":{\"content\":\"token\"}}]}\n"
+    domain: Streaming SSE responses, n_tokens ≥ 2
+    invariants:
+    - TTFT > 0 for valid responses
+    - TPOT ≥ 0 for all tokens
+    - latency ≈ TTFT + (n-1) × mean_TPOT
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Tpot_Definition
+proof_obligations:
+- type: invariant
+  property: TPOT computed from streaming data
+  formal: TPOT > 0 when server supports streaming and n_tokens > 1
+  applies_to: all
+- type: bound
+  property: TTFT separable from TPOT
+  formal: TTFT / latency < 0.95 when streaming (proves streaming is active)
+  applies_to: all
+- type: equivalence
+  property: Streaming output matches non-streaming
+  formal: concat(streaming_tokens) == non_streaming_response.content
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ST-001
+  rule: TPOT non-zero
+  prediction: TPOT P50 > 0 when benchmarking a streaming-capable server
+  test: probador llm bench against llama.cpp (supports SSE)
+  if_fails: Client not sending stream:true or not parsing SSE
+- id: FALSIFY-ST-002
+  rule: TTFT separable
+  prediction: TTFT P50 < latency P50 × 0.5 for 128-token generation
+  test: probador llm bench --prompt-profile medium, check TTFT vs latency
+  if_fails: TTFT includes full generation time — not measuring first token
+- id: FALSIFY-ST-003
+  rule: Content parity
+  prediction: Streaming and non-streaming produce identical output text
+  test: Send same prompt with stream:true and stream:false, compare
+  if_fails: Streaming tokenization differs from batch response
+kani_harnesses:
+- id: KANI-ST-001
+  obligation: TPOT computed from streaming data
+  property: TPOT > 0 when streaming active and n_tokens > 1
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_tpot_positive
+- id: KANI-ST-002
+  obligation: TTFT separable from TPOT
+  property: TTFT / latency < 0.95 proving streaming is active
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ttft_separable
+- id: KANI-ST-003
+  obligation: Streaming output matches non-streaming
+  property: Concatenated streaming tokens equal non-streaming response
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_streaming_content_parity
+qa_gate:
+  id: F-ST-001
+  name: Streaming TPOT Measurement Contract
+  description: SSE streaming support for per-token timing in benchmarks
+  checks:
+  - tpot_nonzero
+  - ttft_separable
+  - content_parity
+  pass_criteria: All 3 falsification tests pass + TPOT P50 > 0
+  falsification: Disable streaming — verify TPOT drops to 0

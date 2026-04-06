@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-083",
+  "prompt": "Expand Kani harness coverage on top-5 impact contracts",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T15:28:37.025875254Z"
+}

@@ -1,0 +1,12 @@
+Equations for clamp-kernel-v1
+=======================================================
+
+  clamp
+    formula:  y_i = min(max(x_i, lo), hi)
+    domain:   x ∈ ℝ^n, lo ≤ hi
+    codomain: y ∈ [lo, hi]^n
+    invariants:
+      - lo ≤ y_i ≤ hi for all i
+      - clamp(clamp(x)) = clamp(x)
+      - x_i ≤ x_j → y_i ≤ y_j
+

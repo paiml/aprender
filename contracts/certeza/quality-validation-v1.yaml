@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Quality validation contract — quality gate execution, size validation, index validation
+  references:
+  - 'Martin (2008) Clean Code: A Handbook of Agile Software Craftsmanship'
+  - 'Humble & Farley (2010) Continuous Delivery'
+equations:
+  validate_size:
+    formula: V_size(artifact) = artifact.size <= threshold → pass
+    domain: artifact ∈ Path, threshold ∈ usize
+    codomain: Result<ValidationResult>
+    invariants:
+    - 'Deterministic: V_size(a) = V_size(a) for unchanged artifact'
+    - Exceeding threshold produces Err with actual vs limit
+    - Zero-size artifacts always pass (no minimum)
+    preconditions:
+    - artifact path exists and is readable
+    - threshold > 0
+    lean_theorem: Theorems.Validate_Size
+  validate_index:
+    formula: V_index(path) = parse(read(path)).is_valid() → pass
+    domain: path ∈ Path to index file
+    codomain: Result<ValidationResult>
+    invariants:
+    - Valid index files pass validation
+    - Corrupt or truncated files produce descriptive errors
+    - Missing files produce Err(NotFound)
+    preconditions:
+    - path is absolute
+    lean_theorem: Theorems.Validate_Index
+  gate_composition:
+    formula: G(checks) = all(checks.map(validate)) → pass/fail
+    domain: checks ∈ [Check]
+    codomain: GateResult
+    invariants:
+    - 'Short-circuit: first failure stops remaining checks'
+    - Empty check list passes (vacuous truth)
+    - Gate result includes all individual check results
+    preconditions:
+    - checks list is well-formed
+    lean_theorem: Theorems.Gate_Composition
+proof_obligations:
+- type: invariant
+  property: Size validation determinism
+  formal: '∀ a: validate_size(a) = validate_size(a) for unchanged a'
+  applies_to: validate_size
+- type: invariant
+  property: Index corruption detection
+  formal: '∀ corrupt_path: validate_index(corrupt_path).is_err()'
+  applies_to: validate_index
+- type: invariant
+  property: Gate conjunction
+  formal: '∀ checks: gate(checks).pass ↔ ∀ c ∈ checks: c.pass'
+  applies_to: gate_composition
+enforcement:
+  size_determinism:
+    description: Size validation is deterministic for unchanged artifacts
+    check: contract_tests::FALSIFY-CTZ-001
+    severity: ERROR
+  corruption_detection:
+    description: Corrupt index files are rejected
+    check: contract_tests::FALSIFY-CTZ-002
+    severity: ERROR
+  gate_conjunction:
+    description: Gate passes only when all checks pass
+    check: contract_tests::FALSIFY-CTZ-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-CTZ-001
+  rule: Size determinism
+  prediction: validate_size returns same result on repeated calls for same file
+  test: validate same artifact 100 times, verify all results identical
+  if_fails: File size read is non-atomic or cached incorrectly
+- id: FALSIFY-CTZ-002
+  rule: Corruption detection
+  prediction: validate_index rejects truncated and bit-flipped index files
+  test: create valid index, truncate to 50%, verify rejection
+  if_fails: Index parser does not validate checksums or lengths
+- id: FALSIFY-CTZ-003
+  rule: Gate conjunction
+  prediction: gate with one failing check returns fail even if others pass
+  test: construct gate with 3 checks where middle one fails, verify gate fails
+  if_fails: Gate short-circuits on first pass instead of first fail
+kani_harnesses:
+- id: KANI-CTZ-001
+  obligation: Size validation determinism
+  property: validate_size is pure
+  bound: 8
+  strategy: exhaustive
+  harness: verify_size_determinism
+- id: KANI-CTZ-002
+  obligation: Corruption detection
+  property: corrupt files rejected
+  bound: 8
+  strategy: exhaustive
+  harness: verify_corruption_detection
+- id: KANI-CTZ-003
+  obligation: Gate conjunction
+  property: gate is logical AND
+  bound: 8
+  strategy: exhaustive
+  harness: verify_gate_conjunction
+qa_gate:
+  id: F-CTZ-001
+  name: Quality Validation Contract
+  description: Quality gate execution, size and index validation quality gate
+  checks:
+  - size_determinism
+  - corruption_detection
+  - gate_conjunction
+  pass_criteria: All 3 falsification tests pass
+  falsification: Make gate return pass when any check passes (OR instead of AND)

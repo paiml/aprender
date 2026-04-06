@@ -1,0 +1,49 @@
+contract: vecmat-blis-gemv-v1
+version: 1.0.0
+status: implemented
+kaizen: '041'
+invariants:
+- id: C-VECMAT-001
+  description: Matrix::vecmat() delegates to crate::blis::gemv — zero intermediate allocations
+  preconditions:
+  - v.len() == m.rows
+  postconditions:
+  - result[j] == sum(v[i] * m[i,j]) for all j in [0, m.cols)
+  - 'Zero intermediate Vector allocations (was: 3 per row)'
+  - Uses AVX2 VFMADD with 4-way K-unrolling on x86_64 with AVX2+FMA
+  - N-tiled accumulator path for N > 4096 (avoids L1 thrashing)
+  invariants:
+  - Single output Vec allocation (result_data)
+  - Scalar fallback on non-AVX2 platforms
+  verified_by:
+  - 20 linear algebra tests passed
+  - 188 matrix tests passed (including property tests)
+affected_files:
+- path: src/matrix/ops/linear/mod.rs
+  functions:
+  - 'Matrix::vecmat: delegates to crate::blis::gemv::gemv()'
+  change: '- Replaced Vector::from_slice + scale + add loop with single gemv() call
+
+    - Eliminated 3 × m.rows temporary Vector heap allocations per call
+
+    - For 2048-row matrix: 6,144 temporary Vectors → 0
+
+    '
+performance_note: 'For attention vecmat (v: 2048, M: 2048×128):
+
+  - Before: 3 × 2048 = 6,144 temporary Vector allocations
+
+  - Each Vector allocs: from_slice copies 128 f32 (512B), scale creates 128 f32, add creates 128 f32
+
+  - Total alloc churn: ~3 MB per vecmat call
+
+  - After: 1 allocation (result_data: 512B), AVX2 VFMADD in-register accumulation
+
+  '
+qa_gate:
+  id: F-VBGV-001
+  name: vecmat-blis-gemv-v1 Contract
+  description: Quality gate for vecmat-blis-gemv-v1
+  checks:
+  - validation
+  - falsification

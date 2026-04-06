@@ -1,0 +1,99 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-05'
+  author: PAIML Engineering
+  description: Bidirectional (encoder) attention -- full attention without causal mask
+  references:
+  - 'Devlin et al. (2019) BERT: Pre-training of Deep Bidirectional Transformers'
+  depends_on:
+  - attention-kernel-v1
+  - softmax-kernel-v1
+equations:
+  bidirectional_attention:
+    formula: BiAttn(Q, K, V) = softmax(QK^T / sqrt(d_k)) * V
+    domain: Q in R^{n x d_k}, K in R^{n x d_k}, V in R^{n x d_v}
+    codomain: R^{n x d_v}
+    invariants:
+    - Every token attends to every other token (no mask)
+    - Attention weights are dense (no structural zeros)
+    - Equivalent to causal attention when n=1
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Bidirectional_Attention
+proof_obligations:
+- type: equivalence
+  property: Causal parity on single-token input
+  formal: '|BiAttn(q, k, v) - CausalAttn(q, k, v)| < eps for n=1'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: invariant
+  property: Full attention density
+  formal: attn_weights[i][j] > 0 for all i, j in 0..n
+  applies_to: all
+- type: invariant
+  property: Weight normalization
+  formal: sum_j(attn_weights[i][j]) = 1 for all i
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: No causal mask applied
+  formal: attn_weights[i][j] > 0 for j > i (upper triangle non-zero)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-BIATT-001
+  rule: No causal mask applied
+  prediction: Upper triangle of attention matrix is non-zero
+  test: proptest with random Q, K, n >= 2
+  if_fails: Causal mask leaked into bidirectional path
+- id: FALSIFY-BIATT-002
+  rule: Causal parity at n=1
+  prediction: Output identical to causal attention for single-token input
+  test: proptest comparing BiAttn and CausalAttn on n=1
+  if_fails: Mask application differs even when mask is trivial
+- id: FALSIFY-BIATT-003
+  rule: Attention weight normalization
+  prediction: Each row sums to 1.0 within tolerance
+  test: proptest with random Q, K of varying dimensions
+  if_fails: Softmax normalization missing or incorrect
+- id: FALSIFY-BIATT-004
+  rule: Full attention density
+  prediction: All entries in attention weight matrix are strictly positive
+  test: proptest with random Q, K, verify min(attn_weights) > 0
+  if_fails: Sparse attention or zero entries from masking bug
+kani_harnesses:
+- id: KANI-BIATT-001
+  obligation: Causal parity on single-token input
+  property: BiAttn matches CausalAttn when n=1
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_causal_parity_single_token
+- id: KANI-BIATT-002
+  obligation: Full attention density
+  property: All attention weights are strictly positive
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_attention_density
+- id: KANI-BIATT-003
+  obligation: Weight normalization
+  property: Each row of attention weights sums to 1.0
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_weight_normalization
+- id: KANI-BIATT-004
+  obligation: No causal mask applied
+  property: Upper triangle of attention matrix is non-zero
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_no_causal_mask
+qa_gate:
+  id: F-BAV-001
+  name: bidirectional-attention-v1 Contract
+  description: 'Quality gate for Bidirectional (encoder) attention -- full attention without '
+  checks:
+  - validation
+  - falsification

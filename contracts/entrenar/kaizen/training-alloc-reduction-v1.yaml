@@ -1,0 +1,87 @@
+contract: training-alloc-reduction-v1
+version: 1.0.0
+status: implemented
+kaizen: 031,032,033
+invariants:
+- id: C-ALLOC-001
+  description: No dead pre-tokenization caches in ClassifyTrainer
+  preconditions:
+  - val_tokens (KAIZEN-028) is the canonical validation token store
+  postconditions:
+  - val_token_cache field does not exist
+  - No duplicate tokenizer calls at construction
+  - val_data tokenized exactly once via pipeline.pre_tokenize()
+  verified_by:
+  - 17 classify_trainer tests pass, 0 failures
+  - cargo check clean compilation
+- id: C-ALLOC-002
+  description: train_epoch() borrows train_tokens instead of cloning per epoch
+  preconditions:
+  - train_tokens and pipeline are disjoint struct fields
+  - shuffle_training_data() updates train_tokens in-place before epoch
+  postconditions:
+  - No Vec<TokenizedSample>::clone() in train_epoch()
+  - No Vec<TokenizedSample>::clone() in train_as_coordinator()
+  - Chunks iterate self.train_tokens by reference
+  invariants:
+  - Pipeline mutations (set_optimizer_lr, train_batch_tokenized) don't alias train_tokens
+  - Behavior identical to clone path (same iteration order, same data)
+  verified_by:
+  - 17 classify_trainer tests pass
+  - test_ssc026_data_shuffled_per_epoch confirms shuffle semantics
+- id: C-ALLOC-003
+  description: flat_map uses stack-allocated arrays, not heap-allocated Vec
+  preconditions:
+  - LoRA layer always has exactly 2 trainable params (lora_a, lora_b)
+  postconditions:
+  - scale_all_gradients uses flat_map(|l| [l.lora_a(), l.lora_b()])
+  - compute_grad_norm uses flat_map(|l| [l.lora_a(), l.lora_b()])
+  - Zero heap allocations from flat_map iterator construction
+  verified_by:
+  - 328 finetune tests pass, 0 failures
+affected_files:
+- path: src/finetune/classify_trainer.rs
+  change: '- Removed val_token_cache field and construction (KAIZEN-031)
+
+    - train_epoch: replaced token_snapshot clone with self.train_tokens borrow (KAIZEN-032)
+
+    - train_as_coordinator: same clone elimination (KAIZEN-032)
+
+    '
+- path: src/finetune/classify_pipeline.rs
+  change: '- scale_all_gradients: vec![...] -> [...] in flat_map (KAIZEN-033)
+
+    - compute_grad_norm: vec![...] -> [...] in flat_map (KAIZEN-033)
+
+    '
+performance_note: 'Combined impact for SSC v3 training (17,942 samples, 50 epochs):
+
+
+  KAIZEN-031 (dead val_token_cache removal):
+
+  - Eliminates 3,588 redundant tokenizer calls at construction
+
+  - Frees ~0.9 MB of dead RAM
+
+
+  KAIZEN-032 (epoch clone elimination):
+
+  - Before: 17,942 Vec<u32> heap allocs + ~4.6 MB per epoch = 230 MB over 50 epochs
+
+  - After: Zero per-epoch allocation (borrow in place)
+
+
+  KAIZEN-033 (flat_map array fix):
+
+  - Before: 48 small Vec allocs per call x 2 methods x 1,122 batches = 107,712 allocs/epoch
+
+  - After: Zero heap allocs from flat_map (stack-allocated [T; 2])
+
+  '
+qa_gate:
+  id: F-TARV-001
+  name: training-alloc-reduction-v1 Contract
+  description: Quality gate for training-alloc-reduction-v1
+  checks:
+  - validation
+  - falsification

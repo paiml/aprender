@@ -1,0 +1,218 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: RMSNorm kernel — root mean square layer normalization
+  references:
+  - Zhang & Sennrich (2019) Root Mean Square Layer Normalization
+  - 'Touvron et al. (2023) Llama 2: Open Foundation and Fine-Tuned Chat Models'
+equations:
+  rmsnorm:
+    formula: RMSNorm(x)_i = (x_i / RMS(x)) · γ_i where RMS(x) = √(Σ x_i² / n + ε)
+    domain: x ∈ ℝ^n, γ ∈ ℝ^n, ε > 0
+    codomain: ℝ^n
+    invariants:
+    - ‖RMSNorm(x)‖² / n ≈ ‖γ‖² / n (scale preservation)
+    - RMSNorm(α·x) = sign(α) · RMSNorm(x) · γ (scale invariance)
+    preconditions:
+    - x.len() > 0
+    - x.iter().all(|v| v.is_finite())
+    - weight.len() == x.len()
+    lean_theorem: Theorems.Rmsnorm
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output.len() == x.len()"
+      - "output is finite"
+proof_obligations:
+- type: precondition
+  property: Input and weight vectors finite, same length, epsilon positive
+  formal: 'len(x) = len(γ) ∧ ε > 0 ∧ ∀i: isFinite(x_i) ∧ isFinite(γ_i)'
+- type: postcondition
+  property: Output same length as input, all elements finite
+  formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
+  requires: RMS-PRE-001
+- type: frame
+  property: Input vector, weight vector, and epsilon unchanged
+  formal: modifies(output) ∧ preserves(x, γ, ε)
+- type: invariant
+  property: Output is finite
+  formal: '|RMSNorm(x)_i| < ∞ for all i when ε > 0'
+  applies_to: all
+- type: invariant
+  property: Scale invariance
+  formal: RMSNorm(α·x) = sign(α) · RMSNorm(x) for α ≠ 0
+  applies_to: all
+  lean:
+    theorem: RMSNorm.rms_scale_zero_eps
+    module: ProvableContracts.RMSNorm
+    status: proved
+    depends_on:
+    - RMSNorm.mean_sq_scale
+    - Real.sqrt_mul
+    - Real.sqrt_sq_eq_abs
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: Proved for ε=0; RMS(αx) = |α|·RMS(x). Full RMSNorm scale invariance follows.
+- type: bound
+  property: RMS denominator is positive
+  formal: RMS(x) > 0 when ε > 0
+  applies_to: all
+  lean:
+    theorem: RMSNorm.rms_pos
+    module: ProvableContracts.RMSNorm
+    status: proved
+    depends_on:
+    - RMSNorm.mean_sq_nonneg
+    - Real.sqrt_pos_of_pos
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: sum(x²) ≥ 0, so sum(x²)/n + ε > 0, and √ of positive is positive
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 4.0
+  applies_to: simd
+- type: idempotency
+  property: Normalized RMS ≈ 1
+  formal: RMS(RMSNorm(x)/γ) ≈ 1 when γ = 1
+  applies_to: all
+verification_summary:
+  total_obligations: 8
+  l2_property_tested: 8
+  l3_kani_proved: 2
+  l4_lean_proved: 2
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+kernel_structure:
+  phases:
+  - name: sum_squares
+    description: Compute Σ x_i²
+    invariant: sum >= 0
+  - name: compute_rms
+    description: Compute √(sum/n + ε)
+    invariant: rms > 0 when ε > 0
+  - name: normalize_scale
+    description: Compute x_i / rms * γ_i
+    invariant: output finite when rms > 0
+simd_dispatch:
+  rmsnorm:
+    scalar: rmsnorm_scalar
+    avx2: rmsnorm_avx2
+    ptx: rmsnorm_ptx
+enforcement:
+  finiteness:
+    description: Output must always be finite
+    check: contract_tests::FALSIFY-RN-001
+    severity: ERROR
+  scale_invariance:
+    description: Must satisfy scale invariance
+    check: contract_tests::FALSIFY-RN-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RN-001
+  rule: Finiteness
+  prediction: RMSNorm(x) is finite for all finite x when ε > 0
+  test: proptest with random vectors including near-zero
+  if_fails: Division by zero when ε too small
+- id: FALSIFY-RN-002
+  rule: Scale invariance
+  prediction: RMSNorm(α·x) ≈ sign(α)·RMSNorm(x) for α ≠ 0
+  test: proptest scaling random vectors by random α
+  if_fails: Epsilon not scale-invariant in implementation
+- id: FALSIFY-RN-003
+  rule: SIMD equivalence
+  prediction: '|rmsnorm_avx2(x) - rmsnorm_scalar(x)| < 4 ULP'
+  test: proptest comparing scalar vs SIMD
+  if_fails: SIMD reduction ordering differs
+- id: FALSIFY-RN-004
+  rule: Zero vector
+  prediction: RMSNorm(0) = 0 (output is zero vector)
+  test: direct test with zero input
+  if_fails: NaN from 0/ε edge case
+- id: FALSIFY-RN-005
+  rule: Unit γ normalized RMS
+  prediction: RMS(RMSNorm(x)/1) ≈ 1 for γ = [1,1,...,1]
+  test: proptest with unit weight vectors
+  if_fails: Normalization not producing unit RMS
+- id: FALSIFY-RN-006
+  rule: Precondition - mismatched lengths
+  prediction: rmsnorm(x, γ) panics or returns Err when len(x) ≠ len(γ)
+  test: 'proptest: random vectors of different lengths'
+  if_fails: Missing length validation
+- id: FALSIFY-RN-007
+  rule: Frame condition
+  prediction: Input x and weight γ byte-identical before and after rmsnorm
+  test: 'proptest: clone inputs, call rmsnorm, assert unchanged'
+  if_fails: Kernel corrupts input buffer
+- id: FALSIFY-RN-008
+  rule: Postcondition - output length
+  prediction: len(rmsnorm(x, γ, ε)) = len(x)
+  test: 'proptest: random valid inputs, verify output length'
+  if_fails: Output buffer allocation mismatch
+kani_harnesses:
+- id: KANI-RN-001
+  obligation: RN-INV-001
+  property: Output always finite with ε > 0
+  bound: 16
+  strategy: exhaustive
+  harness: verify_rmsnorm_finiteness
+- id: KANI-RN-002
+  obligation: RN-BND-001
+  property: RMS denominator positive
+  bound: 16
+  strategy: exhaustive
+  harness: verify_rms_positive
+- id: KANI-RMSNOR-003
+  obligation: Input and weight vectors finite, same length, epsilon positive
+  property: Input and weight vectors finite, same length, epsilon positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-004
+  obligation: Output same length as input, all elements finite
+  property: Output same length as input, all elements finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-005
+  obligation: Input vector, weight vector, and epsilon unchanged
+  property: Input vector, weight vector, and epsilon unchanged
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-006
+  obligation: Output is finite
+  property: Output is finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-007
+  obligation: Scale invariance
+  property: Scale invariance
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-008
+  obligation: RMS denominator is positive
+  property: RMS denominator is positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-009
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-RMSNOR-010
+  obligation: Normalized RMS ≈ 1
+  property: Normalized RMS ≈ 1
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-RN-001
+  name: RMSNorm Contract
+  description: Root mean square normalization quality gate
+  checks:
+  - finiteness
+  - scale_invariance
+  - simd_equivalence
+  pass_criteria: All 8 falsification tests pass + Kani harnesses verify
+  falsification: Set ε = 0 to trigger division by zero

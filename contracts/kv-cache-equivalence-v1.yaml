@@ -1,0 +1,150 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: KV cache equivalence, two-phase generation, and fused kernel correctness
+  references:
+  - Qwen2.5-Coder Showcase Spec §14
+  - Dao et al. (2022) FlashAttention
+  depends_on:
+  - kv-cache-sizing-v1
+equations:
+  prefill_incremental:
+    formula: '|forward_with_cache(t_n) - forward_all([t_0..t_n])[n]| < epsilon'
+    domain: Token sequence
+    invariants:
+    - Cached forward equals full forward for last token
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Prefill_Incremental
+  page_shape:
+    formula: page_elements = block_size * n_kv * d_k
+    domain: PagedAttention configuration
+    invariants:
+    - Page elements product of config values
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Page_Shape
+  batched_serial_equivalence:
+    formula: '|batched_prefill(tokens) - serial_prefill(tokens)| < epsilon'
+    domain: Prefill phase
+    invariants:
+    - Batched and serial prefill produce same result
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Batched_Serial_Equivalence
+  fused_kernel:
+    formula: '|fused_q4k_matvec(W, x) - matmul(dequant(W), x)| < epsilon'
+    domain: Quantized weight W, float input x
+    invariants:
+    - Fused equals decomposed within tolerance
+    - 'Epsilon depends on quantization (Q4K: 1e-3, F16: 1e-5)'
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Fused_Kernel
+proof_obligations:
+- type: frame
+  property: Cache append modifies only new entries; existing KV pairs unchanged
+  formal: modifies(cache[seq_len..seq_len+new_len]) ∧ preserves(cache[0..seq_len])
+- type: old_state
+  property: Cache length increases by exactly the number of new tokens
+  formal: new(cache.len) = old(cache.len) + new_token_count
+- type: equivalence
+  property: Prefill/incremental equivalence
+  formal: '|cached - full| < 1e-5'
+  tolerance: 1e-5
+  applies_to: all
+- type: invariant
+  property: Page shape formula
+  formal: page_elements = block_size * n_kv * d_k
+  applies_to: all
+- type: equivalence
+  property: Batched/serial equivalence
+  formal: '|batched - serial| < 1e-5'
+  tolerance: 1e-5
+  applies_to: all
+- type: equivalence
+  property: Fused kernel equivalence
+  formal: '|fused - decomposed| < 1e-3'
+  tolerance: 1e-3
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-KCE-001
+  rule: Prefill/incremental
+  prediction: Cached matches full within tolerance
+  test: Requires realizar API — currently ignored
+  if_fails: KV cache state corruption
+- id: FALSIFY-KCE-002
+  rule: Page shape
+  prediction: Formula matches actual page allocation
+  test: Pure math — proptest with random configs
+  if_fails: PagedAttention config error
+- id: FALSIFY-KCE-003
+  rule: Batched/serial
+  prediction: Both prefill modes agree
+  test: Requires realizar API — currently ignored
+  if_fails: Batching introduces numerical drift
+- id: FALSIFY-KCE-004
+  rule: Fused kernel
+  prediction: Fused matches decomposed within quant tolerance
+  test: Requires trueno API — currently ignored
+  if_fails: Fused kernel computation error
+- id: FALSIFY-KCE-005
+  rule: Frame condition — existing entries preserved
+  prediction: After cache append, all entries at positions < old_len are byte-identical
+  test: Snapshot cache before append, append new tokens, compare old entries
+  if_fails: Cache append overwrites existing entries (off-by-one in slot index)
+- id: FALSIFY-KCE-006
+  rule: Old state — length growth
+  prediction: cache.len after append = cache.len before append + new_token_count
+  test: 'proptest: random initial cache + random new tokens, verify length delta'
+  if_fails: Cache append writes wrong number of entries
+kani_harnesses:
+- id: KANI-KCE-001
+  obligation: KCE-INV-001
+  property: Page shape positive for bounded configs
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_page_shape
+- id: KANI-KV_CAC-002
+  obligation: Cache append modifies only new entries; existing KV pairs unchanged
+  property: Cache append modifies only new entries; existing KV pairs unchanged
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-003
+  obligation: Cache length increases by exactly the number of new tokens
+  property: Cache length increases by exactly the number of new tokens
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-004
+  obligation: Prefill/incremental equivalence
+  property: Prefill/incremental equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-005
+  obligation: Page shape formula
+  property: Page shape formula
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-006
+  obligation: Batched/serial equivalence
+  property: Batched/serial equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KV_CAC-007
+  obligation: Fused kernel equivalence
+  property: Fused kernel equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-KCE-001
+  name: KV Cache Equivalence Contract
+  description: Cache and kernel equivalence quality gate
+  checks:
+  - prefill_incremental
+  - page_shape
+  - batched_serial
+  - fused_kernel
+  pass_criteria: All 6 falsification tests pass
+  falsification: Corrupt one KV cache entry to break equivalence

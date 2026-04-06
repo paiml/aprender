@@ -1,0 +1,162 @@
+version: 1.0.0
+target_crate: rurl
+bindings:
+# === HTTP Request Construction ===
+- contract: http-client-v1.yaml
+  equation: request_construction
+  function: get
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Constructs HTTP/1.1 GET request with Host and Connection headers
+- contract: http-client-v1.yaml
+  equation: request_construction
+  function: post
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Constructs HTTP/1.1 POST request with Content-Type, Content-Length, Host headers
+# === Response Parsing ===
+- contract: http-client-v1.yaml
+  equation: response_parsing
+  function: send_request
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Orchestrates connect, write, parse status/headers/body pipeline
+- contract: http-client-v1.yaml
+  equation: response_parsing
+  function: parse_status_code
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Extracts u16 status code from HTTP status line
+- contract: http-client-v1.yaml
+  equation: response_parsing
+  function: parse_headers
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Parses headers until empty line, returns Vec<(name, value)>
+- contract: http-client-v1.yaml
+  equation: response_parsing
+  function: read_body
+  module_path: rurl_runtime::HttpClient
+  status: implemented
+  notes: Reads body via Content-Length or read-to-EOF fallback
+# === URL Validation (Zero-Copy Parsing) ===
+- contract: http-client-v1.yaml
+  equation: url_validation
+  function: parse
+  module_path: rurl_url_rewriter::UrlView
+  status: implemented
+  notes: Zero-copy URL parsing using string slicing — scheme, host, path, query, fragment
+- contract: http-client-v1.yaml
+  equation: url_validation
+  function: scheme
+  module_path: rurl_url_rewriter::UrlView
+  status: implemented
+  notes: Accessor returning Option<&str> slice of original input
+- contract: http-client-v1.yaml
+  equation: url_validation
+  function: host
+  module_path: rurl_url_rewriter::UrlView
+  status: implemented
+  notes: Accessor returning Option<&str> slice of original input
+- contract: http-client-v1.yaml
+  equation: url_validation
+  function: path
+  module_path: rurl_url_rewriter::UrlView
+  status: implemented
+  notes: Accessor returning &str slice of original input
+# === Error Propagation ===
+- contract: http-client-v1.yaml
+  equation: error_propagation
+  function: new
+  module_path: rurl_runtime::Runtime
+  status: implemented
+  notes: Maps std::env::VarError to RuntimeError::EnvVarMissing
+- contract: http-client-v1.yaml
+  equation: error_propagation
+  function: next_event
+  module_path: rurl_runtime::Runtime
+  status: implemented
+  notes: Maps HTTP GET failures and missing headers to RuntimeError::EventFetchFailed
+- contract: http-client-v1.yaml
+  equation: error_propagation
+  function: send_response
+  module_path: rurl_runtime::Runtime
+  status: implemented
+  notes: Maps HTTP POST failures to RuntimeError::ResponseFailed
+- contract: http-client-v1.yaml
+  equation: error_propagation
+  function: send_error
+  module_path: rurl_runtime::Runtime
+  status: implemented
+  notes: Maps HTTP POST failures for error reporting to RuntimeError::ResponseFailed
+# === LRU Cache Eviction ===
+- contract: http-client-v1.yaml
+  equation: lru_cache_eviction
+  function: put
+  module_path: rurl_lru_cache::LruCache
+  status: implemented
+  notes: Insert with capacity-bounded eviction of LRU entry from VecDeque back
+- contract: http-client-v1.yaml
+  equation: lru_cache_eviction
+  function: get
+  module_path: rurl_lru_cache::LruCache
+  status: implemented
+  notes: Lookup with move-to-front promotion in access_order
+- contract: http-client-v1.yaml
+  equation: lru_cache_eviction
+  function: move_to_front
+  module_path: rurl_lru_cache::LruCache
+  status: implemented
+  notes: Removes key from VecDeque and pushes to front (MRU position)
+# === SSRF Prevention ===
+- contract: http-client-v1.yaml
+  equation: ssrf_prevention
+  function: validate_redirect_target
+  module_path: rurl_bootstrap::security
+  status: implemented
+  notes: Validates URL target against private IP blocklist and localhost
+- contract: http-client-v1.yaml
+  equation: ssrf_prevention
+  function: extract_host
+  module_path: rurl_bootstrap::security
+  status: implemented
+  notes: Extracts hostname from URL for IP validation, handles IPv6 brackets and port stripping
+- contract: http-client-v1.yaml
+  equation: ssrf_prevention
+  function: is_private_ip
+  module_path: rurl_bootstrap::security
+  status: implemented
+  notes: Checks IpAddr against RFC 1918, loopback, link-local, IPv6 ULA ranges
+# === Multi-Tier Routing ===
+- contract: http-client-v1.yaml
+  equation: multi_tier_routing
+  function: rewrite_url
+  module_path: rurl_bootstrap
+  status: implemented
+  notes: Tier 1 HashMap exact match then Tier 2 PrefixTrie wildcard match
+- contract: http-client-v1.yaml
+  equation: multi_tier_routing
+  function: rewrite_url_cached
+  module_path: rurl_bootstrap
+  status: implemented
+  notes: LRU cache layer over rewrite_url with SSRF validation before caching
+- contract: http-client-v1.yaml
+  equation: multi_tier_routing
+  function: match_url
+  module_path: rurl_prefix_trie::PrefixTrie
+  status: implemented
+  notes: Trie traversal with longest-prefix-wins semantics and wildcard support
+- contract: http-client-v1.yaml
+  equation: multi_tier_routing
+  function: insert
+  module_path: rurl_prefix_trie::PrefixTrie
+  status: implemented
+  notes: Insert pattern with wildcard detection into trie nodes
+critical_path:
+- request_construction
+- response_parsing
+- url_validation
+- error_propagation
+- lru_cache_eviction
+- ssrf_prevention
+- multi_tier_routing

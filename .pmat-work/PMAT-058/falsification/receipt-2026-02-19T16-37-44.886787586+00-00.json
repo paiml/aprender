@@ -1,0 +1,196 @@
+{
+  "id": "019c76c3-bb36-7d52-8442-cc0ac65b8a54",
+  "git_sha": "499311943905e977fa31565ad6525695037d7b99",
+  "timestamp": "2026-02-19T16:37:44.886787586+00:00",
+  "trigger": "WorkComplete",
+  "work_item_id": "PMAT-058",
+  "verdicts": [
+    {
+      "hypothesis": "All baseline files still exist",
+      "method": "ManifestIntegrity",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "All 111 files present",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "The falsifier is active and detecting (Meta-Check)",
+      "method": "MetaFalsification",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Detected dummy gaming pattern correctly",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No coverage exclusion gaming",
+      "method": "CoverageGaming",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No gaming patterns found in 105 files",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changed lines are covered",
+      "method": "DifferentialCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "64 changed files (coverage check requires llvm-cov data)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Total coverage >= 95%",
+      "method": "AbsoluteCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No coverage data (run 'make coverage' to establish baseline), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "TDG score >= baseline",
+      "method": "TdgRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No TDG data (baseline: 0.0)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No function exceeds complexity 20",
+      "method": "ComplexityRegression",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "Complexity check passed",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No vulnerable dependencies added",
+      "method": "SupplyChainIntegrity",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "Deny cache too old (1587 min). Run 'cargo deny check' first.",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "No file exceeds 500 lines",
+      "method": "FileSizeRegression",
+      "falsified": true,
+      "is_blocking": false,
+      "explanation": "22 file(s) exceed 500 lines: crates/provable-contracts-cli/tests/ground_truth.rs (568 lines), crates/provable-contracts-cli/tests/cli_integration.rs (932 lines), crates/provable-contracts/src/diff.rs (521 lines), crates/provable-contracts/src/proof_status.rs (706 lines), crates/provable-contracts/src/audit/mod.rs (519 lines), crates/provable-contracts/src/probar_gen/wired.rs (1319 lines), crates/provable-contracts/src/kernels/activation.rs (569 lines), crates/provable-contracts/src/kernels/flash_attention.rs (737 lines), crates/provable-contracts/src/kernels/attention.rs (561 lines), crates/provable-contracts/src/kernels/adamw.rs (550 lines), crates/provable-contracts/src/kernels/gqa.rs (705 lines), crates/provable-contracts/src/kernels/softmax.rs (561 lines), crates/provable-contracts/src/kernels/matmul.rs (508 lines), crates/provable-contracts/src/kernels/batchnorm.rs (898 lines), crates/provable-contracts/src/kernels/layernorm.rs (618 lines), crates/provable-contracts/src/kernels/cross_entropy.rs (595 lines), crates/provable-contracts/src/kernels/kani_proofs.rs (1599 lines), crates/provable-contracts/tests/falsify_matrix_attention.rs (712 lines), crates/provable-contracts/tests/falsify_cross_kernel.rs (1368 lines), crates/provable-contracts/tests/falsify_optimizer_sequence.rs (1536 lines), crates/provable-contracts/tests/falsify_normalization.rs (706 lines), crates/provable-contracts/tests/falsify_activation_gated.rs (644 lines)",
+      "evidence_summary": "FileList([\"crates/provable-contracts-cli/tests/ground_truth.rs\", \"crates/provable-contracts-cli/tests/cli_integration.rs\", \"crates/provable-contracts/src/diff.rs\", \"crates/provable-contracts/src/proof_status.rs\", \"crates/provable-contracts/src/audit/mod.rs\", \"crates/provable-contracts/src/probar_gen/wired.rs\", \"crates/provable-contracts/src/kernels/activation.rs\", \"crates/provable-contracts/src/kernels/flash_attention.rs\", \"crates/provable-contracts/src/kernels/attention.rs\", \"crates/provable-contracts/src/kernels/adamw.rs\", \"crates/provable-contracts/src/kernels/gqa.rs\", \"crates/provable-contracts/src/kernels/softmax.rs\", \"crates/provable-contracts/src/kernels/matmul.rs\", \"crates/provable-contracts/src/kernels/batchnorm.rs\", \"crates/provable-contracts/src/kernels/layernorm.rs\", \"crates/provable-contracts/src/kernels/cross_entropy.rs\", \"crates/provable-contracts/src/kernels/kani_proofs.rs\", \"crates/provable-contracts/tests/falsify_matrix_attention.rs\", \"crates/provable-contracts/tests/falsify_cross_kernel.rs\", \"crates/provable-contracts/tests/falsify_optimizer_sequence.rs\", \"crates/provable-contracts/tests/falsify_normalization.rs\", \"crates/provable-contracts/tests/falsify_activation_gated.rs\"])"
+    },
+    {
+      "hypothesis": "Spec & Roadmap Quality",
+      "method": "SpecQuality",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No spec file found (optional)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All changes pushed",
+      "method": "GitHubSync",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "1 uncommitted file(s)",
+      "evidence_summary": "GitState { unpushed_commits: 0, dirty_files: 1 }"
+    },
+    {
+      "hypothesis": "All examples compile and run",
+      "method": "ExamplesCompile",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No examples directory found (skipping)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "pmat-book validation passes",
+      "method": "BookValidation",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "pmat-book not found (skipping validation)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new SATD markers (TODO/FIXME/HACK)",
+      "method": "SatdDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No new SATD markers (0 existing)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No new dead code introduced",
+      "method": "DeadCodeDetection",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No dead code detected",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "All files have >= 95% coverage",
+      "method": "PerFileCoverage",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No per-file coverage data (run 'make coverage'), threshold: 95.0%",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "make lint passes",
+      "method": "LintPass",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "Lint cache too old (1587 min). Run 'make lint' first.",
+      "evidence_summary": "BooleanCheck(false)"
+    },
+    {
+      "hypothesis": "All match arm variants have test coverage",
+      "method": "VariantCoverage",
+      "falsified": true,
+      "is_blocking": true,
+      "explanation": "6 untested match variant(s): crates/provable-contracts-cli/src/main.rs::Validate { contract, crates/provable-contracts-cli/src/main.rs::Scaffold { contract, crates/provable-contracts-cli/src/main.rs::Kani { contract, crates/provable-contracts-cli/src/main.rs::Status { contract, crates/provable-contracts-cli/src/main.rs::Diff { old, new, crates/provable-contracts-cli/src/main.rs::LeanStatus { path",
+      "evidence_summary": "FileList([\"crates/provable-contracts-cli/src/main.rs\", \"crates/provable-contracts-cli/src/main.rs\", \"crates/provable-contracts-cli/src/main.rs\", \"crates/provable-contracts-cli/src/main.rs\", \"crates/provable-contracts-cli/src/main.rs\", \"crates/provable-contracts-cli/src/main.rs\"])"
+    },
+    {
+      "hypothesis": "No fix-after-fix chains exceed limit",
+      "method": "FixChainLimit",
+      "falsified": false,
+      "is_blocking": true,
+      "explanation": "No fix chains > 3 consecutive commits",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "Cross-crate integration tests pass",
+      "method": "CrossCrateParity",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No cross-crate config (create .pmat-work/cross-crate.json to enable)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No performance regressions detected",
+      "method": "RegressionGate",
+      "falsified": false,
+      "is_blocking": false,
+      "explanation": "No benchmark cache (run benchmarks to populate .pmat-metrics/benchmark-status.json)",
+      "evidence_summary": null
+    },
+    {
+      "hypothesis": "No incomplete proofs (sorry) introduced",
+      "method": "FormalProofVerification",
+      "falsified": true,
+      "is_blocking": false,
+      "explanation": "3 sorry occurrence(s) exceed threshold (max: 0), in: ./lean/ProvableContracts/Theorems/Softmax/Monotonicity.lean, ./lean/ProvableContracts/Theorems/Softmax/PartitionOfUnity.lean, ./lean/ProvableContracts/Theorems/Softmax/NonNegativity.lean",
+      "evidence_summary": "FileList([\"./lean/ProvableContracts/Theorems/Softmax/Monotonicity.lean\", \"./lean/ProvableContracts/Theorems/Softmax/PartitionOfUnity.lean\", \"./lean/ProvableContracts/Theorems/Softmax/NonNegativity.lean\"])"
+    }
+  ],
+  "overrides": [],
+  "summary": {
+    "total": 22,
+    "passed": 16,
+    "failed": 4,
+    "warnings": 2,
+    "overridden": 0,
+    "allows_completion": false,
+    "health_score": 0.7272727272727273
+  },
+  "content_hash": "82099321c0db67e67ab82c0672836de0a778d0073e7dd226960f7c3aace69508"
+}

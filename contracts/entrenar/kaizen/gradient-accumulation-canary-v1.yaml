@@ -1,0 +1,148 @@
+contract: gradient-accumulation-canary-v1
+title: Gradient Accumulation Canary for Constrained VRAM Training
+kaizen: KAIZEN-069
+status: planned
+date: 2026-04-03
+
+# =============================================================================
+# CONTEXT: F-EXEC-02 — full fine-tune OOMs on yoga 8GB at batch=4
+# =============================================================================
+# Gradient accumulation allows effective batch=4 with physical batch=1,
+# reducing peak VRAM by ~60% (only 1 sample's activations in memory at once).
+# This enables full fine-tune on 8GB GPUs that currently OOM.
+
+baseline:
+  batch_size: 4
+  gradient_accumulation_steps: 1
+  effective_batch: 4
+  peak_vram_yoga: OOM
+  canary: pytorch
+
+target:
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  effective_batch: 4
+  expected_peak_vram_mb: 6000  # ~60% of batch=4 VRAM
+  expected_throughput_ratio: 0.85  # 4x more forward passes but smaller
+  canary: pytorch
+
+invariants:
+  - id: C-GRADACC-001
+    description: Effective batch size equals batch_size * accumulation_steps
+    preconditions:
+      - batch_size > 0
+      - gradient_accumulation_steps > 0
+    postconditions:
+      - effective_batch = batch_size * gradient_accumulation_steps
+      - Weight update frequency = every accumulation_steps forward passes
+      - Loss scaling by 1/accumulation_steps per micro-batch
+
+  - id: C-GRADACC-002
+    description: Gradient accumulation produces identical gradients to large batch
+    preconditions:
+      - Same data samples in same order
+      - Loss scaled by 1/accumulation_steps
+    postconditions:
+      - |sum of micro-batch gradients - single-batch gradient| < epsilon
+      - Final loss within 1% of non-accumulated baseline
+
+  - id: C-GRADACC-003
+    description: Peak VRAM proportional to physical batch_size, not effective batch
+    preconditions:
+      - gradient_accumulation_steps > 1
+    postconditions:
+      - peak_vram <= peak_vram(batch_size=1) * 1.05
+      - peak_vram < peak_vram(batch_size=effective_batch)
+
+hypotheses:
+  - id: H-GRADACC-001
+    name: "Gradient accumulation enables full FT on yoga 8GB"
+    prediction: >
+      pytorch canary with batch=1, accum=4 completes without OOM on yoga.
+      Peak VRAM < 7000 MB.
+    falsification_test: >
+      Run: python canaries/pytorch/train.py --batch-size 1 --gradient-accumulation-steps 4
+      If OOM: FALSIFIED — even batch=1 exceeds 8GB (model + 1 sample activation).
+    status: UNTESTED
+
+  - id: H-GRADACC-002
+    name: "Throughput penalty is < 20%"
+    prediction: >
+      Gradient accumulation adds 4x forward passes but each is smaller.
+      Net throughput (tok/s) should be > 80% of batch=4 (on hardware where
+      batch=4 fits, like gx10).
+    falsification_test: >
+      Run both: --batch-size 4 vs --batch-size 1 --gradient-accumulation-steps 4
+      If ratio < 0.80: FALSIFIED — overhead exceeds expected bounds.
+    status: UNTESTED
+
+falsification_tests:
+  - id: FALSIFY-GRADACC-001
+    rule: C-GRADACC-003 (VRAM proportional to physical batch)
+    prediction: peak_vram(batch=1,accum=4) < peak_vram(batch=4)
+    test: |
+      def test_vram_reduced():
+          r1 = run_pytorch_canary(batch_size=1, accum=4)
+          r4 = run_pytorch_canary(batch_size=4)
+          assert r1["metrics"]["peak_vram_mb"] < r4["metrics"]["peak_vram_mb"]
+    if_fails: Activation memory not freed between micro-batches
+
+  - id: FALSIFY-GRADACC-002
+    rule: C-GRADACC-002 (gradient equivalence)
+    prediction: |final_loss(accum) - final_loss(no_accum)| / final_loss(no_accum) < 0.05
+    test: |
+      def test_loss_equivalent():
+          r_accum = run_pytorch_canary(batch_size=1, accum=4)
+          r_no_accum = run_pytorch_canary(batch_size=4)
+          diff = abs(r_accum["metrics"]["final_loss"] - r_no_accum["metrics"]["final_loss"])
+          assert diff / r_no_accum["metrics"]["final_loss"] < 0.05
+    if_fails: Loss scaling incorrect or data ordering differs
+
+  - id: FALSIFY-GRADACC-003
+    rule: H-GRADACC-001 (fits yoga 8GB)
+    prediction: No OOM, peak_vram < 7000 MB
+    test: |
+      def test_fits_yoga():
+          result = run_pytorch_canary(batch_size=1, accum=4, host="yoga")
+          assert "error" not in result
+          assert result["metrics"]["peak_vram_mb"] < 7000
+    if_fails: batch=1 still OOMs — gradient checkpointing + 8-bit opt required
+
+proof_obligations:
+  - type: equivalence
+    property: Accumulated gradients match single-batch gradients
+    formal: "|sum(grad_micro[i]) / N - grad_batch| < eps element-wise"
+    applies_to: all
+  - type: invariant
+    property: Optimizer step only after accumulation_steps micro-batches
+    formal: "optimizer.step() called iff step % accumulation_steps == 0"
+    applies_to: all
+  - type: bound
+    property: VRAM proportional to physical batch
+    formal: "peak_vram(bs=1, accum=N) < peak_vram(bs=N) * 0.6"
+    applies_to: all
+
+kani_harnesses:
+  - id: KANI-GRADACC-001
+    obligation: Gradient equivalence
+    strategy: bounded_int
+    solver: cadical
+    bound: 8
+  - id: KANI-GRADACC-002
+    obligation: Optimizer step timing
+    strategy: exhaustive
+    solver: cadical
+    bound: 16
+  - id: KANI-GRADACC-003
+    obligation: VRAM bound
+    strategy: bounded_int
+    solver: cadical
+    bound: 8
+
+qa_gate:
+  id: F-GAV-001
+  name: gradient-accumulation-canary-v1 Contract
+  description: Quality gate for gradient accumulation canary
+  checks:
+    - validation
+    - falsification

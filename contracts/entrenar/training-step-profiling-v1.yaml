@@ -1,0 +1,293 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Training step profiling contract — scientific decomposition of a training step
+    into per-layer, per-operation timing via BrickProfiler integration.
+
+    The inference analog (gpu-decode-profiling-v1.yaml) solved GPU profiling for decode.
+    This contract does the same for training: forward + backward + optimizer.
+
+    Root cause: APR is 34x slower than unsloth (194 vs 6,628 tok/s). We shipped
+    35 upstream fixes including FP16 GEMM, fused NF4 kernels, and tensor core GEMM —
+    but have ZERO per-layer measurements to tell us which optimization moved the needle
+    or what the current bottleneck is. We're optimizing blind.
+
+    Five-whys:
+    1. APR 34x slower than unsloth
+    2. Multiple kernel optimizations shipped but unmeasured
+    3. No per-layer training profiler exists
+    4. Entrenar StepProfiler is coarse-grained (11 phases, wall-clock only)
+    5. ROOT CAUSE: BrickProfiler (trueno) not wired into training loop
+
+    Scientific methodology: Hoefler & Belli SC'15 — report median, CI, wall coverage.
+  pmat: [PMAT-480]
+  references:
+    - "gpu-decode-profiling-v1.yaml — inference BrickProfiler contract (15 falsification tests)"
+    - "trueno BrickProfiler: src/brick/profiler/mod.rs — 23 brick types, O(1), 4 sync modes"
+    - "entrenar StepProfiler: src/train/transformer_trainer/step_profiler.rs — 11 coarse phases"
+    - "Hoefler & Belli SC'15 — Scientific Benchmarking of Parallel Computing Systems"
+
+equations:
+  training_step_decomposition:
+    formula: |
+      step_time = embed + h2d + forward + backward + optimizer + data
+      forward = sum(layer_forward[i] for i in 0..num_layers) + norm_lm
+      backward = lm_bwd + norm_bwd + sum(layer_backward[i] for i in 0..num_layers) + embed_bwd
+      layer_forward[i] = rmsnorm + qkv_gemm + attention + ffn_gemm
+      layer_backward[i] = ffn_bwd + attention_bwd + qkv_bwd + rmsnorm_bwd + optimizer_step
+    domain: num_layers in u32, all times in microseconds
+    invariants:
+      - wall_coverage >= 0.90 (phases account for >=90% of step wall time)
+      - wall_coverage <= 1.0 (phases are subsets of step time)
+
+  memory_bandwidth_saturation:
+    formula: |
+      bw_utilization = bytes_transferred / (measured_time * peak_bw)
+      For Qwen 1.5B on RTX 4060L (256 GB/s):
+        NF4 weight load: 28 layers * 7 GEMMs * 1.18 MB = 231 MB/step (NF4 packed)
+        FP16 weight load: 28 layers * 7 GEMMs * 4.7 MB = 923 MB/step (FP16)
+        FP32 weight load: 28 layers * 7 GEMMs * 9.4 MB = 1846 MB/step (FP32)
+      Minimum step time (memory-bound):
+        NF4: 231 MB / 256 GB/s = 0.9 ms
+        FP16: 923 MB / 256 GB/s = 3.6 ms
+        FP32: 1846 MB / 256 GB/s = 7.2 ms
+    domain: bytes_transferred > 0, peak_bw > 0
+    invariants:
+      - If bw_utilization > 0.7, step is memory-BW bound
+      - If bw_utilization < 0.3, step is compute or latency bound
+      - Fused kernels reduce bytes_transferred (1 load vs N loads)
+
+  compute_roofline:
+    formula: |
+      compute_utilization = flops / (measured_time * peak_flops)
+      For Qwen 1.5B on RTX 4060L:
+        Peak FP16 tensor core: 83 TFLOPS
+        Peak FP32 SIMD: 2 TFLOPS
+        Forward FLOPs per step: ~9.66 GFLOP * 28 layers * 7 GEMMs = ~1.9 TFLOP
+        Backward FLOPs per step: ~2x forward = ~3.8 TFLOP
+    domain: flops > 0, peak_flops > 0
+    invariants:
+      - compute_utilization > 0.5 means compute-bound (good for fused kernels)
+      - compute_utilization < 0.1 means launch/memory/transfer overhead dominates
+
+  kernel_launch_overhead:
+    formula: |
+      launch_overhead = num_kernels * avg_launch_latency / step_time
+      Training Qwen 1.5B NF4:
+        Forward: 28 layers * ~21 kernels = ~588 launches
+        Backward: 28 layers * ~25 kernels = ~700 launches
+        Total: ~1288 launches per step
+        At 5us/launch: 6.4 ms overhead
+    domain: num_kernels > 0, avg_launch_latency > 0
+    invariants:
+      - launch_overhead < 0.10 (kernel launch is <10% of step time)
+      - CUDA graph capture eliminates launch overhead for captured regions
+
+falsification_tests:
+  - id: F-TSP-001
+    rule: Wall coverage
+    prediction: Wall coverage >= 90% (phases account for step time)
+    test: >
+      Run 10-step training with BrickProfiler enabled (PerLayer sync).
+      sum(all phase times) / wall_clock_step_time >= 0.90.
+    if_fails: Missing instrumentation in some phase — identify unaccounted time
+
+  - id: F-TSP-002
+    rule: Per-layer accounting
+    prediction: Per-layer timing sums to phase total within 5%
+    test: >
+      sum(layer_forward[0..27]) + norm_lm == forward_total (within 5%).
+      sum(layer_backward[0..27]) + lm_bwd + norm_bwd + embed_bwd == backward_total (within 5%).
+    if_fails: BrickProfiler begin/end mismatch or missing instrumentation
+
+  - id: F-TSP-003
+    rule: Memory BW bottleneck
+    prediction: Memory BW is the training bottleneck (not compute)
+    test: >
+      Run with FP32 weights: measured step_time should be >= 7.2ms (memory BW floor).
+      Run with FP16 weights: step_time should decrease proportionally (~2x less data).
+      Run with NF4 packed: step_time should decrease further (~4x less data).
+      If step_time does NOT decrease with smaller weights, bottleneck is NOT memory BW.
+    if_fails: >
+      Bottleneck is compute (GPU utilization > 50%) or kernel launch overhead
+      or CPU-side work (embedding, optimizer). Profile per-phase to identify.
+
+  - id: F-TSP-004
+    rule: FP16 tensor core activation
+    prediction: FP16 GEMM enables tensor cores (>= 2x compute vs FP32)
+    test: >
+      Compare forward time: FP16_GEMM=1 vs FP16_GEMM=0 on same model.
+      FP16 forward should be >= 1.5x faster if tensor cores engaged.
+    if_fails: cuBLAS not selecting tensor core algorithm — check CUBLAS_MATH mode
+
+  - id: F-TSP-005
+    rule: Fused NF4 memory reduction
+    prediction: Fused NF4 kernels reduce memory traffic
+    test: >
+      Compare step with NF4_FUSED_GEMM=1 (Gate+Up fused) vs separate.
+      Fused should show lower memory_bytes_transferred and faster FFN phase.
+    if_fails: Fused kernel not activated or regression in fused path
+
+  - id: F-TSP-006
+    rule: NF4 tensor core speedup
+    prediction: NF4 tensor core GEMM >= 5x compute vs naive NF4
+    test: >
+      Compare NF4_TC_GEMM=1 vs NF4_FUSED_GEMM=1 forward time.
+      Tensor core path should be >= 5x faster on GEMM-dominated layers.
+    if_fails: >
+      Memory BW still bottleneck (dequant SHMEM bandwidth), or WMMA
+      tiles not fully utilized (occupancy issue)
+
+  - id: F-TSP-007
+    rule: CUDA graph launch elimination
+    prediction: CUDA graph eliminates kernel launch overhead
+    test: >
+      Compare CUDA_GRAPH=1 vs CUDA_GRAPH=0 on same model.
+      With ~1288 launches at 5us each = 6.4ms. Graph should save this.
+    if_fails: Graph capture failed or not replaying (check entrenar log)
+
+  - id: F-TSP-008
+    rule: Backward-forward ratio
+    prediction: Backward is >= 2x forward time (gradient compute + weight update)
+    test: >
+      backward_total / forward_total should be in [1.5, 3.0].
+      If < 1.5: backward may be incomplete (NaN skip, missing layers).
+      If > 3.0: backward has pathological overhead (D2H sync, recompute).
+    if_fails: Investigate NaN backward skips or incomplete backward path
+
+  - id: F-TSP-009
+    rule: Optimizer overhead
+    prediction: Optimizer is < 10% of step time
+    test: optimizer_time / step_time < 0.10
+    if_fails: CPU optimizer bottleneck — consider GPU-resident optimizer
+
+  - id: F-TSP-010
+    rule: Transfer overhead
+    prediction: D2H/H2D transfers are < 15% of step time
+    test: (h2d_time + d2h_time) / step_time < 0.15
+    if_fails: PCIe transfer bottleneck — need to eliminate remaining D2H/H2D
+
+  - id: F-TSP-011
+    rule: Reproducibility
+    prediction: CV < 10% across 5 identical training runs
+    test: >
+      Run 5 identical training sessions (locked clocks, seed=42).
+      Coefficient of variation of per-step time < 0.10.
+    if_fails: Clock instability, thermal throttling, or background processes
+
+  - id: F-TSP-012
+    rule: Profiler overhead
+    prediction: BrickProfiler overhead < 3% of step time
+    test: >
+      Compare step time with profiler enabled (PerLayer sync) vs disabled.
+      Overhead = (profiled - unprofiled) / unprofiled < 0.03.
+    if_fails: Sync mode too aggressive — use Deferred mode for production
+
+proof_obligations:
+  - type: invariant
+    property: Wall coverage threshold
+    formal: sum(phase_times) / wall_clock >= 0.90
+    applies_to: all
+  - type: invariant
+    property: Coverage upper bound
+    formal: sum(phase_times) <= wall_clock
+    applies_to: all
+  - type: monotonicity
+    property: Backward >= forward time
+    formal: backward_total >= forward_total * 1.5
+    applies_to: all
+  - type: invariant
+    property: Layer count matches model
+    formal: len(layer_forward) == num_layers AND len(layer_backward) == num_layers
+    applies_to: all
+  - type: bound
+    property: Memory BW floor
+    formal: step_time >= weight_bytes / peak_memory_bw
+    applies_to: all
+  - type: bound
+    property: Profiler overhead
+    formal: (profiled_step - unprofiled_step) / unprofiled_step < 0.03
+    applies_to: all
+
+kani_harnesses:
+  - id: KANI-TSP-001
+    obligation: Wall coverage threshold
+    property: Wall coverage threshold
+    bound: 8
+    strategy: stub_float
+  - id: KANI-TSP-002
+    obligation: Coverage upper bound
+    property: Coverage upper bound
+    bound: 8
+    strategy: stub_float
+  - id: KANI-TSP-003
+    obligation: Backward >= forward time
+    property: Backward >= forward time
+    bound: 8
+    strategy: stub_float
+  - id: KANI-TSP-004
+    obligation: Layer count matches model
+    property: Layer count matches model
+    bound: 8
+    strategy: exhaustive
+  - id: KANI-TSP-005
+    obligation: Memory BW floor
+    property: Memory BW floor
+    bound: 8
+    strategy: stub_float
+  - id: KANI-TSP-006
+    obligation: Profiler overhead
+    property: Profiler overhead
+    bound: 8
+    strategy: stub_float
+
+implementation_requirements:
+  entrenar_changes:
+    - description: Wire BrickProfiler into CudaNf4TransformerBlock::forward
+      detail: >
+        start_brick(BrickId::RmsNorm) / stop_brick() around each RMSNorm.
+        start_brick(BrickId::QkvProjection) around Q/K/V GEMMs.
+        start_brick(BrickId::GateProjection) around Gate+Up GEMMs.
+        Use PerLayer sync mode to balance accuracy vs overhead.
+    - description: Wire BrickProfiler into backward pass
+      detail: >
+        Same brick instrumentation for backward GEMMs.
+        Track gradient computation separately from weight update.
+    - description: Export per-layer JSON to canary metrics
+      detail: >
+        Extend training JSON output with per_layer_profile field.
+        Array of {layer: i, forward_us: N, backward_us: N, bricks: {...}}.
+    - description: Add --training-profile flag to apr finetune CLI
+      detail: >
+        When enabled, uses BrickProfiler with PerLayer sync.
+        Outputs per-layer timing table + JSON to stderr.
+
+  canary_changes:
+    - description: Add canary-apr-profile Makefile target
+      detail: >
+        Runs canary with --training-profile flag.
+        Parses per-layer JSON from output.
+        Feeds into score.py for regression detection.
+
+  provable_contracts:
+    - description: This contract (training-step-profiling-v1.yaml)
+    - description: Falsification test implementations in entrenar
+
+qa_gate:
+  id: F-TSP-001
+  name: training-step-profiling-v1 Contract
+  checks:
+    - wall_coverage_threshold
+    - per_layer_accounting
+    - memory_bw_bottleneck_identification
+    - fp16_tensor_core_verification
+    - fused_kernel_traffic_reduction
+    - cuda_graph_launch_elimination
+    - backward_forward_ratio
+    - optimizer_overhead
+    - transfer_overhead
+    - reproducibility
+    - profiler_overhead
+  pass_criteria: All 12 falsification tests pass

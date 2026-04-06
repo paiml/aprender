@@ -1,0 +1,300 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: >
+    GPU backend selection and inference correctness contract — backend
+    flag consistency, GPU detection accuracy, temperature-zero generation,
+    GPU/CPU parity, and platform-specific dequantization safety.
+  references:
+  - 'apr-cli/src/commands/run.rs — backend selection logic'
+  - 'apr-cli/src/commands/serve.rs — --gpu flag'
+  - 'aprender/src/native/inference.rs — inference pipeline'
+  - 'realizar/src/gpu/ — wgpu and CUDA backends'
+  depends_on:
+  - apr-cli-v1
+  - apr-serve-v1
+  - layer-parity-v1
+
+equations:
+  backend_selection:
+    formula: |
+      select_backend(flags): CliFlags -> Backend
+        --backend cpu -> CPU (always)
+        --backend gpu -> GPU (fail if unavailable)
+        --gpu -> GPU (serve command shorthand)
+        default -> auto-detect (GPU if available, else CPU)
+      Invariant: selected backend matches actual compute path
+    domain: CLI flags (--backend, --gpu, --no-gpu)
+    codomain: Backend enum (CPU, GPU, Auto)
+    invariants:
+    - --backend cpu must use CPU (never GPU) (GH-614)
+    - --backend flag naming consistent across commands (GH-645)
+    - Auto-detect prefers GPU when available
+    preconditions:
+    - flags parsed successfully
+    postconditions:
+    - selected backend matches actual inference compute path
+    - --backend cpu => no GPU memory allocated
+    lean_theorem: Theorems.BackendSelection
+
+  gpu_detection_accuracy:
+    formula: |
+      detect_gpu(): -> GpuInfo
+        health.compute_mode matches actual device
+        serve plan reports correct device type
+        --json output used_gpu matches actual compute path
+    domain: System GPU state
+    codomain: GpuInfo with accurate compute_mode
+    invariants:
+    - Health endpoint reports compute_mode matching actual device (GH-628)
+    - Serve plan reports correct device and bandwidth (GH-633)
+    - --json used_gpu field matches actual compute path (GH-629)
+    preconditions:
+    - GPU query API available (wgpu or CUDA)
+    postconditions:
+    - reported compute_mode matches actual inference device
+    lean_theorem: Theorems.GpuDetectionAccuracy
+
+  generation_temperature_zero:
+    formula: |
+      generate(prompt, temperature=0.0): (String, f32) -> Vec<TokenId>
+        temperature=0.0 implies greedy decoding (argmax)
+        Output must be non-empty for valid prompt
+        Output must be deterministic (same prompt -> same output)
+    domain: Prompt string with temperature parameter
+    codomain: Non-empty token sequence
+    invariants:
+    - Temperature 0.0 produces non-empty output (GH-637)
+    - Temperature 0.0 is deterministic (same input -> same output)
+    - Greedy decoding selects argmax of logits
+    preconditions:
+    - model loaded
+    - prompt is non-empty
+    - temperature >= 0.0
+    postconditions:
+    - output.len() > 0 for temperature=0.0
+    - output is deterministic for temperature=0.0
+    lean_theorem: Theorems.GenerationTemperatureZero
+
+  gpu_cpu_parity:
+    formula: |
+      parity(model, prompt): (Model, String) -> ParityResult
+        cpu_output = inference(model, prompt, backend=CPU)
+        gpu_output = inference(model, prompt, backend=GPU)
+        cosine_similarity(cpu_output, gpu_output) > 0.99
+        Cpk(cpu_tokens, gpu_tokens) > 1.0 (process capability)
+    domain: Model + prompt on both CPU and GPU backends
+    codomain: ParityResult with Cpk metric
+    invariants:
+    - GPU and CPU produce equivalent token sequences (within tolerance)
+    - Cpk > 1.0 on all platforms (not just RTX 4090) (GH-639)
+    - Dequantization produces non-zero values on all architectures (GH-646)
+    preconditions:
+    - model loaded on both backends
+    - same quantization format
+    postconditions:
+    - cosine similarity > 0.99
+    - no all-zero tensor dequantization
+    tolerance: 0.01
+    lean_theorem: Theorems.GpuCpuParity
+
+  json_output_consistency:
+    formula: |
+      format_json(result): CommandResult -> String
+        --json flag produces valid JSON (never human-readable text)
+        JSON schema matches documented API
+        Fields: used_gpu, tok_per_sec, tokens, model match actual values
+    domain: Command result with --json flag
+    codomain: Valid JSON string
+    invariants:
+    - --json never outputs human-readable text (GH-630, GH-636)
+    - JSON fields match actual computation values (GH-629)
+    - All --json subcommands produce parseable JSON
+    preconditions:
+    - --json flag set
+    postconditions:
+    - output parses as valid JSON
+    - serde_json::from_str(output).is_ok()
+    lean_theorem: Theorems.JsonOutputConsistency
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Parse backend flags, detect GPU, validate model compatibility
+  - name: execute
+    description: Run inference on selected backend, collect metrics
+  - name: verify_output
+    description: Verify output correctness, GPU/CPU parity, JSON formatting
+
+proof_obligations:
+- type: invariant
+  property: Backend flag respected
+  formal: '--backend cpu => no GPU allocation'
+  applies_to: backend_selection
+  lean:
+    theorem: Theorems.BackendSelection
+    status: sorry
+- type: invariant
+  property: GPU detection matches actual device
+  formal: 'health.compute_mode == actual_device'
+  applies_to: gpu_detection_accuracy
+  lean:
+    theorem: Theorems.GpuDetectionAccuracy
+    status: sorry
+- type: postcondition
+  property: Temperature zero produces non-empty output
+  formal: 'temperature == 0.0 => output.len() > 0'
+  applies_to: generation_temperature_zero
+  lean:
+    theorem: Theorems.GenerationTemperatureZero
+    status: sorry
+- type: bound
+  property: GPU/CPU parity within tolerance
+  formal: 'cosine_similarity(cpu, gpu) > 0.99'
+  tolerance: 0.01
+  applies_to: gpu_cpu_parity
+  lean:
+    theorem: Theorems.GpuCpuParity
+    status: sorry
+- type: invariant
+  property: JSON output is valid JSON
+  formal: 'json_flag => serde_json::from_str(output).is_ok()'
+  applies_to: json_output_consistency
+  lean:
+    theorem: Theorems.JsonOutputConsistency
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-GPU-001
+  rule: Backend flag respected
+  prediction: apr run --backend cpu on GPU system uses CPU only
+  test: |
+    Run apr run --backend cpu --json, assert used_gpu == false.
+  if_fails: --backend cpu flag ignored, GPU used anyway (GH-614)
+- id: FALSIFY-GPU-002
+  rule: GPU detection matches actual device
+  prediction: apr serve health reports compute_mode gpu on GPU system
+  test: |
+    Start apr serve on GPU system, curl /health, check compute_mode.
+  if_fails: Health reports cpu on GPU system (GH-628)
+- id: FALSIFY-GPU-003
+  rule: Temperature zero non-empty output
+  prediction: apr run --temperature 0 produces tokens (not empty)
+  test: |
+    Run apr run model.gguf --temperature 0 --max-tokens 16 --json.
+    Assert completion_tokens > 0.
+  if_fails: Temperature 0 generates 0 tokens on GPU (GH-637)
+- id: FALSIFY-GPU-004
+  rule: GPU/CPU parity
+  prediction: Same prompt produces similar output on CPU and GPU
+  test: |
+    Run apr parity model.gguf. Assert Cpk > 1.0.
+  if_fails: GPU/CPU parity much worse on some platforms (GH-639)
+- id: FALSIFY-GPU-005
+  rule: JSON output validity
+  prediction: apr serve plan --json outputs valid JSON (not human text)
+  test: |
+    Run apr serve plan --json model.gguf | jq . > /dev/null
+    Assert exit code 0 (valid JSON).
+  if_fails: --json outputs human-readable text (GH-630)
+- id: FALSIFY-GPU-006
+  rule: No all-zero dequantization
+  prediction: Q6_K tensors on aarch64 dequantize to non-zero values
+  test: |
+    Load Q6_K model on aarch64, check first 100 values.
+    Assert not all zeros.
+  if_fails: NEON dequantization produces all-zeros (GH-646)
+- id: FALSIFY-GPU-007
+  rule: Backend flag naming consistent
+  prediction: All inference commands accept --backend {cpu,gpu}
+  test: |
+    Check run, serve, bench all accept --backend.
+  if_fails: Inconsistent flag naming across commands (GH-645)
+- id: FALSIFY-GPU-008
+  rule: run --gpu uses same CUDA Q4K path as serve --gpu
+  prediction: apr run --gpu tok/s within 2x of apr serve run --gpu tok/s
+  test: |
+    #[test]
+    fn falsify_gpu_008_run_serve_gpu_parity() {
+        // GH-698: run --gpu uses CPU F32 dequant (0.7 tok/s)
+        // while serve --gpu uses CUDA Q4K (273.8 tok/s) — 391x gap
+        let run_out = std::process::Command::new("apr")
+            .args(&["run", "model.apr", "--gpu", "--max-tokens", "16", "--json"])
+            .output().expect("Failed to run apr");
+        let serve_plan = std::process::Command::new("apr")
+            .args(&["serve", "plan", "model.apr", "--gpu", "--json"])
+            .output().expect("Failed to run apr serve plan");
+        // Both should report the same backend
+        if run_out.status.success() && serve_plan.status.success() {
+            let run_json: serde_json::Value =
+                serde_json::from_slice(&run_out.stdout).unwrap();
+            let plan_json: serde_json::Value =
+                serde_json::from_slice(&serve_plan.stdout).unwrap();
+            let run_gpu = run_json["used_gpu"].as_bool().unwrap_or(false);
+            let plan_gpu = plan_json["gpu"].as_bool().unwrap_or(false);
+            assert_eq!(run_gpu, plan_gpu,
+                "run --gpu and serve --gpu must use same GPU path");
+        }
+    }
+  if_fails: run --gpu silently falls back to CPU dequant while serve --gpu uses CUDA (GH-698, GH-573)
+- id: FALSIFY-GPU-009
+  rule: rosetta compare-inference must not exit 0 with 0 tokens
+  prediction: apr rosetta compare-inference exits non-zero when 0 tokens captured
+  test: |
+    #[test]
+    fn falsify_gpu_009_rosetta_zero_tokens() {
+        // GH-699/641: rosetta compare-inference captures 0 tokens and exits 0
+        let out = std::process::Command::new("apr")
+            .args(&["rosetta", "compare-inference", "/dev/null", "/dev/null"])
+            .output().expect("Failed to run apr");
+        if out.status.success() {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // If 0 tokens captured, exit code must be non-zero
+            if stdout.contains("0 tokens") || stdout.contains("Tokens captured: 0") {
+                panic!("rosetta exits 0 with 0 tokens — silent failure (GH-699)");
+            }
+        }
+    }
+  if_fails: Silent failure — 0 tokens captured but exit code 0 (GH-699, GH-641)
+
+kani_harnesses:
+- id: KANI-GPU-001
+  obligation: Backend flag respected
+  property: '--backend cpu => no GPU'
+  bound: 4
+  strategy: exhaustive
+  harness: verify_backend_selection
+- id: KANI-GPU-002
+  obligation: GPU detection matches actual device
+  property: health compute_mode correct
+  bound: 4
+  strategy: exhaustive
+  harness: verify_gpu_detection
+- id: KANI-GPU-003
+  obligation: Temperature zero produces non-empty output
+  property: 'temp=0 => output.len() > 0'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_temp_zero_output
+- id: KANI-GPU-004
+  obligation: GPU/CPU parity within tolerance
+  property: cosine_similarity > 0.99
+  bound: 8
+  strategy: bounded_int
+  harness: verify_gpu_cpu_parity
+- id: KANI-GPU-005
+  obligation: JSON output is valid JSON
+  property: serde_json parses successfully
+  bound: 8
+  strategy: bounded_int
+  harness: verify_json_output
+
+qa_gate:
+  id: F-GPU-GATE
+  name: GPU Backend Contract
+  description: Quality gate for GPU backend selection, detection, and inference correctness
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 7 falsification tests pass

@@ -1,0 +1,285 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Semantic equivalence — transpiled Rust produces identical observable
+    behavior to Python source
+  references:
+  - arXiv:2401.00679 — Equivalence Checking of Quantum Circuits via Intermediate Representation
+  - arXiv:2312.00849 — Verified Lifting of Stencil Computations
+  - Leroy (2009) A Formally Verified Compiler Back-end, J. Automated Reasoning 43(4)
+  - arXiv:2006.03511 — Unsupervised Translation of Programming Languages (TransCoder)
+  - Appel & Blazy (2007) Separation Logic for Small-Step Cminor
+  depends_on:
+  - type-preservation-v1
+equations:
+  observational_equivalence:
+    formula: 'forall f in TranspilableFunctions, forall x in ValidInputs(f): depyler(f)(x)
+      == f(x)'
+    domain: 'f: Python function with supported syntax; x: inputs satisfying preconditions'
+    codomain: Observable outputs (return values, stdout, side effects on mutable args)
+    invariants:
+    - Return values are identical (modulo type coercion via TypeMap)
+    - Side effects on mutable arguments are identical
+    - Exception/panic behavior is equivalent for invalid inputs
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Observational_Equivalence
+  statement_equivalence:
+    formula: sem_rust(transpile(s), sigma_r) = TypeMap_state(sem_python(s, sigma_p))
+    domain: 's in HirStmt, sigma_p: Python state, sigma_r: Rust state where sigma_r
+      = TypeMap_state(sigma_p)'
+    invariants:
+    - Assignment preserves variable binding semantics
+    - If/else branches evaluate identically given same condition truth value
+    - While loops iterate same number of times for same termination condition
+    - For loops iterate over same elements in same order
+    - Return produces same value in both languages
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Statement_Equivalence
+  expression_equivalence:
+    formula: eval_rust(transpile(e), sigma_r) = TypeMap_val(eval_python(e, sigma_p))
+    domain: 'e in HirExpr, sigma_p: Python env, sigma_r: corresponding Rust env'
+    invariants:
+    - 'Arithmetic operators: +, -, *, /, //, %, ** produce equivalent results'
+    - 'Comparison operators: ==, !=, <, >, <=, >= produce equivalent booleans'
+    - 'Boolean operators: and, or, not produce equivalent results'
+    - 'String operations: concatenation, slicing, methods produce equivalent strings'
+    - 'Collection operations: indexing, slicing, append, insert produce equivalent
+      state'
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Expression_Equivalence
+  control_flow_equivalence:
+    formula: trace_rust(transpile(P)) ~ trace_python(P) (bisimulation on observable
+      events)
+    domain: 'P: Python program with supported control flow'
+    invariants:
+    - 'If/elif/else chains: same branch taken for same condition evaluation'
+    - 'While loops: same termination behavior (both terminate or both diverge)'
+    - 'For loops: same iteration sequence over same iterable'
+    - 'Try/except: Rust Result/panic maps to Python exception semantics'
+    - 'Break/continue: identical loop control in transpiled code'
+    - 'With statements: resource acquisition and release semantics preserved'
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Control_Flow_Equivalence
+  comprehension_equivalence:
+    formula: transpile([e for x in iter if cond]) = iter.filter(cond).map(e).collect::<Vec<_>>()
+    domain: List/set/dict comprehensions with arbitrary generators and filters
+    invariants:
+    - Evaluation order of generators preserved (left to right)
+    - Filter conditions evaluated identically
+    - Element expression evaluated identically for each iteration
+    - Nested comprehensions flatten correctly
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Comprehension_Equivalence
+proof_obligations:
+- type: precondition
+  property: Input Python function uses only supported syntax
+  formal: AST(f) subset_of SupportedNodes(depyler)
+  applies_to: all
+- type: postcondition
+  property: Return value equivalence
+  formal: 'forall valid x: depyler(f)(TypeMap_val(x)) = TypeMap_val(f(x))'
+  applies_to: all
+- type: invariant
+  property: Arithmetic equivalence for integers
+  formal: 'forall a,b in i64: transpile(a op b) == a op_rust b for op in {+,-,*,//,%}'
+  applies_to: all
+- type: invariant
+  property: Arithmetic equivalence for floats
+  formal: '|transpile(a op b) - (a op_python b)| < epsilon for op in {+,-,*,/,**}'
+  tolerance: 1.0e-15
+  applies_to: all
+- type: invariant
+  property: Boolean expression equivalence
+  formal: transpile(a bool_op b) == (a bool_op_rust b) for bool_op in {and, or, not}
+  applies_to: all
+- type: invariant
+  property: Comparison operator equivalence
+  formal: transpile(a cmp b) == (a cmp_rust b) for cmp in {==, !=, <, >, <=, >=}
+  applies_to: all
+- type: invariant
+  property: String operation equivalence
+  formal: transpile(s.method(args)) produces same string as Python s.method(args)
+  applies_to: all
+- type: invariant
+  property: Loop iteration count
+  formal: 'iterations_rust(transpile(while cond: body)) == iterations_python(while
+    cond: body)'
+  applies_to: all
+- type: invariant
+  property: Collection indexing equivalence
+  formal: transpile(c[i]) == TypeMap_val(c[i]) for valid index i
+  applies_to: all
+- type: invariant
+  property: Comprehension equivalence
+  formal: transpile([e for x in iter if p]) == iter.filter(p).map(e).collect()
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: python_parse
+    description: Parse Python source to rustpython AST
+    invariant: Lossless parse of supported syntax
+  - name: ast_to_hir
+    description: AstBridge converts Python AST to depyler HIR
+    invariant: All semantic information preserved in HirModule
+  - name: hir_optimization
+    description: Optimize HIR (constant folding, dead code elimination)
+    invariant: Optimizations are semantics-preserving transformations
+  - name: codegen
+    description: Generate Rust source from HIR via quote! macros
+    invariant: Generated Rust compiles and preserves HIR semantics
+  - name: format
+    description: Format generated Rust with rustfmt-equivalent prettifier
+    invariant: Formatting does not change semantics
+falsification_tests:
+- id: FALSIFY-SE-001
+  rule: Integer arithmetic equivalence
+  prediction: transpile(a + b) for int a, b produces same result as Python a + b
+  test: 'proptest: random i64 pairs, compare Rust compiled output vs Python eval'
+  if_fails: Overflow behavior differs (Python arbitrary precision vs Rust i64 wrapping)
+- id: FALSIFY-SE-002
+  rule: Float arithmetic equivalence
+  prediction: transpile(a / b) for float a, b matches Python within f64 epsilon
+  test: 'proptest: random f64 pairs (excluding div by zero), compare outputs'
+  if_fails: Floating-point operation ordering or rounding mode differs
+- id: FALSIFY-SE-003
+  rule: String method equivalence
+  prediction: transpile(s.upper()) produces same string as Python s.upper()
+  test: 'proptest: random Unicode strings, compare .upper() / .lower() / .strip()
+    results'
+  if_fails: Rust String method mapping incomplete or Unicode handling differs
+- id: FALSIFY-SE-004
+  rule: List comprehension equivalence
+  prediction: '[x*2 for x in range(n)] transpiles to (0..n).map(|x| x*2).collect()'
+  test: 'proptest: random n in 0..100, compare list output element by element'
+  if_fails: Comprehension codegen misorders generators or drops filter conditions
+- id: FALSIFY-SE-005
+  rule: If/else branch equivalence
+  prediction: Same branch taken in Rust as in Python for identical condition values
+  test: 'proptest: random condition values, trace which branch executes'
+  if_fails: Condition transpilation inverts or miscompiles boolean logic
+- id: FALSIFY-SE-006
+  rule: For loop iteration equivalence
+  prediction: for x in range(a, b, step) iterates same values as Rust equivalent
+  test: 'proptest: random (a, b, step) including negatives, compare iteration sequences'
+  if_fails: range() to Rust Range/step_by mapping handles negative step incorrectly
+- id: FALSIFY-SE-007
+  rule: Dict operation equivalence
+  prediction: d[key] = value followed by d[key] retrieves same value in both languages
+  test: 'proptest: random key-value insertions and lookups, compare results'
+  if_fails: HashMap vs Python dict insertion or lookup semantics differ
+- id: FALSIFY-SE-008
+  rule: Exception to Result mapping
+  prediction: Python raise ValueError maps to Rust Err(...) or panic with same message
+  test: 'Unit test: transpile functions with raise, verify error propagation'
+  if_fails: Try/except to Result/match mapping incomplete
+- id: FALSIFY-SE-009
+  rule: Floor division for negatives
+  prediction: transpile(-7 // 2) == -4 (Python floor) not -3 (Rust truncate)
+  test: 'proptest: random negative dividend/divisor pairs, compare // results'
+  if_fails: FloorDiv mapped to Rust / which truncates toward zero
+- id: FALSIFY-SE-010
+  rule: With statement resource semantics
+  prediction: 'transpile(with open(f) as h: ...) acquires and releases resource identically'
+  test: 'Unit test: verify Drop-based cleanup matches Python __exit__ semantics'
+  if_fails: With-to-Drop mapping does not guarantee cleanup on early return/panic
+kani_harnesses:
+- id: KANI-SE-001
+  obligation: Integer arithmetic equivalence
+  property: a + b in i64 range produces identical result to Python int addition
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_int_add_equivalence
+- id: KANI-SE-002
+  obligation: Boolean expression equivalence
+  property: and/or/not produce identical truth values
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_bool_equivalence
+- id: KANI-SE-003
+  obligation: Comparison operator equivalence
+  property: All six comparison operators produce identical results for bounded integers
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_comparison_equivalence
+- id: KANI-SE-004
+  obligation: Branch condition equivalence
+  property: If/else takes same branch for identical condition value
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_branch_equivalence
+- id: KANI-SE-005
+  obligation: Loop iteration count
+  property: for i in range(n) iterates exactly n times for n in 0..bound
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_loop_count_equivalence
+- id: KANI-SEMANT-006
+  obligation: Input Python function uses only supported syntax
+  property: Input Python function uses only supported syntax
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SEMANT-007
+  obligation: Return value equivalence
+  property: Return value equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SEMANT-008
+  obligation: Arithmetic equivalence for integers
+  property: Arithmetic equivalence for integers
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SEMANT-009
+  obligation: Arithmetic equivalence for floats
+  property: Arithmetic equivalence for floats
+  bound: 8
+  strategy: stub_float
+- id: KANI-SEMANT-010
+  obligation: String operation equivalence
+  property: String operation equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SEMANT-011
+  obligation: Collection indexing equivalence
+  property: Collection indexing equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SEMANT-012
+  obligation: Comprehension equivalence
+  property: Comprehension equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SE-001
+  name: Semantic Equivalence Contract
+  checks:
+  - integer_arithmetic
+  - float_arithmetic
+  - string_methods
+  - comprehensions
+  - control_flow
+  - exception_mapping
+  - floor_division
+  - resource_management
+  pass_criteria: All 10 falsification tests pass, all 5 Kani harnesses verify
+  falsification: Map Python // to Rust / to break floor division semantics for negatives

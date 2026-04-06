@@ -1,0 +1,102 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Trueno-DB columnar operations — query correctness and get_or_insert idempotency
+  references:
+  - 'Abadi et al. (2013) The Design and Implementation of Modern Column-Oriented Database Systems'
+equations:
+  query:
+    formula: Q(predicate, table) = rows where ∀ r ∈ rows, predicate(r) = true
+    domain: predicate ∈ Predicate, table ∈ Table
+    codomain: Result<Vec<Row>, QueryError>
+    invariants:
+    - All returned rows satisfy the predicate
+    - Empty result is valid (not an error)
+    - 'Deterministic: Q(p, t) = Q(p, t) for immutable table'
+    preconditions:
+    - table exists
+    - predicate references valid columns
+    lean_theorem: Theorems.Query_Correct
+  insert:
+    formula: I(key, value, table) = (entry, table') where table'.get(key) = entry
+    domain: key ∈ K, value ∈ V, table ∈ Table<K, V>
+    codomain: Result<&Entry, InsertError>
+    invariants:
+    - 'Idempotent: get_or_insert(k, v1) then get_or_insert(k, v2) returns original v1'
+    - After insert, query for key always succeeds
+    - Table size increases by at most 1 per call
+    preconditions:
+    - key is hashable and comparable
+    lean_theorem: Theorems.Insert_Idempotent
+proof_obligations:
+- type: invariant
+  property: Query result correctness
+  formal: '∀ predicate, table, row ∈ query(predicate, table): predicate(row) = true'
+  applies_to: query
+- type: invariant
+  property: get_or_insert idempotency
+  formal: '∀ k, v1, v2: get_or_insert(k, v1); get_or_insert(k, v2) = v1'
+  applies_to: insert
+- type: invariant
+  property: Insert then query consistency
+  formal: '∀ k, v: get_or_insert(k, v); query(k) contains v'
+  applies_to: all
+enforcement:
+  query_correctness:
+    description: Query results must satisfy predicate
+    check: contract_tests::FALSIFY-TD-001
+    severity: ERROR
+  insert_idempotency:
+    description: get_or_insert must be idempotent on key
+    check: contract_tests::FALSIFY-TD-002
+    severity: ERROR
+  insert_query_consistency:
+    description: Inserted entries must be queryable
+    check: contract_tests::FALSIFY-TD-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TD-001
+  rule: Query correctness
+  prediction: All rows in query(predicate, table) satisfy predicate
+  test: insert known rows, query with predicate, verify each row
+  if_fails: Predicate evaluation skipped or column scan reads wrong offset
+- id: FALSIFY-TD-002
+  rule: Insert idempotency
+  prediction: get_or_insert(k, v1) then get_or_insert(k, v2) returns v1
+  test: insert key with value A, insert same key with value B, assert returned value is A
+  if_fails: get_or_insert overwrites existing entry instead of returning it
+- id: FALSIFY-TD-003
+  rule: Insert-query consistency
+  prediction: After get_or_insert(k, v), query for k returns row containing v
+  test: insert entry, immediately query by key, assert presence
+  if_fails: Insert writes to buffer not yet flushed to queryable storage
+kani_harnesses:
+- id: KANI-TD-001
+  obligation: Query correctness
+  property: All query results satisfy predicate
+  bound: 16
+  strategy: exhaustive
+  harness: verify_query_correctness
+- id: KANI-TD-002
+  obligation: Insert idempotency
+  property: get_or_insert is idempotent on key
+  bound: 8
+  strategy: exhaustive
+  harness: verify_insert_idempotency
+- id: KANI-TD-003
+  obligation: Insert-query consistency
+  property: Inserted entries are queryable
+  bound: 8
+  strategy: exhaustive
+  harness: verify_insert_query_consistency
+qa_gate:
+  id: F-TD-001
+  name: Trueno-DB Columnar Contract
+  description: Columnar database operation quality gate
+  checks:
+  - query_correctness
+  - insert_idempotency
+  - insert_query_consistency
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip existence check in get_or_insert to trigger FALSIFY-TD-002

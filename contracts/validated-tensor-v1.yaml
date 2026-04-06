@@ -1,0 +1,128 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Validated tensor type invariants (embedding density, NaN/Inf rejection, L2 norm)
+  references:
+  - PMAT-235 Compile-time Poka-Yoke
+  - Qwen2.5-Coder Showcase Spec §15.3
+equations:
+  density_gate:
+    formula: density(E) = count(E_ij != 0) / numel(E)
+    domain: E ∈ ℝ^{m×n}
+    codomain: density ∈ [0, 1]
+    invariants:
+    - density > 0.055 for valid embeddings (reject >= 94.5% zeros)
+    - Fully dense matrix has density = 1.0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Density_Gate
+  nan_inf_rejection:
+    formula: count(isnan(E)) == 0 AND count(isinf(E)) == 0
+    domain: E ∈ ℝ^{m×n}
+    invariants:
+    - No NaN values present
+    - No Inf values present
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Nan_Inf_Rejection
+  l2_norm_nondegeneracy:
+    formula: 'forall i: ||E[i,:]||_2 > 0'
+    domain: E ∈ ℝ^{m×n}, m = vocabulary size
+    invariants:
+    - No all-zero rows (every token has a non-trivial embedding)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.L2_Norm_Nondegeneracy
+type_invariants:
+- name: no_nan
+  type: ValidatedTensor
+  predicate: self.data.iter().all(|x| !x.is_nan())
+  description: No NaN values in tensor data
+- name: no_inf
+  type: ValidatedTensor
+  predicate: self.data.iter().all(|x| x.is_finite())
+  description: No Inf values in tensor data
+- name: density_above_threshold
+  type: ValidatedTensor
+  predicate: self.data.iter().filter(|&&x| x != 0.0).count() as f64 / self.data.len() as f64 > 0.055
+  description: Embedding density exceeds 5.5% (reject near-zero matrices)
+proof_obligations:
+- type: bound
+  property: Density gate
+  formal: density(E) > 0.055 for valid embeddings
+  applies_to: all
+- type: invariant
+  property: NaN/Inf rejection
+  formal: count(isnan) == 0 AND count(isinf) == 0
+  applies_to: all
+- type: invariant
+  property: L2 norm non-degeneracy
+  formal: 'forall row i: ||E[i,:]||_2 > 0'
+  applies_to: all
+- type: equivalence
+  property: SIMD validation equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-VT-001
+  rule: Density gate
+  prediction: Random normal embeddings have density >> 0.055
+  test: proptest with random matrices vs sparse matrices
+  if_fails: Threshold too high or counting error
+- id: FALSIFY-VT-002
+  rule: NaN/Inf rejection
+  prediction: Injecting NaN is detected
+  test: proptest with NaN injection at random positions
+  if_fails: Scanning misses NaN/Inf
+- id: FALSIFY-VT-003
+  rule: L2 norm
+  prediction: Zero rows are detected
+  test: proptest with random matrices having zero rows
+  if_fails: Row norm calculation error
+- id: FALSIFY-VT-004
+  rule: SIMD validation equivalence
+  prediction: SIMD validation matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD validation:SIMD validation rejects different inputs'
+kani_harnesses:
+- id: KANI-VT-001
+  obligation: VT-INV-001
+  property: Density gate for bounded matrices
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_density_gate
+- id: KANI-VALIDA-002
+  obligation: Density gate
+  property: Density gate
+  bound: 8
+  strategy: exhaustive
+- id: KANI-VALIDA-003
+  obligation: NaN/Inf rejection
+  property: NaN/Inf rejection
+  bound: 8
+  strategy: exhaustive
+- id: KANI-VALIDA-004
+  obligation: L2 norm non-degeneracy
+  property: L2 norm non-degeneracy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-VALIDA-005
+  obligation: SIMD validation equivalence
+  property: SIMD validation equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-VT-001
+  name: Validated Tensor Contract
+  description: Tensor validation quality gate
+  checks:
+  - density_gate
+  - nan_inf_rejection
+  - l2_norm_nondegeneracy
+  pass_criteria: All 4 falsification tests pass
+  falsification: Pass 95% zero matrix to trigger density gate

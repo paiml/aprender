@@ -1,0 +1,20 @@
+% Equations for dot-kernel-v1
+\section{Equations: dot-kernel-v1}
+
+\subsection{dot}
+\label{eq:dot}
+
+\begin{equation}
+  y = \sum x_i · w_i
+\end{equation}
+
+\textbf{Domain:} $x \in \mathbb{R}^n, w \in \mathbb{R}^n$
+
+\textbf{Codomain:} $y \in \mathbb{R}$
+
+\textbf{Invariants:}
+\begin{itemize}
+  \item $dot(x, 0) = 0$
+  \item $dot(\alpha·x, w) = \alpha·dot(x, w)$
+\end{itemize}
+

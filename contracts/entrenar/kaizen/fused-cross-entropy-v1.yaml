@@ -1,0 +1,73 @@
+contract: C-XENT-002
+title: Fused GPU Cross-Entropy Loss + Softmax Backward
+kaizen: KAIZEN-050
+status: implemented
+date: 2026-03-04
+baseline:
+  loss_phase_ms: 40.34
+  loss_phase_pct: 13.7
+  logits_d2h_bytes: 77824000
+  grad_h2d_bytes: 77824000
+  total_pcie_per_step_bytes: 155648000
+  step_time_ms: 293.6
+target:
+  loss_phase_ms: <5
+  targets_h2d_bytes: 512
+  loss_d2h_bytes: 512
+  pcie_eliminated_bytes: 155647000
+  step_time_reduction_pct: '>10'
+kernel:
+  name: FusedCrossEntropyKernel
+  file: trueno-gpu/src/kernels/backward/cross_entropy.rs
+  entry_point: fused_cross_entropy
+  block_size: 256
+  grid: seq_len
+  shared_mem: 72
+  algorithm: "Phase 1: max(logits[pos]) via grid-stride + multi-warp reduction\nPhase 2: sum(exp(logits[i] - max)) via grid-stride\
+    \ + multi-warp reduction\nPhase 3: grad[i] = (softmax(i) - one_hot(target)) * scale\n         loss[pos] = max + log(sum)\
+    \ - logits[target]\n"
+  numerical: exp via ex2.approx(x * log2e), log via lg2.approx / log2e
+preconditions:
+- logits_buf has seq_len * vocab_size f32 elements on GPU
+- target_ids in [0, vocab_size) for all positions
+- scale = (1/seq_len) * grad_scaler * (1/accum_steps)
+- OptimKernelCache initialized (init_optim_kernel_cache called)
+postconditions:
+- grad[pos][i] = (softmax(logits[pos])[i] - one_hot(target[pos])[i]) * scale
+- loss = mean(-log(softmax(logits[pos])[target[pos]])) across positions
+- grad_logits GpuBuffer stays GPU-resident (no D2H)
+- logits_buf not downloaded to host
+invariants:
+- No logits D2H transfer in training loop
+- No grad_logits H2D transfer in training loop
+- cpu_loss_and_grad method removed (dead code eliminated)
+- CausalLMLoss field removed from CudaTransformerTrainer
+- eval_batch also uses fused kernel (no CPU fallback)
+files:
+- path: trueno-gpu/src/kernels/backward/cross_entropy.rs
+  change: New FusedCrossEntropyKernel implementation
+- path: trueno-gpu/src/kernels/backward/mod.rs
+  change: Export FusedCrossEntropyKernel
+- path: trueno-gpu/src/ptx/builder/emit/arithmetic.rs
+  change: Added Lg2 to emit_arithmetic_opcode and is_arithmetic_op
+- path: entrenar/src/autograd/cuda_optim.rs
+  change: Added fused_cross_entropy_cuda() wrapper function
+- path: entrenar/src/train/transformer_trainer/cuda_trainer.rs
+  change: '- gpu_forward returns Option<()> (logits stay GPU-resident)
+
+    - train_step_single uses fused_cross_entropy_cuda
+
+    - gpu_backward accepts GpuBuffer<f32> directly (no upload)
+
+    - Removed cpu_loss_and_grad method and CausalLMLoss field
+
+    - eval_batch uses fused kernel
+
+    '
+qa_gate:
+  id: F-FCEV-001
+  name: fused-cross-entropy-v1 Contract
+  description: Quality gate for fused-cross-entropy-v1
+  checks:
+  - validation
+  - falsification

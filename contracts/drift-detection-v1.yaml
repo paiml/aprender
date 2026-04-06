@@ -1,0 +1,154 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Data drift detection -- univariate and performance drift with threshold-based
+    classification
+  references:
+  - Gama et al. (2004) Learning with Drift Detection, SBIA
+  - Webb et al. (2016) Characterizing Concept Drift, DMKD
+equations:
+  univariate_drift:
+    formula: drift_score = |mu_ref - mu_cur| / sigma_ref
+    domain: mu_ref, mu_cur in R, sigma_ref > 0
+    codomain: drift_score in [0, infinity)
+    invariants:
+    - drift_score >= 0 (absolute value divided by positive sigma)
+    - drift_score = 0 when mu_ref = mu_cur (no drift)
+    - Larger shift produces larger score
+    preconditions:
+    - 'input.len() > 0'
+    - window_size > 0
+    lean_theorem: Theorems.Univariate_Drift
+  performance_drift:
+    formula: perf_drift = |metric_ref - metric_cur| / metric_ref
+    domain: metric_ref > 0, metric_cur >= 0
+    codomain: perf_drift in [0, infinity)
+    invariants:
+    - perf_drift >= 0
+    - perf_drift = 0 when metric_ref = metric_cur
+    preconditions:
+    - 'input.len() > 0'
+    - window_size > 0
+    lean_theorem: Theorems.Performance_Drift
+  classify_drift:
+    formula: status = NoDrift if score < warn_threshold, Warning if score < drift_threshold,
+      Drift otherwise
+    domain: score >= 0, 0 < warn_threshold < drift_threshold
+    codomain: status in {NoDrift, Warning, Drift}
+    invariants:
+    - NoDrift < Warning < Drift (ordered severity)
+    - Thresholds partition [0, infinity) into exactly 3 regions
+    - score = 0 always yields NoDrift
+    preconditions:
+    - window_size > 0
+    - threshold > 0.0
+    lean_theorem: Theorems.Classify_Drift
+  min_samples_guard:
+    formula: detect(data) = NoDrift if |data| < min_samples
+    domain: data in R^n, min_samples >= 1
+    codomain: DriftStatus
+    invariants:
+    - Insufficient data never triggers drift alarm
+    - min_samples is a strict lower bound
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Min_Samples_Guard
+proof_obligations:
+- type: bound
+  property: Drift score non-negative
+  formal: drift_score >= 0 for all inputs
+  applies_to: all
+- type: invariant
+  property: DriftStatus transitions correct
+  formal: NoDrift if score < warn, Warning if warn <= score < drift, Drift if score
+    >= drift
+  applies_to: all
+- type: invariant
+  property: min_samples respected
+  formal: '|data| < min_samples implies status = NoDrift'
+  applies_to: all
+- type: invariant
+  property: Identical distributions yield NoDrift
+  formal: mu_ref = mu_cur implies drift_score = 0 implies NoDrift
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-DRIFT-001
+  rule: Drift score non-negative
+  prediction: drift_score >= 0 for all inputs
+  test: 'proptest: random reference and current distributions, compute drift score,
+    check >= 0'
+  if_fails: Sign error in drift score computation
+- id: FALSIFY-DRIFT-002
+  rule: DriftStatus ordering
+  prediction: Higher scores produce equal or higher severity status
+  test: 'proptest: generate scores spanning all thresholds, verify monotone status
+    assignment'
+  if_fails: Threshold comparison logic inverted or off-by-one
+- id: FALSIFY-DRIFT-003
+  rule: min_samples guard
+  prediction: Data below min_samples always returns NoDrift
+  test: 'proptest: random data with |data| < min_samples, verify NoDrift'
+  if_fails: min_samples guard bypassed or not checked
+- id: FALSIFY-DRIFT-004
+  rule: Identical distribution no drift
+  prediction: Same distribution as reference yields NoDrift
+  test: 'proptest: use reference data as current data, verify drift_score = 0 and
+    NoDrift'
+  if_fails: Floating-point rounding in mean/std computation
+enforcement:
+  score_nonneg:
+    description: Drift scores must be non-negative
+    check: contract_tests::FALSIFY-DRIFT-001
+    severity: ERROR
+  status_ordering:
+    description: DriftStatus must follow ordered severity
+    check: contract_tests::FALSIFY-DRIFT-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-DRIFT-001
+  obligation: DRIFT-BND-001
+  property: Drift score is non-negative
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_drift_score_nonneg
+- id: KANI-DRIFT-002
+  obligation: DRIFT-INV-001
+  property: DriftStatus transitions follow ordered severity
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_drift_status_ordering
+- id: KANI-DRIFT_-003
+  obligation: Drift score non-negative
+  property: Drift score non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DRIFT_-004
+  obligation: DriftStatus transitions correct
+  property: DriftStatus transitions correct
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DRIFT_-005
+  obligation: min_samples respected
+  property: min_samples respected
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DRIFT_-006
+  obligation: Identical distributions yield NoDrift
+  property: Identical distributions yield NoDrift
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DRIFT-001
+  name: Drift Detection Contract
+  description: Data drift detection correctness quality gate
+  checks:
+  - drift_score_nonneg
+  - status_ordering
+  - min_samples_guard
+  - identical_no_drift
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Identical distributions produce Warning due to floating-point noise

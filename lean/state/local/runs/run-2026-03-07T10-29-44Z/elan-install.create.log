@@ -1,0 +1,14 @@
+--- FORJAR RESOURCE LOG ---
+resource: elan-install
+action: create
+machine: local
+exit_code: 0
+duration: 0.981s
+
+--- STDOUT ---
+elan installed: elan 4.2.0 (861dbdae2 2026-02-25)
+
+--- STDERR ---
+info: downloading installer
+
+--- END ---

@@ -1,0 +1,42 @@
+//
+// x86-64 AVX2 stub: clamp-kernel-v1
+// Clamp kernel — saturating bound
+// Equation clamp: y_i = min(max(x_i, lo), hi)
+//
+
+.intel_syntax noprefix
+.text
+.globl clamp_avx2
+.p2align 4
+
+clamp_avx2:
+    push rbp
+    mov rbp, rsp
+    // rdi = input ptr, rsi = output ptr, edx = n
+
+    // AVX2 registers: ymm x 16
+    vxorps ymm0, ymm0, ymm0
+    vxorps ymm1, ymm1, ymm1
+    vxorps ymm2, ymm2, ymm2
+    vxorps ymm3, ymm3, ymm3
+
+    // Phase 1: compare_lo
+    // Clamp below by lo
+    // Invariant: tmp_i = max(x_i, lo)
+
+    // Phase 2: compare_hi
+    // Clamp above by hi
+    // Invariant: y_i = min(tmp_i, hi)
+
+    // Phase 3: store
+    // Write result
+    // Invariant: lo ≤ y_i ≤ hi
+
+    // Proof obligations:
+    //   [bound] Output in [lo, hi]
+    //   [monotonicity] Order preservation
+    //   [idempotency] Idempotent application
+    //   [equivalence] SIMD matches scalar
+
+    pop rbp
+    ret

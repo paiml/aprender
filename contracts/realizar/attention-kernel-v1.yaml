@@ -1,0 +1,112 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Attention kernel contract — scaled dot-product attention, RoPE, RMSNorm
+  references:
+  - 'Vaswani et al. (2017) Attention Is All You Need'
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  depends_on:
+  - softmax-kernel-v1
+equations:
+  scaled_dot_product:
+    formula: Attention(Q, K, V) = softmax(Q K^T / √d_k) V
+    domain: Q ∈ R^{n×d_k}, K ∈ R^{m×d_k}, V ∈ R^{m×d_v}
+    codomain: R^{n×d_v}
+    invariants:
+    - Attention weights sum to 1 per query position
+    - Causal mask zeroes future positions
+    - 'GQA broadcasting: num_heads / num_kv_heads groups share K, V'
+    preconditions:
+    - d_k > 0
+    - seq_len > 0
+    - num_heads % num_kv_heads == 0
+    lean_theorem: Theorems.Scaled_Dot_Product
+  rope_rotation:
+    formula: RoPE(x, pos) = [x_{2i} cos(θ_i·pos) - x_{2i+1} sin(θ_i·pos), x_{2i} sin(θ_i·pos) + x_{2i+1} cos(θ_i·pos)]
+    domain: x ∈ R^{d}, pos ∈ N, θ_i = base^{-2i/d}
+    codomain: R^{d}
+    invariants:
+    - 'Norm preservation: ||RoPE(x, pos)|| = ||x||'
+    - 'Position encoding: RoPE(x, p1) ≠ RoPE(x, p2) for p1 ≠ p2 (general case)'
+    - Frequency table computed once at init
+    preconditions:
+    - x.len() % 2 == 0
+    - base > 0.0
+    lean_theorem: Theorems.RoPE_Rotation
+  rmsnorm:
+    formula: RMSNorm(x) = x / RMS(x) * γ where RMS(x) = √(mean(x²) + ε)
+    domain: x ∈ R^{d}, γ ∈ R^{d}, ε > 0
+    codomain: R^{d}
+    invariants:
+    - Output has approximately unit RMS (within ε tolerance)
+    - 'Scale-equivariant: RMSNorm(αx) direction = RMSNorm(x) direction'
+    preconditions:
+    - x.len() == gamma.len()
+    - epsilon > 0.0
+    lean_theorem: Theorems.RMSNorm
+proof_obligations:
+- type: invariant
+  property: Attention weight normalization
+  formal: '∀ Q, K: sum(softmax(Q K^T / √d_k), axis=1) = 1'
+  applies_to: scaled_dot_product
+- type: invariant
+  property: RoPE norm preservation
+  formal: '∀ x, pos: ||RoPE(x, pos)|| ≈ ||x|| (within float epsilon)'
+  applies_to: rope_rotation
+- type: invariant
+  property: RMSNorm output scale
+  formal: '∀ x: RMS(RMSNorm(x) / γ) ≈ 1.0'
+  applies_to: rmsnorm
+enforcement:
+  attention_normalization:
+    description: Softmax attention weights sum to 1.0 per row
+    check: contract_tests::FALSIFY-AK-001
+    severity: ERROR
+  rope_norm:
+    description: RoPE preserves input vector norm
+    check: contract_tests::FALSIFY-AK-002
+    severity: ERROR
+  rmsnorm_unit:
+    description: RMSNorm output has unit RMS before scaling
+    check: contract_tests::FALSIFY-AK-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-AK-001
+  rule: Attention normalization
+  prediction: softmax output rows sum to 1.0 (within 1e-5)
+  test: proptest with random Q, K matrices, verify row sums
+  if_fails: Softmax numerical instability or missing normalization
+- id: FALSIFY-AK-002
+  rule: RoPE norm preservation
+  prediction: 'norm(RoPE(x, pos)) / norm(x) in [1-1e-5, 1+1e-5]'
+  test: proptest with random vectors and positions
+  if_fails: Rotation matrix not orthogonal — sin/cos bug
+- id: FALSIFY-AK-003
+  rule: RMSNorm unit scale
+  prediction: RMS of normalized output (before gamma) ≈ 1.0
+  test: proptest with random input vectors
+  if_fails: Epsilon handling or mean computation bug
+kani_harnesses:
+- id: KANI-AK-001
+  obligation: Attention weight normalization
+  property: softmax rows sum to 1
+  bound: 8
+  strategy: exhaustive
+  harness: verify_attention_weight_sum
+- id: KANI-AK-002
+  obligation: RoPE norm preservation
+  property: rotation preserves L2 norm
+  bound: 8
+  strategy: exhaustive
+  harness: verify_rope_norm
+qa_gate:
+  id: F-AK-001
+  name: Attention Kernel Contract
+  description: Attention, RoPE, and RMSNorm correctness gate
+  checks:
+  - attention_normalization
+  - rope_norm
+  - rmsnorm_unit
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove 1/sqrt(d_k) scaling from attention

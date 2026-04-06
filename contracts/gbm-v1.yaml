@@ -1,0 +1,149 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Gradient Boosting Machine -- sequential ensemble with gradient descent in function space
+  references:
+  - 'Friedman (2001) Greedy Function Approximation: A Gradient Boosting Machine'
+  - Hastie, Tibshirani, Friedman (2009) ESL, Ch. 10
+equations:
+  gradient_boost:
+    formula: F_m(x) = F_{m-1}(x) + nu * h_m(x)
+    domain: 'F_{m-1}: R^d -> R (current model), h_m: R^d -> R (weak learner), nu in (0, 1] (learning rate)'
+    codomain: 'F_m: R^d -> R'
+    invariants:
+    - 'Ensemble is additive: F_M = F_0 + nu * sum h_m'
+    - nu > 0 ensures each tree contributes in gradient direction
+    - F_m is deterministic given training data and hyperparameters
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gradient_Boost
+  negative_gradient:
+    formula: r_{im} = -(dL/dF)|_{F=F_{m-1}(x_i)}
+    domain: 'L: loss function, F_{m-1}: current ensemble, x_i in R^d'
+    codomain: r_{im} in R (pseudo-residuals)
+    invariants:
+    - 'For squared loss: r_{im} = y_i - F_{m-1}(x_i)'
+    - 'For log-loss: r_{im} = y_i - sigma(F_{m-1}(x_i))'
+    - Pseudo-residuals are finite for bounded F and bounded data
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Negative_Gradient
+  predict:
+    formula: y_hat = sigma(F_M(x)) thresholded at 0.5 for classification
+    domain: x in R^d, fitted ensemble F_M
+    codomain: y_hat in {0, 1}
+    invariants:
+    - Predictions are binary {0, 1} for classification
+    - Predictions are deterministic
+    - Ensemble output F_M(x) is finite
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Predict
+  training_loss:
+    formula: L_m = (1/n) * sum L(y_i, F_m(x_i))
+    domain: training data, current ensemble F_m
+    codomain: L_m >= 0
+    invariants:
+    - Training loss is non-negative
+    - L_m <= L_{m-1} (loss non-increasing with more boosting rounds)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Training_Loss
+proof_obligations:
+- type: invariant
+  property: Predictions binary
+  formal: predict(x) in {0, 1} for all x
+  applies_to: all
+- type: invariant
+  property: Predictions deterministic
+  formal: predict(x) = predict(x) for same fitted model
+  applies_to: all
+- type: bound
+  property: Ensemble output finite
+  formal: '|F_M(x)| < infinity for bounded x'
+  applies_to: all
+- type: invariant
+  property: Training loss non-increasing
+  formal: L_m <= L_{m-1} for each boosting round m
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-GBM-001
+  rule: Binary prediction
+  prediction: All predictions in {0, 1}
+  test: 'proptest: fit GBM on random binary data, predict, check all labels in {0, 1}'
+  if_fails: Sigmoid threshold or label mapping error
+- id: FALSIFY-GBM-002
+  rule: Prediction deterministic
+  prediction: predict(X) = predict(X)
+  test: 'proptest: predict twice with same model, compare element-wise'
+  if_fails: Non-deterministic tree splitting or random state leak
+- id: FALSIFY-GBM-003
+  rule: Ensemble output finite
+  prediction: F_M(x) is finite for all bounded test inputs
+  test: 'proptest: fit GBM on bounded data, compute raw ensemble scores, check all finite'
+  if_fails: Numerical overflow in additive ensemble accumulation
+- id: FALSIFY-GBM-004
+  rule: Fit-predict consistency
+  prediction: Predictions only contain labels seen in training
+  test: 'proptest: fit GBM, check prediction set is subset of training label set'
+  if_fails: Label encoding error in multi-class or binary mapping
+enforcement:
+  binary:
+    description: Predictions must be binary
+    check: contract_tests::FALSIFY-GBM-001
+    severity: ERROR
+  deterministic:
+    description: Predictions must be deterministic
+    check: contract_tests::FALSIFY-GBM-002
+    severity: ERROR
+kani_harnesses:
+- id: KANI-GBM-001
+  obligation: GBM-INV-001
+  property: GBM predictions are binary {0, 1}
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gbm_binary_prediction
+- id: KANI-GBM-002
+  obligation: GBM-BND-001
+  property: Ensemble output is finite for bounded input
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ensemble_output_finite
+- id: KANI-GBM_V1-003
+  obligation: Predictions binary
+  property: Predictions binary
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GBM_V1-004
+  obligation: Predictions deterministic
+  property: Predictions deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GBM_V1-005
+  obligation: Ensemble output finite
+  property: Ensemble output finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GBM_V1-006
+  obligation: Training loss non-increasing
+  property: Training loss non-increasing
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GBM-001
+  name: GBM Contract
+  description: Gradient Boosting Machine correctness quality gate
+  checks:
+  - binary_prediction
+  - prediction_deterministic
+  - ensemble_output_finite
+  - fit_predict_consistency
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Ensemble accumulates Inf after many boosting rounds with large learning rate

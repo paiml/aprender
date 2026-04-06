@@ -1,0 +1,84 @@
+contract: wgpu-backward-training-v1
+version: 1.0.0
+status: implemented
+kaizen: 203
+description: >
+  WGSL backward compute shaders for neural network training on non-NVIDIA
+  GPUs (AMD Vulkan, Intel Arc, Apple Metal). 7 backward ops + NF4 dequant,
+  all verified on AMD Radeon Pro W5700X via Vulkan.
+
+invariants:
+- id: FALSIFY-WGPU-001
+  description: Each backward shader matches CPU reference within fp32 tolerance
+  preconditions:
+  - GPU device available (Vulkan, Metal, or DX12)
+  - Input tensors are finite fp32 values
+  postconditions:
+  - 'SiLU backward: max|gpu - cpu| < 1e-4'
+  - 'GEMM backward A (dL/dA = dL/dC @ B^T): max|gpu - cpu| < 1e-3'
+  - 'GEMM backward B (dL/dB = A^T @ dL/dC): max|gpu - cpu| < 1e-3'
+  - 'RoPE backward (transpose rotation): max|gpu - cpu| < 1e-4'
+  - 'AdamW step (fused optimizer): max|gpu - cpu| < 1e-4'
+  - 'RMSNorm backward (dx + dγ): max|grad_input| < 1e-3, max|grad_gamma| < 1e-2'
+  verified_by:
+  - test_falsify_wgpu_001_silu_backward_parity — PASS
+  - test_falsify_wgpu_001_gemm_backward_a_parity — PASS
+  - test_falsify_wgpu_001_gemm_backward_b_parity — PASS
+  - test_falsify_wgpu_001_rope_backward_parity — PASS
+  - test_falsify_wgpu_001_adamw_step_parity — PASS
+  - test_falsify_wgpu_001_rmsnorm_backward_parity — PASS
+  severity: critical
+
+- id: FALSIFY-WGPU-002
+  description: End-to-end training converges (loss decreases) on toy problem
+  preconditions:
+  - WgpuTransformerTrainer initialized with GPU device
+  - Toy dataset with known targets
+  postconditions:
+  - Loss decreases by >10% within 50 steps
+  - All gradients are finite
+  - Weight updates are applied via AdamW on GPU
+  verified_by:
+  - test_falsify_wgpu_002_toy_convergence — PASS (entrenar)
+  severity: critical
+
+- id: FALSIFY-WGPU-003
+  description: NF4 dequantization matches CPU codebook lookup
+  preconditions:
+  - Packed NF4 data with known nibble indices
+  - Scale factors for each block
+  postconditions:
+  - 'max|gpu - cpu| < 1e-6'
+  - Codebook ordering matches trueno::quantize::NF4_LUT
+  verified_by:
+  - test_falsify_wgpu_003_nf4_dequant_parity — PASS
+  severity: critical
+
+affected_files:
+- path: src/backends/gpu/shaders/backward.rs
+  functions:
+  - 'SILU_BACKWARD_SHADER: σ(x)(1+x-xσ(x)) element-wise'
+  - 'GEMM_BACKWARD_A_SHADER: tiled 16×16 dC@B^T'
+  - 'GEMM_BACKWARD_B_SHADER: tiled 16×16 A^T@dC'
+  - 'RMSNORM_BACKWARD_SHADER: workgroup reduction + atomic CAS for dγ'
+  - 'ROPE_BACKWARD_SHADER: negated sin rotation'
+  - 'ADAMW_STEP_SHADER: fused optimizer step'
+  - 'NF4_DEQUANT_SHADER: 4-bit codebook lookup × scale'
+- path: src/backends/gpu/device/backward.rs
+  functions:
+  - 'silu_backward: dispatch + readback'
+  - 'gemm_backward_a: tiled 16×16 dispatch'
+  - 'gemm_backward_b: tiled 16×16 dispatch'
+  - 'rope_backward: dispatch with theta_log2 uniform'
+  - 'adamw_step: 5-buffer dispatch with 3-buffer readback'
+  - 'rmsnorm_backward: 6-binding dispatch with atomic grad_gamma'
+  - 'nf4_dequant: packed u32 → fp32 dispatch'
+- path: examples/wgpu_backward_demo.rs
+  functions:
+  - 'main: runs all 7 ops with CPU parity check'
+
+hardware_verified:
+- device: AMD Radeon Pro W5700X
+  backend: Vulkan
+  vram: 16GB GDDR6
+  results: 7/7 PASS, max diff < 2.4e-7

@@ -1,0 +1,91 @@
+contract: pre-tokenize-corpus-v1
+version: 1.0.0
+status: implemented
+kaizen: 028
+invariants:
+- id: C-PRETOK-001
+  description: Token IDs computed once at dataset construction, reused across all epochs
+  preconditions:
+  - SafetySample has non-empty input text
+  - Pipeline has a tokenizer (BPE) or falls back to byte-level encoding
+  postconditions:
+  - TokenizedSample.token_ids.len() in 1..=max_seq_len
+  - Token IDs identical to what tokenize() would produce on same input
+  - No BPE encoding calls during train_epoch() or validate()
+  invariants:
+  - train_tokens.len() == train_data.len()
+  - val_tokens.len() == val_data.len()
+  - train_tokens shuffled in sync with train_data (same Fisher-Yates swap sequence)
+  verified_by:
+  - classify_trainer tests (17 passed, 0 new failures)
+  - finetune tests (317 passed, 0 regressions)
+  - cargo check (clean compilation)
+affected_files:
+- path: src/finetune/classification.rs
+  change: 'Added TokenizedSample struct (token_ids: Vec<u32>, label: usize)'
+- path: src/finetune/classify_pipeline.rs
+  functions:
+  - pre_tokenize
+  - train_batch_tokenized
+  - train_batch_per_sample_tokenized
+  - try_train_batch_wgpu_tokenized
+  - accumulate_gradients_tokenized
+  - forward_only_tokenized
+  change: Added tokenized variants of all training methods
+- path: src/finetune/classify_trainer.rs
+  functions:
+  - ClassifyTrainer::new
+  - train_epoch
+  - validate
+  - shuffle_training_data
+  - train_distributed (coordinator epoch loop)
+  change: '- Constructor pre-tokenizes train_data and val_data once
+
+    - train_epoch uses train_tokens instead of re-tokenizing
+
+    - validate uses val_tokens instead of re-tokenizing
+
+    - shuffle_training_data swaps train_tokens in sync with train_data
+
+    - Distributed training uses token_snapshot instead of train_data clone
+
+    '
+- path: src/finetune/mod.rs
+  change: Re-export TokenizedSample from classification module
+performance_note: 'For SSC v3 binary classifier training (17,942 samples, 50 epochs):
+
+
+  Before (per epoch):
+
+  - Training: 14,354 samples × tokenize() = 14,354 BPE encodes
+
+  - Validation: 3,588 samples × tokenize() = 3,588 BPE encodes
+
+  - Total: 17,942 × 50 = 897,100 BPE encodes over full training
+
+  - Plus: String clone of all 14,354 training samples per epoch
+
+
+  After:
+
+  - Pre-tokenize: 17,942 BPE encodes (once at construction)
+
+  - Training: 14,354 × Vec<u32> clone per epoch (much cheaper than String)
+
+  - Validation: zero copies (iterate pre-tokenized val_tokens by reference)
+
+  - Total: 17,942 BPE encodes over full training (50x reduction)
+
+
+  BPE encoding cost: ~50-200μs per sample (merge loop + hash lookups)
+
+  Savings: ~45-180 seconds over 50-epoch training run
+
+  '
+qa_gate:
+  id: F-PTCV-001
+  name: pre-tokenize-corpus-v1 Contract
+  description: Quality gate for pre-tokenize-corpus-v1
+  checks:
+  - validation
+  - falsification

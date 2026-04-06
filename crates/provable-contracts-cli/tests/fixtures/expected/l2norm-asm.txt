@@ -1,0 +1,42 @@
+//
+// x86-64 AVX2 stub: l2norm-kernel-v1
+// L2 norm kernel — Euclidean vector length
+// Equation l2norm: ||x|| = sqrt(Σ x_i²)
+//
+
+.intel_syntax noprefix
+.text
+.globl l2norm_avx2
+.p2align 4
+
+l2norm_avx2:
+    push rbp
+    mov rbp, rsp
+    // rdi = input ptr, rsi = output ptr, edx = n
+
+    // AVX2 registers: ymm x 16
+    vxorps ymm0, ymm0, ymm0
+    vxorps ymm1, ymm1, ymm1
+    vxorps ymm2, ymm2, ymm2
+    vxorps ymm3, ymm3, ymm3
+
+    // Phase 1: square
+    // Compute x_i²
+    // Invariant: sq_i ≥ 0
+
+    // Phase 2: sum
+    // Accumulate Σ sq_i
+    // Invariant: total ≥ 0
+
+    // Phase 3: sqrt
+    // Compute sqrt(total)
+    // Invariant: result ≥ 0
+
+    // Proof obligations:
+    //   [bound] Non-negative
+    //   [invariant] Homogeneity
+    //   [invariant] Zero vector yields zero
+    //   [equivalence] SIMD matches scalar
+
+    pop rbp
+    ret

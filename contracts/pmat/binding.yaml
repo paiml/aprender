@@ -1,0 +1,233 @@
+version: 1.0.0
+target_crate: pmat
+source_dir: paiml-mcp-agent-toolkit
+bindings:
+# === IMPLEMENTED (4) ===
+- contract: tdg-scoring-v1.yaml
+  equation: calculate_tdg
+  function: calculate_weighted_tdg
+  module_path: pmat::services::tdg_calculator_core
+  status: implemented
+- contract: comply-check-v1.yaml
+  equation: run_checks
+  function: run_all_checks
+  module_path: pmat::cli::handlers::comply_handlers
+  status: implemented
+- contract: score-composite-v1.yaml
+  equation: geometric_mean
+  function: geometric_mean
+  module_path: pmat::cli::handlers::score_handler_compute
+  status: implemented
+- contract: context-generation-v1.yaml
+  equation: generate_context
+  function: analyze_project
+  module_path: pmat::services::facades::complexity_facade
+  status: implemented
+# === P0: CLI Interface ===
+- contract: cli-interface-v1.yaml
+  equation: exit_code_semantics
+  function: main
+  module_path: pmat::bin::pmat
+  status: pending
+  notes: 'Exit codes: 0=success, 1=violation, 2=config error, 3=internal error'
+- contract: cli-interface-v1.yaml
+  equation: output_format_fidelity
+  function: render_output
+  module_path: pmat::cli::output
+  status: pending
+  notes: JSON/CSV/JUnit/Markdown output format validation
+- contract: cli-interface-v1.yaml
+  equation: timeout_honoring
+  function: run_analysis_with_timeout
+  module_path: pmat::services::context
+  status: pending
+  notes: Analysis respects --timeout flag
+- contract: cli-interface-v1.yaml
+  equation: result_cardinality
+  function: render_output
+  module_path: pmat::cli::output
+  status: pending
+  notes: --top-files N produces at most N entries
+# === P0: MCP Protocol ===
+- contract: mcp-protocol-v1.yaml
+  equation: tool_schema_fidelity
+  function: tool_definitions
+  module_path: pmat::mcp_pmcp::server
+  status: pending
+  notes: Tool inputSchema matches handler parameter expectations
+- contract: mcp-protocol-v1.yaml
+  equation: session_lifecycle
+  function: handle_request
+  module_path: pmat::mcp_pmcp::simple_unified_server
+  status: pending
+  notes: initialize must precede tools/call
+- contract: mcp-protocol-v1.yaml
+  equation: error_mapping_lossless
+  function: map_pmat_error_to_mcp
+  module_path: pmat::mcp_pmcp::handlers
+  status: pending
+  notes: PmatError to McpError with no info loss
+- contract: mcp-protocol-v1.yaml
+  equation: idempotency
+  function: handle_tool_call
+  module_path: pmat::mcp_pmcp::handlers
+  status: pending
+  notes: Read-only tools produce same result for same input
+# === P0: Graph/Index ===
+- contract: graph-index-v1.yaml
+  equation: csr_construction
+  function: num_nodes
+  module_path: pmat::services::tdg::tdg_graph
+  status: pending
+  notes: CSR node count = node_map.len()
+- contract: graph-index-v1.yaml
+  equation: pagerank_convergence
+  function: compute_pagerank
+  module_path: pmat::services::context_graph
+  status: pending
+  notes: PageRank sum=1.0, non-negative, bounded iterations
+- contract: graph-index-v1.yaml
+  equation: fts5_consistency
+  function: search_bm25
+  module_path: pmat::services::context::sqlite_backend
+  status: pending
+  notes: Insert then search returns the doc
+- contract: graph-index-v1.yaml
+  equation: sqlite_roundtrip
+  function: save
+  module_path: pmat::services::context
+  status: pending
+  notes: AgentContextIndex save/load identity
+- contract: graph-index-v1.yaml
+  equation: bm25_scoring
+  function: calculate_relevance_scores
+  module_path: pmat::services::context::sqlite_backend
+  status: pending
+  notes: Non-negative, monotonic in TF
+# === P1: Concurrency ===
+- contract: concurrency-safety-v1.yaml
+  equation: parallel_determinism
+  function: analyze_project_with_cache
+  module_path: pmat::services::context
+  status: pending
+  notes: Parallel analysis = sequential (sorted)
+# === P1: Tracing ===
+- contract: tracing-observability-v1.yaml
+  equation: span_parentage
+  function: instrument
+  module_path: pmat::services::context
+  status: pending
+  notes: No orphan child spans in tracing hierarchy
+# === P1: Memory ===
+- contract: memory-safety-v1.yaml
+  equation: lru_eviction_correctness
+  function: put
+  module_path: pmat::services::cache
+  status: pending
+  notes: Cache size never exceeds capacity
+- contract: memory-safety-v1.yaml
+  equation: arena_lifecycle
+  function: drop
+  module_path: pmat::services::context
+  status: pending
+  notes: Arena drop releases all allocations
+# === P2: State Machine ===
+- contract: state-machine-v1.yaml
+  equation: refactor_transitions
+  function: transition
+  module_path: pmat::services::state_manager
+  status: pending
+  notes: Only forward adjacent transitions allowed
+- contract: state-machine-v1.yaml
+  equation: event_store_append_only
+  function: append
+  module_path: pmat::services::event_store
+  status: pending
+  notes: Past events immutable after write
+# === P2: Configuration ===
+- contract: configuration-schema-v1.yaml
+  equation: unknown_key_rejection
+  function: parse_comply_config
+  module_path: pmat::models::comply_config
+  status: pending
+  notes: Unknown keys rejected, not silently ignored
+- contract: configuration-schema-v1.yaml
+  equation: threshold_invariants
+  function: validate
+  module_path: pmat::models::comply_config
+  status: pending
+  notes: min <= max, pct in [0,100], timeout > 0
+# === P3: Compression ===
+- contract: compression-roundtrip-v1.yaml
+  equation: lz4_roundtrip
+  function: save
+  module_path: pmat::services::context
+  status: pending
+  notes: LZ4 compress/decompress identity
+- contract: compression-roundtrip-v1.yaml
+  equation: sqlite_migration
+  function: migrate_schema
+  module_path: pmat::services::context::sqlite_backend
+  status: pending
+  notes: Schema migration preserves all rows
+# === CRITICAL: Work DBC ===
+- contract: work-dbc-v1.yaml
+  equation: work_lifecycle
+  function: handle_work_start
+  module_path: pmat::cli::handlers::work_handlers::core_handlers::handlers
+  status: implemented
+  notes: Work item lifecycle — start creates contract, sets InProgress in roadmap
+- contract: work-dbc-v1.yaml
+  equation: work_lifecycle
+  function: handle_work_complete
+  module_path: pmat::cli::handlers::work_handlers::core_handlers::handlers
+  status: implemented
+  notes: Work item lifecycle — complete validates claims, sets Completed in roadmap
+- contract: work-dbc-v1.yaml
+  equation: falsifiable_claim
+  function: run_falsification_tests
+  module_path: pmat::cli::handlers::work_falsification::runner
+  status: implemented
+  notes: Popperian falsification — runs 22 checks, produces FalsificationReport
+- contract: work-dbc-v1.yaml
+  equation: contract_profile
+  function: score_contract
+  module_path: pmat::cli::handlers::work_contract_scoring
+  status: implemented
+  notes: 5-dimension quality scoring (coverage, completeness, drift, lint, freshness)
+- contract: work-dbc-v1.yaml
+  equation: rescue_protocol
+  function: execute_rescue
+  module_path: pmat::cli::handlers::work_contract_rescue
+  status: implemented
+  notes: Meyer Section 11 rescue strategies with bounded retries
+- contract: work-dbc-v1.yaml
+  equation: meyer_triad
+  function: classify_claims
+  module_path: pmat::cli::handlers::work_contract_profile
+  status: implemented
+  notes: Meyer require/ensure/invariant clause classification and phase-specific checking
+- contract: work-dbc-v1.yaml
+  equation: checkpoint_verification
+  function: handle_work_checkpoint
+  module_path: pmat::cli::handlers::work_handlers
+  status: implemented
+  notes: Idempotent invariant checking with score delta from baseline
+- contract: work-dbc-v1.yaml
+  equation: override_accountability
+  function: handle_work_complete
+  module_path: pmat::cli::handlers::work_handlers
+  status: implemented
+  notes: Override via --override-claims requires --ticket for accountability, logged in receipt
+critical_path:
+- tdg
+- comply
+- score
+- context
+- exit_code_semantics
+- tool_schema_fidelity
+- csr_construction
+- pagerank_convergence
+- fts5_consistency
+- sqlite_roundtrip
+- parallel_determinism

@@ -1,0 +1,28 @@
+version: 1.0.0
+target_crate: faro
+bindings:
+- contract: beacon-dispatch-v1.yaml
+  equation: bm25_ranking
+  module_path: faro::ranking::bm25
+  function: Bm25Scorer::score
+  signature: 'pub fn score(&self, index: &InvertedIndex, document_id: &str, query_terms: &[&str]) -> f64'
+  status: implemented
+  notes: BM25 with k1=1.2, b=0.75 defaults; Spanish-aware tokenization
+- contract: beacon-dispatch-v1.yaml
+  equation: robots_compliance
+  module_path: faro::robots
+  function: is_allowed
+  signature: 'fn is_allowed(url: &Url, rules: &RobotsTxt) -> bool'
+  status: implemented
+  notes: Standard robots.txt parser with crawl-delay support
+- contract: beacon-dispatch-v1.yaml
+  equation: index_insert_retrieve
+  module_path: faro::index
+  function: insert
+  signature: 'fn insert(&mut self, doc: Document) -> Result<()>'
+  status: implemented
+  notes: Inverted index with Spanish text normalization and unicode handling
+critical_path:
+- robots_compliance
+- index_insert_retrieve
+- bm25_ranking

@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "PMAT-087",
+  "prompt": "Spec v2.1.0: fix 5 falsified numbers + Section 25 Full Enforcement Mandate",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-03-27T16:15:42.922638847Z"
+}

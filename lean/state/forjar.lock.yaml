@@ -1,0 +1,10 @@
+schema: '1.0'
+name: provable-contracts-lean
+last_apply: 2026-03-07T10:30:20Z
+generator: forjar 1.1.1
+machines:
+  local:
+    resources: 2
+    converged: 2
+    failed: 0
+    last_apply: 2026-03-07T10:30:20Z

@@ -1,0 +1,16 @@
+version: 1.0.0
+target_crate: trueno-graph
+critical_path:
+- pagerank
+- bfs
+bindings:
+- contract: pagerank-kernel-v1.yaml
+  equation: pagerank
+  function: pagerank
+  module_path: trueno_graph::algorithms::pagerank
+  status: implemented
+- contract: configuration-v1.yaml
+  equation: bfs
+  function: bfs
+  module_path: trueno_graph::algorithms::traversal
+  status: implemented

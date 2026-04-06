@@ -1,0 +1,232 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-21'
+  author: PAIML Engineering
+  description: Qwen3-235B-A22B (MoE) end-to-end verification — composing all kernel
+    contracts including MoE routing into a complete model proof
+  references:
+  - Qwen3 Technical Report — MoE architecture
+  - Vaswani et al. (2017) Attention Is All You Need
+  - Fedus et al. (2022) Switch Transformers — MoE scaling
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  depends_on:
+  - qwen3moe-shapes-v1
+  - inference-pipeline-v1
+  - embedding-algebra-v1
+  - attention-scaling-v1
+  - kv-cache-sizing-v1
+equations:
+  model_parameter_count:
+    formula: P = V*d + L*(d_attn + d_router + N_experts*d_expert + d_norm) + d_final
+      + V*d
+    domain: V=151936, d=4096, L=94, N_experts=128, moe_inter=1536
+    invariants:
+    - Total ≈ 235.1B for Qwen3-235B-A22B
+    - 'Embedding: 151936 * 4096 ≈ 622.3M'
+    - 'LM head (untied): 151936 * 4096 ≈ 622.3M'
+    - 'Per-layer attention: Q(33.6M) + K(2.1M) + V(2.1M) + O(33.6M) = 71.3M'
+    - 'Per-layer MoE: 128 * 3 * 4096 * 1536 ≈ 2415.9M'
+    - 'Per-layer router: 4096 * 128 = 524K'
+    - 94 identical MoE decoder blocks (decoder_sparse_step=1)
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Model_Parameter_Count
+  active_parameter_count:
+    formula: A = V*d + L*(d_attn + d_router + k*d_expert + d_norm) + d_final + V*d
+    domain: k=8 active experts per token
+    invariants:
+    - Active ≈ 22.2B (A22B designation)
+    - 'Per-layer active MoE: 8 * 3 * 4096 * 1536 ≈ 151.0M'
+    - Active/Total ratio ≈ 9.4% (only 8/128 experts active)
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Active_Parameter_Count
+  flops_per_token:
+    formula: F ≈ 2*A (forward pass) for active compute
+    domain: Approximate FLOPs per token for autoregressive generation
+    invariants:
+    - Linear in A (active params)
+    - Attention FLOP component is O(seq_len * d)
+    - GQA reduces KV computation by factor n_h/n_kv = 16
+    - MoE router adds O(d * N_experts) per token
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Flops_Per_Token
+  memory_breakdown:
+    formula: M = M_weights(total) + M_kv + M_activations
+    domain: Total GPU memory during inference
+    invariants:
+    - M_weights uses TOTAL params (all experts loaded)
+    - M_kv grows linearly with sequence length
+    - M_kv per layer = 2 * n_kv * d_k * seq_len * dtype_bytes
+    - M_activations bounded by batch_size * seq_len * d
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Memory_Breakdown
+  throughput_model:
+    formula: tok/s = min(bandwidth / bytes_per_token, compute / flops_per_token)
+    domain: Roofline-limited throughput for MoE
+    invariants:
+    - 'Memory-bound: must load ALL weights but only compute with 8 experts'
+    - Bandwidth cost ∝ total params, compute cost ∝ active params
+    - 'MoE advantage: compute/memory ratio better than dense equivalent'
+    preconditions:
+    - 'input.len() > 0'
+    - batch_size > 0
+    lean_theorem: Theorems.Throughput_Model
+  verification_ladder:
+    formula: coverage(contract_set) = verified_obligations / total_obligations
+    domain: Fraction of proof obligations with passing tests or Kani proofs
+    invariants:
+    - coverage in [0, 1]
+    - coverage = 1 means all obligations verified
+    preconditions:
+    - 'input.len() > 0'
+    - num_layers > 0
+    lean_theorem: Theorems.Verification_Ladder
+  contract_composition:
+    formula: model = compose(embedding, L * moe_block, final_norm, lm_head)
+    domain: Full model as composition of verified components
+    invariants:
+    - Each component independently verified
+    - Composition preserves shape invariants
+    - Residual stream provides compositional proof structure
+    - 94 identical MoE decoder blocks
+    - 'Each block: attention + MoE FFN (router + experts)'
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Contract_Composition
+proof_obligations:
+- type: invariant
+  property: Total parameter count matches architecture
+  formal: P(Qwen3-235B) in [234B, 236B]
+  applies_to: all
+- type: invariant
+  property: Active parameter count matches designation
+  formal: A(Qwen3-A22B) in [22B, 23B]
+  applies_to: all
+- type: bound
+  property: FLOPs bounded by 2A
+  formal: F <= 2 * A + O(seq_len * d * L)
+  applies_to: all
+- type: ordering
+  property: Quantization memory ordering
+  formal: M(Q4K) < M(Q6K) < M(F16) < M(F32)
+  applies_to: all
+- type: monotonicity
+  property: Throughput increases with bandwidth
+  formal: bw1 < bw2 -> tok_s(bw1) <= tok_s(bw2)
+  applies_to: all
+- type: invariant
+  property: Compositional proof structure
+  formal: 'for all l: shape(block_l(x)) = shape(x)'
+  applies_to: all
+- type: conservation
+  property: 'End-to-end shape: tokens in -> logits out'
+  formal: shape(model(tokens)) = [seq_len, V]
+  tolerance: 0.0
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-QM3E-001
+  rule: Total parameter count
+  prediction: Total params ≈ 235.1B
+  test: 'Deterministic: sum all parameter shapes including 128 experts'
+  if_fails: Architecture config mismatch or expert count wrong
+- id: FALSIFY-QM3E-002
+  rule: Active parameter count
+  prediction: Active params ≈ 22.2B with top-8 routing
+  test: 'Deterministic: sum active params with k=8 experts'
+  if_fails: Active expert count or routing config wrong
+- id: FALSIFY-QM3E-003
+  rule: FLOPs estimate
+  prediction: 2A FLOPs per forward token
+  test: Deterministic with active param constants
+  if_fails: Missing layer or expert in FLOP count
+- id: FALSIFY-QM3E-004
+  rule: Memory ordering
+  prediction: Q4K < Q6K < F16 < F32 memory
+  test: proptest with random tensor dimensions
+  if_fails: Quantization byte formula wrong
+- id: FALSIFY-QM3E-005
+  rule: Throughput roofline
+  prediction: tok/s bounded by bandwidth and compute
+  test: proptest with random hardware specs
+  if_fails: Roofline formula error
+- id: FALSIFY-QM3E-006
+  rule: Compositional proof structure
+  prediction: Each MoE block preserves shape
+  test: 'proptest: verify shape(block(x)) = shape(x) for random blocks'
+  if_fails: MoE block breaks shape invariant
+- id: FALSIFY-QM3E-007
+  rule: End-to-end shape conservation
+  prediction: tokens -> [seq_len, 4096] -> ... -> [seq_len, 151936]
+  test: 'proptest: trace shapes through mock pipeline'
+  if_fails: Shape break in layer composition
+kani_harnesses:
+- id: KANI-QM3E-001
+  obligation: QM3E-INV-001
+  property: Parameter count within expected range
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_qwen3moe_parameter_count
+- id: KANI-QM3E-002
+  obligation: QM3E-ORD-001
+  property: Quantization memory ordering
+  bound: 4
+  strategy: bounded_int
+  harness: verify_qwen3moe_quant_ordering
+- id: KANI-QWEN3M-003
+  obligation: Total parameter count matches architecture
+  property: Total parameter count matches architecture
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-004
+  obligation: Active parameter count matches designation
+  property: Active parameter count matches designation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-005
+  obligation: FLOPs bounded by 2A
+  property: FLOPs bounded by 2A
+  bound: 8
+  strategy: stub_float
+- id: KANI-QWEN3M-006
+  obligation: Quantization memory ordering
+  property: Quantization memory ordering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-007
+  obligation: Throughput increases with bandwidth
+  property: Throughput increases with bandwidth
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-008
+  obligation: Compositional proof structure
+  property: Compositional proof structure
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN3M-009
+  obligation: 'End-to-end shape: tokens in -> logits out'
+  property: 'End-to-end shape: tokens in -> logits out'
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-QM3E-001
+  name: Qwen3 MoE End-to-End Verification
+  description: Full MoE model verification composition quality gate
+  checks:
+  - total_parameter_count
+  - active_parameter_count
+  - flops_per_token
+  - memory_breakdown
+  - throughput_model
+  - verification_ladder
+  - contract_composition
+  pass_criteria: All 7 falsification tests pass + 100% obligation coverage
+  falsification: Change num_experts from 128 to 64 to break total param count

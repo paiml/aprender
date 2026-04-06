@@ -1,0 +1,9 @@
+{
+  "commit_sha": null,
+  "work_item_id": "Add Qwen3-235B-A22B MoE model-specific contracts and artifacts",
+  "prompt": "New task: Add Qwen3-235B-A22B MoE model-specific contracts and artifacts",
+  "tdg_score": 0.0,
+  "repo_score": 0.0,
+  "rust_project_score": 0.0,
+  "timestamp": "2026-02-21T14:46:56.201720868Z"
+}

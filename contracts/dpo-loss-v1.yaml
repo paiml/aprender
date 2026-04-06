@@ -1,0 +1,181 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Direct Preference Optimization (DPO) loss function — aligns language models to human preferences without explicit
+    reward modeling
+  references:
+  - 'Rafailov et al. (2023) Direct Preference Optimization: Your Language Model is Secretly a Reward Model. NeurIPS. arXiv:2305.18290'
+  - Azar et al. (2023) A General Theoretical Paradigm to Understand Learning from Human Feedback. arXiv:2310.12036
+  - Schulman et al. (2017) Proximal Policy Optimization Algorithms. arXiv:1707.06347
+  depends_on:
+  - cross-entropy-kernel-v1
+  - softmax-kernel-v1
+equations:
+  dpo_loss:
+    formula: "DPO loss for a preference pair (x, y_w, y_l):\n  L_DPO(pi_theta; pi_ref) = -log(sigma(beta * (log_ratio_w -\
+      \ log_ratio_l)))\nwhere:\n  log_ratio_w = log(pi_theta(y_w | x)) - log(pi_ref(y_w | x))\n  log_ratio_l = log(pi_theta(y_l\
+      \ | x)) - log(pi_ref(y_l | x))\n  sigma(z) = 1 / (1 + exp(-z))  (logistic sigmoid)\n  beta > 0  (temperature / KL penalty\
+      \ coefficient)\n  y_w = preferred (winning) response\n  y_l = dispreferred (losing) response\nBatch loss: L = (1/N)\
+      \ * sum_{i=1}^{N} L_DPO^{(i)}\n"
+    domain: 'pi_theta, pi_ref: V* -> (0, 1] — policy distributions; beta > 0; x ∈ V* — prompt; y_w, y_l ∈ V* — responses'
+    codomain: L_DPO ∈ [0, +inf)
+    invariants:
+    - L_DPO >= 0 (negative log of sigmoid is non-negative)
+    - L_DPO = log(2) when pi_theta == pi_ref (sigmoid(0) = 0.5)
+    - L_DPO -> 0 as pi_theta assigns higher probability to y_w vs y_l relative to pi_ref
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Dpo_Loss
+  log_ratio:
+    formula: "Log-probability ratio between policy and reference:\n  r(x, y) = log(pi_theta(y | x)) - log(pi_ref(y | x))\n\
+      Computed as difference of per-token log-probabilities summed over sequence:\n  r(x, y) = sum_{t=1}^{T} [log pi_theta(y_t\
+      \ | x, y_{<t}) - log pi_ref(y_t | x, y_{<t})]\n"
+    domain: pi_theta, pi_ref policy distributions over sequences; x prompt; y response of length T
+    codomain: r ∈ (-inf, +inf)
+    invariants:
+    - r(x, y) = 0 when pi_theta == pi_ref
+    - r is finite when both policies assign non-zero probability to all tokens in y
+    - 'sum decomposition: sequence-level ratio = sum of token-level log-ratios'
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Log_Ratio
+  implicit_reward:
+    formula: "DPO implicit reward function:\n  r*(x, y) = beta * log(pi_theta(y | x) / pi_ref(y | x)) + beta * log Z(x)\n\
+      where Z(x) = sum_{y'} pi_ref(y' | x) * exp(r*(x, y') / beta) is the partition function.\nAt the optimal policy pi*:\n\
+      \  pi*(y | x) = (1 / Z(x)) * pi_ref(y | x) * exp(r*(x, y) / beta)\nThe DPO loss implicitly optimizes this reward without\
+      \ needing to compute Z(x).\n"
+    domain: x ∈ V* — prompt; y ∈ V* — response; beta > 0
+    codomain: r* ∈ (-inf, +inf)
+    invariants:
+    - Implicit reward is well-defined up to a constant (Z(x) cancels in preference comparisons)
+    - Higher implicit reward for preferred responses at convergence
+    - 'Recovers RLHF objective: maximizes E[r*(x,y)] - beta * KL(pi_theta || pi_ref)'
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Implicit_Reward
+proof_obligations:
+- type: bound
+  property: Log-ratio is finite
+  formal: '|r(x, y)| < inf when pi_theta(y_t | ...) > 0 and pi_ref(y_t | ...) > 0 for all tokens t'
+  applies_to: all
+- type: monotonicity
+  property: Loss decreases as preferred response probability increases
+  formal: dL_DPO/d(log_ratio_w) < 0 — increasing preferred log-ratio decreases loss
+  applies_to: all
+- type: invariant
+  property: Gradient is zero when pi_theta == pi_ref
+  formal: nabla_theta L_DPO = 0 when pi_theta = pi_ref (stationary at reference)
+  applies_to: all
+- type: bound
+  property: DPO loss is non-negative
+  formal: L_DPO >= 0 for all valid inputs (since -log(sigmoid(z)) >= 0 for all z)
+  applies_to: all
+- type: equivalence
+  property: DPO loss at reference policy equals log(2)
+  formal: L_DPO(pi_ref; pi_ref) = -log(sigma(0)) = log(2) ≈ 0.6931
+  tolerance: 1.0e-06
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_log_probs
+    description: Forward pass through pi_theta and pi_ref to get per-token log-probabilities for y_w and y_l
+    invariant: Log-probabilities are finite and <= 0 (valid log of probability)
+  - name: compute_log_ratios
+    description: Compute r_w = log(pi_theta(y_w|x)/pi_ref(y_w|x)) and r_l similarly
+    invariant: Log-ratios are finite when both policies assign positive probability
+  - name: apply_sigmoid
+    description: Compute sigma(beta * (r_w - r_l)) using numerically stable log-sigmoid
+    invariant: Output in (0, 1); use log1p_exp for stability
+  - name: negative_log
+    description: Compute -log(sigma(...)) as the final loss
+    invariant: Loss is non-negative and finite
+falsification_tests:
+- id: FALSIFY-DPO-001
+  rule: Non-negativity of DPO loss
+  prediction: L_DPO >= 0 for all valid log-ratio pairs and beta > 0
+  test: 'proptest: generate random log_ratio_w, log_ratio_l in [-10, 10] and beta in (0.01, 10); verify loss >= 0'
+  if_fails: Sign error in loss formula or numerically unstable log-sigmoid implementation
+- id: FALSIFY-DPO-002
+  rule: Loss at reference policy
+  prediction: L_DPO = log(2) when log_ratio_w == log_ratio_l == 0 for any beta
+  test: 'Direct test: set both log-ratios to 0 for beta in {0.01, 0.1, 1.0, 10.0}; verify loss ≈ 0.6931'
+  if_fails: Incorrect sigmoid or log implementation; beta scaling applied incorrectly
+- id: FALSIFY-DPO-003
+  rule: Monotonicity in preferred log-ratio
+  prediction: Increasing log_ratio_w while holding log_ratio_l fixed decreases loss
+  test: 'proptest: fix log_ratio_l and beta; generate pairs (r_w1, r_w2) with r_w1 < r_w2; verify L(r_w2) < L(r_w1)'
+  if_fails: Gradient sign inverted; optimizing in wrong direction
+- id: FALSIFY-DPO-004
+  rule: Numerical stability for extreme log-ratios
+  prediction: Loss is finite (no NaN/Inf) for log-ratios in [-100, 100]
+  test: 'proptest: generate extreme log-ratios near overflow boundaries; verify finite output'
+  if_fails: Missing log-sum-exp trick in sigmoid computation; exp overflow for large arguments
+- id: FALSIFY-DPO-005
+  rule: Symmetry under preference swap
+  prediction: L_DPO(r_w, r_l, beta) + L_DPO(r_l, r_w, beta) = -log(sigma(z)) - log(sigma(-z)) = log(1+exp(z))+log(1+exp(-z))
+    for z = beta*(r_w-r_l)
+  test: 'proptest: verify L(r_w,r_l) + L(r_l,r_w) = z + 2*log(1+exp(-|z|)) where z = beta*(r_w-r_l)'
+  if_fails: Asymmetric implementation error in loss computation
+kani_harnesses:
+- id: KANI-DPO-001
+  obligation: DPO loss non-negativity
+  property: -log(sigmoid(z)) >= 0 for all finite z (since sigmoid(z) in (0, 1])
+  bound: 16
+  strategy: stub_float
+  solver: cadical
+  harness: verify_dpo_loss_nonneg
+- id: KANI-DPO-002
+  obligation: Log-ratio finiteness
+  property: log_ratio = log_p_theta - log_p_ref is finite when both log-probs are finite
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_log_ratio_finite
+- id: KANI-DPO-003
+  obligation: Sigmoid output bounds
+  property: 0 < sigmoid(beta * delta) < 1 for all finite delta and beta > 0
+  bound: 16
+  strategy: stub_float
+  solver: cadical
+  harness: verify_sigmoid_bounds
+- id: KANI-DPO_LO-004
+  obligation: Log-ratio is finite
+  property: Log-ratio is finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DPO_LO-005
+  obligation: Loss decreases as preferred response probability increases
+  property: Loss decreases as preferred response probability increases
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DPO_LO-006
+  obligation: Gradient is zero when pi_theta == pi_ref
+  property: Gradient is zero when pi_theta == pi_ref
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DPO_LO-007
+  obligation: DPO loss is non-negative
+  property: DPO loss is non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-DPO_LO-008
+  obligation: DPO loss at reference policy equals log(2)
+  property: DPO loss at reference policy equals log(2)
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-DPO-001
+  name: DPO Loss Contract
+  description: Direct Preference Optimization loss correctness and numerical stability
+  checks:
+  - non_negativity
+  - reference_policy_value
+  - monotonicity
+  - numerical_stability
+  - preference_symmetry
+  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  falsification: Swap y_w and y_l labels to invert optimization direction

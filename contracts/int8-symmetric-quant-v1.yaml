@@ -1,0 +1,138 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: INT8 symmetric per-row weight quantization for transformer inference — absmax scaling with integer accumulation
+  references:
+  - 'Dettmers et al. (2022) LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale'
+  - 'Yao et al. (2022) ZeroQuant: Efficient and Affordable Post-Training Quantization for Large-Scale Transformers'
+  depends_on:
+  - matmul-kernel-v1.yaml
+equations:
+  per_row_scale:
+    formula: scale[r] = max(|W[r,:]|) / 127
+    domain: W ∈ ℝ^{R x C}, R rows, C columns
+    codomain: scale ∈ ℝ^R, scale[r] >= 0
+    invariants:
+    - scale[r] > 0 for all rows r where W[r,:] is not identically zero
+    - scale[r] = 0 if and only if W[r,:] = 0
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Per_Row_Scale
+  quantize:
+    formula: W_q[r,i] = clamp(round(W[r,i] / scale[r]), -127, 127)
+    domain: W ∈ ℝ^{R x C}, scale ∈ ℝ^R
+    codomain: W_q ∈ {-127, ..., 127}^{R x C}
+    invariants:
+    - -127 <= W_q[r,i] <= 127 for all r,i
+    - W_q[r,i] = 0 for all i when scale[r] = 0 (zero-row preservation)
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Quantize
+  dequant_dot:
+    formula: "Dequantized matrix-vector product:\n  output[r] = (Sigma dequant(W_q[r,i]) * x[i]) + bias[r]\n  where dequant(w)\
+      \ = w * scale[r]\nEquivalent integer-accumulate form:\n  output[r] = scale[r] * (Sigma W_q[r,i] * x[i]) + bias[r]\n\
+      The inner sum Sigma W_q[r,i] * x[i] can be computed with integer\nor mixed-precision arithmetic, then scaled once per\
+      \ row.\n"
+    domain: W_q ∈ Z^{R x C}, x ∈ ℝ^C, scale ∈ ℝ^R, bias ∈ ℝ^R
+    codomain: output ∈ ℝ^R
+    invariants:
+    - 'Factored form is algebraically exact: scale[r] * Sigma(W_q[r,i] * x[i]) = Sigma(W_q[r,i] * scale[r] * x[i])'
+    - output[r] = bias[r] when W[r,:] = 0 (zero-row passthrough)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Dequant_Dot
+proof_obligations:
+- type: equivalence
+  property: INT8 matvec approximates fp16 matvec
+  formal: '|int8_matvec(W, x) - fp16_matvec(W, x)| < tolerance element-wise'
+  tolerance: 0.05
+  applies_to: all
+- type: invariant
+  property: 'Compression ratio: 1 byte per weight'
+  formal: storage(W_q) = R * C bytes (vs 2 * R * C bytes for fp16)
+  applies_to: all
+- type: invariant
+  property: Scale positivity for non-zero rows
+  formal: W[r,:] != 0 implies scale[r] > 0
+  applies_to: all
+- type: invariant
+  property: Quantized range
+  formal: -127 <= W_q[r,i] <= 127 for all r,i
+  applies_to: all
+- type: invariant
+  property: Zero-row invariant
+  formal: W[r,:] = 0 implies scale[r] = 0 and output[r] = bias[r]
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_scales
+    description: 'Per-row absmax: scan each row to find max absolute value, divide by 127'
+    invariant: scale[r] = max(|W[r,:]|) / 127; scale[r] = 0 iff row is all-zero
+  - name: quantize_weights
+    description: Divide each weight by its row scale, round to nearest integer, clamp to [-127, 127]
+    invariant: W_q[r,i] = clamp(round(W[r,i] / scale[r]), -127, 127); W_q stored as int8
+  - name: int8_matvec
+    description: Integer dot product per row, then scale and add bias
+    invariant: output[r] = scale[r] * (Sigma_i W_q[r,i] * x[i]) + bias[r]
+falsification_tests:
+- id: FALSIFY-I8Q-001
+  rule: Equivalence to fp16 for Whisper dimensions
+  prediction: '|int8_matvec(W, x) - fp16_matvec(W, x)| < 0.05 element-wise'
+  test: proptest with random fp16 weights W in R^{384x1536} and R^{1536x384}, x ~ N(0,1)
+  if_fails: Quantization error exceeds tolerance — scale granularity insufficient or clamp distortion
+- id: FALSIFY-I8Q-002
+  rule: Round-trip accuracy (quantize then dequantize)
+  prediction: '|dequant(quant(W)) - W| <= scale[r] / 2 element-wise (half-LSB bound)'
+  test: proptest with random fp16 weight matrices, verify per-element error within half-step
+  if_fails: Rounding mode or clamping introduces error beyond theoretical half-LSB bound
+- id: FALSIFY-I8Q-003
+  rule: 'Edge case: near-zero weights'
+  prediction: Weights with |W[r,i]| < scale[r]/254 quantize to 0; scale remains valid
+  test: matrices with rows where max is 1e-6, verify scale > 0 and no division by zero
+  if_fails: Subnormal or near-zero scale causes NaN or Inf in quantization
+- id: FALSIFY-I8Q-004
+  rule: Uniform distribution stress test
+  prediction: Equivalence holds for adversarial weight distributions (uniform, bimodal, heavy-tail)
+  test: proptest with W ~ Uniform(-1,1), W ~ Laplace(0,0.1), W ~ Cauchy(0,1) clipped to fp16 range
+  if_fails: Distribution shape causes systematic quantization bias exceeding tolerance
+- id: FALSIFY-I8Q-005
+  rule: Zero-row invariant
+  prediction: Property holds under boundary conditions
+  test: Exercise boundary values for last obligation
+  if_fails: Edge case violation in Zero-row invariant
+kani_harnesses:
+- id: int8-symmetric-quant-v1-kani-001
+  obligation: INT8 matvec approximates fp16 matvec
+  bound: 8
+  strategy: bounded_int
+- id: KANI-INT8_S-002
+  obligation: 'Compression ratio: 1 byte per weight'
+  property: 'Compression ratio: 1 byte per weight'
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INT8_S-003
+  obligation: Scale positivity for non-zero rows
+  property: Scale positivity for non-zero rows
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INT8_S-004
+  obligation: Quantized range
+  property: Quantized range
+  bound: 8
+  strategy: exhaustive
+- id: KANI-INT8_S-005
+  obligation: Zero-row invariant
+  property: Zero-row invariant
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ISQV-001
+  name: int8-symmetric-quant-v1 Contract
+  description: Quality gate for INT8 symmetric per-row weight quantization for transformer i
+  checks:
+  - validation
+  - falsification
