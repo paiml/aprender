@@ -1,0 +1,107 @@
+[workspace]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.1"
+edition = "2021"
+authors = ["Pragmatic AI Labs Research Division"]
+license = "MIT"
+repository = "https://github.com/paiml/certeza"
+rust-version = "1.75"
+
+[workspace.dependencies]
+
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
+name = "certeza"
+version = "0.1.1"
+edition = "2021"
+authors = ["Pragmatic AI Labs Research Division"]
+description = "A scientific experiment into realistic provability with Rust - asymptotic test effectiveness framework"
+repository = "https://github.com/paiml/certeza"
+license = "MIT"
+keywords = ["testing", "property-based", "mutation", "formal-verification", "quality"]
+categories = ["development-tools::testing", "development-tools::profiling"]
+readme = "README.md"
+documentation = "https://docs.rs/certeza"
+
+[features]
+# Chaos engineering features (renacer pattern from Sprint 29)
+default = []
+chaos-basic = []
+chaos-network = ["chaos-basic"]
+chaos-byzantine = ["chaos-basic"]
+chaos-full = ["chaos-network", "chaos-byzantine"]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+[lints]
+workspace = true
+
+[dependencies]
+# Serialization for benchmark results
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# System information for metadata collection
+sysinfo = "0.30"
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+# Property-based testing framework
+proptest = "1.5"
+# Performance benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "vec_benchmarks"
+harness = false
+
+# Test coverage tools
+# Note: cargo-tarpaulin and cargo-llvm-cov are installed as cargo subcommands
+
+# Mutation testing
+# Note: cargo-mutants is installed as a cargo subcommand
+
+[profile.test]
+# Optimizations for faster test execution
+opt-level = 1
+
+[profile.release]
+# Production optimizations
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.bench]
+# Benchmark optimizations
+lto = true
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[profile.dev]
+panic = "abort"

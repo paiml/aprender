@@ -1,0 +1,158 @@
+# PMAT Quality Thresholds
+# Detailed quality metrics and thresholds for certeza project
+
+[complexity]
+# Cyclomatic complexity (control flow complexity)
+cyclomatic_threshold = 10
+cyclomatic_warn = 8
+cyclomatic_critical = 15
+
+# Cognitive complexity (human understandability)
+cognitive_threshold = 10
+cognitive_warn = 8
+cognitive_critical = 12
+
+# Nesting depth
+max_nesting = 5
+warn_nesting = 4
+
+# Function size
+max_lines_per_function = 50
+warn_lines_per_function = 40
+
+[satd]
+# Self-Admitted Technical Debt - ZERO TOLERANCE
+zero_tolerance = true
+patterns = [
+    "TODO",
+    "FIXME",
+    "HACK",
+    "XXX",
+    "TEMP",
+    "WORKAROUND",
+]
+
+# Require GitHub issue links for any tech debt
+require_issue_links = true
+fail_on_unlinked_satd = true
+
+[coverage]
+# Code coverage thresholds (EXTREME TDD: 85%+)
+minimum_coverage = 85.0
+target_coverage = 95.0
+
+# Line coverage
+min_line_coverage = 85.0
+target_line_coverage = 95.0
+
+# Branch coverage
+min_branch_coverage = 80.0
+target_branch_coverage = 90.0
+
+# Function coverage
+min_function_coverage = 90.0
+
+# Enforce coverage on new code
+enforce_on_new_code = true
+new_code_coverage = 95.0
+
+[mutation]
+# Mutation testing thresholds
+minimum_mutation_score = 85.0
+target_mutation_score = 90.0
+
+# Mutation testing configuration
+max_mutations_per_file = 1000
+timeout_multiplier = 2.0
+
+# Analysis of surviving mutants
+require_survivor_analysis = true
+
+[documentation]
+# Rustdoc coverage
+min_public_items_documented = 90.0
+min_private_items_documented = 50.0
+
+# Require examples for public functions
+require_examples = true
+min_example_coverage = 80.0
+
+# Module documentation
+require_module_docs = true
+require_crate_docs = true
+
+# Safety documentation (for unsafe code)
+require_safety_docs = true
+min_safety_doc_lines = 3
+
+[security]
+# Security analysis
+run_cargo_audit = true
+deny_vulnerabilities = true
+allow_unmaintained = false
+
+# Cargo-deny configuration
+run_cargo_deny = true
+deny_unmaintained = true
+deny_deprecated = true
+deny_duplicate_dependencies = true
+
+[rust_specific]
+# Rust-specific quality settings
+clippy_strictness = "pedantic"
+rustfmt_edition = "2021"
+
+# Unsafe code
+max_unsafe_blocks = 0
+require_unsafe_justification = true
+
+# Error handling
+require_result_handling = true
+forbid_unwrap_in_production = true
+
+[testing]
+# Test quality requirements
+min_unit_tests = 20
+min_integration_tests = 10
+min_property_tests = 5
+
+# Property-based testing
+proptest_min_iterations = 256
+proptest_max_iterations = 10000
+
+# Test organization
+require_test_modules = true
+require_assertion_messages = true
+
+[tiered_testing]
+# Tiered TDD-X workflow alignment (certeza-specific)
+
+# Tier 1: ON-SAVE (sub-second)
+tier1_timeout_ms = 1000
+tier1_tests = ["unit", "focused_property"]
+
+# Tier 2: ON-COMMIT (1-5 minutes)
+tier2_timeout_ms = 300000
+tier2_tests = ["all_property", "integration", "coverage"]
+
+# Tier 3: ON-MERGE/NIGHTLY (hours)
+tier3_timeout_ms = 7200000
+tier3_tests = ["mutation", "formal_verification", "benchmarks"]
+
+[grading]
+# Project scoring thresholds (Rust Project Score)
+
+# Grade boundaries
+a_plus_threshold = 95.0
+a_threshold = 90.0
+a_minus_threshold = 85.0
+b_plus_threshold = 80.0
+b_threshold = 70.0
+
+# Component weights
+tooling_weight = 25.0
+code_quality_weight = 20.0
+testing_weight = 20.0
+documentation_weight = 15.0
+performance_weight = 10.0
+community_weight = 10.0

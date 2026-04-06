@@ -1,0 +1,95 @@
+{
+  "title": "certeza: Scientific Framework for Asymptotic Test Effectiveness in Rust",
+  "description": "A research framework for approaching practical maximum confidence in software testing through tiered verification, property-based testing, mutation analysis, and scientific performance benchmarking. Includes comprehensive specifications (~26.5K words), Rust implementation with PMAT compliance, and reproducible benchmarking infrastructure.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "creators": [
+    {
+      "name": "Pragmatic AI Labs",
+      "affiliation": "Pragmatic AI Labs",
+      "orcid": ""
+    }
+  ],
+  "keywords": [
+    "rust",
+    "testing",
+    "property-based-testing",
+    "mutation-testing",
+    "benchmarking",
+    "performance-analysis",
+    "formal-verification",
+    "scientific-computing",
+    "reproducibility",
+    "tiered-testing",
+    "tdd",
+    "extreme-tdd",
+    "statistical-analysis",
+    "pmat"
+  ],
+  "subjects": [
+    {
+      "term": "Software Engineering",
+      "identifier": "http://id.loc.gov/authorities/subjects/sh89003285"
+    },
+    {
+      "term": "Software Testing",
+      "identifier": "http://id.loc.gov/authorities/subjects/sh96008664"
+    },
+    {
+      "term": "Performance Analysis",
+      "identifier": "http://id.loc.gov/authorities/subjects/sh85099588"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/paiml/certeza",
+      "relation": "isSupplementTo",
+      "scheme": "url",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/paiml/trueno",
+      "relation": "references",
+      "scheme": "url",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+      "relation": "references",
+      "scheme": "url",
+      "resource_type": "software"
+    },
+    {
+      "identifier": "https://github.com/paiml/compiled-rust-benchmarking",
+      "relation": "references",
+      "scheme": "url",
+      "resource_type": "software"
+    }
+  ],
+  "contributors": [
+    {
+      "name": "Contributors",
+      "type": "Other",
+      "affiliation": "Pragmatic AI Labs"
+    }
+  ],
+  "references": [
+    "Dijkstra, E. W. (1972). Notes On Structured Programming. Structured Programming.",
+    "Claessen, K., & Hughes, J. (2000). QuickCheck: A Lightweight Tool for Random Testing of Haskell Programs. ICFP.",
+    "Jia, Y., & Harman, M. (2011). An Analysis and Survey of the Development of Mutation Testing. IEEE TSE.",
+    "Chen, T. Y., Kuo, F.-C., & Zhou, Z. Q. (2018). Metamorphic Testing: A New Approach for Generating Next Test Cases. HKUST Tech Report.",
+    "Fleming, P. J., & Wallace, J. J. (1986). How not to lie with statistics: The correct way to summarize benchmark results. CACM."
+  ],
+  "notes": "This archive includes:\n\n1. Complete source code (Rust implementation)\n2. Comprehensive specifications:\n   - Asymptotic Test Effectiveness Framework (v1.1, ~14K words)\n   - Scientific Reporting and Benchmarking Framework (v1.0, ~12.5K words)\n3. Benchmarking infrastructure:\n   - TypeScript/Deno reporting tools\n   - Statistical analysis utilities\n   - Multi-format report generators (JSON, CSV, Markdown, HTML)\n4. PMAT-compliant quality gates and CI/CD configuration\n5. Reproducibility artifacts:\n   - Dockerfile for hermetic builds\n   - Toolchain manifests\n   - Validation scripts\n6. Example benchmark results and reports\n\nReproduction Instructions:\nSee REPRODUCTION.md for step-by-step instructions to reproduce all results from scratch using Docker or native builds.\n\nSystem Requirements:\n- Rust 1.82.0 (pinned via rust-toolchain.toml)\n- Deno 2.x (for reporting scripts)\n- Docker (optional, for hermetic builds)\n\nCitation:\nIf you use this software in your research, please cite using the DOI provided by Zenodo.",
+  "communities": [
+    {
+      "identifier": "rust-lang"
+    },
+    {
+      "identifier": "software-testing"
+    }
+  ],
+  "language": "eng",
+  "version": "0.1.0-phase3"
+}
