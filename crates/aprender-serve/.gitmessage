@@ -1,0 +1,46 @@
+# <type>(<scope>): <subject>
+#
+# <body>
+#
+# <footer>
+#
+# Types:
+#   feat     - New feature
+#   fix      - Bug fix
+#   perf     - Performance improvement
+#   refactor - Code restructuring (no feature/fix)
+#   test     - Add/update tests
+#   docs     - Documentation only
+#   style    - Formatting, no code change
+#   chore    - Maintenance (deps, config)
+#   ci       - CI/CD changes
+#
+# Scope examples: parser, transformer, quantize, tokenizer, api, cli
+#
+# Subject:
+#   - Imperative mood ("add" not "added")
+#   - No period at end
+#   - Max 50 characters
+#
+# Body:
+#   - Wrap at 72 characters
+#   - Explain WHAT and WHY, not HOW
+#   - Reference issues: Refs #123
+#
+# Footer:
+#   - Breaking changes: BREAKING CHANGE: <description>
+#   - Issue references: Closes #123, Fixes #456
+#
+# Example:
+#
+# feat(parser): add GGUF v3 header parsing
+#
+# Implement parser for GGUF version 3 header format including
+# new alignment field. Required for llama.cpp 0.3+ compatibility.
+#
+# - Parse new alignment metadata field
+# - Validate version >= 3 for new fields
+# - Backward compatible with v2 files
+#
+# Refs #234
+# Closes #567

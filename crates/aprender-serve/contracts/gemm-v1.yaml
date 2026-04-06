@@ -1,0 +1,84 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "BLAS GEMM contracts for batched and single-dispatch operations"
+  references:
+    - "Dongarra et al. (1990) LAPACK: A Portable Linear Algebra Library"
+    - "IMP-114: True GPU Batched GEMM specification"
+
+equations:
+  batched_gemm:
+    formula: "C[b] = A[b] @ B[b] for b ∈ [0, batch_size), A[b] ∈ ℝ^{m×k}, B[b] ∈ ℝ^{k×n}"
+    domain: "batch_size ≥ 1, m, k, n > 0"
+    invariants:
+      - "Output shape: [batch_size, m, n]"
+      - "Each batch element is independent (no cross-batch dependencies)"
+  flattened_batched_gemm:
+    formula: "Flatten A to [batch*m, k], dispatch single matmul, reshape to [batch, m, n]"
+    domain: "batch_size > 0, m, k, n > 0"
+    invariants:
+      - "Flattened result equals per-batch loop result"
+      - "Small batch (≤8): optimized loop; large batch (>8): parallel CPU+GPU"
+  single_dispatch_attention:
+    formula: "scores = softmax(Q @ K^T / sqrt(d_k)); output = scores @ V"
+    domain: "Q ∈ ℝ^{seq×d}, K ∈ ℝ^{seq×d}, V ∈ ℝ^{seq×d}"
+    invariants:
+      - "Attention output has same shape as V"
+      - "Single GPU dispatch replaces per-head loop"
+  gemm_numerical_stability:
+    formula: "Use Kahan summation or equivalent for large k dimensions"
+    domain: "k > 1024"
+    invariants:
+      - "Relative error bounded by O(k * eps_mach) not O(k^2 * eps_mach)"
+
+proof_obligations:
+  - type: invariant
+    property: "Batched GEMM independence"
+    formal: "C[b] depends only on A[b] and B[b], not on A[b'] or B[b'] for b' != b"
+    applies_to: all
+  - type: invariant
+    property: "Flattened equivalence"
+    formal: "flattened_batched_gemm(A,B) = loop { matmul(A[b], B[b]) } for all b"
+    tolerance: 1.0e-5
+    applies_to: all
+  - type: invariant
+    property: "Output shape for batched GEMM"
+    formal: "output.len() = batch_size * m * n"
+    applies_to: all
+  - type: bound
+    property: "Input buffer sizes"
+    formal: "A.len() = batch_size * m * k ∧ B.len() = batch_size * k * n"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-GEMM-001
+    rule: "Batched independence"
+    prediction: "Modifying A[0] does not change C[1]"
+    test: test_imp_118a_true_batched_gemm_correctness
+    if_fails: "Cross-batch buffer aliasing in flattened layout"
+  - id: FALSIFY-GEMM-002
+    rule: "Flattened vs loop equivalence"
+    prediction: "flattened_batched_gemm ≈ per-batch matmul loop"
+    test: test_imp_114b_flattened_matches_loop
+    if_fails: "Flattening stride or reshape indexing is wrong"
+  - id: FALSIFY-GEMM-003
+    rule: "Output buffer size"
+    prediction: "output.len() = batch * m * n exactly"
+    test: test_imp_114a_flattened_batched_gemm_correctness
+    if_fails: "Pre-allocation size mismatch"
+  - id: FALSIFY-GEMM-004
+    rule: "Single dispatch attention shape"
+    prediction: "Attention output shape = [seq_len, q_dim]"
+    test: test_imp_113b_single_dispatch_attention_correctness
+    if_fails: "Head concatenation or reshape produces wrong dimensions"
+
+kani_harnesses:
+  - id: gemm-kani-001
+    obligation: "Input buffer sizes"
+    bound: 4
+    strategy: bounded_int
+  - id: gemm-kani-002
+    obligation: "Output shape for batched GEMM"
+    bound: 4
+    strategy: bounded_int

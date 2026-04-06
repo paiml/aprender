@@ -1,0 +1,45 @@
+{
+  "config": {
+    "seed": 42,
+    "input_dim": 784,
+    "num_classes": 2,
+    "warmup_iterations": 100,
+    "benchmark_iterations": 10000,
+    "training_samples": 1000,
+    "pytorch_version": "2.9.1+cu128",
+    "python_version": "3.13.1",
+    "platform": "Linux 6.8.0-87-generic",
+    "cpu": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "timestamp": "2025-11-27T20:23:35Z"
+  },
+  "results": [
+    {
+      "name": "PyTorch LogisticRegression",
+      "iterations": 10000,
+      "mean_us": 5.1137684,
+      "std_us": 0.9747545790661263,
+      "ci_95_lower": 5.094663210250304,
+      "ci_95_upper": 5.132873589749695,
+      "p50_us": 5.028,
+      "p95_us": 5.208,
+      "p99_us": 8.032,
+      "min_us": 4.887,
+      "max_us": 88.795,
+      "throughput_per_sec": 195550.50635457016
+    },
+    {
+      "name": "PyTorch MLP",
+      "iterations": 10000,
+      "mean_us": 17.2413427,
+      "std_us": 2.6509287734288316,
+      "ci_95_lower": 17.189384496040795,
+      "ci_95_upper": 17.293300903959206,
+      "p50_us": 16.926,
+      "p95_us": 17.697,
+      "p99_us": 25.749,
+      "min_us": 16.315,
+      "max_us": 169.566,
+      "throughput_per_sec": 58000.12315746151
+    }
+  ]
+}

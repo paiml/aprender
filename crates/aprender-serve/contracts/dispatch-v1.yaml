@@ -1,0 +1,88 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Model dispatch contracts for CPU/GPU backend selection"
+  references:
+    - "realizar architecture: unified CPU/GPU dispatch with automatic backend selection"
+
+equations:
+  dispatch_decision:
+    formula: "backend = if gpu_available ∧ data_size > threshold then GPU else CPU"
+    domain: "data_size ∈ ℕ, threshold > 0"
+    invariants:
+      - "Decision is deterministic for given (gpu_available, data_size, threshold)"
+      - "CPU fallback always available"
+  dispatch_counter:
+    formula: "total = cpu_count + gpu_count (atomic counters)"
+    domain: "cpu_count, gpu_count ∈ ℕ"
+    invariants:
+      - "Counters are monotonically non-decreasing"
+      - "Atomic operations ensure thread-safety"
+  latency_tracking:
+    formula: "avg_latency = sum_latency / count, variance = sum_sq/count - avg^2"
+    domain: "count > 0, sum_latency ≥ 0"
+    invariants:
+      - "min_latency ≤ avg_latency ≤ max_latency"
+      - "Histogram bucket counts sum to total count"
+  gpu_buffer_limit:
+    formula: "exceeds_limit = (size_bytes > max_gpu_buffer_bytes)"
+    domain: "size_bytes ∈ ℕ, max_gpu_buffer_bytes > 0"
+    invariants:
+      - "Operations exceeding GPU buffer limit dispatch to CPU"
+      - "Limit check happens before GPU memory allocation"
+
+proof_obligations:
+  - type: invariant
+    property: "Dispatch counter consistency"
+    formal: "total_dispatches = cpu_dispatches + gpu_dispatches at all times"
+    applies_to: all
+  - type: invariant
+    property: "GPU ratio in [0, 1]"
+    formal: "0.0 ≤ gpu_ratio() ≤ 1.0, returns 0.0 when total = 0"
+    applies_to: all
+  - type: invariant
+    property: "Latency min/max ordering"
+    formal: "min_latency ≤ max_latency after any recording"
+    applies_to: all
+  - type: invariant
+    property: "CPU fallback correctness"
+    formal: "CPU path produces valid results when GPU is unavailable"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-DISP-001
+    rule: "Counter consistency"
+    prediction: "total = cpu + gpu after concurrent dispatches"
+    test: test_dispatch_metrics_record_dispatches
+    if_fails: "Atomic ordering insufficient for consistency"
+  - id: FALSIFY-DISP-002
+    rule: "GPU ratio zero-total"
+    prediction: "gpu_ratio() = 0.0 when no dispatches recorded"
+    test: test_dispatch_metrics_gpu_ratio
+    if_fails: "Division by zero on empty counters"
+  - id: FALSIFY-DISP-003
+    rule: "Latency histogram exhaustive"
+    prediction: "Sum of all histogram buckets = latency_count"
+    test: test_dispatch_metrics_cpu_latency
+    if_fails: "Bucket boundary logic drops or double-counts samples"
+  - id: FALSIFY-DISP-004
+    rule: "Backend auto-detection"
+    prediction: "GpuCompute::auto() succeeds on all platforms (CPU fallback)"
+    test: test_gpu_compute_auto_creation
+    if_fails: "Auto mode does not fall back to CPU when GPU unavailable"
+  - id: FALSIFY-DISP-005
+    rule: "Latency min ≤ max"
+    prediction: "After recording any latency, min ≤ max"
+    test: test_dispatch_metrics_gpu_latency
+    if_fails: "AtomicU64 fetch_min/fetch_max initialization wrong (MAX/0 init)"
+
+kani_harnesses:
+  - id: disp-kani-001
+    obligation: "GPU ratio in [0, 1]"
+    bound: 4
+    strategy: bounded_int
+  - id: disp-kani-002
+    obligation: "Dispatch counter consistency"
+    bound: 8
+    strategy: bounded_int

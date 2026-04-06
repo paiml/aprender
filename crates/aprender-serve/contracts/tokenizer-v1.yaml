@@ -1,0 +1,80 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "BPE tokenization contracts for text encoding and decoding"
+  references:
+    - "Sennrich et al. (2016) Neural Machine Translation of Rare Words with Subword Units"
+    - "Kudo & Richardson (2018) SentencePiece: A simple and language independent subword tokenizer"
+
+equations:
+  roundtrip:
+    formula: "decode(encode(text)) ⊇ text (lossless for in-vocabulary text)"
+    domain: "text ∈ UTF-8 strings, vocab ⊂ Unicode substrings"
+    invariants:
+      - "encode() always produces at least 1 token for non-empty input"
+      - "All token IDs in encode output are < vocab_size"
+  bpe_merge:
+    formula: "BPE: iteratively merge most frequent adjacent pair until no merge applies"
+    domain: "merge_rules ordered by priority (index 0 = highest priority)"
+    invariants:
+      - "Merge order is deterministic given fixed merge_rules"
+      - "Number of tokens decreases monotonically with each merge step"
+  vocabulary_bijection:
+    formula: "token_to_id and id_to_token are inverse mappings"
+    domain: "id ∈ [0, vocab_size), token ∈ vocab"
+    invariants:
+      - "id_to_token[token_to_id[t]] = t for all t in vocab"
+      - "token_to_id[id_to_token[i]] = i for all i in [0, vocab_size)"
+  special_tokens:
+    formula: "Special tokens are matched atomically before BPE splitting"
+    domain: "special ⊂ vocab, pattern: <|...|> or <...>"
+    invariants:
+      - "Special tokens are never split by BPE merges"
+      - "encode('<|endoftext|>') returns exactly 1 token ID"
+
+proof_obligations:
+  - type: bound
+    property: "All encoded token IDs within vocabulary"
+    formal: "∀ id ∈ encode(text): id < vocab_size"
+    applies_to: all
+  - type: invariant
+    property: "Non-empty input produces non-empty output"
+    formal: "text.len() > 0 ⟹ encode(text).len() ≥ 1"
+    applies_to: all
+  - type: invariant
+    property: "Vocabulary bijection"
+    formal: "token_to_id and id_to_token are consistent inverse maps"
+    applies_to: all
+  - type: invariant
+    property: "Unknown token fallback"
+    formal: "Out-of-vocabulary characters map to unk_token_id"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TOK-001
+    rule: "Encode output bounded"
+    prediction: "All token IDs < vocab_size for arbitrary UTF-8 input"
+    test: "Encode strings with Unicode, emoji, control chars"
+    if_fails: "encode() returns IDs outside vocabulary range"
+  - id: FALSIFY-TOK-002
+    rule: "Roundtrip decode(encode(text))"
+    prediction: "decode(encode(text)) recovers original text for ASCII input"
+    test: "Encode then decode common English sentences"
+    if_fails: "Token boundary or merge order produces wrong reconstruction"
+  - id: FALSIFY-TOK-003
+    rule: "Empty vocabulary rejected"
+    prediction: "BPETokenizer::new with empty vocab returns Err"
+    test: "Construct BPETokenizer with empty vocab"
+    if_fails: "Missing validation in constructor"
+  - id: FALSIFY-TOK-004
+    rule: "Special token atomicity"
+    prediction: "Special tokens are encoded as single token IDs"
+    test: "Encode text containing <|endoftext|>, verify single ID"
+    if_fails: "BPE splits special tokens into subwords"
+
+kani_harnesses:
+  - id: tok-kani-001
+    obligation: "All encoded token IDs within vocabulary"
+    bound: 8
+    strategy: bounded_int

@@ -1,0 +1,30 @@
+# cargo-mutants configuration
+# Run: cargo mutants
+
+[mutants]
+# Directories to test
+examine_globs = ["src/**/*.rs"]
+
+# Directories to skip
+exclude_globs = [
+    "src/main.rs",  # Entry point
+    "tests/**",
+    "benches/**",
+    "examples/**",
+]
+
+# Timeout per mutant (seconds)
+timeout = 300
+
+# Number of parallel jobs
+jobs = 4
+
+# Minimum test coverage for mutants
+minimum_test_timeout = 60
+
+# Skip mutants in these functions (known to be tested indirectly)
+skip_functions = [
+    "fmt",
+    "clone",
+    "default",
+]

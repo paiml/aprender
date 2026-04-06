@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e94560"/>
+      <stop offset="100%" style="stop-color:#ff6b6b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" fill="url(#bg)" rx="8"/>
+
+  <!-- Title -->
+  <text x="40" y="60" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="700" fill="#ffffff">realizar</text>
+  <text x="40" y="90" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#8892b0">Pure Rust ML Inference Engine</text>
+
+  <!-- Performance highlight -->
+  <rect x="40" y="110" width="200" height="70" fill="url(#accent)" rx="6"/>
+  <text x="140" y="145" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="700" fill="#ffffff" text-anchor="middle">276 tok/s</text>
+  <text x="140" y="168" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#ffffff" text-anchor="middle" opacity="0.9">RTX 4090 CUDA</text>
+
+  <!-- Comparison -->
+  <text x="280" y="135" font-family="monospace" font-size="14" fill="#64ffda">vs llama.cpp: +8%</text>
+  <text x="280" y="158" font-family="monospace" font-size="14" fill="#64ffda">vs Ollama: +21%</text>
+
+  <!-- Features -->
+  <text x="480" y="135" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#8892b0">GGUF • SafeTensors • Q4_K/Q8_0</text>
+  <text x="480" y="158" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#8892b0">Pure Rust PTX • No LLVM/nvcc</text>
+
+  <!-- Rust logo hint -->
+  <circle cx="750" cy="50" r="25" fill="none" stroke="#e94560" stroke-width="2" opacity="0.5"/>
+  <text x="750" y="56" font-family="system-ui, sans-serif" font-size="20" fill="#e94560" text-anchor="middle" opacity="0.7">🦀</text>
+</svg>

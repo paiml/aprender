@@ -1,0 +1,43 @@
+# Realizar Code Owners
+#
+# These owners will be requested for review when someone opens a pull request.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything
+* @paiml/realizar-maintainers
+
+# Core inference engine
+/src/lib.rs @paiml/core-team
+/src/inference/ @paiml/core-team
+/src/transformer/ @paiml/core-team
+/src/quantize/ @paiml/core-team
+
+# Model parsers
+/src/gguf.rs @paiml/parser-team
+/src/safetensors.rs @paiml/parser-team
+
+# HTTP API
+/src/api.rs @paiml/api-team
+/src/server.rs @paiml/api-team
+
+# CLI
+/src/cli.rs @paiml/cli-team
+/src/main.rs @paiml/cli-team
+
+# Benchmarks
+/benches/ @paiml/perf-team
+
+# Documentation
+/docs/ @paiml/docs-team
+/book/ @paiml/docs-team
+README.md @paiml/docs-team
+
+# CI/CD
+/.github/ @paiml/devops-team
+/Makefile @paiml/devops-team
+/Dockerfile @paiml/devops-team
+
+# Dependencies and configuration
+/Cargo.toml @paiml/core-team
+/Cargo.lock @paiml/core-team
+/rust-toolchain.toml @paiml/devops-team

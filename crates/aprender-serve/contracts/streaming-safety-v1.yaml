@@ -1,0 +1,80 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-04-02"
+  author: "candle-vs-apr F-SCALE-01 (streaming stack overflow)"
+  description: "SSE streaming safety — async handler Future size must be bounded"
+  references:
+    - "realizr#172: SSE streaming stack overflow"
+    - "7 speculative fixes failed (stack size, Box::pin, skip backends, sync wrapper)"
+    - "Root cause unknown — this contract defines what MUST hold"
+
+# Five-whys on the INVESTIGATION FAILURE (meta):
+# 1. Why 7 failed attempts? → Guessed at fix locations
+# 2. Why guessed? → No contract defining what streaming MUST satisfy
+# 3. Why no contract? → Jumped to code before provable diagnosis
+# 4. Why jumped? → Violated Measure-and-Fix policy
+# 5. Root cause: **fixed symptoms without proving root cause**
+
+equations:
+  future_size_bounded:
+    formula: "size_of::<HandlerFuture>() < TOKIO_WORKER_STACK_SIZE"
+    domain: "All async handler functions registered with axum Router"
+    invariants:
+      - "The Future returned by openai_chat_completions_handler must fit on the tokio worker thread stack"
+      - "If Future > 1MB, the handler must Box::pin its internal state or use spawn_blocking"
+      - "Streaming and non-streaming paths must have comparable Future sizes"
+    measurement: |
+      At compile time: #[cfg(debug_assertions)] const_assert!(std::mem::size_of::<F>() < 1_000_000)
+      At runtime: RUST_MIN_STACK=N to test boundary
+
+  streaming_parity:
+    formula: "streaming_works ⟺ non_streaming_works"
+    domain: "openai_chat_completions_handler with stream:true vs stream:false"
+    invariants:
+      - "If non-streaming returns 200 OK, streaming must also return 200 OK (SSE)"
+      - "If streaming overflows but non-streaming works, the overflow is in stream-specific code"
+      - "The handler function body must be identical up to the stream/non-stream branch point"
+
+proof_obligations:
+  - type: precondition
+    property: "Handler Future fits in stack"
+    formal: "size_of(handler_future) < worker_stack_size"
+    measurement: "Print size_of handler future in debug builds"
+
+  - type: invariant
+    property: "No async state machine inflation from unused backends"
+    formal: "Each try_* backend contributes O(1) to handler Future size"
+    measurement: "Compile with each backend feature independently, compare Future sizes"
+
+falsification_tests:
+  - id: "FALSIFY-SS-001"
+    rule: "Non-streaming request succeeds (baseline)"
+    prediction: "stream:false returns 200 + valid JSON"
+    test: curl_non_streaming_baseline
+    if_fails: "Handler Future too large even for non-streaming path"
+
+  - id: "FALSIFY-SS-002"
+    rule: "Streaming request succeeds"
+    prediction: "stream:true returns SSE events without stack overflow"
+    test: curl_streaming_sse
+    if_fails: "Async state machine inflated beyond tokio worker stack size"
+
+  - id: "FALSIFY-SS-003"
+    rule: "Handler Future size bounded"
+    prediction: "std::mem::size_of_val(&handler_future) < 1MB"
+    test: sizeof_handler_future_debug
+    if_fails: "Handler Future exceeds 1MB — needs Box::pin or spawn_blocking"
+
+  - id: "FALSIFY-SS-004"
+    rule: "Streaming works with minimal features"
+    prediction: "Build with --features cuda only, streaming returns SSE events"
+    test: streaming_minimal_features_cuda_only
+    if_fails: "Unused backend features inflate async state machine beyond stack"
+
+diagnosis_protocol: |
+  BEFORE any code change:
+  1. Measure handler Future size: std::mem::size_of_val()
+  2. Build with minimal features to isolate which backend inflates the Future
+  3. Use cargo-expand to inspect the generated async state machine
+  4. Only then apply targeted fix with provable contract binding

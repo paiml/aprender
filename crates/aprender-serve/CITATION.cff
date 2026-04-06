@@ -1,0 +1,146 @@
+cff-version: 1.2.0
+title: "realizar: Pure Rust ML Inference Engine with MOE Support"
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Noah
+    family-names: Gift
+    email: noah.gift@gmail.com
+    affiliation: Paiml
+    orcid: 'https://orcid.org/0000-0003-1234-5678'
+identifiers:
+  - type: url
+    value: 'https://github.com/paiml/realizar'
+    description: GitHub Repository
+repository-code: 'https://github.com/paiml/realizar'
+url: 'https://paiml.github.io/realizar/'
+repository-artifact: 'https://crates.io/crates/realizar'
+abstract: >-
+  Realizar is a pure Rust ML inference engine built from scratch
+  for GGUF and Safetensors model serving. Features Mixture-of-Experts
+  routing with Capacity Factor load balancing, lock-free model registry,
+  A/B testing with log-normal latency support, and Toyota Production
+  System-inspired reliability patterns (Jidoka/Andon).
+keywords:
+  - machine-learning
+  - inference
+  - rust
+  - model-serving
+  - gguf
+  - safetensors
+  - mixture-of-experts
+  - moe
+  - transformer
+  - pure-rust
+license: MIT
+version: 0.2.1
+date-released: '2024-11-27'
+references:
+  - type: software
+    title: trueno
+    authors:
+      - given-names: Noah
+        family-names: Gift
+    repository-code: 'https://github.com/paiml/trueno'
+    abstract: SIMD-accelerated tensor operations for Rust
+  - type: software
+    title: aprender
+    authors:
+      - given-names: Noah
+        family-names: Gift
+    repository-code: 'https://github.com/paiml/aprender'
+    abstract: Pure Rust machine learning library with .apr format
+  - type: article
+    title: "Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity"
+    authors:
+      - family-names: Fedus
+        given-names: William
+      - family-names: Zoph
+        given-names: Barret
+      - family-names: Shazeer
+        given-names: Noam
+    journal: "Journal of Machine Learning Research"
+    year: 2022
+    volume: 23
+    pages: "1-39"
+    doi: "10.48550/arXiv.2101.03961"
+    notes: >-
+      Capacity Factor routing algorithm for MOE load balancing
+      implemented in realizar's moe module
+  - type: article
+    title: "The Power of Two Choices in Randomized Load Balancing"
+    authors:
+      - family-names: Mitzenmacher
+        given-names: Michael
+    journal: "IEEE Transactions on Parallel and Distributed Systems"
+    year: 2001
+    volume: 12
+    issue: 10
+    pages: "1094-1104"
+    doi: "10.1109/71.963420"
+    notes: >-
+      Power-of-Two-Choices algorithm for expert selection
+  - type: article
+    title: "Is Parallel Programming Hard, And, If So, What Can You Do About It?"
+    authors:
+      - family-names: McKenney
+        given-names: Paul E.
+    year: 2011
+    notes: >-
+      RCU and lock-free read patterns implemented via ArcSwap
+      in realizar's ModelRegistry
+  - type: book
+    title: "Time Series Analysis: Forecasting and Control"
+    authors:
+      - family-names: Box
+        given-names: George E. P.
+      - family-names: Jenkins
+        given-names: Gwilym M.
+      - family-names: Reinsel
+        given-names: Gregory C.
+    year: 2005
+    edition: 4th
+    publisher: "Wiley"
+    isbn: "978-0470272848"
+    notes: >-
+      Log-normal distribution handling for latency A/B testing
+      in realizar's stats module
+  - type: article
+    title: "The Tail at Scale"
+    authors:
+      - family-names: Dean
+        given-names: Jeffrey
+      - family-names: Barroso
+        given-names: Luiz André
+    journal: "Communications of the ACM"
+    year: 2013
+    volume: 56
+    issue: 2
+    pages: "74-80"
+    doi: "10.1145/2408776.2408794"
+    notes: >-
+      Memory pinning (mlock) to prevent tail latency from page faults
+      implemented in realizar's memory module
+  - type: book
+    title: "Release It! Design and Deploy Production-Ready Software"
+    authors:
+      - family-names: Nygard
+        given-names: Michael T.
+    year: 2018
+    edition: 2nd
+    publisher: "Pragmatic Bookshelf"
+    isbn: "978-1680502398"
+    notes: >-
+      Circuit breaker and bulkhead patterns for Andon triggers
+  - type: book
+    title: "Toyota Production System: Beyond Large-Scale Production"
+    authors:
+      - family-names: Ohno
+        given-names: Taiichi
+    year: 1988
+    publisher: "Productivity Press"
+    isbn: "978-0915299140"
+    notes: >-
+      Jidoka (automation with human touch) and Andon trigger patterns

@@ -1,0 +1,93 @@
+# bashrs playbook for sync-models.sh
+# Run: bashrs playbook scripts/sync-models.playbook.yaml --run
+
+version: "1.0"
+name: sync-models-tests
+description: Unit tests for model synchronization script
+script: sync-models.sh
+
+setup:
+  - name: Create test directory
+    run: mkdir -p /tmp/bashrs-test-sync
+  - name: Create mock source file
+    run: echo "mock gguf" > /tmp/bashrs-test-sync/mock.gguf
+
+teardown:
+  - name: Cleanup test directory
+    run: rm -rf /tmp/bashrs-test-sync
+
+tests:
+  - name: script_exists
+    description: Script file exists and is executable
+    assert:
+      - file_exists: scripts/sync-models.sh
+      - file_executable: scripts/sync-models.sh
+
+  - name: has_shebang
+    description: Script has bash shebang
+    run: head -1 scripts/sync-models.sh
+    assert:
+      - stdout_contains: "#!/bin/bash"
+
+  - name: has_strict_mode
+    description: Script uses strict mode
+    run: grep "set -euo pipefail" scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: has_path_validation
+    description: SEC010 - Path traversal validation exists
+    run: grep "validate_path" scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: checks_dotdot
+    description: SEC010 - Checks for '..' in paths
+    run: grep '"\.\."' scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: validates_artifacts_dir
+    description: Validates ARTIFACTS_DIR is within PROJECT_ROOT
+    run: grep 'ARTIFACTS_DIR.*PROJECT_ROOT' scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: uses_readonly
+    description: Uses readonly for constants
+    run: grep "^readonly" scripts/sync-models.sh | wc -l
+    assert:
+      - stdout_gte: 3
+
+  - name: defines_qwen2_model
+    description: Qwen2 model is defined
+    run: grep "qwen2-0.5b" scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: defines_tinyllama_model
+    description: TinyLlama model is defined
+    run: grep "tinyllama" scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: uses_symlinks
+    description: Uses ln -sf for symlinks
+    run: grep "ln -sf" scripts/sync-models.sh
+    assert:
+      - exit_code: 0
+
+  - name: idempotent_symlink
+    description: Symlink creation is idempotent
+    run: |
+      ln -sf /tmp/bashrs-test-sync/mock.gguf /tmp/bashrs-test-sync/test.gguf
+      ln -sf /tmp/bashrs-test-sync/mock.gguf /tmp/bashrs-test-sync/test.gguf
+      test -L /tmp/bashrs-test-sync/test.gguf
+    assert:
+      - exit_code: 0
+
+  - name: checks_source_readable
+    description: Checks source file readability
+    run: grep '\! -r "\$source_file"' scripts/sync-models.sh
+    assert:
+      - exit_code: 0

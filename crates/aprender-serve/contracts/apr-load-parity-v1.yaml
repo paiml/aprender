@@ -1,0 +1,52 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "candle-vs-apr F-FORMAT-01 (APR load 120x slower)"
+  description: "APR v2 model loading must bypass eager CPU dequantization"
+  references:
+    - "candle-vs-apr: APR ~60s vs GGUF 0.49s (120x slower)"
+    - "realizr GH-175: from_apr_bytes() eagerly CPU-dequants all Q4K"
+    - "Zero-copy mmap claim falsified by dequant+requant roundtrip"
+
+# Five-whys:
+# 1. Why 60s load? → from_apr_bytes() CPU dequants ALL Q4K tensors to F32
+# 2. Why CPU dequant? → build_apr_layers() calls get_f32() for every tensor
+# 3. Why get_f32()? → dequant_by_dtype() in mod_dequant_q4k_apr.rs:41-88
+# 4. Why not pass Q4K to GPU? → upload_single_weight() receives F32 bytes
+# 5. Root cause: eager CPU dequant pipeline — Q4K bytes never reach GPU
+
+equations:
+  lazy_dequant:
+    formula: "gpu_path ⟹ Q4K_bytes → GPU_buffer (no CPU F32 intermediate)"
+    domain: "APR v2 CUDA model loading"
+    invariants:
+      - "CUDA path must skip from_apr_bytes() CPU dequant entirely"
+      - "Raw Q4K bytes uploaded to GPU via load_quantized_weights()"
+      - "Fused Q4K GEMV kernels handle dequant at compute time"
+
+  load_time_parity:
+    formula: "apr_load_time <= 2 × gguf_load_time"
+    domain: "Model loading latency"
+    invariants:
+      - "APR mmap + index parse should match GGUF mmap parse"
+      - "No CPU dequantization on the critical path"
+      - "GPU weight upload time bounded by PCIe bandwidth"
+
+obligations:
+  - "AprV2ModelCuda must use mmap'd Q4K bytes directly"
+  - "build_apr_layers() must NOT be called on CUDA path"
+  - "upload_single_weight() must accept raw Q4K bytes"
+  - "Fused Q4K GEMV dispatch must match GGUF path"
+
+falsification_tests:
+  - id: "FALSIFY-ALP-001"
+    rule: "APR CUDA load time <= 2x GGUF load time"
+    prediction: "apr_load_ms / gguf_load_ms <= 2.0"
+    test: probador_llm_load_apr_vs_gguf_time
+    if_fails: "APR model loading still does eager CPU dequantization on the critical path"
+  - id: "FALSIFY-ALP-002"
+    rule: "APR CUDA decode tok/s within 10% of GGUF"
+    prediction: "apr_tok_s / gguf_tok_s >= 0.9"
+    test: probador_llm_load_apr_vs_gguf_throughput
+    if_fails: "APR decode path has overhead beyond load-time dequantization"

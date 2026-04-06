@@ -1,0 +1,1 @@
+{"content_hash":"a0682bc3a9bc710f","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/kv-cache-management-v1.yaml","line":null,"contract_stem":"kv-cache-management-v1","suppressed":false}]}

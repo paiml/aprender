@@ -1,0 +1,346 @@
+# Chat Template State Machine Playbook for Realizar
+# Verified with: bashrs lint && bashrs purify
+#
+# This playbook defines the state machine for chat template processing
+# in the realizar inference engine following Toyota Way principles.
+#
+# Reference: Realizar chat_template module
+
+version: "1.0"
+name: "Realizar Chat Template State Machine"
+description: "Verify correct chat template processing for LLM inference"
+
+machine:
+  id: "chat_template_inference"
+  initial: "idle"
+
+  states:
+    idle:
+      id: "idle"
+      description: "Template engine ready for model loading"
+      invariants:
+        - description: "No active template"
+          condition: "engine.template.is_none()"
+
+    model_loading:
+      id: "model_loading"
+      description: "Loading GGUF/SafeTensors model with tokenizer"
+      on_entry:
+        - type: log
+          message: "Loading model and extracting tokenizer metadata"
+      invariants:
+        - description: "Model path provided"
+          condition: "engine.model_path.is_some()"
+
+    detecting:
+      id: "detecting"
+      description: "Auto-detecting template format from model name or vocab"
+      on_entry:
+        - type: log
+          message: "Starting format detection"
+      invariants:
+        - description: "Model name or vocab available"
+          condition: "engine.model_name.is_some() || engine.vocab.is_some()"
+
+    template_ready:
+      id: "template_ready"
+      description: "Template compiled and ready for formatting"
+      invariants:
+        - description: "Template is compiled"
+          condition: "engine.template.is_some()"
+        - description: "Format is known"
+          condition: "engine.format != TemplateFormat::Unknown"
+
+    formatting:
+      id: "formatting"
+      description: "Formatting conversation for inference"
+      invariants:
+        - description: "Template is ready"
+          condition: "engine.template.is_some()"
+        - description: "Messages provided"
+          condition: "engine.messages.len() > 0"
+
+    tokenizing:
+      id: "tokenizing"
+      description: "Tokenizing formatted prompt"
+      invariants:
+        - description: "Formatted output available"
+          condition: "engine.formatted_output.len() > 0"
+
+    inference_ready:
+      id: "inference_ready"
+      description: "Prompt ready for model inference"
+      final_state: "true"
+      invariants:
+        - description: "Token IDs generated"
+          condition: "engine.token_ids.len() > 0"
+
+    error:
+      id: "error"
+      description: "Error encountered during processing"
+      final_state: "true"
+      invariants:
+        - description: "Error is recorded"
+          condition: "engine.error.is_some()"
+
+  transitions:
+    - id: "load_model"
+      from: "idle"
+      to: "model_loading"
+      event: "model_path_set"
+      description: "Begin model loading"
+
+    - id: "model_loaded"
+      from: "model_loading"
+      to: "detecting"
+      event: "model_loaded"
+      description: "Model loaded, detect template format"
+
+    - id: "format_detected"
+      from: "detecting"
+      to: "template_ready"
+      event: "format_detected"
+      description: "Format identified, template ready"
+      guard: "format != TemplateFormat::Unknown"
+
+    - id: "start_formatting"
+      from: "template_ready"
+      to: "formatting"
+      event: "messages_provided"
+      description: "Messages received, begin formatting"
+
+    - id: "format_complete"
+      from: "formatting"
+      to: "tokenizing"
+      event: "formatted"
+      description: "Formatted output ready, tokenize"
+
+    - id: "tokenize_complete"
+      from: "tokenizing"
+      to: "inference_ready"
+      event: "tokenized"
+      description: "Tokens ready for inference"
+
+    - id: "loading_error"
+      from: "model_loading"
+      to: "error"
+      event: "load_failed"
+      description: "Model loading failed"
+
+    - id: "detection_error"
+      from: "detecting"
+      to: "error"
+      event: "detection_failed"
+      description: "Could not detect format"
+
+    - id: "format_error"
+      from: "formatting"
+      to: "error"
+      event: "format_failed"
+      description: "Conversation formatting failed"
+
+    - id: "tokenize_error"
+      from: "tokenizing"
+      to: "error"
+      event: "tokenize_failed"
+      description: "Tokenization failed"
+
+  forbidden:
+    - from: "idle"
+      to: "formatting"
+      reason: "Cannot format without loading model"
+
+    - from: "idle"
+      to: "inference_ready"
+      reason: "Cannot be inference-ready without processing"
+
+    - from: "detecting"
+      to: "inference_ready"
+      reason: "Cannot be inference-ready without formatting"
+
+# Feature Coverage Requirements
+coverage:
+  features:
+    templates:
+      - chatml_basic           # ChatML single message
+      - chatml_multiturn       # ChatML multi-turn conversation
+      - chatml_system          # ChatML with system prompt
+      - llama2_basic           # LLaMA2 single message
+      - llama2_system          # LLaMA2 with <<SYS>> system prompt
+      - mistral_basic          # Mistral single message (no system)
+      - phi_basic              # Phi Instruct/Output format
+      - alpaca_basic           # Alpaca ### format
+      - raw_passthrough        # Raw fallback
+      - custom_jinja2          # Custom HuggingFace template
+
+    auto_detection:
+      - detect_from_model_name # Model name pattern matching
+      - detect_from_vocab      # Vocabulary token detection
+      - detect_chatml_tokens   # <|im_start|> in vocab
+      - detect_llama2_tokens   # [INST] in vocab
+      - detect_fallback_raw    # Unknown model -> Raw
+
+    gguf_integration:
+      - gguf_tokenizer_extract   # Extract tokenizer from GGUF
+      - gguf_vocab_preserve      # Preserve vocabulary during APR import
+      - gguf_template_metadata   # Read chat_template from GGUF metadata
+
+    edge_cases:
+      - empty_conversation     # [] input
+      - single_message         # One user message
+      - unicode_content        # CJK, emoji, RTL
+      - special_token_escape   # Content with <|im_end|>
+      - long_conversation      # 100+ turns
+
+    security:
+      - template_size_limit    # Reject > 100KB
+      - recursion_limit        # Max 100 depth
+      - no_filesystem          # No file access
+      - no_code_exec           # No arbitrary code
+
+  thresholds:
+    minimum_coverage: 95
+    target_coverage: 100
+
+# Performance Requirements (inference-focused)
+performance:
+  format_single_message:
+    max_duration_us: 50       # < 50 microseconds (faster than aprender)
+    max_memory_kb: 5
+  format_conversation:
+    max_duration_us: 500      # < 500 microseconds for 10 turns
+    max_memory_kb: 50
+  auto_detection:
+    max_duration_us: 100      # < 100 microseconds
+    max_memory_kb: 1
+  template_compile:
+    max_duration_ms: 5        # < 5 milliseconds
+    max_memory_kb: 256
+  full_pipeline:              # Format + tokenize
+    max_duration_ms: 2        # < 2 milliseconds
+    max_memory_kb: 512
+
+# Determinism Requirements
+determinism:
+  enabled: "true"
+  iterations: 5
+  description: "Same input must produce identical token sequence"
+
+# Path Assertions
+assertions:
+  path:
+    must_visit:
+      - "idle"
+      - "model_loading"
+      - "detecting"
+      - "template_ready"
+      - "formatting"
+      - "tokenizing"
+      - "inference_ready"
+    must_not_visit:
+      - "error"  # For valid inputs
+
+  output:
+    - var: "token_ids"
+      not_empty: "true"
+    - var: "errors"
+      empty: "true"  # For valid inputs
+
+# Test Scenarios
+scenarios:
+  - name: "ChatML GGUF Flow"
+    input:
+      model_path: "qwen2-0.5b-instruct.gguf"
+      messages:
+        - role: "system"
+          content: "You are helpful."
+        - role: "user"
+          content: "Hello"
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "<|im_start|>system"
+        - "<|im_end|>"
+        - "<|im_start|>assistant"
+      token_count_min: 10
+
+  - name: "LLaMA2 TinyLlama Flow"
+    input:
+      model_path: "tinyllama-1.1b-chat.gguf"
+      messages:
+        - role: "system"
+          content: "Be concise."
+        - role: "user"
+          content: "What is Rust?"
+    expected:
+      format: "Llama2"
+      output_contains:
+        - "<s>"
+        - "[INST]"
+        - "<<SYS>>"
+        - "<</SYS>>"
+      token_count_min: 15
+
+  - name: "Mistral No System"
+    input:
+      model_path: "mistral-7b-instruct.gguf"
+      messages:
+        - role: "system"
+          content: "Ignored"
+        - role: "user"
+          content: "Hello"
+    expected:
+      format: "Mistral"
+      output_not_contains:
+        - "Ignored"
+        - "<<SYS>>"
+      output_contains:
+        - "[INST]"
+
+  - name: "Auto-Detection Fallback"
+    input:
+      model_path: "unknown-model.gguf"
+      messages:
+        - role: "user"
+          content: "Test"
+    expected:
+      format: "Raw"
+      output_contains:
+        - "Test"
+
+  - name: "Multi-turn Conversation"
+    input:
+      model_path: "qwen2-0.5b-instruct.gguf"
+      messages:
+        - role: "user"
+          content: "2+2?"
+        - role: "assistant"
+          content: "4"
+        - role: "user"
+          content: "3+3?"
+    expected:
+      format: "ChatML"
+      output_contains:
+        - "2+2?"
+        - "4"
+        - "3+3?"
+      message_order_preserved: "true"
+
+# Probador Integration
+probador:
+  enabled: "true"
+  test_file: "tests/chat_template_tests.rs"
+  example: "examples/chat_template.rs"
+  coverage_report: "target/coverage/chat_template.json"
+  visual_snapshots:
+    - name: "chatml_inference"
+      scenario: "ChatML GGUF Flow"
+    - name: "llama2_inference"
+      scenario: "LLaMA2 TinyLlama Flow"
+
+# bashrs Verification Commands
+verification:
+  lint: "bashrs lint playbooks/chat_template.yaml"
+  test: "cargo test chat_template"
+  example: "cargo run --example chat_template"
+  coverage: "cargo llvm-cov -- chat_template"

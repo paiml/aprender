@@ -1,0 +1,89 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "KV cache lifecycle management for transformer inference"
+  references:
+    - "Pope et al. (2022) Efficiently Scaling Transformer Inference"
+    - "Kwon et al. (2023) Efficient Memory Management for LLM Serving with PagedAttention"
+
+equations:
+  cache_memory:
+    formula: "mem_bytes = 2 * num_layers * num_kv_heads * max_seq_len * head_dim * sizeof(f32)"
+    domain: "num_layers, num_kv_heads, head_dim > 0, max_seq_len ∈ [1, 131072]"
+    invariants:
+      - "Memory is pre-allocated at init, not during inference"
+      - "Factor of 2 accounts for K and V caches"
+  cache_append:
+    formula: "K_cache[layer][pos] = K_new; V_cache[layer][pos] = V_new; pos += 1"
+    domain: "pos ∈ [0, max_seq_len), layer ∈ [0, num_layers)"
+    invariants:
+      - "pos monotonically increases within a sequence"
+      - "cache[i] immutable for i < pos (append-only)"
+  gqa_layout:
+    formula: "K_cache shape = [num_kv_heads, max_len, head_dim], num_kv_heads ≤ num_heads"
+    domain: "num_heads mod num_kv_heads = 0"
+    invariants:
+      - "GQA ratio = num_heads / num_kv_heads is a positive integer"
+      - "Each KV head is shared by exactly (num_heads / num_kv_heads) query heads"
+  batched_cache:
+    formula: "Batched layout: [M, num_kv_heads, max_len, head_dim] for M sequences"
+    domain: "M ∈ [1, 32]"
+    invariants:
+      - "Each sequence has independent position counter"
+      - "Stride = num_kv_heads * max_len * head_dim per sequence"
+
+proof_obligations:
+  - type: bound
+    property: "Cache position within allocated bounds"
+    formal: "0 ≤ pos < max_seq_len at all append operations"
+    applies_to: all
+  - type: invariant
+    property: "Past KV entries immutable"
+    formal: "cache[layer][i] for i < current_pos is never modified after write"
+    applies_to: all
+  - type: bound
+    property: "Batch size within supported range"
+    formal: "1 ≤ batch_size ≤ 32 for batched KV cache init"
+    applies_to: all
+  - type: invariant
+    property: "Reset zeroes all positions"
+    formal: "After reset, pos = 0 for all layers and all cache values = 0"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-KVCM-001
+    rule: "Position bounds at capacity"
+    prediction: "Appending beyond max_seq_len returns error, not UB"
+    test: test_kv_cache_full_sequence
+    if_fails: "Missing bounds check in cache append path"
+  - id: FALSIFY-KVCM-002
+    rule: "Immutability of past entries"
+    prediction: "Past KV entries unchanged after new token generation"
+    test: test_kv_cache_append_and_advance
+    if_fails: "In-place mutation of historical KV entries"
+  - id: FALSIFY-KVCM-003
+    rule: "Batched cache isolation"
+    prediction: "Writing to sequence i does not affect sequence j (i != j)"
+    test: test_kv_cache_state_isolation_between_calls
+    if_fails: "Stride calculation error causes cross-sequence contamination"
+  - id: FALSIFY-KVCM-004
+    rule: "Reset completeness"
+    prediction: "After reset_kv_cache_gpu, all positions are 0"
+    test: test_kv_cache_reset_and_zero
+    if_fails: "Reset only resets position counter but not buffer contents"
+  - id: FALSIFY-KVCM-005
+    rule: "Rollback consistency"
+    prediction: "rollback_kv_cache_gpu(pos) sets cache length to pos"
+    test: "Fill to pos=10, rollback to pos=5, verify length is 5"
+    if_fails: "Rollback does not properly truncate cache state"
+
+kani_harnesses:
+  - id: kvcm-kani-001
+    obligation: "Cache position within allocated bounds"
+    bound: 16
+    strategy: bounded_int
+  - id: kvcm-kani-002
+    obligation: "Batch size within supported range"
+    bound: 6
+    strategy: bounded_int

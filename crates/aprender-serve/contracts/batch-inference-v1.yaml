@@ -1,0 +1,102 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-03-21"
+  author: "PAIML Engineering"
+  description: "Batch processing contracts for multi-request LLM inference"
+  references:
+    - "Yu et al. (2022) Orca: A Distributed Serving System for Transformer-Based Generative Models"
+    - "PARITY-053: Continuous Batching specification"
+
+equations:
+  batch_throughput:
+    formula: "throughput = Σ tokens_generated / total_time_sec"
+    domain: "batch_size ≥ 1, tokens_generated ≥ 0"
+    invariants:
+      - "Throughput ≥ 0"
+      - "Batched throughput ≥ sequential throughput for batch > gpu_threshold"
+  token_batch_capacity:
+    formula: "is_full = (tokens.len() >= capacity)"
+    domain: "capacity > 0"
+    invariants:
+      - "Batch fires when len == capacity, not before"
+      - "After flush, batch is empty (len == 0)"
+  continuous_batching:
+    formula: "process_batch: for each request in batch, generate tokens independently"
+    domain: "batch: Vec<Request>, |batch| ∈ [1, max_batch_size]"
+    invariants:
+      - "Each request receives its own response via oneshot channel"
+      - "Batch errors do not cascade: failure of request i does not affect request j"
+      - "Both stream=true AND stream=false route through batch scheduler when available (realizr#211)"
+      - "c=4 aggregate throughput >= 1.5x c=1 throughput (no write-lock serialization)"
+  gpu_batch_threshold:
+    formula: "use_gpu_batch = (batch_size >= gpu_threshold)"
+    domain: "gpu_threshold > 0 (default 32)"
+    invariants:
+      - "Below threshold: sequential processing"
+      - "At or above threshold: true GPU batch inference"
+  batch_latency:
+    formula: "per_request_latency = total_batch_latency / batch_size"
+    domain: "batch_size > 0, total_batch_latency > 0"
+    invariants:
+      - "per_request_latency ≤ total_batch_latency"
+      - "Amortized latency decreases with batch size (up to saturation)"
+
+proof_obligations:
+  - type: invariant
+    property: "Batch capacity trigger"
+    formal: "push() returns Some(tokens) iff len == capacity after push"
+    applies_to: all
+  - type: invariant
+    property: "Batch isolation"
+    formal: "Failure of request i does not prevent response to request j"
+    applies_to: all
+  - type: bound
+    property: "Throughput non-negative"
+    formal: "throughput ≥ 0 for all valid batches"
+    applies_to: all
+  - type: invariant
+    property: "Empty batch is no-op"
+    formal: "process_batch([]) performs no work and returns immediately"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Batch capacity trigger"
+    prediction: "TokenBatch fires exactly at capacity, not before"
+    test: test_token_batch_push_full
+    if_fails: "Off-by-one in is_full() or push() comparison"
+  - id: FALSIFY-BATCH-002
+    rule: "Batch flush empties state"
+    prediction: "After flush, len() == 0 and is_empty() == true"
+    test: test_token_batch_flush
+    if_fails: "Flush does not clear internal vector"
+  - id: FALSIFY-BATCH-003
+    rule: "Lambda batch error accounting"
+    prediction: "record_batch(s, e, _) increments success and error counts correctly"
+    test: test_metrics_record_batch
+    if_fails: "Counter accumulation logic is wrong"
+  - id: FALSIFY-BATCH-004
+    rule: "Batch size recommendation"
+    prediction: "recommended_batch_size never returns 0"
+    test: test_degradation_manager_recommended_batch_size
+    if_fails: "Edge case returns 0 which causes division by zero downstream"
+  - id: FALSIFY-BATCH-005
+    rule: "Empty batch no-op"
+    prediction: "process_batch with empty vec returns immediately"
+    test: test_batch_handler_rejects_empty_batch
+    if_fails: "Empty batch triggers GPU allocation or panics"
+  - id: FALSIFY-BATCH-006
+    rule: "Non-streaming uses batch scheduler (realizr#211)"
+    prediction: "stream=false at c=4 achieves >= 1.5x c=1 aggregate throughput"
+    test: "probador llm load --concurrency 4 --stream false vs --concurrency 1"
+    if_fails: "Non-streaming path still bypasses batch scheduler via write-lock"
+
+kani_harnesses:
+  - id: batch-kani-001
+    obligation: "Batch capacity trigger"
+    bound: 8
+    strategy: bounded_int
+  - id: batch-kani-002
+    obligation: "Throughput non-negative"
+    bound: 4
+    strategy: stub_float

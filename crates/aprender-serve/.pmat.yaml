@@ -1,0 +1,35 @@
+comply:
+  suppressions:
+    - rules: ["CB-954"]
+      files: ["docs/roadmaps/roadmap.yaml"]
+      reason: "single-token ffn/inference and draft/accepted token counts are ML inference metric names, not secrets"
+
+    - rules: ["CB-954"]
+      files: ["playbooks/chat_template.yaml"]
+      reason: "token_count_min is a tokenizer validation field, not a secret"
+
+    - rules: ["CB-021"]
+      files: ["src/quantize/**", "src/apr_transformer/q4_simd.rs"]
+      reason: "CB-021 flags _mm256_ in doc comments/code comments; actual SIMD functions already have #[target_feature(enable = avx2)]"
+
+    - rules: ["CB-501"]
+      files: ["src/**/tests_part_*.rs", "src/**/tests_*.rs"]
+      reason: "test files split for File Health; unwrap() is standard in tests"
+
+    - rules: ["CB-506"]
+      files: ["src/quantize/format_trait.rs", "src/quantize/parallel_dequant.rs"]
+      reason: "CB-506 targets &str byte indexing; these are &[u8] slices with bounds guaranteed by SUPERBLOCK_BYTES trait constants and explicit length checks"
+    - rules: ["CB-954"]
+      files: [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+      reason: "secrets: inherit is standard GHA syntax"
+    - rules: ["CB-953"]
+      files: [".github/workflows/release.yml", ".github/workflows/ci.yml"]
+      reason: "paiml/.github reusable workflows canonical at @main"
+  thresholds:
+    min_tdg_grade: "A"
+    tdg_exclude_paths:
+      - "examples/*"
+      - "tests/*"
+      - "benches/*"
+      - "src/tensor_names_fallback.rs"
+      - "src/gguf/inference/forward/*"

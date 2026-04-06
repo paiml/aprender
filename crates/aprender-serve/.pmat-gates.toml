@@ -1,0 +1,54 @@
+# PMAT Quality Gates Configuration for realizar
+# ComputeBrick ecosystem - CUDA/GPU compute operations
+
+[gates]
+# Run clippy linter
+run_clippy = true
+
+# Enforce strict clippy (-D warnings)
+clippy_strict = true
+
+# Run test suite
+run_tests = true
+
+# Test timeout in seconds
+test_timeout = 600
+
+# Check code coverage
+check_coverage = true
+
+# Minimum coverage percentage (target: 95%)
+min_coverage = 95.0
+
+# Check cyclomatic complexity
+check_complexity = true
+
+# Maximum cyclomatic complexity per function
+max_complexity = 20
+
+[quality]
+coverage_threshold = 95.0
+max_complexity = 20
+max_binary_size_mb = 50
+
+[exclude]
+patterns = [
+    "**/target/**",
+    # Forward pass inference loops are inherently complex (200+ line functions
+    # with many architecture-specific branches). Complexity is essential, not accidental.
+    "src/gguf/inference/forward/core_part_02_part_02.rs",
+    "src/gguf/inference/forward/core_part_02_part_03.rs",
+    "src/gguf/cuda/weights_part_02.rs",
+]
+
+[compute-brick]
+enabled = true
+require_safety_comments = true
+require_target_feature = true
+cv_threshold_percent = 15.0
+efficiency_threshold_percent = 25.0
+cuda_bounds_check = true
+cuda_barrier_safety = true
+
+[hooks]
+pre_commit = ["pmat comply check --failures-only"]

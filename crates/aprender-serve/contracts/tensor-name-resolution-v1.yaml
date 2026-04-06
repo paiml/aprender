@@ -1,0 +1,81 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-02"
+  author: "candle-vs-apr falsification (paiml/realizar#170)"
+  description: "Tensor name resolution contracts — all GPU weight lookups must resolve across GGUF, SafeTensors, and HF naming conventions"
+  references:
+    - "paiml/realizar#167: hardcoded HF tensor names in scheduler"
+    - "paiml/realizar#168: norm cache alias mismatch"
+    - "paiml/realizar#169: SafeTensors GPU inference missing"
+    - "paiml/realizar#170: 0 provable-contracts on tensor name resolution"
+
+equations:
+  name_resolution:
+    formula: "resolve(name) = find_tensor_name(candidates(name)) where candidates covers GGUF, SafeTensors, HF conventions"
+    domain: "name ∈ {embedding, output_norm, layer_attn_norm, layer_ffn_norm, q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, lm_head}"
+    invariants:
+      - "resolve(name) succeeds for all supported naming conventions"
+      - "resolve(name) returns a name that exists in the model tensor index"
+      - "No get_tensor_f32() or get_tensor_bytes() call in GPU paths bypasses resolve()"
+  format_parity:
+    formula: "∀ format ∈ {GGUF, SafeTensors, APR}, GPU_inference(model, format) produces equivalent output"
+    domain: "model = same weights, different serialization format"
+    invariants:
+      - "All 3 formats have a GPU inference path"
+      - "Output logits differ by < 1e-3 between formats on same input"
+  upload_integrity:
+    formula: "∀ tensor ∈ model, upload(tensor).device_bytes == tensor.source_bytes"
+    domain: "tensor.data ∈ raw bytes, device_ptr ∈ GPU memory"
+    invariants:
+      - "Uploaded bytes are byte-identical to source"
+      - "Pool and individual allocations produce identical kernel output"
+
+proof_obligations:
+  - type: invariant
+    property: "GGUF name resolution complete"
+    formal: "∀ role ∈ ROLES, ∃ name ∈ GGUF_NAMES, resolve(role) = name"
+    applies_to: all
+  - type: invariant
+    property: "HF name resolution complete"
+    formal: "∀ role ∈ ROLES, ∃ name ∈ HF_NAMES, resolve(role) = name"
+    applies_to: all
+  - type: invariant
+    property: "All formats have GPU path"
+    formal: "∀ fmt ∈ {GGUF, SafeTensors, APR}, gpu_inference(fmt) ≠ cpu_fallback"
+    applies_to: all
+  - type: invariant
+    property: "Upload is byte-preserving"
+    formal: "download(upload(data)) == data"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-TNR-001
+    rule: "GGUF-named APR resolves all tensors"
+    prediction: "APR from apr import --preserve-q4k resolves all tensor names"
+    test: "Load GGUF-converted APR, call find_tensor_name for all 12 roles per layer"
+    if_fails: "normalize_tensor_name missing a GGUF→HF mapping"
+  - id: FALSIFY-TNR-002
+    rule: "Format parity at c=1"
+    prediction: "GGUF, SafeTensors, APR produce same top-1 token on same prompt"
+    test: "Run greedy decode (temp=0) on same prompt across all 3 formats"
+    if_fails: "Weight loading, dequantization, or kernel dispatch differs between formats"
+  - id: FALSIFY-TNR-003
+    rule: "Pool vs individual allocation equivalence"
+    prediction: "Q4K GEMV output identical whether weight is in pool or individual allocation"
+    test: "Upload same tensor both ways, run GEMV, compare output bit-for-bit"
+    if_fails: "Pool offset alignment or pointer arithmetic bug"
+  - id: FALSIFY-TNR-004
+    rule: "No hardcoded tensor names in GPU paths"
+    prediction: "grep for get_tensor_f32 without find_tensor_name returns 0 hits in GPU code"
+    test: "Static analysis: all get_tensor_f32 calls preceded by find_tensor_name"
+    if_fails: "Hardcoded name bypasses resolution (regression of #167)"
+
+kani_harnesses:
+  - id: tnr-kani-001
+    obligation: "GGUF name resolution complete"
+    bound: 12
+    strategy: bounded_int
+  - id: tnr-kani-002
+    obligation: "Upload is byte-preserving"
+    bound: 144
+    strategy: bounded_int

@@ -1,0 +1,23 @@
+# rustfmt configuration for Realizar
+# Using only stable features (no nightly required)
+
+edition = "2021"
+
+# Line width
+max_width = 100
+
+# Function formatting
+fn_params_layout = "Tall"
+
+# Use field init shorthand
+use_field_init_shorthand = true
+
+# Newlines
+newline_style = "Unix"
+
+# Match arms
+match_block_trailing_comma = true
+
+# Reordering
+reorder_imports = true
+reorder_modules = true
