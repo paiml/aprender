@@ -1,0 +1,28 @@
+# cargo-mutants configuration for trueno-db
+# Following certeza formula for mutation testing
+
+# Exclude specific mutants by regex pattern
+exclude_re = [
+    # GPU initialization code - requires actual GPU hardware
+    "GpuBackend::new",
+    "init_gpu",
+
+    # Benchmark code - not part of production code paths
+    "benches::",
+
+    # Example code - for demonstration only
+    "examples::",
+]
+
+# Skip entire files or modules
+exclude_globs = [
+    "benches/**",
+    "examples/**",
+]
+
+# Timeout for individual test runs (in seconds)
+# Certeza uses 60s, we use same
+timeout = 60
+
+# Show test output for failed mutants
+show_times = false

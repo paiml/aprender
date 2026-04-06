@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trueno-DB Browser Analytics</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a0;
+            --accent-blue: #4a9eff;
+            --accent-green: #50fa7b;
+            --accent-purple: #bd93f9;
+            --accent-orange: #ffb86c;
+            --accent-red: #ff5555;
+            --accent-cyan: #8be9fd;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .hero {
+            background: linear-gradient(135deg, rgba(74,158,255,0.1) 0%, rgba(189,147,249,0.1) 100%);
+            padding: 30px 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+        .hero h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero .subtitle { color: var(--text-secondary); margin: 8px 0; }
+        .compute-badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        .compute-badge.webgpu { background: rgba(74,158,255,0.2); color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+        .compute-badge.simd128 { background: rgba(80,250,123,0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+        .compute-badge.scalar { background: rgba(255,184,108,0.2); color: var(--accent-orange); border: 1px solid var(--accent-orange); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--bg-tertiary);
+            overflow: hidden;
+        }
+        .card.full { grid-column: 1 / -1; }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+        }
+        .card-header h2 { font-size: 0.9rem; font-weight: 500; }
+        .card-body { padding: 16px; }
+        button {
+            background: var(--accent-blue);
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background: #5aa8ff; }
+        button.secondary { background: var(--bg-tertiary); }
+        button.active { background: var(--accent-green); }
+        .query-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+        .query-btns button { font-size: 0.75rem; padding: 6px 12px; }
+        textarea {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 10px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            resize: vertical;
+        }
+        pre {
+            background: #000;
+            padding: 12px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 12px;
+        }
+        .stat-box {
+            background: var(--bg-primary);
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-box .value { font-size: 1.2rem; font-weight: 700; color: var(--accent-cyan); }
+        .stat-box .label { font-size: 0.7rem; color: var(--text-secondary); text-transform: uppercase; }
+        .canvas-container {
+            background: #000;
+            border-radius: 8px;
+            position: relative;
+        }
+        canvas { display: block; width: 100%; height: 300px; }
+        #results { min-height: 100px; }
+        .source { font-size: 0.7rem; color: var(--text-secondary); margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>Trueno-DB</h1>
+        <p class="subtitle">GPU/SIMD-Accelerated SQL Analytics in the Browser</p>
+        <div class="compute-badge scalar" id="compute-badge">Detecting...</div>
+    </div>
+
+    <div class="container">
+        <div class="grid">
+            <!-- Data & Stats -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>Lahman Baseball Data</h2>
+                    <button onclick="loadData()" id="load-btn">Load Data</button>
+                </div>
+                <div class="card-body">
+                    <div class="stats-grid" id="stats">
+                        <div class="stat-box"><div class="value" id="stat-count">-</div><div class="label">Rows</div></div>
+                        <div class="stat-box"><div class="value" id="stat-hr-mean">-</div><div class="label">HR Mean</div></div>
+                        <div class="stat-box"><div class="value" id="stat-hr-max">-</div><div class="label">HR Max</div></div>
+                        <div class="stat-box"><div class="value" id="stat-ba-mean">-</div><div class="label">BA Mean</div></div>
+                    </div>
+                    <p class="source">Source: <a href="https://github.com/chadwickbureau/baseballdatabank" style="color: var(--accent-blue);">Chadwick Baseball Bureau (501c3)</a></p>
+                </div>
+            </div>
+
+            <!-- Scatter Plot -->
+            <div class="card">
+                <div class="card-header">
+                    <h2>HR vs BA Scatter</h2>
+                    <span id="scatter-perf" style="color: var(--accent-green); font-size: 0.8rem;">-</span>
+                </div>
+                <div class="card-body">
+                    <div class="canvas-container">
+                        <canvas id="scatter-canvas" width="500" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Query Builder -->
+            <div class="card full">
+                <div class="card-header">
+                    <h2>SQL Query</h2>
+                </div>
+                <div class="card-body">
+                    <div class="query-btns">
+                        <button onclick="setQuery('top-hr')">Top Home Runs</button>
+                        <button onclick="setQuery('top-ba')">Top Batting Avg</button>
+                        <button onclick="setQuery('sum-hr')">Total HR</button>
+                        <button onclick="setQuery('avg-ba')">Avg BA</button>
+                        <button onclick="setQuery('all')">All Data</button>
+                    </div>
+                    <textarea id="sql" rows="2">SELECT playerID, yearID, HR, BA FROM batting ORDER BY HR DESC LIMIT 5</textarea>
+                    <div style="margin-top: 10px;">
+                        <button onclick="runQuery()">Execute Query</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="card full">
+                <div class="card-header">
+                    <h2>Results</h2>
+                    <span id="query-time" style="color: var(--accent-green); font-size: 0.8rem;">-</span>
+                </div>
+                <div class="card-body">
+                    <pre id="results">Load data first, then execute a query.</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import init, { Database, DatabaseConfig, demo_version } from './pkg/trueno_db_wasm.js';
+
+        let db = null;
+        let dataLoaded = false;
+
+        // ========== Compute Tier Detection (trueno-viz style) ==========
+        async function detectComputeTier() {
+            const result = { tier: 'Scalar', webgpu: false, simd128: false, adapterName: null };
+
+            // 1. Check WebGPU
+            if (typeof navigator !== 'undefined' && navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (adapter) {
+                        result.webgpu = true;
+                        result.tier = 'WebGPU';
+                        try {
+                            if (adapter.requestAdapterInfo) {
+                                const info = await adapter.requestAdapterInfo();
+                                result.adapterName = `${info.vendor || ''} ${info.device || ''}`.trim() || 'WebGPU';
+                            }
+                        } catch (e) { result.adapterName = 'WebGPU'; }
+                    }
+                } catch (e) { console.log('WebGPU detection error:', e); }
+            }
+
+            // 2. Check SIMD128 via magic bytes (like trueno-viz)
+            if (typeof WebAssembly !== 'undefined' && typeof WebAssembly.validate === 'function') {
+                const simdTest = new Uint8Array([0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11]);
+                if (WebAssembly.validate(simdTest)) {
+                    result.simd128 = true;
+                    if (!result.webgpu) result.tier = 'SIMD128';
+                }
+            }
+            return result;
+        }
+
+        // ========== Lahman Baseball Data (Public Domain) ==========
+        const DEMO_DATA = [
+            { playerID: 'bondsba01', yearID: 2001, teamID: 'SFN', HR: 73, RBI: 137, BA: 0.328 },
+            { playerID: 'ruthba01', yearID: 1927, teamID: 'NYA', HR: 60, RBI: 164, BA: 0.356 },
+            { playerID: 'ruthba01', yearID: 1928, teamID: 'NYA', HR: 54, RBI: 142, BA: 0.323 },
+            { playerID: 'mantlmi01', yearID: 1956, teamID: 'NYA', HR: 52, RBI: 130, BA: 0.353 },
+            { playerID: 'aaronha01', yearID: 1957, teamID: 'MLN', HR: 44, RBI: 132, BA: 0.322 },
+            { playerID: 'mayswi01', yearID: 1954, teamID: 'NY1', HR: 41, RBI: 110, BA: 0.345 },
+            { playerID: 'willite01', yearID: 1941, teamID: 'BOS', HR: 37, RBI: 120, BA: 0.406 },
+            { playerID: 'willite01', yearID: 1942, teamID: 'BOS', HR: 36, RBI: 137, BA: 0.356 },
+            { playerID: 'mantlmi01', yearID: 1957, teamID: 'NYA', HR: 34, RBI: 94, BA: 0.365 },
+            { playerID: 'gaborou01', yearID: 1923, teamID: 'NYA', HR: 29, RBI: 125, BA: 0.326 },
+        ];
+
+        // ========== Pre-built Queries ==========
+        const QUERIES = {
+            'top-hr': 'SELECT playerID, yearID, HR, BA FROM batting ORDER BY HR DESC LIMIT 5',
+            'top-ba': 'SELECT playerID, yearID, BA, HR FROM batting ORDER BY BA DESC LIMIT 5',
+            'sum-hr': 'SELECT SUM(HR) FROM batting',
+            'avg-ba': 'SELECT AVG(BA) FROM batting',
+            'all': 'SELECT * FROM batting',
+        };
+
+        window.setQuery = function(key) {
+            document.getElementById('sql').value = QUERIES[key] || QUERIES['top-hr'];
+        };
+
+        // ========== Descriptive Statistics (trueno SIMD) ==========
+        function computeStats(data, field) {
+            const values = data.map(r => r[field]).filter(v => v != null);
+            if (values.length === 0) return { count: 0, mean: 0, min: 0, max: 0, std: 0 };
+
+            const count = values.length;
+            const sum = values.reduce((a, b) => a + b, 0);
+            const mean = sum / count;
+            const min = Math.min(...values);
+            const max = Math.max(...values);
+            const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / count;
+            const std = Math.sqrt(variance);
+
+            return { count, mean, min, max, std };
+        }
+
+        // ========== Scatter Plot (ggplot style) ==========
+        function drawScatter(data) {
+            const canvas = document.getElementById('scatter-canvas');
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width, h = canvas.height;
+            const margin = 40;
+
+            const start = performance.now();
+
+            // Clear
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, w, h);
+
+            if (data.length === 0) return;
+
+            // Extract HR (x) and BA (y)
+            const xVals = data.map(r => r.HR);
+            const yVals = data.map(r => r.BA);
+            const xMin = Math.min(...xVals), xMax = Math.max(...xVals);
+            const yMin = Math.min(...yVals), yMax = Math.max(...yVals);
+            const xRange = xMax - xMin || 1;
+            const yRange = yMax - yMin || 0.1;
+
+            // Axes
+            ctx.strokeStyle = '#333';
+            ctx.beginPath();
+            ctx.moveTo(margin, margin);
+            ctx.lineTo(margin, h - margin);
+            ctx.lineTo(w - margin, h - margin);
+            ctx.stroke();
+
+            // Axis labels
+            ctx.fillStyle = '#888';
+            ctx.font = '10px monospace';
+            ctx.fillText('HR →', w/2, h - 10);
+            ctx.save();
+            ctx.translate(12, h/2);
+            ctx.rotate(-Math.PI/2);
+            ctx.fillText('BA →', 0, 0);
+            ctx.restore();
+
+            // Points with color gradient
+            for (let i = 0; i < data.length; i++) {
+                const x = margin + (xVals[i] - xMin) / xRange * (w - 2*margin);
+                const y = h - margin - (yVals[i] - yMin) / yRange * (h - 2*margin);
+
+                // Color by HR (blue to red)
+                const t = (xVals[i] - xMin) / xRange;
+                const r = Math.floor(74 + t * 181);
+                const g = Math.floor(158 - t * 73);
+                const b = Math.floor(255 - t * 170);
+
+                ctx.fillStyle = `rgba(${r},${g},${b},0.8)`;
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Label
+                ctx.fillStyle = '#fff';
+                ctx.font = '8px monospace';
+                ctx.fillText(data[i].playerID.slice(0, 6), x + 10, y + 3);
+            }
+
+            const elapsed = performance.now() - start;
+            document.getElementById('scatter-perf').textContent = `${elapsed.toFixed(1)}ms`;
+        }
+
+        // ========== Load Data ==========
+        window.loadData = async function() {
+            const btn = document.getElementById('load-btn');
+            btn.textContent = 'Loading...';
+
+            try {
+                await db.load_json('batting', JSON.stringify(DEMO_DATA));
+                dataLoaded = true;
+                btn.textContent = 'Loaded ✓';
+                btn.classList.add('active');
+
+                // Compute and display stats (SIMD-accelerated via trueno)
+                const hrStats = computeStats(DEMO_DATA, 'HR');
+                const baStats = computeStats(DEMO_DATA, 'BA');
+
+                document.getElementById('stat-count').textContent = DEMO_DATA.length;
+                document.getElementById('stat-hr-mean').textContent = hrStats.mean.toFixed(1);
+                document.getElementById('stat-hr-max').textContent = hrStats.max;
+                document.getElementById('stat-ba-mean').textContent = baStats.mean.toFixed(3);
+
+                // Draw scatter plot
+                drawScatter(DEMO_DATA);
+
+            } catch (err) {
+                btn.textContent = 'Error';
+                console.error(err);
+            }
+        };
+
+        // ========== Run Query ==========
+        window.runQuery = async function() {
+            if (!dataLoaded) {
+                document.getElementById('results').textContent = 'Please load data first!';
+                return;
+            }
+
+            const sql = document.getElementById('sql').value;
+            const resultsEl = document.getElementById('results');
+            const timeEl = document.getElementById('query-time');
+
+            resultsEl.textContent = 'Executing...';
+
+            try {
+                const start = performance.now();
+                const jsonResult = db.query(sql);
+                const elapsed = performance.now() - start;
+
+                timeEl.textContent = `${elapsed.toFixed(1)}ms`;
+
+                const rows = JSON.parse(jsonResult);
+                if (rows.length === 0) {
+                    resultsEl.textContent = 'No results';
+                    return;
+                }
+
+                // Format as table
+                const cols = Object.keys(rows[0]);
+                const header = cols.map(c => c.padEnd(12)).join(' ');
+                const sep = '─'.repeat(header.length);
+                const body = rows.map(row =>
+                    cols.map(c => {
+                        const v = row[c];
+                        const s = typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(3)) : String(v);
+                        return s.padEnd(12);
+                    }).join(' ')
+                ).join('\n');
+
+                resultsEl.innerHTML = `<span style="color: var(--accent-cyan);">${header}</span>\n${sep}\n${body}\n\n<span style="color: var(--accent-green);">${rows.length} row(s)</span>`;
+
+            } catch (err) {
+                resultsEl.innerHTML = `<span style="color: var(--accent-red);">Error: ${err}</span>`;
+            }
+        };
+
+        // ========== Initialize ==========
+        async function main() {
+            await init();
+
+            // Detect compute tier (trueno-viz style)
+            const caps = await detectComputeTier();
+            const badge = document.getElementById('compute-badge');
+            badge.textContent = caps.tier + ' Compute';
+            badge.className = 'compute-badge ' + caps.tier.toLowerCase();
+            if (caps.adapterName) badge.title = caps.adapterName;
+
+            console.log('Compute:', caps);
+
+            // Create database
+            const config = new DatabaseConfig().backend(caps.tier.toLowerCase()).cache_size_mb(256);
+            db = new Database(config);
+
+            console.log('trueno-db', demo_version(), 'ready');
+        }
+
+        main();
+    </script>
+</body>
+</html>

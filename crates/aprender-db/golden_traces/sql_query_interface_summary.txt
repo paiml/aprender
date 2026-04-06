@@ -1,0 +1,134 @@
+
+📊 Creating sample e-commerce dataset (10,000 orders)...
+  ✓ Created 10000 orders
+  ✓ Columns: order_id, customer_id, amount, quantity, category
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 1: Simple SELECT with column projection
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT order_id, amount FROM orders LIMIT 5
+
+Results (5 rows):
+  order_id | amount
+  ---------|--------
+         1 | $ 22.50
+         2 | $ 35.00
+         3 | $ 47.50
+         4 | $ 60.00
+         5 | $ 72.50
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 2: WHERE clause filtering
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT order_id, amount FROM orders WHERE amount > 400.0 LIMIT 5
+
+Results (5 rows):
+  order_id | amount
+  ---------|--------
+        32 | $410.00
+        33 | $422.50
+        34 | $435.00
+        35 | $447.50
+        36 | $460.00
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 3: Aggregations (SUM, AVG, COUNT, MIN, MAX)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT COUNT(*), SUM(amount), AVG(amount), MIN(amount), MAX(amount) FROM orders
+
+Results:
+  Total Orders:         10000
+  Total Revenue:   $2537500.00
+  Average Order:   $    253.75
+  Minimum Order:   $     10.00
+  Maximum Order:   $    497.50
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 4: ORDER BY + LIMIT (Top-K optimization)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT order_id, amount FROM orders ORDER BY amount DESC LIMIT 10
+Note: Uses O(N log K) Top-K algorithm instead of O(N log N) full sort
+
+Top 10 Highest Value Orders:
+  Rank | order_id | amount
+  -----|----------|--------
+     1 |       39 | $497.50
+     2 |      239 | $497.50
+     3 |      199 | $497.50
+     4 |      119 | $497.50
+     5 |      319 | $497.50
+     6 |      159 | $497.50
+     7 |      359 | $497.50
+     8 |       79 | $497.50
+     9 |      279 | $497.50
+    10 |      399 | $497.50
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 5: Combined WHERE filter + Aggregation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT COUNT(*), AVG(amount) FROM orders WHERE amount > 300.0
+
+Results:
+  High-value orders (>$300): 4000
+  Average amount:            $403.75
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 6: Filter on quantity
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL: SELECT order_id, quantity, amount FROM orders WHERE quantity >= 8 LIMIT 5
+
+Bulk Orders (quantity ≥ 8):
+  order_id | quantity | amount
+  ---------|----------|--------
+         7 |        8 | $ 97.50
+         8 |        9 | $110.00
+         9 |       10 | $122.50
+        17 |        8 | $222.50
+        18 |        9 | $235.00
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Performance Characteristics
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Aggregations: 2.78x faster than scalar (SIMD acceleration)
+✓ Top-K: 5-28x faster than heap-based sorting
+✓ Zero-copy operations via Apache Arrow
+✓ Cost-based backend selection (GPU when compute > 5x transfer)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Toyota Way: Kaizen (Continuous Improvement)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+All queries executed successfully!
+Coverage: 92.64% with comprehensive test suite
+Backend equivalence: GPU == SIMD == Scalar results
+
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 43.23    0.000715           7        90           write
+ 13.48    0.000223          11        19           mmap
+  5.38    0.000089          12         7           mprotect
+  6.29    0.000104          14         7           read
+  3.81    0.000063          10         6           brk
+  3.08    0.000051          10         5           newfstatat
+  2.24    0.000037           7         5           rt_sigaction
+  2.60    0.000043           8         5           close
+  4.90    0.000081          16         5           openat
+  2.30    0.000038           9         4           unknown
+  1.57    0.000026           6         4           pread64
+  5.50    0.000091          22         4           munmap
+  1.33    0.000022           7         3           sigaltstack
+  0.91    0.000015           7         2           getrandom
+  1.15    0.000019           9         2         1 arch_prctl
+  0.42    0.000007           7         1           set_tid_address
+  0.60    0.000010          10         1           poll
+  0.73    0.000012          12         1         1 access
+  0.48    0.000008           8         1           set_robust_list
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.001654           9       172         2 total

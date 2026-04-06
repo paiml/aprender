@@ -1,0 +1,18 @@
+# Clippy Configuration for trueno-db
+# Enforces quality standards
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Allowed names for single-character variables
+allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "c", "d", "q", "v", "w"]
+
+# Minimum identifier length
+min-ident-chars-threshold = 1
+
+# Disallow dangerous methods (Cloudflare outage 2025-11-18)
+# Note: disallowed-methods removed — unwrap_used/expect_used allowed at crate level
+disallowed-methods = []

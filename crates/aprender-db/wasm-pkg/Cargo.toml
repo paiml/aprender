@@ -1,0 +1,53 @@
+[package]
+name = "trueno-db-wasm"
+version = "0.3.2"
+edition = "2021"
+authors = ["Pragmatic AI Labs <info@paiml.com>"]
+description = "Browser demo for trueno-db with WebGPU/SIMD128"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Parent crate (simd only, no tokio for WASM)
+trueno-db = { path = "..", default-features = false, features = ["simd", "wasm"] }
+trueno = "0.7.1"  # Direct dependency for SIMD backend
+
+# WASM bindings
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+
+# Web APIs
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Navigator",
+    "Document",
+    "Element",
+    "HtmlElement",
+    "Performance",
+    "Gpu",
+    "GpuAdapter",
+    "GpuDevice",
+] }
+
+[features]
+default = []
+webgpu = []
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

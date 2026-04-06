@@ -1,0 +1,88 @@
+
+Detecting SIMD capabilities...
+  CPU: x86_64
+  AVX-512: true
+  AVX2: true
+  AVX: true
+  SSE4.2: true
+  SSE2: true
+
+Creating test dataset (10M elements)...
+  ✓ Dataset created: 10000000 elements (38.15 MB)
+
+=== Benchmark 1: Scalar Sum (No SIMD) ===
+  Result: 75846211600384.00
+  Time: 6.347012ms
+  Throughput: 5.87 GB/s
+
+=== Benchmark 2: Auto-Vectorized Sum ===
+  Result: 74969685950464.00
+  Time: 1.556665ms
+  Throughput: 23.93 GB/s
+  Speedup: 4.08x vs scalar
+
+=== Trueno Integration (Phase 1 MVP) ===
+Trueno-DB integrates the trueno crate for SIMD operations:
+  - Backend: Auto-detection (AVX-512 → AVX2 → SSE2 → Scalar)
+  - Use case: Columnar aggregations (sum, avg, min, max)
+  - Performance: 2-8x speedup vs scalar operations
+  - Portability: Works on all platforms (graceful degradation)
+
+Example use in Trueno-DB:
+  ```rust
+  use trueno_db::{Backend, Database};
+
+  let db = Database::builder()
+      .backend(Backend::Simd)  // Force SIMD backend
+      .build()?;
+  ```
+
+=== SIMD Vector Widths ===
+AVX-512: 64 bytes (16 × f32 or 8 × f64)
+AVX2:    32 bytes (8 × f32 or 4 × f64)
+SSE2:    16 bytes (4 × f32 or 2 × f64)
+Scalar:  4/8 bytes (1 × f32 or 1 × f64)
+
+For 10M elements:
+  Scalar: 10,000,000 operations
+  SSE2:   2,500,000 operations (4x speedup)
+  AVX2:   1,250,000 operations (8x speedup)
+  AVX-512: 625,000 operations (16x speedup)
+
+=== Toyota Way: Muda (Waste Elimination) ===
+SIMD eliminates waste by:
+  1. Processing multiple elements per instruction
+  2. Reducing memory bandwidth requirements
+  3. Better CPU cache utilization
+  4. Automatic graceful degradation (no runtime errors)
+
+=== Phase 1 MVP Status ===
+✓ Trueno crate integration for SIMD
+✓ Backend dispatcher (cost-based selection)
+✓ Storage engine (Arrow/Parquet)
+✓ Top-K selection (heap-based algorithm)
+✗ GPU kernels (deferred to Phase 2)
+
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 16.17    0.000567          10        56           write
+  3.94    0.000138           9        14           mmap
+  1.74    0.000061          10         6           mprotect
+  1.57    0.000055          11         5           read
+  0.88    0.000031           6         5           rt_sigaction
+  1.31    0.000046          11         4           openat
+  0.74    0.000026           6         4           close
+  0.77    0.000027           6         4           newfstatat
+  0.71    0.000025           6         4           pread64
+  0.74    0.000026           6         4           unknown
+ 68.77    0.002411         803         3           munmap
+  0.68    0.000024           8         3           brk
+  0.60    0.000021           7         3           sigaltstack
+  0.40    0.000014           7         2         1 arch_prctl
+  0.20    0.000007           7         1           getrandom
+  0.17    0.000006           6         1           set_robust_list
+  0.20    0.000007           7         1           poll
+  0.23    0.000008           8         1         1 access
+  0.17    0.000006           6         1           set_tid_address
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.003506          28       122         2 total

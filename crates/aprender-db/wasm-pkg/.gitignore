@@ -1,0 +1,9 @@
+# Node modules
+node_modules/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Package lock
+package-lock.json
