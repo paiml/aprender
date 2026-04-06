@@ -1,0 +1,19 @@
+[book]
+title = "Probar - Rust-Native WASM Testing Framework"
+authors = ["PAIML Team"]
+description = "Documentation for the Probar testing framework"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "coal"
+git-repository-url = "https://github.com/paiml/probar"
+edit-url-template = "https://github.com/paiml/probar/edit/main/book/{path}"
+
+[output.html.fold]
+enable = true
+level = 1

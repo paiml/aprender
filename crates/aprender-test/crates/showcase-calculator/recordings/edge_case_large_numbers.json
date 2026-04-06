@@ -1,0 +1,19 @@
+{
+  "name": "Edge Case - Large Numbers",
+  "description": "Record of calculation with large numbers",
+  "recorded_at": "2024-12-14T00:00:00Z",
+  "duration_ms": 1200,
+  "events": [
+    {"frame": 0, "type": "init", "state": "idle"},
+    {"frame": 10, "type": "sequence", "input": "999999999", "state": "entering_first"},
+    {"frame": 50, "type": "click", "target": "[data-op='multiply']", "state": "operator_selected"},
+    {"frame": 60, "type": "sequence", "input": "999999999", "state": "entering_second"},
+    {"frame": 100, "type": "click", "target": "[data-action='equals']", "state": "showing_result"},
+    {"frame": 110, "type": "assert", "result_valid": true, "passed": true}
+  ],
+  "final_state": {
+    "display": "999999998000000001",
+    "history_length": 1
+  },
+  "deterministic": true
+}

@@ -1,0 +1,941 @@
+warning: unused import: `Duration`
+  --> crates/probar/src/performance.rs:16:17
+   |
+16 | use std::time::{Duration, Instant};
+   |                 ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: trait `AsAny` is never used
+   --> crates/probar/src/fixture.rs:367:7
+    |
+367 | trait AsAny {
+    |       ^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `expect_frame` is never used
+   --> crates/probar/src/tui/assertions.rs:218:8
+    |
+218 | pub fn expect_frame(frame: &TuiFrame) -> FrameAssertion<'_> {
+    |        ^^^^^^^^^^^^
+
+warning: struct `MultiValueTracker` is never constructed
+   --> crates/probar/src/tui/assertions.rs:399:12
+    |
+399 | pub struct MultiValueTracker {
+    |            ^^^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `record`, `get`, `names`, and `assert_bounds` are never used
+   --> crates/probar/src/tui/assertions.rs:406:12
+    |
+403 | impl MultiValueTracker {
+    | ---------------------- associated items in this implementation
+...
+406 |     pub fn new() -> Self {
+    |            ^^^
+...
+413 |     pub fn record(&mut self, name: &str, timestamp_ms: u64, value: f64) {
+    |            ^^^^^^
+...
+423 |     pub fn get(&self, name: &str) -> Option<&ValueTracker<f64>> {
+    |            ^^^
+...
+429 |     pub fn names(&self) -> Vec<&str> {
+    |            ^^^^^
+...
+434 |     pub fn assert_bounds(&self, bounds: &HashMap<String, (f64, f64)>) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^
+
+warning: struct `SnapshotManager` is never constructed
+   --> crates/probar/src/tui/snapshot.rs:148:12
+    |
+148 | pub struct SnapshotManager {
+    |            ^^^^^^^^^^^^^^^
+
+warning: multiple associated items are never used
+   --> crates/probar/src/tui/snapshot.rs:158:12
+    |
+155 | impl SnapshotManager {
+    | -------------------- associated items in this implementation
+...
+158 |     pub fn new(snapshot_dir: &Path) -> Self {
+    |            ^^^
+...
+167 |     pub fn with_update_mode(mut self, update: bool) -> Self {
+    |            ^^^^^^^^^^^^^^^^
+...
+174 |     pub fn snapshot_dir(&self) -> &Path {
+    |            ^^^^^^^^^^^^
+...
+180 |     pub fn snapshot_path(&self, name: &str) -> PathBuf {
+    |            ^^^^^^^^^^^^^
+...
+186 |     pub fn exists(&self, name: &str) -> bool {
+    |            ^^^^^^
+...
+191 |     pub fn save(&self, snapshot: &TuiSnapshot) -> ProbarResult<()> {
+    |            ^^^^
+...
+197 |     pub fn load(&self, name: &str) -> ProbarResult<TuiSnapshot> {
+    |            ^^^^
+...
+203 |     pub fn assert_snapshot(&self, name: &str, frame: &TuiFrame) -> ProbarResult<()> {
+    |            ^^^^^^^^^^^^^^^
+...
+226 |     pub fn list(&self) -> ProbarResult<Vec<String>> {
+    |            ^^^^
+...
+248 |     pub fn delete(&self, name: &str) -> ProbarResult<()> {
+    |            ^^^^^^
+
+warning: unused result of type `std::option::Option<f64>`
+  --> crates/probar/src/assertion/equation.rs:76:9
+   |
+76 |         self.variables.insert(name.to_string(), value);
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut EquationContext`
+   --> crates/probar/src/assertion/equation.rs:103:13
+    |
+103 |             ctx.set(&var.name, var.value);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:409:9
+    |
+409 |         self.verifier.verify_eq("v = v0 + at", expected, v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:423:9
+    |
+423 |         self.verifier.verify_eq("x = x0 + v0*t + 0.5*a*t²", expected, x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:437:9
+    |
+437 |         self.verifier.verify_eq("v² = v0² + 2a(x-x0)", expected, v * v);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:489:9
+    |
+489 |         self.verifier.verify_eq("KE = 0.5*m*v²", expected, ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:502:9
+    |
+502 |         self.verifier.verify_eq("PE = m*g*h", expected, pe);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:516:9
+    |
+516 |         self.verifier.verify_eq("E_total conserved", total_initial, total_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:528:9
+    |
+528 |         self.verifier.verify_eq("W = ΔKE", work, delta_ke);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:580:9
+    |
+580 |         self.verifier.verify_eq("p = m*v", expected, p);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:593:9
+    |
+593 |         self.verifier.verify_eq("p_total conserved", p_initial, p_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut MomentumVerifier`
+   --> crates/probar/src/assertion/equation.rs:605:9
+    |
+605 |         self.verify_conservation(m1, v1_initial, m2, v2_initial, v1_final, v2_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:610:9
+    |
+610 |         self.verifier.verify_eq("KE conserved (elastic)", ke_initial, ke_final);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:656:9
+    |
+656 |         self.verifier.verify_non_negative("score >= 0", score);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:662:9
+    |
+662 |         self.verifier.verify_in_range("health", health, 0.0, max_health);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:673:9
+    |
+673 |         self.verifier.verify_in_range("x position", x, min_x, max_x);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:674:9
+    |
+674 |         self.verifier.verify_in_range("y position", y, min_y, max_y);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:681:9
+    |
+681 |         self.verifier.verify_in_range("speed", speed, 0.0, max_speed);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:687:9
+    |
+687 |         self.verifier.verify_eq("entity count", expected as f64, count as f64);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut EquationVerifier`
+   --> crates/probar/src/assertion/equation.rs:693:9
+    |
+693 |         self.verifier.verify_eq(name, expected, actual);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+  --> crates/probar/src/bridge.rs:95:9
+   |
+95 |         self.positions.insert(entity_id, (x, y));
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<(f32, f32)>`
+   --> crates/probar/src/bridge.rs:100:9
+    |
+100 |         self.velocities.insert(entity_id, (vx, vy));
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<i32>`
+   --> crates/probar/src/bridge.rs:105:9
+    |
+105 |         self.scores.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<bool>`
+   --> crates/probar/src/bridge.rs:110:9
+    |
+110 |         self.flags.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/bridge.rs:230:9
+    |
+230 |         self.components.insert(name.into(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:346:17
+    |
+346 |                 self.cache.remove(&oldest);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `u64`
+   --> crates/probar/src/bridge.rs:347:17
+    |
+347 |                 self.access_order.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GameStateSnapshot>`
+   --> crates/probar/src/bridge.rs:353:9
+    |
+353 |         self.cache.insert(frame, snapshot);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/runtime.rs:684:1
+    |
+684 | / pub struct WasmRuntime {
+685 | |     _phantom: std::marker::PhantomData<()>,
+686 | | }
+    | |_^
+    |
+    = note: requested on the command line with `-W missing-debug-implementations`
+
+warning: unused result of type `&mut ratatui::buffer::Cell`
+   --> crates/probar/src/tui/backend.rs:306:21
+    |
+306 |                     cell.set_char(ch);
+    |                     ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates/probar/src/tui/snapshot.rs:29:5
+   |
+29 |     pub height: u16,
+   |     ^^^^^^^^^^^^^^^
+   |
+note: the lint level is defined here
+  --> crates/probar/src/lib.rs:20:9
+   |
+20 | #![warn(missing_docs)]
+   |         ^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/tui/snapshot.rs:75:9
+   |
+75 |         self.metadata.insert(key.to_string(), value.to_string());
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/replay.rs:166:9
+    |
+166 |         self.metadata.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:177:9
+    |
+177 |         self.expected_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:182:9
+    |
+182 |         self.tested_interactions.insert(interaction);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<ElementCoverage>`
+   --> crates/probar/src/ux_coverage.rs:257:9
+    |
+257 |         self.elements.insert(key, coverage);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:283:9
+    |
+283 |         self.expected_states.insert(state);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `bool`
+   --> crates/probar/src/ux_coverage.rs:327:9
+    |
+327 |         self.visited_states.insert(state.clone());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:197:9
+    |
+197 |         presets.insert("new_york".to_string(), GeolocationPosition::new_york());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:198:9
+    |
+198 |         presets.insert("tokyo".to_string(), GeolocationPosition::tokyo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:199:9
+    |
+199 |         presets.insert("london".to_string(), GeolocationPosition::london());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:200:9
+    |
+200 |         presets.insert("paris".to_string(), GeolocationPosition::paris());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:201:9
+    |
+201 |         presets.insert("sydney".to_string(), GeolocationPosition::sydney());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:202:9
+    |
+202 | /         presets.insert(
+203 | |             "san_francisco".to_string(),
+204 | |             GeolocationPosition::san_francisco(),
+205 | |         );
+    | |__________^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:206:9
+    |
+206 |         presets.insert("berlin".to_string(), GeolocationPosition::berlin());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:207:9
+    |
+207 |         presets.insert("singapore".to_string(), GeolocationPosition::singapore());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:208:9
+    |
+208 |         presets.insert("dubai".to_string(), GeolocationPosition::dubai());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<GeolocationPosition>`
+   --> crates/probar/src/emulation/geolocation.rs:209:9
+    |
+209 |         presets.insert("sao_paulo".to_string(), GeolocationPosition::sao_paulo());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:581:9
+    |
+581 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:582:9
+    |
+582 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:583:9
+    |
+583 |         width: f64,
+    |         ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:584:9
+    |
+584 |         height: f64,
+    |         ^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:585:9
+    |
+585 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:586:9
+    |
+586 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:587:9
+    |
+587 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:588:9
+    |
+588 |         rx: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:589:9
+    |
+589 |         ry: Option<f64>,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:593:9
+    |
+593 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:594:9
+    |
+594 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:595:9
+    |
+595 |         r: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:596:9
+    |
+596 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:597:9
+    |
+597 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:598:9
+    |
+598 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:602:9
+    |
+602 |         cx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:603:9
+    |
+603 |         cy: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:604:9
+    |
+604 |         rx: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:605:9
+    |
+605 |         ry: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:606:9
+    |
+606 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:607:9
+    |
+607 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:608:9
+    |
+608 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:612:9
+    |
+612 |         x1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:613:9
+    |
+613 |         y1: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:614:9
+    |
+614 |         x2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:615:9
+    |
+615 |         y2: f64,
+    |         ^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:616:9
+    |
+616 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:617:9
+    |
+617 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:621:9
+    |
+621 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:622:9
+    |
+622 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:623:9
+    |
+623 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:624:9
+    |
+624 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:628:9
+    |
+628 |         points: Vec<(f64, f64)>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:629:9
+    |
+629 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:630:9
+    |
+630 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:631:9
+    |
+631 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:635:9
+    |
+635 |         d: String,
+    |         ^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:636:9
+    |
+636 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:637:9
+    |
+637 |         stroke: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:638:9
+    |
+638 |         stroke_width: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:642:9
+    |
+642 |         x: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:643:9
+    |
+643 |         y: f64,
+    |         ^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:644:9
+    |
+644 |         content: String,
+    |         ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:645:9
+    |
+645 |         font_size: Option<f64>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:646:9
+    |
+646 |         fill: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:647:9
+    |
+647 |         font_family: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:651:9
+    |
+651 |         id: Option<String>,
+    |         ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates/probar/src/media/svg_exporter.rs:652:9
+    |
+652 |         children: Vec<SvgShape>,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type does not implement `Debug`; consider adding `#[derive(Debug)]` or a manual implementation
+   --> crates/probar/src/watch.rs:261:1
+    |
+261 | / pub struct FnWatchHandler<F>
+262 | | where
+263 | |     F: Fn(&[FileChange]) -> ProbarResult<()> + Send + Sync,
+...   |
+266 | | }
+    | |_^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/tracing_support.rs:132:9
+    |
+132 |         self.attributes.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<serde_json::Value>`
+   --> crates/probar/src/tracing_support.rs:217:9
+    |
+217 |         self.attributes.insert(key.to_string(), value);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/network.rs:173:9
+    |
+173 |         self.headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/performance.rs:108:9
+    |
+108 |         self.tags.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<MetricStats>`
+   --> crates/probar/src/performance.rs:381:17
+    |
+381 |                 metrics.insert(name, stats);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<Instant>`
+   --> crates/probar/src/performance.rs:488:9
+    |
+488 |         self.timers.insert(name.to_string(), Instant::now());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:600:17
+    |
+600 |                 self.frame_times.remove(0);
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `f64`
+   --> crates/probar/src/performance.rs:615:13
+    |
+615 |             self.frame_times.remove(0);
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:64:9
+   |
+64 | /         self.local_storage
+65 | |             .entry(origin.to_string())
+66 | |             .or_default()
+67 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+  --> crates/probar/src/context.rs:74:9
+   |
+74 | /         self.session_storage
+75 | |             .entry(origin.to_string())
+76 | |             .or_default()
+77 | |             .insert(key.to_string(), value.to_string());
+   | |________________________________________________________^
+
+warning: unused result of type `std::option::Option<std::string::String>`
+   --> crates/probar/src/context.rs:318:9
+    |
+318 |         self.extra_headers.insert(key.to_string(), value.to_string());
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:574:9
+    |
+574 |         contexts.insert(id.clone(), context);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `std::option::Option<BrowserContext>`
+   --> crates/probar/src/context.rs:659:9
+    |
+659 |         contexts.remove(context_id);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (lib) generated 117 warnings (run `cargo fix --lib -p probar` to apply 1 suggestion)
+   Compiling probar v0.1.0 (/home/noah/src/probar/crates/probar)
+warning: unused variable: `dashboard_page`
+  --> crates/probar/examples/page_object.rs:47:9
+   |
+47 |     let dashboard_page = PageObjectBuilder::new()
+   |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_dashboard_page`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `probar` (example "page_object" test) generated 1 warning
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:18:5
+   |
+18 |     ctx.set("velocity", 10.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:19:5
+   |
+19 |     ctx.set("time", 2.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationContext`
+  --> crates/probar/examples/equation_verify.rs:20:5
+   |
+20 |     ctx.set("acceleration", 5.0);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:44:5
+   |
+44 |     verifier.verify_eq("v = v0 + at", expected_v, v);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:52:5
+   |
+52 |     verifier.verify_eq("x = v0*t + 0.5*a*t²", expected_x, x);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:61:5
+   |
+61 |     verifier.verify_in_range("health", health, 0.0, max_health);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:65:5
+   |
+65 |     verifier.verify_non_negative("score", score);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:84:5
+   |
+84 |     verifier.verify_eq("KE = 0.5*m*v²", 25.0, ke);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+  --> crates/probar/examples/equation_verify.rs:98:5
+   |
+98 |     verifier.verify_eq("p = m*v", 10.0, p1);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused result of type `&mut probar::EquationVerifier`
+   --> crates/probar/examples/equation_verify.rs:132:5
+    |
+132 |     verifier.verify_eq("floating point", b_val, a_val);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `probar` (example "equation_verify" test) generated 10 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.70s
+     Running unittests examples/accessibility_demo.rs (target/debug/examples/accessibility_demo-c11c4dcc59c5d515)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/basic_test.rs (target/debug/examples/basic_test-4189ba2f99eb1d82)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/coverage_demo.rs (target/debug/examples/coverage_demo-2adc3000697970d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/equation_verify.rs (target/debug/examples/equation_verify-7479f2f8db508f00)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/execution_trace.rs (target/debug/examples/execution_trace-3fa765ec34784fb0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/locator_demo.rs (target/debug/examples/locator_demo-8e8e9578b04fcd90)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/multi_context.rs (target/debug/examples/multi_context-ab4f81977e934709)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/network_intercept.rs (target/debug/examples/network_intercept-343df0bddffe0bff)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/page_object.rs (target/debug/examples/page_object-96ddde6849e6aa5d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/performance_profile.rs (target/debug/examples/performance_profile-33276cc0b7b0a090)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/pong_simulation.rs (target/debug/examples/pong_simulation-93d7b192885391a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/retry_assertions.rs (target/debug/examples/retry_assertions-11d8cdd0c0a46f16)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/soft_assertions.rs (target/debug/examples/soft_assertions-85dcf96799184952)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/watch_mode.rs (target/debug/examples/watch_mode-13933f3db155e8a5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/websocket_monitor.rs (target/debug/examples/websocket_monitor-cbd8b93d7f2412a9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

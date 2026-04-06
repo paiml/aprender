@@ -1,0 +1,5 @@
+comply:
+  thresholds:
+    min_tdg_grade: "B"
+  tdg_exclude_paths:
+    - "crates/probar/src/pixel_coverage/heatmap.rs"

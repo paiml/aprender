@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+  <style>
+    .state { fill: #e0e0e0; stroke: #333; stroke-width: 2; }
+    .state-final { fill: #c8e6c9; }
+    .transition { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .label { font-family: sans-serif; font-size: 12px; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
+    </marker>
+  </defs>
+  <text x="10" y="20" class="label">State Machine: login_flow</text>
+  <ellipse cx="400" cy="100" rx="60" ry="30" class="state state-final"/>
+  <text x="400" y="105" text-anchor="middle" class="label">logged_in</text>
+  <ellipse cx="400" cy="200" rx="60" ry="30" class="state"/>
+  <text x="400" y="205" text-anchor="middle" class="label">error</text>
+  <ellipse cx="400" cy="300" rx="60" ry="30" class="state"/>
+  <text x="400" y="305" text-anchor="middle" class="label">authenticating</text>
+  <ellipse cx="400" cy="400" rx="60" ry="30" class="state"/>
+  <text x="400" y="405" text-anchor="middle" class="label">logged_out</text>
+
+  <!-- DOT source:
+       digraph StateMachine {
+         rankdir=LR;
+         node [shape=ellipse];
+         __start [shape=point];
+         __start -> "logged_out";
+         "logged_in" [shape=doublecircle];
+         "error" [shape=ellipse];
+         "authenticating" [shape=ellipse];
+         "logged_out" [shape=ellipse];
+         "logged_out" -> "authenticating" [label="submit"];
+         "authenticating" -> "logged_in" [label="auth_ok"];
+         "authenticating" -> "error" [label="auth_fail"];
+         "error" -> "logged_out" [label="retry"];
+         "logged_in" -> "logged_out" [label="logout [session.valid]"];
+       }
+  -->
+</svg>

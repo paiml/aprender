@@ -1,0 +1,19 @@
+{
+  "name": "Happy Path - Basic Calculation",
+  "description": "Record of successful 6 * 7 = 42 calculation",
+  "recorded_at": "2024-12-14T00:00:00Z",
+  "duration_ms": 850,
+  "events": [
+    {"frame": 0, "type": "init", "state": "idle"},
+    {"frame": 10, "type": "click", "target": "[data-digit='6']", "state": "entering_first"},
+    {"frame": 20, "type": "click", "target": "[data-op='multiply']", "state": "operator_selected"},
+    {"frame": 30, "type": "click", "target": "[data-digit='7']", "state": "entering_second"},
+    {"frame": 40, "type": "click", "target": "[data-action='equals']", "state": "showing_result"},
+    {"frame": 50, "type": "assert", "display": "42", "passed": true}
+  ],
+  "final_state": {
+    "display": "42",
+    "history_length": 1
+  },
+  "deterministic": true
+}

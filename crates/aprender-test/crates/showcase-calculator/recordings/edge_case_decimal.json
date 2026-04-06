@@ -1,0 +1,19 @@
+{
+  "name": "Edge Case - Decimal Operations",
+  "description": "Record of calculation with decimal numbers",
+  "recorded_at": "2024-12-14T00:00:00Z",
+  "duration_ms": 900,
+  "events": [
+    {"frame": 0, "type": "init", "state": "idle"},
+    {"frame": 10, "type": "sequence", "input": "3.14159", "state": "entering_first"},
+    {"frame": 40, "type": "click", "target": "[data-op='multiply']", "state": "operator_selected"},
+    {"frame": 50, "type": "sequence", "input": "2", "state": "entering_second"},
+    {"frame": 60, "type": "click", "target": "[data-action='equals']", "state": "showing_result"},
+    {"frame": 70, "type": "assert", "result_approx": 6.28318, "tolerance": 0.00001, "passed": true}
+  ],
+  "final_state": {
+    "display": "6.28318",
+    "history_length": 1
+  },
+  "deterministic": true
+}

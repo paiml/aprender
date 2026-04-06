@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickLit" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickDim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#374151;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1f2937;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="brickFail" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dc2626;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feFlood flood-color="#4ade80" flood-opacity="0.5"/>
+      <feComposite in2="coloredBlur" operator="in"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="400" fill="url(#bgGrad)"/>
+
+  <!-- Grid pattern -->
+  <g opacity="0.1" stroke="#4ade80" stroke-width="0.5">
+    <line x1="0" y1="100" x2="800" y2="100"/>
+    <line x1="0" y1="200" x2="800" y2="200"/>
+    <line x1="0" y1="300" x2="800" y2="300"/>
+    <line x1="200" y1="0" x2="200" y2="400"/>
+    <line x1="400" y1="0" x2="400" y2="400"/>
+    <line x1="600" y1="0" x2="600" y2="400"/>
+  </g>
+
+  <!-- Title -->
+  <text x="400" y="50" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="bold" fill="#ffffff" text-anchor="middle">
+    BRICK ARCHITECTURE
+  </text>
+  <text x="400" y="80" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#94a3b8" text-anchor="middle">
+    Tests ARE the Interface
+  </text>
+
+  <!-- Brick Row 1 - Lit bricks -->
+  <g transform="translate(80, 120)">
+    <!-- Brick 1 - Status (Lit) -->
+    <rect x="0" y="0" width="80" height="60" rx="4" fill="url(#brickLit)" filter="url(#glowGreen)"/>
+    <text x="40" y="25" font-family="monospace" font-size="24" fill="#000" text-anchor="middle" font-weight="bold">S</text>
+    <text x="40" y="48" font-family="system-ui" font-size="10" fill="#000" text-anchor="middle">Status</text>
+    <circle cx="70" cy="10" r="6" fill="#22c55e" stroke="#fff" stroke-width="1"/>
+
+    <!-- Brick 2 - Wave (Lit) -->
+    <rect x="100" y="0" width="80" height="60" rx="4" fill="url(#brickLit)" filter="url(#glowGreen)"/>
+    <text x="140" y="25" font-family="monospace" font-size="24" fill="#000" text-anchor="middle" font-weight="bold">W</text>
+    <text x="140" y="48" font-family="system-ui" font-size="10" fill="#000" text-anchor="middle">Wave</text>
+    <circle cx="170" cy="10" r="6" fill="#22c55e" stroke="#fff" stroke-width="1"/>
+
+    <!-- Brick 3 - Audio (Lit) -->
+    <rect x="200" y="0" width="80" height="60" rx="4" fill="url(#brickLit)" filter="url(#glowGreen)"/>
+    <text x="240" y="25" font-family="monospace" font-size="24" fill="#000" text-anchor="middle" font-weight="bold">A</text>
+    <text x="240" y="48" font-family="system-ui" font-size="10" fill="#000" text-anchor="middle">Audio</text>
+    <circle cx="270" cy="10" r="6" fill="#22c55e" stroke="#fff" stroke-width="1"/>
+
+    <!-- Brick 4 - Trans (Lit) -->
+    <rect x="300" y="0" width="80" height="60" rx="4" fill="url(#brickLit)" filter="url(#glowGreen)"/>
+    <text x="340" y="25" font-family="monospace" font-size="24" fill="#000" text-anchor="middle" font-weight="bold">T</text>
+    <text x="340" y="48" font-family="system-ui" font-size="10" fill="#000" text-anchor="middle">Trans</text>
+    <circle cx="370" cy="10" r="6" fill="#22c55e" stroke="#fff" stroke-width="1"/>
+
+    <!-- Brick 5 - Error (Failed) -->
+    <rect x="400" y="0" width="80" height="60" rx="4" fill="url(#brickFail)"/>
+    <text x="440" y="25" font-family="monospace" font-size="24" fill="#fff" text-anchor="middle" font-weight="bold">E</text>
+    <text x="440" y="48" font-family="system-ui" font-size="10" fill="#fff" text-anchor="middle">Error</text>
+    <circle cx="470" cy="10" r="6" fill="#dc2626" stroke="#fff" stroke-width="1"/>
+    <line x1="465" y1="5" x2="475" y2="15" stroke="#fff" stroke-width="2"/>
+    <line x1="475" y1="5" x2="465" y2="15" stroke="#fff" stroke-width="2"/>
+
+    <!-- Brick 6 - Model (Dim - pending) -->
+    <rect x="500" y="0" width="80" height="60" rx="4" fill="url(#brickDim)" opacity="0.6"/>
+    <text x="540" y="25" font-family="monospace" font-size="24" fill="#6b7280" text-anchor="middle" font-weight="bold">M</text>
+    <text x="540" y="48" font-family="system-ui" font-size="10" fill="#6b7280" text-anchor="middle">Model</text>
+    <circle cx="570" cy="10" r="6" fill="#374151" stroke="#6b7280" stroke-width="1"/>
+  </g>
+
+  <!-- Verification Panel -->
+  <g transform="translate(80, 210)">
+    <rect x="0" y="0" width="560" height="130" rx="8" fill="#111827" stroke="#374151" stroke-width="1"/>
+
+    <text x="20" y="25" font-family="system-ui" font-size="14" fill="#fff" font-weight="bold">Verification Results</text>
+
+    <!-- Status line -->
+    <text x="20" y="50" font-family="monospace" font-size="12" fill="#4ade80">Status    [PASS] budget:  50ms actual:  12ms assertions: 3/3</text>
+
+    <!-- Wave line -->
+    <text x="20" y="68" font-family="monospace" font-size="12" fill="#4ade80">Wave      [PASS] budget: 100ms actual:  45ms assertions: 3/3</text>
+
+    <!-- Audio line -->
+    <text x="20" y="86" font-family="monospace" font-size="12" fill="#4ade80">Audio     [PASS] budget: 150ms actual:  67ms assertions: 3/3</text>
+
+    <!-- Trans line -->
+    <text x="20" y="104" font-family="monospace" font-size="12" fill="#4ade80">Trans     [PASS] budget: 600ms actual: 234ms assertions: 3/3</text>
+
+    <!-- Error line -->
+    <text x="20" y="122" font-family="monospace" font-size="12" fill="#f87171">Error     [FAIL] budget:  50ms actual:  15ms assertions: 1/2</text>
+  </g>
+
+  <!-- Budget Bar -->
+  <g transform="translate(80, 355)">
+    <text x="0" y="0" font-family="system-ui" font-size="12" fill="#94a3b8">Budget Utilization: 40.2%</text>
+    <rect x="150" y="-12" width="300" height="16" rx="4" fill="#1f2937"/>
+    <rect x="150" y="-12" width="120" height="16" rx="4" fill="#4ade80"/>
+    <text x="460" y="0" font-family="system-ui" font-size="12" fill="#4ade80">(healthy)</text>
+  </g>
+
+  <!-- Tagline -->
+  <text x="680" y="380" font-family="system-ui" font-size="11" fill="#64748b" text-anchor="end">
+    probar v1.0 | jugar-probar
+  </text>
+</svg>

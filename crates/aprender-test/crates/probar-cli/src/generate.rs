@@ -1,0 +1,698 @@
+//! Zero-Artifact Code Generation (PROBAR-SPEC-009-P7)
+//!
+//! Generates web artifacts (HTML, CSS, JS) from brick definitions.
+//! Zero hand-written web code - everything derived from Rust types.
+
+use jugar_probar::brick::{
+    AudioBrick, BrickWorkerMessage, BrickWorkerMessageDirection, EventBrick, EventHandler,
+    EventType, FieldType, WorkerBrick,
+};
+use std::fs;
+
+/// Configuration for artifact generation
+#[derive(Debug, Clone)]
+pub struct GenerateConfig {
+    /// Application name
+    pub app_name: String,
+    /// WASM module path
+    pub wasm_module: String,
+    /// Model path (optional, for ML apps)
+    pub model_path: Option<String>,
+    /// Page title
+    pub title: String,
+    /// Output directory
+    pub output_dir: std::path::PathBuf,
+}
+
+impl Default for GenerateConfig {
+    fn default() -> Self {
+        Self {
+            app_name: "app".into(),
+            wasm_module: "./pkg/app.js".into(),
+            model_path: None,
+            title: "Probar Application".into(),
+            output_dir: std::path::PathBuf::from("."),
+        }
+    }
+}
+
+/// Result of artifact generation
+#[derive(Debug)]
+pub struct GenerateResult {
+    /// Generated HTML
+    pub html: String,
+    /// Generated CSS
+    pub css: String,
+    /// Generated main JS
+    pub main_js: String,
+    /// Generated worker JS (if any)
+    pub worker_js: Option<String>,
+    /// Generated audio worklet JS (if any)
+    pub worklet_js: Option<String>,
+    /// Files written
+    pub files_written: Vec<std::path::PathBuf>,
+}
+
+/// Generate web artifacts from brick definitions
+pub fn generate_from_bricks(
+    worker: Option<&WorkerBrick>,
+    events: Option<&EventBrick>,
+    audio: Option<&AudioBrick>,
+    config: &GenerateConfig,
+) -> Result<GenerateResult, String> {
+    let mut files_written = Vec::new();
+
+    // Generate HTML
+    let html = generate_html(config);
+
+    // Generate CSS
+    let css = generate_css();
+
+    // Generate main JS (event handlers + WASM init)
+    let main_js = generate_main_js(events, config);
+
+    // Generate worker JS if WorkerBrick provided
+    let worker_js = worker.map(jugar_probar::WorkerBrick::to_worker_js);
+
+    // Generate audio worklet JS if AudioBrick provided
+    let worklet_js = audio.map(jugar_probar::AudioBrick::to_worklet_js);
+
+    // Write files
+    let output_dir = &config.output_dir;
+    fs::create_dir_all(output_dir).map_err(|e| format!("Failed to create output dir: {e}"))?;
+
+    // Write index.html
+    let html_path = output_dir.join("index.html");
+    fs::write(&html_path, &html).map_err(|e| format!("Failed to write index.html: {e}"))?;
+    files_written.push(html_path);
+
+    // Write style.css
+    let css_path = output_dir.join("style.css");
+    fs::write(&css_path, &css).map_err(|e| format!("Failed to write style.css: {e}"))?;
+    files_written.push(css_path);
+
+    // Write main.js
+    let main_js_path = output_dir.join("main.js");
+    fs::write(&main_js_path, &main_js).map_err(|e| format!("Failed to write main.js: {e}"))?;
+    files_written.push(main_js_path);
+
+    // Write worker.js if present
+    if let Some(ref wjs) = worker_js {
+        let worker_path = output_dir.join("worker.js");
+        fs::write(&worker_path, wjs).map_err(|e| format!("Failed to write worker.js: {e}"))?;
+        files_written.push(worker_path);
+    }
+
+    // Write audio-worklet.js if present
+    if let Some(ref ajs) = worklet_js {
+        let worklet_path = output_dir.join("audio-worklet.js");
+        fs::write(&worklet_path, ajs)
+            .map_err(|e| format!("Failed to write audio-worklet.js: {e}"))?;
+        files_written.push(worklet_path);
+    }
+
+    Ok(GenerateResult {
+        html,
+        css,
+        main_js,
+        worker_js,
+        worklet_js,
+        files_written,
+    })
+}
+
+/// Generate HTML from config
+fn generate_html(config: &GenerateConfig) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title}</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app" class="container">
+        <h1>{title}</h1>
+        <div id="status" class="status-brick" aria-live="polite">Loading...</div>
+        <div id="controls" class="controls">
+            <button id="record" disabled aria-label="Start/Stop Recording">Record</button>
+            <button id="clear" aria-label="Clear">Clear</button>
+        </div>
+        <div id="output" class="output">
+            <div id="partial" class="transcription-partial"></div>
+            <div id="transcript" class="transcription-final" aria-live="polite"></div>
+        </div>
+    </div>
+    <script type="module" src="main.js"></script>
+</body>
+</html>
+"#,
+        title = config.title,
+    )
+}
+
+/// Generate CSS
+fn generate_css() -> String {
+    r"/* Generated by probar - DO NOT EDIT MANUALLY */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+}
+
+.container {
+    max-width: 800px;
+    width: 100%;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #4dc3ff;
+}
+
+.status-brick {
+    background: #16213e;
+    padding: 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    margin-bottom: 1rem;
+}
+
+.status-loading { color: #4dc3ff; }
+.status-ready { color: #50fa7b; }
+.status-recording { color: #50fa7b; animation: pulse 1s infinite; }
+.status-error { color: #ff6b6b; }
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+button {
+    padding: 1rem 2rem;
+    font-size: 1rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#record {
+    background: #e94560;
+    color: white;
+    flex: 1;
+}
+
+#record:hover:not(:disabled) { background: #ff6b6b; }
+#record:disabled { background: #666; cursor: not-allowed; }
+#record.recording { background: #50fa7b; animation: pulse 1s infinite; }
+
+#clear {
+    background: #4dc3ff;
+    color: #1a1a2e;
+}
+
+#clear:hover { background: #7dd5ff; }
+
+.output {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 1.5rem;
+    min-height: 200px;
+}
+
+.transcription-partial {
+    color: #888;
+    font-style: italic;
+    margin-bottom: 1rem;
+    min-height: 1.5em;
+}
+
+.transcription-final {
+    color: #eee;
+    font-size: 1.2rem;
+    line-height: 1.6;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+"
+    .into()
+}
+
+/// Generate main.js from event handlers
+fn generate_main_js(events: Option<&EventBrick>, config: &GenerateConfig) -> String {
+    let mut js = String::new();
+
+    js.push_str("// Generated by probar - DO NOT EDIT MANUALLY\n\n");
+
+    // Import WASM module
+    js.push_str(&format!(
+        "import init, {{ WorkerManager }} from '{}';\n\n",
+        config.wasm_module
+    ));
+
+    // State variables
+    js.push_str("let manager = null;\n");
+    js.push_str("let isRecording = false;\n");
+    js.push_str("let audioContext = null;\n");
+    js.push_str("let mediaStream = null;\n\n");
+
+    // DOM references
+    js.push_str("const status = document.getElementById('status');\n");
+    js.push_str("const recordBtn = document.getElementById('record');\n");
+    js.push_str("const clearBtn = document.getElementById('clear');\n\n");
+
+    // Init function
+    js.push_str("async function initApp() {\n");
+    js.push_str("    try {\n");
+    js.push_str("        status.textContent = 'Loading WASM...';\n");
+    js.push_str("        status.className = 'status-brick status-loading';\n");
+    js.push_str("        await init();\n\n");
+
+    // Worker initialization if model_path provided
+    if let Some(ref model_path) = config.model_path {
+        js.push_str("        status.textContent = 'Spawning worker...';\n");
+        js.push_str("        manager = new WorkerManager();\n");
+        js.push_str(&format!("        await manager.spawn('{model_path}');\n\n"));
+
+        js.push_str("        window.addEventListener('whisper-worker-ready', () => {\n");
+        js.push_str("            status.textContent = 'Loading model...';\n");
+        js.push_str("            manager.send_init();\n");
+        js.push_str("        }, { once: true });\n\n");
+
+        js.push_str("        window.addEventListener('whisper-model-loaded', (e) => {\n");
+        js.push_str("            const { sizeMb, loadTimeMs } = e.detail;\n");
+        js.push_str("            status.textContent = `Ready (${sizeMb.toFixed(1)}MB in ${(loadTimeMs/1000).toFixed(1)}s)`;\n");
+        js.push_str("            status.className = 'status-brick status-ready';\n");
+        js.push_str("            recordBtn.disabled = false;\n");
+        js.push_str("        });\n\n");
+
+        js.push_str("        window.addEventListener('whisper-transcription', (e) => {\n");
+        js.push_str("            const { text, isFinal } = e.detail;\n");
+        js.push_str("            if (isFinal) {\n");
+        js.push_str(
+            "                document.getElementById('transcript').textContent += text + ' ';\n",
+        );
+        js.push_str("                document.getElementById('partial').textContent = '';\n");
+        js.push_str("            } else {\n");
+        js.push_str("                document.getElementById('partial').textContent = text;\n");
+        js.push_str("            }\n");
+        js.push_str("        });\n");
+    } else {
+        js.push_str("        status.textContent = 'Ready';\n");
+        js.push_str("        status.className = 'status-brick status-ready';\n");
+        js.push_str("        recordBtn.disabled = false;\n");
+    }
+
+    js.push_str("    } catch (err) {\n");
+    js.push_str("        status.textContent = 'Error: ' + err.message;\n");
+    js.push_str("        status.className = 'status-brick status-error';\n");
+    js.push_str("        console.error('[App] Init failed:', err);\n");
+    js.push_str("    }\n");
+    js.push_str("}\n\n");
+
+    // Add event handlers from EventBrick
+    if let Some(event_brick) = events {
+        js.push_str(&event_brick.to_event_js());
+        js.push('\n');
+    } else {
+        // Default event handlers
+        js.push_str("// Default event handlers\n");
+        js.push_str("recordBtn.addEventListener('click', async () => {\n");
+        js.push_str("    if (isRecording) {\n");
+        js.push_str("        if (manager) manager.stopRecording();\n");
+        js.push_str("        if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());\n");
+        js.push_str("        if (audioContext) audioContext.close();\n");
+        js.push_str("        isRecording = false;\n");
+        js.push_str("        recordBtn.textContent = 'Record';\n");
+        js.push_str("        recordBtn.classList.remove('recording');\n");
+        js.push_str("        status.textContent = 'Ready';\n");
+        js.push_str("        status.className = 'status-brick status-ready';\n");
+        js.push_str("    } else {\n");
+        js.push_str("        try {\n");
+        js.push_str("            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });\n");
+        js.push_str("            audioContext = new AudioContext();\n");
+        js.push_str("            if (manager) manager.startRecording(audioContext.sampleRate);\n");
+        js.push_str("            isRecording = true;\n");
+        js.push_str("            recordBtn.textContent = 'Stop';\n");
+        js.push_str("            recordBtn.classList.add('recording');\n");
+        js.push_str("            status.textContent = 'Recording...';\n");
+        js.push_str("            status.className = 'status-brick status-recording';\n");
+        js.push_str("        } catch (err) {\n");
+        js.push_str("            status.textContent = 'Mic access denied';\n");
+        js.push_str("            status.className = 'status-brick status-error';\n");
+        js.push_str("        }\n");
+        js.push_str("    }\n");
+        js.push_str("});\n\n");
+
+        js.push_str("clearBtn.addEventListener('click', () => {\n");
+        js.push_str("    document.getElementById('transcript').textContent = '';\n");
+        js.push_str("    document.getElementById('partial').textContent = '';\n");
+        js.push_str("});\n\n");
+    }
+
+    // Call init
+    js.push_str("initApp();\n");
+
+    js
+}
+
+/// Create a demo `WorkerBrick` for whisper.apr
+#[must_use]
+pub fn create_whisper_worker_brick() -> WorkerBrick {
+    WorkerBrick::new("whisper-transcription")
+        .message(
+            BrickWorkerMessage::new("bootstrap", BrickWorkerMessageDirection::ToWorker)
+                .field("wasmUrl", FieldType::String)
+                .field("modelUrl", FieldType::String),
+        )
+        .message(BrickWorkerMessage::new(
+            "ready",
+            BrickWorkerMessageDirection::FromWorker,
+        ))
+        .message(
+            BrickWorkerMessage::new("init", BrickWorkerMessageDirection::ToWorker)
+                .field("ringBuffer", FieldType::SharedArrayBuffer),
+        )
+        .message(
+            BrickWorkerMessage::new("model_loaded", BrickWorkerMessageDirection::FromWorker)
+                .field("sizeMb", FieldType::Number)
+                .field("loadTimeMs", FieldType::Number),
+        )
+        .message(
+            BrickWorkerMessage::new("start", BrickWorkerMessageDirection::ToWorker)
+                .field("sampleRate", FieldType::Number),
+        )
+        .message(BrickWorkerMessage::new(
+            "stop",
+            BrickWorkerMessageDirection::ToWorker,
+        ))
+        .message(
+            BrickWorkerMessage::new("transcription", BrickWorkerMessageDirection::FromWorker)
+                .field("text", FieldType::String)
+                .field("isFinal", FieldType::Boolean),
+        )
+        .state("uninitialized")
+        .state("bootstrapped")
+        .state("loading")
+        .state("ready")
+        .state("recording")
+        .initial("uninitialized")
+        .transition("uninitialized", "bootstrap", "bootstrapped")
+        .transition("bootstrapped", "ready", "loading")
+        .transition("loading", "init", "loading")
+        .transition("loading", "model_loaded", "ready")
+        .transition("ready", "start", "recording")
+        .transition("recording", "stop", "ready")
+        .transition("recording", "transcription", "recording")
+}
+
+/// Create demo `EventBrick` for whisper.apr
+#[must_use]
+pub fn create_whisper_event_brick() -> EventBrick {
+    EventBrick::new()
+        .on(
+            "#record",
+            EventType::Click,
+            EventHandler::dispatch_state("toggle_recording"),
+        )
+        .on(
+            "#clear",
+            EventType::Click,
+            EventHandler::call_wasm("clear_transcript"),
+        )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_generate_html() {
+        let config = GenerateConfig {
+            title: "Test App".into(),
+            ..Default::default()
+        };
+
+        let html = generate_html(&config);
+
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("<title>Test App</title>"));
+        assert!(html.contains("id=\"status\""));
+        assert!(html.contains("id=\"record\""));
+        assert!(html.contains("aria-label"));
+    }
+
+    #[test]
+    fn test_generate_css() {
+        let css = generate_css();
+
+        assert!(css.contains("Generated by probar"));
+        assert!(css.contains(".status-brick"));
+        assert!(css.contains(".transcription-final"));
+        assert!(css.contains("@keyframes pulse"));
+    }
+
+    #[test]
+    fn test_generate_main_js() {
+        let config = GenerateConfig {
+            wasm_module: "./pkg/app.js".into(),
+            model_path: Some("/models/test.bin".into()),
+            ..Default::default()
+        };
+
+        let js = generate_main_js(None, &config);
+
+        assert!(js.contains("Generated by probar"));
+        assert!(js.contains("import init"));
+        assert!(js.contains("initApp"));
+        assert!(js.contains("whisper-worker-ready"));
+    }
+
+    #[test]
+    fn test_generate_from_bricks() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = GenerateConfig {
+            app_name: "test".into(),
+            title: "Test".into(),
+            output_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let worker = create_whisper_worker_brick();
+        let events = create_whisper_event_brick();
+
+        let result = generate_from_bricks(Some(&worker), Some(&events), None, &config);
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+
+        assert!(result.files_written.len() >= 4);
+        assert!(result.worker_js.is_some());
+        assert!(temp_dir.path().join("index.html").exists());
+        assert!(temp_dir.path().join("style.css").exists());
+        assert!(temp_dir.path().join("main.js").exists());
+        assert!(temp_dir.path().join("worker.js").exists());
+    }
+
+    #[test]
+    fn test_create_whisper_worker_brick() {
+        let worker = create_whisper_worker_brick();
+
+        let js = worker.to_worker_js();
+        // Name is converted to PascalCase in the header comment
+        assert!(
+            js.contains("WhisperTranscription"),
+            "Missing WhisperTranscription"
+        );
+        // ToWorker messages appear in case statements
+        assert!(js.contains("bootstrap"), "Missing bootstrap (ToWorker)");
+        assert!(js.contains("init"), "Missing init (ToWorker)");
+        assert!(js.contains("start"), "Missing start (ToWorker)");
+        assert!(js.contains("stop"), "Missing stop (ToWorker)");
+
+        let rust = worker.to_rust_bindings();
+        assert!(rust.contains("pub enum ToWorker"));
+        assert!(rust.contains("pub enum FromWorker"));
+        // FromWorker messages appear in Rust bindings
+        assert!(
+            rust.contains("ModelLoaded"),
+            "Missing ModelLoaded (FromWorker)"
+        );
+        assert!(
+            rust.contains("Transcription"),
+            "Missing Transcription (FromWorker)"
+        );
+    }
+
+    // Additional coverage tests
+
+    #[test]
+    fn test_generate_config_default() {
+        let config = GenerateConfig::default();
+        assert_eq!(config.app_name, "app");
+        assert_eq!(config.wasm_module, "./pkg/app.js");
+        assert!(config.model_path.is_none());
+        assert_eq!(config.title, "Probar Application");
+        assert_eq!(config.output_dir, std::path::PathBuf::from("."));
+    }
+
+    #[test]
+    fn test_generate_main_js_no_model_path() {
+        let config = GenerateConfig {
+            model_path: None,
+            ..Default::default()
+        };
+
+        let js = generate_main_js(None, &config);
+
+        // Should have direct "Ready" status without model loading
+        assert!(js.contains("status.textContent = 'Ready'"));
+        assert!(js.contains("status.className = 'status-brick status-ready'"));
+        assert!(js.contains("recordBtn.disabled = false"));
+        // Should not have model-related events
+        assert!(!js.contains("whisper-worker-ready"));
+    }
+
+    #[test]
+    fn test_generate_main_js_with_event_brick() {
+        let config = GenerateConfig::default();
+        let events = create_whisper_event_brick();
+
+        let js = generate_main_js(Some(&events), &config);
+
+        // Should contain event brick's generated JS
+        assert!(js.contains("#record"));
+        assert!(js.contains("#clear"));
+        // Should not contain default event handlers
+        assert!(!js.contains("// Default event handlers"));
+    }
+
+    #[test]
+    fn test_create_whisper_event_brick() {
+        let events = create_whisper_event_brick();
+
+        let js = events.to_event_js();
+
+        assert!(js.contains("#record"));
+        assert!(js.contains("#clear"));
+        assert!(js.contains("click"));
+    }
+
+    #[test]
+    fn test_generate_from_bricks_no_worker_no_audio() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = GenerateConfig {
+            output_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = generate_from_bricks(None, None, None, &config);
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+
+        assert!(result.worker_js.is_none());
+        assert!(result.worklet_js.is_none());
+        assert_eq!(result.files_written.len(), 3); // html, css, main.js only
+    }
+
+    #[test]
+    fn test_generate_from_bricks_with_audio() {
+        use jugar_probar::brick::AudioBrick;
+
+        let temp_dir = TempDir::new().unwrap();
+        let config = GenerateConfig {
+            output_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let audio = AudioBrick::new("test-audio")
+            .inputs(1)
+            .outputs(1)
+            .sample_rate(16000);
+
+        let result = generate_from_bricks(None, None, Some(&audio), &config);
+
+        assert!(result.is_ok());
+        let result = result.unwrap();
+
+        assert!(result.worklet_js.is_some());
+        assert!(temp_dir.path().join("audio-worklet.js").exists());
+    }
+
+    #[test]
+    fn test_generate_from_bricks_invalid_output_dir() {
+        let config = GenerateConfig {
+            output_dir: std::path::PathBuf::from("/nonexistent/readonly/path"),
+            ..Default::default()
+        };
+
+        let result = generate_from_bricks(None, None, None, &config);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to create output dir"));
+    }
+
+    #[test]
+    fn test_generate_result_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = GenerateConfig {
+            title: "Test Result Fields".into(),
+            output_dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let result = generate_from_bricks(None, None, None, &config).unwrap();
+
+        assert!(result.html.contains("Test Result Fields"));
+        assert!(result.css.contains("Generated by probar"));
+        assert!(result.main_js.contains("initApp"));
+    }
+
+    #[test]
+    fn test_generate_html_escaping() {
+        let config = GenerateConfig {
+            title: "Test & Special <chars>".into(),
+            ..Default::default()
+        };
+
+        let html = generate_html(&config);
+
+        // Title should be present
+        assert!(html.contains("Test & Special <chars>"));
+    }
+
+    #[test]
+    fn test_generate_main_js_imports() {
+        let config = GenerateConfig {
+            wasm_module: "./custom/path.js".into(),
+            ..Default::default()
+        };
+
+        let js = generate_main_js(None, &config);
+
+        assert!(js.contains("import init, { WorkerManager } from './custom/path.js'"));
+    }
+}

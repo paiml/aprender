@@ -1,0 +1,61 @@
+name: "Calculator Load Test"
+description: "Verify calculator handles concurrent users and rapid input"
+version: "1.0"
+
+scenarios:
+  - name: "sustained_load"
+    description: "Steady user load for 60 seconds"
+    stages:
+      - duration: 10s
+        target_users: 10
+        ramp: true
+      - duration: 50s
+        target_users: 10
+        steady: true
+      - duration: 10s
+        target_users: 0
+        ramp: true
+    sla:
+      response_time_p95_ms: 100
+      error_rate_max: 0.01
+      apdex_target: 0.95
+
+  - name: "spike_test"
+    description: "Sudden traffic spike"
+    stages:
+      - duration: 5s
+        target_users: 5
+        ramp: true
+      - duration: 5s
+        target_users: 50
+        ramp: true
+      - duration: 10s
+        target_users: 50
+        steady: true
+      - duration: 5s
+        target_users: 5
+        ramp: true
+    sla:
+      response_time_p95_ms: 200
+      error_rate_max: 0.05
+      recovery_time_s: 10
+
+  - name: "rapid_input"
+    description: "Very fast keystroke simulation"
+    user_behavior:
+      keystrokes_per_second: 20
+      calculations_per_minute: 60
+    duration: 30s
+    sla:
+      input_latency_ms: 50
+      calculation_latency_ms: 100
+
+analysis:
+  statistics:
+    - percentiles: [50, 75, 90, 95, 99]
+    - throughput
+    - error_breakdown
+  visualization:
+    - latency_histogram
+    - throughput_timeline
+    - error_timeline

@@ -1,0 +1,8 @@
+{
+  "theme": "dark",
+  "background": "#212121",
+  "display_text": "#FFFFFF",
+  "button_text": "#FFFFFF",
+  "contrast_ratio": 15.9,
+  "wcag_level": "AAA"
+}

@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1e293b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22c55e;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#4ade80;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="rustGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f97316;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fb923c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="playwrightGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2dd4bf;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#14b8a6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="wasmGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#654ff0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="200" fill="url(#bgGrad)" rx="10"/>
+
+  <!-- Grid pattern (subtle) -->
+  <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="1">
+    <line x1="0" y1="50" x2="800" y2="50"/>
+    <line x1="0" y1="100" x2="800" y2="100"/>
+    <line x1="0" y1="150" x2="800" y2="150"/>
+    <line x1="100" y1="0" x2="100" y2="200"/>
+    <line x1="200" y1="0" x2="200" y2="200"/>
+    <line x1="300" y1="0" x2="300" y2="200"/>
+    <line x1="400" y1="0" x2="400" y2="200"/>
+    <line x1="500" y1="0" x2="500" y2="200"/>
+    <line x1="600" y1="0" x2="600" y2="200"/>
+    <line x1="700" y1="0" x2="700" y2="200"/>
+  </g>
+
+  <!-- Test checkmark icon -->
+  <g transform="translate(40, 50)">
+    <circle cx="45" cy="50" r="45" fill="url(#accentGrad)" opacity="0.15"/>
+    <circle cx="45" cy="50" r="35" fill="none" stroke="url(#accentGrad)" stroke-width="4"/>
+    <path d="M28 50 L40 62 L62 38" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Title -->
+  <text x="150" y="70" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="bold" fill="#ffffff">
+    Probar
+  </text>
+
+  <!-- Tagline -->
+  <text x="150" y="100" font-family="system-ui, -apple-system, sans-serif" font-size="16" fill="#9ca3af">
+    Playwright-Compatible Testing for WASM + TUI Applications
+  </text>
+
+  <!-- Badge row 1 -->
+  <g transform="translate(150, 115)">
+    <!-- Pure Rust Badge -->
+    <rect width="90" height="22" rx="11" fill="url(#rustGrad)"/>
+    <text x="45" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      Pure Rust
+    </text>
+  </g>
+
+  <g transform="translate(250, 115)">
+    <!-- Playwright API Badge -->
+    <rect width="115" height="22" rx="11" fill="url(#playwrightGrad)"/>
+    <text x="57" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      Playwright API
+    </text>
+  </g>
+
+  <g transform="translate(375, 115)">
+    <!-- Zero JS Badge -->
+    <rect width="70" height="22" rx="11" fill="#dc2626"/>
+    <text x="35" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      Zero JS
+    </text>
+  </g>
+
+  <!-- Badge row 2 -->
+  <g transform="translate(150, 145)">
+    <!-- WASM Badge -->
+    <rect width="80" height="22" rx="11" fill="url(#wasmGrad)"/>
+    <text x="40" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      WASM
+    </text>
+  </g>
+
+  <g transform="translate(240, 145)">
+    <!-- TUI Badge -->
+    <rect width="80" height="22" rx="11" fill="#0891b2"/>
+    <text x="40" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      TUI
+    </text>
+  </g>
+
+  <g transform="translate(330, 145)">
+    <!-- Games Badge -->
+    <rect width="70" height="22" rx="11" fill="#c026d3"/>
+    <text x="35" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      Games
+    </text>
+  </g>
+
+  <g transform="translate(410, 145)">
+    <!-- Simulations Badge -->
+    <rect width="95" height="22" rx="11" fill="#059669"/>
+    <text x="47" y="15" font-family="monospace" font-size="10" fill="#ffffff" text-anchor="middle">
+      Simulations
+    </text>
+  </g>
+
+  <!-- Test targets illustration -->
+  <g transform="translate(540, 35)">
+    <!-- Browser/WASM icon -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="10" width="70" height="50" rx="4" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+      <rect x="0" y="10" width="70" height="12" rx="4" fill="#8b5cf6" opacity="0.3"/>
+      <circle cx="10" cy="16" r="3" fill="#ef4444"/>
+      <circle cx="20" cy="16" r="3" fill="#eab308"/>
+      <circle cx="30" cy="16" r="3" fill="#22c55e"/>
+      <text x="35" y="45" font-family="monospace" font-size="8" fill="#8b5cf6" text-anchor="middle">WASM</text>
+    </g>
+
+    <!-- Terminal/TUI icon -->
+    <g transform="translate(85, 0)">
+      <rect x="0" y="10" width="70" height="50" rx="4" fill="none" stroke="#0891b2" stroke-width="2"/>
+      <text x="8" y="30" font-family="monospace" font-size="9" fill="#0891b2">$_</text>
+      <rect x="8" y="38" width="30" height="3" rx="1" fill="#0891b2" opacity="0.5"/>
+      <rect x="8" y="45" width="50" height="3" rx="1" fill="#0891b2" opacity="0.5"/>
+      <text x="35" y="70" font-family="monospace" font-size="8" fill="#0891b2" text-anchor="middle">TUI</text>
+    </g>
+
+    <!-- Arrow pointing to checkmark -->
+    <g transform="translate(170, 25)">
+      <path d="M0 15 L25 15" fill="none" stroke="#4ade80" stroke-width="2" stroke-dasharray="4,2"/>
+      <polygon points="25,15 20,10 20,20" fill="#4ade80"/>
+    </g>
+
+    <!-- Result checkmark -->
+    <g transform="translate(200, 10)">
+      <circle cx="20" cy="20" r="18" fill="url(#accentGrad)" opacity="0.2"/>
+      <path d="M10 20 L17 27 L30 13" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- Decorative elements -->
+  <circle cx="770" cy="25" r="12" fill="url(#accentGrad)" opacity="0.3"/>
+  <circle cx="530" cy="175" r="8" fill="url(#rustGrad)" opacity="0.3"/>
+  <circle cx="780" cy="170" r="6" fill="url(#wasmGrad)" opacity="0.3"/>
+</svg>
