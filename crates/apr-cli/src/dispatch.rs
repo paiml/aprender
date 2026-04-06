@@ -318,17 +318,25 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             tokenizer,
             enforce_provenance,
             allow_no_config,
-        } => import::run(
-            source,
-            output.as_deref(),
-            Some(arch.as_str()),
-            quantize.as_deref(),
-            *strict,
-            *preserve_q4k,
-            tokenizer.as_ref(),
-            *enforce_provenance,
-            *allow_no_config,
-        ),
+        } => {
+            // GH-666: Reject network sources when --offline is set
+            if cli.offline && (source.starts_with("hf://") || source.starts_with("http://") || source.starts_with("https://")) {
+                return Some(Err(crate::error::CliError::NetworkError(
+                    format!("Cannot import from '{}' in --offline mode. Use a local file path.", source),
+                )));
+            }
+            import::run(
+                source,
+                output.as_deref(),
+                Some(arch.as_str()),
+                quantize.as_deref(),
+                *strict,
+                *preserve_q4k,
+                tokenizer.as_ref(),
+                *enforce_provenance,
+                *allow_no_config,
+            )
+        }
         Commands::Convert {
             file,
             quantize,

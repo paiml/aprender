@@ -42,6 +42,7 @@ fn scaled_dot_product_attention(
     dropout_p: f32,
     training: bool,
 ) -> (Tensor, Tensor) {
+    contract_pre_attention!(query.data());
     let d_k = query.shape()[query.ndim() - 1] as f32;
     let scale = 1.0 / d_k.sqrt();
 

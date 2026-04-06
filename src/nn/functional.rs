@@ -58,6 +58,7 @@ pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
 #[provable_contracts_macros::contract("silu-kernel-v1", equation = "sigmoid")]
 #[must_use]
 pub fn sigmoid(x: &Tensor) -> Tensor {
+    contract_pre_sigmoid!(x.data());
     x.sigmoid()
 }
 
@@ -148,6 +149,7 @@ pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
 /// Equation: softmax(x)\_i = exp(x\_i - max) / sum\_j exp(x\_j - max)
 #[must_use]
 pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
+    contract_pre_softmax!(logits);
     trueno::blis::softmax::softmax_1d_alloc(logits)
 }
 
@@ -187,6 +189,7 @@ pub fn softmax_1d_f64(logits: &[f64]) -> Vec<f64> {
 /// Equation: log\_softmax(x)\_i = x\_i - max - log(sum exp(x\_j - max))
 #[must_use]
 pub fn log_softmax_1d(logits: &[f32]) -> Vec<f32> {
+    contract_pre_log_softmax!(logits);
     let n = logits.len();
     let mut out = vec![0.0f32; n];
 

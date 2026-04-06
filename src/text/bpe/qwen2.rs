@@ -127,6 +127,7 @@ impl Qwen2BpeTokenizer {
     /// Encode text to token IDs.
     #[must_use]
     pub fn encode(&self, text: &str) -> Vec<u32> {
+        contract_pre_encode!();
         self.base.encode(text)
     }
 

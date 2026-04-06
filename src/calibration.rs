@@ -331,6 +331,7 @@ impl IsotonicRegression {
 /// Returns (`mean_predicted_prob`, `fraction_positive`) for each bin.
 #[must_use]
 pub fn reliability_diagram(predictions: &[f32], labels: &[bool], n_bins: usize) -> Vec<(f32, f32)> {
+    contract_pre_reliability_diagram!(predictions);
     let mut bins: Vec<(f32, f32, usize)> = vec![(0.0, 0.0, 0); n_bins]; // (sum_pred, sum_pos, count)
 
     for (&pred, &label) in predictions.iter().zip(labels.iter()) {
