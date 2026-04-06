@@ -1,0 +1,118 @@
+# trueno-graph Roadmap
+# Aligned with docs/specifications/graph-db-spec.md
+
+project:
+  name: trueno-graph
+  version: 0.1.0
+  description: GPU-first embedded graph database for code analysis
+
+milestones:
+  - name: Phase 1 - Foundation
+    status: complete
+    completion_date: 2025-11-22
+    tasks:
+      - id: p1-csr-storage
+        title: CSR graph storage implementation
+        status: complete
+        labels: [foundation, core]
+      - id: p1-parquet-io
+        title: Parquet I/O for graph persistence
+        status: complete
+        labels: [foundation, io]
+      - id: p1-testing
+        title: Property tests and 95% coverage
+        status: complete
+        labels: [quality, testing]
+
+  - name: Phase 2 - Algorithm Integration
+    status: in_progress
+    tasks:
+      - id: p2-pagerank
+        title: PageRank implementation via aprender
+        status: complete
+        labels: [algorithms, core]
+      - id: p2-bfs
+        title: BFS and find_callers implementation
+        status: complete
+        labels: [algorithms, traversal]
+      - id: p2-benchmarks
+        title: Criterion benchmarks for CSR + algorithms
+        status: complete
+        labels: [performance, benchmarks]
+      - id: p2-networkx-comparison
+        title: NetworkX baseline comparison benchmarks
+        status: todo
+        priority: high
+        labels: [validation, benchmarks, python]
+        description: |
+          Create Python benchmarks to validate performance claims:
+          - BFS 10x faster than NetworkX CPU baseline
+          - PageRank 5x faster than NetworkX
+          - Use identical graph structures for fair comparison
+        acceptance_criteria:
+          - Python script benchmarks/compare_networkx.py created
+          - BFS speedup measured and documented
+          - PageRank speedup measured and documented
+          - Results match spec claims (±20% tolerance)
+        estimated_hours: 4
+        dependencies: [p2-pagerank, p2-bfs, p2-benchmarks]
+
+  - name: Phase 3 - GPU Acceleration
+    status: in_progress
+    tasks:
+      - id: p3-reverse-csr
+        title: Reverse CSR for O(1) incoming neighbors
+        status: complete
+        completion_date: 2025-11-22
+        labels: [optimization, core]
+      - id: p3-gpu-setup
+        title: wgpu integration and GPU device initialization
+        status: complete
+        completion_date: 2025-11-22
+        priority: medium
+        labels: [gpu, infrastructure]
+        dependencies: [p3-reverse-csr]
+        estimated_hours: 8
+      - id: p3-gpu-bfs
+        title: GPU BFS kernel implementation
+        status: todo
+        priority: medium
+        labels: [gpu, algorithms, traversal]
+        dependencies: [p3-gpu-setup]
+        estimated_hours: 12
+      - id: p3-gpu-pagerank
+        title: GPU PageRank implementation
+        status: todo
+        priority: medium
+        labels: [gpu, algorithms]
+        dependencies: [p3-gpu-setup]
+        estimated_hours: 10
+
+  - name: Phase 4 - Advanced Algorithms
+    status: todo
+    tasks:
+      - id: p4-louvain
+        title: Louvain community detection
+        status: todo
+        priority: low
+        labels: [algorithms, clustering]
+        estimated_hours: 16
+      - id: p4-betweenness
+        title: Betweenness centrality
+        status: todo
+        priority: low
+        labels: [algorithms, centrality]
+        estimated_hours: 12
+      - id: p4-triangle-count
+        title: Triangle counting
+        status: todo
+        priority: low
+        labels: [algorithms]
+        estimated_hours: 8
+
+notes: |
+  - Phase 1 complete: 23 tests, 96.96% coverage
+  - Phase 2 complete: 37 tests, 97.86% coverage (+ NetworkX benchmarks)
+  - Phase 3.1 complete: 40 tests, 98.11% coverage, O(1) incoming neighbors
+  - Phase 3.2 complete: 27 tests (with --features gpu), GPU device initialization
+  - Next priority: GPU buffer management (Phase 3.3) then GPU BFS/PageRank

@@ -1,0 +1,12 @@
+# Python dependencies for NetworkX comparison benchmarks
+#
+# Install with:
+#   python3 -m pip install --user -r benchmarks/requirements.txt
+# OR (if using venv):
+#   python3 -m venv venv
+#   source venv/bin/activate
+#   pip install -r benchmarks/requirements.txt
+
+networkx>=3.0
+numpy>=1.24.0
+scipy>=1.10.0
