@@ -32,6 +32,7 @@ struct StageResult {
 
 /// Run the 10-stage pipeline self-test with REAL validation
 pub(crate) fn run(path: &Path, no_gpu: bool, json: bool) -> Result<(), CliError> {
+    contract_pre_apr_model_validity!();
     if !json {
         output::section("Model Self-Test (PMAT-112: Real Validation)");
         println!("Model: {}\n", path.display().to_string().cyan());

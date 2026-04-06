@@ -38,6 +38,7 @@ pub(crate) fn run(
     limit: usize,
     json: bool,
 ) -> Result<(), CliError> {
+    contract_pre_flag_integrity!();
     validate_path(path)?;
 
     // GH-248: JSON output mode

@@ -134,6 +134,7 @@ pub(crate) fn run(
     calibration: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
+    contract_pre_exit_code_on_failure!();
     let prune_method = validate_prune_params(file, method, target_ratio, sparsity)?;
 
     // GH-513: Reject --calibration since calibration-aware pruning is not yet implemented

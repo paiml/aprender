@@ -14,6 +14,7 @@ use std::path::Path;
 
 /// Run the lint command
 pub(crate) fn run(file: &Path, json: bool) -> Result<()> {
+    contract_pre_apr_model_validity!();
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));

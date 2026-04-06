@@ -1012,6 +1012,7 @@ pub(crate) fn run(
     experimental_mps: bool,
     gpu_share: u32,
 ) -> Result<()> {
+    contract_pre_rank_bounds_safety!();
     if experimental_mps {
         setup_mps(gpu_share, json_output)?;
     }
