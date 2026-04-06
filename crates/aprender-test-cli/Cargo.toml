@@ -13,15 +13,18 @@ categories = ["development-tools::testing", "command-line-utilities", "wasm"]
 [features]
 default = ["browser"]
 # Enable real browser control for live validation (requires chromium)
-browser = ["aprender-test-lib/browser"]
+browser = ["jugar-probar/browser"]
+
+[lib]
+name = "probador"
 
 [[bin]]
 name = "aprender-test-cli"
 path = "src/main.rs"
 
 [dependencies]
-# Core library (was: jugar-probar)
-aprender-test-lib = { path = "../aprender-test-lib" }
+# Core library (was: jugar-probar) — dep key preserves Rust identifier
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }
 
 # CLI framework
 clap = { workspace = true }

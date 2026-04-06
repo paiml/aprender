@@ -40,6 +40,7 @@ exclude = [
 ]
 
 [lib]
+name = "entrenar"
 # NOTE: For WASM builds, use `wasm-pack build` which sets cdylib target automatically.
 # Listing both ["cdylib", "rlib"] here causes cargo output filename collisions
 # during parallel test compilation (cargo#6313), so we only specify rlib for native.

@@ -120,7 +120,7 @@ anyhow = "1.0"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
 
 # HTTP
@@ -202,7 +202,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 image = "0.25"
 base64 = "0.22"
-syn = { version = "2", features = ["full"] }
+syn = { version = "2", features = ["full", "visit"] }
 quote = "1"
 proc-macro2 = "1"
 async-trait = "0.1"
@@ -229,7 +229,7 @@ mp4 = "0.14"
 ratatui = "0.29"
 
 # HTTP middleware
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "compression-gzip", "set-header"] }
 mime_guess = "2"
 
 # Browser / WASM runtime (heavy optional deps for test framework)

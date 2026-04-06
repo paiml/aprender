@@ -30,8 +30,8 @@ impl CompressionLevel {
     fn to_png_compression(self) -> png::Compression {
         match self {
             Self::None | Self::Fast => png::Compression::Fast,
-            Self::Default => png::Compression::Balanced,
-            Self::Best => png::Compression::High,
+            Self::Default => png::Compression::Default,
+            Self::Best => png::Compression::Best,
         }
     }
 }
