@@ -1,0 +1,73 @@
+[workspace]
+
+[package]
+name = "ttop"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["PAIML Team"]
+description = "Terminal Top: 10X better than btop - Pure Rust system monitor with GPU support (NVIDIA/AMD/Apple), sovereign stack, zero-allocation rendering"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/trueno-viz"
+homepage = "https://github.com/paiml/trueno-viz/tree/main/crates/ttop"
+documentation = "https://docs.rs/ttop"
+readme = "README.md"
+keywords = ["system-monitor", "tui", "terminal", "btop", "htop"]
+categories = ["command-line-utilities", "visualization"]
+exclude = ["target/", ".pmat/", ".pmat-metrics/", "docs/"]
+
+[[bin]]
+name = "ttop"
+path = "src/main.rs"
+
+[dependencies]
+# Sovereign Stack: presentar-terminal replaces ratatui (version + path for clean-room)
+presentar-terminal = { version = "0.3.5", path = "../../../presentar/crates/presentar-terminal", features = ["ptop"] }
+presentar-core = { version = "0.3.4", path = "../../../presentar/crates/presentar-core" }
+
+# Terminal I/O (only non-PAIML terminal dep)
+crossterm = "0.28"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Shared formatting/display utilities (Batuta stack)
+batuta-common = "0.1"
+
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml_ng = "0.10"
+
+[dev-dependencies]
+# Probar testing (Brick Architecture, version + path for clean-room)
+jugar-probar = { version = "1.0.4", path = "../../../probar/crates/probar", default-features = false, features = ["tui", "media"] }
+proptest = "1.4"
+tempfile = "3.10"
+
+[features]
+default = ["nvidia"]
+nvidia = []
+amd = []
+apple-hardware = []
+full = ["nvidia"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "allow"
+assertions_on_constants = "allow"
+useless_vec = "allow"
+for_kv_map = "allow"
+manual_range_contains = "allow"

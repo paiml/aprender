@@ -1,0 +1,18 @@
+# cargo-deny configuration for ttop v2
+# Sovereign stack policy: ban ratatui and tui crates
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[[bans.deny]]
+name = "ratatui"
+wrappers = []
+
+[[bans.deny]]
+name = "tui"
+wrappers = []
+
+[[bans.deny]]
+name = "termion"
+wrappers = []

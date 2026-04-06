@@ -1,0 +1,14 @@
+# cargo-nextest CI profile
+# Deployed from paiml/infra — do not edit manually.
+# Spec: docs/specifications/unified-ci-pipeline.md
+
+[profile.ci]
+retries = 0
+fail-fast = true
+slow-warning = "60s"
+status-level = "fail"
+
+[profile.ci.junit]
+path = "target/nextest/ci/junit.xml"
+store-success-output = false
+store-failure-output = true

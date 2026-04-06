@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>trueno-viz | High-Performance Visualization</title>
+    <link rel="icon" href="favicon.ico">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a24;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a0;
+            --accent-blue: #4a9eff;
+            --accent-green: #50fa7b;
+            --accent-purple: #bd93f9;
+            --accent-orange: #ffb86c;
+            --accent-red: #ff5555;
+            --accent-cyan: #8be9fd;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, rgba(74,158,255,0.1) 0%, rgba(189,147,249,0.1) 100%);
+            padding: 40px 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .hero .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+
+        .stats-bar {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-green);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .compute-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-top: 20px;
+        }
+
+        .compute-badge.scalar {
+            background: rgba(255, 184, 108, 0.2);
+            color: var(--accent-orange);
+            border: 1px solid var(--accent-orange);
+        }
+
+        .compute-badge.simd128 {
+            background: rgba(80, 250, 123, 0.2);
+            color: var(--accent-green);
+            border: 1px solid var(--accent-green);
+        }
+
+        .compute-badge.webgpu {
+            background: rgba(74, 158, 255, 0.2);
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .demo-grid { grid-template-columns: 1fr; }
+        }
+
+        .demo-card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            border: 1px solid var(--bg-tertiary);
+            overflow: hidden;
+        }
+
+        .demo-card.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .card-header h2 {
+            font-size: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-header .perf {
+            font-size: 0.8rem;
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        .canvas-container {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .canvas-container canvas {
+            display: block;
+            width: 100%;
+            height: 400px;
+        }
+
+        .fps-counter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: var(--accent-green);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .control-group label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        select, input[type="number"] {
+            background: var(--bg-primary);
+            border: 1px solid var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.875rem;
+        }
+
+        button {
+            background: var(--accent-blue);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #5aa8ff;
+            transform: translateY(-1px);
+        }
+
+        button.secondary {
+            background: var(--bg-tertiary);
+        }
+
+        button.danger {
+            background: var(--accent-red);
+        }
+
+        .benchmark-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        .benchmark-table th,
+        .benchmark-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .benchmark-table th {
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .benchmark-table td {
+            font-size: 0.9rem;
+        }
+
+        .benchmark-table .value {
+            color: var(--accent-green);
+            font-weight: 600;
+        }
+
+        .benchmark-table .bar {
+            height: 8px;
+            background: var(--accent-blue);
+            border-radius: 4px;
+            min-width: 20px;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid var(--bg-tertiary);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .ascii-display {
+            background: #000;
+            padding: 20px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            line-height: 1.2;
+            overflow-x: auto;
+            white-space: pre;
+            color: var(--accent-cyan);
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>trueno-viz</h1>
+        <p class="subtitle">SIMD/GPU-Accelerated Visualization for Data Science</p>
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="stat-value" id="total-points">-</div>
+                <div class="stat-label">Points Rendered</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="avg-fps">-</div>
+                <div class="stat-label">Avg FPS</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="throughput">-</div>
+                <div class="stat-label">Points/sec</div>
+            </div>
+        </div>
+        <div class="compute-badge scalar" id="compute-badge">Detecting...</div>
+    </div>
+
+    <div class="container">
+        <div class="demo-grid">
+            <!-- Real-time Scatter -->
+            <div class="demo-card">
+                <div class="card-header">
+                    <h2>Real-time Scatter Plot</h2>
+                    <span class="perf" id="scatter-perf">-</span>
+                </div>
+                <div class="card-body">
+                    <div class="canvas-container">
+                        <canvas id="scatter-canvas" width="600" height="400"></canvas>
+                        <div class="fps-counter" id="scatter-fps">0 FPS</div>
+                    </div>
+                    <div class="controls">
+                        <div class="control-group">
+                            <label>Points</label>
+                            <select id="scatter-count">
+                                <option value="1000">1K</option>
+                                <option value="10000" selected>10K</option>
+                                <option value="50000">50K</option>
+                                <option value="100000">100K</option>
+                                <option value="500000">500K</option>
+                            </select>
+                        </div>
+                        <button onclick="toggleScatterAnimation()" id="scatter-btn">Start Animation</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Streaming Histogram -->
+            <div class="demo-card">
+                <div class="card-header">
+                    <h2>Streaming Histogram</h2>
+                    <span class="perf" id="hist-perf">-</span>
+                </div>
+                <div class="card-body">
+                    <div class="canvas-container">
+                        <canvas id="hist-canvas" width="600" height="400"></canvas>
+                        <div class="fps-counter" id="hist-fps">0 FPS</div>
+                    </div>
+                    <div class="controls">
+                        <div class="control-group">
+                            <label>Samples/frame</label>
+                            <select id="hist-rate">
+                                <option value="1000">1K</option>
+                                <option value="10000" selected>10K</option>
+                                <option value="50000">50K</option>
+                            </select>
+                        </div>
+                        <button onclick="toggleHistAnimation()" id="hist-btn">Start Stream</button>
+                        <button onclick="resetHistogram()" class="secondary">Reset</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Physics Simulation -->
+            <div class="demo-card full-width">
+                <div class="card-header">
+                    <h2>Bouncing Ball Physics</h2>
+                    <span class="perf" id="physics-perf">-</span>
+                </div>
+                <div class="card-body">
+                    <div class="canvas-container">
+                        <canvas id="physics-canvas" width="1200" height="400"></canvas>
+                        <div class="fps-counter" id="physics-fps">0 FPS</div>
+                    </div>
+                    <div class="controls">
+                        <div class="control-group">
+                            <label>Balls</label>
+                            <select id="physics-count">
+                                <option value="100">100</option>
+                                <option value="500" selected>500</option>
+                                <option value="1000">1K</option>
+                                <option value="2000">2K</option>
+                                <option value="5000">5K</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>Gravity</label>
+                            <select id="physics-gravity">
+                                <option value="0" selected>Zero-G</option>
+                                <option value="0.3">Light</option>
+                                <option value="0.8">Normal</option>
+                                <option value="2">Heavy</option>
+                            </select>
+                        </div>
+                        <button onclick="togglePhysics()" id="physics-btn">Start Simulation</button>
+                        <button onclick="shakeBalls()" class="secondary">Shake!</button>
+                        <button onclick="resetPhysics()" class="secondary">Reset</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Benchmark Suite -->
+            <div class="demo-card full-width">
+                <div class="card-header">
+                    <h2>Performance Benchmarks</h2>
+                    <button onclick="runBenchmarks()">Run All Benchmarks</button>
+                </div>
+                <div class="card-body">
+                    <table class="benchmark-table">
+                        <thead>
+                            <tr>
+                                <th>Operation</th>
+                                <th>Data Size</th>
+                                <th>Time</th>
+                                <th>Throughput</th>
+                                <th>Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="benchmark-body">
+                            <tr>
+                                <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                                    Click "Run All Benchmarks" to start
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import init, {
+            version,
+            detect_compute_tier,
+            ScatterConfig,
+            ScatterPlot,
+            HistogramConfig,
+            Histogram,
+            benchmark_scatter,
+            benchmark_histogram
+        } from './pkg/trueno_viz_wasm.js';
+
+        let capabilities;
+        let scatterAnimating = false;
+        let histAnimating = false;
+        let scatterFrameCount = 0;
+        let histFrameCount = 0;
+        let totalPointsRendered = 0;
+        let fpsHistory = [];
+
+        // JavaScript-side compute tier detection (like organizational-intelligence-plugin)
+        async function detectComputeTier() {
+            const result = {
+                tier: 'Scalar',
+                webgpu: false,
+                simd128: false,
+                adapterName: null
+            };
+
+            // 1. Check WebGPU
+            if (typeof navigator !== 'undefined' && navigator.gpu) {
+                try {
+                    const adapter = await navigator.gpu.requestAdapter();
+                    if (adapter) {
+                        result.webgpu = true;
+                        result.tier = 'WebGPU';
+                        // Try to get adapter info (not available in all browsers)
+                        try {
+                            if (adapter.requestAdapterInfo) {
+                                const info = await adapter.requestAdapterInfo();
+                                result.adapterName = `${info.vendor || ''} ${info.device || ''} ${info.architecture || ''}`.trim();
+                            } else if (adapter.info) {
+                                // Fallback for older API
+                                result.adapterName = `${adapter.info.vendor || ''} ${adapter.info.device || ''}`.trim();
+                            }
+                        } catch (infoErr) {
+                            // Adapter info not available, but WebGPU still works
+                            result.adapterName = 'WebGPU Adapter';
+                        }
+                    }
+                } catch (e) {
+                    console.log('WebGPU detection error:', e);
+                }
+            }
+
+            // 2. Check WASM SIMD128 (magic byte validation like OIP)
+            if (typeof WebAssembly !== 'undefined' && typeof WebAssembly.validate === 'function') {
+                // This is a minimal WASM module that uses SIMD instructions
+                // If browser supports SIMD, validation succeeds
+                const simdTest = new Uint8Array([
+                    0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,10,10,1,8,0,65,0,253,15,253,98,11
+                ]);
+                if (WebAssembly.validate(simdTest)) {
+                    result.simd128 = true;
+                    if (!result.webgpu) {
+                        result.tier = 'SIMD128';
+                    }
+                }
+            }
+
+            return result;
+        }
+
+        // Initialize
+        async function initialize() {
+            await init();
+
+            // Use JS-side detection for accurate tier info
+            capabilities = await detectComputeTier();
+
+            const badge = document.getElementById('compute-badge');
+            badge.textContent = capabilities.tier + ' Compute';
+            badge.className = 'compute-badge ' + capabilities.tier.toLowerCase();
+
+            // Show adapter name for WebGPU
+            if (capabilities.adapterName) {
+                badge.title = capabilities.adapterName;
+            }
+
+            console.log('Compute capabilities:', capabilities);
+
+            // Initialize GPU physics if WebGPU available
+            if (capabilities.tier === 'WebGPU') {
+                await initGPUPhysics();
+            }
+
+            // Initial renders
+            renderScatter();
+            renderHistogram();
+            initBalls(parseInt(document.getElementById('physics-count').value));
+            renderPhysics();
+
+            // Start FPS counter
+            setInterval(updateStats, 1000);
+        }
+
+        // Scatter Plot with Canvas
+        const scatterCanvas = document.getElementById('scatter-canvas');
+        const scatterCtx = scatterCanvas.getContext('2d');
+        let scatterData = { x: [], y: [] };
+        let scatterPhase = 0;
+
+        function generateScatterData(count, animated = false) {
+            const x = new Float32Array(count);
+            const y = new Float32Array(count);
+
+            for (let i = 0; i < count; i++) {
+                const t = i / count * Math.PI * 4;
+                const r = 0.3 + Math.random() * 0.2;
+
+                if (animated) {
+                    // Spiral galaxy effect
+                    const arm = Math.floor(Math.random() * 3);
+                    const armOffset = arm * Math.PI * 2 / 3;
+                    const spiral = t + armOffset + scatterPhase;
+                    x[i] = 0.5 + Math.cos(spiral) * r * (1 + t/20);
+                    y[i] = 0.5 + Math.sin(spiral) * r * (1 + t/20);
+                } else {
+                    x[i] = Math.random();
+                    y[i] = Math.random();
+                }
+            }
+            return { x, y };
+        }
+
+        function renderScatter() {
+            const count = parseInt(document.getElementById('scatter-count').value);
+            scatterData = generateScatterData(count, scatterAnimating);
+
+            const start = performance.now();
+
+            // Clear
+            scatterCtx.fillStyle = '#000';
+            scatterCtx.fillRect(0, 0, scatterCanvas.width, scatterCanvas.height);
+
+            // Draw points
+            const w = scatterCanvas.width;
+            const h = scatterCanvas.height;
+
+            scatterCtx.fillStyle = 'rgba(74, 158, 255, 0.6)';
+            for (let i = 0; i < count; i++) {
+                const px = scatterData.x[i] * w;
+                const py = (1 - scatterData.y[i]) * h;
+                scatterCtx.fillRect(px - 1, py - 1, 2, 2);
+            }
+
+            const elapsed = performance.now() - start;
+            const fps = 1000 / elapsed;
+
+            document.getElementById('scatter-perf').textContent =
+                `${elapsed.toFixed(1)}ms | ${(count/elapsed*1000/1e6).toFixed(2)}M pts/s`;
+
+            scatterFrameCount++;
+            totalPointsRendered += count;
+            fpsHistory.push(fps);
+            if (fpsHistory.length > 60) fpsHistory.shift();
+        }
+
+        function scatterLoop() {
+            if (!scatterAnimating) return;
+            scatterPhase += 0.02;
+            renderScatter();
+            requestAnimationFrame(scatterLoop);
+        }
+
+        window.toggleScatterAnimation = function() {
+            scatterAnimating = !scatterAnimating;
+            document.getElementById('scatter-btn').textContent =
+                scatterAnimating ? 'Stop Animation' : 'Start Animation';
+            if (scatterAnimating) scatterLoop();
+        };
+
+        // Histogram with Canvas
+        const histCanvas = document.getElementById('hist-canvas');
+        const histCtx = histCanvas.getContext('2d');
+        let histBins = new Float32Array(50);
+        let histTotal = 0;
+
+        function addHistogramSamples(count) {
+            for (let i = 0; i < count; i++) {
+                // Mixture of Gaussians
+                let v;
+                const r = Math.random();
+                if (r < 0.3) {
+                    v = gaussianRandom(0.3, 0.08);
+                } else if (r < 0.7) {
+                    v = gaussianRandom(0.6, 0.1);
+                } else {
+                    v = gaussianRandom(0.8, 0.05);
+                }
+                v = Math.max(0, Math.min(1, v));
+                const bin = Math.floor(v * (histBins.length - 1));
+                histBins[bin]++;
+                histTotal++;
+            }
+        }
+
+        function gaussianRandom(mean, std) {
+            const u1 = Math.random();
+            const u2 = Math.random();
+            return mean + std * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+        }
+
+        function renderHistogram() {
+            const start = performance.now();
+
+            histCtx.fillStyle = '#000';
+            histCtx.fillRect(0, 0, histCanvas.width, histCanvas.height);
+
+            const w = histCanvas.width;
+            const h = histCanvas.height;
+            const barW = w / histBins.length;
+            const maxVal = Math.max(...histBins) || 1;
+
+            // Gradient bars
+            const gradient = histCtx.createLinearGradient(0, h, 0, 0);
+            gradient.addColorStop(0, '#4a9eff');
+            gradient.addColorStop(1, '#bd93f9');
+            histCtx.fillStyle = gradient;
+
+            for (let i = 0; i < histBins.length; i++) {
+                const barH = (histBins[i] / maxVal) * (h - 40);
+                histCtx.fillRect(i * barW + 1, h - barH - 20, barW - 2, barH);
+            }
+
+            // Labels
+            histCtx.fillStyle = '#888';
+            histCtx.font = '10px monospace';
+            histCtx.fillText(`Samples: ${histTotal.toLocaleString()}`, 10, 15);
+
+            const elapsed = performance.now() - start;
+            document.getElementById('hist-perf').textContent =
+                `${elapsed.toFixed(1)}ms | ${histTotal.toLocaleString()} samples`;
+
+            histFrameCount++;
+        }
+
+        function histLoop() {
+            if (!histAnimating) return;
+            const rate = parseInt(document.getElementById('hist-rate').value);
+            addHistogramSamples(rate);
+            renderHistogram();
+            totalPointsRendered += rate;
+            requestAnimationFrame(histLoop);
+        }
+
+        window.toggleHistAnimation = function() {
+            histAnimating = !histAnimating;
+            document.getElementById('hist-btn').textContent =
+                histAnimating ? 'Stop Stream' : 'Start Stream';
+            if (histAnimating) histLoop();
+        };
+
+        window.resetHistogram = function() {
+            histBins = new Float32Array(50);
+            histTotal = 0;
+            renderHistogram();
+        };
+
+        // Physics Simulation
+        const physicsCanvas = document.getElementById('physics-canvas');
+        const physicsCtx = physicsCanvas.getContext('2d');
+        let physicsAnimating = false;
+        let physicsFpsHistory = [];
+        let balls = [];
+
+        class Ball {
+            constructor(x, y, vx, vy, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.color = color;
+                this.mass = radius * radius; // mass proportional to area
+            }
+        }
+
+        // ========== WebGPU Compute Physics ==========
+        let gpuDevice = null;
+        let gpuPhysicsPipeline = null;
+        let gpuBallBuffer = null;
+        let gpuParamsBuffer = null;
+        let gpuStagingBuffer = null;
+        let gpuBindGroup = null;
+        let useGPUPhysics = false;
+        const MAX_GPU_BALLS = 8192;
+
+        // WGSL Compute Shader for physics simulation
+        const physicsShaderCode = `
+struct Ball {
+    x: f32,
+    y: f32,
+    vx: f32,
+    vy: f32,
+    radius: f32,
+    mass: f32,
+    _pad1: f32,
+    _pad2: f32,
+}
+
+struct Params {
+    numBalls: u32,
+    width: f32,
+    height: f32,
+    gravity: f32,
+    dt: f32,
+    damping: f32,
+    restitution: f32,
+    _pad: f32,
+}
+
+@group(0) @binding(0) var<storage, read_write> balls: array<Ball>;
+@group(0) @binding(1) var<uniform> params: Params;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= params.numBalls) { return; }
+
+    var ball = balls[i];
+
+    // Apply gravity and velocity
+    ball.vy += params.gravity * params.dt * 60.0;
+    ball.x += ball.vx * params.dt * 60.0;
+    ball.y += ball.vy * params.dt * 60.0;
+    ball.vx *= params.damping;
+    ball.vy *= params.damping;
+
+    // Wall collisions
+    if (ball.x - ball.radius < 0.0) {
+        ball.x = ball.radius;
+        ball.vx = -ball.vx * params.restitution;
+    }
+    if (ball.x + ball.radius > params.width) {
+        ball.x = params.width - ball.radius;
+        ball.vx = -ball.vx * params.restitution;
+    }
+    if (ball.y - ball.radius < 0.0) {
+        ball.y = ball.radius;
+        ball.vy = -ball.vy * params.restitution;
+    }
+    if (ball.y + ball.radius > params.height) {
+        ball.y = params.height - ball.radius;
+        ball.vy = -ball.vy * params.restitution;
+    }
+
+    // Ball-to-ball collisions (each ball checks all others)
+    for (var j = 0u; j < params.numBalls; j++) {
+        if (i == j) { continue; }
+        let other = balls[j];
+
+        let dx = other.x - ball.x;
+        let dy = other.y - ball.y;
+        let dist = sqrt(dx * dx + dy * dy);
+        let minDist = ball.radius + other.radius;
+
+        if (dist < minDist && dist > 0.001) {
+            let nx = dx / dist;
+            let ny = dy / dist;
+            let dvx = ball.vx - other.vx;
+            let dvy = ball.vy - other.vy;
+            let dvn = dvx * nx + dvy * ny;
+
+            if (dvn < 0.0) {
+                let totalMass = ball.mass + other.mass;
+                let impulse = (2.0 * dvn) / totalMass;
+
+                ball.vx -= impulse * other.mass * nx * params.restitution;
+                ball.vy -= impulse * other.mass * ny * params.restitution;
+
+                // Separate overlapping balls
+                let overlap = (minDist - dist) * 0.5;
+                ball.x -= overlap * nx;
+                ball.y -= overlap * ny;
+            }
+        }
+    }
+
+    balls[i] = ball;
+}
+`;
+
+        async function initGPUPhysics() {
+            if (!navigator.gpu) {
+                console.log('WebGPU not available, using CPU physics');
+                return false;
+            }
+
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    console.log('No GPU adapter, using CPU physics');
+                    return false;
+                }
+
+                gpuDevice = await adapter.requestDevice();
+                console.log('WebGPU device acquired for physics compute');
+
+                // Create shader module
+                const shaderModule = gpuDevice.createShaderModule({
+                    code: physicsShaderCode
+                });
+
+                // Create bind group layout
+                const bindGroupLayout = gpuDevice.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                    ]
+                });
+
+                // Create pipeline
+                gpuPhysicsPipeline = gpuDevice.createComputePipeline({
+                    layout: gpuDevice.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+                    compute: { module: shaderModule, entryPoint: 'main' }
+                });
+
+                // Create buffers
+                const ballBufferSize = MAX_GPU_BALLS * 32; // 8 floats * 4 bytes
+                gpuBallBuffer = gpuDevice.createBuffer({
+                    size: ballBufferSize,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+                });
+
+                gpuParamsBuffer = gpuDevice.createBuffer({
+                    size: 32, // 8 values * 4 bytes
+                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                });
+
+                gpuStagingBuffer = gpuDevice.createBuffer({
+                    size: ballBufferSize,
+                    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+                });
+
+                // Create bind group
+                gpuBindGroup = gpuDevice.createBindGroup({
+                    layout: bindGroupLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: gpuBallBuffer } },
+                        { binding: 1, resource: { buffer: gpuParamsBuffer } },
+                    ]
+                });
+
+                useGPUPhysics = true;
+                console.log('GPU Physics initialized successfully!');
+                return true;
+
+            } catch (e) {
+                console.error('GPU Physics init failed:', e);
+                return false;
+            }
+        }
+
+        function uploadBallsToGPU() {
+            if (!useGPUPhysics || balls.length === 0) return;
+
+            // Pack ball data: x, y, vx, vy, radius, mass, pad, pad
+            const data = new Float32Array(balls.length * 8);
+            for (let i = 0; i < balls.length; i++) {
+                const b = balls[i];
+                const offset = i * 8;
+                data[offset + 0] = b.x;
+                data[offset + 1] = b.y;
+                data[offset + 2] = b.vx;
+                data[offset + 3] = b.vy;
+                data[offset + 4] = b.radius;
+                data[offset + 5] = b.mass;
+                data[offset + 6] = 0; // padding
+                data[offset + 7] = 0; // padding
+            }
+            gpuDevice.queue.writeBuffer(gpuBallBuffer, 0, data);
+        }
+
+        async function runGPUPhysics(dt) {
+            if (!useGPUPhysics) return false;
+
+            const gravity = parseFloat(document.getElementById('physics-gravity').value);
+            const damping = gravity === 0 ? 1.0 : 0.999;
+            const restitution = 0.98;
+
+            // Upload params
+            const params = new Float32Array([
+                balls.length,           // numBalls (will be cast to u32 in shader)
+                physicsCanvas.width,    // width
+                physicsCanvas.height,   // height
+                gravity,                // gravity
+                Math.min(dt, 0.033),    // dt
+                damping,                // damping
+                restitution,            // restitution
+                0                       // padding
+            ]);
+            // Fix: numBalls needs to be u32
+            const paramsView = new DataView(params.buffer);
+            paramsView.setUint32(0, balls.length, true);
+            gpuDevice.queue.writeBuffer(gpuParamsBuffer, 0, params);
+
+            // Create command encoder
+            const encoder = gpuDevice.createCommandEncoder();
+
+            // Dispatch compute
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(gpuPhysicsPipeline);
+            pass.setBindGroup(0, gpuBindGroup);
+            pass.dispatchWorkgroups(Math.ceil(balls.length / 64));
+            pass.end();
+
+            // Copy results to staging buffer
+            encoder.copyBufferToBuffer(gpuBallBuffer, 0, gpuStagingBuffer, 0, balls.length * 32);
+
+            gpuDevice.queue.submit([encoder.finish()]);
+
+            // Read back results
+            await gpuStagingBuffer.mapAsync(GPUMapMode.READ);
+            const resultData = new Float32Array(gpuStagingBuffer.getMappedRange().slice(0));
+            gpuStagingBuffer.unmap();
+
+            // Update ball objects
+            for (let i = 0; i < balls.length; i++) {
+                const offset = i * 8;
+                balls[i].x = resultData[offset + 0];
+                balls[i].y = resultData[offset + 1];
+                balls[i].vx = resultData[offset + 2];
+                balls[i].vy = resultData[offset + 3];
+            }
+
+            return true;
+        }
+
+        // ========== End WebGPU Compute Physics ==========
+
+        function initBalls(count) {
+            balls = [];
+            const w = physicsCanvas.width;
+            const h = physicsCanvas.height;
+            const colors = ['#4a9eff', '#50fa7b', '#bd93f9', '#ffb86c', '#ff5555', '#8be9fd'];
+
+            for (let i = 0; i < count; i++) {
+                const radius = 3 + Math.random() * 6;
+                // Much higher initial velocities for chaos
+                const speed = 15 + Math.random() * 20;
+                const angle = Math.random() * Math.PI * 2;
+                balls.push(new Ball(
+                    radius + Math.random() * (w - 2 * radius),
+                    radius + Math.random() * (h - 2 * radius),
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    radius,
+                    colors[Math.floor(Math.random() * colors.length)]
+                ));
+            }
+        }
+
+        function updatePhysics(dt) {
+            const gravity = parseFloat(document.getElementById('physics-gravity').value);
+            const w = physicsCanvas.width;
+            const h = physicsCanvas.height;
+            // No damping in zero-g, slight damping with gravity
+            const damping = gravity === 0 ? 1.0 : 0.999;
+            const restitution = 0.98; // Very bouncy
+
+            // Update positions and velocities
+            for (const ball of balls) {
+                ball.vy += gravity * dt * 60; // Apply gravity
+                ball.x += ball.vx * dt * 60;
+                ball.y += ball.vy * dt * 60;
+                ball.vx *= damping;
+                ball.vy *= damping;
+
+                // Wall collisions
+                if (ball.x - ball.radius < 0) {
+                    ball.x = ball.radius;
+                    ball.vx = -ball.vx * restitution;
+                }
+                if (ball.x + ball.radius > w) {
+                    ball.x = w - ball.radius;
+                    ball.vx = -ball.vx * restitution;
+                }
+                if (ball.y - ball.radius < 0) {
+                    ball.y = ball.radius;
+                    ball.vy = -ball.vy * restitution;
+                }
+                if (ball.y + ball.radius > h) {
+                    ball.y = h - ball.radius;
+                    ball.vy = -ball.vy * restitution;
+                }
+            }
+
+            // Ball-to-ball collisions (O(n²) - showcases compute)
+            for (let i = 0; i < balls.length; i++) {
+                for (let j = i + 1; j < balls.length; j++) {
+                    const a = balls[i];
+                    const b = balls[j];
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const minDist = a.radius + b.radius;
+
+                    if (dist < minDist && dist > 0) {
+                        // Collision response
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        const dvx = a.vx - b.vx;
+                        const dvy = a.vy - b.vy;
+                        const dvn = dvx * nx + dvy * ny;
+
+                        if (dvn > 0) continue; // Moving apart
+
+                        const totalMass = a.mass + b.mass;
+                        const impulse = (2 * dvn) / totalMass;
+
+                        a.vx -= impulse * b.mass * nx * restitution;
+                        a.vy -= impulse * b.mass * ny * restitution;
+                        b.vx += impulse * a.mass * nx * restitution;
+                        b.vy += impulse * a.mass * ny * restitution;
+
+                        // Separate overlapping balls
+                        const overlap = (minDist - dist) / 2;
+                        a.x -= overlap * nx;
+                        a.y -= overlap * ny;
+                        b.x += overlap * nx;
+                        b.y += overlap * ny;
+                    }
+                }
+            }
+        }
+
+        function renderPhysics() {
+            physicsCtx.fillStyle = '#000';
+            physicsCtx.fillRect(0, 0, physicsCanvas.width, physicsCanvas.height);
+
+            for (const ball of balls) {
+                physicsCtx.beginPath();
+                physicsCtx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+                physicsCtx.fillStyle = ball.color;
+                physicsCtx.fill();
+            }
+        }
+
+        let lastPhysicsTime = 0;
+        async function physicsLoop(timestamp) {
+            if (!physicsAnimating) return;
+
+            const dt = lastPhysicsTime ? (timestamp - lastPhysicsTime) / 1000 : 0.016;
+            lastPhysicsTime = timestamp;
+
+            const start = performance.now();
+
+            // Try GPU physics first, fall back to CPU
+            let usedGPU = false;
+            if (useGPUPhysics) {
+                try {
+                    await runGPUPhysics(dt);
+                    usedGPU = true;
+                } catch (e) {
+                    console.warn('GPU physics failed, falling back to CPU:', e);
+                    updatePhysics(Math.min(dt, 0.033));
+                }
+            } else {
+                updatePhysics(Math.min(dt, 0.033));
+            }
+
+            renderPhysics();
+            const elapsed = performance.now() - start;
+
+            const fps = 1000 / elapsed;
+            physicsFpsHistory.push(fps);
+            if (physicsFpsHistory.length > 60) physicsFpsHistory.shift();
+
+            const avgFps = physicsFpsHistory.reduce((a, b) => a + b, 0) / physicsFpsHistory.length;
+            const collisionsPerFrame = balls.length * (balls.length - 1) / 2;
+            const backend = usedGPU ? 'GPU' : 'CPU';
+
+            document.getElementById('physics-fps').textContent = avgFps.toFixed(0) + ' FPS';
+            document.getElementById('physics-perf').textContent =
+                `${elapsed.toFixed(1)}ms | ${balls.length} balls | ${(collisionsPerFrame/1000).toFixed(1)}K checks | ${backend}`;
+
+            requestAnimationFrame(physicsLoop);
+        }
+
+        window.togglePhysics = async function() {
+            physicsAnimating = !physicsAnimating;
+            document.getElementById('physics-btn').textContent =
+                physicsAnimating ? 'Stop Simulation' : 'Start Simulation';
+
+            if (physicsAnimating) {
+                if (balls.length === 0) {
+                    initBalls(parseInt(document.getElementById('physics-count').value));
+                }
+                // Upload balls to GPU
+                if (useGPUPhysics) {
+                    uploadBallsToGPU();
+                }
+                lastPhysicsTime = 0;
+                physicsFpsHistory = [];
+                requestAnimationFrame(physicsLoop);
+            }
+        };
+
+        window.resetPhysics = function() {
+            physicsAnimating = false;
+            document.getElementById('physics-btn').textContent = 'Start Simulation';
+            initBalls(parseInt(document.getElementById('physics-count').value));
+            renderPhysics();
+            document.getElementById('physics-fps').textContent = '0 FPS';
+            document.getElementById('physics-perf').textContent = '-';
+        };
+
+        window.shakeBalls = function() {
+            // Inject random energy into all balls
+            for (const ball of balls) {
+                const impulse = 20 + Math.random() * 30;
+                const angle = Math.random() * Math.PI * 2;
+                ball.vx += Math.cos(angle) * impulse;
+                ball.vy += Math.sin(angle) * impulse;
+            }
+        };
+
+        // Initialize physics on load
+        document.getElementById('physics-count').addEventListener('change', () => {
+            if (!physicsAnimating) {
+                initBalls(parseInt(document.getElementById('physics-count').value));
+                renderPhysics();
+            }
+        });
+
+        // Benchmarks
+        window.runBenchmarks = function() {
+            const tbody = document.getElementById('benchmark-body');
+            tbody.innerHTML = '<tr><td colspan="5"><div class="loading"><div class="spinner"></div>Running benchmarks...</div></td></tr>';
+
+            setTimeout(() => {
+                const results = [];
+                const maxThroughput = { value: 0 };
+
+                // Run benchmarks
+                for (const size of [1000, 10000, 100000, 500000]) {
+                    const result = benchmark_scatter(size);
+                    const throughput = result.throughput;
+                    if (throughput > maxThroughput.value) maxThroughput.value = throughput;
+                    results.push({
+                        op: 'Scatter Transform',
+                        size: size.toLocaleString(),
+                        time: result.time_ms.toFixed(2) + ' ms',
+                        throughput: (throughput / 1e6).toFixed(2) + ' M/s',
+                        raw: throughput
+                    });
+                }
+
+                for (const size of [10000, 100000, 500000]) {
+                    const result = benchmark_histogram(size, 50);
+                    const throughput = result.throughput;
+                    if (throughput > maxThroughput.value) maxThroughput.value = throughput;
+                    results.push({
+                        op: 'Histogram Binning',
+                        size: size.toLocaleString(),
+                        time: result.time_ms.toFixed(2) + ' ms',
+                        throughput: (throughput / 1e6).toFixed(2) + ' M/s',
+                        raw: throughput
+                    });
+                }
+
+                tbody.innerHTML = results.map(r => `
+                    <tr>
+                        <td>${r.op}</td>
+                        <td>${r.size}</td>
+                        <td>${r.time}</td>
+                        <td class="value">${r.throughput}</td>
+                        <td><div class="bar" style="width: ${(r.raw / maxThroughput.value * 100).toFixed(0)}%"></div></td>
+                    </tr>
+                `).join('');
+            }, 100);
+        };
+
+        // Stats update
+        function updateStats() {
+            document.getElementById('total-points').textContent =
+                (totalPointsRendered / 1e6).toFixed(1) + 'M';
+
+            const avgFps = fpsHistory.length > 0
+                ? (fpsHistory.reduce((a,b) => a+b, 0) / fpsHistory.length).toFixed(0)
+                : '-';
+            document.getElementById('avg-fps').textContent = avgFps;
+
+            document.getElementById('scatter-fps').textContent = avgFps + ' FPS';
+            document.getElementById('hist-fps').textContent = histAnimating ? avgFps + ' FPS' : '0 FPS';
+
+            // Calculate throughput
+            if (fpsHistory.length > 0) {
+                const count = parseInt(document.getElementById('scatter-count').value);
+                const throughput = avgFps * count / 1e6;
+                document.getElementById('throughput').textContent = throughput.toFixed(1) + 'M';
+            }
+        }
+
+        initialize();
+    </script>
+</body>
+</html>

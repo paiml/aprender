@@ -1,0 +1,146 @@
+#!/bin/bash
+# Pre-commit hook: Quality gates enforcement
+#
+# Enforces:
+# 1. Code formatting (cargo fmt)
+# 2. Clippy lints (zero warnings)
+# 3. Tests pass
+# 4. Security audit (cargo audit)
+# 5. Complexity check (pmat)
+# 6. SATD check (pmat)
+# 7. Coverage check (95% threshold)
+#
+# To install: make hooks-install
+# To bypass (EMERGENCY ONLY): git commit --no-verify
+
+set -euo pipefail
+
+echo "Running pre-commit quality gates..."
+echo ""
+
+# Check if we're in a rebase or merge
+if [ -d ".git/rebase-merge" ] || [ -d ".git/rebase-apply" ]; then
+    echo "Skipping hooks during rebase"
+    exit 0
+fi
+
+# 1. Format check
+echo "Checking code formatting..."
+if ! cargo fmt -- --check > /dev/null 2>&1; then
+    echo "FAIL: Code not formatted"
+    echo "   Run: cargo fmt"
+    exit 1
+fi
+echo "   Formatting OK"
+
+# 2. Clippy
+echo "Running clippy..."
+if ! cargo clippy --all-targets --all-features -- -D warnings > /dev/null 2>&1; then
+    echo "FAIL: Clippy warnings found"
+    echo "   Run: cargo clippy --all-targets --all-features"
+    exit 1
+fi
+echo "   Clippy OK"
+
+# 3. Tests
+echo "Running tests..."
+if ! cargo test --all-features --quiet > /dev/null 2>&1; then
+    echo "FAIL: Tests failed"
+    echo "   Run: cargo test --all-features"
+    exit 1
+fi
+echo "   Tests OK"
+
+# 4. Security audit
+echo "Checking security..."
+if command -v cargo-audit > /dev/null 2>&1; then
+    if ! cargo audit --quiet > /dev/null 2>&1; then
+        echo "WARNING: Security audit found issues"
+        echo "   Run: cargo audit"
+    else
+        echo "   Security OK"
+    fi
+else
+    echo "   cargo-audit not installed, skipping"
+fi
+
+# 5. Complexity check (staged files only)
+echo "Checking complexity..."
+if command -v pmat > /dev/null 2>&1; then
+    STAGED_SRC=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs' 2>/dev/null | head -20)
+    if [ -n "${STAGED_SRC:-}" ]; then
+        COMPLEXITY_FAILED=0
+        for SRC_FILE in $STAGED_SRC; do
+            if [ -f "$SRC_FILE" ]; then
+                FILE_OUTPUT=$(pmat analyze complexity --file "$SRC_FILE" --max-cyclomatic 30 --max-cognitive 25 2>&1)
+                if echo "$FILE_OUTPUT" | grep -q 'Errors.*: [1-9]'; then
+                    COMPLEXITY_FAILED=1
+                fi
+            fi
+        done
+        if [ "$COMPLEXITY_FAILED" -eq 0 ]; then
+            echo "   Complexity OK"
+        else
+            echo "WARNING: Some files exceed complexity thresholds"
+        fi
+    else
+        echo "   No source files staged, skipping"
+    fi
+else
+    echo "   pmat not installed, skipping"
+fi
+
+# 6. SATD check
+echo "Checking SATD..."
+if command -v pmat > /dev/null 2>&1; then
+    SATD_OUTPUT=$(pmat analyze satd 2>&1)
+    SATD_COUNT=$(echo "$SATD_OUTPUT" | grep -oP 'Total violations: \K[0-9]+' || echo "0")
+    if [ "${SATD_COUNT:-0}" -le 15 ] 2>/dev/null; then
+        echo "   SATD OK ($SATD_COUNT comments)"
+    else
+        echo "WARNING: $SATD_COUNT SATD comments found"
+    fi
+else
+    echo "   pmat not installed, skipping"
+fi
+
+# 7. Coverage check (95% threshold, excluding wasm.rs)
+echo "Checking coverage (95% threshold)..."
+if command -v cargo-llvm-cov > /dev/null 2>&1; then
+    # Temporarily disable mold linker
+    test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.hook-backup || true
+
+    cargo llvm-cov clean --workspace > /dev/null 2>&1 || true
+    cargo llvm-cov --no-report nextest --no-tests=warn --all-features > /dev/null 2>&1 || \
+        cargo llvm-cov --no-report --all-features > /dev/null 2>&1
+
+    # Restore config
+    test -f ~/.cargo/config.toml.hook-backup && mv ~/.cargo/config.toml.hook-backup ~/.cargo/config.toml || true
+
+    COVERAGE=$(cargo llvm-cov report 2>/dev/null | python3 -c "
+import sys
+lines = list(sys.stdin)
+src_lines = [l for l in lines if l.startswith('src/') and 'wasm.rs' not in l]
+if not src_lines:
+    print('0')
+    sys.exit(0)
+total = sum(int(l.split()[1]) for l in src_lines)
+uncov = sum(int(l.split()[2]) for l in src_lines)
+cov = 100*(total-uncov)/total if total > 0 else 0
+print(f'{cov:.2f}')
+")
+
+    if (( $(echo "${COVERAGE:-0} < 95" | bc -l) )); then
+        echo "FAIL: Coverage ${COVERAGE}% < 95%"
+        echo "   Run: make coverage"
+        exit 1
+    fi
+    echo "   Coverage ${COVERAGE}% (>= 95%)"
+else
+    echo "   cargo-llvm-cov not installed, skipping coverage check"
+    echo "   Install with: cargo install cargo-llvm-cov"
+fi
+
+echo ""
+echo "All pre-commit checks passed!"
+exit 0

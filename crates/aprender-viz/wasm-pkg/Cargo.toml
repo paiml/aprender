@@ -1,0 +1,83 @@
+[package]
+name = "trueno-viz-wasm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["PAIML Team"]
+description = "WebGPU/WASM visualization demo for trueno-viz"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM bindings
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-wasm-bindgen = "0.6"
+
+# WebGPU support (requires RUSTFLAGS="--cfg=web_sys_unstable_apis")
+web-sys = { version = "0.3.82", features = [
+    "console",
+    "Window",
+    "Navigator",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Performance",
+    # WebGPU (unstable)
+    "Gpu",
+    "GpuAdapter",
+    "GpuAdapterInfo",
+    "GpuDevice",
+    "GpuQueue",
+    "GpuBuffer",
+    "GpuBufferDescriptor",
+    "GpuShaderModule",
+    "GpuShaderModuleDescriptor",
+    "GpuComputePipeline",
+    "GpuComputePipelineDescriptor",
+    "GpuProgrammableStage",
+    "GpuCommandEncoder",
+    "GpuCommandEncoderDescriptor",
+    "GpuComputePassEncoder",
+    "GpuBindGroup",
+    "GpuBindGroupDescriptor",
+    "GpuBindGroupEntry",
+    "GpuBindGroupLayout",
+    "GpuBindGroupLayoutDescriptor",
+    "GpuBindGroupLayoutEntry",
+    "GpuBufferBindingLayout",
+    "GpuPipelineLayout",
+    "GpuPipelineLayoutDescriptor",
+]}
+
+# WASM-compatible random
+getrandom = { version = "0.2", features = ["js"] }
+
+[features]
+default = []
+# Enable WebGPU (requires: RUSTFLAGS="--cfg=web_sys_unstable_apis")
+webgpu = []
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package."*"]
+opt-level = "s"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "allow"

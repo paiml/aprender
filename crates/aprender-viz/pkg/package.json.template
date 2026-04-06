@@ -1,0 +1,40 @@
+{
+  "name": "@paiml/trueno-viz",
+  "version": "0.1.0",
+  "description": "SIMD-accelerated visualization library for the browser - no JavaScript charting library required",
+  "main": "trueno_viz.js",
+  "module": "trueno_viz.js",
+  "types": "trueno_viz.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paiml/trueno-viz"
+  },
+  "keywords": [
+    "visualization",
+    "charts",
+    "wasm",
+    "webassembly",
+    "rust",
+    "data-science",
+    "scatter-plot",
+    "line-chart",
+    "histogram",
+    "heatmap"
+  ],
+  "author": "PAIML Team",
+  "license": "MIT OR Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/paiml/trueno-viz/issues"
+  },
+  "homepage": "https://github.com/paiml/trueno-viz#readme",
+  "files": [
+    "trueno_viz_bg.wasm",
+    "trueno_viz.js",
+    "trueno_viz.d.ts",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./trueno_viz.js",
+    "./snippets/*"
+  ]
+}

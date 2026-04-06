@@ -1,0 +1,140 @@
+# PMAT O(1) Quality Gate Configuration
+# Trueno-Viz: SIMD/GPU/WASM-Accelerated Visualization Library
+#
+# Philosophy: Toyota Way + Scientific Rigor
+# - Jidoka: Stop the line on quality violations
+# - Kaizen: Continuously improve thresholds
+# - Evidence-Based: Data-driven quality standards
+
+[quality_gates]
+# === Timing Thresholds ===
+# Maximum time for quality checks (milliseconds)
+lint_max_ms = 30_000              # 30s for Clippy
+test_fast_max_ms = 300_000        # 5min for fast tests
+coverage_max_ms = 600_000         # 10min for coverage
+mutation_max_ms = 1_800_000       # 30min for mutation testing
+
+# === Binary Size ===
+# Maximum release binary size (bytes)
+binary_max_bytes = 50_000_000     # 50MB limit
+
+# === Dependencies ===
+# Maximum dependency count (crates.io ecosystem)
+deps_default_max = 500            # Reasonable for viz library
+deps_build_max = 100              # Build dependencies
+deps_dev_max = 200                # Dev dependencies
+
+# === Code Coverage ===
+# Minimum test coverage percentage (NASA-grade standard)
+min_coverage_pct = 95.0           # 95% minimum (upgraded from 85%)
+coverage_target_pct = 98.0        # Target for new code
+
+# === Mutation Testing ===
+# Test suite quality validation
+min_mutation_score_pct = 80.0     # 80% mutation kill rate
+mutation_target_pct = 85.0        # Target for mature modules
+
+# === Complexity ===
+# Cognitive load management
+max_cyclomatic_complexity = 15    # Per-function limit
+max_cognitive_complexity = 20     # Per-function limit
+max_file_lines = 500              # Encourage modular design
+
+# === Technical Debt ===
+# TDG (Technical Debt Grading) thresholds
+min_tdg_grade = "A-"              # Minimum grade (88+ score)
+max_tdg_score_drop = 5.0          # Max regression per PR
+
+# === Defect Patterns ===
+# Known high-risk patterns (Cloudflare-class prevention)
+max_unwrap_calls = 50             # Prefer proper error handling
+max_expect_calls = 100            # Document expectations
+max_todo_comments = 20            # Must have linked issues
+max_unsafe_blocks = 10            # Require safety docs
+
+# === Dead Code ===
+# Inventory waste elimination
+max_dead_code_pct = 5.0           # Maximum dead code percentage
+max_unused_deps = 3               # Unused dependencies
+
+[enforcement]
+# === Enforcement Mode ===
+# strict: Fail on ANY violation
+# warning: Log warnings but don't fail
+# disabled: Skip checks (not recommended)
+mode = "strict"
+
+# === Pre-commit Hooks ===
+# Automatic enforcement on commit
+pre_commit_enabled = true
+pre_commit_checks = [
+    "fmt-check",
+    "clippy",
+    "test-fast",
+    "quality-gate",
+]
+
+# === Regression Prevention ===
+# Block PRs that degrade quality
+block_on_coverage_decrease = true
+block_on_tdg_regression = true
+block_on_mutation_decrease = true
+
+[thresholds_by_path]
+# === Path-specific Thresholds ===
+# Critical paths have stricter requirements
+
+[thresholds_by_path."src/render"]
+# Rendering code is safety-critical
+min_coverage_pct = 98.0
+max_cyclomatic_complexity = 10
+max_unwrap_calls = 5
+
+[thresholds_by_path."src/accel"]
+# Acceleration code (SIMD/GPU)
+min_coverage_pct = 95.0
+max_unsafe_blocks = 20            # SIMD requires unsafe
+require_safety_docs = true
+
+[thresholds_by_path."src/prompt"]
+# Text prompt interface
+min_coverage_pct = 90.0
+max_cyclomatic_complexity = 20    # Parser complexity acceptable
+
+[thresholds_by_path."tests"]
+# Test code has relaxed requirements
+min_coverage_pct = 0.0            # Tests don't need coverage
+max_cyclomatic_complexity = 25    # Test setup can be complex
+
+[kaizen]
+# === Continuous Improvement ===
+# Track metrics over time for trend analysis
+
+# Metrics history retention (days)
+history_retention_days = 90
+
+# Alert on trend degradation
+alert_on_coverage_trend_down = true
+alert_on_complexity_trend_up = true
+
+# Improvement targets (per quarter)
+quarterly_coverage_increase = 1.0       # +1% per quarter
+quarterly_complexity_decrease = 5.0     # -5% avg complexity
+quarterly_mutation_increase = 2.0       # +2% mutation score
+
+[reporting]
+# === Report Generation ===
+# Automatic quality reports
+
+# Generate reports on CI
+ci_report_enabled = true
+ci_report_format = "json"
+ci_report_path = ".pmat/reports"
+
+# Quality summary in PR comments
+pr_comment_enabled = true
+pr_comment_format = "markdown"
+
+# Badge generation
+badge_enabled = true
+badge_path = ".pmat/badges"

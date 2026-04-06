@@ -1,0 +1,152 @@
+# TDG (Technical Debt Grading) Enforcement Rules
+# Trueno-Viz Quality Standards
+#
+# Grade Scale:
+#   A+ (94+): Exemplary - publish as reference
+#   A  (90-93): Excellent - production ready
+#   A- (88-89): Very Good - minor improvements possible
+#   B+ (85-87): Good - review before merge
+#   B  (80-84): Acceptable - improvement needed
+#   C  (70-79): Concerning - refactor soon
+#   D  (60-69): Poor - technical debt accumulating
+#   F  (<60): Failing - immediate action required
+
+[quality_gates]
+# === Minimum Grade Requirements ===
+
+# Overall project grade
+project_min_grade = "A-"          # 88+ score required
+
+# New code grade (PRs)
+new_code_min_grade = "A"          # 90+ for new code
+
+# Per-language thresholds
+rust_min_grade = "A-"
+# typescript_min_grade = "B+"     # If we add any TS tooling
+
+# === Regression Prevention ===
+
+# Maximum score drop allowed per PR
+max_score_drop = 5.0
+
+# Enforcement mode
+mode = "strict"                   # strict | warning | disabled
+
+# Fail on any grade drop
+fail_on_grade_drop = true
+
+[metrics]
+# === TDG Metric Weights ===
+# Six orthogonal metrics (total: 100 points)
+
+# Structural Complexity (function/cyclomatic)
+structural_complexity_weight = 20
+
+# Semantic Complexity (logical dependencies)
+semantic_complexity_weight = 15
+
+# Duplication Ratio (code reuse)
+duplication_ratio_weight = 15
+
+# Coupling Score (module interdependencies)
+coupling_score_weight = 20
+
+# Documentation Coverage (rustdoc/comments)
+documentation_coverage_weight = 15
+
+# Consistency Score (code style adherence)
+consistency_score_weight = 15
+
+[penalties]
+# === Penalty Definitions ===
+# Specific patterns that reduce TDG score
+
+# Self-Admitted Technical Debt comments
+satd_comment_penalty = 2.0        # Per SATD comment
+
+# TODO without issue link
+unlinked_todo_penalty = 1.5       # Per unlinked TODO
+
+# FIXME/HACK/XXX comments
+hack_comment_penalty = 3.0        # Per hack comment
+
+# Magic numbers (non-const literals)
+magic_number_penalty = 0.5        # Per magic number
+
+# Deep nesting (>4 levels)
+deep_nesting_penalty = 2.0        # Per deeply nested block
+
+# Long functions (>50 lines)
+long_function_penalty = 1.0       # Per long function
+
+# Large files (>500 lines)
+large_file_penalty = 5.0          # Per large file
+
+[bonuses]
+# === Bonus Points ===
+# Patterns that increase TDG score
+
+# Property-based tests
+property_test_bonus = 2.0         # Per proptest
+
+# Benchmark coverage
+benchmark_bonus = 1.5             # Per benchmark
+
+# Safety documentation (unsafe blocks)
+safety_doc_bonus = 1.0            # Per documented unsafe
+
+# ADR (Architecture Decision Record) reference
+adr_reference_bonus = 0.5         # Per ADR reference
+
+[baseline]
+# === Baseline Configuration ===
+
+# Baseline file path
+file = ".pmat/tdg-baseline.json"
+
+# Auto-update baseline on release
+auto_update_on_release = true
+
+# Require baseline for TDG checks
+require_baseline = true
+
+# Content hashing algorithm
+hash_algorithm = "blake3"
+
+[reporting]
+# === TDG Reporting ===
+
+# Report format
+format = "table"                  # table | json | markdown
+
+# Show grade breakdown
+show_breakdown = true
+
+# Show penalty details
+show_penalties = true
+
+# Show improvement suggestions
+show_suggestions = true
+
+# Historical trend (days)
+trend_days = 30
+
+[exceptions]
+# === Path Exceptions ===
+# Paths with different requirements
+
+# Generated code (skip analysis)
+skip_paths = [
+    "target/",
+    "*.generated.rs",
+]
+
+# Test code (relaxed requirements)
+relaxed_paths = [
+    "tests/",
+    "benches/",
+    "examples/",
+]
+
+# Relaxed grade for test paths
+relaxed_min_grade = "B"

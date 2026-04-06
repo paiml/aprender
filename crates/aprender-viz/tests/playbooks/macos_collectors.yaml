@@ -1,0 +1,177 @@
+# macOS Collector Playbook Tests
+# Following ttop-demo.md specification section 7.2
+#
+# Run: probador run tests/playbooks/macos_collectors.yaml
+
+name: macOS Collector Verification
+platform: macos
+setup:
+  terminal_size: [120, 40]
+  deterministic_mode: true
+
+steps:
+  # CPU Collector Tests
+  - name: Verify CPU collector available
+    action: check_collector
+    collector: cpu
+    assert:
+      - collector.is_available() == true
+      - collector.core_count() > 0
+
+  - name: Verify CPU metrics collection
+    action: collect_metrics
+    collector: cpu
+    count: 2
+    delay_ms: 500
+    assert:
+      - metrics.has("cpu.total")
+      - metrics.get("cpu.total") >= 0.0
+      - metrics.get("cpu.total") <= 100.0
+
+  - name: Verify CPU load average
+    action: collect_metrics
+    collector: cpu
+    assert:
+      - metrics.has("cpu.load.1")
+      - metrics.has("cpu.load.5")
+      - metrics.has("cpu.load.15")
+      - metrics.get("cpu.load.1") >= 0.0
+
+  # Memory Collector Tests
+  - name: Verify memory collector available
+    action: check_collector
+    collector: memory
+    assert:
+      - collector.is_available() == true
+
+  - name: Verify memory metrics
+    action: collect_metrics
+    collector: memory
+    assert:
+      - metrics.has("memory.total")
+      - metrics.has("memory.used")
+      - metrics.has("memory.available")
+      - metrics.has("memory.used.percent")
+      - metrics.get("memory.total") > 0
+      - metrics.get("memory.used.percent") >= 0.0
+      - metrics.get("memory.used.percent") <= 100.0
+
+  - name: Verify swap metrics
+    action: collect_metrics
+    collector: memory
+    assert:
+      - metrics.has("memory.swap.total")
+      - metrics.has("memory.swap.used")
+
+  # Network Collector Tests
+  - name: Verify network collector available
+    action: check_collector
+    collector: network
+    assert:
+      - collector.is_available() == true
+
+  - name: Verify network interfaces detected
+    action: collect_metrics
+    collector: network
+    count: 2
+    delay_ms: 200
+    assert:
+      - collector.interfaces().len() > 0
+
+  - name: Verify network rates
+    action: collect_metrics
+    collector: network
+    count: 2
+    delay_ms: 200
+    assert:
+      - collector.current_rates().is_some()
+
+  # Disk Collector Tests
+  - name: Verify disk collector available
+    action: check_collector
+    collector: disk
+    assert:
+      - collector.is_available() == true
+
+  - name: Verify disk mounts detected
+    action: collect_metrics
+    collector: disk
+    assert:
+      - collector.mounts().len() > 0
+
+  - name: Verify root mount exists
+    action: collect_metrics
+    collector: disk
+    assert:
+      - collector.mounts().any(|m| m.mount_point == "/")
+
+  - name: Verify disk usage percentages
+    action: collect_metrics
+    collector: disk
+    assert:
+      - collector.mounts().all(|m| m.usage_percent() >= 0.0)
+      - collector.mounts().all(|m| m.usage_percent() <= 100.0)
+
+  # Process Collector Tests
+  - name: Verify process collector available
+    action: check_collector
+    collector: process
+    assert:
+      - collector.is_available() == true
+
+  - name: Verify process count reasonable
+    action: collect_metrics
+    collector: process
+    assert:
+      - collector.count() >= 50
+      - collector.count() <= 5000
+
+  - name: Verify launchd detected (PID 1)
+    action: collect_metrics
+    collector: process
+    assert:
+      - collector.processes().contains_key(1)
+
+  - name: Verify process tree building
+    action: collect_metrics
+    collector: process
+    assert:
+      - collector.build_tree().len() > 0
+
+  # GPU Collector Tests (macOS)
+  - name: Verify GPU collector available
+    action: check_collector
+    collector: gpu_apple
+    assert:
+      - collector.is_available() == true
+
+  - name: Verify GPU detection
+    action: collect_metrics
+    collector: gpu_apple
+    assert:
+      - collector.primary_gpu().is_some()
+      - collector.primary_gpu().name.len() > 0
+
+# Accuracy Claims (Section 10.3)
+accuracy_tests:
+  - claim: 41
+    description: "CPU % within ±2% of top"
+    test: compare_cpu_with_top
+    tolerance: 2.0
+
+  - claim: 42
+    description: "Memory within ±1MB of free"
+    test: compare_memory_with_sysctl
+    tolerance_bytes: 1048576
+
+  - claim: 58
+    description: "Process count matches ps aux"
+    test: compare_process_count_with_ps
+    tolerance: 10
+
+# Determinism Claims (Section 10.4)
+determinism_tests:
+  - claim: 61
+    description: "Same state → identical metrics"
+    test: verify_deterministic_collection
+    iterations: 5

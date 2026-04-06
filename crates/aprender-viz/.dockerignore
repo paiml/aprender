@@ -1,0 +1,10 @@
+target/
+.git/
+*.log
+.pmat/
+pkg/
+pkg-node/
+wasm-pkg/
+node_modules/
+*.wasm
+.DS_Store
