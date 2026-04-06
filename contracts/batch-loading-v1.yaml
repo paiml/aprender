@@ -1,0 +1,43 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Batch data loading contract for alimentar"
+  crate: "alimentar"
+  references:
+    - "Smith et al., Dont Decay the Learning Rate Increase the Batch Size, ICLR 2018"
+
+equations:
+  batch_size_invariant:
+    formula: "actual_batch_size <= requested_batch_size"
+    domain: "requested_batch_size > 0"
+    invariants:
+      - "Last batch may be smaller (remainder)"
+      - "Sum of all batch sizes = total dataset size"
+
+proof_obligations:
+  - type: invariant
+    property: "No data loss during batching"
+    formal: "sum(batch_sizes) = dataset_size"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Batch completeness"
+    test: "test_corpus_to_record_batch"
+    prediction: "verified"
+    if_fails: "Contract violation — data lost during batching"
+
+kani_harnesses:
+  - id: KANI-BATCH-001
+    obligation: PO-BATCH-001
+    property: "Batch completeness for bounded inputs"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_batch_loading
+
+qa_gate:
+  id: QA-BATCH
+  name: "batch loading contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: []

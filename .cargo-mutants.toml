@@ -1,0 +1,50 @@
+# cargo-mutants configuration
+# https://mutants.rs/
+#
+# Run with: cargo mutants
+
+# Timeout multiplier for running mutated tests
+# Higher values allow for slower test runs
+timeout_multiplier = 3.0
+
+# Minimum timeout in seconds
+minimum_test_timeout = 60
+
+# Files/modules to exclude from mutation testing
+exclude_globs = [
+    # Exclude test modules
+    "tests/**",
+    # Exclude build scripts
+    "build.rs",
+    # Exclude benchmarks
+    "benches/**",
+]
+
+# Specific functions to exclude from mutation
+exclude_re = [
+    # Exclude debug impls (cosmetic)
+    "^impl.*Debug.*fmt$",
+    # Exclude display impls (cosmetic)
+    "^impl.*Display.*fmt$",
+    # Exclude test helper functions
+    "^create_test_",
+    # Exclude main function
+    "^main$",
+]
+
+# Mutant types to enable/disable
+[mutants]
+# Replace binary operators (+, -, *, /)
+binary_operators = true
+# Replace comparison operators (<, >, ==, !=)
+comparison_operators = true
+# Replace boolean operators (&&, ||)
+boolean_operators = true
+# Replace unary operators (!, -)
+unary_operators = true
+# Replace assignment operators (+=, -=, etc)
+assignment_operators = true
+# Replace return values
+return_values = true
+# Replace constants
+constants = true

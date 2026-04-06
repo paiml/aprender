@@ -1,0 +1,32 @@
+# PMAT Quality Gates Configuration
+# See: https://github.com/paiml/pmat
+
+[quality]
+# Minimum thresholds for quality gates
+rust_project_score = 85
+repo_score = 85
+test_coverage = 80
+mutation_score = 60
+
+[gates]
+# Enforce quality gates in CI
+enforce_in_ci = true
+block_on_failure = true
+
+[thresholds]
+# Complexity thresholds
+max_cyclomatic_complexity = 20
+max_cognitive_complexity = 15
+max_function_lines = 100
+
+[testing]
+# Testing requirements
+require_unit_tests = true
+require_integration_tests = true
+require_doc_tests = true
+
+[documentation]
+# Documentation requirements
+require_readme = true
+require_changelog = true
+require_api_docs = true

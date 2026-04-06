@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#134e5e"/>
+      <stop offset="100%" style="stop-color:#71b280"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#11998e"/>
+      <stop offset="100%" style="stop-color:#38ef7d"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <g transform="translate(640, 280)">
+    <path d="M-80,-60 L-40,-60 L-40,60 L-80,60 Z" fill="url(#accent)" opacity="0.8"/>
+    <path d="M-20,-40 L20,-40 L20,60 L-20,60 Z" fill="url(#accent)" opacity="0.6"/>
+    <path d="M40,-20 L80,-20 L80,60 L40,60 Z" fill="url(#accent)" opacity="0.4"/>
+    <path d="M-100,-80 L100,-80" stroke="#fff" stroke-width="2" stroke-dasharray="8,4" opacity="0.4"/>
+    <circle cx="-60" cy="-80" r="6" fill="#38ef7d"/>
+    <circle cx="0" cy="-80" r="6" fill="#11998e"/>
+    <circle cx="60" cy="-80" r="6" fill="#38ef7d"/>
+  </g>
+  <text x="640" y="480" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">alimentar</text>
+  <text x="640" y="530" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#fff" text-anchor="middle" opacity="0.8">Data Pipeline Orchestration</text>
+</svg>

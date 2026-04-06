@@ -1,0 +1,205 @@
+[package]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
+name = "alimentar"
+version = "0.2.9"
+edition = "2021"
+authors = ["paiml"]
+description = "Data Loading, Distribution and Tooling in Pure Rust"
+license = "MIT"
+repository = "https://github.com/paiml/alimentar"
+keywords = ["data", "ml", "arrow", "parquet", "dataset"]
+categories = ["data-structures", "science"]
+rust-version = "1.75"
+
+[features]
+default = ["local", "tokio-runtime", "cli", "repl", "mmap", "shuffle", "provenance"]
+local = []
+mmap = ["dep:memmap2"]
+shuffle = ["dep:rand"]
+provenance = ["dep:sha2"]
+tokio-runtime = ["dep:tokio"]
+s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
+http = ["dep:reqwest"]
+hf-hub = ["http", "dep:base64", "dep:hex", "dep:sha2"]
+cli = ["dep:clap", "dep:crossterm"]
+repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
+wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
+format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf", "dep:sha2", "dep:rand_core", "dep:getrandom"]
+format-signing = ["dep:ed25519-dalek", "dep:getrandom"]
+format-streaming = ["mmap"]
+doctest = ["dep:chrono", "dep:regex", "dep:walkdir"]
+dhat-heap = ["dep:dhat"]
+
+[dependencies]
+# Core (always)
+# NOTE: arrow 57+ fixes comfy-table let_chains compatibility
+arrow = { version = "57", default-features = false, features = ["prettyprint", "ipc"] }
+arrow-csv = { version = "57" }
+arrow-json = { version = "57" }
+parquet = { version = "57", default-features = false, features = ["arrow", "snap", "zstd"] }
+thiserror = "2"
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Format serialization
+rmp-serde = "1"
+zstd = "0.13"
+lz4_flex = "0.11"
+
+# Random (for shuffle) - with JS support for WASM
+rand = { version = "0.8", optional = true }
+getrandom = { version = "0.2", features = ["js"], optional = true }
+
+# Memory mapping (not available on WASM)
+memmap2 = { version = "0.9", optional = true }
+
+# CLI (optional, not for WASM)
+clap = { version = "4", features = ["derive"], optional = true }
+crossterm = { version = "0.28", optional = true }
+
+# REPL (feature-gated)
+reedline = { version = "0.37", optional = true }
+nu-ansi-term = { version = "0.50", optional = true }
+
+# Async (feature-gated)
+tokio = { version = "1", features = ["rt", "fs", "sync", "rt-multi-thread"], optional = true }
+
+# S3 (feature-gated)
+aws-sdk-s3 = { version = "1", optional = true }
+aws-config = { version = "1", optional = true }
+
+# HTTP (feature-gated)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json", "multipart"], optional = true }
+base64 = { version = "0.22", optional = true }
+hex = { version = "0.4", optional = true }
+
+# WASM (feature-gated)
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+# Encryption (feature-gated, WASM-safe)
+aes-gcm = { version = "0.10", optional = true }
+argon2 = { version = "0.5", optional = true }
+x25519-dalek = { version = "2", features = ["static_secrets"], optional = true }
+hkdf = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }
+rand_core = { version = "0.6", optional = true }
+
+# Signing (feature-gated, WASM-safe)
+ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+serde_yaml = "0.9.34"
+
+# Heap profiling (feature-gated)
+dhat = { version = "0.3", optional = true }
+
+# TUI support (unicode width calculation)
+unicode-width = "0.2"
+
+# Doctest extraction (feature-gated)
+chrono = { version = "0.4", features = ["serde"], optional = true }
+regex = { version = "1", optional = true }
+walkdir = { version = "2", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.6"
+assert_cmd = "2"
+predicates = "3"
+jugar-probar = "1.0.1"
+
+[[bin]]
+name = "alimentar"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "generate_fixtures"
+path = "scripts/generate_fixtures.rs"
+
+[lib]
+name = "alimentar"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "allow"
+unreachable = "warn"
+checked_conversions = "warn"
+fallible_impl_from = "warn"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+cognitive_complexity = "allow"
+significant_drop_tightening = "allow"
+redundant_pub_crate = "allow"
+missing_const_for_fn = "allow"
+option_if_let_else = "allow"
+uninlined_format_args = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+len_zero = "allow"
+redundant_closure = "allow"
+redundant_closure_for_method_calls = "allow"
+bool_comparison = "allow"
+approx_constant = "allow"
+
+[[bench]]
+name = "dataset_bench"
+harness = false
+
+[[example]]
+name = "doctest_extraction"
+required-features = ["doctest"]
+
+[[example]]
+name = "hub_publishing"
+required-features = ["hf-hub"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[profile.dev]
+panic = "abort"
+
+[profile.test]
+opt-level = 1
+
+[profile.bench]
+lto = true
+codegen-units = 1
