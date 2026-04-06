@@ -1,0 +1,462 @@
+roadmap_version: '1.0'
+github_enabled: false
+github_repo: null
+roadmap:
+- id: TV-001
+  github_issue: null
+  item_type: task
+  title: Initialize Cargo project structure
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:02:53.286784264+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-002
+  github_issue: null
+  item_type: task
+  title: Implement SIMD-aligned Framebuffer
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:06:25.398560744+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-003
+  github_issue: null
+  item_type: task
+  title: Implement basic geometric primitives
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:09:39.007846618+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-004
+  github_issue: null
+  item_type: task
+  title: Implement Scale abstractions
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:09:56.754490534+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-005
+  github_issue: null
+  item_type: task
+  title: Implement PNG output encoder
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:09:57.122512962+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-006
+  github_issue: null
+  item_type: task
+  title: Implement ScatterPlot
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:09:57.496087309+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-007
+  github_issue: null
+  item_type: task
+  title: Implement Histogram
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:09:57.868735254+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-008
+  github_issue: null
+  item_type: task
+  title: Implement Heatmap with color scales
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:11:37.424205305+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-009
+  github_issue: null
+  item_type: task
+  title: Implement Box and Violin plots
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:43:14.620153183+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-010
+  github_issue: null
+  item_type: task
+  title: Implement Line chart with Douglas-Peucker
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:13:48.897328659+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-011
+  github_issue: null
+  item_type: task
+  title: Implement SVG output encoder
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T03:24:57.082580166+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-012
+  github_issue: null
+  item_type: task
+  title: Implement Terminal output (ASCII/Unicode)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:37:49.010051817+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-013
+  github_issue: null
+  item_type: task
+  title: Implement Confusion Matrix
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:16:34.102498838+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-014
+  github_issue: null
+  item_type: task
+  title: Implement ROC/PR curves
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:18:59.426015226+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-015
+  github_issue: null
+  item_type: task
+  title: Implement streaming Loss curves
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-24T23:22:51.518871236+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-016
+  github_issue: null
+  item_type: task
+  title: Integration with aprender
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T04:05:55.792879568+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-017
+  github_issue: null
+  item_type: task
+  title: Implement Force-directed graph layout
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T03:29:36.195365445+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-018
+  github_issue: null
+  item_type: task
+  title: Integration with trueno-graph
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T04:13:37.508661913+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-019
+  github_issue: null
+  item_type: task
+  title: Implement text prompt interface
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T03:34:25.095115409+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-020
+  github_issue: null
+  item_type: task
+  title: Implement Grammar of Graphics API
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T03:46:52.943907512+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-021
+  github_issue: null
+  item_type: task
+  title: WASM package and npm publication
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 1970-01-01T00:00:00Z
+  updated: 2025-11-25T03:57:45.080271356+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: TV-022
+  github_issue: null
+  item_type: task
+  title: Replace unwrap() calls with proper error handling
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2025-11-25T07:15:00Z
+  updated: 2025-11-25T08:30:00Z
+  spec: 'Verified zero unwrap() in production code (all 335 occurrences in #[cfg(test)] only). Added clippy::unwrap_used=deny lint with test exception.'
+  acceptance_criteria:
+  - Zero unwrap() calls in src/ (excluding tests) - VERIFIED
+  - All error paths have meaningful messages - VERIFIED
+  - clippy::unwrap_used lint enabled - DONE (deny in Cargo.toml)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - security
+  - reliability
+  notes: 'Verified: All unwrap() calls are in #[cfg(test)] blocks. clippy::unwrap_used=deny prevents future production unwraps.'
+- id: TV-023
+  github_issue: null
+  item_type: task
+  title: Add comprehensive benchmark suite
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-25T08:45:00Z
+  updated: 2025-11-25T08:45:00Z
+  spec: Add criterion benchmarks for all major plot types and encoders
+  acceptance_criteria:
+  - Histogram benchmark (data size scaling)
+  - Heatmap benchmark (grid size, palette comparisons)
+  - Line chart benchmark (simplification, multi-series)
+  - Encoder benchmark (PNG/SVG, compression)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - performance
+  notes: 6 benchmark files covering scatter, framebuffer, histogram, heatmap, line, encoder
+- id: TV-024
+  github_issue: null
+  item_type: task
+  title: Real-time GPU visualization demo
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2025-11-25T09:00:00Z
+  updated: 2025-11-25T09:00:00Z
+  spec: GPU-first showcase with WebGPU compute, WASM SIMD fallback, WebSocket streaming, Grammar of Graphics API
+  acceptance_criteria:
+  - WebGPU compute tier with SIMD128/256 fallbacks
+  - 60fps rendering of 1M+ points
+  - WebSocket binary streaming protocol
+  - 6 demo scenes (scatter, heatmap, line, network, violin, ROC)
+  - Interactive code editor for Grammar of Graphics
+  - Performance metrics overlay
+  phases:
+  - name: Foundation (WebGPU/WASM, ring buffer, scatter)
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: Grammar API (aesthetics, scales, coords, themes)
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: Advanced Geometries (heatmap, line, graph, violin)
+    status: planned
+    estimated_effort: null
+    completion: 0
+  - name: Streaming (WebSocket, data generators, polish)
+    status: planned
+    estimated_effort: null
+    completion: 0
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - showcase
+  - gpu
+  - webgpu
+  notes: 'Specification: docs/specifications/real-time-gpu-demo-spec.md. 10 peer-reviewed citations.'
+- id: PMAT-025
+  github_issue: null
+  item_type: task
+  title: 'ttop: Additional tests and benchmark verification'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-14T09:53:45Z
+  updated: 2026-01-14T10:02:25.707303153+00:00
+  spec: null
+  acceptance_criteria:
+  - Add more tests to improve coverage and verify micro/macro benchmarking
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - testing
+  - benchmarks
+  notes: null
+- id: PMAT-026
+  github_issue: null
+  item_type: task
+  title: 'ttop: 95% coverage - mandatory target'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-01-14T10:06:01Z
+  updated: 2026-01-14T10:06:06.807921928+00:00
+  spec: null
+  acceptance_criteria:
+  - Achieve 95% line coverage through comprehensive probador testing and performance optimization
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - coverage
+  - testing
+  - performance
+  notes: null

@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="50%" style="stop-color:#161b22"/>
+      <stop offset="100%" style="stop-color:#0d1117"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#58a6ff"/>
+      <stop offset="50%" style="stop-color:#a855f7"/>
+      <stop offset="100%" style="stop-color:#f97316"/>
+    </linearGradient>
+    <linearGradient id="cpu-grad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="mem-grad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="gpu-grad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" style="stop-color:#f97316;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#f97316;stop-opacity:0.9"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="500" fill="url(#bg)"/>
+
+  <!-- Grid pattern -->
+  <g stroke="#30363d" stroke-width="0.5" opacity="0.3">
+    <line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="400" x2="1200" y2="400"/>
+    <line x1="200" y1="0" x2="200" y2="500"/>
+    <line x1="400" y1="0" x2="400" y2="500"/>
+    <line x1="600" y1="0" x2="600" y2="500"/>
+    <line x1="800" y1="0" x2="800" y2="500"/>
+    <line x1="1000" y1="0" x2="1000" y2="500"/>
+  </g>
+
+  <!-- ttop Terminal Mock - Left Side -->
+  <g transform="translate(60, 80)">
+    <!-- Terminal window -->
+    <rect x="0" y="0" width="420" height="280" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+    <!-- Title bar -->
+    <rect x="0" y="0" width="420" height="28" rx="8" fill="#21262d"/>
+    <rect x="0" y="20" width="420" height="10" fill="#21262d"/>
+    <!-- Window controls -->
+    <circle cx="16" cy="14" r="6" fill="#f85149"/>
+    <circle cx="36" cy="14" r="6" fill="#f0883e"/>
+    <circle cx="56" cy="14" r="6" fill="#3fb950"/>
+    <!-- Title -->
+    <text x="210" y="18" font-family="monospace" font-size="12" fill="#8b949e" text-anchor="middle">ttop</text>
+
+    <!-- CPU Section -->
+    <text x="15" y="52" font-family="monospace" font-size="11" fill="#58a6ff">CPU</text>
+    <text x="380" y="52" font-family="monospace" font-size="11" fill="#22c55e">47%</text>
+    <!-- CPU Bars -->
+    <g transform="translate(15, 58)">
+      <rect x="0" y="0" width="390" height="8" rx="2" fill="#21262d"/>
+      <rect x="0" y="0" width="183" height="8" rx="2" fill="url(#cpu-grad)"/>
+      <rect x="0" y="12" width="390" height="8" rx="2" fill="#21262d"/>
+      <rect x="0" y="12" width="253" height="8" rx="2" fill="url(#cpu-grad)"/>
+      <rect x="0" y="24" width="390" height="8" rx="2" fill="#21262d"/>
+      <rect x="0" y="24" width="140" height="8" rx="2" fill="url(#cpu-grad)"/>
+      <rect x="0" y="36" width="390" height="8" rx="2" fill="#21262d"/>
+      <rect x="0" y="36" width="312" height="8" rx="2" fill="url(#cpu-grad)"/>
+    </g>
+
+    <!-- Memory Section -->
+    <text x="15" y="122" font-family="monospace" font-size="11" fill="#3b82f6">MEM</text>
+    <text x="340" y="122" font-family="monospace" font-size="11" fill="#8b949e">12.4/32.0 GB</text>
+    <rect x="15" y="128" width="390" height="12" rx="3" fill="#21262d"/>
+    <rect x="15" y="128" width="152" height="12" rx="3" fill="url(#mem-grad)"/>
+
+    <!-- GPU Section -->
+    <text x="15" y="162" font-family="monospace" font-size="11" fill="#f97316">GPU</text>
+    <text x="340" y="162" font-family="monospace" font-size="11" fill="#8b949e">RTX 4090 78%</text>
+    <rect x="15" y="168" width="390" height="12" rx="3" fill="#21262d"/>
+    <rect x="15" y="168" width="304" height="12" rx="3" fill="url(#gpu-grad)"/>
+
+    <!-- Process list -->
+    <text x="15" y="202" font-family="monospace" font-size="10" fill="#8b949e">PID   CPU%  MEM%  COMMAND</text>
+    <text x="15" y="218" font-family="monospace" font-size="10" fill="#c9d1d9">1234  45.2   8.1  cargo build</text>
+    <text x="15" y="232" font-family="monospace" font-size="10" fill="#c9d1d9">5678  12.3   4.2  rust-analyzer</text>
+    <text x="15" y="246" font-family="monospace" font-size="10" fill="#c9d1d9">9012   8.7   2.1  nvim</text>
+    <text x="15" y="260" font-family="monospace" font-size="10" fill="#c9d1d9">3456   3.2   1.8  zsh</text>
+  </g>
+
+  <!-- Visualization Panel - Right Side -->
+  <g transform="translate(520, 80)">
+    <!-- Panel frame -->
+    <rect x="0" y="0" width="620" height="280" rx="8" fill="#161b22" stroke="#30363d" stroke-width="2"/>
+    <rect x="0" y="0" width="620" height="28" rx="8" fill="#21262d"/>
+    <rect x="0" y="20" width="620" height="10" fill="#21262d"/>
+    <text x="310" y="18" font-family="monospace" font-size="12" fill="#8b949e" text-anchor="middle">trueno-viz: GPU-Accelerated Charts</text>
+
+    <!-- Scatter plot area -->
+    <g transform="translate(30, 50)">
+      <!-- Axes -->
+      <line x1="0" y1="180" x2="250" y2="180" stroke="#30363d" stroke-width="2"/>
+      <line x1="0" y1="0" x2="0" y2="180" stroke="#30363d" stroke-width="2"/>
+      <!-- Grid -->
+      <g stroke="#30363d" stroke-width="0.5" opacity="0.5">
+        <line x1="0" y1="45" x2="250" y2="45"/>
+        <line x1="0" y1="90" x2="250" y2="90"/>
+        <line x1="0" y1="135" x2="250" y2="135"/>
+        <line x1="62" y1="0" x2="62" y2="180"/>
+        <line x1="125" y1="0" x2="125" y2="180"/>
+        <line x1="187" y1="0" x2="187" y2="180"/>
+      </g>
+      <!-- Scatter points with glow -->
+      <g filter="url(#glow)">
+        <circle cx="25" cy="155" r="6" fill="#a855f7"/>
+        <circle cx="50" cy="140" r="6" fill="#a855f7"/>
+        <circle cx="75" cy="125" r="6" fill="#a855f7"/>
+        <circle cx="100" cy="100" r="6" fill="#a855f7"/>
+        <circle cx="125" cy="85" r="6" fill="#a855f7"/>
+        <circle cx="150" cy="70" r="6" fill="#a855f7"/>
+        <circle cx="175" cy="50" r="6" fill="#a855f7"/>
+        <circle cx="200" cy="35" r="6" fill="#a855f7"/>
+        <circle cx="225" cy="20" r="6" fill="#a855f7"/>
+      </g>
+      <!-- Trend line -->
+      <line x1="20" y1="160" x2="230" y2="15" stroke="#ec4899" stroke-width="2" stroke-dasharray="5,3" opacity="0.8"/>
+      <text x="125" y="210" font-family="system-ui" font-size="11" fill="#8b949e" text-anchor="middle">Training Loss</text>
+    </g>
+
+    <!-- Line chart area -->
+    <g transform="translate(320, 50)">
+      <!-- Axes -->
+      <line x1="0" y1="180" x2="270" y2="180" stroke="#30363d" stroke-width="2"/>
+      <line x1="0" y1="0" x2="0" y2="180" stroke="#30363d" stroke-width="2"/>
+      <!-- Grid -->
+      <g stroke="#30363d" stroke-width="0.5" opacity="0.5">
+        <line x1="0" y1="45" x2="270" y2="45"/>
+        <line x1="0" y1="90" x2="270" y2="90"/>
+        <line x1="0" y1="135" x2="270" y2="135"/>
+        <line x1="67" y1="0" x2="67" y2="180"/>
+        <line x1="135" y1="0" x2="135" y2="180"/>
+        <line x1="202" y1="0" x2="202" y2="180"/>
+      </g>
+      <!-- Area fill -->
+      <path d="M0,160 L30,140 L60,100 L90,80 L120,60 L150,50 L180,45 L210,42 L240,40 L270,38 L270,180 L0,180 Z"
+            fill="#58a6ff" opacity="0.2"/>
+      <!-- Line -->
+      <path d="M0,160 L30,140 L60,100 L90,80 L120,60 L150,50 L180,45 L210,42 L240,40 L270,38"
+            fill="none" stroke="#58a6ff" stroke-width="2.5" filter="url(#glow)"/>
+      <!-- Points -->
+      <g filter="url(#glow)">
+        <circle cx="0" cy="160" r="4" fill="#58a6ff"/>
+        <circle cx="60" cy="100" r="4" fill="#58a6ff"/>
+        <circle cx="120" cy="60" r="4" fill="#58a6ff"/>
+        <circle cx="180" cy="45" r="4" fill="#58a6ff"/>
+        <circle cx="240" cy="40" r="4" fill="#58a6ff"/>
+      </g>
+      <text x="135" y="210" font-family="system-ui" font-size="11" fill="#8b949e" text-anchor="middle">Accuracy (ROC AUC)</text>
+    </g>
+  </g>
+
+  <!-- Title and tagline -->
+  <text x="600" y="420" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="700" fill="url(#accent)" text-anchor="middle" filter="url(#glow)">trueno-viz</text>
+  <text x="600" y="460" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="#8b949e" text-anchor="middle">SIMD/GPU-Accelerated Visualization + ttop System Monitor</text>
+
+  <!-- Feature badges -->
+  <g transform="translate(600, 480)">
+    <g transform="translate(-240, 0)">
+      <rect x="0" y="0" width="90" height="20" rx="10" fill="#238636" opacity="0.8"/>
+      <text x="45" y="14" font-family="system-ui" font-size="10" fill="#fff" text-anchor="middle">Pure Rust</text>
+    </g>
+    <g transform="translate(-130, 0)">
+      <rect x="0" y="0" width="100" height="20" rx="10" fill="#1f6feb" opacity="0.8"/>
+      <text x="50" y="14" font-family="system-ui" font-size="10" fill="#fff" text-anchor="middle">SIMD + GPU</text>
+    </g>
+    <g transform="translate(-10, 0)">
+      <rect x="0" y="0" width="110" height="20" rx="10" fill="#8957e5" opacity="0.8"/>
+      <text x="55" y="14" font-family="system-ui" font-size="10" fill="#fff" text-anchor="middle">Zero JS/WASM</text>
+    </g>
+    <g transform="translate(120, 0)">
+      <rect x="0" y="0" width="120" height="20" rx="10" fill="#f97316" opacity="0.8"/>
+      <text x="60" y="14" font-family="system-ui" font-size="10" fill="#fff" text-anchor="middle">8ms Frame Time</text>
+    </g>
+  </g>
+</svg>

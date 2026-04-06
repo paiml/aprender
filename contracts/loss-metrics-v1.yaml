@@ -1,0 +1,42 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Loss metric visualization contract for trueno-viz"
+  crate: "trueno-viz"
+  references:
+    - "Munzner, Visualization Analysis and Design, 2014"
+
+equations:
+  loss_display:
+    formula: "pixel_y = height - (loss - min_loss) / (max_loss - min_loss) * height"
+    domain: "loss ∈ R, max_loss > min_loss"
+    invariants:
+      - "Lower loss maps to lower y position (higher on screen)"
+
+proof_obligations:
+  - type: bound
+    property: "Loss renders within canvas bounds"
+    formal: "0 <= pixel_y <= height"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-LOSS-001
+    rule: "Loss rendering bounds"
+    test: "test_sparkline_render"
+    prediction: "verified"
+    if_fails: "Contract violation — loss rendered outside canvas"
+
+kani_harnesses:
+  - id: KANI-LOSS-001
+    obligation: PO-LOSS-001
+    property: "Pixel bounds"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_loss_bounds
+
+qa_gate:
+  id: QA-LOSS
+  name: "loss metrics contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: ["test_sparkline_render"]

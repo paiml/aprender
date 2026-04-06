@@ -1,0 +1,289 @@
+{
+  "tree_hash": "6c8433dbe2805bd372ae70618ee283fe76f50e15",
+  "pmat_version": "3.5.1",
+  "timestamp": "2026-02-26T13:04:34.393691851Z",
+  "report": {
+    "files_with_dead_code": [
+      {
+        "file_path": "crates/ttop/tests/proptest_macos.rs",
+        "dead_items": [
+          {
+            "name": "macos_property_tests",
+            "kind": "Suppressed",
+            "line": 11,
+            "column": 1,
+            "message": "mod `macos_property_tests` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.9090909090909091
+      },
+      {
+        "file_path": "examples/btop.rs",
+        "dead_items": [
+          {
+            "name": "ViewMode",
+            "kind": "Suppressed",
+            "line": 68,
+            "column": 1,
+            "message": "enum `ViewMode` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.3929273084479371
+      },
+      {
+        "file_path": "src/monitor/widgets/horizon.rs",
+        "dead_items": [
+          {
+            "name": "braille_char",
+            "kind": "Suppressed",
+            "line": 185,
+            "column": 1,
+            "message": "fn `braille_char` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.535475234270415
+      },
+      {
+        "file_path": "src/monitor/collectors/gpu_amd.rs",
+        "dead_items": [
+          {
+            "name": "rsmi_status",
+            "kind": "Suppressed",
+            "line": 28,
+            "column": 1,
+            "message": "mod `rsmi_status` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "rsmi_memory_type",
+            "kind": "Suppressed",
+            "line": 34,
+            "column": 1,
+            "message": "mod `rsmi_memory_type` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "rsmi_clk_type",
+            "kind": "Suppressed",
+            "line": 42,
+            "column": 1,
+            "message": "mod `rsmi_clk_type` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "rsmi_temp",
+            "kind": "Suppressed",
+            "line": 49,
+            "column": 1,
+            "message": "mod `rsmi_temp` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 2.841918294849023
+      },
+      {
+        "file_path": "crates/ttop/src/panels.rs",
+        "dead_items": [
+          {
+            "name": "format_dir_path",
+            "kind": "Suppressed",
+            "line": 3400,
+            "column": 1,
+            "message": "fn `format_dir_path` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "entropy_heatmap",
+            "kind": "Suppressed",
+            "line": 3470,
+            "column": 1,
+            "message": "fn `entropy_heatmap` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.09846153846153846
+      },
+      {
+        "file_path": "crates/ttop/src/analyzers/geoip.rs",
+        "dead_items": [
+          {
+            "name": "US",
+            "kind": "Suppressed",
+            "line": 28,
+            "column": 1,
+            "message": "const `US` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "DE",
+            "kind": "Suppressed",
+            "line": 30,
+            "column": 1,
+            "message": "const `DE` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "GB",
+            "kind": "Suppressed",
+            "line": 32,
+            "column": 1,
+            "message": "const `GB` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "FR",
+            "kind": "Suppressed",
+            "line": 34,
+            "column": 1,
+            "message": "const `FR` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "NL",
+            "kind": "Suppressed",
+            "line": 36,
+            "column": 1,
+            "message": "const `NL` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "JP",
+            "kind": "Suppressed",
+            "line": 38,
+            "column": 1,
+            "message": "const `JP` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "SG",
+            "kind": "Suppressed",
+            "line": 40,
+            "column": 1,
+            "message": "const `SG` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "AU",
+            "kind": "Suppressed",
+            "line": 42,
+            "column": 1,
+            "message": "const `AU` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CA",
+            "kind": "Suppressed",
+            "line": 44,
+            "column": 1,
+            "message": "const `CA` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "BR",
+            "kind": "Suppressed",
+            "line": 46,
+            "column": 1,
+            "message": "const `BR` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "IN",
+            "kind": "Suppressed",
+            "line": 48,
+            "column": 1,
+            "message": "const `IN` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CN",
+            "kind": "Suppressed",
+            "line": 50,
+            "column": 1,
+            "message": "const `CN` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "RU",
+            "kind": "Suppressed",
+            "line": 52,
+            "column": 1,
+            "message": "const `RU` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "KR",
+            "kind": "Suppressed",
+            "line": 54,
+            "column": 1,
+            "message": "const `KR` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "IE",
+            "kind": "Suppressed",
+            "line": 56,
+            "column": 1,
+            "message": "const `IE` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "SE",
+            "kind": "Suppressed",
+            "line": 58,
+            "column": 1,
+            "message": "const `SE` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CH",
+            "kind": "Suppressed",
+            "line": 60,
+            "column": 1,
+            "message": "const `CH` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "IT",
+            "kind": "Suppressed",
+            "line": 62,
+            "column": 1,
+            "message": "const `IT` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "ES",
+            "kind": "Suppressed",
+            "line": 64,
+            "column": 1,
+            "message": "const `ES` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "PL",
+            "kind": "Suppressed",
+            "line": 66,
+            "column": 1,
+            "message": "const `PL` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "LOCAL",
+            "kind": "Suppressed",
+            "line": 70,
+            "column": 1,
+            "message": "const `LOCAL` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "PRIVATE",
+            "kind": "Suppressed",
+            "line": 72,
+            "column": 1,
+            "message": "const `PRIVATE` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          },
+          {
+            "name": "CLOUD",
+            "kind": "Suppressed",
+            "line": 74,
+            "column": 1,
+            "message": "const `CLOUD` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 8.098591549295776
+      },
+      {
+        "file_path": "crates/ttop/src/analyzers/disk_io.rs",
+        "dead_items": [
+          {
+            "name": "RawDiskStats",
+            "kind": "Suppressed",
+            "line": 137,
+            "column": 1,
+            "message": "struct `RawDiskStats` has #[allow(dead_code)] suppression (explicit dead code admission)"
+          }
+        ],
+        "file_dead_percentage": 0.5291005291005291
+      }
+    ],
+    "total_dead_items": 33,
+    "dead_code_percentage": 0.07447360700503261,
+    "total_lines": 88622,
+    "dead_lines": 66,
+    "dead_by_type": {
+      "suppressed": 33
+    }
+  }
+}

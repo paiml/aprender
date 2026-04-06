@@ -1,0 +1,24 @@
+# Clippy Configuration for trueno-viz
+# Enforces quality standards
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
+
+# Type complexity threshold
+type-complexity-threshold = 250
+
+# Allowed names for single-character variables (math/graphics notation)
+allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "c", "d", "r", "g", "w", "h"]
+
+# Minimum identifier length
+min-ident-chars-threshold = 1
+
+# Disallow dangerous methods that can cause panics
+# Cloudflare outage 2025-11-18: unwrap() panic caused 3+ hour network outage
+[[disallowed-methods]]
+path = "core::option::Option::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."
+
+[[disallowed-methods]]
+path = "core::result::Result::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. Cloudflare-class defect risk."

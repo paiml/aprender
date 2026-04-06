@@ -1,0 +1,16 @@
+{
+  "name": "trueno-viz-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "serve": "npx serve . -p 9876",
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:debug": "npx playwright test --debug",
+    "test:ui": "npx playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "serve": "^14.2.0"
+  }
+}

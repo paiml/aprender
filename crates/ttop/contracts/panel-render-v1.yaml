@@ -1,0 +1,66 @@
+# Panel Rendering Contract v1.0.0
+#
+# Contracts for ttop v2 sovereign TUI monitor panel rendering.
+# All panels render to CellBuffer. Zero-allocation steady-state.
+#
+# References:
+#   - Meyer (1992) Design by Contract, IEEE Computer 25(10)
+#   - Tufte (1983) Visual Display of Quantitative Information
+#   - Ohno (1988) Toyota Production System
+
+metadata:
+  version: "1.0.0"
+  created: "2026-04-02"
+  author: "PAIML Engineering"
+  description: "CellBuffer rendering bounds and data consistency contracts"
+  references:
+    - "Meyer (1992) Design by Contract"
+    - "Tufte (1983) Data-ink ratio"
+
+equations:
+  buffer_bounds:
+    formula: "cell(x,y) = cells[y * width + x]"
+    domain: "x: u16, y: u16, width > 0, height > 0"
+    codomain: "Cell with valid symbol, fg, bg"
+    preconditions:
+      - "width > 0"
+      - "height > 0"
+    postconditions:
+      - "cells.len() == width as usize * height as usize"
+
+  cpu_percent:
+    formula: "cpu_total = mean(per_core_percent)"
+    domain: "per_core_percent: Vec<f64>, each in [0, 100]"
+    codomain: "f64 in [0, 100]"
+    preconditions:
+      - "per_core_percent.iter().all(|p| *p >= 0.0)"
+    postconditions:
+      - "per_core_percent.iter().all(|p| *p <= 100.0)"
+
+  memory_consistency:
+    formula: "mem_used + mem_free <= mem_total"
+    domain: "mem_used: u64, mem_total: u64"
+    codomain: "consistent memory state"
+    preconditions:
+      - "mem_total > 0"
+    postconditions:
+      - "mem_used <= mem_total"
+
+  display_format:
+    formula: "format_bytes(n) = '{value}{unit}' where unit in {B,K,M,G,T}"
+    domain: "n: u64"
+    codomain: "non-empty String with unit suffix"
+    preconditions: []
+    postconditions:
+      - "!ret.is_empty()"
+
+proof_obligations:
+  - type: precondition
+    property: "Buffer dimensions are positive"
+    formal: "width > 0 and height > 0"
+  - type: postcondition
+    property: "Memory used never exceeds total"
+    formal: "mem_used <= mem_total"
+  - type: postcondition
+    property: "CPU percent bounded per core"
+    formal: "forall p in per_core_percent: 0 <= p <= 100"

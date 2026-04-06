@@ -1,0 +1,298 @@
+[workspace]
+resolver = "2"
+members = ["."]
+exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/", "target/", ".profraw", ".profdata", ".vscode/", ".idea/", "proptest-regressions/"]
+
+[workspace.package]
+edition = "2021"
+
+[package]
+name = "trueno-viz"
+version = "0.2.4"
+edition = "2021"
+rust-version = "1.75"
+authors = ["PAIML Team"]
+description = "SIMD/GPU/WASM-accelerated visualization library for data science and ML"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/trueno-viz"
+documentation = "https://docs.rs/trueno-viz"
+readme = "README.md"
+keywords = ["visualization", "simd", "gpu", "wasm", "data-science"]
+categories = ["visualization", "graphics", "science", "wasm"]
+
+[dependencies]
+# Core SIMD/GPU acceleration
+trueno = { version = "0.17", default-features = false }
+
+# Shared Batuta stack utilities (display traits, formatting)
+batuta-common = "0.1"
+
+# PNG encoding (pure Rust, no libpng)
+png = "0.17"
+
+# Base64 encoding for SVG embedded images
+base64 = "0.22"
+
+# Error handling
+thiserror = "2.0"
+
+# Optional: ML integration
+aprender = { version = "0.27.5", optional = true }
+
+# Optional: Graph integration
+trueno-graph = { version = "0.1.17", optional = true, default-features = false }
+
+# Optional: Database integration
+trueno-db = { version = "0.3.16", optional = true }
+
+# Optional: Training integration and inference monitoring
+entrenar = { version = "0.6", optional = true }
+
+# Optional: Serialization (for ML inference monitoring visualization)
+serde = { version = "1.0", features = ["derive"], optional = true }
+
+# Optional: TUI monitoring system
+ratatui = { version = "0.30", optional = true }
+crossterm = { version = "0.29", optional = true }
+serde_yaml_ng = { version = "0.10", optional = true }
+
+# Optional: GPU monitoring
+nvml-wrapper = { version = "0.10", optional = true }
+
+# Optional: Multi-system monitoring
+tokio = { version = "1.0", features = ["net", "rt-multi-thread", "sync", "time"], optional = true }
+rmp-serde = { version = "1.3", optional = true }
+rustls = { version = "0.23", optional = true }
+
+# Optional: Stack integration for monitoring
+realizar = { version = "0.7", optional = true }
+# trueno-zram = { version = "0.1", optional = true }  # Not yet on crates.io
+repartir = { version = "2.0", optional = true }
+
+# Optional: WGPU multi-GPU monitoring (100% safe Rust)
+wgpu = { version = "24", optional = true }
+
+# Optional: Apple hardware acceleration (Neural Engine, Afterburner, Secure Enclave)
+manzana = { version = "0.2", optional = true }
+
+# Config directory lookup
+dirs = { version = "5.0", optional = true }
+
+# Dynamic library loading for AMD GPU (ROCm SMI)
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+# Optional: WASM support
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["console"] }
+
+[dev-dependencies]
+# Testing
+proptest = "1.4"
+criterion = { version = "0.6", features = ["html_reports"] }
+
+# Test utilities
+tempfile = "3.10"
+approx = "0.5"
+
+# TUI testing (required for popperian_falsification_test.rs)
+ratatui = "0.30"
+
+[features]
+default = []
+
+# SIMD acceleration is built-in to trueno by default
+# No feature flag needed
+
+# GPU compute acceleration (native)
+gpu = ["trueno/gpu"]
+
+# GPU compute acceleration (WebGPU/WASM)
+gpu-wasm = ["trueno/gpu-wasm", "wasm"]
+
+# Parallel processing with rayon
+parallel = ["trueno/parallel"]
+
+# ML library integration
+ml = ["dep:aprender", "dep:entrenar", "dep:serde"]
+
+# Graph library integration
+graph = ["dep:trueno-graph"]
+
+# Database integration
+db = ["dep:trueno-db"]
+
+# Terminal output support
+terminal = []
+
+# SVG output support
+svg = []
+
+# WASM/WebAssembly support
+wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
+
+# TUI monitoring system (btop-like)
+monitor = ["dep:ratatui", "dep:crossterm", "dep:serde", "dep:serde_yaml_ng", "dep:dirs"]
+
+# Monitor with NVIDIA GPU support
+monitor-nvidia = ["monitor", "dep:nvml-wrapper"]
+
+# Monitor with multi-system support
+monitor-remote = ["monitor", "dep:tokio", "dep:rmp-serde"]
+
+# Monitor with TLS encryption for remote
+monitor-tls = ["monitor-remote", "dep:rustls"]
+
+# Monitor with Sovereign AI Stack integration
+# Note: trueno-zram not yet on crates.io
+monitor-stack = ["monitor", "dep:realizar", "dep:entrenar", "dep:repartir"]
+
+# Monitor with WGPU multi-GPU support (100% safe Rust - RECOMMENDED)
+gpu-wgpu = ["monitor", "dep:wgpu"]
+
+# Monitor with IOKit GPU support (macOS only, uses unsafe FFI)
+gpu-iokit = ["monitor"]
+
+# Monitor with Afterburner FPGA support (Mac Pro only, uses unsafe FFI)
+afterburner = ["monitor"]
+
+# Monitor with manzana Apple hardware (Neural Engine, Afterburner, Metal, Secure Enclave)
+apple-hardware = ["monitor", "dep:manzana"]
+
+# Monitor with all GPU backends
+gpu-full = ["gpu-wgpu", "monitor-nvidia"]
+
+# Monitor with all accelerator backends
+accel-full = ["gpu-full", "gpu-iokit", "afterburner", "apple-hardware"]
+
+# Monitor with all features
+monitor-full = ["monitor-nvidia", "monitor-tls", "monitor-stack", "gpu-wgpu"]
+
+# All features enabled (excluding wasm which needs special build)
+full = ["gpu", "parallel", "ml", "graph", "db", "terminal", "svg", "monitor"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+
+[[bench]]
+name = "scatter_benchmark"
+harness = false
+
+[[bench]]
+name = "framebuffer_benchmark"
+harness = false
+
+[[bench]]
+name = "histogram_benchmark"
+harness = false
+
+[[bench]]
+name = "heatmap_benchmark"
+harness = false
+
+[[bench]]
+name = "line_benchmark"
+harness = false
+
+[[bench]]
+name = "encoder_benchmark"
+harness = false
+
+[[bin]]
+name = "trueno-monitor"
+path = "src/bin/trueno_monitor.rs"
+required-features = ["monitor"]
+
+[[bin]]
+name = "trueno-agent"
+path = "src/bin/trueno_agent.rs"
+required-features = ["monitor-remote"]
+
+[[example]]
+name = "aprender_integration"
+required-features = ["ml"]
+
+[[example]]
+name = "trueno_graph_integration"
+required-features = ["graph"]
+
+[[example]]
+name = "btop"
+required-features = ["monitor"]
+
+[[example]]
+name = "test_macos_collectors"
+required-features = ["monitor"]
+
+[[example]]
+name = "simd_kernels"
+required-features = ["monitor"]
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--generate-link-to-definition", "--cfg", "docsrs"]
+all-features = true
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+missing_docs = "warn"
+deprecated = "allow"  # criterion::black_box -> std::hint::black_box migration pending
+
+[workspace.lints.clippy]
+# Base warning level
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# Ban unwrap() in production code (Cloudflare incident 2025-11-18)
+# Tests use #![cfg_attr(test, allow(clippy::unwrap_used))] in lib.rs
+unwrap_used = "deny"
+# expect() with meaningful messages is acceptable
+expect_used = "allow"
+assertions_on_constants = "allow"  # Allow assert!(true) in compile-test
+
+# Allow common pedantic lints
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Allow common patterns in graphics/visualization code
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_precision_loss = "allow"
+many_single_char_names = "allow"  # h, s, l, r, g, b are standard color notation
+suboptimal_flops = "allow"        # Clarity over micro-optimization initially
+lint_groups_priority = "allow"    # Cargo.toml lint config warning
+
+# Allow in tests/benchmarks
+useless_vec = "allow"             # Vec used for test clarity
+
+[lints]
+workspace = true
+
+[package.metadata.release]
+shared-version = true
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
+
+[workspace.dependencies]

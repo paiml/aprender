@@ -1,0 +1,31 @@
+{
+  "sha": "ab681f6",
+  "timestamp": "2026-03-28T16:54:09.610862716+00:00",
+  "composite": 60.40251013183199,
+  "grade": "D",
+  "sub_scores": {
+    "rps": 81.78001165501165,
+    "comply": 41.0,
+    "coverage": 50.0,
+    "muda_inv": 91.90132228142886,
+    "evoscore": 50.0,
+    "dbc": 50.0,
+    "file_health": 95.57522123893806,
+    "pv_lint": 48.131764705882354
+  },
+  "rps_categories": {
+    "Reproducibility": 52.0,
+    "Build Performance": 100.0,
+    "Dependency Health": 91.66666666666666,
+    "Documentation": 100.0,
+    "Rust Tooling & CI/CD": 85.0,
+    "Performance & Benchmarking": 100.0,
+    "Formal Verification": 36.875,
+    "Testing Excellence": 82.5,
+    "Known Defects": 100.0,
+    "GPU/SIMD Quality": 90.0,
+    "Code Quality": 61.53846153846154
+  },
+  "comply_errors": 2,
+  "comply_warnings": 13
+}
