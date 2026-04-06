@@ -299,11 +299,18 @@ fn parse_model_size(size: &str) -> Result<u64> {
     Ok((num * multiplier as f64) as u64)
 }
 
-/// Estimate parameters from model file size
+/// Estimate parameters from GGUF metadata or file size fallback.
+/// GH-625: file_size * 2 overestimates (Q4_K_M has mixed dtypes + F32 biases).
 fn estimate_params_from_file(path: &Path) -> Result<u64> {
+    // Try RosettaStone inspection for accurate param count
+    if let Ok(report) = aprender::format::rosetta::RosettaStone::new().inspect(path) {
+        if report.total_params > 0 {
+            return Ok(report.total_params as u64);
+        }
+    }
+    // Fallback: file size heuristic (Q4 ≈ 0.5 bytes/param)
     let metadata = std::fs::metadata(path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?;
-    // Conservative estimate: assume Q4 (~0.5 bytes/param)
     Ok(metadata.len() * 2)
 }
 
