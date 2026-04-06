@@ -28,7 +28,7 @@ mod special_tokens_contract {
     /// Read the registry YAML file content.
     fn read_registry_content() -> String {
         let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/special-tokens-registry-v1.yaml");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/special-tokens-registry-v1.yaml");
         assert!(
             path.exists(),
             "contracts/special-tokens-registry-v1.yaml must exist (P0 gap)"

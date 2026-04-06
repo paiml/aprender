@@ -19,7 +19,7 @@ mod contract_falsification {
     /// Load all model family configs from the contracts directory.
     /// Returns (family_name, config) pairs.
     fn load_all_families() -> Vec<(String, ModelFamilyConfig)> {
-        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
+        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
         let families_dir = contracts_dir.join("model-families");
         assert!(
             families_dir.exists(),

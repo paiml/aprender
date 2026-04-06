@@ -58,7 +58,7 @@ fn collect_rs_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn search_dir_for_file(search_root: &Path, filename: &str) -> Option<PathBuf> {

@@ -40,7 +40,7 @@ mod metadata_bounds_contract {
     /// Read the bounds contract YAML.
     fn read_bounds_content() -> String {
         let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/model-metadata-bounds-v1.yaml");
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-metadata-bounds-v1.yaml");
         assert!(
             path.exists(),
             "contracts/model-metadata-bounds-v1.yaml must exist (Gap 2)"
@@ -165,7 +165,7 @@ mod metadata_bounds_contract {
 
     /// Load all model-family YAML configs.
     fn load_all_family_configs() -> Vec<(String, ModelFamilyConfig)> {
-        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/model-families");
+        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
         assert!(
             families_dir.exists(),
             "contracts/model-families/ must exist"

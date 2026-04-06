@@ -63,7 +63,7 @@ architectures:
 
     #[test]
     fn test_load_qwen2_yaml() {
-        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
+        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
         let yaml_path = contracts_dir.join("model-families/qwen2.yaml");
         if yaml_path.exists() {
             let config = load_family_yaml(&yaml_path).expect("load qwen2 yaml");
@@ -80,7 +80,7 @@ architectures:
 
     #[test]
     fn test_load_family_registry() {
-        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts");
+        let contracts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts");
         if contracts_dir.join("model-families").exists() {
             let registry = load_family_registry(&contracts_dir).expect("load registry");
             assert!(
