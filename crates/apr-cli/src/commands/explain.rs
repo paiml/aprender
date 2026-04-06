@@ -563,6 +563,36 @@ const TENSOR_ROLES: &[(&[&str], &str)] = &[
         &["self_attn"],
         "Self-attention — attends within the same sequence",
     ),
+    // GH-635: GGUF tensor naming conventions (blk.N.attn_*, blk.N.ffn_*)
+    (&["attn_q"], "Query projection (GGUF convention)"),
+    (&["attn_k"], "Key projection (GGUF convention)"),
+    (&["attn_v"], "Value projection (GGUF convention)"),
+    (
+        &["attn_output"],
+        "Attention output projection (GGUF convention)",
+    ),
+    (&["ffn_up"], "Feed-forward up projection (GGUF convention)"),
+    (
+        &["ffn_down"],
+        "Feed-forward down projection (GGUF convention)",
+    ),
+    (
+        &["ffn_gate"],
+        "Feed-forward gate projection (GGUF SwiGLU)",
+    ),
+    (&["attn_norm"], "Attention normalization (GGUF convention)"),
+    (
+        &["ffn_norm"],
+        "Feed-forward normalization (GGUF convention)",
+    ),
+    (
+        &["output_norm"],
+        "Final output normalization (GGUF convention)",
+    ),
+    (
+        &["rope_freqs"],
+        "Rotary positional encoding frequencies (RoPE)",
+    ),
 ];
 
 /// Explain a tensor's role based on naming conventions
