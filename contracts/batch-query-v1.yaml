@@ -1,0 +1,43 @@
+metadata:
+  version: "1.0.0"
+  author: "Sovereign AI Stack"
+  description: "Batch query execution contract for trueno-db"
+  crate: "trueno-db"
+  references:
+    - "Abadi et al., The Design of Modern Column-Oriented Database Systems, 2013"
+
+equations:
+  batch_throughput:
+    formula: "throughput = rows_processed / elapsed_seconds"
+    domain: "rows_processed ∈ ℕ, elapsed_seconds > 0"
+    invariants:
+      - "throughput > 0 for non-empty batches"
+      - "Linear scaling: 2× rows → ~2× time"
+
+proof_obligations:
+  - type: bound
+    property: "Batch query returns all matching rows"
+    formal: "|result| <= |table| for any predicate"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-BATCH-001
+    rule: "Batch correctness"
+    test: "test_append_batch_olap_pattern"
+    prediction: "verified"
+    if_fails: "Contract violation — batch query drops rows"
+
+kani_harnesses:
+  - id: KANI-BATCH-001
+    obligation: PO-BATCH-001
+    property: "Batch result bounded by table size"
+    bound: 8
+    strategy: bounded_int
+    harness: verify_batch_query_bound
+
+qa_gate:
+  id: QA-BATCH
+  name: "batch query contract"
+  min_coverage: 0.90
+  max_complexity: 20
+  required_tests: []

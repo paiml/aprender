@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="gpu" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#10b981"/>
+      <stop offset="100%" style="stop-color:#34d399"/>
+    </linearGradient>
+    <linearGradient id="simd" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="thunder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#fbbf24"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Database cylinder -->
+  <g transform="translate(640, 250)">
+    <g transform="translate(-140, -80)">
+      <!-- Cylinder body -->
+      <ellipse cx="70" cy="0" rx="70" ry="20" fill="url(#simd)" opacity="0.8"/>
+      <rect x="0" y="0" width="140" height="100" fill="url(#simd)" opacity="0.8"/>
+      <ellipse cx="70" cy="100" rx="70" ry="20" fill="url(#simd)" opacity="0.6"/>
+
+      <!-- Data rows -->
+      <rect x="15" y="25" width="110" height="8" rx="2" fill="#0f3460" opacity="0.7"/>
+      <rect x="15" y="40" width="90" height="8" rx="2" fill="#0f3460" opacity="0.7"/>
+      <rect x="15" y="55" width="100" height="8" rx="2" fill="#0f3460" opacity="0.7"/>
+      <rect x="15" y="70" width="80" height="8" rx="2" fill="#0f3460" opacity="0.7"/>
+    </g>
+
+    <!-- GPU chip -->
+    <g transform="translate(100, -60)">
+      <rect x="0" y="0" width="80" height="80" rx="4" fill="url(#gpu)" opacity="0.9"/>
+      <!-- GPU grid -->
+      <g fill="#0f3460" opacity="0.5">
+        <rect x="10" y="10" width="12" height="12" rx="1"/>
+        <rect x="26" y="10" width="12" height="12" rx="1"/>
+        <rect x="42" y="10" width="12" height="12" rx="1"/>
+        <rect x="58" y="10" width="12" height="12" rx="1"/>
+        <rect x="10" y="26" width="12" height="12" rx="1"/>
+        <rect x="26" y="26" width="12" height="12" rx="1"/>
+        <rect x="42" y="26" width="12" height="12" rx="1"/>
+        <rect x="58" y="26" width="12" height="12" rx="1"/>
+        <rect x="10" y="42" width="12" height="12" rx="1"/>
+        <rect x="26" y="42" width="12" height="12" rx="1"/>
+        <rect x="42" y="42" width="12" height="12" rx="1"/>
+        <rect x="58" y="42" width="12" height="12" rx="1"/>
+        <rect x="10" y="58" width="12" height="12" rx="1"/>
+        <rect x="26" y="58" width="12" height="12" rx="1"/>
+        <rect x="42" y="58" width="12" height="12" rx="1"/>
+        <rect x="58" y="58" width="12" height="12" rx="1"/>
+      </g>
+      <text x="40" y="95" font-family="monospace" font-size="10" fill="#34d399" text-anchor="middle">GPU</text>
+    </g>
+
+    <!-- Arrow from DB to GPU -->
+    <path d="M -50 0 L 90 -20" stroke="url(#thunder)" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+
+    <!-- Fallback cascade -->
+    <g transform="translate(-80, 80)">
+      <text x="0" y="0" font-family="monospace" font-size="12" fill="#888">GPU</text>
+      <text x="50" y="0" font-family="monospace" font-size="12" fill="#666">→</text>
+      <text x="70" y="0" font-family="monospace" font-size="12" fill="#888">SIMD</text>
+      <text x="130" y="0" font-family="monospace" font-size="12" fill="#666">→</text>
+      <text x="150" y="0" font-family="monospace" font-size="12" fill="#888">Scalar</text>
+    </g>
+  </g>
+
+  <!-- Performance indicator -->
+  <g transform="translate(900, 200)" opacity="0.6">
+    <rect x="0" y="0" width="120" height="80" rx="4" fill="#0f3460" stroke="url(#gpu)" stroke-width="1"/>
+    <text x="60" y="20" font-family="monospace" font-size="10" fill="#34d399" text-anchor="middle">Performance</text>
+    <rect x="15" y="30" width="90" height="8" rx="2" fill="url(#gpu)"/>
+    <rect x="15" y="45" width="60" height="8" rx="2" fill="url(#simd)"/>
+    <rect x="15" y="60" width="30" height="8" rx="2" fill="#666"/>
+  </g>
+
+  <text x="640" y="460" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="700" fill="#fff" text-anchor="middle">trueno-db</text>
+  <text x="640" y="510" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#888" text-anchor="middle">GPU-First Embedded Analytics with SIMD Fallback</text>
+</svg>

@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 617457b1c37deb0ba88004c4fffb08be42cd2a220f463cd3fc4c853ddffa873b # shrinks to data = [-2.7211854e38, -3.2840235e38]
+cc a104d4c110f9e7b45a35ed7cc9fea1e82de136b0783eae52eb23f1081ad2b950 # shrinks to data = [-1242460263, -905023386]
+cc f359c1546993e1fca3aa6a097afafa74114ba42d23f9784ef1cba56fc5693ca5 # shrinks to data = [-1591701044, -555782605]
+cc 5a86d42cc2032d3c50033a890a431baa3653c18274d1b2131660d882e41b942a # shrinks to data = [2.4160818e38, 1.1828726e38]
+cc 8acde56e374c43d5aa4b674767571d1cbdbdc3c075e923050b403169d8b850ab # shrinks to data = [-6.152284e37, 0.0, 0.0, 0.0, -0.0, 4.993917e30, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.8166754e33, -0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+cc 92f9fcd29355a91f93bae69e9055c556c07a09721c00633686938fb2fa47fb5b # shrinks to data = [-2.0285458e32, -8.328688e35, 0.0, 0.0, 3.861831e30, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]

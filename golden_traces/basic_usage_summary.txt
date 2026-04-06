@@ -1,0 +1,58 @@
+
+Creating sample dataset (1M rows)...
+  ✓ Created batch: 1000000 rows, 3 columns
+  ✓ Memory size: 27.44 MB
+
+Initializing storage engine...
+  ✓ Storage engine initialized
+
+Appending batch to storage (OLAP append-only pattern)...
+  ✓ Batch appended successfully
+  ✓ Total batches in storage: 1
+
+Iterating over morsels (128MB chunks):
+  This prevents GPU VRAM OOM by processing data in chunks
+
+  Morsel #1: 1000000 rows, 27.44 MB
+
+  ✓ Total morsels: 1
+  ✓ Total rows processed: 1000000
+  ✓ All data accounted for: true
+
+Schema information:
+  - user_id: Int32
+  - score: Float32
+  - category: Utf8
+
+=== OLAP vs OLTP Design ===
+✓ Supported: append_batch() - Bulk append (OLAP pattern)
+✗ Not supported: update_row() - Random updates (OLTP pattern)
+
+Rationale:
+  Columnar storage optimizes for bulk reads, not random writes
+  Single-row update cost: O(N) (rewrite entire column)
+  Batch append cost: O(1) (append to new partition)
+
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 35.43    0.002091           8       240           brk
+  3.95    0.000233           8        28           write
+  4.15    0.000245          12        20           mmap
+ 49.42    0.002917         324         9           munmap
+  1.02    0.000060          10         6           mprotect
+  0.56    0.000033           6         5           rt_sigaction
+  0.98    0.000058          11         5           read
+  0.56    0.000033           8         4           newfstatat
+  0.56    0.000033           8         4           close
+  0.44    0.000026           6         4           unknown
+  0.98    0.000058          14         4           openat
+  0.42    0.000025           6         4           pread64
+  0.34    0.000020           6         3           sigaltstack
+  0.32    0.000019           9         2         1 arch_prctl
+  0.32    0.000019           9         2           getrandom
+  0.10    0.000006           6         1           set_tid_address
+  0.20    0.000012          12         1         1 access
+  0.12    0.000007           7         1           set_robust_list
+  0.12    0.000007           7         1           poll
+------ ----------- ----------- --------- --------- ----------------
+100.00    0.005902          17       344         2 total

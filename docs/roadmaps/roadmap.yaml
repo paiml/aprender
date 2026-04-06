@@ -1,0 +1,166 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/trueno-db
+roadmap:
+- id: GENCHI-GENBUTSU
+  github_issue: null
+  item_type: task
+  title: GPU syscall tracing with Renacer
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T17:30:00.000000000+00:00
+  updated: 2025-11-22T08:25:16.700685360+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - documentation
+  - genchi-genbutsu
+  - gpu
+  - performance
+  - phase-1
+  notes: null
+- id: 'PHASE2-001: Local multi-GPU data partitioning'
+  github_issue: null
+  item_type: task
+  title: 'New task: PHASE2-001: Local multi-GPU data partitioning'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T18:56:01.867219309+00:00
+  updated: 2025-11-21T19:15:25.410156114+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: gpu-syscall-tracing
+  github_issue: null
+  item_type: task
+  title: 'New task: gpu-syscall-tracing'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T08:25:14.544493952+00:00
+  updated: 2025-11-22T13:27:58.451762025+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: phase4-http-range
+  github_issue: null
+  item_type: task
+  title: 'Phase 4: HTTP Range Request Parquet Reader for WASM'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-25T14:00:00.000000000+00:00
+  updated: 2025-11-25T10:32:11.929200940+00:00
+  spec: docs/specifications/PHASE4-WASM-TOC.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase-4
+  - wasm
+  - browser
+  notes: null
+- id: phase4-e2e-testing
+  github_issue: null
+  item_type: task
+  title: 'Phase 4: Playwright E2E testing for WASM browser demo'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-25T15:00:00.000000000+00:00
+  updated: 2025-11-25T15:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - phase-4
+  - wasm
+  - testing
+  - e2e
+  notes: null
+- id: phase5-experiment-schema
+  github_issue: 4
+  item_type: task
+  title: 'Phase 5: Experiment Tracking Schema for entrenar'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-30T12:00:00.000000000+00:00
+  updated: 2025-11-30T12:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - experiments table schema with metadata columns
+  - runs table schema with status and timing
+  - metrics time-series optimized for range queries
+  - artifacts table with CAS references
+  phases: []
+  subtasks: []
+  estimated_effort: medium
+  labels:
+  - phase-5
+  - entrenar
+  - experiment-tracking
+  - schema
+  notes: 'Cross-project: ENT-EPIC-001 (entrenar experiment tracking spec v1.8.0)'
+- id: phase6-kv-store
+  github_issue: null
+  item_type: epic
+  title: 'Phase 6: Key-Value Store Module for PAIML Stack Integration'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2025-12-05T20:00:00.000000000+00:00
+  updated: 2025-12-05T18:37:45.221552601+00:00
+  spec: null
+  acceptance_criteria:
+  - Simple KV trait with get/set/delete/exists operations
+  - SIMD-optimized key hashing (FxHash or xxHash via trueno)
+  - GPU batch operations for bulk KV ops (1000+ keys)
+  - WASM compatibility for browser localStorage/IndexedDB
+  - Parquet persistence backend for durability
+  - TTL support with background expiration
+  - Zero-copy value access where possible
+  phases: []
+  subtasks: []
+  estimated_effort: large
+  labels:
+  - phase-6
+  - kv-store
+  - pforge
+  - stack-integration
+  - simd
+  - gpu
+  - wasm
+  notes: 'Cross-project: pforge state management needs embedded KV store. Eliminates external deps (sled/redb) from PAIML stack. Design must respect GPU/SIMD/WASM story.'
+- id: GH-5
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-5'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-04T14:41:58.548870233+00:00
+  updated: 2026-02-26T12:55:41.899768714+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
