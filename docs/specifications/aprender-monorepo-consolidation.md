@@ -163,6 +163,8 @@ Every successful large Rust project uses this pattern:
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
+| Phase 11a: Fix CI clippy | TODO | Sovereign-ci reusable workflow clippy gate |
+| Phase 11b: Publish pass 3 (manual) | TODO | 5-at-a-time, topological, babysit rate limits |
 | Phase 9a: Sub-spec accuracy audit | TODO | Verify 395 specs still accurate post-monorepo |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
 | Phase 9c: Babysit crates.io publish | STALLED | 10/70 live, need manual topological passes |
