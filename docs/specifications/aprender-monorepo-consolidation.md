@@ -160,8 +160,10 @@ Every successful large Rust project uses this pattern:
 | Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 
-**Current count**: 69 active workspace members, 0 compile failures, **12,975 lib tests pass, 0 failures**.
+**Current count**: 69 active workspace members, 0 compile failures.
+**Tests**: aprender-core 12,975 pass / 0 fail. Workspace 18,548+ pass / 29 fail (contracts path issue).
 **Integration tests**: 14 (8 monorepo invariant + 6 CLI command).
+**Dependencies**: arrow/parquet aligned to v57 across all crates.
 **Excluded**: 4 workspace root shells (viz-ttop, present, test, train-canary).
 
 ---
