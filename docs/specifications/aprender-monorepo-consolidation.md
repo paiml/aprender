@@ -160,11 +160,11 @@ Every successful large Rust project uses this pattern:
 | Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
-| Phase 7b: Remove config patches | TODO | Eliminate `.cargo/config.toml` `[patch.crates-io]` |
+| Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
 | Phase 7c: Update CLAUDE.md | TODO | Root CLAUDE.md references old project structure |
 | Phase 7d: CI pipeline | TODO | Update ci.yml for `cargo test --workspace` |
 
-**Current count**: 69 active workspace members, 0 compile failures.
+**Current count**: 70 active workspace members, 0 compile failures, 0 `[patch.crates-io]`.
 **Tests**: **25,309 pass, 4 fail** (workspace lib + apr-cli + integration). 4 fail are contract panics in apr-cli.
 **Contracts**: 405 provable contracts merged from all 20 repos into root contracts/.
 **Integration tests**: 14 (8 monorepo invariant + 6 CLI command).

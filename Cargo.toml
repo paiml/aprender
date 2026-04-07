@@ -74,6 +74,7 @@ members = [
     "crates/aprender-present-lib",
     "crates/aprender-present-test",
     "crates/aprender-present-test-macros",
+    "crates/aprender-common",
     # --- APR-MONO Phase 3c: test/probar sub-crates (enabled) ---
     "crates/aprender-test-lib",
     "crates/aprender-test-cli",
@@ -249,6 +250,7 @@ presentar-yaml = { path = "crates/aprender-present-yaml", package = "aprender-pr
 presentar-test = { path = "crates/aprender-present-test", package = "aprender-present-test" }
 presentar-test-macros = { path = "crates/aprender-present-test-macros", package = "aprender-present-test-macros" }
 jugar-probar-derive = { path = "crates/aprender-test-derive", package = "aprender-test-derive" }
+batuta-common = { path = "crates/aprender-common", package = "aprender-common" }
 
 [workspace.lints.rust]
 # Safety

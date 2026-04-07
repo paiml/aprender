@@ -519,6 +519,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-common"
+version = "0.29.0"
+dependencies = [
+ "lz4_flex 0.11.6",
+ "zstd",
+]
+
+[[package]]
 name = "aprender-compute"
 version = "0.29.0"
 dependencies = [
@@ -3551,6 +3559,8 @@ dependencies = [
 [[package]]
 name = "batuta-common"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97eb4c76189d694d880ab9affaf6087fb88bc7afe2de7c7e9c9452745788f478"
 dependencies = [
  "lz4_flex 0.11.6",
  "zstd",
