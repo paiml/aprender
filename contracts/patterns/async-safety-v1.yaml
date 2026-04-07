@@ -1,0 +1,145 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Async safety — cancellation-safety, structured-concurrency, and channel-conservation cross-cutting patterns
+  kind: pattern
+  references:
+  - 'Hahnle et al. (2023). Context-aware Trace Contracts for Async. arXiv:2310.04384'
+  - 'Lagaillardie et al. (2022). Affine Rust with Multiparty Session Types. arXiv:2204.13464'
+  - 'Lattuada et al. (2023). Verus: Verifying Rust via Linear Ghost Types. arXiv:2303.05491'
+  - 'Cutner et al. (2021). Deadlock-free Async Message Reordering in Rust. arXiv:2112.12693'
+  - 'Barwell et al. (2022). Multiparty Session Types with Crash-Stop. arXiv:2207.02015'
+  - 'Shi et al. (2025). Complexity of Testing Message-Passing Concurrency. arXiv:2505.05162'
+  applies_to:
+  - pmat (rayon parallel analysis)
+  - realizar (batched inference)
+  - entrenar (data loader workers)
+equations:
+  cancellation_safe:
+    formula: |
+      cancel: Task<T> -> ()
+        forall resource r acquired by task:
+          r.is_released() after cancel
+        No leaked: file handles, temp files, network connections, semaphore permits
+    domain: Task in Running state
+    codomain: unit (all resources released)
+    invariants:
+    - Drop impl releases all resources
+    - 'select! branches are cancellation-safe (no partial state)'
+    - Temp files cleaned up via Drop guard, not explicit cleanup
+    preconditions:
+    - Task is in Running state
+    postconditions:
+    - All acquired resources released within 1s of cancel signal
+    - No .tmp files remain after cancellation
+    - Open fd count returns to pre-task level
+    lean_theorem: Theorems.CancellationSafe
+  structured_spawn:
+    formula: |
+      structured: (Parent, Vec<Child>) -> bool
+        forall child in parent.spawned:
+          child.lifetime is subset of parent.lifetime
+        parent.await => all children completed or cancelled
+    domain: Parent task with spawned children
+    codomain: bool (structured)
+    invariants:
+    - No orphan tasks (tasks that outlive their parent scope)
+    - JoinSet/TaskSet owns all spawned work
+    - Panic in child propagates to parent (not silently lost)
+    preconditions:
+    - Parent owns all child task handles
+    postconditions:
+    - After parent completes, no child tasks are running
+    - All child panics have been observed (not swallowed)
+    lean_theorem: Theorems.StructuredSpawn
+  channel_lossless:
+    formula: |
+      lossless: (Sender<T>, Receiver<T>, Bound) -> bool
+        sent_count = received_count + pending_count + dropped_on_close
+        forall msg: msg is received XOR sender was dropped before delivery
+    domain: Bounded or unbounded channel pair
+    codomain: bool (lossless)
+    invariants:
+    - No silent message loss in bounded channels
+    - 'Backpressure: send blocks when channel full (not drop)'
+    - Message ordering preserved (FIFO)
+    preconditions:
+    - Channel is open (at least one sender alive)
+    postconditions:
+    - 'After close: receiver drains remaining pending messages'
+    - sent_count = received_count + dropped_on_close
+    lean_theorem: Theorems.ChannelLossless
+proof_obligations:
+- type: frame
+  property: Resources released on cancellation
+  formal: 'forall task t, resource r: acquired(t, r) and cancelled(t) -> released(r)'
+  applies_to: cancellation_safe
+- type: frame
+  property: Children do not outlive parent
+  formal: 'forall parent p, child c: spawned(p, c) -> lifetime(c) subset lifetime(p)'
+  applies_to: structured_spawn
+- type: conservation
+  property: Messages are conserved across channel
+  formal: 'forall channel ch: sent(ch) = received(ch) + pending(ch) + dropped_on_close(ch)'
+  applies_to: channel_lossless
+- type: invariant
+  property: No orphan tasks after parent completion
+  formal: 'forall p: completed(p) -> forall c in spawned(p): completed(c) or cancelled(c)'
+  applies_to: structured_spawn
+falsification_tests:
+- id: FALSIFY-ASY-001
+  rule: Cancellation safety
+  prediction: Cancelling task after 100ms leaks zero resources
+  test: Start analysis, cancel after 100ms via tokio::time::timeout, check for .tmp files and open fd count
+  if_fails: Missing Drop guard on resource — temp files or fd leak on cancel
+- id: FALSIFY-ASY-002
+  rule: Structured concurrency
+  prediction: After parent task completes, no spawned child tasks are still running
+  test: Spawn parent with 10 children, drop parent handle, verify all children stopped within 1s
+  if_fails: Orphan task — spawned via tokio::spawn instead of JoinSet
+- id: FALSIFY-ASY-003
+  rule: Channel conservation
+  prediction: sent_count = received_count + pending for 10K messages
+  test: Send 10K messages through bounded channel, close sender, drain receiver, assert conservation
+  if_fails: Silent message drop — likely unbounded channel used as bounded or missing drain
+- id: FALSIFY-ASY-004
+  rule: Select cancellation safety
+  prediction: 'select! branches do not leave partial state on cancellation'
+  test: 'Repeatedly cancel select! with two async branches at random points, verify no corruption'
+  if_fails: 'Partial write in select! branch — non-atomic operation split across await points'
+- id: FALSIFY-ASY-005
+  rule: Child panic propagation
+  prediction: Panic in child task is observed by parent (not silently lost)
+  test: Spawn child that panics, verify parent receives JoinError::Panic
+  if_fails: Using tokio::spawn without checking JoinHandle — panic silently lost
+kani_harnesses:
+- id: KANI-ASY-001
+  obligation: Cancellation releases resources
+  property: All acquired resources released after cancel
+  bound: 4
+  strategy: exhaustive
+  harness: verify_cancellation_resource_release
+- id: KANI-ASY-002
+  obligation: Structured concurrency lifetime
+  property: Child lifetime subset of parent lifetime
+  bound: 4
+  strategy: exhaustive
+  harness: verify_structured_spawn_lifetime
+- id: KANI-ASY-003
+  obligation: Channel message conservation
+  property: sent = received + pending + dropped_on_close
+  bound: 16
+  strategy: exhaustive
+  harness: verify_channel_conservation
+qa_gate:
+  id: F-ASY-001
+  name: Async Safety Contract
+  description: Cancellation safety, structured concurrency, and channel conservation quality gate
+  checks:
+  - cancellation_safety
+  - structured_concurrency
+  - channel_conservation
+  - panic_propagation
+  pass_criteria: All 5 falsification tests pass and no resource leaks detected
+  falsification: Cancel task mid-operation; expect zero leaked file handles and temp files

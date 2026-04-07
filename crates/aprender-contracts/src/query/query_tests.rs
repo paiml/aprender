@@ -10,13 +10,15 @@
         let index = test_index();
         let params = QueryParams {
             query: "softmax numerical stability".to_string(),
+            limit: 50, // Increased from default for 405-contract corpus
             ..Default::default()
         };
         let output = execute(&index, &params);
         assert!(!output.results.is_empty());
         assert!(
             output.results.iter().any(|r| r.stem.contains("softmax")),
-            "Results should include softmax contract"
+            "Results should include softmax contract, got: {:?}",
+            output.results.iter().map(|r| &r.stem).collect::<Vec<_>>()
         );
     }
 

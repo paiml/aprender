@@ -60,7 +60,13 @@ falsification_tests:
   prediction: apr encrypt model.enc errors
   test: apr encrypt model.enc -o out.enc
   if_fails: Double encryption — unrecoverable data corruption
-kani_harnesses: []
+proof_obligations:
+- type: invariant
+  property: "score < 50 implies exit_code != 0"
+kani_harnesses:
+- id: KH-CLI-001
+  obligation: validate_exit_code
+  property: exit_code_nonzero_on_failure
 verification_summary:
   total_obligations: 4
   l2_property_tested: 4
