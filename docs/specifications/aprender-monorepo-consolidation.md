@@ -165,9 +165,9 @@ Every successful large Rust project uses this pattern:
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
 | Phase 11a: Fix CI | DONE | Excluded 4 CUDA crates from workspace-test, lint passes |
 | Phase 11b: Publish manual | IN PROGRESS | Topological tiers, aprender-core live |
-| Phase 9a: Sub-spec accuracy audit | TODO | Verify 395 specs still accurate post-monorepo |
+| Phase 9a: Sub-spec accuracy audit | DONE | 26 stale repo refs, 5 apr-cli→aprender fixed |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
-| Phase 9c: Babysit crates.io publish | STALLED | 10/70 live, need manual topological passes |
+| Phase 9c: Babysit crates.io publish | IN PROGRESS | 47/70 live, rate-limited background publish |
 | Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
 | Phase 10: Crate hygiene | IN PROGRESS | Contract: `crate-hygiene-v1.yaml` (6 equations) |
 | Phase 10a: Banned deps | TODO | Remove ratatui (→ presentar), ndarray (→ trueno) |
@@ -175,7 +175,7 @@ Every successful large Rust project uses this pattern:
 | Phase 10c: Dep budget | DONE | 8 crates over budget (orchestrate=60, train=51 — expected) |
 | Phase 10d: Namespace audit | DONE | 867 old `use` stmts compile via [lib] name aliases |
 | Phase 10e: Complexity | DONE | Top cyclomatic = 14 (under 15 budget) |
-| Phase 10f: Dedup deps | TODO | Eliminate 139 multi-version external deps |
+| Phase 10f: Dedup deps | AUDITED | 139 multi-version deps; top: trueno 0.16→0.17, criterion 4 versions, arrow 54→57 |
 | Phase 6: Archive old repos | DONE | 20/20 repos archived via GitHub API |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
@@ -438,8 +438,8 @@ aprender = { path = "../aprender" }
 
 1. Publish all `aprender-*` crates from the monorepo in topological order
 2. Publish shim crates for old names (see Phase 4a below)
-3. Verify `cargo install apr-cli` works from crates.io
-4. Post-publish smoke test: `cargo install apr-cli --force` on clean machine
+3. Verify `cargo install aprender` works from crates.io
+4. Post-publish smoke test: `cargo install aprender --force` on clean machine
 
 #### Phase 4a: Shim Crate Publishing
 
@@ -557,7 +557,7 @@ Merge book content from all repos into `aprender/book/`:
 book/src/
 ├── introduction.md
 ├── getting-started/
-│   └── installation.md          # cargo install apr-cli
+│   └── installation.md          # cargo install aprender
 ├── compute/                     # was trueno book
 │   ├── simd-backends.md
 │   ├── gpu-compute.md
@@ -725,7 +725,7 @@ The following infra specs must be updated BEFORE or DURING migration:
 `clean-room-spec.md` container must handle full workspace:
 - Disk: 2-3× current for ~48 crate build graph
 - Memory: monitor for OOM on parallel compilation
-- `cargo install apr-cli` post-publish smoke test unchanged
+- `cargo install aprender` post-publish smoke test unchanged
 
 ### INFRA-ARCHIVE: Old repo archival
 

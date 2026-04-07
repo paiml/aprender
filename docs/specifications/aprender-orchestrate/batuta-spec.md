@@ -187,7 +187,7 @@ Steps 3-5 can run in parallel after step 2 completes.
 1. realizar 0.8.4 coverage < 95% → fix coverage gaps before publish
 2. aprender CI failing → fix lint/test/coverage before aprender publish
 3. Clean-room build fails → fix any path-only deps
-4. `apr code` doesn't work after `cargo install apr-cli` → verify with `apr code -p "What is 2+2?"`
+4. `apr code` doesn't work after `cargo install aprender` → verify with `apr code -p "What is 2+2?"`
 5. Qwen3NoThinkTemplate not in published realizar → apr serve produces thinking loops
 
 3. **Convert Qwen3 1.7B to APR format** — once realizar 0.8.4 lands, `apr convert --to-apr Qwen3-1.7B-Q4_K_M.gguf` should produce a valid `.apr` file with embedded tokenizer. APR is the stack-native format — faster loading, row-major layout, LZ4/ZSTD compression. Discovery will prefer it.
