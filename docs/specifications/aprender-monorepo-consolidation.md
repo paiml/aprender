@@ -161,7 +161,7 @@ Every successful large Rust project uses this pattern:
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 
 **Current count**: 69 active workspace members, 0 compile failures.
-**Tests**: aprender-core 12,975/0. aprender-contracts 1,364/7. Workspace 18,900+.
+**Tests**: aprender-core 12,975/0. aprender-contracts 1,371/0. **Total 14,360 pass, 0 fail.**
 **Contracts**: 405 provable contracts merged from all 20 repos into root contracts/.
 **Integration tests**: 14 (8 monorepo invariant + 6 CLI command).
 **Dependencies**: arrow/parquet aligned to v57 across all crates.
