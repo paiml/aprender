@@ -319,7 +319,7 @@ fn main() {
     emit_provable_contract_bindings();
 
     // ── Phase 2: Model family contracts → generated Rust code ──
-    let families_dir = Path::new("../../contracts/model-families");
+    let families_dir = if Path::new("contracts/model-families").exists() { Path::new("contracts/model-families").to_path_buf() } else { Path::new("../../contracts/model-families").to_path_buf() };
 
     // Tell Cargo to re-run if any YAML changes
     println!("cargo:rerun-if-changed=../../contracts/model-families");
@@ -331,10 +331,15 @@ fn main() {
         fs::write(
             &out_path,
             "// No ../../contracts/model-families/ directory found at build time\n\
-             // Using empty generated registry\n\
+             // Using empty generated registry (crates.io / clean-room build)\n\
              \n\
              /// Known model family names (generated at build time)\n\
-             pub const KNOWN_FAMILIES: &[&str] = &[];\n",
+             pub const KNOWN_FAMILIES: &[&str] = &[];\n\
+             \n\
+             /// Build empty default registry (no contracts available at build time)\n\
+             pub fn build_default_registry() -> Vec<crate::format::model_family_loader::ModelFamilyConfig> {\n\
+                 Vec::new()\n\
+             }\n",
         )
         .expect("write generated code");
         return;
