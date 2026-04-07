@@ -244,7 +244,7 @@
     fn test_rosetta_inspect_dispatch_gguf() {
         // Directly test run_rosetta_inspect() is reachable
         let file = build_inspect_gguf();
-        let result = run_rosetta_inspect(file.path(), false);
+        let result = run_rosetta_inspect(file.path(), false, false, false);
         assert!(
             result.is_ok(),
             "run_rosetta_inspect GGUF failed: {result:?}"
@@ -254,7 +254,7 @@
     #[test]
     fn test_rosetta_inspect_dispatch_safetensors() {
         let file = build_inspect_safetensors();
-        let result = run_rosetta_inspect(file.path(), true);
+        let result = run_rosetta_inspect(file.path(), true, false, false);
         assert!(
             result.is_ok(),
             "run_rosetta_inspect SafeTensors JSON failed: {result:?}"

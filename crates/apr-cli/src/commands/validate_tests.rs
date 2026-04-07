@@ -47,6 +47,7 @@ fn test_run_file_not_found() {
         false,
         None,
         false,
+        false,
     );
     assert!(result.is_err());
     match result {
@@ -58,7 +59,7 @@ fn test_run_file_not_found() {
 #[test]
 fn test_run_is_directory() {
     let dir = tempdir().expect("create temp dir");
-    let result = run(dir.path(), false, false, None, false);
+    let result = run(dir.path(), false, false, None, false, false);
     assert!(result.is_err());
     match result {
         Err(CliError::NotAFile(_)) => {}
@@ -71,7 +72,7 @@ fn test_run_invalid_file() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     file.write_all(b"not a valid APR file").expect("write");
 
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     // Should fail validation because file is not valid APR
     assert!(result.is_err());
 }
@@ -81,7 +82,7 @@ fn test_run_with_quality_flag() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     file.write_all(b"invalid data").expect("write");
 
-    let result = run(file.path(), true, false, None, false);
+    let result = run(file.path(), true, false, None, false, false);
     // Should fail but quality flag is handled
     assert!(result.is_err());
 }
@@ -91,7 +92,7 @@ fn test_run_with_min_score() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     file.write_all(b"invalid data").expect("write");
 
-    let result = run(file.path(), false, false, Some(100), false);
+    let result = run(file.path(), false, false, Some(100), false, false);
     // Should fail before min_score check because file is invalid
     assert!(result.is_err());
 }
@@ -101,7 +102,7 @@ fn test_run_with_strict_flag() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     file.write_all(b"test data").expect("write");
 
-    let result = run(file.path(), false, true, None, false);
+    let result = run(file.path(), false, true, None, false, false);
     // Should fail with strict mode
     assert!(result.is_err());
 }
@@ -111,7 +112,7 @@ fn test_run_with_all_flags() {
     let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     file.write_all(b"test data").expect("write");
 
-    let result = run(file.path(), true, true, Some(50), false);
+    let result = run(file.path(), true, true, Some(50), false, false);
     // Should fail with all flags enabled
     assert!(result.is_err());
 }
@@ -121,7 +122,7 @@ fn test_run_empty_file() {
     let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
     // Empty file - no write
 
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     // Empty file should fail validation
     assert!(result.is_err());
 }
@@ -247,7 +248,7 @@ fn test_run_gguf_format_dispatch() {
     file.write_all(&gguf_bytes).expect("write GGUF");
 
     // Should dispatch to GGUF validation path (RosettaStone::validate)
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     // GGUF validation should succeed (physics constraints pass)
     assert!(result.is_ok(), "GGUF format dispatch should work");
 }
@@ -278,7 +279,7 @@ fn test_run_safetensors_format_dispatch() {
     file.write_all(&st_bytes).expect("write SafeTensors");
 
     // Should dispatch to SafeTensors validation path (RosettaStone::validate)
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     // SafeTensors validation should succeed
     assert!(result.is_ok(), "SafeTensors format dispatch should work");
 }
@@ -310,7 +311,7 @@ fn test_run_gguf_format_detection_by_magic() {
     file.write_all(&gguf_bytes).expect("write GGUF");
 
     // Should detect GGUF by magic bytes, not extension
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     assert!(result.is_ok(), "Should detect GGUF by magic bytes");
 }
 
@@ -343,6 +344,6 @@ fn test_run_gguf_with_physics_violations() {
     file.write_all(&gguf_bytes).expect("write GGUF");
 
     // Should fail due to NaN physics violation
-    let result = run(file.path(), false, false, None, false);
+    let result = run(file.path(), false, false, None, false, false);
     assert!(result.is_err(), "Should fail with NaN tensors");
 }

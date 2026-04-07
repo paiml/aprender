@@ -154,7 +154,7 @@
     fn test_run_empty_file_gguf() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         // Empty file should fail
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         assert!(result.is_err());
     }
 
@@ -162,7 +162,7 @@
     fn test_run_empty_file_apr() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         // Empty file should fail
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         assert!(result.is_err());
     }
 
@@ -171,7 +171,7 @@
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("modelfile");
         std::fs::write(&path, b"some data").expect("write");
-        let result = run(&path, false, false);
+        let result = run(&path, false, false, false);
         // No extension -> unsupported format or feature disabled
         assert!(result.is_err());
     }
@@ -181,7 +181,7 @@
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.GGUF");
         std::fs::write(&path, b"not valid gguf").expect("write");
-        let result = run(&path, false, false);
+        let result = run(&path, false, false, false);
         // Should attempt GGUF parsing (lowercased) but fail due to invalid content
         assert!(result.is_err());
     }
@@ -191,7 +191,7 @@
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.Apr");
         std::fs::write(&path, b"not valid apr").expect("write");
-        let result = run(&path, false, false);
+        let result = run(&path, false, false, false);
         assert!(result.is_err());
     }
 
@@ -200,7 +200,7 @@
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.txt");
         std::fs::write(&path, b"text data").expect("write");
-        let result = run(&path, false, false);
+        let result = run(&path, false, false, false);
         assert!(result.is_err());
     }
 
@@ -209,7 +209,7 @@
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("config.json");
         std::fs::write(&path, b"{}").expect("write");
-        let result = run(&path, false, false);
+        let result = run(&path, false, false, false);
         assert!(result.is_err());
     }
 

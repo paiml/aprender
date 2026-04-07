@@ -146,6 +146,7 @@ fn test_run_file_not_found() {
         false,
         100,
         false,
+        false,
     );
     assert!(result.is_err());
 }
@@ -157,7 +158,7 @@ fn test_run_with_small_file() {
     file.write_all(b"short").expect("write");
 
     // Should fail because file is too small for header
-    let result = run(file.path(), false, false, false, 100, false);
+    let result = run(file.path(), false, false, false, 100, false, false);
     assert!(result.is_err());
 }
 
@@ -443,7 +444,7 @@ fn run_hex_mode_succeeds_on_regular_file() {
     let mut file = NamedTempFile::new().expect("create file");
     file.write_all(b"Hello, hex world! 0123456789ABCDEF")
         .expect("write");
-    let result = run(file.path(), false, true, false, 256, false);
+    let result = run(file.path(), false, true, false, 256, false, false);
     assert!(result.is_ok());
 }
 

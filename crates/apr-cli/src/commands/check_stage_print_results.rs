@@ -107,7 +107,7 @@
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(Path::new("/nonexistent/model.gguf"), false, false);
+        let result = run(Path::new("/nonexistent/model.gguf"), false, false, false);
         assert!(result.is_err());
     }
 
@@ -116,7 +116,7 @@
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not a valid gguf file").expect("write");
 
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         // Should fail (invalid GGUF or feature disabled)
         assert!(result.is_err());
     }
@@ -126,7 +126,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         // Should fail (invalid APR or feature disabled)
         assert!(result.is_err());
     }
@@ -136,7 +136,7 @@
         let mut file = NamedTempFile::with_suffix(".bin").expect("create temp file");
         file.write_all(b"binary data").expect("write");
 
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         // Should fail (unsupported format or feature disabled)
         assert!(result.is_err());
     }
@@ -146,7 +146,7 @@
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not valid").expect("write");
 
-        let result = run(file.path(), true, false); // no_gpu = true
+        let result = run(file.path(), true, false, false); // no_gpu = true
                                                     // Should fail (invalid file)
         assert!(result.is_err());
     }
@@ -154,7 +154,7 @@
     #[test]
     fn test_run_is_directory() {
         let dir = tempdir().expect("create temp dir");
-        let result = run(dir.path(), false, false);
+        let result = run(dir.path(), false, false, false);
         // Should fail (is a directory)
         assert!(result.is_err());
     }
@@ -164,7 +164,7 @@
         let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file.write_all(b"not valid safetensors").expect("write");
 
-        let result = run(file.path(), false, false);
+        let result = run(file.path(), false, false, false);
         // Should fail (unsupported format or feature disabled)
         assert!(result.is_err());
     }

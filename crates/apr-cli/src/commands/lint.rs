@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn test_display_report_empty() {
         let report = LintReport::new();
-        display_report(&report);
+        display_report(&report, false);
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
         report.add_issue(LintIssue::metadata_warn("Missing license"));
         report.add_issue(LintIssue::naming_info("Use full names"));
         report.add_issue(LintIssue::efficiency_info("Consider alignment"));
-        display_report(&report);
+        display_report(&report, false);
     }
 
     // ========================================================================
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(std::path::Path::new("/nonexistent/model.apr"), false);
+        let result = run(std::path::Path::new("/nonexistent/model.apr"), false, false);
         assert!(result.is_err());
         match result {
             Err(CliError::FileNotFound(path)) => {
@@ -262,7 +262,7 @@ mod tests {
         file.write_all(b"not a valid APR file")
             .expect("write to temp file");
 
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         // Should return error since it's not a valid APR file
         assert!(result.is_err());
     }
