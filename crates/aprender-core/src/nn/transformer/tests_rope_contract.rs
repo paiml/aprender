@@ -241,11 +241,19 @@ mod rp_proptest_falsify {
                 .map(|(&a, &b)| a * b).sum();
 
             let diff = (dot1 - dot2).abs();
-            let scale = dot1.abs().max(dot2.abs()).max(1e-6);
+            let scale = dot1.abs().max(dot2.abs());
+            // Use absolute tolerance when values are near zero (f32 precision limit),
+            // relative tolerance otherwise. Near-zero dot products amplify relative
+            // error due to catastrophic cancellation in the sum.
+            let ok = if scale < 1e-4 {
+                diff < 1e-6  // absolute: sub-microsecond precision
+            } else {
+                diff / scale < 1e-3  // relative: 0.1%
+            };
             prop_assert!(
-                diff / scale < 1e-3,
-                "FALSIFIED RP-002-prop: dot({},{})={}, dot({},{})={}, diff={}",
-                m1, n1, dot1, m2, n2, dot2, diff
+                ok,
+                "FALSIFIED RP-002-prop: dot({},{})={}, dot({},{})={}, diff={}, scale={}",
+                m1, n1, dot1, m2, n2, dot2, diff, scale
             );
         }
     }
