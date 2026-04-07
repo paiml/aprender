@@ -1,0 +1,99 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'APR-MONO consolidation spec (aprender-monorepo-consolidation.md)'
+  description: >
+    Documentation contract for the aprender monorepo — README.md accuracy,
+    book completeness, and cookbook integration.
+
+equations:
+  readme_install_command:
+    formula: |
+      README.md MUST contain: `cargo install aprender`
+      README.md MUST NOT contain: `cargo install apr-cli` as primary install
+    domain: README.md content
+    codomain: bool (pass/fail)
+    invariants:
+    - "`cargo install aprender` appears in Quick Start section"
+    - "apr binary name is documented"
+    preconditions:
+    - "README.md exists at workspace root"
+    postconditions:
+    - "New user can install in one command"
+
+  readme_crate_count_accuracy:
+    formula: |
+      crate_count_in_readme == cargo metadata --workspace member count
+    domain: README.md text, cargo metadata JSON
+    codomain: bool (counts match)
+    invariants:
+    - "Crate count is not hardcoded — derived from workspace"
+    preconditions:
+    - "cargo metadata resolves without errors"
+
+  readme_no_stale_references:
+    formula: |
+      forall name in {trueno, realizar, entrenar, batuta}:
+        README.md does NOT reference name as active/installable crate
+    domain: README.md content
+    codomain: bool
+    invariants:
+    - "Old repo names only appear in migration/history context"
+
+  book_builds:
+    formula: |
+      mdbook build book/ exits 0
+    domain: book/ directory
+    codomain: ExitCode
+    invariants:
+    - "All markdown files parse correctly"
+    - "All internal links resolve"
+
+falsification_tests:
+- id: FALSIFY-README-001
+  rule: cargo install aprender in README
+  prediction: README.md contains "cargo install aprender"
+  test: grep -q "cargo install aprender" README.md
+  if_fails: New users can't find install command
+
+- id: FALSIFY-README-002
+  rule: apr run example in README
+  prediction: README.md contains "apr run" usage example
+  test: grep -q "apr run" README.md
+  if_fails: New users don't know how to use the CLI
+
+- id: FALSIFY-README-003
+  rule: no apr-cli install reference
+  prediction: README.md does not contain "cargo install apr-cli"
+  test: "! grep -q 'cargo install apr-cli' README.md"
+  if_fails: Users install wrong package
+
+- id: FALSIFY-README-004
+  rule: no stale repo references
+  prediction: README.md does not reference old repos as active
+  test: "! grep -qP 'cargo install (trueno|realizar|entrenar|batuta)\\b' README.md"
+  if_fails: Users try to install archived repos
+
+- id: FALSIFY-README-005
+  rule: book builds
+  prediction: mdbook build succeeds
+  test: mdbook build book/
+  if_fails: Documentation is broken
+
+proof_obligations:
+- type: invariant
+  property: "README install command matches actual binary"
+
+kani_harnesses:
+- id: KH-DOCS-001
+  obligation: readme_install_command
+  property: install_produces_apr_binary
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: tested
