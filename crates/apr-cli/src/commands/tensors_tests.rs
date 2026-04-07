@@ -195,7 +195,7 @@ fn test_tensor_info_json_from_with_anomalies() {
     };
 
     let json_info = TensorInfoJson::from(&info);
-    assert!(json_info.mean.unwrap().is_nan());
+    assert!(json_info.mean.expect("mean").is_nan());
     assert_eq!(json_info.nan_count, Some(5));
     assert_eq!(json_info.inf_count, Some(2));
 }

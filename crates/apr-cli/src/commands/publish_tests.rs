@@ -153,7 +153,7 @@ fn test_find_model_files_empty() {
     let temp_dir = std::env::temp_dir().join("apr_publish_test_empty");
     let _ = fs::create_dir_all(&temp_dir);
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert!(files.is_empty());
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -167,7 +167,7 @@ fn test_find_model_files_apr() {
     let apr_file = temp_dir.join("model.apr");
     let _ = fs::write(&apr_file, "APR2");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with("model.apr"));
 
@@ -182,7 +182,7 @@ fn test_find_model_files_safetensors() {
     let st_file = temp_dir.join("model.safetensors");
     let _ = fs::write(&st_file, "safetensors");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with("model.safetensors"));
 
@@ -197,7 +197,7 @@ fn test_find_model_files_gguf() {
     let gguf_file = temp_dir.join("model.gguf");
     let _ = fs::write(&gguf_file, "GGUF");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert_eq!(files.len(), 1);
     assert!(files[0].ends_with("model.gguf"));
 
@@ -214,7 +214,7 @@ fn test_find_model_files_multiple_formats() {
     let _ = fs::write(temp_dir.join("model.gguf"), "GGUF");
     let _ = fs::write(temp_dir.join("readme.txt"), "ignored");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert_eq!(files.len(), 3);
     // Files are sorted alphabetically
     assert!(files[0].ends_with("model.apr"));
@@ -234,7 +234,7 @@ fn test_find_model_files_ignores_non_model_files() {
     let _ = fs::write(temp_dir.join("tokenizer.json"), "{}");
     let _ = fs::write(temp_dir.join("README.md"), "# Readme");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert!(files.is_empty());
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -249,7 +249,7 @@ fn test_find_model_files_case_insensitive() {
     let _ = fs::write(temp_dir.join("model.APR"), "APR2");
     let _ = fs::write(temp_dir.join("model.GGUF"), "GGUF");
 
-    let files = find_model_files(&temp_dir).unwrap();
+    let files = find_model_files(&temp_dir).expect("value");
     assert_eq!(files.len(), 2);
 
     let _ = fs::remove_dir_all(&temp_dir);
@@ -306,7 +306,7 @@ fn test_generate_model_card_description_generated() {
     );
 
     assert!(card.description.is_some());
-    assert!(card.description.unwrap().contains("Whisper Tiny"));
+    assert!(card.description.expect("description").contains("Whisper Tiny"));
 }
 
 #[test]
@@ -514,8 +514,8 @@ fn test_model_card_extended_dynamic_formats() {
     assert!(output.contains("| `weights.safetensors` | HuggingFace SafeTensors format |"));
     // Available Formats table should NOT contain hardcoded model.apr when not in file list
     // (Note: model.apr still appears in the Usage code example section, so check table specifically)
-    let formats_section = output.split("## Available Formats").nth(1).unwrap();
-    let formats_table = formats_section.split("## Usage").next().unwrap();
+    let formats_section = output.split("## Available Formats").nth(1).expect("nth(1");
+    let formats_table = formats_section.split("## Usage").next().expect("next");
     assert!(!formats_table.contains("model.apr"));
 }
 

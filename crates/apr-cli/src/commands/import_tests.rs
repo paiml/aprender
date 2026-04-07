@@ -7,50 +7,50 @@ use aprender::format::converter::QuantizationType;
 
 #[test]
 fn test_derive_output_path_hf_repo() {
-    let result = derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct").unwrap();
+    let result = derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct").expect("5B-Instruct'");
     assert_eq!(result, PathBuf::from("Qwen2.5-Coder-1.5B-Instruct.apr"));
 }
 
 #[test]
 fn test_derive_output_path_hf_with_file() {
     let result =
-        derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf").unwrap();
+        derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf").expect("gguf'");
     assert_eq!(result, PathBuf::from("model-q4k.apr"));
 }
 
 #[test]
 fn test_derive_output_path_local_gguf() {
-    let result = derive_output_path("/path/to/model.gguf").unwrap();
+    let result = derive_output_path("/path/to/model.gguf").expect("gguf'");
     assert_eq!(result, PathBuf::from("model.apr"));
 }
 
 #[test]
 fn test_derive_output_path_local_safetensors() {
-    let result = derive_output_path("model.safetensors").unwrap();
+    let result = derive_output_path("model.safetensors").expect("safetensors'");
     assert_eq!(result, PathBuf::from("model.apr"));
 }
 
 #[test]
 fn test_derive_output_path_url() {
-    let result = derive_output_path("https://example.com/models/qwen-1.5b.gguf").unwrap();
+    let result = derive_output_path("https://example.com/models/qwen-1.5b.gguf").expect("gguf'");
     assert_eq!(result, PathBuf::from("qwen-1.5b.apr"));
 }
 
 #[test]
 fn test_derive_output_path_url_no_extension() {
-    let result = derive_output_path("https://example.com/models/mymodel").unwrap();
+    let result = derive_output_path("https://example.com/models/mymodel").expect("com/models/mymodel'");
     assert_eq!(result, PathBuf::from("mymodel.apr"));
 }
 
 #[test]
 fn test_derive_output_path_hf_nested_file() {
-    let result = derive_output_path("hf://openai/whisper-tiny/pytorch_model.bin").unwrap();
+    let result = derive_output_path("hf://openai/whisper-tiny/pytorch_model.bin").expect("bin'");
     assert_eq!(result, PathBuf::from("pytorch_model.apr"));
 }
 
 #[test]
 fn test_derive_output_path_relative_path() {
-    let result = derive_output_path("./models/test.safetensors").unwrap();
+    let result = derive_output_path("./models/test.safetensors").expect("safetensors'");
     assert_eq!(result, PathBuf::from("test.apr"));
 }
 
@@ -60,37 +60,37 @@ fn test_derive_output_path_relative_path() {
 
 #[test]
 fn test_parse_quantize_none() {
-    let result = parse_quantize(None).unwrap();
+    let result = parse_quantize(None).expect("value");
     assert!(result.is_none());
 }
 
 #[test]
 fn test_parse_quantize_int8() {
-    let result = parse_quantize(Some("int8")).unwrap();
+    let result = parse_quantize(Some("int8")).expect("value");
     assert_eq!(result, Some(QuantizationType::Int8));
 }
 
 #[test]
 fn test_parse_quantize_int4() {
-    let result = parse_quantize(Some("int4")).unwrap();
+    let result = parse_quantize(Some("int4")).expect("value");
     assert_eq!(result, Some(QuantizationType::Int4));
 }
 
 #[test]
 fn test_parse_quantize_fp16() {
-    let result = parse_quantize(Some("fp16")).unwrap();
+    let result = parse_quantize(Some("fp16")).expect("value");
     assert_eq!(result, Some(QuantizationType::Fp16));
 }
 
 #[test]
 fn test_parse_quantize_q4k() {
-    let result = parse_quantize(Some("q4k")).unwrap();
+    let result = parse_quantize(Some("q4k")).expect("value");
     assert_eq!(result, Some(QuantizationType::Q4K));
 }
 
 #[test]
 fn test_parse_quantize_q4_k_underscore() {
-    let result = parse_quantize(Some("q4_k")).unwrap();
+    let result = parse_quantize(Some("q4_k")).expect("value");
     assert_eq!(result, Some(QuantizationType::Q4K));
 }
 
@@ -398,7 +398,7 @@ fn t_f_gt_001_enforce_provenance_allows_safetensors() {
 
 #[test]
 fn test_source_parse_huggingface_basic() {
-    let source = Source::parse("hf://openai/whisper-tiny").unwrap();
+    let source = Source::parse("hf://openai/whisper-tiny").expect("value");
     match source {
         Source::HuggingFace { org, repo, file } => {
             assert_eq!(org, "openai");
@@ -411,7 +411,7 @@ fn test_source_parse_huggingface_basic() {
 
 #[test]
 fn test_source_parse_huggingface_with_file() {
-    let source = Source::parse("hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF/model.gguf").unwrap();
+    let source = Source::parse("hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF/model.gguf").expect("gguf'");
     match source {
         Source::HuggingFace { org, repo, file } => {
             assert_eq!(org, "Qwen");
@@ -424,7 +424,7 @@ fn test_source_parse_huggingface_with_file() {
 
 #[test]
 fn test_source_parse_local() {
-    let source = Source::parse("/path/to/model.safetensors").unwrap();
+    let source = Source::parse("/path/to/model.safetensors").expect("safetensors'");
     match source {
         Source::Local(path) => {
             assert_eq!(path, PathBuf::from("/path/to/model.safetensors"));
@@ -435,7 +435,7 @@ fn test_source_parse_local() {
 
 #[test]
 fn test_source_parse_url() {
-    let source = Source::parse("https://example.com/model.gguf").unwrap();
+    let source = Source::parse("https://example.com/model.gguf").expect("gguf'");
     match source {
         Source::Url(url) => {
             assert_eq!(url, "https://example.com/model.gguf");

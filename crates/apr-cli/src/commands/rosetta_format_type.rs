@@ -8,7 +8,7 @@
         let path = Path::new("model.gguf");
         let result = FormatType::from_extension(path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), FormatType::Gguf);
+        assert_eq!(result.expect("is_ok());         assert_eq!(r"), FormatType::Gguf);
     }
 
     #[test]
@@ -16,7 +16,7 @@
         let path = Path::new("model.safetensors");
         let result = FormatType::from_extension(path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), FormatType::SafeTensors);
+        assert_eq!(result.expect("is_ok());         assert_eq!(r"), FormatType::SafeTensors);
     }
 
     #[test]
@@ -24,7 +24,7 @@
         let path = Path::new("model.apr");
         let result = FormatType::from_extension(path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), FormatType::Apr);
+        assert_eq!(result.expect("is_ok());         assert_eq!(r"), FormatType::Apr);
     }
 
     #[test]

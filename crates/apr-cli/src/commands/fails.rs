@@ -3,13 +3,13 @@
 
     #[test]
     fn test_parse_local_path() {
-        let source = ModelSource::parse("model.apr").unwrap();
+        let source = ModelSource::parse("model.apr").expect("apr'");
         assert_eq!(source, ModelSource::Local(PathBuf::from("model.apr")));
     }
 
     #[test]
     fn test_parse_absolute_path() {
-        let source = ModelSource::parse("/path/to/model.apr").unwrap();
+        let source = ModelSource::parse("/path/to/model.apr").expect("apr'");
         assert_eq!(
             source,
             ModelSource::Local(PathBuf::from("/path/to/model.apr"))
@@ -18,7 +18,7 @@
 
     #[test]
     fn test_parse_huggingface_source() {
-        let source = ModelSource::parse("hf://openai/whisper-tiny").unwrap();
+        let source = ModelSource::parse("hf://openai/whisper-tiny").expect("ModelSource::parse('hf://opena");
         assert_eq!(
             source,
             ModelSource::HuggingFace {
@@ -33,7 +33,7 @@
     fn test_parse_huggingface_with_file() {
         let source =
             ModelSource::parse("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/model-q4_k_m.gguf")
-                .unwrap();
+                .expect("gguf'");
         assert_eq!(
             source,
             ModelSource::HuggingFace {
@@ -52,7 +52,7 @@
 
     #[test]
     fn test_parse_https_url() {
-        let source = ModelSource::parse("https://example.com/model.apr").unwrap();
+        let source = ModelSource::parse("https://example.com/model.apr").expect("apr'");
         assert_eq!(
             source,
             ModelSource::Url("https://example.com/model.apr".to_string())
@@ -61,7 +61,7 @@
 
     #[test]
     fn test_parse_http_url() {
-        let source = ModelSource::parse("http://example.com/model.apr").unwrap();
+        let source = ModelSource::parse("http://example.com/model.apr").expect("apr'");
         assert_eq!(
             source,
             ModelSource::Url("http://example.com/model.apr".to_string())
@@ -400,7 +400,7 @@
     fn test_parse_token_ids_simple() {
         let result = parse_token_ids("1 2 3");
         assert!(result.is_ok());
-        let tokens = result.unwrap();
+        let tokens = result.expect("is_ok());         let tokens =");
         assert_eq!(tokens, vec![1, 2, 3]);
     }
 
@@ -408,7 +408,7 @@
     fn test_parse_token_ids_comma_separated() {
         let result = parse_token_ids("1,2,3");
         assert!(result.is_ok());
-        let tokens = result.unwrap();
+        let tokens = result.expect("is_ok());         let tokens =");
         assert_eq!(tokens, vec![1, 2, 3]);
     }
 
@@ -428,7 +428,7 @@
     fn test_parse_token_ids_mixed_spaces() {
         let result = parse_token_ids("1  2   3");
         assert!(result.is_ok());
-        let tokens = result.unwrap();
+        let tokens = result.expect("is_ok());         let tokens =");
         assert_eq!(tokens, vec![1, 2, 3]);
     }
 

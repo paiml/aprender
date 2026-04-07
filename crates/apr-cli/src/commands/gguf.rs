@@ -252,7 +252,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     let mut draft_cuda_model = load_draft_model(&config)?;
 
-    let (hidden_dim, num_heads, num_kv_heads, num_layers, head_dim, intermediate_dim) =
+    let (hidden_dim, num_heads, num_kv_heads, num_layers, _head_dim, intermediate_dim) =
         extract_model_dims(&mapped);
 
     eprintln!("cbtop: Model config:");

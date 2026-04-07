@@ -11,6 +11,7 @@
 //! apr distill teacher.apr --plan --json
 //! ```
 
+use colored::Colorize;
 use crate::error::{CliError, Result};
 use crate::output;
 use serde::Deserialize;
@@ -41,6 +42,7 @@ struct DistillTeacherConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillStudentConfig {
     model_id: String,
     #[serde(default)]
@@ -88,6 +90,7 @@ fn default_alpha() -> f32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillProgressiveConfig {
     layer_mapping: Vec<[usize; 2]>,
     #[serde(default = "default_hidden_weight")]
@@ -99,6 +102,7 @@ fn default_hidden_weight() -> f32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillAttentionConfig {
     #[serde(default = "default_attention_weight")]
     weight: f32,
@@ -109,6 +113,7 @@ fn default_attention_weight() -> f32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillTrainingConfig {
     #[serde(default = "default_epochs")]
     epochs: usize,
@@ -159,6 +164,7 @@ fn default_seed() -> u64 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillDatasetConfig {
     path: String,
     #[serde(default = "default_max_seq_length")]
@@ -172,6 +178,7 @@ fn default_max_seq_length() -> usize {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct DistillOutputConfig {
     #[serde(default = "default_output_dir")]
     dir: String,
@@ -212,6 +219,7 @@ fn default_eval_steps() -> usize {
 // Separate from DistillYamlConfig (logit KD) because vocab mismatch prevents logit alignment.
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct TextDistillConfig {
     teacher: TextTeacherConfig,
     #[serde(default)]
@@ -220,6 +228,7 @@ struct TextDistillConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct TextTeacherConfig {
     model: String,
     #[serde(default)]
@@ -237,6 +246,7 @@ struct TextTeacherConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 struct TextStudentConfig {
     checkpoint: String,
     tokenizer: String,
@@ -790,7 +800,6 @@ fn print_config_plan_text(
     dataset_exists: bool,
     dataset_size: u64,
 ) {
-    use colored::Colorize;
     output::header("apr distill plan — Config-Driven Knowledge Distillation");
     println!();
     output::kv("  Config", config_path.display().to_string());
@@ -1006,7 +1015,6 @@ fn run_config_precompute(
                 serde_json::to_string_pretty(&manifest).unwrap_or_default()
             );
         } else {
-            use colored::Colorize;
             output::pipeline_stage("Precompute", output::StageStatus::Done);
             println!();
             output::kv("  Manifest", manifest_path.display().to_string());
@@ -1019,7 +1027,6 @@ fn run_config_precompute(
     } else {
         // Teacher is a HuggingFace model ID — note this for the user
         if !json_output {
-            use colored::Colorize;
             output::pipeline_stage("Loading teacher", output::StageStatus::Done);
             println!();
             println!(
@@ -1134,7 +1141,6 @@ fn run_config_train(
     }
 
     if !json_output {
-        use colored::Colorize;
         output::header("apr distill apply — Stage 2: Train Student with KD Loss");
         println!();
         output::kv("  Config", config_path.display().to_string());
@@ -1202,7 +1208,6 @@ fn run_config_train(
                 serde_json::to_string_pretty(&train_meta).unwrap_or_default()
             );
         } else {
-            use colored::Colorize;
             output::pipeline_stage("Loading student", output::StageStatus::Done);
             output::pipeline_stage("KD training", output::StageStatus::Done);
             println!();
@@ -1212,7 +1217,6 @@ fn run_config_train(
         }
     } else {
         if !json_output {
-            use colored::Colorize;
             println!(
                 "  {} Student '{}' is not a local path.",
                 "NOTE".yellow().bold(),
@@ -1857,7 +1861,6 @@ fn run_text_generate(
             serde_json::to_string_pretty(&result).unwrap_or_default()
         );
     } else {
-        use colored::Colorize;
         output::pipeline_stage("Generating completions", output::StageStatus::Done);
         println!();
         output::kv("  Completions", generated_count.to_string());

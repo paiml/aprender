@@ -735,7 +735,8 @@ fn run_balance_sqrt_inverse(
     num_classes: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    use alimentar::{imbalance::ImbalanceDetector, Dataset};
+    use alimentar::imbalance::ImbalanceDetector;
+    
 
     let report = ImbalanceDetector::new(label_column)
         .analyze(dataset)

@@ -89,8 +89,8 @@
         /// Helper to render app to a test backend and capture frame
         fn render_frame(app: &mut App, width: u16, height: u16) -> TuiFrame {
             let backend = TestBackend::new(width, height);
-            let mut terminal = Terminal::new(backend).unwrap();
-            terminal.draw(|f| ui(f, app)).unwrap();
+            let mut terminal = Terminal::new(backend).expect("Terminal::new(backend)");
+            terminal.draw(|f| ui(f, app)).expect("draw(|f| ui(f, app");
             // Convert ratatui buffer to probar TuiFrame
             TuiFrame::from_buffer(terminal.backend().buffer(), 0)
         }
@@ -324,8 +324,8 @@
             assert!(!sequence.is_empty());
 
             // First and last frames should differ
-            let first = sequence.first().unwrap();
-            let last = sequence.last().unwrap();
+            let first = sequence.first().expect("first(");
+            let last = sequence.last().expect("last(");
             assert!(!first.matches(last), "First and last frames should differ");
         }
 
@@ -366,7 +366,7 @@
         fn test_snapshot_manager_workflow() {
             use tempfile::TempDir;
 
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new().expect("TempDir::new()");
             let manager = SnapshotManager::new(temp_dir.path());
 
             let mut app = App::new(None);
@@ -382,7 +382,7 @@
             assert!(result2.is_ok(), "Same frame should match snapshot");
 
             // List snapshots
-            let list = manager.list().unwrap();
+            let list = manager.list().expect("list(");
             assert!(list.contains(&"tui_overview".to_string()));
         }
 
@@ -390,7 +390,7 @@
         fn test_snapshot_manager_detects_changes() {
             use tempfile::TempDir;
 
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new().expect("TempDir::new()");
             let manager = SnapshotManager::new(temp_dir.path());
 
             let mut app = App::new(None);
@@ -398,7 +398,7 @@
             // Create snapshot with Overview tab
             app.current_tab = Tab::Overview;
             let frame1 = render_frame(&mut app, 80, 24);
-            manager.assert_snapshot("test_snap", &frame1).unwrap();
+            manager.assert_snapshot("test_snap", &frame1).expect("assert_snapshot('test_snap', &");
 
             // Try to assert with Help tab (should fail)
             app.current_tab = Tab::Help;
@@ -412,7 +412,7 @@
         fn test_snapshot_manager_update_mode() {
             use tempfile::TempDir;
 
-            let temp_dir = TempDir::new().unwrap();
+            let temp_dir = TempDir::new().expect("TempDir::new()");
             let manager = SnapshotManager::new(temp_dir.path()).with_update_mode(true);
 
             let mut app = App::new(None);
@@ -420,7 +420,7 @@
             // Create initial snapshot
             app.current_tab = Tab::Overview;
             let frame1 = render_frame(&mut app, 80, 24);
-            manager.assert_snapshot("updatable", &frame1).unwrap();
+            manager.assert_snapshot("updatable", &frame1).expect("assert_snapshot('updatable', &");
 
             // Update with different content (update mode allows this)
             app.current_tab = Tab::Help;
@@ -430,7 +430,7 @@
             assert!(result.is_ok(), "Update mode should allow changes");
 
             // Verify snapshot was updated
-            let loaded = manager.load("updatable").unwrap();
+            let loaded = manager.load("updatable").expect("load('updatable'");
             assert!(
                 loaded.content.iter().any(|l| l.contains("Keyboard")),
                 "Snapshot should now contain Help content"

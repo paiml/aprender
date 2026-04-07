@@ -46,7 +46,7 @@ fn test_load_tensor_data_gguf() {
     let result = load_tensor_data(file.path());
     assert!(result.is_ok(), "load_tensor_data should work for GGUF");
 
-    let tensor_map = result.unwrap();
+    let tensor_map = result.expect("value");
     assert_eq!(tensor_map.len(), 1);
     assert!(tensor_map.contains_key("model.weight"));
 }
@@ -82,7 +82,7 @@ fn test_load_tensor_data_safetensors() {
         "load_tensor_data should work for SafeTensors"
     );
 
-    let tensor_map = result.unwrap();
+    let tensor_map = result.expect("value");
     assert_eq!(tensor_map.len(), 1);
     assert!(tensor_map.contains_key("test.weight"));
 }
@@ -138,7 +138,7 @@ fn test_load_tensor_data_gguf_multiple_tensors() {
     let result = load_tensor_data(file.path());
     assert!(result.is_ok(), "load_tensor_data should succeed");
 
-    let tensor_map = result.unwrap();
+    let tensor_map = result.expect("value");
     // Check that we got at least the first tensor
     assert!(!tensor_map.is_empty(), "tensor_map should not be empty");
     assert!(

@@ -17,7 +17,7 @@
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
-        assert!((output.inference_ms.unwrap() - 10.0).abs() < f64::EPSILON);
+        assert!((output.inference_ms.expect("inference_ms") - 10.0).abs() < f64::EPSILON);
     }
 
     /// InferenceOutput with no metrics.

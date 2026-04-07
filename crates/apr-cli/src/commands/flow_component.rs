@@ -6,24 +6,24 @@
     #[test]
     fn test_flow_component_from_str_full() {
         assert_eq!(
-            "full".parse::<FlowComponent>().unwrap(),
+            "full".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Full
         );
-        assert_eq!("all".parse::<FlowComponent>().unwrap(), FlowComponent::Full);
+        assert_eq!("all".parse::<FlowComponent>().expect("parse::<FlowComponent>("), FlowComponent::Full);
     }
 
     #[test]
     fn test_flow_component_from_str_encoder() {
         assert_eq!(
-            "encoder".parse::<FlowComponent>().unwrap(),
+            "encoder".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Encoder
         );
         assert_eq!(
-            "enc".parse::<FlowComponent>().unwrap(),
+            "enc".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Encoder
         );
         assert_eq!(
-            "ENCODER".parse::<FlowComponent>().unwrap(),
+            "ENCODER".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Encoder
         );
     }
@@ -31,11 +31,11 @@
     #[test]
     fn test_flow_component_from_str_decoder() {
         assert_eq!(
-            "decoder".parse::<FlowComponent>().unwrap(),
+            "decoder".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Decoder
         );
         assert_eq!(
-            "dec".parse::<FlowComponent>().unwrap(),
+            "dec".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Decoder
         );
     }
@@ -43,15 +43,15 @@
     #[test]
     fn test_flow_component_from_str_self_attention() {
         assert_eq!(
-            "self_attn".parse::<FlowComponent>().unwrap(),
+            "self_attn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::SelfAttention
         );
         assert_eq!(
-            "self-attn".parse::<FlowComponent>().unwrap(),
+            "self-attn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::SelfAttention
         );
         assert_eq!(
-            "selfattn".parse::<FlowComponent>().unwrap(),
+            "selfattn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::SelfAttention
         );
     }
@@ -59,29 +59,29 @@
     #[test]
     fn test_flow_component_from_str_cross_attention() {
         assert_eq!(
-            "cross_attn".parse::<FlowComponent>().unwrap(),
+            "cross_attn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::CrossAttention
         );
         assert_eq!(
-            "cross-attn".parse::<FlowComponent>().unwrap(),
+            "cross-attn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::CrossAttention
         );
         assert_eq!(
-            "crossattn".parse::<FlowComponent>().unwrap(),
+            "crossattn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::CrossAttention
         );
         assert_eq!(
-            "encoder_attn".parse::<FlowComponent>().unwrap(),
+            "encoder_attn".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::CrossAttention
         );
     }
 
     #[test]
     fn test_flow_component_from_str_ffn() {
-        assert_eq!("ffn".parse::<FlowComponent>().unwrap(), FlowComponent::Ffn);
-        assert_eq!("mlp".parse::<FlowComponent>().unwrap(), FlowComponent::Ffn);
+        assert_eq!("ffn".parse::<FlowComponent>().expect("parse::<FlowComponent>("), FlowComponent::Ffn);
+        assert_eq!("mlp".parse::<FlowComponent>().expect("parse::<FlowComponent>("), FlowComponent::Ffn);
         assert_eq!(
-            "feedforward".parse::<FlowComponent>().unwrap(),
+            "feedforward".parse::<FlowComponent>().expect("parse::<FlowComponent>("),
             FlowComponent::Ffn
         );
     }

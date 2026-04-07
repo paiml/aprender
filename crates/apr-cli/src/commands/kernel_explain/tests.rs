@@ -590,7 +590,7 @@ fn load_families_count() {
 #[test]
 fn load_families_expected_classes() {
     let families = load_families();
-    let find = |name: &str| families.iter().find(|f| f.family == name).unwrap();
+    let find = |name: &str| families.iter().find(|f| f.family == name).expect("family == name");
 
     assert_eq!(find("llama").kernel_class, KernelClass::A);
     assert_eq!(find("qwen2").kernel_class, KernelClass::A);
@@ -626,28 +626,28 @@ fn load_families_all_have_display_name() {
 // Direct matches
 #[test]
 fn resolve_direct_llama() {
-    let f = resolve_family("llama").unwrap();
+    let f = resolve_family("llama").expect("resolve_family('llama')");
     assert_eq!(f.family, "llama");
     assert_eq!(f.kernel_class, KernelClass::A);
 }
 
 #[test]
 fn resolve_direct_bert() {
-    let f = resolve_family("bert").unwrap();
+    let f = resolve_family("bert").expect("resolve_family('bert')");
     assert_eq!(f.family, "bert");
     assert_eq!(f.kernel_class, KernelClass::B);
 }
 
 #[test]
 fn resolve_direct_mamba() {
-    let f = resolve_family("mamba").unwrap();
+    let f = resolve_family("mamba").expect("resolve_family('mamba')");
     assert_eq!(f.family, "mamba");
     assert_eq!(f.kernel_class, KernelClass::Ssm);
 }
 
 #[test]
 fn resolve_direct_rwkv7() {
-    let f = resolve_family("rwkv7").unwrap();
+    let f = resolve_family("rwkv7").expect("resolve_family('rwkv7')");
     assert_eq!(f.family, "rwkv7");
     assert_eq!(f.kernel_class, KernelClass::Linear);
 }
@@ -655,19 +655,19 @@ fn resolve_direct_rwkv7() {
 // Normalized matches (hyphens, dots, case)
 #[test]
 fn resolve_normalized_hyphens() {
-    let f = resolve_family("falcon-h1").unwrap();
+    let f = resolve_family("falcon-h1").expect("resolve_family('falcon-h1')");
     assert_eq!(f.family, "falcon_h1");
 }
 
 #[test]
 fn resolve_normalized_dots() {
-    let f = resolve_family("qwen3.5").unwrap();
+    let f = resolve_family("qwen3.5").expect("5'");
     assert_eq!(f.family, "qwen3_5");
 }
 
 #[test]
 fn resolve_normalized_uppercase() {
-    let f = resolve_family("LLAMA").unwrap();
+    let f = resolve_family("LLAMA").expect("resolve_family('LLAMA')");
     assert_eq!(f.family, "llama");
 }
 
@@ -676,120 +676,120 @@ fn resolve_normalized_uppercase() {
 fn resolve_cross_compact_qwen_3_5() {
     // "qwen-3-5" → normalized "qwen_3_5" → compact "qwen35"
     // family "qwen3_5" → compact "qwen35" → match
-    let f = resolve_family("qwen-3-5").unwrap();
+    let f = resolve_family("qwen-3-5").expect("resolve_family('qwen-3-5')");
     assert_eq!(f.family, "qwen3_5");
 }
 
 // Alias matches
 #[test]
 fn resolve_alias_mixtral() {
-    let f = resolve_family("mixtral").unwrap();
+    let f = resolve_family("mixtral").expect("resolve_family('mixtral')");
     assert_eq!(f.family, "mistral");
     assert!(f.display_name.contains("via"));
 }
 
 #[test]
 fn resolve_alias_phi3() {
-    let f = resolve_family("phi3").unwrap();
+    let f = resolve_family("phi3").expect("resolve_family('phi3')");
     assert_eq!(f.family, "llama");
     assert!(f.display_name.contains("phi3"));
 }
 
 #[test]
 fn resolve_alias_phi4() {
-    let f = resolve_family("phi4").unwrap();
+    let f = resolve_family("phi4").expect("resolve_family('phi4')");
     assert_eq!(f.family, "llama");
 }
 
 #[test]
 fn resolve_alias_bloom() {
-    let f = resolve_family("bloom").unwrap();
+    let f = resolve_family("bloom").expect("resolve_family('bloom')");
     assert_eq!(f.family, "bert");
 }
 
 #[test]
 fn resolve_alias_falcon() {
-    let f = resolve_family("falcon").unwrap();
+    let f = resolve_family("falcon").expect("resolve_family('falcon')");
     assert_eq!(f.family, "bert");
 }
 
 #[test]
 fn resolve_alias_smollm() {
-    let f = resolve_family("smollm").unwrap();
+    let f = resolve_family("smollm").expect("resolve_family('smollm')");
     assert_eq!(f.family, "llama");
 }
 
 #[test]
 fn resolve_alias_smollm2() {
-    let f = resolve_family("smollm2").unwrap();
+    let f = resolve_family("smollm2").expect("resolve_family('smollm2')");
     assert_eq!(f.family, "llama");
 }
 
 #[test]
 fn resolve_alias_codegemma() {
-    let f = resolve_family("codegemma").unwrap();
+    let f = resolve_family("codegemma").expect("resolve_family('codegemma')");
     assert_eq!(f.family, "gemma");
 }
 
 #[test]
 fn resolve_alias_gpt_neo() {
-    let f = resolve_family("gpt_neo").unwrap();
+    let f = resolve_family("gpt_neo").expect("resolve_family('gpt_neo')");
     assert_eq!(f.family, "bert");
 }
 
 #[test]
 fn resolve_alias_gptneo_compact() {
-    let f = resolve_family("gptneo").unwrap();
+    let f = resolve_family("gptneo").expect("resolve_family('gptneo')");
     assert_eq!(f.family, "bert");
 }
 
 #[test]
 fn resolve_alias_starcoder2() {
-    let f = resolve_family("starcoder2").unwrap();
+    let f = resolve_family("starcoder2").expect("resolve_family('starcoder2')");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_alias_vicuna() {
-    let f = resolve_family("vicuna").unwrap();
+    let f = resolve_family("vicuna").expect("resolve_family('vicuna')");
     assert_eq!(f.family, "llama");
 }
 
 #[test]
 fn resolve_alias_qwq() {
-    let f = resolve_family("qwq").unwrap();
+    let f = resolve_family("qwq").expect("resolve_family('qwq')");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_alias_qwen2_moe() {
-    let f = resolve_family("qwen2_moe").unwrap();
+    let f = resolve_family("qwen2_moe").expect("resolve_family('qwen2_moe')");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_alias_normalized_gpt_j_hyphen() {
-    let f = resolve_family("gpt-j").unwrap();
+    let f = resolve_family("gpt-j").expect("resolve_family('gpt-j')");
     assert_eq!(f.family, "bert");
 }
 
 // Architecture string match
 #[test]
 fn resolve_arch_qwen2forcausallm() {
-    let f = resolve_family("Qwen2ForCausalLM").unwrap();
+    let f = resolve_family("Qwen2ForCausalLM").expect("resolve_family('Qwen2ForCausal");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_arch_bertmodel() {
-    let f = resolve_family("BertModel").unwrap();
+    let f = resolve_family("BertModel").expect("resolve_family('BertModel')");
     assert_eq!(f.family, "bert");
 }
 
 // Architecture string → stripped → alias re-check
 #[test]
 fn resolve_stripped_graniteforcausallm() {
-    let f = resolve_family("GraniteForCausalLM").unwrap();
+    let f = resolve_family("GraniteForCausalLM").expect("resolve_family('GraniteForCaus");
     assert_eq!(f.family, "llama");
 }
 
@@ -797,21 +797,21 @@ fn resolve_stripped_graniteforcausallm() {
 #[test]
 fn resolve_partial_qwen_matches_qwen2() {
     // "qwen" is prefix of family "qwen2" → Pass 2
-    let f = resolve_family("qwen").unwrap();
+    let f = resolve_family("qwen").expect("resolve_family('qwen')");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_partial_phi3mini_via_alias() {
     // "phi3mini" starts_with alias "phi3" → Pass 1
-    let f = resolve_family("phi-3-mini").unwrap();
+    let f = resolve_family("phi-3-mini").expect("resolve_family('phi-3-mini')");
     assert_eq!(f.family, "llama");
     assert!(f.display_name.contains("phi3"));
 }
 
 #[test]
 fn resolve_partial_gpt_matches_gpt2() {
-    let f = resolve_family("gpt").unwrap();
+    let f = resolve_family("gpt").expect("resolve_family('gpt')");
     assert_eq!(f.family, "gpt2");
 }
 
@@ -835,7 +835,7 @@ fn resolve_emoji_stripped() {
 #[test]
 fn resolve_emoji_with_text() {
     // "🦙llama" → strip non-ASCII → "llama" → match
-    let f = resolve_family("\u{1f999}llama").unwrap();
+    let f = resolve_family("\u{1f999}llama").expect("resolve_family('\u{1f999}llama");
     assert_eq!(f.family, "llama");
 }
 
@@ -925,38 +925,38 @@ fn json_whitespace_around_colon() {
 
 #[test]
 fn enrich_hidden_act_silu() {
-    let r = enrich_rationale("hidden_act", "silu", "{}").unwrap();
+    let r = enrich_rationale("hidden_act", "silu", "{}").expect("'{}')");
     assert!(r.contains("SiLU"));
 }
 
 #[test]
 fn enrich_hidden_act_gelu() {
-    let r = enrich_rationale("hidden_act", "gelu", "{}").unwrap();
+    let r = enrich_rationale("hidden_act", "gelu", "{}").expect("'{}')");
     assert!(r.contains("GELU"));
 }
 
 #[test]
 fn enrich_hidden_act_gelu_new() {
-    let r = enrich_rationale("hidden_act", "gelu_new", "{}").unwrap();
+    let r = enrich_rationale("hidden_act", "gelu_new", "{}").expect("'{}')");
     assert!(r.contains("GELU"));
 }
 
 #[test]
 fn enrich_hidden_act_unknown() {
-    let r = enrich_rationale("hidden_act", "relu", "{}").unwrap();
+    let r = enrich_rationale("hidden_act", "relu", "{}").expect("'{}')");
     assert!(r.contains("relu"));
 }
 
 #[test]
 fn enrich_rms_norm_eps() {
-    let r = enrich_rationale("rms_norm_eps", "1e-06", "{}").unwrap();
+    let r = enrich_rationale("rms_norm_eps", "1e-06", "{}").expect("'{}')");
     assert!(r.contains("RMSNorm"));
 }
 
 #[test]
 fn enrich_num_kv_heads_gqa() {
     let json = r#"{"num_attention_heads": 32, "num_key_value_heads": 8}"#;
-    let r = enrich_rationale("num_key_value_heads", "8", json).unwrap();
+    let r = enrich_rationale("num_key_value_heads", "8", json).expect("json)");
     assert!(r.contains("GQA"));
     assert!(r.contains("8"));
     assert!(r.contains("32"));
@@ -965,86 +965,86 @@ fn enrich_num_kv_heads_gqa() {
 #[test]
 fn enrich_num_kv_heads_mqa() {
     let json = r#"{"num_attention_heads": 32, "num_key_value_heads": 1}"#;
-    let r = enrich_rationale("num_key_value_heads", "1", json).unwrap();
+    let r = enrich_rationale("num_key_value_heads", "1", json).expect("json)");
     assert!(r.contains("MQA"));
 }
 
 #[test]
 fn enrich_num_kv_heads_mha() {
     let json = r#"{"num_attention_heads": 32, "num_key_value_heads": 32}"#;
-    let r = enrich_rationale("num_key_value_heads", "32", json).unwrap();
+    let r = enrich_rationale("num_key_value_heads", "32", json).expect("json)");
     assert!(r.contains("MHA"));
 }
 
 #[test]
 fn enrich_rope_theta() {
-    let r = enrich_rationale("rope_theta", "10000.0", "{}").unwrap();
+    let r = enrich_rationale("rope_theta", "10000.0", "{}").expect("0', '{}'");
     assert!(r.contains("RoPE"));
 }
 
 #[test]
 fn enrich_intermediate_size_swiglu() {
     let json = r#"{"hidden_size": 4096, "intermediate_size": 11008, "hidden_act": "silu"}"#;
-    let r = enrich_rationale("intermediate_size", "11008", json).unwrap();
+    let r = enrich_rationale("intermediate_size", "11008", json).expect("json)");
     assert!(r.contains("SwiGLU"));
 }
 
 #[test]
 fn enrich_intermediate_size_gelu() {
     let json = r#"{"hidden_size": 768, "intermediate_size": 3072, "hidden_act": "gelu"}"#;
-    let r = enrich_rationale("intermediate_size", "3072", json).unwrap();
+    let r = enrich_rationale("intermediate_size", "3072", json).expect("json)");
     assert!(r.contains("GELU"));
 }
 
 #[test]
 fn enrich_num_local_experts_moe() {
-    let r = enrich_rationale("num_local_experts", "8", "{}").unwrap();
+    let r = enrich_rationale("num_local_experts", "8", "{}").expect("'{}')");
     assert!(r.contains("MoE"));
     assert!(r.contains("8"));
 }
 
 #[test]
 fn enrich_num_experts_single() {
-    let r = enrich_rationale("num_local_experts", "1", "{}").unwrap();
+    let r = enrich_rationale("num_local_experts", "1", "{}").expect("'{}')");
     assert!(r.contains("dense"));
 }
 
 #[test]
 fn enrich_num_experts_negative() {
-    let r = enrich_rationale("num_local_experts", "-1", "{}").unwrap();
+    let r = enrich_rationale("num_local_experts", "-1", "{}").expect("'{}')");
     assert!(r.contains("negative"));
 }
 
 #[test]
 fn enrich_tie_word_embeddings_true() {
-    let r = enrich_rationale("tie_word_embeddings", "true", "{}").unwrap();
+    let r = enrich_rationale("tie_word_embeddings", "true", "{}").expect("'{}')");
     assert!(r.contains("Shared"));
 }
 
 #[test]
 fn enrich_tie_word_embeddings_false() {
-    let r = enrich_rationale("tie_word_embeddings", "false", "{}").unwrap();
+    let r = enrich_rationale("tie_word_embeddings", "false", "{}").expect("'{}')");
     assert!(r.contains("Separate"));
 }
 
 #[test]
 fn enrich_num_attention_heads_gqa() {
     let json = r#"{"num_attention_heads": 32, "num_key_value_heads": 4}"#;
-    let r = enrich_rationale("num_attention_heads", "32", json).unwrap();
+    let r = enrich_rationale("num_attention_heads", "32", json).expect("json)");
     assert!(r.contains("GQA"));
 }
 
 #[test]
 fn enrich_num_attention_heads_mha() {
     let json = r#"{"num_attention_heads": 12, "num_key_value_heads": 12}"#;
-    let r = enrich_rationale("num_attention_heads", "12", json).unwrap();
+    let r = enrich_rationale("num_attention_heads", "12", json).expect("json)");
     assert!(r.contains("MHA"));
 }
 
 #[test]
 fn enrich_hidden_size_with_params() {
     let json = r#"{"hidden_size": 4096, "num_hidden_layers": 32, "intermediate_size": 11008, "hidden_act": "silu", "vocab_size": 32000, "num_attention_heads": 32, "num_key_value_heads": 8}"#;
-    let r = enrich_rationale("hidden_size", "4096", json).unwrap();
+    let r = enrich_rationale("hidden_size", "4096", json).expect("json)");
     assert!(r.contains("Hidden dim"));
     assert!(r.contains("params"));
 }
@@ -1052,14 +1052,14 @@ fn enrich_hidden_size_with_params() {
 #[test]
 fn enrich_hidden_size_gelu_model() {
     let json = r#"{"hidden_size": 768, "num_hidden_layers": 12, "intermediate_size": 3072, "hidden_act": "gelu", "vocab_size": 30522, "num_attention_heads": 12, "num_key_value_heads": 12}"#;
-    let r = enrich_rationale("hidden_size", "768", json).unwrap();
+    let r = enrich_rationale("hidden_size", "768", json).expect("json)");
     assert!(r.contains("Hidden dim"));
     assert!(r.contains("params"));
 }
 
 #[test]
 fn enrich_num_hidden_layers() {
-    let r = enrich_rationale("num_hidden_layers", "32", "{}").unwrap();
+    let r = enrich_rationale("num_hidden_layers", "32", "{}").expect("'{}')");
     assert!(r.contains("32"));
     assert!(r.contains("layers"));
 }
@@ -1067,32 +1067,32 @@ fn enrich_num_hidden_layers() {
 #[test]
 fn enrich_vocab_size_with_hidden() {
     let json = r#"{"vocab_size": 32000, "hidden_size": 4096}"#;
-    let r = enrich_rationale("vocab_size", "32000", json).unwrap();
+    let r = enrich_rationale("vocab_size", "32000", json).expect("json)");
     assert!(r.contains("32000"));
     assert!(r.contains("MB"));
 }
 
 #[test]
 fn enrich_max_position_1m() {
-    let r = enrich_rationale("max_position_embeddings", "1048576", "{}").unwrap();
+    let r = enrich_rationale("max_position_embeddings", "1048576", "{}").expect("'{}')");
     assert!(r.contains("1M+"));
 }
 
 #[test]
 fn enrich_max_position_128k() {
-    let r = enrich_rationale("max_position_embeddings", "131072", "{}").unwrap();
+    let r = enrich_rationale("max_position_embeddings", "131072", "{}").expect("'{}')");
     assert!(r.contains("128K+"));
 }
 
 #[test]
 fn enrich_max_position_8k() {
-    let r = enrich_rationale("max_position_embeddings", "8192", "{}").unwrap();
+    let r = enrich_rationale("max_position_embeddings", "8192", "{}").expect("'{}')");
     assert!(r.contains("8K+"));
 }
 
 #[test]
 fn enrich_max_position_small() {
-    let r = enrich_rationale("max_position_embeddings", "512", "{}").unwrap();
+    let r = enrich_rationale("max_position_embeddings", "512", "{}").expect("'{}')");
     assert!(r.contains("512"));
     assert!(!r.contains("K+"));
 }
@@ -1104,14 +1104,14 @@ fn enrich_unknown_key() {
 
 #[test]
 fn enrich_num_experts_per_tok() {
-    let r = enrich_rationale("num_experts_per_tok", "2", "{}").unwrap();
+    let r = enrich_rationale("num_experts_per_tok", "2", "{}").expect("'{}')");
     assert!(r.contains("2"));
     assert!(r.contains("experts"));
 }
 
 #[test]
 fn enrich_num_experts_per_tok_one() {
-    let r = enrich_rationale("num_experts_per_tok", "1", "{}").unwrap();
+    let r = enrich_rationale("num_experts_per_tok", "1", "{}").expect("'{}')");
     assert!(r.contains("1"));
     assert!(r.contains("expert"));
     // singular
@@ -1550,7 +1550,7 @@ fn proof_class_unknown_has_some_proofs() {
 
 #[test]
 fn json_output_basic() {
-    let family = resolve_family("llama").unwrap();
+    let family = resolve_family("llama").expect("resolve_family('llama')");
     let config = make_config(&[]);
     let json = build_json_output(&family, config, false);
     assert_eq!(json.family, "llama");
@@ -1561,17 +1561,17 @@ fn json_output_basic() {
 
 #[test]
 fn json_output_with_proof() {
-    let family = resolve_family("llama").unwrap();
+    let family = resolve_family("llama").expect("resolve_family('llama')");
     let config = make_config(&[]);
     let json = build_json_output(&family, config, true);
     assert!(json.proof_summary.is_some());
-    let ps = json.proof_summary.unwrap();
+    let ps = json.proof_summary.expect("proof_summary");
     assert!(ps.total > 0);
 }
 
 #[test]
 fn json_output_internal_fields_removed() {
-    let family = resolve_family("llama").unwrap();
+    let family = resolve_family("llama").expect("resolve_family('llama')");
     let mut config = make_config(&[("_architectures", "LlamaForCausalLM")]);
     config.insert(
         "model_type".to_string(),
@@ -1589,7 +1589,7 @@ fn json_output_internal_fields_removed() {
 
 #[test]
 fn json_output_equivalence_class() {
-    let family = resolve_family("qwen2").unwrap();
+    let family = resolve_family("qwen2").expect("resolve_family('qwen2')");
     let json = build_json_output(&family, make_config(&[]), false);
     // Class A has multiple families
     assert!(json.equivalence_class_families.len() > 1);
@@ -1620,7 +1620,7 @@ fn all_aliases_resolvable() {
             "Alias {alias} should resolve (expected target: {target})"
         );
         assert_eq!(
-            resolved.unwrap().family,
+            resolved.expect("resolved").family,
             *target,
             "Alias {alias} resolved to wrong family"
         );
@@ -1645,7 +1645,7 @@ fn all_alias_architectures_have_matching_alias() {
 #[test]
 fn regression_phi3_mini_resolves_to_class_a() {
     // phi-3-mini was resolving to phi (Class B/D) instead of phi3 alias (Class A)
-    let f = resolve_family("phi-3-mini").unwrap();
+    let f = resolve_family("phi-3-mini").expect("resolve_family('phi-3-mini')");
     assert_eq!(f.family, "llama");
     assert_eq!(f.kernel_class, KernelClass::A);
 }
@@ -1653,27 +1653,27 @@ fn regression_phi3_mini_resolves_to_class_a() {
 #[test]
 fn regression_qwen_resolves_to_qwen2_not_moe() {
     // "qwen" was resolving to qwen2_moe alias before family match
-    let f = resolve_family("qwen").unwrap();
+    let f = resolve_family("qwen").expect("resolve_family('qwen')");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn regression_phi2_resolves_to_phi() {
     // phi-2 is the phi family directly (Class B/D, NOT phi3→llama alias)
-    let f = resolve_family("phi").unwrap();
+    let f = resolve_family("phi").expect("resolve_family('phi')");
     assert_eq!(f.family, "phi");
 }
 
 #[test]
 fn regression_gemma2_alias() {
-    let f = resolve_family("gemma2").unwrap();
+    let f = resolve_family("gemma2").expect("resolve_family('gemma2')");
     assert_eq!(f.family, "gemma");
     assert_eq!(f.kernel_class, KernelClass::F);
 }
 
 #[test]
 fn regression_mamba_is_ssm() {
-    let f = resolve_family("mamba").unwrap();
+    let f = resolve_family("mamba").expect("resolve_family('mamba')");
     assert_eq!(f.kernel_class, KernelClass::Ssm);
     let ops = kernel_ops_for_class(KernelClass::Ssm);
     assert!(!ops.iter().any(|o| o.kernel == "softmax"));
@@ -1681,7 +1681,7 @@ fn regression_mamba_is_ssm() {
 
 #[test]
 fn regression_rwkv7_is_linear() {
-    let f = resolve_family("rwkv7").unwrap();
+    let f = resolve_family("rwkv7").expect("resolve_family('rwkv7')");
     assert_eq!(f.kernel_class, KernelClass::Linear);
     let ops = kernel_ops_for_class(KernelClass::Linear);
     assert!(!ops.iter().any(|o| o.kernel == "softmax"));
@@ -1693,7 +1693,7 @@ fn regression_rwkv7_is_linear() {
 fn param_estimate_gqa_model() {
     // Qwen2.5-7B: hidden=3584, layers=28, inter=18944, heads=28, kv=4, vocab=152064
     let json = r#"{"hidden_size": 3584, "num_hidden_layers": 28, "intermediate_size": 18944, "hidden_act": "silu", "vocab_size": 152064, "num_attention_heads": 28, "num_key_value_heads": 4}"#;
-    let r = enrich_rationale("hidden_size", "3584", json).unwrap();
+    let r = enrich_rationale("hidden_size", "3584", json).expect("json)");
     // Should estimate ~7-8B
     assert!(r.contains("B params"), "Expected B params in: {r}");
 }
@@ -1702,7 +1702,7 @@ fn param_estimate_gqa_model() {
 fn param_estimate_gelu_model() {
     // BERT-base: hidden=768, layers=12, inter=3072, heads=12, kv=12, vocab=30522
     let json = r#"{"hidden_size": 768, "num_hidden_layers": 12, "intermediate_size": 3072, "hidden_act": "gelu", "vocab_size": 30522, "num_attention_heads": 12, "num_key_value_heads": 12, "tie_word_embeddings": "true"}"#;
-    let r = enrich_rationale("hidden_size", "768", json).unwrap();
+    let r = enrich_rationale("hidden_size", "768", json).expect("json)");
     // BERT-base is ~110M
     assert!(r.contains("M params"), "Expected M params in: {r}");
 }
@@ -1711,7 +1711,7 @@ fn param_estimate_gelu_model() {
 fn param_estimate_moe_model() {
     // Model with experts should include expert weights
     let json = r#"{"hidden_size": 4096, "num_hidden_layers": 32, "intermediate_size": 11008, "hidden_act": "silu", "vocab_size": 32000, "num_attention_heads": 32, "num_key_value_heads": 8, "num_local_experts": 8, "moe_intermediate_size": 4096}"#;
-    let r = enrich_rationale("hidden_size", "4096", json).unwrap();
+    let r = enrich_rationale("hidden_size", "4096", json).expect("json)");
     assert!(r.contains("B params"), "MoE model should be large: {r}");
 }
 
@@ -1753,7 +1753,7 @@ fn constraints_default_all_empty() {
 
 #[test]
 fn family_info_clone_eq() {
-    let f = resolve_family("llama").unwrap();
+    let f = resolve_family("llama").expect("resolve_family('llama')");
     let f2 = f.clone();
     assert_eq!(f.family, f2.family);
     assert_eq!(f.kernel_class, f2.kernel_class);
@@ -1763,7 +1763,7 @@ fn family_info_clone_eq() {
 
 #[test]
 fn integration_llama_full_pipeline() {
-    let family = resolve_family("llama").unwrap();
+    let family = resolve_family("llama").expect("resolve_family('llama')");
     assert_eq!(family.kernel_class, KernelClass::A);
     let ops = kernel_ops_for_family(family.kernel_class, &family.constraints);
     assert!(ops.len() > 4);
@@ -1776,7 +1776,7 @@ fn integration_llama_full_pipeline() {
 
 #[test]
 fn integration_bert_full_pipeline() {
-    let family = resolve_family("bert").unwrap();
+    let family = resolve_family("bert").expect("resolve_family('bert')");
     assert_eq!(family.kernel_class, KernelClass::B);
     let ops = kernel_ops_for_class(KernelClass::B);
     assert!(!ops.iter().any(|o| o.kernel == "rope_forward"));
@@ -1784,7 +1784,7 @@ fn integration_bert_full_pipeline() {
 
 #[test]
 fn integration_gemma_full_pipeline() {
-    let family = resolve_family("gemma").unwrap();
+    let family = resolve_family("gemma").expect("resolve_family('gemma')");
     assert_eq!(family.kernel_class, KernelClass::F);
     let ops = kernel_ops_for_class(KernelClass::F);
     assert!(ops.iter().any(|o| o.kernel == "gated_mlp"));
@@ -1793,7 +1793,7 @@ fn integration_gemma_full_pipeline() {
 
 #[test]
 fn integration_mamba_full_pipeline() {
-    let family = resolve_family("mamba").unwrap();
+    let family = resolve_family("mamba").expect("resolve_family('mamba')");
     assert_eq!(family.kernel_class, KernelClass::Ssm);
     let ops = kernel_ops_for_class(KernelClass::Ssm);
     assert!(ops.iter().any(|o| o.kernel == "selective_scan"));
@@ -1801,7 +1801,7 @@ fn integration_mamba_full_pipeline() {
 
 #[test]
 fn integration_alias_full_pipeline() {
-    let family = resolve_family("mixtral").unwrap();
+    let family = resolve_family("mixtral").expect("resolve_family('mixtral')");
     assert!(family.display_name.contains("via"));
     let json = build_json_output(&family, BTreeMap::new(), false);
     assert!(json.display_name.contains("via"));
@@ -1811,23 +1811,23 @@ fn integration_alias_full_pipeline() {
 
 #[test]
 fn resolve_config_json_valid() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"model_type": "qwen2", "hidden_size": 4096}"#).unwrap();
-    let f = resolve_from_config_json(&path).unwrap();
+    std::fs::write(&path, r#"{"model_type": "qwen2", "hidden_size": 4096}"#).expect("4096}'#)");
+    let f = resolve_from_config_json(&path).expect("unwrap();     let f = resolve_");
     assert_eq!(f.family, "qwen2");
 }
 
 #[test]
 fn resolve_config_json_no_model_type_uses_architectures() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
     std::fs::write(
         &path,
         r#"{"architectures": ["LlamaForCausalLM"], "hidden_size": 4096}"#,
     )
-    .unwrap();
-    let f = resolve_from_config_json(&path).unwrap();
+    .expect("expected value");
+    let f = resolve_from_config_json(&path).expect("unwrap();     let f = resolve_");
     assert_eq!(f.family, "llama");
 }
 
@@ -1838,17 +1838,17 @@ fn resolve_config_json_missing_file() {
 
 #[test]
 fn resolve_config_json_array_rejected() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"[{"model_type": "bert"}]"#).unwrap();
+    std::fs::write(&path, r#"[{"model_type": "bert"}]"#).expect("'bert'}]'#)");
     assert!(resolve_from_config_json(&path).is_none());
 }
 
 #[test]
 fn resolve_config_json_unknown_model_type() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"model_type": "totally_unknown_xyz"}"#).unwrap();
+    std::fs::write(&path, r#"{"model_type": "totally_unknown_xyz"}"#).expect("'totally_unknown_xyz'}'#)");
     assert!(resolve_from_config_json(&path).is_none());
 }
 
@@ -1856,7 +1856,7 @@ fn resolve_config_json_unknown_model_type() {
 
 #[test]
 fn config_mapping_extracts_fields() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
     std::fs::write(
         &path,
@@ -1874,7 +1874,7 @@ fn config_mapping_extracts_fields() {
                 "architectures": ["Qwen2ForCausalLM"]
             }"#,
     )
-    .unwrap();
+    .expect("expected value");
     let map = extract_config_mapping(&path);
     assert!(map.contains_key("model_type"));
     assert!(map.contains_key("hidden_act"));
@@ -1895,13 +1895,13 @@ fn config_mapping_missing_file() {
 
 #[test]
 fn config_mapping_enriches_gqa() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("tempfile::tempdir()");
     let path = dir.path().join("config.json");
     std::fs::write(
         &path,
         r#"{"num_attention_heads": 32, "num_key_value_heads": 8}"#,
     )
-    .unwrap();
+    .expect("expected value");
     let map = extract_config_mapping(&path);
     assert!(map["num_key_value_heads"].rationale.contains("GQA"));
 }
@@ -1911,7 +1911,7 @@ fn config_mapping_enriches_gqa() {
 #[test]
 fn print_human_output_no_panic() {
     use super::output::print_human_output;
-    let family = resolve_family("llama").unwrap();
+    let family = resolve_family("llama").expect("resolve_family('llama')");
     let config = BTreeMap::new();
     // Just verify it doesn't panic — output goes to stdout
     print_human_output(&family, &config, false, false);

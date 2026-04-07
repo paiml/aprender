@@ -729,6 +729,7 @@ fn execute_training(
 }
 
 /// Stub: creates adapter tensors with random init but does NOT train.
+#[allow(dead_code)]
 fn execute_training_stub(
     model_path: &Path,
     config: &OptimalConfig,
@@ -791,6 +792,7 @@ fn execute_training_stub(
 
 /// Write LoRA adapter metadata to APR writer.
 #[allow(clippy::disallowed_methods)]
+#[allow(dead_code)]
 fn write_adapter_metadata(
     writer: &mut aprender::serialization::apr::AprWriter,
     model_path: &Path,
@@ -815,6 +817,7 @@ fn write_adapter_metadata(
 }
 
 /// Create LoRA A/B tensor pairs for all eligible layers.
+#[allow(dead_code)]
 fn create_lora_tensors(
     writer: &mut aprender::serialization::apr::AprWriter,
     lora_targets: &[&aprender::format::rosetta::TensorInfo],
@@ -848,6 +851,7 @@ fn create_lora_tensors(
 
 /// Display adapter creation results.
 #[allow(clippy::disallowed_methods)]
+#[allow(dead_code)]
 fn display_adapter_result(
     adapter_count: u64,
     total_adapter_params: u64,
@@ -1711,7 +1715,7 @@ fn run_instruct(
     _rank: u32,
     _epochs: u32,
     _learning_rate: f64,
-    _plan_only: bool,
+    plan_only: bool,
     _json_output: bool,
     _method: &str,
     _quantize_nf4: bool,

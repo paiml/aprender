@@ -230,10 +230,10 @@ const FAMILY_ALIASES: &[(&str, &str)] = &[
 
 // Re-export the public functions so callers use the same paths as before
 pub use config::{
-    detect_constraint_mismatches, extract_architecture_display, extract_config_mapping,
+    extract_config_mapping,
     extract_json_string,
 };
 pub use family::load_families;
-pub use output::{build_json_output, print_human_output, KernelExplainJson, ProofSummary};
-pub use proof::{proof_status_for_class, proof_status_for_contract, ContractProof, ProofLevel};
+pub use output::{build_json_output, print_human_output};
+
 pub use resolve::{family_aliases, resolve_family, resolve_from_config_json};

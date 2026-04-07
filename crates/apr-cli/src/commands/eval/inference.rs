@@ -320,7 +320,7 @@ fn run_humaneval_inference(
         let max_new = 256;
         for step in 0..max_new {
             let pos = prompt_tokens.len() + step;
-            let last_tok = *tokens.last().unwrap();
+            let last_tok = *tokens.last().expect("last(");
             let logits = transformer
                 .forward_with_cache(last_tok, &mut cache, pos)
                 .map_err(|e| format!("Generation failed: {e}"))?;
@@ -874,7 +874,7 @@ fn run_mbpp_inference(
         let max_new = 512;
         for step in 0..max_new {
             let pos = prompt_tokens.len() + step;
-            let last_tok = *tokens.last().unwrap();
+            let last_tok = *tokens.last().expect("last(");
             let logits = transformer
                 .forward_with_cache(last_tok, &mut cache, pos)
                 .map_err(|e| format!("Generation failed: {e}"))?;

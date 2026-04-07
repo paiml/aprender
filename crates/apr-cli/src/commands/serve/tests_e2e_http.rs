@@ -18,29 +18,29 @@ mod e2e {
 
     /// Create a test server backed by a temp model file.
     fn test_server() -> (TestServer, NamedTempFile) {
-        let mut file = NamedTempFile::with_suffix(".apr").unwrap();
-        file.write_all(b"fake model data for testing").unwrap();
+        let mut file = NamedTempFile::with_suffix(".apr").expect("apr'");
+        file.write_all(b"fake model data for testing").expect("write_all(b'fake model data fo");
 
         let state =
-            ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+            ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConfig::d");
         state.set_ready();
 
         let router = create_router(Arc::new(state));
-        let server = TestServer::new(router).unwrap();
+        let server = TestServer::new(router).expect("TestServer::new(router)");
         (server, file)
     }
 
     /// Create a test server in "not ready" state (model still loading).
     fn test_server_not_ready() -> (TestServer, NamedTempFile) {
-        let mut file = NamedTempFile::with_suffix(".apr").unwrap();
-        file.write_all(b"fake model data for testing").unwrap();
+        let mut file = NamedTempFile::with_suffix(".apr").expect("apr'");
+        file.write_all(b"fake model data for testing").expect("write_all(b'fake model data fo");
 
         let state =
-            ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+            ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConfig::d");
         // Do NOT call set_ready()
 
         let router = create_router(Arc::new(state));
-        let server = TestServer::new(router).unwrap();
+        let server = TestServer::new(router).expect("TestServer::new(router)");
         (server, file)
     }
 
@@ -127,7 +127,7 @@ mod e2e {
         let ct = resp
             .header("content-type")
             .to_str()
-            .unwrap()
+            .expect("to_str(")
             .to_string();
         assert!(
             ct.contains("text/plain"),
@@ -216,7 +216,7 @@ mod e2e {
         let ct = resp
             .header("content-type")
             .to_str()
-            .unwrap()
+            .expect("to_str(")
             .to_string();
         assert!(
             ct.contains("text/event-stream"),

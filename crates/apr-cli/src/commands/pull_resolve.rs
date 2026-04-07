@@ -1,7 +1,7 @@
 
     #[test]
     fn test_resolve_hf_model_bare_org_repo_with_apr() {
-        let result = resolve_hf_model("org/repo/model.apr").unwrap();
+        let result = resolve_hf_model("org/repo/model.apr").expect("apr'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.apr"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -11,7 +11,7 @@
     #[test]
     fn test_resolve_hf_model_relative_path_with_dots() {
         // ../path should NOT be normalized to hf://
-        let result = resolve_hf_model("../models/test.gguf").unwrap();
+        let result = resolve_hf_model("../models/test.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "../models/test.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -20,7 +20,7 @@
 
     #[test]
     fn test_resolve_hf_model_http_url() {
-        let result = resolve_hf_model("http://example.com/model.gguf").unwrap();
+        let result = resolve_hf_model("http://example.com/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "http://example.com/model.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -29,7 +29,7 @@
 
     #[test]
     fn test_resolve_hf_model_ftp_url() {
-        let result = resolve_hf_model("ftp://example.com/model.gguf").unwrap();
+        let result = resolve_hf_model("ftp://example.com/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "ftp://example.com/model.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -61,7 +61,7 @@
     #[test]
     fn test_resolve_hf_model_bare_empty_parts() {
         // "/" alone → parts = ["", ""], both empty → does NOT normalize
-        let result = resolve_hf_model("/").unwrap();
+        let result = resolve_hf_model("/").expect("resolve_hf_model('/')");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "/"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -71,7 +71,7 @@
     #[test]
     fn test_resolve_hf_model_bare_single_slash() {
         // "a/" → parts = ["a", ""], parts[1].is_empty() → no normalization
-        let result = resolve_hf_model("a/").unwrap();
+        let result = resolve_hf_model("a/").expect("resolve_hf_model('a/')");
         // parts[1] is empty, so bare org/repo normalization skipped
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "a/"),
@@ -212,35 +212,35 @@
     #[test]
     fn test_resolve_hf_uri_with_apr_extension() {
         let uri = "hf://org/repo/model.apr";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("apr';         let resolved = r");
         assert_eq!(resolved, uri);
     }
 
     #[test]
     fn test_resolve_hf_uri_with_pt_extension() {
         let uri = "hf://org/repo/model.pt";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("pt';         let resolved = re");
         assert_eq!(resolved, uri);
     }
 
     #[test]
     fn test_resolve_hf_uri_bare_org_repo_gguf() {
         // "org/repo/file.gguf" → normalizes to "hf://org/repo/file.gguf"
-        let resolved = resolve_hf_uri("org/repo/file.gguf").unwrap();
+        let resolved = resolve_hf_uri("org/repo/file.gguf").expect("gguf'");
         assert_eq!(resolved, "hf://org/repo/file.gguf");
     }
 
     #[test]
     fn test_resolve_hf_uri_dot_relative_path() {
         let uri = "./some/dir/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "dot-relative path should not be normalized");
     }
 
     #[test]
     fn test_resolve_hf_uri_dot_dot_relative_path() {
         let uri = "../parent/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(
             resolved, uri,
             "parent-relative path should not be normalized"
@@ -250,7 +250,7 @@
     #[test]
     fn test_resolve_hf_uri_just_a_word() {
         // Single word with no slashes: not normalized, returned as SingleFile
-        let resolved = resolve_hf_uri("model").unwrap();
+        let resolved = resolve_hf_uri("model").expect("resolve_hf_uri('model')");
         assert_eq!(resolved, "model");
     }
 
@@ -322,7 +322,7 @@
     #[test]
     fn test_resolve_hf_model_double_slash_bare_path() {
         // "a//b" → parts = ["a", "", "b"], parts[1].is_empty() → no normalization
-        let result = resolve_hf_model("a//b").unwrap();
+        let result = resolve_hf_model("a//b").expect("resolve_hf_model('a//b')");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "a//b"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -355,7 +355,7 @@
     fn test_resolve_hf_model_unicode_in_path() {
         // Unicode org/repo should be normalized
         // Will fail at API call since repo doesn't exist
-        let result = resolve_hf_model("org-\u{00e9}/repo-\u{00fc}/model.gguf").unwrap();
+        let result = resolve_hf_model("org-\u{00e9}/repo-\u{00fc}/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => {
                 assert!(s.starts_with("hf://"), "Should be normalized: {}", s);
@@ -368,7 +368,7 @@
     #[test]
     fn test_resolve_hf_model_spaces_in_path() {
         // Spaces in path — should not crash
-        let result = resolve_hf_model("org name/repo name/model.gguf").unwrap();
+        let result = resolve_hf_model("org name/repo name/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => {
                 assert!(s.starts_with("hf://"));

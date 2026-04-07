@@ -341,7 +341,7 @@ mod tests {
             "tokens_per_sec": 50.0, "timestamp": "2026-04-05T00:00:00Z",
             "runtime_name": "apr-serve", "elapsed_secs": 30.0, "concurrency": 4
         });
-        serde_json::from_value(json).unwrap()
+        serde_json::from_value(json).expect("serde_json::from_value(json)")
     }
 
     #[test]
@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn falsify_lt_004_default_prompts() {
-        let prompts = load_prompts(None).unwrap();
+        let prompts = load_prompts(None).expect("load_prompts(None)");
         assert_eq!(prompts.len(), 1, "FALSIFY-LT-004: exactly 1 default prompt");
         assert_eq!(
             prompts[0].messages[0].role,
@@ -381,22 +381,22 @@ mod tests {
 
     #[test]
     fn falsify_lt_005_empty_prompts_rejected() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempfile::tempdir()");
         let path = dir.path().join("empty.jsonl");
-        std::fs::write(&path, "").unwrap();
+        std::fs::write(&path, "").expect("jsonl');         std::fs::writ");
         assert!(load_prompts(Some(&path)).is_err(), "FALSIFY-LT-005");
     }
 
     #[test]
     fn falsify_lt_006_jsonl_prompts() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempfile::tempdir()");
         let path = dir.path().join("test.jsonl");
         std::fs::write(
             &path,
             "{\"prompt\": \"What is Rust?\"}\n{\"prompt\": \"Hello\"}\n",
         )
-        .unwrap();
-        let prompts = load_prompts(Some(&path)).unwrap();
+        .expect("expected value");
+        let prompts = load_prompts(Some(&path)).expect("unwrap();         let prompts");
         assert_eq!(prompts.len(), 2, "FALSIFY-LT-006");
         assert!(prompts[0].messages[0].content.contains("Rust"));
     }
@@ -413,8 +413,8 @@ mod tests {
     #[test]
     fn falsify_lt_008_baseline_roundtrip() {
         let result = test_result(500.0, 30.0);
-        let json = serde_json::to_string_pretty(&result).unwrap();
-        let parsed: LoadTestResult = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string_pretty(&result).expect("serde_json::to_string_pretty(&");
+        let parsed: LoadTestResult = serde_json::from_str(&json).expect("serde_json::from_str(&json)");
         assert_eq!(parsed.total_requests, 100, "FALSIFY-LT-008");
         assert!(
             (parsed.ttft_p99_ms - 500.0).abs() < 0.01,

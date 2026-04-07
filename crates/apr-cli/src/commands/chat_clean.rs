@@ -260,7 +260,7 @@
         assert!(config.force_cpu);
         assert!(config.trace);
         assert_eq!(
-            config.trace_output.as_ref().map(|p| p.to_str().unwrap()),
+            config.trace_output.as_ref().map(|p| p.to_str().expect("to_str(")),
             Some("/tmp/all_fields.json")
         );
     }
@@ -319,7 +319,7 @@
             trace_output: Some(PathBuf::from("relative/trace.json")),
             ..Default::default()
         };
-        assert!(!config.trace_output.as_ref().unwrap().is_absolute());
+        assert!(!config.trace_output.as_ref().expect("as_ref(").is_absolute());
     }
 
     // =========================================================================

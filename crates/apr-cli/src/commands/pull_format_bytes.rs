@@ -64,21 +64,21 @@
     #[test]
     fn test_pmat_108_resolve_uri_with_gguf_extension_unchanged() {
         let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "URI with .gguf should be unchanged");
     }
 
     #[test]
     fn test_pmat_108_resolve_uri_case_insensitive_gguf() {
         let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.GGUF";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("GGUF';         let resolved =");
         assert_eq!(resolved, uri, "URI with .GGUF should be unchanged");
     }
 
     #[test]
     fn test_pmat_108_resolve_non_hf_uri_unchanged() {
         let uri = "/path/to/local/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "Non-hf:// URI should be unchanged");
     }
 
@@ -92,35 +92,35 @@
     #[test]
     fn test_resolve_hf_uri_relative_path() {
         let uri = "./models/test.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "Relative path should be unchanged");
     }
 
     #[test]
     fn test_resolve_hf_uri_absolute_path() {
         let uri = "/home/user/models/test.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "Absolute path should be unchanged");
     }
 
     #[test]
     fn test_resolve_hf_uri_https_url() {
         let uri = "https://example.com/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, "HTTPS URL should be unchanged");
     }
 
     #[test]
     fn test_resolve_hf_uri_with_mixed_case_extension() {
         let uri = "hf://Org/Repo/model.GgUf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("GgUf';         let resolved =");
         assert_eq!(resolved, uri, "Mixed case .GgUf should be unchanged");
     }
 
     #[test]
     fn test_resolve_hf_uri_empty_string() {
         let uri = "";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("resolve_hf_uri(uri)");
         assert_eq!(resolved, uri, "Empty string should be unchanged");
     }
 
@@ -145,7 +145,7 @@
         // The test_resolve_hf_uri_invalid_hf_format covers the error case.
         // For now, we just verify the URI format is preserved for files with .gguf extension
         let uri = "hf://org/repo/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri, ".gguf extension should be unchanged");
     }
 
@@ -163,7 +163,7 @@
     #[ignore]
     fn test_pmat_108_resolve_qwen_repo_finds_q4_k_m() {
         let uri = "hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("resolve_hf_uri(uri)");
         assert!(resolved.ends_with(".gguf"), "Should end with .gguf");
         assert!(
             resolved.to_lowercase().contains("q4_k_m"),
@@ -184,9 +184,9 @@
         let test_file = temp_dir.join("test_model.gguf");
         let _ = std::fs::write(&test_file, "GGUF");
 
-        let result = resolve_model_path(test_file.to_str().unwrap());
+        let result = resolve_model_path(test_file.to_str().expect("to_str("));
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), test_file);
+        assert_eq!(result.expect("is_ok());         assert_eq!(r"), test_file);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -283,7 +283,7 @@
         assert!(result.is_ok());
 
         // Verify files are unchanged (still our dummy content)
-        let content = std::fs::read_to_string(temp_dir.join("abc123.tokenizer.json")).unwrap();
+        let content = std::fs::read_to_string(temp_dir.join("abc123.tokenizer.json")).expect("json'");
         assert_eq!(content, "{}");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -317,11 +317,11 @@
 
         // Verify tokenizer.json has vocab
         let tok =
-            std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.tokenizer.json")).unwrap();
+            std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.tokenizer.json")).expect("json'");
         assert!(tok.contains("vocab"), "tokenizer.json should contain vocab");
 
         // Verify config.json has model architecture
-        let cfg = std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.config.json")).unwrap();
+        let cfg = std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.config.json")).expect("json'");
         assert!(
             cfg.contains("num_hidden_layers"),
             "config.json should contain num_hidden_layers"
@@ -428,7 +428,7 @@
 
     #[test]
     fn test_gh213_resolve_non_hf_uri_is_single_file() {
-        let result = resolve_hf_model("/path/to/model.gguf").unwrap();
+        let result = resolve_hf_model("/path/to/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "/path/to/model.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -437,7 +437,7 @@
 
     #[test]
     fn test_gh213_resolve_hf_with_extension_is_single_file() {
-        let result = resolve_hf_model("hf://org/repo/model.safetensors").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.safetensors").expect("safetensors'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.safetensors"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),

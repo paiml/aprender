@@ -1365,8 +1365,8 @@ pub(crate) fn run_decrypt(
         ));
     }
 
-    let nonce: [u8; 32] = data[8..40].try_into().unwrap();
-    let stored_mac: [u8; 32] = data[40..72].try_into().unwrap();
+    let nonce: [u8; 32] = data[8..40].try_into().expect("try_into(");
+    let stored_mac: [u8; 32] = data[40..72].try_into().expect("try_into(");
     let encrypted = &data[72..];
 
     if !json_output {

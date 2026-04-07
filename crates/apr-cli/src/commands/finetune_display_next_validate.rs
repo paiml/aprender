@@ -233,6 +233,7 @@ fn run_merge(
 }
 
 /// Check if a tensor name is eligible for LoRA adaptation.
+#[allow(dead_code)]
 fn is_lora_eligible(name: &str) -> bool {
     // Target attention and MLP projection layers
     let targets = [
@@ -267,6 +268,7 @@ fn is_lora_eligible(name: &str) -> bool {
 }
 
 /// Deterministic pseudo-random seed from tensor name + index.
+#[allow(dead_code)]
 fn hash_seed(name: &str, idx: usize) -> u64 {
     // Simple FNV-1a inspired hash for deterministic initialization
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;

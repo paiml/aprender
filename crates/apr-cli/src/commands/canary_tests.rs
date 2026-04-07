@@ -184,7 +184,7 @@ fn test_missing_tensor_result() {
     assert_eq!(result.std_drift, f32::MAX);
     assert!(!result.shape_match);
     assert!(result.message.is_some());
-    assert!(result.message.unwrap().contains("not found"));
+    assert!(result.message.expect("message").contains("not found"));
 }
 
 // ========================================================================
@@ -231,21 +231,21 @@ fn build_failure_message_test_helper(
 fn test_build_failure_message_shape_mismatch() {
     let msg = build_failure_message_test_helper(false, false, 0.01, 0.01);
     assert!(msg.is_some());
-    assert!(msg.unwrap().contains("Shape mismatch"));
+    assert!(msg.expect("value").contains("Shape mismatch"));
 }
 
 #[test]
 fn test_build_failure_message_mean_drift() {
     let msg = build_failure_message_test_helper(false, true, 0.15, 0.01);
     assert!(msg.is_some());
-    assert!(msg.unwrap().contains("Mean drift"));
+    assert!(msg.expect("value").contains("Mean drift"));
 }
 
 #[test]
 fn test_build_failure_message_std_drift() {
     let msg = build_failure_message_test_helper(false, true, 0.05, 0.25);
     assert!(msg.is_some());
-    assert!(msg.unwrap().contains("Std drift"));
+    assert!(msg.expect("value").contains("Std drift"));
 }
 
 // ========================================================================
@@ -429,7 +429,7 @@ fn test_load_canary_data_valid() {
 
     let result = load_canary_data(canary.path());
     assert!(result.is_ok());
-    assert_eq!(result.unwrap().model_name, "test.safetensors");
+    assert_eq!(result.expect("value").model_name, "test.safetensors");
 }
 
 #[test]

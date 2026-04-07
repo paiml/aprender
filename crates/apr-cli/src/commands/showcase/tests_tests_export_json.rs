@@ -18,7 +18,7 @@ fn test_export_json_default_path() {
         runs: 30,
     };
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         export_format: ExportFormat::Json,
         export_path: None, // Should use default
@@ -26,7 +26,7 @@ fn test_export_json_default_path() {
         ..Default::default()
     };
 
-    export_benchmark_results(&bench, &config).unwrap();
+    export_benchmark_results(&bench, &config).expect("value");
 
     // Default path should be model_dir/benchmark-results.json
     let expected_path = temp_dir.path().join("benchmark-results.json");
@@ -48,7 +48,7 @@ fn test_export_csv_default_path() {
         runs: 30,
     };
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         export_format: ExportFormat::Csv,
         export_path: None,
@@ -56,7 +56,7 @@ fn test_export_csv_default_path() {
         ..Default::default()
     };
 
-    export_benchmark_results(&bench, &config).unwrap();
+    export_benchmark_results(&bench, &config).expect("value");
 
     let expected_path = temp_dir.path().join("benchmark-results.csv");
     assert!(expected_path.exists());
@@ -372,7 +372,7 @@ fn test_run_chat_returns_ok_true() {
     let config = ShowcaseConfig::default();
     let result = super::demo::run_chat(&config);
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(result.expect("value"));
 }
 
 #[test]
@@ -399,7 +399,7 @@ fn test_run_brick_demo_no_inference_feature() {
     let config = ShowcaseConfig::default();
     let result = super::demo::run_brick_demo(&config);
     assert!(result.is_ok());
-    let demo_result = result.unwrap();
+    let demo_result = result.expect("value");
     assert_eq!(demo_result.layers_measured, 0);
     assert!(demo_result.layer_timings_us.is_empty());
     assert!(demo_result.bottleneck.is_none());
@@ -418,7 +418,7 @@ fn test_run_cuda_demo_no_cuda_feature() {
     let config = ShowcaseConfig::default();
     let result = run_cuda_demo(&config);
     assert!(result.is_ok());
-    let cuda_result = result.unwrap();
+    let cuda_result = result.expect("value");
     assert_eq!(cuda_result.device_count, 0);
     assert_eq!(cuda_result.device_name, "disabled");
     assert_eq!(cuda_result.total_vram_gb, 0.0);
@@ -440,7 +440,7 @@ fn test_run_zram_demo_no_zram_feature() {
     let config = ShowcaseConfig::default();
     let result = run_zram_demo(&config);
     assert!(result.is_ok());
-    let zram_result = result.unwrap();
+    let zram_result = result.expect("value");
     assert_eq!(zram_result.lz4_ratio, 0.0);
     assert_eq!(zram_result.zstd_ratio, 0.0);
     assert_eq!(zram_result.zero_page_gbps, 0.0);

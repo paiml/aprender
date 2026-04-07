@@ -369,7 +369,7 @@
     #[test]
     fn test_resolve_hf_model_bare_org_repo_with_pt_extension() {
         // "org/repo/model.pt" → normalizes to "hf://org/repo/model.pt" → SingleFile
-        let result = resolve_hf_model("org/repo/model.pt").unwrap();
+        let result = resolve_hf_model("org/repo/model.pt").expect("pt'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.pt"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -379,7 +379,7 @@
     #[test]
     fn test_resolve_hf_model_file_url_scheme() {
         // "file:///path/to/model" has "://" so NOT normalized
-        let result = resolve_hf_model("file:///path/to/model.gguf").unwrap();
+        let result = resolve_hf_model("file:///path/to/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "file:///path/to/model.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -389,7 +389,7 @@
     #[test]
     fn test_resolve_hf_model_s3_url_scheme() {
         // "s3://bucket/key" has "://" → not normalized, not hf:// → SingleFile
-        let result = resolve_hf_model("s3://bucket/model.gguf").unwrap();
+        let result = resolve_hf_model("s3://bucket/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "s3://bucket/model.gguf"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -399,7 +399,7 @@
     #[test]
     fn test_resolve_hf_model_just_dot() {
         // "." starts with '.' → NOT normalized
-        let result = resolve_hf_model(".").unwrap();
+        let result = resolve_hf_model(".").expect("'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "."),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -408,7 +408,7 @@
 
     #[test]
     fn test_resolve_hf_model_empty_string() {
-        let result = resolve_hf_model("").unwrap();
+        let result = resolve_hf_model("").expect("resolve_hf_model('')");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, ""),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -417,7 +417,7 @@
 
     #[test]
     fn test_resolve_hf_model_gguf_mixed_case_extension() {
-        let result = resolve_hf_model("hf://org/repo/model.GGuF").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.GGuF").expect("GGuF'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.GGuF"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .GGuF"),
@@ -426,7 +426,7 @@
 
     #[test]
     fn test_resolve_hf_model_pt_mixed_case() {
-        let result = resolve_hf_model("hf://org/repo/model.PT").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.PT").expect("PT'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.PT"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -441,6 +441,6 @@
     fn test_resolve_hf_uri_single_file_with_safetensors() {
         // .safetensors has a known extension → SingleFile passthrough
         let uri = "hf://org/repo/model.safetensors";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("safetensors';         let reso");
         assert_eq!(resolved, uri);
     }

@@ -2,14 +2,14 @@
     #[test]
     fn test_resolve_hf_uri_with_file_scheme() {
         let uri = "file:///home/user/model.gguf";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("gguf';         let resolved =");
         assert_eq!(resolved, uri);
     }
 
     #[test]
     fn test_resolve_hf_uri_s3_scheme() {
         let uri = "s3://bucket/key/model.safetensors";
-        let resolved = resolve_hf_uri(uri).unwrap();
+        let resolved = resolve_hf_uri(uri).expect("safetensors';         let reso");
         assert_eq!(resolved, uri);
     }
 

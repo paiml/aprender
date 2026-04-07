@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn test_result_type_ok() {
         let result: Result<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert_eq!(result.expect("value"), 42);
     }
 
     #[test]
@@ -397,7 +397,7 @@ mod tests {
         std::fs::write(&tmp, b"test").expect("write");
         let result = resolve_model_path(&tmp);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), tmp);
+        assert_eq!(result.expect("value"), tmp);
         std::fs::remove_file(&tmp).ok();
     }
 
@@ -409,7 +409,7 @@ mod tests {
         std::fs::write(&model_file, b"test").expect("write");
         let result = resolve_model_path(&dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), model_file);
+        assert_eq!(result.expect("value"), model_file);
         std::fs::remove_file(&model_file).ok();
         std::fs::remove_dir(&dir).ok();
     }
@@ -422,7 +422,7 @@ mod tests {
         std::fs::write(&model_file, b"test").expect("write");
         let result = resolve_model_path(&dir);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), model_file);
+        assert_eq!(result.expect("value"), model_file);
         std::fs::remove_file(&model_file).ok();
         std::fs::remove_dir(&dir).ok();
     }
@@ -440,7 +440,7 @@ mod tests {
         let result = resolve_model_path(&dir);
         assert!(result.is_ok());
         assert_eq!(
-            result.unwrap(),
+            result.expect("value"),
             index_file,
             "index.json must take priority over shard files"
         );

@@ -328,7 +328,7 @@ fn test_benchmark_comparison_negative_speedup() {
         runs: 30,
     };
 
-    assert!(bench.speedup_vs_llama.unwrap() < 0.0);
+    assert!(bench.speedup_vs_llama.expect("speedup_vs_llama") < 0.0);
 }
 
 #[test]
@@ -345,10 +345,10 @@ fn test_benchmark_comparison_deserialization() {
         "apr_tps_stddev": 3.2,
         "runs": 50
     }"#;
-    let bench: BenchmarkComparison = serde_json::from_str(json).unwrap();
+    let bench: BenchmarkComparison = serde_json::from_str(json).expect("value");
     assert!((bench.apr_tps - 100.5).abs() < 0.001);
     assert!(bench.llama_cpp_tps.is_none());
-    assert!((bench.ollama_tps.unwrap() - 80.0).abs() < 0.001);
+    assert!((bench.ollama_tps.expect("ollama_tps") - 80.0).abs() < 0.001);
     assert_eq!(bench.runs, 50);
 }
 
@@ -369,7 +369,7 @@ fn test_benchmark_comparison_clone() {
     let cloned = original.clone();
     assert!((cloned.apr_tps - 44.0).abs() < 0.001);
     assert_eq!(cloned.runs, 30);
-    assert!((cloned.speedup_vs_llama.unwrap() - 25.7).abs() < 0.001);
+    assert!((cloned.speedup_vs_llama.expect("speedup_vs_llama") - 25.7).abs() < 0.001);
 }
 
 // ========================================================================

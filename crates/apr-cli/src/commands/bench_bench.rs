@@ -398,7 +398,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 100, Duration::from_millis(50), &config).unwrap();
+            calculate_benchmark_stats(times, 100, Duration::from_millis(50), &config).expect("&config)");
 
         assert_eq!(result.total_tokens, 100);
         assert_eq!(result.total_time, Duration::from_secs(5));
@@ -429,7 +429,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
+            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).expect("&config)");
 
         // Total time = 1500ms = 1.5s
         assert_eq!(result.total_time, Duration::from_millis(1500));

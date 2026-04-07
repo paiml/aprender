@@ -21,7 +21,7 @@ fn test_format_tools_prompt_no_description() {
 #[test]
 fn test_parse_tool_calls_valid_json() {
     let output = r#"{"tool_call": {"name": "calc", "arguments": {"x": 42}}}"#;
-    let calls = parse_tool_calls(output).unwrap();
+    let calls = parse_tool_calls(output).expect("parse_tool_calls(output)");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].function.name, "calc");
     assert_eq!(calls[0].tool_type, "function");
@@ -32,7 +32,7 @@ fn test_parse_tool_calls_valid_json() {
 #[test]
 fn test_parse_tool_calls_embedded_in_text() {
     let output = r#"Let me help. {"tool_call": {"name": "search", "arguments": {"q": "rust"}}}"#;
-    let calls = parse_tool_calls(output).unwrap();
+    let calls = parse_tool_calls(output).expect("parse_tool_calls(output)");
     assert_eq!(calls[0].function.name, "search");
 }
 
@@ -64,7 +64,7 @@ fn test_parse_tool_calls_invalid_json() {
 #[test]
 fn test_parse_tool_calls_whitespace_trimmed() {
     let output = r#"  {"tool_call": {"name": "ws_test", "arguments": {}}}  "#;
-    let calls = parse_tool_calls(output).unwrap();
+    let calls = parse_tool_calls(output).expect("parse_tool_calls(output)");
     assert_eq!(calls[0].function.name, "ws_test");
 }
 
@@ -110,7 +110,7 @@ fn test_function_def_serialization_skips_none() {
         description: None,
         parameters: None,
     };
-    let json = serde_json::to_string(&def).unwrap();
+    let json = serde_json::to_string(&def).expect("serde_json::to_string(&def)");
     assert!(!json.contains("description"));
     assert!(!json.contains("parameters"));
     assert!(json.contains("\"name\":\"test\""));
@@ -122,8 +122,8 @@ fn test_function_call_roundtrip() {
         name: "compute".to_string(),
         arguments: r#"{"a": 1, "b": 2}"#.to_string(),
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: FunctionCall = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("serde_json::to_string(&origina");
+    let parsed: FunctionCall = serde_json::from_str(&json).expect("serde_json::from_str(&json)");
     assert_eq!(parsed.name, "compute");
     assert_eq!(parsed.arguments, r#"{"a": 1, "b": 2}"#);
 }
@@ -133,8 +133,8 @@ fn test_tool_choice_function_name_roundtrip() {
     let name = ToolChoiceFunction {
         name: "my_fn".to_string(),
     };
-    let json = serde_json::to_string(&name).unwrap();
-    let parsed: ToolChoiceFunction = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&name).expect("serde_json::to_string(&name)");
+    let parsed: ToolChoiceFunction = serde_json::from_str(&json).expect("serde_json::from_str(&json)");
     assert_eq!(parsed.name, "my_fn");
 }
 

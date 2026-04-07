@@ -6,7 +6,7 @@
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_gguf_inference_no_inference_needs_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -15,17 +15,17 @@ fn test_run_gguf_inference_no_inference_needs_file() {
     // Create a fake GGUF file that's large enough
     let gguf_path = temp_dir.path().join(config.tier.gguf_filename());
     let fake_data = vec![0u8; 2_000_000]; // 2MB
-    std::fs::write(&gguf_path, &fake_data).unwrap();
+    std::fs::write(&gguf_path, &fake_data).expect("value");
 
     let result = super::pipeline::run_gguf_inference(&config);
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(result.expect("value"));
 }
 
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_gguf_inference_no_inference_too_small() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -33,7 +33,7 @@ fn test_run_gguf_inference_no_inference_too_small() {
 
     // Create a GGUF file that's too small
     let gguf_path = temp_dir.path().join(config.tier.gguf_filename());
-    std::fs::write(&gguf_path, b"tiny").unwrap();
+    std::fs::write(&gguf_path, b"tiny").expect("value");
 
     let result = super::pipeline::run_gguf_inference(&config);
     assert!(result.is_err());
@@ -42,7 +42,7 @@ fn test_run_gguf_inference_no_inference_too_small() {
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_gguf_inference_no_inference_missing_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -56,7 +56,7 @@ fn test_run_gguf_inference_no_inference_missing_file() {
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_convert_no_inference() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -65,24 +65,24 @@ fn test_run_convert_no_inference() {
     // Create a fake GGUF file for conversion
     let gguf_path = temp_dir.path().join(config.tier.gguf_filename());
     let fake_data = vec![0u8; 1_000];
-    std::fs::write(&gguf_path, &fake_data).unwrap();
+    std::fs::write(&gguf_path, &fake_data).expect("value");
 
     let result = super::pipeline::run_convert(&config);
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(result.expect("value"));
 
     // Should have created a placeholder APR file
     let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
     let apr_path = temp_dir.path().join(apr_basename);
     assert!(apr_path.exists());
-    let content = std::fs::read_to_string(&apr_path).unwrap();
+    let content = std::fs::read_to_string(&apr_path).expect("value");
     assert!(content.contains("APR-PLACEHOLDER-V2"));
 }
 
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_apr_inference_no_inference_missing_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -91,13 +91,13 @@ fn test_run_apr_inference_no_inference_missing_file() {
     // No APR file - should return Ok(false)
     let result = super::pipeline::run_apr_inference(&config);
     assert!(result.is_ok());
-    assert!(!result.unwrap());
+    assert!(!result.expect("value"));
 }
 
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_apr_inference_no_inference_with_file() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -106,17 +106,17 @@ fn test_run_apr_inference_no_inference_with_file() {
     // Create a placeholder APR file
     let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
     let apr_path = temp_dir.path().join(&apr_basename);
-    std::fs::write(&apr_path, "APR-PLACEHOLDER").unwrap();
+    std::fs::write(&apr_path, "APR-PLACEHOLDER").expect("value");
 
     let result = super::pipeline::run_apr_inference(&config);
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(result.expect("value"));
 }
 
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_apr_inference_no_inference_with_zram_flag() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         zram: true, // Tests the ZRAM flag printing path
@@ -125,7 +125,7 @@ fn test_run_apr_inference_no_inference_with_zram_flag() {
 
     let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
     let apr_path = temp_dir.path().join(&apr_basename);
-    std::fs::write(&apr_path, "APR-PLACEHOLDER").unwrap();
+    std::fs::write(&apr_path, "APR-PLACEHOLDER").expect("value");
 
     let result = super::pipeline::run_apr_inference(&config);
     assert!(result.is_ok());
@@ -137,7 +137,7 @@ fn test_run_apr_inference_no_inference_with_zram_flag() {
 
 #[test]
 fn test_run_import_model_already_exists() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -145,11 +145,11 @@ fn test_run_import_model_already_exists() {
 
     // Create the model file so import returns early
     let gguf_path = temp_dir.path().join(config.tier.gguf_filename());
-    std::fs::write(&gguf_path, b"existing model data").unwrap();
+    std::fs::write(&gguf_path, b"existing model data").expect("value");
 
     let result = super::pipeline::run_import(&config);
     assert!(result.is_ok());
-    assert!(result.unwrap()); // Should return true for already-exists
+    assert!(result.expect("value")); // Should return true for already-exists
 }
 
 // ========================================================================
@@ -265,8 +265,8 @@ fn test_benchmark_comparison_serde_all_none() {
         apr_tps_stddev: 2.0,
         runs: 30,
     };
-    let json = serde_json::to_string(&bench).unwrap();
-    let parsed: BenchmarkComparison = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&bench).expect("value");
+    let parsed: BenchmarkComparison = serde_json::from_str(&json).expect("value");
     assert!((parsed.apr_tps - 50.0).abs() < 0.001);
     assert!(parsed.llama_cpp_tps.is_none());
     assert!(parsed.ollama_tps.is_none());
@@ -288,11 +288,11 @@ fn test_benchmark_comparison_serde_pretty_print() {
         apr_tps_stddev: 1.5,
         runs: 30,
     };
-    let pretty = serde_json::to_string_pretty(&bench).unwrap();
+    let pretty = serde_json::to_string_pretty(&bench).expect("value");
     assert!(pretty.contains('\n'));
     assert!(pretty.contains("apr_tps"));
     // Verify round-trip with pretty-printed JSON
-    let parsed: BenchmarkComparison = serde_json::from_str(&pretty).unwrap();
+    let parsed: BenchmarkComparison = serde_json::from_str(&pretty).expect("value");
     assert_eq!(parsed.runs, 30);
 }
 
@@ -303,7 +303,7 @@ fn test_benchmark_comparison_serde_pretty_print() {
 #[test]
 #[cfg(not(feature = "inference"))]
 fn test_run_convert_apr_already_exists() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -311,11 +311,11 @@ fn test_run_convert_apr_already_exists() {
 
     // Create both GGUF and APR files
     let gguf_path = temp_dir.path().join(config.tier.gguf_filename());
-    std::fs::write(&gguf_path, b"fake gguf").unwrap();
+    std::fs::write(&gguf_path, b"fake gguf").expect("value");
 
     let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
     let apr_path = temp_dir.path().join(&apr_basename);
-    std::fs::write(&apr_path, b"existing apr").unwrap();
+    std::fs::write(&apr_path, b"existing apr").expect("value");
 
     // The non-inference convert path still writes a placeholder.
     // But the inference path would short-circuit. Let's verify the function runs:

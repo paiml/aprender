@@ -12,7 +12,7 @@ fn test_generate_request_full_deserialization() {
         "stream": true,
         "stop": [".", "!"]
     }"#;
-    let req: GenerateRequest = serde_json::from_str(json).unwrap();
+    let req: GenerateRequest = serde_json::from_str(json).expect("value");
     assert_eq!(req.prompt, "Hello world");
     assert_eq!(req.max_tokens, 128);
     assert!((req.temperature - 0.7).abs() < f32::EPSILON);
@@ -26,7 +26,7 @@ fn test_generate_request_full_deserialization() {
 fn test_generate_request_minimal() {
     // Only prompt is required, everything else has defaults
     let json = r#"{"prompt": "test"}"#;
-    let req: GenerateRequest = serde_json::from_str(json).unwrap();
+    let req: GenerateRequest = serde_json::from_str(json).expect("value");
     assert_eq!(req.prompt, "test");
     assert_eq!(req.max_tokens, 256);
     assert!((req.temperature - 1.0).abs() < f32::EPSILON);
@@ -43,7 +43,7 @@ fn test_generate_response_serialization() {
         latency_ms: 123,
     };
 
-    let json = serde_json::to_string(&resp).unwrap();
+    let json = serde_json::to_string(&resp).expect("value");
     assert!(json.contains("\"text\":\"Hello there\""));
     assert!(json.contains("\"tokens_generated\":5"));
     assert!(json.contains("\"finish_reason\":\"stop\""));
@@ -58,8 +58,8 @@ fn test_generate_response_roundtrip() {
         finish_reason: "length".to_string(),
         latency_ms: 567,
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: GenerateResponse = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("value");
+    let parsed: GenerateResponse = serde_json::from_str(&json).expect("value");
     assert_eq!(parsed.text, "Output text");
     assert_eq!(parsed.tokens_generated, 42);
     assert_eq!(parsed.finish_reason, "length");
@@ -117,7 +117,7 @@ fn test_stream_event_done_sse_format() {
 #[test]
 fn test_stream_event_serialization() {
     let event = StreamEvent::token("test", 99);
-    let json = serde_json::to_string(&event).unwrap();
+    let json = serde_json::to_string(&event).expect("value");
     assert!(json.contains("\"event\":\"token\""));
     assert!(json.contains("\"data\":\"test\""));
     assert!(json.contains("\"token_id\":99"));
@@ -126,7 +126,7 @@ fn test_stream_event_serialization() {
 #[test]
 fn test_stream_event_done_serialization_skips_token_id() {
     let event = StreamEvent::done("stop", 10);
-    let json = serde_json::to_string(&event).unwrap();
+    let json = serde_json::to_string(&event).expect("value");
     // token_id is None -> should be skipped
     assert!(!json.contains("token_id"));
 }
@@ -138,7 +138,7 @@ fn test_stream_event_done_serialization_skips_token_id() {
 #[test]
 fn test_transcribe_request_defaults() {
     let json = r#"{}"#;
-    let req: TranscribeRequest = serde_json::from_str(json).unwrap();
+    let req: TranscribeRequest = serde_json::from_str(json).expect("value");
     assert!(req.language.is_none());
     assert_eq!(req.task, "transcribe");
 }
@@ -146,7 +146,7 @@ fn test_transcribe_request_defaults() {
 #[test]
 fn test_transcribe_request_with_language() {
     let json = r#"{"language": "fr", "task": "translate"}"#;
-    let req: TranscribeRequest = serde_json::from_str(json).unwrap();
+    let req: TranscribeRequest = serde_json::from_str(json).expect("value");
     assert_eq!(req.language.as_deref(), Some("fr"));
     assert_eq!(req.task, "translate");
 }
@@ -159,8 +159,8 @@ fn test_transcribe_response_roundtrip() {
         duration_seconds: 3.5,
         latency_ms: 200,
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: TranscribeResponse = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("value");
+    let parsed: TranscribeResponse = serde_json::from_str(&json).expect("value");
     assert_eq!(parsed.text, "Hello world");
     assert_eq!(parsed.language, "en");
     assert!((parsed.duration_seconds - 3.5).abs() < f64::EPSILON);
@@ -178,7 +178,7 @@ fn test_server_info_serialization() {
         version: "0.25.1".to_string(),
         model_id: "my-model".to_string(),
     };
-    let json = serde_json::to_string(&info).unwrap();
+    let json = serde_json::to_string(&info).expect("value");
     assert!(json.contains("\"name\":\"apr-serve\""));
     assert!(json.contains("\"version\":\"0.25.1\""));
     assert!(json.contains("\"model_id\":\"my-model\""));
@@ -191,8 +191,8 @@ fn test_server_info_roundtrip() {
         version: "1.2.3".to_string(),
         model_id: "model-abc".to_string(),
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: ServerInfo = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("value");
+    let parsed: ServerInfo = serde_json::from_str(&json).expect("value");
     assert_eq!(parsed.name, "test");
     assert_eq!(parsed.version, "1.2.3");
     assert_eq!(parsed.model_id, "model-abc");
@@ -205,7 +205,7 @@ fn test_server_info_roundtrip() {
 #[test]
 fn test_chat_message_user_message() {
     let json = r#"{"role": "user", "content": "Hello"}"#;
-    let msg: ChatMessage = serde_json::from_str(json).unwrap();
+    let msg: ChatMessage = serde_json::from_str(json).expect("value");
     assert_eq!(msg.role, "user");
     assert_eq!(msg.content.as_deref(), Some("Hello"));
     assert!(msg.tool_calls.is_none());
@@ -216,7 +216,7 @@ fn test_chat_message_user_message() {
 #[test]
 fn test_chat_message_system_message() {
     let json = r#"{"role": "system", "content": "You are helpful."}"#;
-    let msg: ChatMessage = serde_json::from_str(json).unwrap();
+    let msg: ChatMessage = serde_json::from_str(json).expect("value");
     assert_eq!(msg.role, "system");
     assert_eq!(msg.content.as_deref(), Some("You are helpful."));
 }
@@ -232,11 +232,11 @@ fn test_chat_message_assistant_with_tool_calls() {
             "function": {"name": "calc", "arguments": "{\"x\":1}"}
         }]
     }"#;
-    let msg: ChatMessage = serde_json::from_str(json).unwrap();
+    let msg: ChatMessage = serde_json::from_str(json).expect("value");
     assert_eq!(msg.role, "assistant");
     assert!(msg.content.is_none());
     assert!(msg.tool_calls.is_some());
-    let calls = msg.tool_calls.unwrap();
+    let calls = msg.tool_calls.expect("tool_calls");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].id, "call_1");
     assert_eq!(calls[0].function.name, "calc");
@@ -251,7 +251,7 @@ fn test_chat_message_serialization_skips_none() {
         tool_call_id: None,
         name: None,
     };
-    let json = serde_json::to_string(&msg).unwrap();
+    let json = serde_json::to_string(&msg).expect("value");
     assert!(!json.contains("tool_calls"));
     assert!(!json.contains("tool_call_id"));
     assert!(!json.contains("name"));
@@ -264,7 +264,7 @@ fn test_chat_message_serialization_skips_none() {
 #[test]
 fn test_chat_completion_request_minimal() {
     let json = r#"{"messages": [{"role": "user", "content": "Hi"}]}"#;
-    let req: ChatCompletionRequest = serde_json::from_str(json).unwrap();
+    let req: ChatCompletionRequest = serde_json::from_str(json).expect("value");
     assert_eq!(req.model, ""); // default
     assert_eq!(req.messages.len(), 1);
     assert!(req.tools.is_none());
@@ -288,13 +288,13 @@ fn test_chat_completion_request_full() {
         "temperature": 0.5,
         "top_p": 0.9
     }"#;
-    let req: ChatCompletionRequest = serde_json::from_str(json).unwrap();
+    let req: ChatCompletionRequest = serde_json::from_str(json).expect("value");
     assert_eq!(req.model, "gpt-4");
     assert_eq!(req.messages.len(), 2);
     assert_eq!(req.max_tokens, Some(100));
     assert!(req.stream);
-    assert!((req.temperature.unwrap() - 0.5).abs() < f32::EPSILON);
-    assert!((req.top_p.unwrap() - 0.9).abs() < f32::EPSILON);
+    assert!((req.temperature.expect("temperature") - 0.5).abs() < f32::EPSILON);
+    assert!((req.top_p.expect("top_p") - 0.9).abs() < f32::EPSILON);
 }
 
 #[test]
@@ -321,12 +321,12 @@ fn test_chat_completion_response_roundtrip() {
             total_tokens: 6,
         }),
     };
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: ChatCompletionResponse = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("value");
+    let parsed: ChatCompletionResponse = serde_json::from_str(&json).expect("value");
     assert_eq!(parsed.id, "chatcmpl-001");
     assert_eq!(parsed.choices.len(), 1);
     assert_eq!(parsed.choices[0].message.content.as_deref(), Some("Hello!"));
-    assert_eq!(parsed.usage.as_ref().unwrap().total_tokens, 6);
+    assert_eq!(parsed.usage.as_ref().expect("as_ref").total_tokens, 6);
 }
 
 // ========================================================================
@@ -340,8 +340,8 @@ fn test_token_usage_roundtrip() {
         completion_tokens: 20,
         total_tokens: 30,
     };
-    let json = serde_json::to_string(&usage).unwrap();
-    let parsed: TokenUsage = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&usage).expect("value");
+    let parsed: TokenUsage = serde_json::from_str(&json).expect("value");
     assert_eq!(parsed.prompt_tokens, 10);
     assert_eq!(parsed.completion_tokens, 20);
     assert_eq!(parsed.total_tokens, 30);
@@ -354,7 +354,7 @@ fn test_token_usage_roundtrip() {
 #[test]
 fn test_tool_choice_mode_auto() {
     let json = r#""auto""#;
-    let choice: ToolChoice = serde_json::from_str(json).unwrap();
+    let choice: ToolChoice = serde_json::from_str(json).expect("value");
     match choice {
         ToolChoice::Mode(mode) => assert_eq!(mode, "auto"),
         _ => panic!("Expected Mode variant"),
@@ -364,7 +364,7 @@ fn test_tool_choice_mode_auto() {
 #[test]
 fn test_tool_choice_mode_none() {
     let json = r#""none""#;
-    let choice: ToolChoice = serde_json::from_str(json).unwrap();
+    let choice: ToolChoice = serde_json::from_str(json).expect("value");
     match choice {
         ToolChoice::Mode(mode) => assert_eq!(mode, "none"),
         _ => panic!("Expected Mode variant"),
@@ -374,7 +374,7 @@ fn test_tool_choice_mode_none() {
 #[test]
 fn test_tool_choice_specific_function() {
     let json = r#"{"type": "function", "function": {"name": "get_temp"}}"#;
-    let choice: ToolChoice = serde_json::from_str(json).unwrap();
+    let choice: ToolChoice = serde_json::from_str(json).expect("value");
     match choice {
         ToolChoice::Function {
             tool_type,

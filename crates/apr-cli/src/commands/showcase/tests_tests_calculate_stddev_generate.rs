@@ -46,7 +46,7 @@ fn test_extract_json_field_with_spaces() {
 fn test_extract_json_field_float() {
     let json = r#"{"value": 3.14}"#;
     let val = super::benchmark::extract_json_field(json, "value");
-    assert!((val.unwrap() - 3.14).abs() < 0.001);
+    assert!((val.expect("value") - 3.14).abs() < 0.001);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn test_format_benchmark_csv_header_structure() {
         runs: 1,
     };
     let csv = format_benchmark_csv(&bench);
-    let header = csv.lines().next().unwrap();
+    let header = csv.lines().next().expect("next");
     assert_eq!(
         header,
         "system,tokens_per_sec,ttft_ms,speedup_pct,stddev,runs"
@@ -189,7 +189,7 @@ fn test_brick_demo_result_with_data() {
     assert_eq!(r.layers_measured, 28);
     assert_eq!(r.layer_timings_us.len(), 3);
     assert!(r.bottleneck.is_some());
-    let (name, time) = r.bottleneck.unwrap();
+    let (name, time) = r.bottleneck.expect("bottleneck");
     assert_eq!(name, "FfnBrick");
     assert!((time - 120.0).abs() < 0.001);
     assert!(r.assertions_passed);

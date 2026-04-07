@@ -11,7 +11,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 10, Duration::from_millis(50), &config).unwrap();
+            calculate_benchmark_stats(times, 10, Duration::from_millis(50), &config).expect("&config)");
 
         assert_eq!(result.total_time, Duration::from_millis(500));
         assert_eq!(result.mean_time, Duration::from_millis(500));
@@ -36,7 +36,7 @@
         };
         // 500 tokens / 0.5s = 1000 tok/s
         let result =
-            calculate_benchmark_stats(times, 500, Duration::from_millis(5), &config).unwrap();
+            calculate_benchmark_stats(times, 500, Duration::from_millis(5), &config).expect("&config)");
 
         assert!(result.passed); // 1000 >= 60
         assert!(result.tokens_per_second >= 60.0);
@@ -56,7 +56,7 @@
         };
         // 10 tokens / 10s = 1 tok/s
         let result =
-            calculate_benchmark_stats(times, 10, Duration::from_millis(200), &config).unwrap();
+            calculate_benchmark_stats(times, 10, Duration::from_millis(200), &config).expect("&config)");
 
         assert!(!result.passed); // 1 < 60
         assert!(result.tokens_per_second < 60.0);
@@ -76,7 +76,7 @@
         };
         // 300 tokens / 5s = 60 tok/s
         let result =
-            calculate_benchmark_stats(times, 300, Duration::from_millis(10), &config).unwrap();
+            calculate_benchmark_stats(times, 300, Duration::from_millis(10), &config).expect("&config)");
 
         assert!(result.passed); // 60 >= 60
         assert!((result.tokens_per_second - 60.0).abs() < 0.01);
@@ -103,7 +103,7 @@
             Duration::from_millis(10),
             &config,
         )
-        .unwrap();
+        .expect("expected value");
 
         // iteration_times should be preserved as-is (not sorted)
         assert_eq!(result.iteration_times, original_times);
@@ -127,7 +127,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 40, Duration::from_millis(25), &config).unwrap();
+            calculate_benchmark_stats(times, 40, Duration::from_millis(25), &config).expect("&config)");
 
         // GH-491: sorted [100, 200, 300, 400], even count: avg(200, 300) = 250ms
         assert_eq!(result.median_time, Duration::from_millis(250));
@@ -150,7 +150,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 30, Duration::from_millis(10), &config).unwrap();
+            calculate_benchmark_stats(times, 30, Duration::from_millis(10), &config).expect("&config)");
 
         // sorted: [100, 300, 500], median index 3/2=1 => 300ms
         assert_eq!(result.median_time, Duration::from_millis(300));
@@ -168,7 +168,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 1000, Duration::from_nanos(10), &config).unwrap();
+            calculate_benchmark_stats(times, 1000, Duration::from_nanos(10), &config).expect("&config)");
 
         // 1000 tokens / 1 microsecond = 1e9 tok/s
         assert!(result.tokens_per_second > 1e6);
@@ -193,7 +193,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
+            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).expect("&config)");
 
         // Total time = 10400ms
         // Mean = 2080ms
@@ -217,7 +217,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 20, Duration::from_millis(50), &config).unwrap();
+            calculate_benchmark_stats(times, 20, Duration::from_millis(50), &config).expect("&config)");
 
         // Mean = 500ms
         assert_eq!(result.mean_time, Duration::from_millis(500));
@@ -239,7 +239,7 @@
             prompt: "test".to_string(),
             quiet: false,
         };
-        let result = calculate_benchmark_stats(times, 0, Duration::ZERO, &config).unwrap();
+        let result = calculate_benchmark_stats(times, 0, Duration::ZERO, &config).expect("&config)");
 
         assert_eq!(result.total_tokens, 0);
         // 0 / 0.3 = 0.0
@@ -259,7 +259,7 @@
             quiet: false,
         };
         let ttft = Duration::from_millis(42);
-        let result = calculate_benchmark_stats(times, 30, ttft, &config).unwrap();
+        let result = calculate_benchmark_stats(times, 30, ttft, &config).expect("&config)");
 
         assert_eq!(result.time_to_first_token, ttft);
     }

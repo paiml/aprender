@@ -20,7 +20,7 @@
     #[test]
     fn test_gh213_resolve_bare_org_repo_with_gguf_extension() {
         // "org/repo/file.gguf" should normalize to "hf://org/repo/file.gguf" → SingleFile
-        let result = resolve_hf_model("org/repo/model.gguf").unwrap();
+        let result = resolve_hf_model("org/repo/model.gguf").expect("gguf'");
         match result {
             ResolvedModel::SingleFile(s) => {
                 assert_eq!(s, "hf://org/repo/model.gguf");
@@ -32,7 +32,7 @@
     #[test]
     fn test_gh213_resolve_bare_single_component_unchanged() {
         // "justAName" (no slash) should not be normalized, stays as local path
-        let result = resolve_hf_model("justAName").unwrap();
+        let result = resolve_hf_model("justAName").expect("resolve_hf_model('justAName')");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "justAName"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -42,7 +42,7 @@
     #[test]
     fn test_gh213_resolve_relative_path_not_normalized() {
         // "./path/to/model" should NOT be treated as org/repo
-        let result = resolve_hf_model("./path/to/model").unwrap();
+        let result = resolve_hf_model("./path/to/model").expect("/path/to/model'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "./path/to/model"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -52,7 +52,7 @@
     #[test]
     fn test_gh213_resolve_absolute_path_not_normalized() {
         // "/home/user/model" should NOT be treated as org/repo
-        let result = resolve_hf_model("/home/user/model").unwrap();
+        let result = resolve_hf_model("/home/user/model").expect("resolve_hf_model('/home/user/m");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "/home/user/model"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -64,7 +64,7 @@
     #[ignore]
     fn test_gh213_resolve_small_model_is_single_file() {
         // 0.5B model has a single model.safetensors
-        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct").unwrap();
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct").expect("5B-Instruct'");
         match result {
             ResolvedModel::SingleFile(s) => {
                 assert!(
@@ -81,7 +81,7 @@
     #[ignore]
     fn test_gh213_resolve_large_model_is_sharded() {
         // 3B+ models use sharded SafeTensors
-        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-3B-Instruct").unwrap();
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-3B-Instruct").expect("5-Coder-3B-Instruct'");
         match result {
             ResolvedModel::Sharded {
                 org,
@@ -113,7 +113,7 @@
     #[test]
     #[ignore]
     fn test_gh213_resolve_7b_model_is_sharded() {
-        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-7B-Instruct").unwrap();
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-7B-Instruct").expect("5-Coder-7B-Instruct'");
         match result {
             ResolvedModel::Sharded { shard_files, .. } => {
                 assert!(
@@ -404,7 +404,7 @@
 
     #[test]
     fn test_resolve_hf_model_with_apr_extension() {
-        let result = resolve_hf_model("hf://org/repo/model.apr").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.apr").expect("apr'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.apr"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .apr"),
@@ -413,7 +413,7 @@
 
     #[test]
     fn test_resolve_hf_model_with_pt_extension() {
-        let result = resolve_hf_model("hf://org/repo/model.pt").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.pt").expect("pt'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.pt"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .pt"),
@@ -422,7 +422,7 @@
 
     #[test]
     fn test_resolve_hf_model_case_insensitive_safetensors() {
-        let result = resolve_hf_model("hf://org/repo/model.SafeTensors").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.SafeTensors").expect("SafeTensors'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.SafeTensors"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
@@ -431,7 +431,7 @@
 
     #[test]
     fn test_resolve_hf_model_with_mixed_case_apr() {
-        let result = resolve_hf_model("hf://org/repo/model.APR").unwrap();
+        let result = resolve_hf_model("hf://org/repo/model.APR").expect("APR'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.APR"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .APR"),
@@ -441,7 +441,7 @@
     #[test]
     fn test_resolve_hf_model_bare_org_repo_with_safetensors() {
         // "org/repo/model.safetensors" → "hf://org/repo/model.safetensors" → SingleFile
-        let result = resolve_hf_model("org/repo/model.safetensors").unwrap();
+        let result = resolve_hf_model("org/repo/model.safetensors").expect("safetensors'");
         match result {
             ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.safetensors"),
             ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),

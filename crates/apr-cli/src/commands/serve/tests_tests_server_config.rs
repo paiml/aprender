@@ -253,13 +253,13 @@ fn test_error_response_with_string_types() {
 
 #[test]
 fn test_health_status_deserialization() {
-    let healthy: HealthStatus = serde_json::from_str("\"healthy\"").unwrap();
+    let healthy: HealthStatus = serde_json::from_str("\"healthy\"").expect("value");
     assert_eq!(healthy, HealthStatus::Healthy);
 
-    let degraded: HealthStatus = serde_json::from_str("\"degraded\"").unwrap();
+    let degraded: HealthStatus = serde_json::from_str("\"degraded\"").expect("value");
     assert_eq!(degraded, HealthStatus::Degraded);
 
-    let unhealthy: HealthStatus = serde_json::from_str("\"unhealthy\"").unwrap();
+    let unhealthy: HealthStatus = serde_json::from_str("\"unhealthy\"").expect("value");
     assert_eq!(unhealthy, HealthStatus::Unhealthy);
 }
 
@@ -300,8 +300,8 @@ fn test_health_response_full_roundtrip() {
         gpu_available: true,
     };
 
-    let json = serde_json::to_string(&original).unwrap();
-    let parsed: HealthResponse = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&original).expect("value");
+    let parsed: HealthResponse = serde_json::from_str(&json).expect("value");
 
     assert_eq!(parsed.status, HealthStatus::Degraded);
     assert_eq!(parsed.model_id, "qwen2-7b");
@@ -318,7 +318,7 @@ fn test_health_response_full_roundtrip() {
 #[test]
 fn test_health_check_not_ready_is_unhealthy() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     // Not calling set_ready()
     let health = health_check(&state);
     assert_eq!(health.status, HealthStatus::Unhealthy);
@@ -327,7 +327,7 @@ fn test_health_check_not_ready_is_unhealthy() {
 #[test]
 fn test_health_check_ready_zero_requests_is_healthy() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     state.set_ready();
     let health = health_check(&state);
     assert_eq!(health.status, HealthStatus::Healthy);
@@ -336,7 +336,7 @@ fn test_health_check_ready_zero_requests_is_healthy() {
 #[test]
 fn test_health_check_ready_low_latency_is_healthy() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     state.set_ready();
     state.metrics.record_request(true, 10, 100); // 100ms avg
 
@@ -347,7 +347,7 @@ fn test_health_check_ready_low_latency_is_healthy() {
 #[test]
 fn test_health_check_ready_high_latency_is_degraded() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     state.set_ready();
     state.metrics.record_request(true, 10, 5000); // 5000ms avg > 1000ms threshold
 
@@ -358,7 +358,7 @@ fn test_health_check_ready_high_latency_is_degraded() {
 #[test]
 fn test_health_check_includes_version() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     state.set_ready();
 
     let health = health_check(&state);
@@ -371,7 +371,7 @@ fn test_health_check_includes_version() {
 #[test]
 fn test_health_check_includes_requests_total() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     state.set_ready();
     state.metrics.record_request(true, 5, 10);
     state.metrics.record_request(true, 5, 10);
@@ -388,11 +388,11 @@ fn test_health_check_includes_requests_total() {
 #[test]
 fn test_server_state_mmap_threshold_exact() {
     // 50MB exactly should NOT use mmap (threshold is >50MB)
-    let mut file = NamedTempFile::new().unwrap();
+    let mut file = NamedTempFile::new().expect("value");
     let data = vec![0u8; 50 * 1024 * 1024];
-    file.write_all(&data).unwrap();
+    file.write_all(&data).expect("write_all(&data");
 
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     assert!(
         !state.uses_mmap,
         "Exactly 50MB should not use mmap (threshold is >50MB)"
@@ -402,7 +402,7 @@ fn test_server_state_mmap_threshold_exact() {
 #[test]
 fn test_server_state_ready_toggle() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
 
     assert!(!state.is_ready());
     state.set_ready();
@@ -414,10 +414,10 @@ fn test_server_state_ready_toggle() {
 
 #[test]
 fn test_server_state_model_id_no_extension() {
-    let mut file = NamedTempFile::with_suffix(".gguf").unwrap();
-    file.write_all(b"data").unwrap();
+    let mut file = NamedTempFile::with_suffix(".gguf").expect("gguf'");
+    file.write_all(b"data").expect("write_all(b'data'");
 
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
     assert!(!state.model_id.contains(".gguf"));
     assert!(!state.model_id.is_empty());
 }
@@ -426,7 +426,7 @@ fn test_server_state_model_id_no_extension() {
 fn test_server_state_preserves_config() {
     let file = create_test_model();
     let config = ServerConfig::default().with_port(9999).with_host("0.0.0.0");
-    let state = ServerState::new(file.path().to_path_buf(), config).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), config).expect("to_path_buf(), config");
 
     assert_eq!(state.config.port, 9999);
     assert_eq!(state.config.host, "0.0.0.0");
@@ -435,7 +435,7 @@ fn test_server_state_preserves_config() {
 #[test]
 fn test_server_state_metrics_initialized() {
     let file = create_test_model();
-    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).unwrap();
+    let state = ServerState::new(file.path().to_path_buf(), ServerConfig::default()).expect("to_path_buf(), ServerConf");
 
     // Metrics should be freshly initialized with model size already stored
     assert!(state.metrics.model_memory_bytes.load(Ordering::Relaxed) > 0);

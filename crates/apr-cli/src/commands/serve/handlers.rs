@@ -129,7 +129,7 @@ async fn wgpu_chat_completion(
         let prompt_len = prompt_ids.len();
         tokio::task::spawn_blocking(move || {
             let gen_start = std::time::Instant::now();
-            let fwd = state.fwd.lock().unwrap();
+            let fwd = state.fwd.lock().expect("lock(");
             let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
             let mut last_logits = Vec::new();
             // Prefill
@@ -214,7 +214,7 @@ async fn wgpu_chat_completion(
         // Non-streaming: original path
         let gen_start = std::time::Instant::now();
         let mut output_ids: Vec<u32> = Vec::new();
-        let fwd = state.fwd.lock().unwrap();
+        let fwd = state.fwd.lock().expect("lock(");
         let mut kv_caches: Vec<(Vec<f32>, Vec<f32>)> = Vec::new();
 
         let mut last_logits = Vec::new();
@@ -512,7 +512,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
                     let argmax = logits
                         .iter()
                         .enumerate()
-                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .max_by(|a, b| a.1.partial_cmp(b.1).expect("1"))
                         .map(|(i, _)| i)
                         .unwrap_or(0);
                     let elapsed = test_start.elapsed();

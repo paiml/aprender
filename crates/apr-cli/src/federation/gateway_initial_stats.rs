@@ -341,7 +341,7 @@
         // Verify us-west has good health (3 successes)
         let us_west_health = health
             .get_cached_health(&NodeId("us-west-gpu".to_string()))
-            .unwrap();
+            .expect("to_string");
         assert_eq!(
             us_west_health.status,
             HealthState::Healthy,

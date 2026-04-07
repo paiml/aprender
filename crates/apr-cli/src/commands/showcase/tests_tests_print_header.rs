@@ -373,7 +373,7 @@ fn test_run_benchmark_no_inference_no_baselines() {
     };
     let result = super::benchmark::run_benchmark(&config);
     assert!(result.is_ok());
-    let bench = result.unwrap();
+    let bench = result.expect("value");
     // Non-inference path uses simulated values around 44.0 tok/s
     assert!(bench.apr_tps > 0.0);
     assert!(bench.apr_ttft_ms > 0.0);
@@ -390,18 +390,18 @@ fn test_run_benchmark_no_inference_no_baselines() {
 #[test]
 #[cfg(not(feature = "visualization"))]
 fn test_run_visualize_no_visualization_feature() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
     };
     let result = super::demo::run_visualize(&config, None);
     assert!(result.is_ok());
-    assert!(result.unwrap());
+    assert!(result.expect("value"));
     // Should have created an SVG file
     let svg_path = temp_dir.path().join("showcase-performance.svg");
     assert!(svg_path.exists());
-    let content = std::fs::read_to_string(&svg_path).unwrap();
+    let content = std::fs::read_to_string(&svg_path).expect("value");
     assert!(content.contains("<svg"));
     assert!(content.contains("APR Inference"));
 }
@@ -409,7 +409,7 @@ fn test_run_visualize_no_visualization_feature() {
 #[test]
 #[cfg(not(feature = "visualization"))]
 fn test_run_visualize_with_benchmark_data() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()

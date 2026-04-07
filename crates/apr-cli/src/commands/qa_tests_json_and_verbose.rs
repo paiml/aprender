@@ -332,7 +332,7 @@
     }
 
     /// Failed gate with None value (e.g., infrastructure failure, not metric miss).
-    /// Bug class: downstream code unwrapping value.unwrap() on failure.
+    /// Bug class: downstream code unwrapping value.expect("value") on failure.
     #[test]
     fn gate_result_failed_without_value() {
         let result = GateResult::failed(

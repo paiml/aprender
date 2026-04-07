@@ -81,7 +81,7 @@
         let result = find_model_in_dir(Path::new("/nonexistent/directory"));
         // Returns Ok with the directory path if no model found
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("/nonexistent/directory"));
+        assert_eq!(result.expect("value"), PathBuf::from("/nonexistent/directory"));
     }
 
     #[test]
@@ -108,7 +108,7 @@
         };
         let result = format_prediction_output(&[0.5, 0.5], Duration::from_millis(50), &options);
         assert!(result.is_ok());
-        let output = result.unwrap();
+        let output = result.expect("value");
         assert!(output.contains("predictions"));
     }
 
@@ -126,7 +126,7 @@
         let result = resolve_model(&source, false, false);
         // Local paths return Ok (existence check happens later)
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), PathBuf::from("/nonexistent/model.apr"));
+        assert_eq!(result.expect("value"), PathBuf::from("/nonexistent/model.apr"));
     }
 
     #[test]
@@ -157,7 +157,7 @@
     fn test_parse_input_features_none() {
         let result = parse_input_features(None);
         assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        assert!(result.expect("value").is_empty());
     }
 
     #[test]

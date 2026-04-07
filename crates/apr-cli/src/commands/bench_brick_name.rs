@@ -357,7 +357,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 30, Duration::from_secs(10), &config).unwrap();
+            calculate_benchmark_stats(times, 30, Duration::from_secs(10), &config).expect("&config)");
 
         assert_eq!(result.mean_time, Duration::from_secs(10));
         assert_eq!(result.median_time, Duration::from_secs(10));
@@ -385,7 +385,7 @@
             quiet: false,
         };
         let result =
-            calculate_benchmark_stats(times, 50, Duration::from_millis(50), &config).unwrap();
+            calculate_benchmark_stats(times, 50, Duration::from_millis(50), &config).expect("&config)");
 
         // Total = 1500ms, mean = 300ms
         assert_eq!(result.mean_time, Duration::from_millis(300));
@@ -406,7 +406,7 @@
         };
         // 10000 tokens in 50ms = 200,000 tok/s
         let result =
-            calculate_benchmark_stats(times, 10000, Duration::from_millis(1), &config).unwrap();
+            calculate_benchmark_stats(times, 10000, Duration::from_millis(1), &config).expect("&config)");
 
         assert!(result.tokens_per_second > 100_000.0);
         assert!(result.passed);

@@ -155,11 +155,11 @@
     #[test]
     fn test_output_format_parse_mixed_case() {
         assert!(matches!(
-            "Json".parse::<OutputFormat>().unwrap(),
+            "Json".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Json
         ));
         assert!(matches!(
-            "FLAMEGRAPH".parse::<OutputFormat>().unwrap(),
+            "FLAMEGRAPH".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Flamegraph
         ));
     }
@@ -167,11 +167,11 @@
     #[test]
     fn test_profile_focus_parse_mixed_case() {
         assert!(matches!(
-            "ATTENTION".parse::<ProfileFocus>().unwrap(),
+            "ATTENTION".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Attention
         ));
         assert!(matches!(
-            "Mlp".parse::<ProfileFocus>().unwrap(),
+            "Mlp".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Mlp
         ));
     }

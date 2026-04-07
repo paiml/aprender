@@ -54,12 +54,12 @@ fn test_benchmark_comparison_json_serialization() {
         runs: 30,
     };
 
-    let json = serde_json::to_string(&bench).unwrap();
+    let json = serde_json::to_string(&bench).expect("value");
     assert!(json.contains("\"apr_tps\":44.0"));
     assert!(json.contains("\"runs\":30"));
 
     // Round-trip
-    let parsed: BenchmarkComparison = serde_json::from_str(&json).unwrap();
+    let parsed: BenchmarkComparison = serde_json::from_str(&json).expect("value");
     assert!((parsed.apr_tps - 44.0).abs() < 0.001);
     assert_eq!(parsed.runs, 30);
 }
@@ -153,7 +153,7 @@ fn test_export_json_to_file() {
         runs: 30,
     };
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let export_path = temp_dir.path().join("benchmark.json");
 
     let config = ShowcaseConfig {
@@ -163,12 +163,12 @@ fn test_export_json_to_file() {
         ..Default::default()
     };
 
-    export_benchmark_results(&bench, &config).unwrap();
+    export_benchmark_results(&bench, &config).expect("value");
 
     // Verify file exists and contains valid JSON
     assert!(export_path.exists());
-    let content = std::fs::read_to_string(&export_path).unwrap();
-    let parsed: BenchmarkComparison = serde_json::from_str(&content).unwrap();
+    let content = std::fs::read_to_string(&export_path).expect("value");
+    let parsed: BenchmarkComparison = serde_json::from_str(&content).expect("value");
     assert!((parsed.apr_tps - 44.0).abs() < 0.001);
 }
 
@@ -187,7 +187,7 @@ fn test_export_csv_to_file() {
         runs: 30,
     };
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let export_path = temp_dir.path().join("benchmark.csv");
 
     let config = ShowcaseConfig {
@@ -197,11 +197,11 @@ fn test_export_csv_to_file() {
         ..Default::default()
     };
 
-    export_benchmark_results(&bench, &config).unwrap();
+    export_benchmark_results(&bench, &config).expect("value");
 
     // Verify file exists and contains CSV header
     assert!(export_path.exists());
-    let content = std::fs::read_to_string(&export_path).unwrap();
+    let content = std::fs::read_to_string(&export_path).expect("value");
     assert!(content.starts_with("system,tokens_per_sec"));
     assert!(content.contains("APR,44.00"));
 }
@@ -221,7 +221,7 @@ fn test_export_none_creates_no_file() {
         runs: 30,
     };
 
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let json_path = temp_dir.path().join("benchmark-results.json");
     let csv_path = temp_dir.path().join("benchmark-results.csv");
 
@@ -232,7 +232,7 @@ fn test_export_none_creates_no_file() {
         ..Default::default()
     };
 
-    export_benchmark_results(&bench, &config).unwrap();
+    export_benchmark_results(&bench, &config).expect("value");
 
     // No files should be created
     assert!(!json_path.exists());
@@ -264,7 +264,7 @@ fn test_zram_demo_result_fields() {
 #[test]
 #[cfg(feature = "zram")]
 fn test_zram_demo_runs_successfully() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         zram: true,
@@ -275,7 +275,7 @@ fn test_zram_demo_runs_successfully() {
     let result = run_zram_demo(&config);
     assert!(result.is_ok(), "ZRAM demo should complete successfully");
 
-    let zram_result = result.unwrap();
+    let zram_result = result.expect("value");
     // Verify compression ratios are positive
     assert!(zram_result.lz4_ratio > 0.0, "LZ4 ratio should be positive");
     assert!(
@@ -303,7 +303,7 @@ fn test_zram_demo_runs_successfully() {
 fn test_zram_context_extension_point_80() {
     // Point 80: ZRAM ≥2x context extension
     // With typical compression ratios, we should achieve at least 2x context extension
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         zram: true,
@@ -330,10 +330,10 @@ fn test_zram_zero_page_optimization() {
     let compressor = CompressorBuilder::new()
         .algorithm(ZramAlgorithm::Lz4)
         .build()
-        .unwrap();
+        .expect("build");
 
     let zero_page = [0u8; PAGE_SIZE];
-    let compressed = compressor.compress(&zero_page).unwrap();
+    let compressed = compressor.compress(&zero_page).expect("compress(&zero_page");
 
     // Zero page should compress to very small size (same-fill optimization)
     let ratio = PAGE_SIZE as f64 / compressed.data.len() as f64;
@@ -352,12 +352,12 @@ fn test_zram_compression_stats_reporting() {
     let compressor = CompressorBuilder::new()
         .algorithm(ZramAlgorithm::Lz4)
         .build()
-        .unwrap();
+        .expect("build");
 
     // Compress some pages
     let test_page = [0x42u8; PAGE_SIZE];
-    let _ = compressor.compress(&test_page).unwrap();
-    let _ = compressor.compress(&test_page).unwrap();
+    let _ = compressor.compress(&test_page).expect("compress(&test_page");
+    let _ = compressor.compress(&test_page).expect("compress(&test_page");
 
     // Verify stats are tracked (Point 82)
     let stats = compressor.stats();
@@ -417,7 +417,7 @@ fn test_cuda_demo_disabled_result() {
 #[test]
 #[cfg(feature = "cuda")]
 fn test_cuda_demo_runs_successfully() {
-    let temp_dir = tempfile::tempdir().unwrap();
+    let temp_dir = tempfile::tempdir().expect("value");
     let config = ShowcaseConfig {
         model_dir: temp_dir.path().to_path_buf(),
         ..Default::default()
@@ -427,7 +427,7 @@ fn test_cuda_demo_runs_successfully() {
     let result = run_cuda_demo(&config);
     assert!(result.is_ok(), "CUDA demo should complete: {:?}", result);
 
-    let cuda_result = result.unwrap();
+    let cuda_result = result.expect("value");
     // Either CUDA is available with devices, or it's not
     if cuda_result.cuda_available {
         assert!(cuda_result.device_count > 0);

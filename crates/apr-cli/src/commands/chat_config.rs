@@ -22,7 +22,7 @@
         };
         assert!(config.system.is_some());
         assert_eq!(
-            config.system.as_ref().unwrap(),
+            config.system.as_ref().expect("as_ref("),
             "You are a helpful assistant."
         );
     }
@@ -36,7 +36,7 @@
         };
         assert!(config.trace);
         assert_eq!(
-            config.trace_output.as_ref().unwrap().to_str().unwrap(),
+            config.trace_output.as_ref().expect("as_ref(").to_str().expect("to_str("),
             "/tmp/trace.json"
         );
     }

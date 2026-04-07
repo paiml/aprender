@@ -8,19 +8,19 @@ use std::fs;
 #[test]
 fn test_tune_method_parse() {
     assert!(matches!(
-        "lora".parse::<TuneMethod>().unwrap(),
+        "lora".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::LoRA
     ));
     assert!(matches!(
-        "qlora".parse::<TuneMethod>().unwrap(),
+        "qlora".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::QLoRA
     ));
     assert!(matches!(
-        "auto".parse::<TuneMethod>().unwrap(),
+        "auto".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::Auto
     ));
     assert!(matches!(
-        "full".parse::<TuneMethod>().unwrap(),
+        "full".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::Full
     ));
 }
@@ -28,15 +28,15 @@ fn test_tune_method_parse() {
 #[test]
 fn test_tune_method_parse_case_insensitive() {
     assert!(matches!(
-        "LORA".parse::<TuneMethod>().unwrap(),
+        "LORA".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::LoRA
     ));
     assert!(matches!(
-        "LoRa".parse::<TuneMethod>().unwrap(),
+        "LoRa".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::LoRA
     ));
     assert!(matches!(
-        "QLORA".parse::<TuneMethod>().unwrap(),
+        "QLORA".parse::<TuneMethod>().expect("parse::<TuneMethod>"),
         TuneMethod::QLoRA
     ));
 }
@@ -98,16 +98,16 @@ fn test_tune_method_into_entrenar_method() {
 
 #[test]
 fn test_parse_model_size() {
-    assert_eq!(parse_model_size("7B").unwrap(), 7_000_000_000);
-    assert_eq!(parse_model_size("1.5B").unwrap(), 1_500_000_000);
-    assert_eq!(parse_model_size("70B").unwrap(), 70_000_000_000);
-    assert_eq!(parse_model_size("500M").unwrap(), 500_000_000);
+    assert_eq!(parse_model_size("7B").expect("value"), 7_000_000_000);
+    assert_eq!(parse_model_size("1.5B").expect("5B'"), 1_500_000_000);
+    assert_eq!(parse_model_size("70B").expect("value"), 70_000_000_000);
+    assert_eq!(parse_model_size("500M").expect("value"), 500_000_000);
 }
 
 #[test]
 fn test_parse_model_size_case_insensitive() {
-    assert_eq!(parse_model_size("7b").unwrap(), 7_000_000_000);
-    assert_eq!(parse_model_size("1.5b").unwrap(), 1_500_000_000);
+    assert_eq!(parse_model_size("7b").expect("value"), 7_000_000_000);
+    assert_eq!(parse_model_size("1.5b").expect("5b'"), 1_500_000_000);
 }
 
 #[test]
@@ -119,22 +119,22 @@ fn test_parse_model_size_invalid() {
 
 #[test]
 fn test_parse_model_size_decimal() {
-    assert_eq!(parse_model_size("0.5B").unwrap(), 500_000_000);
-    assert_eq!(parse_model_size("2.7B").unwrap(), 2_700_000_000);
-    assert_eq!(parse_model_size("13.5B").unwrap(), 13_500_000_000);
+    assert_eq!(parse_model_size("0.5B").expect("5B'"), 500_000_000);
+    assert_eq!(parse_model_size("2.7B").expect("7B'"), 2_700_000_000);
+    assert_eq!(parse_model_size("13.5B").expect("5B'"), 13_500_000_000);
 }
 
 #[test]
 fn test_parse_model_size_millions() {
-    assert_eq!(parse_model_size("125M").unwrap(), 125_000_000);
-    assert_eq!(parse_model_size("350M").unwrap(), 350_000_000);
-    assert_eq!(parse_model_size("1000M").unwrap(), 1_000_000_000);
+    assert_eq!(parse_model_size("125M").expect("value"), 125_000_000);
+    assert_eq!(parse_model_size("350M").expect("value"), 350_000_000);
+    assert_eq!(parse_model_size("1000M").expect("value"), 1_000_000_000);
 }
 
 #[test]
 fn test_parse_model_size_large() {
-    assert_eq!(parse_model_size("180B").unwrap(), 180_000_000_000);
-    assert_eq!(parse_model_size("405B").unwrap(), 405_000_000_000);
+    assert_eq!(parse_model_size("180B").expect("value"), 180_000_000_000);
+    assert_eq!(parse_model_size("405B").expect("value"), 405_000_000_000);
 }
 
 #[test]
@@ -193,13 +193,13 @@ fn test_estimate_params_from_file() {
     // GH-484: GGUF files use Q4 estimate (size * 2)
     let gguf_file = temp_dir.join("test_model.gguf");
     let _ = fs::write(&gguf_file, &data);
-    let params = estimate_params_from_file(&gguf_file).unwrap();
+    let params = estimate_params_from_file(&gguf_file).expect("value");
     assert_eq!(params, 2_000_000, "GGUF: 1MB * 2 = 2M params (Q4 estimate)");
 
     // GH-484: Non-GGUF files use fp16 estimate (size / 2)
     let st_file = temp_dir.join("test_model.safetensors");
     let _ = fs::write(&st_file, &data);
-    let params = estimate_params_from_file(&st_file).unwrap();
+    let params = estimate_params_from_file(&st_file).expect("value");
     assert_eq!(params, 500_000, "SafeTensors: 1MB / 2 = 500K params (fp16)");
 
     let _ = fs::remove_dir_all(&temp_dir);

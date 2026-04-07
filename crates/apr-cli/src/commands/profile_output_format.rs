@@ -6,15 +6,15 @@
     #[test]
     fn test_output_format_parse() {
         assert!(matches!(
-            "json".parse::<OutputFormat>().unwrap(),
+            "json".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Json
         ));
         assert!(matches!(
-            "human".parse::<OutputFormat>().unwrap(),
+            "human".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Human
         ));
         assert!(matches!(
-            "flamegraph".parse::<OutputFormat>().unwrap(),
+            "flamegraph".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Flamegraph
         ));
     }
@@ -22,7 +22,7 @@
     #[test]
     fn test_output_format_parse_text() {
         assert!(matches!(
-            "text".parse::<OutputFormat>().unwrap(),
+            "text".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Human
         ));
     }
@@ -30,7 +30,7 @@
     #[test]
     fn test_output_format_parse_svg() {
         assert!(matches!(
-            "svg".parse::<OutputFormat>().unwrap(),
+            "svg".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Flamegraph
         ));
     }
@@ -38,11 +38,11 @@
     #[test]
     fn test_output_format_parse_case_insensitive() {
         assert!(matches!(
-            "JSON".parse::<OutputFormat>().unwrap(),
+            "JSON".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Json
         ));
         assert!(matches!(
-            "HUMAN".parse::<OutputFormat>().unwrap(),
+            "HUMAN".parse::<OutputFormat>().expect("parse::<OutputFormat>("),
             OutputFormat::Human
         ));
     }
@@ -80,15 +80,15 @@
     #[test]
     fn test_profile_focus_parse() {
         assert!(matches!(
-            "attention".parse::<ProfileFocus>().unwrap(),
+            "attention".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Attention
         ));
         assert!(matches!(
-            "mlp".parse::<ProfileFocus>().unwrap(),
+            "mlp".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Mlp
         ));
         assert!(matches!(
-            "all".parse::<ProfileFocus>().unwrap(),
+            "all".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::All
         ));
     }
@@ -96,7 +96,7 @@
     #[test]
     fn test_profile_focus_parse_attn() {
         assert!(matches!(
-            "attn".parse::<ProfileFocus>().unwrap(),
+            "attn".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Attention
         ));
     }
@@ -104,7 +104,7 @@
     #[test]
     fn test_profile_focus_parse_ffn() {
         assert!(matches!(
-            "ffn".parse::<ProfileFocus>().unwrap(),
+            "ffn".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Mlp
         ));
     }
@@ -112,11 +112,11 @@
     #[test]
     fn test_profile_focus_parse_matmul() {
         assert!(matches!(
-            "matmul".parse::<ProfileFocus>().unwrap(),
+            "matmul".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Matmul
         ));
         assert!(matches!(
-            "gemm".parse::<ProfileFocus>().unwrap(),
+            "gemm".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Matmul
         ));
     }
@@ -124,11 +124,11 @@
     #[test]
     fn test_profile_focus_parse_embedding() {
         assert!(matches!(
-            "embedding".parse::<ProfileFocus>().unwrap(),
+            "embedding".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Embedding
         ));
         assert!(matches!(
-            "embed".parse::<ProfileFocus>().unwrap(),
+            "embed".parse::<ProfileFocus>().expect("parse::<ProfileFocus>("),
             ProfileFocus::Embedding
         ));
     }
@@ -203,7 +203,7 @@
             min_throughput: Some(100.0),
             ..Default::default()
         };
-        assert_eq!(assertions.min_throughput.unwrap(), 100.0);
+        assert_eq!(assertions.min_throughput.expect("min_throughput"), 100.0);
     }
 
     #[test]
@@ -213,8 +213,8 @@
             max_p50_ms: Some(25.0),
             ..Default::default()
         };
-        assert_eq!(assertions.max_p99_ms.unwrap(), 50.0);
-        assert_eq!(assertions.max_p50_ms.unwrap(), 25.0);
+        assert_eq!(assertions.max_p99_ms.expect("max_p99_ms"), 50.0);
+        assert_eq!(assertions.max_p50_ms.expect("max_p50_ms"), 25.0);
     }
 
     #[test]

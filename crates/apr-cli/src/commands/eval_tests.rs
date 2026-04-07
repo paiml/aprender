@@ -6,18 +6,18 @@ use super::*;
 
 #[test]
 fn test_dataset_parse() {
-    assert_eq!("wikitext-2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
-    assert_eq!("wikitext2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
-    assert_eq!("lambada".parse::<Dataset>().unwrap(), Dataset::Lambada);
-    assert_eq!("custom".parse::<Dataset>().unwrap(), Dataset::Custom);
+    assert_eq!("wikitext-2".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::WikiText2);
+    assert_eq!("wikitext2".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::WikiText2);
+    assert_eq!("lambada".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::Lambada);
+    assert_eq!("custom".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::Custom);
 }
 
 #[test]
 fn test_dataset_parse_case_insensitive() {
-    assert_eq!("WIKITEXT-2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
-    assert_eq!("WikiText2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
-    assert_eq!("LAMBADA".parse::<Dataset>().unwrap(), Dataset::Lambada);
-    assert_eq!("CUSTOM".parse::<Dataset>().unwrap(), Dataset::Custom);
+    assert_eq!("WIKITEXT-2".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::WikiText2);
+    assert_eq!("WikiText2".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::WikiText2);
+    assert_eq!("LAMBADA".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::Lambada);
+    assert_eq!("CUSTOM".parse::<Dataset>().expect("parse::<Dataset>"), Dataset::Custom);
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn test_get_eval_text_wikitext() {
         threshold: 20.0,
     };
 
-    let text = get_eval_text(&config).unwrap();
+    let text = get_eval_text(&config).expect("value");
     assert!(!text.is_empty());
     assert!(text.contains("Eiffel Tower")); // WikiText sample contains this
 }
@@ -220,7 +220,7 @@ fn test_get_eval_text_lambada() {
         threshold: 20.0,
     };
 
-    let text = get_eval_text(&config).unwrap();
+    let text = get_eval_text(&config).expect("value");
     assert!(!text.is_empty());
     assert!(text.contains("walked into the room")); // LAMBADA sample contains this
 }
@@ -234,7 +234,7 @@ fn test_get_eval_text_custom() {
         threshold: 20.0,
     };
 
-    let text = get_eval_text(&config).unwrap();
+    let text = get_eval_text(&config).expect("value");
     assert_eq!(text, "This is custom evaluation text.");
 }
 

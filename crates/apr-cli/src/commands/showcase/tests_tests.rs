@@ -36,8 +36,8 @@ fn test_benchmark_comparison_speedup() {
         runs: 30,
     };
 
-    assert!(comparison.speedup_vs_llama.unwrap() >= 25.0);
-    assert!(comparison.speedup_vs_ollama.unwrap() >= 25.0);
+    assert!(comparison.speedup_vs_llama.expect("speedup_vs_llama") >= 25.0);
+    assert!(comparison.speedup_vs_ollama.expect("speedup_vs_ollama") >= 25.0);
 }
 
 #[test]
