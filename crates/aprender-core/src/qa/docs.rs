@@ -6,7 +6,24 @@
 //! - **Standardization**: Consistent documentation across the codebase
 //! - **Visual Control**: Clear examples demonstrate usage patterns
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Find workspace root (same as velocity.rs)
+fn find_workspace_root() -> PathBuf {
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for _ in 0..5 {
+        let cargo_toml = dir.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") && dir.join("README.md").exists() {
+                    return dir;
+                }
+            }
+        }
+        if !dir.pop() { break; }
+    }
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
 
 /// Documentation test configuration
 #[derive(Debug, Clone)]
@@ -74,7 +91,8 @@ impl DocsResult {
 #[must_use]
 pub fn o1_example_listing() -> DocsResult {
     // Cargo can list examples via cargo run --example
-    let examples_exist = Path::new("examples").exists()
+    let ws = find_workspace_root();
+    let examples_exist = ws.join("examples").exists()
         || std::env::current_dir()
             .map(|p| p.join("examples").exists())
             .unwrap_or(false);
@@ -187,7 +205,8 @@ pub fn o6_public_api_only() -> DocsResult {
 /// Verify mdbook builds
 #[must_use]
 pub fn o7_mdbook_builds() -> DocsResult {
-    let book_exists = Path::new("book").exists() || Path::new("docs/book").exists();
+    let ws = find_workspace_root();
+    let book_exists = ws.join("book").exists() || ws.join("docs/book").exists();
 
     if book_exists {
         DocsResult::pass("O7", "mdBook builds", "mdbook build succeeds")
@@ -226,7 +245,8 @@ pub fn o9_code_blocks_tested() -> DocsResult {
 /// Verify README has quickstart
 #[must_use]
 pub fn o10_readme_quickstart() -> DocsResult {
-    let readme_exists = Path::new("README.md").exists();
+    let ws = find_workspace_root();
+    let readme_exists = ws.join("README.md").exists();
 
     if readme_exists {
         DocsResult::pass(
@@ -272,7 +292,8 @@ pub fn o12_manpages_generation() -> DocsResult {
 /// Verify changelog mentions new features
 #[must_use]
 pub fn o13_changelog_updated() -> DocsResult {
-    let changelog_exists = Path::new("CHANGELOG.md").exists();
+    let ws = find_workspace_root();
+    let changelog_exists = ws.join("CHANGELOG.md").exists();
 
     if changelog_exists {
         DocsResult::pass(
@@ -316,7 +337,8 @@ pub fn o14_contributing_guide() -> DocsResult {
 /// Verify Apache 2.0 license headers
 #[must_use]
 pub fn o15_license_headers() -> DocsResult {
-    let license_exists = Path::new("LICENSE").exists() || Path::new("LICENSE-APACHE").exists();
+    let ws = find_workspace_root();
+    let license_exists = ws.join("LICENSE").exists() || ws.join("LICENSE-APACHE").exists();
 
     if license_exists {
         DocsResult::pass("O15", "License headers", "Apache 2.0 license present")

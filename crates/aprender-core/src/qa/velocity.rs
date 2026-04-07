@@ -6,8 +6,28 @@
 //! - **Flow**: Fast feedback loops enable continuous improvement
 //! - **Jidoka**: Fail fast on broken tests
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+/// Find the workspace root by walking up from CWD looking for a Cargo.toml
+/// that contains `[workspace]`. Falls back to CWD if not found.
+fn find_workspace_root() -> PathBuf {
+    let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    for _ in 0..5 {
+        let cargo_toml = dir.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") && dir.join("Makefile").exists() {
+                    return dir;
+                }
+            }
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
 
 /// Test velocity verification result
 #[derive(Debug, Clone)]
@@ -64,7 +84,7 @@ impl VelocityResult {
 /// Verify test-fast target exists in Makefile
 #[must_use]
 pub fn p1_test_fast_exists() -> VelocityResult {
-    let makefile_path = Path::new("Makefile");
+    let makefile_path = find_workspace_root().join("Makefile");
 
     if !makefile_path.exists() {
         return VelocityResult::fail("P1", "test-fast exists", "Makefile not found");
@@ -99,7 +119,7 @@ pub fn p2_test_fast_under_2s() -> VelocityResult {
     // Note: The full test-fast takes ~21s. The <2s target requires test-smoke.
     // This verifies the test-smoke target exists for the 2s requirement.
 
-    let makefile_path = Path::new("Makefile");
+    let makefile_path = find_workspace_root().join("Makefile");
     if !makefile_path.exists() {
         return VelocityResult::fail("P2", "test-fast < 2s", "Makefile not found");
     }
@@ -225,7 +245,7 @@ pub fn p6_compile_under_5s() -> VelocityResult {
 /// Verify test-heavy target exists for slow tests
 #[must_use]
 pub fn p7_test_heavy_exists() -> VelocityResult {
-    let makefile_path = Path::new("Makefile");
+    let makefile_path = find_workspace_root().join("Makefile");
 
     if !makefile_path.exists() {
         return VelocityResult::fail("P7", "test-heavy exists", "Makefile not found");
@@ -253,7 +273,7 @@ pub fn p7_test_heavy_exists() -> VelocityResult {
 #[must_use]
 pub fn p8_nextest_supported() -> VelocityResult {
     // Check if Makefile uses nextest
-    let makefile_path = Path::new("Makefile");
+    let makefile_path = find_workspace_root().join("Makefile");
 
     if !makefile_path.exists() {
         return VelocityResult::fail("P8", "nextest supported", "Makefile not found");
@@ -281,7 +301,7 @@ pub fn p8_nextest_supported() -> VelocityResult {
 #[must_use]
 pub fn p9_ci_fast_first() -> VelocityResult {
     // Check CI configuration
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let ci_path = find_workspace_root().join(".github/workflows/ci.yml");
 
     if !ci_path.exists() {
         return VelocityResult::fail("P9", "CI fast first", "CI workflow not found");
