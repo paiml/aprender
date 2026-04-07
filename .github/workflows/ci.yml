@@ -43,6 +43,7 @@ jobs:
       - name: Integration tests
         run: |
           cargo test -p aprender-core --test monorepo_invariants
+          cargo test -p aprender-core --test readme_contract
           cargo test -p apr-cli --test cli_commands
 
   mutants:
