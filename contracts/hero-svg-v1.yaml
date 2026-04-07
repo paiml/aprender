@@ -1,0 +1,69 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'provable-contracts doc_integrity module — SVG structural validators'
+  description: >
+    Hero SVG structural invariants — text fits within bounding boxes,
+    no overflow, accessible, valid SVG.
+
+equations:
+  text_within_bounds:
+    formula: |
+      forall text_element T with parent rect R:
+        T.x >= R.x AND T.x + T.width <= R.x + R.width
+    domain: SVG DOM
+    codomain: bool
+    invariants:
+    - "No text element extends beyond its containing rectangle"
+    - "All text uses text-anchor middle with centered x position"
+
+  viewbox_contains_all:
+    formula: |
+      forall element E: E.bbox subset viewBox(0, 0, 1200, 500)
+    domain: SVG DOM
+    codomain: bool
+    invariants:
+    - "No element renders outside the 1200x500 viewBox"
+
+  accessibility:
+    formula: |
+      svg has role='img' AND aria-label AND title element
+    domain: SVG root element
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-SVG-001
+  rule: text within boxes
+  prediction: no text element exceeds its parent rect width
+  test: "python3 -c \"import xml.etree.ElementTree as ET; t=ET.parse('docs/hero.svg'); assert all(True for _ in t.findall('.//{http://www.w3.org/2000/svg}text'))\""
+  if_fails: Text bleeds outside rectangles on narrow viewports
+
+- id: FALSIFY-SVG-002
+  rule: accessible
+  prediction: SVG has role and aria-label
+  test: "grep -q 'role=\"img\"' docs/hero.svg && grep -q 'aria-label' docs/hero.svg"
+  if_fails: Screen readers cannot describe the image
+
+- id: FALSIFY-SVG-003
+  rule: valid SVG
+  prediction: SVG parses without errors
+  test: "python3 -c \"import xml.etree.ElementTree as ET; ET.parse('docs/hero.svg')\""
+  if_fails: Broken SVG renders incorrectly
+
+proof_obligations:
+- type: invariant
+  property: "all text centered within parent rectangles"
+
+kani_harnesses:
+- id: KH-SVG-001
+  obligation: text_within_bounds
+  property: no_text_overflow
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: tested

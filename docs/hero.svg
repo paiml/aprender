@@ -25,120 +25,100 @@
       <stop offset="0%" style="stop-color:#238636"/>
       <stop offset="100%" style="stop-color:#2ea043"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
     <filter id="shadow">
-      <feDropShadow dx="1" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.25"/>
     </filter>
   </defs>
 
   <!-- Background -->
   <rect width="1200" height="500" fill="url(#bg)"/>
 
-  <!-- Subtle grid pattern -->
-  <g opacity="0.03">
-    <line x1="0" y1="50" x2="1200" y2="50" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="100" x2="1200" y2="100" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="150" x2="1200" y2="150" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="200" x2="1200" y2="200" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="250" x2="1200" y2="250" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="300" x2="1200" y2="300" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="350" x2="1200" y2="350" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="400" x2="1200" y2="400" stroke="#fff" stroke-width="1"/>
-    <line x1="0" y1="450" x2="1200" y2="450" stroke="#fff" stroke-width="1"/>
+  <!-- Subtle grid -->
+  <g opacity="0.03" stroke="#fff" stroke-width="1">
+    <line x1="0" y1="100" x2="1200" y2="100"/>
+    <line x1="0" y1="200" x2="1200" y2="200"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="400" x2="1200" y2="400"/>
   </g>
 
   <!-- Title -->
-  <text x="600" y="55" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="42" font-weight="800" letter-spacing="-1">aprender</text>
-  <text x="600" y="82" text-anchor="middle" fill="#8b949e" font-family="system-ui, -apple-system, sans-serif" font-size="16">Next-generation ML framework in pure Rust</text>
+  <text x="600" y="52" text-anchor="middle" fill="#fff" font-family="system-ui,-apple-system,sans-serif" font-size="40" font-weight="800" letter-spacing="-1">aprender</text>
+  <text x="600" y="78" text-anchor="middle" fill="#8b949e" font-family="system-ui,-apple-system,sans-serif" font-size="15">Next-generation ML framework in pure Rust</text>
 
   <!-- Install command -->
-  <rect x="400" y="95" width="400" height="32" rx="6" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
-  <text x="420" y="116" fill="#7ee787" font-family="monospace" font-size="13">$ cargo install aprender</text>
+  <rect x="420" y="92" width="360" height="30" rx="6" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="600" y="112" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="13">$ cargo install aprender</text>
 
   <!-- Stats bar -->
-  <g transform="translate(150, 145)">
-    <text x="0" y="0" fill="#58a6ff" font-family="monospace" font-size="13" font-weight="bold">70 crates</text>
-    <text x="120" y="0" fill="#30363d" font-family="monospace" font-size="13">|</text>
-    <text x="140" y="0" fill="#58a6ff" font-family="monospace" font-size="13" font-weight="bold">57 commands</text>
-    <text x="290" y="0" fill="#30363d" font-family="monospace" font-size="13">|</text>
-    <text x="310" y="0" fill="#58a6ff" font-family="monospace" font-size="13" font-weight="bold">25,391 tests</text>
-    <text x="460" y="0" fill="#30363d" font-family="monospace" font-size="13">|</text>
-    <text x="480" y="0" fill="#58a6ff" font-family="monospace" font-size="13" font-weight="bold">405 contracts</text>
-    <text x="640" y="0" fill="#30363d" font-family="monospace" font-size="13">|</text>
-    <text x="660" y="0" fill="#7ee787" font-family="monospace" font-size="13" font-weight="bold">0 failures</text>
-  </g>
-
-  <!-- Architecture Diagram -->
+  <text x="200" y="145" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="12" font-weight="bold">70 crates</text>
+  <text x="310" y="145" text-anchor="middle" fill="#30363d" font-family="monospace" font-size="12">|</text>
+  <text x="420" y="145" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="12" font-weight="bold">57 commands</text>
+  <text x="530" y="145" text-anchor="middle" fill="#30363d" font-family="monospace" font-size="12">|</text>
+  <text x="640" y="145" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="12" font-weight="bold">25,391 tests</text>
+  <text x="750" y="145" text-anchor="middle" fill="#30363d" font-family="monospace" font-size="12">|</text>
+  <text x="860" y="145" text-anchor="middle" fill="#58a6ff" font-family="monospace" font-size="12" font-weight="bold">405 contracts</text>
+  <text x="1000" y="145" text-anchor="middle" fill="#7ee787" font-family="monospace" font-size="12" font-weight="bold">0 failures</text>
 
   <!-- CLI Layer -->
-  <rect x="100" y="175" width="1000" height="45" rx="8" fill="url(#accent)" filter="url(#shadow)"/>
-  <text x="600" y="203" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="15" font-weight="bold">apr CLI  (57 commands: run, serve, chat, finetune, inspect, validate, convert, ...)</text>
+  <rect x="100" y="165" width="1000" height="40" rx="8" fill="url(#accent)" filter="url(#shadow)"/>
+  <text x="600" y="190" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="14" font-weight="bold">apr CLI — run, serve, chat, finetune, inspect, validate, convert, merge ...</text>
 
   <!-- Core crates row -->
-  <g transform="translate(100, 235)">
-    <!-- aprender-core -->
-    <rect x="0" y="0" width="240" height="65" rx="8" fill="url(#core)" filter="url(#shadow)"/>
-    <text x="120" y="25" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender-core</text>
-    <text x="120" y="43" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">ML library: regression, trees,</text>
-    <text x="120" y="55" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">SVM, NLP, graph, .apr format</text>
+  <rect x="100" y="218" width="237" height="62" rx="8" fill="url(#core)" filter="url(#shadow)"/>
+  <text x="218" y="240" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">aprender-core</text>
+  <text x="218" y="255" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">ML: regression, trees, SVM</text>
+  <text x="218" y="268" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">NLP, graph, .apr format</text>
 
-    <!-- aprender-serve -->
-    <rect x="253" y="0" width="240" height="65" rx="8" fill="url(#serve)" filter="url(#shadow)"/>
-    <text x="373" y="25" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender-serve</text>
-    <text x="373" y="43" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Inference: GGUF, SafeTensors,</text>
-    <text x="373" y="55" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">KV cache, batched prefill</text>
+  <rect x="350" y="218" width="237" height="62" rx="8" fill="url(#serve)" filter="url(#shadow)"/>
+  <text x="468" y="240" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">aprender-serve</text>
+  <text x="468" y="255" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">GGUF, SafeTensors inference</text>
+  <text x="468" y="268" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">KV cache, batched prefill</text>
 
-    <!-- aprender-train -->
-    <rect x="506" y="0" width="240" height="65" rx="8" fill="url(#train)" filter="url(#shadow)"/>
-    <text x="626" y="25" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender-train</text>
-    <text x="626" y="43" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Training: LoRA, QLoRA, distill,</text>
-    <text x="626" y="55" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">autograd, model merging</text>
+  <rect x="600" y="218" width="237" height="62" rx="8" fill="url(#train)" filter="url(#shadow)"/>
+  <text x="718" y="240" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">aprender-train</text>
+  <text x="718" y="255" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">LoRA, QLoRA, distillation</text>
+  <text x="718" y="268" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">autograd, model merging</text>
 
-    <!-- aprender-orchestrate -->
-    <rect x="759" y="0" width="240" height="65" rx="8" fill="#6e40c9" filter="url(#shadow)"/>
-    <text x="879" y="25" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender-orchestrate</text>
-    <text x="879" y="43" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">Agents, RAG oracle,</text>
-    <text x="879" y="55" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">playbooks, pipelines</text>
-  </g>
+  <rect x="850" y="218" width="249" height="62" rx="8" fill="#6e40c9" filter="url(#shadow)"/>
+  <text x="974" y="240" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">aprender-orchestrate</text>
+  <text x="974" y="255" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">Agents, RAG oracle</text>
+  <text x="974" y="268" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">playbooks, pipelines</text>
 
   <!-- Compute layer -->
-  <g transform="translate(100, 315)">
-    <rect x="0" y="0" width="490" height="55" rx="8" fill="url(#compute)" filter="url(#shadow)"/>
-    <text x="245" y="23" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">aprender-compute  (SIMD: AVX2/AVX-512/NEON/WASM | GPU: CUDA PTX, wgpu)</text>
-    <text x="245" y="42" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">+ aprender-gpu, aprender-quant, aprender-fft, aprender-sparse, aprender-solve</text>
+  <rect x="100" y="295" width="490" height="55" rx="8" fill="url(#compute)" filter="url(#shadow)"/>
+  <text x="345" y="316" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">aprender-compute</text>
+  <text x="345" y="331" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">SIMD: AVX2/AVX-512/NEON/WASM</text>
+  <text x="345" y="343" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">GPU: CUDA PTX, wgpu</text>
 
-    <!-- Data/Storage -->
-    <rect x="503" y="0" width="240" height="55" rx="8" fill="#1f6feb" filter="url(#shadow)"/>
-    <text x="623" y="23" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">Data &amp; Storage</text>
-    <text x="623" y="42" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">db, graph, rag, data, registry</text>
+  <rect x="603" y="295" width="240" height="55" rx="8" fill="#1f6feb" filter="url(#shadow)"/>
+  <text x="723" y="316" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">Data and Storage</text>
+  <text x="723" y="331" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">db, graph, rag, data</text>
+  <text x="723" y="343" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">registry, distribute</text>
 
-    <!-- Contracts -->
-    <rect x="756" y="0" width="243" height="55" rx="8" fill="#da3633" filter="url(#shadow)"/>
-    <text x="877" y="23" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-size="14" font-weight="bold">Provable Contracts</text>
-    <text x="877" y="42" text-anchor="middle" fill="#ffffffcc" font-family="monospace" font-size="10">405 YAML: equations + falsification</text>
-  </g>
+  <rect x="856" y="295" width="243" height="55" rx="8" fill="#da3633" filter="url(#shadow)"/>
+  <text x="977" y="316" text-anchor="middle" fill="#fff" font-family="system-ui,sans-serif" font-size="13" font-weight="bold">Provable Contracts</text>
+  <text x="977" y="331" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">405 YAML contracts</text>
+  <text x="977" y="343" text-anchor="middle" fill="#ffffffbb" font-family="monospace" font-size="9">equations + falsification</text>
 
   <!-- Bottom: Quick examples -->
-  <g transform="translate(100, 390)">
-    <rect x="0" y="0" width="320" height="85" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
-    <text x="15" y="20" fill="#8b949e" font-family="monospace" font-size="11">Inference</text>
-    <text x="15" y="38" fill="#7ee787" font-family="monospace" font-size="11">$ apr run model.gguf "2+2?"</text>
-    <text x="15" y="54" fill="#7ee787" font-family="monospace" font-size="11">$ apr serve model.gguf :8080</text>
-    <text x="15" y="70" fill="#7ee787" font-family="monospace" font-size="11">$ apr chat model.gguf</text>
+  <rect x="100" y="368" width="320" height="110" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="115" y="388" fill="#8b949e" font-family="monospace" font-size="11" font-weight="bold">Inference</text>
+  <text x="115" y="408" fill="#7ee787" font-family="monospace" font-size="11">$ apr run model.gguf "2+2?"</text>
+  <text x="115" y="425" fill="#7ee787" font-family="monospace" font-size="11">$ apr serve model :8080</text>
+  <text x="115" y="442" fill="#7ee787" font-family="monospace" font-size="11">$ apr chat model.gguf</text>
+  <text x="115" y="465" fill="#484f58" font-family="monospace" font-size="9">225+ tok/s on RTX 4090</text>
 
-    <rect x="340" y="0" width="320" height="85" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
-    <text x="355" y="20" fill="#8b949e" font-family="monospace" font-size="11">Training</text>
-    <text x="355" y="38" fill="#7ee787" font-family="monospace" font-size="11">$ apr finetune model --lora</text>
-    <text x="355" y="54" fill="#7ee787" font-family="monospace" font-size="11">$ apr distill teacher student</text>
-    <text x="355" y="70" fill="#7ee787" font-family="monospace" font-size="11">$ apr merge a.gguf b.gguf</text>
+  <rect x="440" y="368" width="320" height="110" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="455" y="388" fill="#8b949e" font-family="monospace" font-size="11" font-weight="bold">Training</text>
+  <text x="455" y="408" fill="#7ee787" font-family="monospace" font-size="11">$ apr finetune model --lora</text>
+  <text x="455" y="425" fill="#7ee787" font-family="monospace" font-size="11">$ apr distill teacher student</text>
+  <text x="455" y="442" fill="#7ee787" font-family="monospace" font-size="11">$ apr merge a.gguf b.gguf</text>
+  <text x="455" y="465" fill="#484f58" font-family="monospace" font-size="9">LoRA rank-64 in minutes</text>
 
-    <rect x="680" y="0" width="320" height="85" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
-    <text x="695" y="20" fill="#8b949e" font-family="monospace" font-size="11">Inspection</text>
-    <text x="695" y="38" fill="#7ee787" font-family="monospace" font-size="11">$ apr inspect model.gguf</text>
-    <text x="695" y="54" fill="#7ee787" font-family="monospace" font-size="11">$ apr validate model --strict</text>
-    <text x="695" y="70" fill="#7ee787" font-family="monospace" font-size="11">$ apr profile model --roofline</text>
-  </g>
+  <rect x="780" y="368" width="320" height="110" rx="8" fill="#1c2128" stroke="#30363d" stroke-width="1"/>
+  <text x="795" y="388" fill="#8b949e" font-family="monospace" font-size="11" font-weight="bold">Inspection</text>
+  <text x="795" y="408" fill="#7ee787" font-family="monospace" font-size="11">$ apr inspect model.gguf</text>
+  <text x="795" y="425" fill="#7ee787" font-family="monospace" font-size="11">$ apr validate --strict</text>
+  <text x="795" y="442" fill="#7ee787" font-family="monospace" font-size="11">$ apr profile --roofline</text>
+  <text x="795" y="465" fill="#484f58" font-family="monospace" font-size="9">57 commands, every one tested</text>
 </svg>
