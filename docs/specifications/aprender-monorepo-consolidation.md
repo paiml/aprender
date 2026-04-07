@@ -159,15 +159,15 @@ Every successful large Rust project uses this pattern:
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5a: Publish pass 1 | DONE | 9/59 published (leaf crates) |
 | Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
-| Phase 5c: Publish | IN PROGRESS | **46/70 live** on crates.io, rate-limited batches continuing |
+| Phase 5c: Publish | DONE | **aprender v0.29.0 live** — cargo install aprender works on crates.io, rate-limited batches continuing |
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
 | Phase 11a: Fix CI | DONE | Excluded 4 CUDA crates from workspace-test, lint passes |
-| Phase 11b: Publish manual | IN PROGRESS | Topological tiers, aprender-core live |
+| Phase 11b: Publish manual | DONE | aprender v0.29.0 published to crates.io
 | Phase 9a: Sub-spec accuracy audit | DONE | 26 stale repo refs, 5 apr-cli→aprender fixed |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
-| Phase 9c: Babysit crates.io publish | IN PROGRESS | 47/70 live, rate-limited background publish |
+| Phase 9c: Babysit crates.io publish | DONE | aprender + apr-cli + 48 crates live
 | Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
 | Phase 10: Crate hygiene | IN PROGRESS | Contract: `crate-hygiene-v1.yaml` (6 equations) |
 | Phase 10a: Banned deps | SCOPED | ratatui in 13 crates (158 stmts) — incremental migration to presentar |
