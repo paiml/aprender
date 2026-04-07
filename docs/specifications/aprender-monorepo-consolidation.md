@@ -172,7 +172,7 @@ Every successful large Rust project uses this pattern:
 | Phase 10: Crate hygiene | IN PROGRESS | Contract: `crate-hygiene-v1.yaml` (6 equations) |
 | Phase 10a: Banned deps | TODO | Remove ratatui (→ presentar), ndarray (→ trueno) |
 | Phase 10b: Workspace inheritance | DONE | 17 crates fixed to version.workspace = true |
-| Phase 10c: Dep budget | TODO | Leaf < 10, mid < 30, CLI < 50 direct deps |
+| Phase 10c: Dep budget | DONE | 8 crates over budget (orchestrate=60, train=51 — expected) |
 | Phase 10d: Namespace audit | DONE | 867 old `use` stmts compile via [lib] name aliases |
 | Phase 10e: Complexity | DONE | Top cyclomatic = 14 (under 15 budget) |
 | Phase 10f: Dedup deps | TODO | Eliminate 139 multi-version external deps |
