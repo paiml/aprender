@@ -159,17 +159,17 @@ Every successful large Rust project uses this pattern:
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5a: Publish pass 1 | DONE | 9/59 published (leaf crates) |
 | Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
-| Phase 5c: Publish pass 2 | IN PROGRESS | Retrying with deps now live on crates.io |
+| Phase 5c: Publish pass 2 | STALLED | Process died; 10/70 live on crates.io, need pass 3 |
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
 | Phase 9a: Sub-spec accuracy audit | TODO | Verify 395 specs still accurate post-monorepo |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
-| Phase 9c: Babysit crates.io publish | IN PROGRESS | Pass 2 running |
+| Phase 9c: Babysit crates.io publish | STALLED | 10/70 live, need manual topological passes |
 | Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
 | Phase 10: Crate hygiene | IN PROGRESS | Contract: `crate-hygiene-v1.yaml` (6 equations) |
 | Phase 10a: Banned deps | TODO | Remove ratatui (→ presentar), ndarray (→ trueno) |
-| Phase 10b: Workspace inheritance | TODO | All crates version/edition/license.workspace = true |
+| Phase 10b: Workspace inheritance | DONE | 17 crates fixed to version.workspace = true |
 | Phase 10c: Dep budget | TODO | Leaf < 10, mid < 30, CLI < 50 direct deps |
 | Phase 10d: Namespace audit | TODO | Old `use trueno::` → verify [lib] aliases work |
 | Phase 10e: Complexity | TODO | pmat cyclomatic < 15 per function |
