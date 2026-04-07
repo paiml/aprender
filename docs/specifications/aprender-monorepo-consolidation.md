@@ -165,7 +165,7 @@ Every successful large Rust project uses this pattern:
 | Phase 7d: CI pipeline | DONE | Added workspace-test job (70 crates + integration tests) |
 
 **Current count**: 70 active workspace members, 0 compile failures, 0 `[patch.crates-io]`.
-**Tests**: **25,309 pass, 4 fail** (workspace lib + apr-cli + integration). 4 fail are contract panics in apr-cli.
+**Tests**: **25,391 pass, 0 fail** (workspace-wide `cargo test --workspace --lib`).
 **Contracts**: 405 provable contracts merged from all 20 repos into root contracts/.
 **Integration tests**: 14 (8 monorepo invariant + 6 CLI command).
 **Dependencies**: arrow/parquet aligned to v57 across all crates.

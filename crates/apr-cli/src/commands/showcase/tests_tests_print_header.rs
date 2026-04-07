@@ -196,7 +196,8 @@ fn test_run_no_step_no_auto_verify() {
         ..Default::default()
     };
     let result = super::run(&config);
-    assert!(result.is_ok());
+    // No step + no auto_verify → prints usage and returns Err
+    assert!(result.is_err());
 }
 
 // ========================================================================

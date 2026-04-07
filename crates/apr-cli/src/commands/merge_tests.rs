@@ -8,10 +8,11 @@ use tempfile::NamedTempFile;
 // ========================================================================
 
 #[test]
+#[should_panic(expected = "Contract")]
 fn test_run_insufficient_files() {
+    // Contract pre-condition panics: merge requires >= 2 files
     let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-
-    let result = run(
+    let _ = run(
         &[file.path().to_path_buf()],
         "average",
         Some(Path::new("/tmp/merged.apr")),
@@ -23,18 +24,13 @@ fn test_run_insufficient_files() {
         false,
         false,
     );
-    assert!(result.is_err());
-    match result {
-        Err(CliError::ValidationFailed(msg)) => {
-            assert!(msg.contains("at least 2"));
-        }
-        _ => panic!("Expected ValidationFailed error"),
-    }
 }
 
 #[test]
+#[should_panic(expected = "Contract")]
 fn test_run_empty_files() {
-    let result = run(
+    // Contract pre-condition panics: merge requires non-empty file list
+    let _ = run(
         &[],
         "average",
         Some(Path::new("/tmp/merged.apr")),
@@ -46,13 +42,6 @@ fn test_run_empty_files() {
         false,
         false,
     );
-    assert!(result.is_err());
-    match result {
-        Err(CliError::ValidationFailed(msg)) => {
-            assert!(msg.contains("at least 2"));
-        }
-        _ => panic!("Expected ValidationFailed error"),
-    }
 }
 
 #[test]

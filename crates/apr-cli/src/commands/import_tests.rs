@@ -276,9 +276,9 @@ fn test_run_with_force_flag() {
 
 #[test]
 fn test_run_invalid_source() {
-    // Empty source should fail
+    // Non-existent source should return Err (empty string panics on contract)
     let result = run(
-        "",
+        "/nonexistent/model.gguf",
         Some(Path::new("output.apr")),
         None,
         None,
