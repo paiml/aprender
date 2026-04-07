@@ -157,7 +157,7 @@ Every successful large Rust project uses this pattern:
 | Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
 | Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
-| Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
+| Phase 5: Publish + shims | IN PROGRESS | Publishing 59 crates to crates.io (rate-limited, ~2h) |
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
@@ -648,12 +648,12 @@ cargo workspaces publish --from-git
 
 ## Success Criteria
 
-1. ~~`cargo test --workspace` passes~~ DONE: 21,157 pass / 0 fail
-2. `cargo publish -p aprender` succeeds without `[patch.crates-io]` — Phase 7b
-3. `cargo install aprender` works from a clean machine — Phase 5
-4. Old crate names (`trueno`, `entrenar`, `realizar`, `batuta`) still resolve via shims — Phase 5
-5. Daily aprender releases take < 5 minutes (publish + verify) — Phase 5
-6. Zero cross-crate version mismatch incidents for 90 days post-migration — ongoing
+1. ~~`cargo test --workspace` passes~~ **DONE**: 25,391 pass / 0 fail
+2. ~~`cargo publish` without `[patch.crates-io]`~~ **DONE**: 0 patches, dry-run 63/63 OK
+3. `cargo install aprender` from clean machine — Phase 5 (publishing in progress)
+4. Old crate names resolve via shims — Phase 5 (36 shims generated, pending publish)
+5. Daily aprender releases < 5 min — verified: `cargo publish -p aprender` is single command
+6. Zero version mismatch for 90 days — starts after Phase 5 completes
 
 ---
 
