@@ -173,8 +173,8 @@ Every successful large Rust project uses this pattern:
 | Phase 10a: Banned deps | TODO | Remove ratatui (→ presentar), ndarray (→ trueno) |
 | Phase 10b: Workspace inheritance | DONE | 17 crates fixed to version.workspace = true |
 | Phase 10c: Dep budget | TODO | Leaf < 10, mid < 30, CLI < 50 direct deps |
-| Phase 10d: Namespace audit | TODO | Old `use trueno::` → verify [lib] aliases work |
-| Phase 10e: Complexity | TODO | pmat cyclomatic < 15 per function |
+| Phase 10d: Namespace audit | DONE | 867 old `use` stmts compile via [lib] name aliases |
+| Phase 10e: Complexity | DONE | Top cyclomatic = 14 (under 15 budget) |
 | Phase 10f: Dedup deps | TODO | Eliminate 139 multi-version external deps |
 | Phase 6: Archive old repos | DONE | 20/20 repos archived via GitHub API |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
