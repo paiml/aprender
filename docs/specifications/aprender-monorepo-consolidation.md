@@ -163,7 +163,7 @@ Every successful large Rust project uses this pattern:
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
-| Phase 11a: Fix CI | DONE | Excluded 4 CUDA crates from workspace-test, lint passes |
+| Phase 11a: Fix CI | DONE | Excluded 7 GPU/CUDA crates from workspace-test, lint passes |
 | Phase 11b: Publish manual | DONE | aprender v0.29.0 published to crates.io
 | Phase 9a: Sub-spec accuracy audit | DONE | 26 stale repo refs, 5 apr-cli→aprender fixed |
 | Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
