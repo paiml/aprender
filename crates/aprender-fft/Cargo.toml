@@ -17,7 +17,7 @@ thiserror = "2"
 
 [dev-dependencies]
 proptest = "1"
-criterion = "0.7"
+criterion = { workspace = true }
 
 [[bench]]
 name = "fft_bench"

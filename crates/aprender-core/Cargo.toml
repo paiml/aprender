@@ -154,7 +154,7 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 proptest = "1.6"
-criterion = "0.5"
+criterion = { workspace = true }
 renacer = "0.10"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)

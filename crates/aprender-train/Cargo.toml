@@ -134,7 +134,7 @@ serde_yaml_ng = "0.10"
 proptest = "1.4"
 approx = "0.5"
 tempfile = "3.8"
-criterion = "0.5"
+criterion = { workspace = true }
 arrow = { version = "57", default-features = false }  # For MNIST example array access
 parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA

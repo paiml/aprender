@@ -43,7 +43,7 @@ format-encryption = []
 
 [dev-dependencies]
 assert_cmd = "2"
-criterion = "0.5"
+criterion = { workspace = true }
 predicates = "3"
 proptest = "1"
 tempfile = "3"

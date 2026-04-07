@@ -132,7 +132,7 @@ ureq = { version = "2.12", features = ["json"] }
 rand = { version = "0.9", features = ["small_rng"] }
 rand_chacha = "0.9"
 proptest = "1.6"
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 tempfile = "3.14"
 
 # Data formats

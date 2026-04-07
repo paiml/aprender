@@ -18,7 +18,7 @@ aprender = { path = "../aprender-core", version = "0.29.0", package = "aprender-
 ndarray = { version = "0.16", default-features = false }
 
 # Benchmark harness
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "matmul"

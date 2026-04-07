@@ -41,7 +41,7 @@ manzana = { version = "0.2.0", optional = true }
 
 [dev-dependencies]
 proptest = "1.9"
-criterion = "0.7"
+criterion = { workspace = true }
 simular = "0.2.0"
 pollster = "0.4"
 bytemuck = { version = "1.21", features = ["derive"] }

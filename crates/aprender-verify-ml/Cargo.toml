@@ -67,7 +67,7 @@ pest_derive = { version = "2.7", optional = true }
 
 [dev-dependencies]
 proptest = "1.6"
-criterion = "0.6"
+criterion = { workspace = true }
 renacer = "0.7"
 tempfile = "3.14"
 

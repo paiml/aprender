@@ -18,7 +18,7 @@ aprender = { path = "../aprender-core", version = "0.29.0", package = "aprender-
 tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "fancy-regex"] }
 
 # Benchmark harness
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bench]]
 name = "encode"

@@ -82,7 +82,7 @@ serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 proptest = "1.9"
-criterion = "0.7"
+criterion = { workspace = true }
 tokio = { version = "1", features = ["macros", "rt"] }
 serde_json = "1.0"
 nalgebra = "0.34"  # For eigendecomposition benchmark comparison
