@@ -87,11 +87,11 @@ use aprender::linear_regression::LinearRegression;
 
 ## Book Rewrite
 
-### Merge Strategy
+### Strategy
 
 1. **Keep**: `book/` (296 chapters) — ML library reference
-2. **Merge**: `../apr-cookbook/book/` (252 chapters) → `book/src/cookbook/`
-3. **Add new sections**:
+2. **Keep separate**: `apr-cookbook` (252 chapters) — recipes have own release cadence
+3. **Add new sections to book/**:
    - Getting Started (install, first model, first inference)
    - CLI Reference (auto-generated from `apr <cmd> --help`)
    - Architecture (monorepo crate map)

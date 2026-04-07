@@ -1,17 +1,33 @@
 # Introduction
 
-## Prerequisites
+Welcome to **The Aprender Guide** — documentation for the Aprender ML framework.
 
-**No prior knowledge required!** This book is designed for:
-- Developers with basic programming experience (any language)
-- Anyone interested in improving code quality
-- Rust developers (recommended but not required)
+## Quick Start
 
-**Time investment:** Each chapter takes 10-30 minutes to read. Real mastery comes from practice.
+```bash
+cargo install aprender
+apr pull qwen2.5-coder-1.5b
+apr run qwen2.5-coder-1.5b "What is 2+2?"
+```
+
+## What is Aprender?
+
+Aprender is a next-generation ML framework in pure Rust — 70 workspace crates,
+57 CLI commands, 25,391 tests, 405 provable contracts. Install once, get everything:
+inference, training, serving, profiling, model operations.
+
+## This Book
+
+- **Getting Started** — Install, run your first model, fine-tune, serve
+- **CLI Reference** — All 57 `apr` commands with `--help` output
+- **Architecture** — Monorepo layout, crate map, provable contracts
+- **Cookbook** — Recipes and workflows (separate repo: [apr-cookbook](https://github.com/paiml/apr-cookbook))
+- **EXTREME TDD** — The methodology used to build aprender (296 chapters)
 
 ---
 
-Welcome to the **EXTREME TDD Guide**, a comprehensive methodology for building zero-defect software through rigorous test-driven development. This book documents the practices, principles, and real-world implementation strategies used to build **aprender**, a pure-Rust machine learning library with production-grade quality.
+This book also documents the **EXTREME TDD methodology** — the practices used to achieve
+25,391 tests with zero failures across 70 crates.
 
 ## What You'll Learn
 

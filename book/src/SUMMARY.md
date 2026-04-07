@@ -1,6 +1,37 @@
-# EXTREME TDD - The Aprender Guide
+# The Aprender Guide
 
 [Introduction](./introduction.md)
+
+# Getting Started
+
+- [Installation](./getting-started/installation.md)
+- [First Inference](./getting-started/first-inference.md)
+- [First Training](./getting-started/first-training.md)
+- [First Server](./getting-started/first-server.md)
+
+# CLI Reference
+
+- [Overview](./cli-reference/overview.md)
+- [apr run](./cli-reference/apr-run.md)
+- [apr serve](./cli-reference/apr-serve.md)
+- [apr chat](./cli-reference/apr-chat.md)
+- [apr finetune](./cli-reference/apr-finetune.md)
+- [apr inspect](./cli-reference/apr-inspect.md)
+- [apr validate](./cli-reference/apr-validate.md)
+- [apr convert](./cli-reference/apr-convert.md)
+- [apr pull](./cli-reference/apr-pull.md)
+
+# Architecture
+
+- [Monorepo Layout](./architecture/monorepo-layout.md)
+- [Crate Map](./architecture/crate-map.md)
+- [Provable Contracts](./architecture/provable-contracts.md)
+
+# Cookbook
+
+- [See apr-cookbook](./cookbook/index.md)
+
+# EXTREME TDD Methodology
 
 # Core Methodology
 
