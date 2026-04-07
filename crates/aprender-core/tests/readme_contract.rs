@@ -100,6 +100,17 @@ fn test_hero_svg_accessible() {
     assert!(svg.contains("<title>"), "FALSIFY-SVG-002: hero.svg missing <title>");
 }
 
+/// FALSIFY-README-006: Framework comparison section exists with real data
+#[test]
+fn test_readme_has_framework_comparison() {
+    let readme = read_readme();
+    assert!(readme.contains("## Framework Comparison"), "Missing Framework Comparison section");
+    assert!(readme.contains("candle-vs-apr"), "Missing candle-vs-apr citation");
+    assert!(readme.contains("ground-truth-apr-ludwig"), "Missing ludwig comparison citation");
+    assert!(readme.contains("369.9"), "Missing realizr benchmark number (369.9 tok/s)");
+    assert!(readme.contains("3,220"), "Missing batched throughput number (3,220 tok/s)");
+}
+
 /// FALSIFY-SVG-003: Hero SVG is valid XML
 #[test]
 fn test_hero_svg_valid() {

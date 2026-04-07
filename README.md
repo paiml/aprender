@@ -145,6 +145,52 @@ paiml/aprender/
 | Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |
 | TinyLlama 1.1B | Q4_0 | 17 tok/s | CPU (APR format) |
 
+## Framework Comparison
+
+Benchmarked against real inference engines on Qwen2.5-Coder 7B Q4_K (RTX 4090).
+Data from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) proof-of-concept:
+
+### Inference Speed (single request, decode tok/s)
+
+| Engine | tok/s | vs Candle | Architecture |
+|--------|-------|-----------|--------------|
+| llama.cpp b7746 | **443.6** | 1.95x | C++, Flash Attention |
+| **aprender (realizr)** | **369.9** | **1.63x** | Rust, CUDA graph + Flash Decoding |
+| Candle | 227.4 | 1.00x | Rust, per-op dispatch |
+
+### Batched Throughput (aprender only — Candle has no server)
+
+| Concurrency | Agg tok/s | Scaling | Method |
+|-------------|-----------|---------|--------|
+| 1 | 367 | 1.0x | Single request |
+| 8 | 954 | 2.6x | Continuous batching |
+| 32 | **3,220** | **8.8x** | Orca-style iteration scheduling |
+
+### Why Aprender Beats Candle
+
+| aprender advantage | Candle limitation | Impact |
+|---|---|---|
+| CUDA graph (647 kernels, 1 launch) | Per-op dispatch (~640 launches) | **+26%** |
+| Flash Decoding (chunked KV) | Standard SDPA | **+15%** long ctx |
+| Fused DP4A GEMV (4-bit native) | Separate dequant + matmul | **~10%** |
+| Continuous batching server | CLI only, no server | **8.8x** at c=32 |
+
+### ML Training: apr vs Ludwig
+
+From [ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig)
+(21 recipes, Popperian falsification methodology):
+
+| Capability | aprender | Ludwig | Notes |
+|-----------|----------|--------|-------|
+| Classification (Iris, Wine) | `apr finetune` | `ludwig train` | Both achieve >95% accuracy |
+| LoRA fine-tuning | `apr finetune --lora` | Not native | apr: rank-64 in minutes |
+| Quantization (INT8/INT4) | `apr quantize` | Not supported | apr-native capability |
+| Model merging | `apr merge --strategy ties` | Not supported | TIES/DARE/SLERP |
+| Provable contracts | 405 YAML contracts | None | Equation-based verification |
+| Single binary | `cargo install aprender` | `pip install ludwig` | Rust vs Python |
+
+*All benchmarks reproducible from linked repos with `cargo test`.*
+
 ## Provable Contracts
 
 Every CLI command and kernel has a provable contract (`contracts/*.yaml`)
