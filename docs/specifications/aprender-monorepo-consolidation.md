@@ -163,10 +163,17 @@ Every successful large Rust project uses this pattern:
 | Phase 8a: Unified specs | DONE | 395 specs + TOC (463 lines) in root docs/specifications/ |
 | Phase 8b: Crate READMEs | DONE | 70/70 crates have README.md, contract-enforced |
 | Phase 8c: CLI QA skill | DONE | /dogfood skill: 7 gates, 12 protocols, 57 commands |
-| Phase 9a: Sub-spec accuracy audit | TODO | Verify 395 specs still accurate post-monorepo, enforce with contracts |
-| Phase 9b: Run /dogfood skill | TODO | Full exhaustive QA of apr binary against real models |
-| Phase 9c: Babysit crates.io publish | TODO | Rerun publish until all 70 crates live |
-| Phase 9d: Archive repo redirect READMEs | TODO | Update 20 archived repos with redirect notice |
+| Phase 9a: Sub-spec accuracy audit | TODO | Verify 395 specs still accurate post-monorepo |
+| Phase 9b: Run /dogfood skill | DONE | WARN: 55/57 cmds OK, 12/12 protocols pass |
+| Phase 9c: Babysit crates.io publish | IN PROGRESS | Pass 2 running |
+| Phase 9d: Archive repo redirects | DONE | 20/20 repo descriptions updated with redirect |
+| Phase 10: Crate hygiene | IN PROGRESS | Contract: `crate-hygiene-v1.yaml` (6 equations) |
+| Phase 10a: Banned deps | TODO | Remove ratatui (→ presentar), ndarray (→ trueno) |
+| Phase 10b: Workspace inheritance | TODO | All crates version/edition/license.workspace = true |
+| Phase 10c: Dep budget | TODO | Leaf < 10, mid < 30, CLI < 50 direct deps |
+| Phase 10d: Namespace audit | TODO | Old `use trueno::` → verify [lib] aliases work |
+| Phase 10e: Complexity | TODO | pmat cyclomatic < 15 per function |
+| Phase 10f: Dedup deps | TODO | Eliminate 139 multi-version external deps |
 | Phase 6: Archive old repos | DONE | 20/20 repos archived via GitHub API |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |

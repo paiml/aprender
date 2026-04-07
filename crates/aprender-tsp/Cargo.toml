@@ -1,6 +1,6 @@
 [package]
 name = "aprender-tsp"
-version = "0.2.0"
+version.workspace = true
 edition = "2021"
 authors = ["paiml"]
 description = "Local TSP optimization with personalized .apr models"

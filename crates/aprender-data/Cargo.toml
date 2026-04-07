@@ -1,7 +1,7 @@
 [package]
 exclude = ["tests/", "benches/", "docs/", ".github/", "book/", ".pmat/"]
 name = "aprender-data"
-version = "0.2.9"
+version.workspace = true
 edition = "2021"
 authors = ["paiml"]
 description = "Data Loading, Distribution and Tooling in Pure Rust"

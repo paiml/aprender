@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "apr-cli"
-version = "0.4.17"
+version = "0.29.0"
 dependencies = [
  "alimentar",
  "aprender-core",
@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-compute"
-version = "0.1.0"
+version = "0.29.0"
 dependencies = [
  "aprender-core",
  "criterion 0.5.1",
@@ -466,7 +466,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-bench-tokenizer"
-version = "0.1.0"
+version = "0.29.0"
 dependencies = [
  "aprender-core",
  "criterion 0.5.1",
@@ -697,7 +697,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-data"
-version = "0.2.9"
+version = "0.29.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -794,7 +794,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-distribute"
-version = "2.0.4"
+version = "0.29.0"
 dependencies = [
  "arrow 57.3.0",
  "bincode",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-graph"
-version = "0.1.18"
+version = "0.29.0"
 dependencies = [
  "anyhow",
  "aprender-core",
@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-monte-carlo"
-version = "0.1.1"
+version = "0.29.0"
 dependencies = [
  "aprender 0.29.0",
  "assert_cmd",
@@ -1139,7 +1139,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-profile"
-version = "0.10.2"
+version = "0.29.0"
 dependencies = [
  "addr2line 0.25.1",
  "anyhow",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-rag"
-version = "0.2.5"
+version = "0.29.0"
 dependencies = [
  "async-trait",
  "batuta-common",
@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-registry"
-version = "0.2.6"
+version = "0.29.0"
 dependencies = [
  "alimentar",
  "anyhow",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-shell"
-version = "0.3.0"
+version = "0.29.0"
 dependencies = [
  "aprender-core",
  "assert_cmd",
@@ -1371,7 +1371,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-simulate"
-version = "0.3.2"
+version = "0.29.0"
 dependencies = [
  "bincode",
  "bitflags 2.11.0",
@@ -1728,7 +1728,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-tsp"
-version = "0.2.0"
+version = "0.29.0"
 dependencies = [
  "aprender 0.29.0",
  "assert_cmd",
@@ -1743,7 +1743,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify"
-version = "0.1.1"
+version = "0.29.0"
 dependencies = [
  "chrono",
  "criterion 0.5.1",
@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-verify-ml"
-version = "0.5.0"
+version = "0.29.0"
 dependencies = [
  "aprender-core",
  "arrow 57.3.0",
@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-viz"
-version = "0.2.4"
+version = "0.29.0"
 dependencies = [
  "approx",
  "aprender-core",

@@ -1,6 +1,6 @@
 [package]
 name = "aprender-graph"
-version = "0.1.18"
+version.workspace = true
 edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"

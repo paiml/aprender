@@ -1,6 +1,6 @@
 [package]
 name = "aprender-shell"
-version = "0.3.0"
+version.workspace = true
 edition = "2021"
 authors = ["paiml"]
 description = "AI-powered shell completion trained on your history"

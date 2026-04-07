@@ -1,6 +1,6 @@
 [package]
 name = "aprender-verify-ml"
-version = "0.5.0"
+version.workspace = true
 edition = "2021"
 rust-version = "1.70"
 authors = ["Pragmatic AI Labs"]

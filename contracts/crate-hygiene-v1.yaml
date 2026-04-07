@@ -1,0 +1,128 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Sovereign AI Stack — all deps should be stack-internal where possible'
+  - 'Cargo.toml best practices — workspace version inheritance, no path-only deps'
+  description: >
+    Per-crate hygiene contract enforcing sovereign deps, minimal dependency
+    count, Cargo.toml best practices, no duplicate code layers, and correct
+    namespace usage post-monorepo consolidation.
+
+equations:
+  no_banned_deps:
+    formula: |
+      forall crate in workspace:
+        crate does NOT depend on ratatui (use presentar-terminal)
+        crate does NOT depend on ndarray (use trueno/aprender primitives)
+        crate does NOT depend on polars (use trueno-db)
+        crate does NOT depend on arrow directly (use aprender-db)
+    domain: all workspace Cargo.toml files
+    codomain: bool
+    invariants:
+    - "ratatui → presentar-terminal (sovereign TUI)"
+    - "ndarray → trueno Vector/Matrix (sovereign compute)"
+    - "External TUI/compute deps replaced by stack equivalents"
+
+  workspace_version_inheritance:
+    formula: |
+      forall crate Cargo.toml:
+        version.workspace = true (not hardcoded)
+        edition.workspace = true
+        license.workspace = true
+        repository.workspace = true
+    domain: crates/*/Cargo.toml
+    codomain: bool
+    invariants:
+    - "No hardcoded version in sub-crate (inherits 0.29.0)"
+
+  dep_count_budget:
+    formula: |
+      forall crate:
+        count(direct_dependencies) <= 30 (lib crates)
+        count(direct_dependencies) <= 50 (binary/CLI crates)
+    domain: Cargo.toml [dependencies] section
+    codomain: bool
+    invariants:
+    - "Leaf crates (compute, quant, fft) have < 10 deps"
+    - "Mid-tier (serve, train) have < 30 deps"
+    - "Only apr-cli may exceed 30 (it's the integration point)"
+
+  no_stale_namespace:
+    formula: |
+      forall .rs file in crates/:
+        no `use trueno::` where `use aprender_compute::` is correct
+        no `extern crate trueno` (old name, now aprender-compute)
+    domain: source files (handled by [lib] name aliases)
+    codomain: bool
+    invariants:
+    - "[lib] name aliases make old names compile but new code should use new names"
+
+  zero_duplicate_versions:
+    formula: |
+      forall dep D used by 2+ workspace crates:
+        all crates use the same version of D
+    domain: workspace dependency graph
+    codomain: bool
+    invariants:
+    - "No diamond dependency version conflicts"
+
+  complexity_budget:
+    formula: |
+      forall function F in workspace:
+        cyclomatic_complexity(F) <= 15
+        cognitive_complexity(F) <= 25
+    domain: all Rust functions
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-HYGIENE-001
+  rule: no ratatui in workspace
+  prediction: "zero crates depend on ratatui directly"
+  test: "grep -rn 'ratatui' crates/*/Cargo.toml | grep -v '#' | grep -c '=' == 0"
+  if_fails: "non-sovereign TUI dep — replace with presentar-terminal"
+
+- id: FALSIFY-HYGIENE-002
+  rule: workspace version inheritance
+  prediction: "no hardcoded version = X.Y.Z in sub-crate [package]"
+  test: "grep -rn '^version = \"' crates/*/Cargo.toml | grep -v workspace | wc -l == 0"
+  if_fails: "crate has hardcoded version — should use version.workspace = true"
+
+- id: FALSIFY-HYGIENE-003
+  rule: path deps have version
+  prediction: "every path dep also has version for crates.io"
+  test: "grep -rn 'path = \"\\.\\./' crates/*/Cargo.toml | grep -v version | wc -l == 0"
+  if_fails: "path dep without version — cargo publish will fail"
+
+- id: FALSIFY-HYGIENE-004
+  rule: README exists
+  prediction: "every crate has README.md"
+  test: "cargo test -p aprender-core --test readme_contract test_every_crate_has_readme"
+  if_fails: "crate invisible on crates.io"
+
+- id: FALSIFY-HYGIENE-005
+  rule: no duplicate dep versions in workspace
+  prediction: "workspace.dependencies eliminates version skew"
+  test: "cargo metadata | python3 check_dup_versions.py"
+  if_fails: "diamond dependency — different crates pull different versions"
+
+proof_obligations:
+- type: invariant
+  property: "all crates use workspace version inheritance"
+- type: invariant
+  property: "no banned non-sovereign dependencies"
+- type: bound
+  property: "direct dependency count within budget per tier"
+
+kani_harnesses:
+- id: KH-HYGIENE-001
+  obligation: workspace_version_inheritance
+  property: all_crates_inherit_workspace_version
+
+verification_summary:
+  total_obligations: 5
+  proven: 0
+  tested: 5
+  status: tested

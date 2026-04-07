@@ -1,6 +1,6 @@
 [package]
 name = "aprender-profile"
-version = "0.10.2"
+version.workspace = true
 edition = "2021"
 rust-version = "1.75"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]

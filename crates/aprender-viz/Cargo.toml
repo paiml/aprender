@@ -1,6 +1,6 @@
 [package]
 name = "aprender-viz"
-version = "0.2.4"
+version.workspace = true
 edition = "2021"
 rust-version = "1.75"
 authors = ["PAIML Team"]

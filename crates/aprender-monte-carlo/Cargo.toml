@@ -1,6 +1,6 @@
 [package]
 name = "aprender-monte-carlo"
-version = "0.1.1"
+version.workspace = true
 edition = "2021"
 authors = ["paiml"]
 description = "Monte Carlo simulations for finance, stock market, and business forecasting"
