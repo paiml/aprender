@@ -1,0 +1,134 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: GPU inference must pre-upload all model weights to VRAM at startup
+  references:
+  - 'qwen-coder-deploy bench-results-v2: apr GPU 108 tok/s vs llama.cpp 225 tok/s'
+  - 'realizar CUDA log: ''Pre-uploaded 0 MB weights to GPU'' — no weights resident'
+  - Gregg & Hazelwood (2011) 5× PCIe rule — data must be resident for GPU benefit
+  - roofline-model-v1.yaml — bandwidth ceiling analysis
+  depends_on:
+  - roofline-model-v1.yaml
+  - backend-dispatch-v1.yaml
+equations:
+  pcie_overhead:
+    formula: "Per-inference PCIe transfer cost:\n  transfer_time = model_bytes / pcie_bandwidth\n\
+      \  Qwen2.5-1.5B Q4K: 1.1 GB / 32 GB/s (PCIe 4.0 x16) ≈ 34ms\n\nPer-token overhead\
+      \ (28 layers, 7 matmuls/layer):\n  matmul_transfers = 196 × weight_slab_bytes\
+      \ / pcie_bandwidth\n\nWith persistent VRAM residency:\n  transfer_time = 0 (weights\
+      \ already in VRAM)\n  Only activations + KV cache cross PCIe (negligible for\
+      \ batch=1)\n"
+    domain: PCIe 4.0 x16, model_bytes > 0
+    invariants:
+    - Persistent residency eliminates per-inference transfer
+    - VRAM usage = model_bytes (constant after startup)
+    preconditions:
+    - 'input.len() > 0'
+    - model_bytes > 0
+    lean_theorem: Theorems.Pcie_Overhead
+  throughput_target:
+    formula: "GPU memory bandwidth ceiling (RTX 4090):\n  bw_ceiling = 1008 GB/s /\
+      \ 1.1 GB ≈ 916 tok/s (theoretical)\n  llama.cpp measured: 225 tok/s (24.5% roofline\
+      \ utilization)\n  apr measured: 108 tok/s (11.8% roofline utilization)\n\nTarget:\
+      \ apr GPU ≥ 180 tok/s (80% of llama.cpp, 19.6% roofline)\n"
+    domain: RTX 4090, Qwen2.5-1.5B Q4K
+    invariants:
+    - Throughput bounded by min(bw_ceiling, compute_ceiling)
+    - Weight residency eliminates PCIe bottleneck
+    preconditions:
+    - 'input.len() > 0'
+    - batch_size > 0
+    lean_theorem: Theorems.Throughput_Target
+proof_obligations:
+- type: invariant
+  property: All weights resident in VRAM after startup
+  formal: gpu_memory_used ≥ model_bytes after Benchmark::new()
+  applies_to: all
+- type: bound
+  property: GPU throughput reaches target
+  formal: tok/s(apr GPU) ≥ 180 on RTX 4090 with Qwen2.5-1.5B Q4K
+  applies_to: all
+- type: invariant
+  property: Zero PCIe transfers during inference
+  formal: cudaMemcpy count during forward() = 0 for weight tensors
+  applies_to: all
+- type: equivalence
+  property: Output parity with CPU path
+  formal: argmax(logits_gpu) == argmax(logits_cpu) for greedy decoding
+  tolerance: 0.0001
+  applies_to: all
+- type: invariant
+  property: 'PMAT-394: Grace Blackwell unified memory — cuMemAllocManaged eager, not
+    lazy'
+  formal: cuMemAllocManaged on CUDA 13.0/GB10 allocates physical pages immediately
+    (Xid 31 on OOM)
+  applies_to: cc >= 120
+  finding: 32B OOM (150 GB VM). cuMemAllocManaged NOT suitable for large models on
+    current driver. Use mmap+cuMemHostRegister or driver update.
+falsification_tests:
+- id: FALSIFY-GWR-001
+  rule: Weight residency
+  prediction: nvidia-smi shows model_bytes MB allocated after server startup
+  test: Start apr serve --gpu, check nvidia-smi memory before first request
+  if_fails: Weights loaded on-demand, not at startup
+- id: FALSIFY-GWR-002
+  rule: Throughput target
+  prediction: apr GPU ≥ 180 tok/s on Qwen2.5-1.5B Q4K (RTX 4090)
+  test: probador llm bench --prompt-profile medium --duration 30s --runs 3
+  if_fails: PCIe overhead or kernel launch overhead exceeds budget
+- id: FALSIFY-GWR-003
+  rule: No per-inference transfers
+  prediction: nsys trace shows 0 cudaMemcpyHtoD during steady-state inference
+  test: nsys profile apr serve, send 10 requests, check transfer count
+  if_fails: Weights being re-uploaded per request
+- id: FALSIFY-GWR-004
+  rule: Output parity
+  prediction: GPU output matches CPU output within tolerance
+  test: Compare 20-token greedy generation GPU vs CPU
+  if_fails: VRAM layout corruption or precision drift
+- id: FALSIFY-GWR-005
+  rule: Grace Blackwell unified memory
+  prediction: cuMemAllocManaged uses eager allocation, not lazy
+  test: Check allocation flag is CU_MEM_ATTACH_GLOBAL on Grace
+  if_fails: Lazy allocation causes page faults during inference
+kani_harnesses:
+- id: KANI-GWR-001
+  obligation: All weights resident in VRAM after startup
+  property: gpu_memory_used >= model_bytes after Benchmark::new()
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_weight_residency
+- id: KANI-GWR-002
+  obligation: GPU throughput reaches target
+  property: tok/s(apr GPU) >= 180 on RTX 4090 with Qwen2.5-1.5B Q4K
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_throughput_target
+- id: KANI-GWR-003
+  obligation: Zero PCIe transfers during inference
+  property: cudaMemcpy count during forward() = 0 for weight tensors
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_zero_pcie_transfers
+- id: KANI-GWR-004
+  obligation: Output parity with CPU path
+  property: argmax(logits_gpu) == argmax(logits_cpu) for greedy decoding
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gpu_cpu_output_parity
+qa_gate:
+  id: F-GWR-001
+  name: GPU Weight Residency Contract
+  description: Persistent VRAM weight storage for inference throughput
+  checks:
+  - weight_residency
+  - throughput_target
+  - no_pcie_transfers
+  - output_parity
+  pass_criteria: All 5 falsification tests pass + throughput ≥ 180 tok/s
+  falsification: Force weights to host memory — measure throughput delta

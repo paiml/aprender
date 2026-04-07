@@ -1,0 +1,1 @@
+{"content_hash":"c97892ae1812cd23","findings":[{"rule_id":"PV-AUD-003","severity":"warning","message":"AUDIT-003: Equations defined but no proof obligations — obligations should be derived from equations","file":"contracts/apr-checkpoint-v1.yaml","line":null,"contract_stem":"apr-checkpoint-v1","suppressed":false,"is_new":true}]}

@@ -1,0 +1,318 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-02'
+  author: PAIML Engineering
+  description: Research-grounded QLoRA hyperparameter bounds for classification fine-tuning
+  references:
+  - 'Dettmers et al. (2023) QLoRA: Efficient Finetuning of Quantized LLMs [arXiv:2305.14314]'
+  - 'Hu et al. (2021) LoRA: Low-Rank Adaptation of Large Language Models [arXiv:2106.09685]'
+  - Lightning AI (2024) LoRA Insights from Hundreds of Experiments
+  - RTX LoRA/QLoRA Profiling (2025) [arXiv:2509.12229]
+  - Unsloth (2025) LoRA Hyperparameters Guide
+  depends_on:
+  - classification-finetune-v1
+  - lora-algebra-v1
+  - cuda-classify-training-v1
+equations:
+  learning_rate_scaling:
+    formula: lr = 2e-4 if model_params <= 13e9 else 1e-4
+    domain: model_params in Z+, lr in R+
+    codomain: lr in {1e-4, 2e-4}
+    invariants:
+    - 'Dettmers 2023 Table 9: lr=2e-4 for 7B/13B, lr=1e-4 for 33B/65B'
+    - Hyperparameters at 7B generalize except lr and batch_size
+    - 4B model is closer to 7B than 33B — use 2e-4
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Learning_Rate_Scaling
+  effective_batch_size:
+    formula: eff_batch = batch_size * accumulation_steps = 16
+    domain: batch_size in Z+, accumulation_steps in Z+
+    codomain: eff_batch in {16}
+    invariants:
+    - 'Dettmers 2023 Table 9: batch=16 for 7B'
+    - 'Unsloth guide: batch=2, grad_accum=8 for memory efficiency'
+    - 'RTX 4090: batch=4, grad_accum=4 balances throughput and memory'
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Effective_Batch_Size
+  lora_alpha_ratio:
+    formula: alpha = 2 * rank
+    domain: rank in Z+, rank >= 4
+    codomain: alpha in Z+, alpha = 2*rank
+    invariants:
+    - 'Lightning AI: r=256,alpha=512 best; alpha=2r consistently optimal'
+    - LoRA effective scaling is alpha/rank — ratio=2 trains faster than ratio=1
+    - Deviating from 2x ratio degrades performance (Lightning AI ablation)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Lora_Alpha_Ratio
+  seq_len_from_data:
+    formula: max_seq_len = next_pow2(percentile(token_lengths, 99))
+    domain: 'token_lengths: Vec<usize>, percentile in (0,100)'
+    codomain: max_seq_len in {64, 128, 256, 512, 1024, 2048}
+    invariants:
+    - Attention is O(n^2) — oversized seq_len wastes compute quadratically
+    - p99 coverage means <= 1% of samples are truncated
+    - Power-of-2 aligns with GPU warp/tile boundaries
+    - 'SSC v3 data: p99=253 tokens => max_seq_len=256'
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Seq_Len_From_Data
+  warmup_fraction:
+    formula: warmup_steps = floor(warmup_frac * total_steps), warmup_frac in [0.03, 0.10]
+    domain: warmup_frac in R, total_steps in Z+
+    codomain: warmup_steps in Z+
+    invariants:
+    - 'Unsloth guide: 5-10% of total steps'
+    - Prevents early gradient explosion from random classifier head
+    - Linear ramp from 0 to target lr
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Warmup_Fraction
+  gradient_clip_bound:
+    formula: '||g||_2 <= max_norm where max_norm = 1.0'
+    domain: g in R^n (gradient vector)
+    codomain: '||g_clipped||_2 <= 1.0'
+    invariants:
+    - Standard transformer training practice
+    - SSC v2.2 saw gradient norms up to 115.1 — clipping essential
+    - Prevents catastrophic weight updates from outlier batches
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Gradient_Clip_Bound
+  epoch_count_imbalanced:
+    formula: epochs >= ceil(min_class_updates / (minority_count / eff_batch))
+    domain: minority_count in Z+, eff_batch in Z+, min_class_updates = 100
+    codomain: epochs in Z+, epochs >= 2
+    invariants:
+    - Minority class needs >= 100 gradient updates to learn boundary
+    - 'SSC v3: 926 minority samples / 16 eff_batch = 58 updates/epoch'
+    - 1 epoch = 58 updates (insufficient), 2 epochs = 116 (marginal), 3 = 174 (adequate)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Epoch_Count_Imbalanced
+proof_obligations:
+- type: bound
+  property: Learning rate within research bounds
+  formal: lr in [5e-5, 5e-4] AND lr = f(model_size) per Dettmers 2023
+  applies_to: all
+- type: invariant
+  property: Effective batch size is 16
+  formal: batch_size * accumulation_steps == 16
+  applies_to: all
+- type: invariant
+  property: LoRA alpha/rank ratio is 2
+  formal: lora_alpha == 2.0 * lora_rank
+  tolerance: 0.001
+  applies_to: all
+- type: bound
+  property: Sequence length covers p99 of data
+  formal: max_seq_len >= percentile(token_lengths, 99) AND max_seq_len <= 2 * percentile(token_lengths, 99)
+  applies_to: all
+- type: bound
+  property: Warmup fraction in safe range
+  formal: warmup_fraction in [0.03, 0.10]
+  applies_to: all
+- type: invariant
+  property: Gradient clipping enabled
+  formal: gradient_clip_norm == Some(1.0)
+  applies_to: all
+- type: bound
+  property: Sufficient epochs for minority class
+  formal: epochs >= 2 when imbalance_ratio > 5
+  applies_to: all
+kani_harnesses:
+- id: KANI-HP-001
+  obligation: Learning rate within research bounds
+  strategy: bounded_int
+  solver: cadical
+  bound: 16
+  description: Verify lr is in [5e-5, 5e-4] for all valid model sizes
+- id: KANI-HP-002
+  obligation: Effective batch size is 16
+  strategy: exhaustive
+  solver: cadical
+  bound: 16
+  description: Enumerate batch_size * accum_steps combinations that equal 16
+- id: KANI-HP-003
+  obligation: LoRA alpha/rank ratio is 2
+  strategy: bounded_int
+  solver: cadical
+  bound: 32
+  description: Verify alpha == 2 * rank for all valid rank values
+- id: KANI-HP-004
+  obligation: Warmup fraction in safe range
+  strategy: bounded_int
+  solver: cadical
+  bound: 16
+  description: Verify warmup fraction stays in [0.03, 0.10]
+- id: KANI-QLORA_-005
+  obligation: Sequence length covers p99 of data
+  property: Sequence length covers p99 of data
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QLORA_-006
+  obligation: Gradient clipping enabled
+  property: Gradient clipping enabled
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QLORA_-007
+  obligation: Sufficient epochs for minority class
+  property: Sufficient epochs for minority class
+  bound: 8
+  strategy: exhaustive
+falsification_tests:
+- id: FALSIFY-HP-001
+  rule: C-HP-001 (Learning rate scaling)
+  prediction: validate() rejects lr=1e-4 for model_size <= 13B with QLoRA
+  test: "#[test]\nfn falsify_hp_001_lr_too_low_for_small_model() {\n    let config = ClassifyConfig {\n        learning_rate:\
+    \ 1e-4,  // 33B+ rate, wrong for 4B\n        quantize_nf4: true,\n        ..ClassifyConfig::default()\n    };\n    let\
+    \ diag = config.validate_hyperparameters(4_000_000_000);\n    assert!(diag.has_warning(\"C-HP-001\"),\n            \"\
+    FALSIFIED: accepted 33B+ lr for 4B model\");\n}\n"
+  if_fails: Learning rate validation not checking model size
+- id: FALSIFY-HP-002
+  rule: C-HP-002 (Effective batch size)
+  prediction: validate() warns when effective_batch != 16
+  test: "#[test]\nfn falsify_hp_002_effective_batch_not_16() {\n    let config = ClassifyConfig {\n        batch_size: 4,\n\
+    \        accumulation_steps: 1,  // effective=4, not 16\n        ..ClassifyConfig::default()\n    };\n    let diag = config.validate_hyperparameters(4_000_000_000);\n\
+    \    assert!(diag.has_warning(\"C-HP-002\"),\n            \"FALSIFIED: accepted effective_batch=4\");\n}\n"
+  if_fails: Effective batch size validation missing
+- id: FALSIFY-HP-003
+  rule: C-HP-003 (Alpha/rank ratio)
+  prediction: validate() warns when alpha != 2*rank
+  test: "#[test]\nfn falsify_hp_003_alpha_not_2x_rank() {\n    let config = ClassifyConfig {\n        lora_rank: 16,\n   \
+    \     lora_alpha: 16.0,  // ratio=1, should be 2\n        ..ClassifyConfig::default()\n    };\n    let diag = config.validate_hyperparameters(4_000_000_000);\n\
+    \    assert!(diag.has_warning(\"C-HP-003\"),\n            \"FALSIFIED: accepted alpha/rank ratio=1\");\n}\n"
+  if_fails: Alpha/rank ratio validation missing
+- id: FALSIFY-HP-004
+  rule: C-HP-004 (Seq len from data)
+  prediction: validate_with_data() warns when max_seq_len > 2 * p99_tokens
+  test: "#[test]\nfn falsify_hp_004_seq_len_wasteful() {\n    let config = ClassifyConfig {\n        max_seq_len: 512,\n \
+    \       ..ClassifyConfig::default()\n    };\n    let data_stats = DataStats { p99_token_length: 253 };\n    let diag =\
+    \ config.validate_with_data(&data_stats);\n    assert!(diag.has_warning(\"C-HP-004\"),\n            \"FALSIFIED: accepted\
+    \ seq_len=512 when p99=253\");\n}\n"
+  if_fails: Sequence length not validated against data distribution
+- id: FALSIFY-HP-005
+  rule: C-HP-005 (Warmup)
+  prediction: validate() warns when warmup_fraction is None or outside [0.03, 0.10]
+  test: "#[test]\nfn falsify_hp_005_no_warmup() {\n    let config = ClassifyConfig {\n        warmup_fraction: None,\n   \
+    \     ..ClassifyConfig::default()\n    };\n    let diag = config.validate_hyperparameters(4_000_000_000);\n    assert!(diag.has_warning(\"\
+    C-HP-005\"),\n            \"FALSIFIED: accepted missing warmup\");\n}\n"
+  if_fails: Warmup validation missing
+- id: FALSIFY-HP-006
+  rule: C-HP-006 (Gradient clipping)
+  prediction: validate() warns when gradient_clip_norm is None
+  test: "#[test]\nfn falsify_hp_006_no_gradient_clip() {\n    let config = ClassifyConfig {\n        gradient_clip_norm: None,\n\
+    \        ..ClassifyConfig::default()\n    };\n    let diag = config.validate_hyperparameters(4_000_000_000);\n    assert!(diag.has_warning(\"\
+    C-HP-006\"),\n            \"FALSIFIED: accepted no gradient clipping\");\n}\n"
+  if_fails: Gradient clipping validation missing
+- id: FALSIFY-HP-007
+  rule: C-HP-008 (Epochs for imbalanced data)
+  prediction: validate_with_data() warns when epochs < 2 and imbalance > 5:1
+  test: "#[test]\nfn falsify_hp_007_insufficient_epochs() {\n    let config = ClassifyConfig {\n        epochs: 1,\n     \
+    \   ..ClassifyConfig::default()\n    };\n    let data_stats = DataStats { imbalance_ratio: 14.5 };\n    let diag = config.validate_with_data(&data_stats);\n\
+    \    assert!(diag.has_warning(\"C-HP-008\"),\n            \"FALSIFIED: accepted 1 epoch with 14.5:1 imbalance\");\n}\n"
+  if_fails: Epoch count not validated against class imbalance
+- id: FALSIFY-HP-008
+  rule: Contract-grounded defaults
+  prediction: ClassifyConfig::qlora_default(4B) produces research-grounded values
+  test: "#[test]\nfn falsify_hp_008_qlora_defaults() {\n    let config = ClassifyConfig::qlora_default(4_000_000_000);\n \
+    \   assert_eq!(config.learning_rate, 2e-4);          // C-HP-001\n    assert_eq!(config.batch_size * config.accumulation_steps,\
+    \ 16); // C-HP-002\n    assert!((config.lora_alpha - 2.0 * config.lora_rank as f32).abs() < 0.001); // C-HP-003\n    assert_eq!(config.gradient_clip_norm,\
+    \ Some(1.0)); // C-HP-006\n}\n"
+  if_fails: qlora_default() not applying research-grounded values
+parameters:
+  learning_rate:
+    id: C-HP-001
+    value: 0.0002
+    source: Dettmers 2023 Table 9
+    condition: model_params <= 13e9
+  effective_batch_size:
+    id: C-HP-002
+    value: 16
+    decomposition:
+      batch_size: 4
+      accumulation_steps: 4
+    source: Dettmers 2023 Table 9 + RTX 4090 VRAM budget
+  lora_alpha:
+    id: C-HP-003
+    formula: 2 * lora_rank
+    default_with_rank_16: 32.0
+    source: Lightning AI hundreds of experiments
+  max_seq_len:
+    id: C-HP-004
+    formula: next_pow2(p99(token_lengths))
+    ssc_v3_value: 256
+    ssc_v3_p99: 253
+    source: Measured data distribution + O(n^2) attention cost
+  warmup_fraction:
+    id: C-HP-005
+    value: 0.06
+    range:
+    - 0.03
+    - 0.1
+    source: Unsloth guide + standard practice
+  gradient_clip_norm:
+    id: C-HP-006
+    value: 1.0
+    source: Dettmers 2023 + SSC v2.2 precedent (grad norms up to 115.1)
+  weight_decay:
+    id: C-HP-007
+    value: 0.01
+    source: Unsloth guide + standard AdamW
+  epochs:
+    id: C-HP-008
+    minimum: 2
+    recommended: 3
+    condition: imbalance_ratio > 5
+    source: Minority class needs >= 100 gradient updates
+qa_gate:
+  id: F-HP-GATE
+  name: QLoRA Hyperparameter Contract
+  description: Research-grounded hyperparameter validation for QLoRA classification
+  checks:
+  - learning_rate_bounds
+  - effective_batch_size
+  - lora_alpha_ratio
+  - seq_len_from_data
+  - warmup_enabled
+  - gradient_clipping
+  - epoch_sufficiency
+  - qlora_defaults
+  pass_criteria: All 8 falsification tests pass
+  falsification: Set lr=1e-6 with batch_size=1 and epochs=1 — must trigger all warnings
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — validate_hyperparameters() runs automatically
+
+    before training starts. Warnings are printed but do not block (human decides).
+
+    Errors (e.g., lr=0, batch_size=0) block immediately.
+
+    '
+  poka_yoke: '"Mistake-proofing" — ClassifyConfig::qlora_default(model_size) encodes research
+
+    findings so users get correct values without reading papers. The constructor
+
+    name itself signals the intended use case.
+
+    '
+  genchi_genbutsu: '"Go and see" — C-HP-004 requires measuring actual token lengths from the
+
+    training data, not assuming a fixed max_seq_len. The data drives the config.
+
+    '
+  kaizen: '"Continuous improvement" — Each parameter traces to a specific paper/table.
+
+    When new research supersedes (e.g., a 2026 paper finds alpha=3r is better),
+
+    update the contract equation, bump version, and re-derive.
+
+    '

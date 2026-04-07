@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Visualization render contract — primitive drawing, layout correctness, render output
+  references:
+  - 'Bresenham (1965) Algorithm for computer control of a digital plotter'
+  - 'Shneiderman (1992) Tree visualization with tree-maps'
+equations:
+  render_output:
+    formula: R(scene) = terminal_escape_codes(rasterize(scene))
+    domain: scene ∈ Scene (collection of primitives + layout)
+    codomain: String (terminal-encoded output)
+    invariants:
+    - 'Deterministic: R(scene) = R(scene) for all scenes'
+    - Output contains only valid terminal escape sequences
+    - Empty scene produces empty output
+    preconditions:
+    - scene dimensions > 0
+    lean_theorem: Theorems.Render_Output
+  primitive_bounds:
+    formula: '∀ primitive p, canvas C: pixels(p) ⊆ bounds(C)'
+    domain: p ∈ {line, rect, circle, point, disk}, C ∈ Canvas
+    codomain: Modified Canvas
+    invariants:
+    - draw_line clips to canvas bounds
+    - draw_rect with negative dimensions produces empty output
+    - draw_circle radius 0 draws single point
+    preconditions:
+    - canvas width > 0 && height > 0
+    lean_theorem: Theorems.Primitive_Bounds
+  layout_treemap:
+    formula: L(nodes, rect) = partition(rect, nodes, weights) where Sigma(areas) = area(rect)
+    domain: nodes ∈ [TreeNode], rect ∈ Rect
+    codomain: Vec<Rect>
+    invariants:
+    - 'Area conservation: sum of child areas = parent area'
+    - No overlapping child rectangles
+    - All child rectangles within parent bounds
+    preconditions:
+    - nodes.len() > 0
+    - all weights > 0
+    lean_theorem: Theorems.Layout_Treemap
+proof_obligations:
+- type: invariant
+  property: Render determinism
+  formal: '∀ scene: render(scene) = render(scene)'
+  applies_to: render_output
+- type: soundness
+  property: Primitive bounds safety
+  formal: '∀ p, C: draw(p, C) writes only within C.bounds'
+  applies_to: primitive_bounds
+- type: invariant
+  property: Treemap area conservation
+  formal: '∀ layout: sum(child_areas) = parent_area'
+  applies_to: layout_treemap
+enforcement:
+  render_determinism:
+    description: Same scene always renders identically
+    check: contract_tests::FALSIFY-TVIZ-001
+    severity: ERROR
+  bounds_safety:
+    description: Drawing primitives never write outside canvas
+    check: contract_tests::FALSIFY-TVIZ-002
+    severity: ERROR
+  area_conservation:
+    description: Treemap layout conserves total area
+    check: contract_tests::FALSIFY-TVIZ-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TVIZ-001
+  rule: Render determinism
+  prediction: render(scene) called twice produces identical output
+  test: construct scene with all primitive types, render twice, compare
+  if_fails: Non-deterministic iteration order or random color selection
+- id: FALSIFY-TVIZ-002
+  rule: Bounds safety
+  prediction: draw_line with out-of-bounds endpoints clips to canvas
+  test: proptest with random line endpoints, verify no out-of-bounds writes
+  if_fails: Bresenham line drawing lacks bounds checking
+- id: FALSIFY-TVIZ-003
+  rule: Area conservation
+  prediction: treemap layout child areas sum to parent area within epsilon
+  test: layout 100 nodes, verify |sum(child_areas) - parent_area| < 1e-6
+  if_fails: Rounding error accumulation in squarified treemap
+kani_harnesses:
+- id: KANI-TVIZ-001
+  obligation: Render determinism
+  property: render is deterministic
+  bound: 8
+  strategy: exhaustive
+  harness: verify_render_determinism
+- id: KANI-TVIZ-002
+  obligation: Bounds safety
+  property: primitives clip to canvas
+  bound: 16
+  strategy: exhaustive
+  harness: verify_primitive_bounds
+- id: KANI-TVIZ-003
+  obligation: Area conservation
+  property: treemap conserves area
+  bound: 8
+  strategy: exhaustive
+  harness: verify_area_conservation
+qa_gate:
+  id: F-TVIZ-001
+  name: Visualization Render Contract
+  description: Render correctness, primitive bounds, and layout quality gate
+  checks:
+  - render_determinism
+  - bounds_safety
+  - area_conservation
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove clipping in draw_line to allow out-of-bounds writes

@@ -1,0 +1,167 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-01'
+  author: PAIML Engineering
+  description: >
+    Scoring gate invariants for training canary pass/fail regression detection.
+    Falsification condition F-SC-01 and F-EXEC-01.
+  references:
+    - training-canary-spec.md Section 6 (Scoring & Regression Detection)
+    - canary-metrics-schema-v1.yaml (input schema)
+  depends_on:
+    - canary-metrics-schema-v1
+
+scoring_invariants:
+  - id: C-SCORE-001
+    name: Throughput gate
+    description: >
+      pass = (measured_tok_s >= baseline_tok_s * 0.90).
+      15% slowdown (0.85x) MUST FAIL. 5% variance (0.95x) MUST PASS.
+    severity: P0
+    critical: true
+
+  - id: C-SCORE-002
+    name: VRAM gate
+    description: >
+      pass = (measured_vram <= baseline_vram * 1.05).
+      10% VRAM increase (1.10x) MUST FAIL.
+    severity: P0
+    critical: true
+
+  - id: C-SCORE-003
+    name: cuBLAS parity gate
+    description: >
+      pass = (loss_divergence <= 0.01) AND (throughput_ratio >= 0.95).
+    severity: P0
+    critical: true
+
+  - id: C-SCORE-004
+    name: baselines.json coherent with spec
+    description: >
+      Every baseline in baselines.json matches training-canary-spec.md Section 5.
+    severity: P0
+    critical: true
+
+equations:
+  throughput_gate:
+    formula: pass = (tok_s >= baseline * 0.90)
+    preconditions:
+      - tok_s > 0
+      - baseline > 0
+    lean_theorem: Theorems.Throughput_Gate
+  vram_gate:
+    formula: pass = (vram <= baseline * 1.05)
+    preconditions:
+      - vram > 0
+      - baseline > 0
+    lean_theorem: Theorems.Vram_Gate
+  parity_gate:
+    formula: pass = (divergence <= 0.01) AND (ratio >= 0.95)
+    preconditions:
+      - divergence >= 0
+      - ratio > 0
+    lean_theorem: Theorems.Parity_Gate
+
+proof_obligations:
+  - type: bound
+    property: Throughput tolerance is 10%
+    formal: THROUGHPUT_TOLERANCE == 0.10
+    applies_to: all
+  - type: bound
+    property: VRAM tolerance is 5%
+    formal: VRAM_TOLERANCE == 0.05
+    applies_to: all
+  - type: invariant
+    property: 15% slowdown triggers FAIL
+    formal: score(baseline * 0.85, baseline) == FAIL
+    applies_to: throughput_gate
+  - type: invariant
+    property: 5% slowdown triggers PASS
+    formal: score(baseline * 0.95, baseline) == PASS
+    applies_to: throughput_gate
+  - type: invariant
+    property: cuBLAS divergence 0.02 triggers FAIL
+    formal: score_cublas(divergence=0.02) == FAIL
+    applies_to: parity_gate
+
+falsification_tests:
+  - id: FALSIFY-SCORE-001
+    rule: C-SCORE-001 (Throughput gate)
+    prediction: score-gate exits non-zero for 15% throughput regression
+    test: |
+      def test_15pct_slowdown_fails():
+          result = {"canary": "unsloth", "metrics": {"tokens_per_sec": 5610, "peak_vram_mb": 3515, "final_loss": 0.15}}
+          baseline = {"tokens_per_sec": 6600, "peak_vram_mb": 3600, "final_loss": 2.0}
+          score = score_result(result, baseline)
+          assert not score["pass"], "FALSIFIED: 15% regression not detected"
+    if_fails: Throughput gate tolerance is wrong or not applied
+  - id: FALSIFY-SCORE-002
+    rule: C-SCORE-001 (Throughput gate)
+    prediction: score-gate exits 0 for 5% throughput variance
+    test: |
+      def test_5pct_variance_passes():
+          result = {"canary": "unsloth", "metrics": {"tokens_per_sec": 6270, "peak_vram_mb": 3515, "final_loss": 0.15}}
+          baseline = {"tokens_per_sec": 6600, "peak_vram_mb": 3600, "final_loss": 2.0}
+          score = score_result(result, baseline)
+          assert score["pass"], "FALSIFIED: 5% natural variance wrongly rejected"
+    if_fails: Throughput gate too strict
+  - id: FALSIFY-SCORE-003
+    rule: C-SCORE-002 (VRAM gate)
+    prediction: score-gate exits non-zero for 10% VRAM increase
+    test: |
+      def test_10pct_vram_increase_fails():
+          result = {"canary": "unsloth", "metrics": {"tokens_per_sec": 6700, "peak_vram_mb": 3960, "final_loss": 0.15}}
+          baseline = {"tokens_per_sec": 6600, "peak_vram_mb": 3600, "final_loss": 2.0}
+          score = score_result(result, baseline)
+          assert not score["pass"], "FALSIFIED: 10% VRAM regression not detected"
+    if_fails: VRAM gate tolerance is wrong
+  - id: FALSIFY-SCORE-004
+    rule: C-SCORE-003 (cuBLAS parity gate)
+    prediction: score-gate exits non-zero for divergence=0.02
+    test: |
+      def test_cublas_divergence_fails():
+          result = {"canary": "cublas", "metrics": {"parity": {"loss_divergence": 0.02, "throughput_ratio": 1.0}, "default": {"tokens_per_sec": 4100}}}
+          baseline = {"tokens_per_sec": 4000, "max_loss_divergence": 0.01, "min_throughput_ratio": 0.95}
+          score = score_cublas_result(result, baseline)
+          assert not score["pass"], "FALSIFIED: 0.02 divergence not caught"
+    if_fails: cuBLAS parity threshold wrong
+  - id: FALSIFY-SCORE-005
+    rule: C-SCORE-003 (cuBLAS parity gate — ratio)
+    prediction: score-gate exits non-zero for throughput_ratio=0.94
+    test: |
+      def test_cublas_ratio_fails():
+          result = {"canary": "cublas", "metrics": {"parity": {"loss_divergence": 0.0, "throughput_ratio": 0.94}, "default": {"tokens_per_sec": 4100}}}
+          baseline = {"tokens_per_sec": 4000, "max_loss_divergence": 0.01, "min_throughput_ratio": 0.95}
+          score = score_cublas_result(result, baseline)
+          assert not score["pass"], "FALSIFIED: 0.94 ratio not caught (threshold is 0.95)"
+    if_fails: cuBLAS throughput ratio threshold wrong
+
+kani_harnesses:
+  - id: KANI-SCORE-001
+    obligation: Throughput tolerance is 10%
+    strategy: exhaustive
+    solver: cadical
+    bound: 16
+    description: Verify THROUGHPUT_TOLERANCE = 0.10 produces correct pass/fail boundary
+  - id: KANI-SCORE-002
+    obligation: VRAM tolerance is 5%
+    strategy: exhaustive
+    solver: cadical
+    bound: 16
+    description: Verify VRAM_TOLERANCE = 0.05 produces correct pass/fail boundary
+  - id: KANI-SCORE-003
+    obligation: cuBLAS parity gate correct
+    strategy: bounded_int
+    solver: cadical
+    bound: 16
+    description: Verify parity gate rejects divergence > 0.01
+
+qa_gate:
+  id: F-SC-01
+  name: canary-score-gate-v1 Contract
+  description: Validate scoring logic correctness with injection tests
+  checks:
+    - throughput_gate
+    - vram_gate
+    - parity_gate
+  pass_criteria: All 4 falsification tests pass

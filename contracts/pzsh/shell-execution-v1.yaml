@@ -1,0 +1,122 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Performance-first shell framework — startup budget, parser correctness, executor safety
+  references:
+  - 'Ramey (2011) Bash Reference Manual'
+  - 'POSIX.1-2017 Shell Command Language'
+equations:
+  startup_budget:
+    formula: T(init) <= MAX_STARTUP_MS where T(init) = T(config_load) + T(plugin_init) + T(prompt_render)
+    domain: ShellConfig
+    codomain: Duration where duration <= 10ms
+    invariants:
+    - 'Total startup never exceeds 10ms hard limit'
+    - 'Config load phase bounded: T(config_load) < 5ms'
+    - 'Prompt render bounded: T(prompt_render) <= 2ms'
+    - 'Budget violation returns error, never silently exceeds'
+    preconditions:
+    - config file exists and is valid TOML
+    - no network I/O during startup
+    lean_theorem: Theorems.Startup_Budget
+  parser_correctness:
+    formula: 'parse(input) = AST | Error, where valid(input) => AST and invalid(input) => Error'
+    domain: input ∈ String
+    codomain: Result<Command, ParseError>
+    invariants:
+    - 'Deterministic: parse(s) = parse(s) for all s'
+    - 'Empty input produces empty command'
+    - 'Unterminated quotes produce ParseError, not partial AST'
+    - 'Parser time bounded: T(parse) <= 2ms'
+    preconditions:
+    - input.len() <= 1_048_576
+    lean_theorem: Theorems.Parser_Correctness
+  config_validation:
+    formula: V(config) = Ok(ValidConfig) | Err(ConfigError) where ValidConfig has all required fields
+    domain: config ∈ RawConfig (from TOML)
+    codomain: Result<ShellConfig, ConfigError>
+    invariants:
+    - 'Missing required fields produce ConfigError'
+    - 'Default values applied for optional fields'
+    - 'Forbidden patterns (eval, source from network) rejected'
+    - 'Valid config always has non-empty prompt format'
+    preconditions:
+    - raw config is valid TOML syntax
+    lean_theorem: Theorems.Config_Validation
+proof_obligations:
+- type: invariant
+  property: Startup time hard limit
+  formal: '∀ config: startup_time(config) <= 10ms'
+  applies_to: startup_budget
+- type: invariant
+  property: Parser determinism
+  formal: '∀ input: parse(input) = parse(input)'
+  applies_to: parser_correctness
+- type: invariant
+  property: Forbidden pattern rejection
+  formal: '∀ config with eval: validate(config) = Err(ForbiddenPattern)'
+  applies_to: config_validation
+enforcement:
+  startup_limit:
+    description: Shell startup must complete within 10ms
+    check: contract_tests::FALSIFY-PZS-001
+    severity: ERROR
+  parser_determinism:
+    description: Parser must produce identical output for identical input
+    check: contract_tests::FALSIFY-PZS-002
+    severity: ERROR
+  forbidden_patterns:
+    description: Config must reject forbidden patterns like eval
+    check: contract_tests::FALSIFY-PZS-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PZS-001
+  rule: Startup budget
+  prediction: Shell startup completes within 10ms for any valid config
+  test: benchmark startup with default config, assert < 10ms at p99
+  if_fails: Blocking I/O or expensive computation during init
+- id: FALSIFY-PZS-002
+  rule: Parser determinism
+  prediction: parse(s) called twice returns identical AST for any input s
+  test: proptest with random shell command strings, parse twice, assert equal
+  if_fails: Non-deterministic state in parser (e.g., global mutable state)
+- id: FALSIFY-PZS-003
+  rule: Forbidden pattern rejection
+  prediction: Config containing eval or source-from-network is rejected
+  test: construct configs with forbidden patterns, verify validation error
+  if_fails: Missing pattern check in config validator
+- id: FALSIFY-PZS-004
+  rule: Unterminated quote handling
+  prediction: Input with unterminated quotes returns ParseError, not partial AST
+  test: proptest with strings ending in unclosed quotes
+  if_fails: Parser consumes to EOF instead of erroring on unclosed quote
+kani_harnesses:
+- id: KANI-PZS-001
+  obligation: Startup time hard limit
+  property: Startup duration <= MAX_STARTUP_MS
+  bound: 8
+  strategy: exhaustive
+  harness: verify_startup_budget
+- id: KANI-PZS-002
+  obligation: Parser determinism
+  property: Parse is deterministic
+  bound: 16
+  strategy: exhaustive
+  harness: verify_parser_determinism
+- id: KANI-PZS-003
+  obligation: Forbidden pattern rejection
+  property: Forbidden patterns rejected
+  bound: 8
+  strategy: exhaustive
+  harness: verify_forbidden_patterns
+qa_gate:
+  id: F-PZS-001
+  name: Shell Execution Contract
+  description: Performance-first shell framework quality gate
+  checks:
+  - startup_limit
+  - parser_determinism
+  - forbidden_patterns
+  pass_criteria: All 4 falsification tests pass
+  falsification: Add a 20ms sleep to startup and verify budget test catches it

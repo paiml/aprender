@@ -1,0 +1,131 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Absolute position embeddings — learned additive positional encoding
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need
+equations:
+  absolute_position_add:
+    formula: output[t] = token_embed[t] + pos_embed[t]
+    domain: t in {0, ..., seq_len - 1}, token_embed in R^d, pos_embed in R^d
+    codomain: output in R^d
+    invariants:
+    - output.shape = token_embed.shape (shape preservation)
+    - pos_embed = 0 implies output = token_embed (additive identity)
+    - t < max_position for all valid positions
+    - output[t] is finite for finite inputs
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Absolute_Position_Add
+proof_obligations:
+- type: invariant
+  property: Shape preservation
+  formal: output.shape = token_embed.shape = (seq_len, d)
+  applies_to: all
+- type: invariant
+  property: Additive identity
+  formal: pos_embed[t] = 0 implies output[t] = token_embed[t]
+  applies_to: all
+- type: bound
+  property: Max position bound
+  formal: t < max_position for all positions in the input
+  applies_to: all
+- type: bound
+  property: Finite output
+  formal: is_finite(token_embed[t]) and is_finite(pos_embed[t]) implies is_finite(output[t])
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: lookup_position_embedding
+    description: Index into pos_embed table with position t
+    invariant: t < max_position
+  - name: elementwise_add
+    description: Compute token_embed[t] + pos_embed[t] elementwise
+    invariant: output.shape = input.shape
+simd_dispatch:
+  absolute_position_add:
+    scalar: absolute_position_add_scalar
+    avx2: absolute_position_add_avx2
+    ptx: absolute_position_add_ptx
+enforcement:
+  shape_preservation:
+    description: Output shape must match input token embedding shape
+    check: contract_tests::FALSIFY-AP-001
+    severity: ERROR
+  additive_identity:
+    description: Zero position embedding must preserve token embedding
+    check: contract_tests::FALSIFY-AP-002
+    severity: ERROR
+  position_bound:
+    description: All positions must be within max_position
+    check: contract_tests::FALSIFY-AP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-AP-001
+  rule: Shape preservation
+  prediction: output.shape = token_embed.shape for all inputs
+  test: proptest with random seq_len and d, verify output dimensions match
+  if_fails: Embedding addition changes tensor shape or broadcasts incorrectly
+- id: FALSIFY-AP-002
+  rule: Additive identity
+  prediction: output = token_embed when pos_embed is all zeros
+  test: proptest with random token_embed and zero pos_embed
+  if_fails: Zero position embedding not acting as identity under addition
+- id: FALSIFY-AP-003
+  rule: Max position bound
+  prediction: Positions >= max_position are rejected or clamped
+  test: proptest with positions at and beyond max_position boundary
+  if_fails: Out-of-bounds position index accepted without error
+- id: FALSIFY-AP-004
+  rule: Finite output
+  prediction: output is finite for all finite inputs
+  test: proptest with random finite token_embed and pos_embed values
+  if_fails: Float addition producing NaN or Inf from finite inputs
+kani_harnesses:
+- id: KANI-AP-001
+  obligation: AP-INV-001
+  property: Output shape equals input token embedding shape
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_absolute_position_shape
+- id: KANI-AP-002
+  obligation: AP-INV-002
+  property: Zero position embedding preserves token embedding
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_absolute_position_identity
+- id: KANI-ABSOLU-003
+  obligation: Shape preservation
+  property: Shape preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ABSOLU-004
+  obligation: Additive identity
+  property: Additive identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ABSOLU-005
+  obligation: Max position bound
+  property: Max position bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-ABSOLU-006
+  obligation: Finite output
+  property: Finite output
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AP-001
+  name: Absolute Position Contract
+  description: Absolute position embeddings quality gate
+  checks:
+  - shape_preservation
+  - additive_identity
+  - position_bound
+  - finite_output
+  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  falsification: Replace addition with multiplication to break additive identity

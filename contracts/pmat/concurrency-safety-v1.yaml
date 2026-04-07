@@ -1,0 +1,105 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Concurrency safety contracts — channel lossless, task cancellation cleanup, parallel determinism
+  references:
+  - Lamport (1978). Time, Clocks, and the Ordering of Events. CACM
+  - pmat concurrency boundary (pv-spec §32.6)
+equations:
+  channel_lossless:
+    formula: |
+      channel: (Sender, Receiver, Bound) -> bool
+        sent_count = received_count + pending_count
+        No message lost unless sender explicitly dropped
+    domain: Bounded async channels
+    codomain: bool (conservation invariant)
+    invariants:
+    - Message count is conserved
+    - No silent drops
+    preconditions:
+    - channel is open
+    postconditions:
+    - sent = received + pending
+    lean_theorem: Theorems.ChannelLossless
+  task_cancellation_cleanup:
+    formula: |
+      cancel: Task -> ResourceSet
+        for-all resource in task.acquired: resource.is_released() after cancel
+        No leaked file handles, no leaked tempfiles
+    domain: Any async task with acquired resources
+    codomain: All resources released
+    invariants:
+    - Cancellation releases all resources
+    - No tempfile leaks in .pmat/
+    preconditions:
+    - task is in Running state
+    postconditions:
+    - all acquired resources released
+    lean_theorem: Theorems.TaskCancellationCleanup
+  parallel_determinism:
+    formula: |
+      parallel: (Files, Analyzer) -> Vec<Result>
+        sort(parallel_analyze(files)) = sort(sequential_analyze(files))
+    domain: Set of files with any analyzer
+    codomain: Deterministic result set (modulo ordering)
+    invariants:
+    - Parallel and sequential produce identical results when sorted
+    preconditions:
+    - files is non-empty
+    - analyzer is pure (no shared mutable state)
+    postconditions:
+    - sorted results are identical
+    lean_theorem: Theorems.ParallelDeterminism
+proof_obligations:
+- type: conservation
+  property: Channel message conservation
+  formal: sent_count = received_count + pending_count
+  applies_to: all
+- type: frame
+  property: Cancellation releases all resources
+  formal: modifies(task.state), preserves(all resources released)
+  applies_to: all
+- type: determinism
+  property: Parallel equals sequential
+  formal: sort(parallel_result) = sort(sequential_result)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CONC-001
+  rule: Concurrent query consistency
+  prediction: 1000 concurrent queries produce consistent function counts
+  test: Spawn 1000 parallel analyze_complexity, compare all result counts
+  if_fails: Race condition in shared index access
+- id: FALSIFY-CONC-002
+  rule: Cancellation tempfile cleanup
+  prediction: Cancelled analysis does not leave .pmat/*.tmp files
+  test: Start analysis, cancel after 100ms, check for tmp files
+  if_fails: Tempfile cleanup not wired to cancellation token
+- id: FALSIFY-CONC-003
+  rule: Parallel map determinism
+  prediction: Rayon parallel map over 10K files = sequential map (sorted)
+  test: Analyze 10K files both ways, sort and compare
+  if_fails: Non-deterministic state in analyzer (e.g. HashMap iteration)
+kani_harnesses:
+- id: KANI-CONC-001
+  obligation: Channel message conservation
+  property: sent = received + pending
+  bound: 16
+  strategy: exhaustive
+- id: KANI-CONC-002
+  obligation: Cancellation cleanup
+  property: all resources released after cancel
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONC-003
+  obligation: Parallel determinism
+  property: parallel result set = sequential result set
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CONC-001
+  name: concurrency-safety-v1 Contract
+  description: Quality gate for concurrency safety
+  checks:
+  - validation
+  - falsification

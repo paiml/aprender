@@ -1,0 +1,63 @@
+contract: host-buffer-reuse-v1
+version: 1.0.0
+status: implemented
+kaizen: '044'
+invariants:
+- id: C-HOSTREUSE-001
+  description: compute_workspace_clip_scale pre-allocates single host buffer for all 9 D2H downloads
+  preconditions:
+  - ws contains valid GpuBuffer entries for all 9 gradient components
+  postconditions:
+  - Returns (grad_norm, clip_scale) identical to original implementation
+  - '1 host buffer allocation per call (was: 9)'
+  - Buffer sized to max gradient component length
+  verified_by:
+  - 98 transformer trainer tests passed
+- id: C-HOSTREUSE-002
+  description: download_workspace_to_accum pre-allocates single host buffer for all 9 D2H downloads
+  preconditions:
+  - ws contains valid gradient buffers
+  - accum.block_grads[layer_idx].components has matching sizes
+  postconditions:
+  - Accumulates gradients identically to original (d += s)
+  - '1 host buffer allocation per call (was: 9)'
+  verified_by:
+  - 98 transformer trainer tests passed
+- id: C-HOSTREUSE-003
+  description: cpu_loss_and_grad pre-allocates exp_vals outside softmax loop
+  preconditions:
+  - logits_data.len() == seq_len * vocab_size
+  postconditions:
+  - Identical loss and gradient values
+  - '1 exp_vals allocation per call (was: seq_len allocations)'
+  verified_by:
+  - 98 transformer trainer tests passed
+affected_files:
+- path: src/train/transformer_trainer/cuda_trainer.rs
+  functions:
+  - 'compute_workspace_clip_scale: single pre-allocated host buffer for 9 D2H downloads'
+  - 'download_workspace_to_accum: single pre-allocated host buffer for 9 D2H downloads'
+  - 'cpu_loss_and_grad: exp_vals pre-allocated outside softmax loop'
+  change: '- compute_workspace_clip_scale: 9 allocs → 1 (max 104 MB buffer)
+
+    - download_workspace_to_accum: 9 allocs → 1 (max 104 MB buffer)
+
+    - cpu_loss_and_grad: seq_len allocs → 1 (vocab_size = 607 KB buffer)
+
+    '
+performance_note: 'For Qwen3-4B (vocab=151936, hidden=2560, intermediate=10240):
+
+  - compute_workspace_clip_scale: 9 allocs/call → 1, saves ~936 MB alloc churn
+
+  - download_workspace_to_accum: 9 allocs/call/layer → 1, saves ~936 MB alloc churn/layer
+
+  - cpu_loss_and_grad exp_vals: 256 allocs/call → 1, saves ~155 MB alloc churn
+
+  '
+qa_gate:
+  id: F-HBRV-001
+  name: host-buffer-reuse-v1 Contract
+  description: Quality gate for host-buffer-reuse-v1
+  checks:
+  - validation
+  - falsification

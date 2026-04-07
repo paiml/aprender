@@ -1,0 +1,251 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Shell safety classifier correctness — the linter must detect all dangerous
+    shell patterns (command injection, path traversal, secret leakage, unsafe temp
+    files, privilege escalation) with zero false negatives on known-bad patterns
+  references:
+  - OWASP OS Command Injection (CWE-78)
+  - OWASP Path Traversal (CWE-22)
+  - CWE-377 Insecure Temporary File
+  - CWE-269 Improper Privilege Management
+  - ShellCheck Wiki — https://www.shellcheck.net/wiki/
+  depends_on:
+  - parser-soundness-v1
+equations:
+  classify_injection:
+    formula: "classify_injection: source_line -> Vec<Diagnostic>\n  Detects command\
+      \ injection vectors in shell scripts:\n    SEC001: eval with user-controlled\
+      \ input (eval \"$USER_INPUT\")\n    SEC002: Unquoted variables in dangerous\
+      \ commands (curl $URL, ssh $HOST)\n    SEC003: find -exec sh -c with embedded\
+      \ {} (filename injection)\n  Each diagnostic carries:\n    - rule_id: String\
+      \ (e.g. \"SEC001\")\n    - severity: Error | Warning | Info\n    - span: Span\
+      \ { start_line, start_col, end_line, end_col }\n    - fix: Option<Fix> (auto-fix\
+      \ suggestion where safe)\n"
+    domain: source_line in UTF-8 string (single line of shell source)
+    codomain: Vec<Diagnostic> — empty if no injection pattern detected
+    invariants:
+    - eval with unquoted variable always produces SEC001 diagnostic
+    - Unquoted variable after dangerous command (curl, wget, ssh, scp, git, rsync,
+      docker, kubectl) always produces SEC002
+    - find -exec sh -c with {} inside quoted string always produces SEC003
+    - Safe patterns (eval with literal, quoted variables, {} as separate arg) produce
+      no diagnostic
+    preconditions:
+    - '!source.is_empty()'
+    - source.len() <= 1_000_000
+    lean_theorem: Theorems.Classify_Injection
+  classify_secrets:
+    formula: "classify_secrets: source_line -> Vec<Diagnostic>\n  Detects hardcoded\
+      \ secrets and credential leakage:\n    SEC005: Hardcoded API keys, passwords,\
+      \ tokens, AWS secrets\n  Pattern matching against known secret variable names:\n\
+      \    API_KEY=, SECRET=, PASSWORD=, TOKEN=, AWS_SECRET, GITHUB_TOKEN=, PRIVATE_KEY=\n\
+      \  with literal string values (not environment variable references).\n"
+    domain: source_line in UTF-8 string
+    codomain: Vec<Diagnostic>
+    invariants:
+    - Variable assignment with secret-pattern name and literal value always produces
+      SEC005
+    - Variable assignment referencing environment variable (${VAR:-}) does not produce
+      SEC005
+    preconditions:
+    - '!source.is_empty()'
+    - source.len() <= 1_000_000
+    lean_theorem: Theorems.Classify_Secrets
+  classify_filesystem:
+    formula: "classify_filesystem: source_line -> Vec<Diagnostic>\n  Detects unsafe\
+      \ filesystem operations:\n    SEC004: wget/curl with TLS verification disabled\
+      \ (--no-check-certificate, -k, --insecure)\n    SEC006: Predictable temporary\
+      \ file names (/tmp/fixed_name instead of mktemp)\n    SEC007: sudo with unquoted\
+      \ variables on destructive commands (rm -rf, chmod 777)\n  Each class has a\
+      \ known-bad pattern set and a known-safe exception set.\n"
+    domain: source_line in UTF-8 string
+    codomain: Vec<Diagnostic>
+    invariants:
+    - wget --no-check-certificate always produces SEC004
+    - curl -k or curl --insecure always produces SEC004
+    - Assignment to /tmp/literal without mktemp always produces SEC006
+    - sudo rm -rf $VAR (unquoted) always produces SEC007
+    - sudo rm -rf "${VAR}" (quoted, validated) does not produce SEC007
+    preconditions:
+    - '!source.is_empty()'
+    - source.len() <= 1_000_000
+    lean_theorem: Theorems.Classify_Filesystem
+  lint_shell:
+    formula: "lint_shell: source_text -> LintResult\n  Top-level entry point that\
+      \ runs all SEC rules plus SC (ShellCheck-compatible) rules:\n    Dispatches\
+      \ to: SEC001-SEC024, SC1003-SC2325, BASH001-BASH010, DET001-DET004,\n      \
+      \             IDEM001-IDEM003, PERF001-PERF005, PORT001-PORT005, REL001-REL005\n\
+      \  Aggregates all diagnostics into a single LintResult.\n  Supports lint profiles\
+      \ (default, strict, security-only).\n"
+    domain: source_text in UTF-8 string (complete shell script)
+    codomain: 'LintResult { diagnostics: Vec<Diagnostic>, summary: LintSummary }'
+    invariants:
+    - Known-vulnerable corpus inputs produce at least one Error-severity diagnostic
+    - Empty input produces empty diagnostic list (no spurious warnings)
+    - Comment-only lines never produce security diagnostics
+    preconditions:
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Lint_Shell
+proof_obligations:
+- type: soundness
+  property: Zero false negatives on known injection patterns
+  formal: 'For all p in KNOWN_INJECTION_PATTERNS: |classify_injection(p)| >= 1'
+  applies_to: all
+- type: soundness
+  property: Zero false negatives on known secret patterns
+  formal: 'For all p in KNOWN_SECRET_PATTERNS: |classify_secrets(p)| >= 1'
+  applies_to: all
+- type: soundness
+  property: Zero false negatives on known filesystem abuse
+  formal: 'For all p in KNOWN_FS_ABUSE_PATTERNS: |classify_filesystem(p)| >= 1'
+  applies_to: all
+- type: invariant
+  property: Safe patterns produce no security diagnostic
+  formal: 'For all p in KNOWN_SAFE_PATTERNS: classify_*(p) produces no Error-severity
+    diagnostic'
+  applies_to: all
+- type: invariant
+  property: Diagnostic severity ordering
+  formal: command injection (SEC001, SEC003) >= Error; unquoted vars (SEC002) >= Warning;
+    info rules >= Info
+  applies_to: all
+- type: invariant
+  property: Rule ID uniqueness
+  formal: Each diagnostic rule_id maps to exactly one check function; no rule ID collisions
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: line_scan
+    description: Iterate source lines, skip comments, apply per-line SEC rules
+    invariant: Every non-comment line is checked against all active SEC rules; no
+      lines silently skipped
+  - name: pattern_match
+    description: Match line content against known-bad patterns with word-boundary
+      and context checks
+    invariant: Word-boundary checks prevent false positives on substrings (e.g., 'evaluate'
+      does not trigger SEC001 for 'eval')
+  - name: diagnostic_emit
+    description: Construct Diagnostic with rule_id, severity, span, and optional Fix
+    invariant: Every diagnostic has valid span with line >= 1; severity is never None
+  - name: aggregation
+    description: Collect all diagnostics into LintResult with summary counts
+    invariant: Summary counts match actual diagnostic vector length per severity level
+falsification_tests:
+- id: FALSIFY-SEC-001
+  rule: eval injection detection (SEC001)
+  prediction: eval with unquoted variable always detected
+  test: 'Feed lines: ''eval "$CMD"'', ''eval $USER_INPUT'', ''eval "rm -rf $DIR"'';
+    assert each produces SEC001 diagnostic'
+  if_fails: is_standalone_eval() word-boundary check too restrictive; misses eval
+    in valid positions
+- id: FALSIFY-SEC-002
+  rule: Unquoted variable detection (SEC002)
+  prediction: curl/wget/ssh with $VAR (no quotes) always detected
+  test: 'Feed lines: ''curl $URL'', ''wget $PATH'', ''ssh $HOST'', ''docker run $IMG'';
+    assert SEC002 for each'
+  if_fails: DANGEROUS_COMMANDS list missing a command, or word-boundary check too
+    strict
+- id: FALSIFY-SEC-003
+  rule: find -exec injection (SEC003)
+  prediction: find -exec sh -c with embedded {} in quotes always detected
+  test: 'Feed: ''find . -exec sh -c "echo {}" \;''; assert SEC003. Feed safe: ''find
+    . -exec rm {} \;''; assert no SEC003'
+  if_fails: is_braces_in_shell_string() fails to parse complex quoting contexts
+- id: FALSIFY-SEC-004
+  rule: TLS bypass detection (SEC004)
+  prediction: wget --no-check-certificate and curl -k/-insecure always detected
+  test: Feed each variant; assert SEC004. Feed 'curl https://safe.com'; assert no
+    SEC004
+  if_fails: Pattern matching misses short flag (-k) or long flag variant
+- id: FALSIFY-SEC-005
+  rule: Hardcoded secret detection (SEC005)
+  prediction: API_KEY="literal" always detected; API_KEY="${API_KEY:-}" never detected
+  test: Feed both patterns; assert SEC005 only for literal assignment
+  if_fails: Pattern matching does not distinguish literal values from environment
+    variable references
+- id: FALSIFY-SEC-006
+  rule: Unsafe temp file detection (SEC006)
+  prediction: TMPFILE="/tmp/myapp.$$" always detected; TMPFILE="$(mktemp)" never detected
+  test: Feed both patterns; assert SEC006 only for predictable path
+  if_fails: mktemp exception not checked, or pattern misses $$ PID expansion
+- id: FALSIFY-SEC-007
+  rule: Privilege escalation detection (SEC007)
+  prediction: sudo rm -rf $DIR (unquoted) always detected
+  test: 'Feed: ''sudo rm -rf $DIR''; assert SEC007. Feed ''sudo rm -rf "${DIR}"'';
+    assert no SEC007 or lower severity'
+  if_fails: DANGEROUS_SUDO_COMMANDS list incomplete or quoting detection broken
+- id: FALSIFY-SEC-008
+  rule: Safe eval indirection not flagged
+  prediction: $(eval "printf '%s' ...") is safe POSIX indirection, not flagged as
+    SEC001
+  test: 'Feed: ''$(eval "printf ''%s'' \"$var\"")''; assert no SEC001 diagnostic'
+  if_fails: is_safe_eval_indirection() context check fails to recognize the safe pattern
+kani_harnesses:
+- id: KANI-SEC-001
+  obligation: Diagnostic span validity
+  property: All emitted diagnostics have span.start_line >= 1 and span.start_col >=
+    1
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_diagnostic_span_valid
+- id: KANI-SEC-002
+  obligation: Rule ID uniqueness
+  property: No two distinct check functions emit the same rule_id prefix
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_rule_id_unique
+- id: KANI-SEC-003
+  obligation: Severity monotonicity
+  property: Injection rules (SEC001, SEC003, SEC007) always emit Error severity, never
+    downgraded
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_injection_severity
+- id: KANI-SAFETY-004
+  obligation: Zero false negatives on known injection patterns
+  property: Zero false negatives on known injection patterns
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAFETY-005
+  obligation: Zero false negatives on known secret patterns
+  property: Zero false negatives on known secret patterns
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAFETY-006
+  obligation: Zero false negatives on known filesystem abuse
+  property: Zero false negatives on known filesystem abuse
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAFETY-007
+  obligation: Safe patterns produce no security diagnostic
+  property: Safe patterns produce no security diagnostic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAFETY-008
+  obligation: Diagnostic severity ordering
+  property: Diagnostic severity ordering
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SEC-001
+  name: Safety Classifier Contract
+  description: Shell safety linter detects all known-bad patterns with zero false
+    negatives and structured diagnostics
+  checks:
+  - eval_injection
+  - unquoted_variable
+  - find_exec_injection
+  - tls_bypass
+  - hardcoded_secrets
+  - unsafe_tempfile
+  - privilege_escalation
+  - safe_pattern_exclusion
+  pass_criteria: All 8 falsification tests pass + 3 Kani harnesses verify
+  falsification: Remove 'eval' from SEC001 pattern to break injection detection on
+    the most critical vector

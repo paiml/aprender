@@ -1,0 +1,216 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Safetensors binary format safety — JSON header validation, tensor offset bounds,
+    dtype consistency, and zero-copy mmap correctness. Safetensors was designed to
+    prevent pickle RCE but still has parsing-layer defect vectors (header size overflow,
+    overlapping tensor regions, dtype mismatch).
+  references:
+  - 'Safetensors specification (huggingface/safetensors, README.md)'
+  - 'CVE-2023-37470 — safetensors header injection via crafted JSON'
+  - 'HuggingFace safetensors format: 8-byte LE header_size + JSON header + tensor data'
+  - 'aprender/src/safetensors/ — Safetensors parser implementation'
+  depends_on:
+  - tensor-shape-flow-v1
+  - validated-tensor-v1
+equations:
+  header_size_validation:
+    formula: |
+      validate_header: &[u8] -> Result<(usize, JsonHeader), FormatError>
+        header_size = u64::from_le_bytes(bytes[0..8])
+        header_size < MAX_HEADER_SIZE (100MB)
+        header_size + 8 <= file_size
+        json_bytes = &bytes[8..8+header_size]
+        header = serde_json::parse(json_bytes)?
+    domain: First bytes of a safetensors file
+    codomain: Result<(header_size, parsed JSON), FormatError>
+    invariants:
+    - header_size is validated before ANY allocation
+    - header_size + 8 <= file_size (no OOB read)
+    - header_size < MAX_HEADER_SIZE prevents memory exhaustion
+    - JSON parsing fails gracefully on malformed input
+    preconditions:
+    - file is readable and len >= 8
+    postconditions:
+    - header is valid JSON object
+    - header_size matches actual JSON byte length
+    lean_theorem: Theorems.Header_Size_Validation
+  tensor_offset_bounds:
+    formula: |
+      validate_offsets: (JsonHeader, file_size) -> Result<Vec<TensorMeta>, FormatError>
+        data_start = 8 + header_size
+        For each tensor in header:
+          begin = tensor.data_offsets[0]
+          end = tensor.data_offsets[1]
+          0 <= begin < end
+          data_start + end <= file_size
+          (end - begin) == product(shape) * dtype_size(dtype)
+    domain: Parsed JSON header with file size
+    codomain: Result<Vec<TensorMeta>, FormatError>
+    invariants:
+    - begin < end (no empty or reversed ranges)
+    - No tensor region extends beyond file
+    - Tensor regions do not overlap (each byte belongs to at most one tensor)
+    - Size matches shape * dtype exactly
+    preconditions:
+    - header parsed successfully
+    - file_size known
+    postconditions:
+    - all tensor data regions within [data_start, file_size)
+    - no overlapping regions
+    lean_theorem: Theorems.Tensor_Offset_Bounds
+  dtype_consistency:
+    formula: |
+      validate_dtype: (String, &[u8]) -> Result<DType, FormatError>
+        dtype_str ∈ {"F16", "F32", "F64", "BF16", "I8", "I16", "I32", "I64", "U8", "BOOL"}
+        dtype_size(dtype) ∈ {1, 2, 4, 8}
+        tensor_bytes.len() == product(shape) * dtype_size(dtype)
+    domain: dtype string from JSON header + tensor bytes
+    codomain: Result<DType, FormatError>
+    invariants:
+    - Only known dtype strings accepted (no arbitrary types)
+    - Byte count exactly matches shape * size (no trailing/missing bytes)
+    - BF16 and F16 distinguished (different bit patterns)
+    preconditions:
+    - dtype string is non-empty
+    postconditions:
+    - parsed DType has known size
+    lean_theorem: Theorems.DType_Consistency
+  mmap_zero_copy:
+    formula: |
+      mmap_tensor: (fd, offset, size) -> Result<&[u8], MmapError>
+        mmap(fd, offset=data_start+begin, len=end-begin, PROT_READ)
+        Result is a borrowed slice — no copy, no allocation
+        Page-aligned offset for efficiency
+    domain: File descriptor + tensor offset range
+    codomain: Result<&[u8], MmapError> — borrowed, zero-copy
+    invariants:
+    - No data copied to heap (zero-copy guarantee)
+    - mmap region does not extend beyond file
+    - Alignment to page boundary for efficient access
+    - Multiple tensors can be mmapped simultaneously
+    preconditions:
+    - offset bounds validated by tensor_offset_bounds
+    - file descriptor is valid and readable
+    postconditions:
+    - returned slice length == end - begin exactly
+    lean_theorem: Theorems.Mmap_Zero_Copy
+  no_overlap_invariant:
+    formula: |
+      check_no_overlap: Vec<(begin, end)> -> Result<(), OverlapError>
+        Sort regions by begin
+        For adjacent pairs (r1, r2): r1.end <= r2.begin
+        No byte in data section belongs to two tensors
+    domain: List of tensor offset ranges
+    codomain: Result<(), OverlapError>
+    invariants:
+    - Sorted check is O(n log n) not O(n^2)
+    - Gap bytes between tensors are allowed (padding)
+    - Zero-length ranges rejected by offset_bounds
+    preconditions:
+    - all ranges have begin < end
+    postconditions:
+    - no overlapping byte ranges
+    lean_theorem: Theorems.No_Overlap_Invariant
+proof_obligations:
+- type: bound
+  property: Header size bounded before allocation
+  formal: header_size < MAX_HEADER_SIZE checked before alloc(header_size)
+  applies_to: header_size_validation
+- type: invariant
+  property: Tensor regions within file bounds
+  formal: forall t, data_start + t.end <= file_size
+  applies_to: tensor_offset_bounds
+- type: invariant
+  property: No overlapping tensor regions
+  formal: forall t1 t2, t1 != t2 -> [t1.begin, t1.end) ∩ [t2.begin, t2.end) = empty
+  applies_to: no_overlap_invariant
+- type: invariant
+  property: DType size matches tensor bytes
+  formal: forall t, t.bytes.len() == product(t.shape) * dtype_size(t.dtype)
+  applies_to: dtype_consistency
+- type: invariant
+  property: Zero-copy mmap no heap allocation
+  formal: mmap_tensor allocates 0 heap bytes
+  applies_to: mmap_zero_copy
+falsification_tests:
+- id: FALSIFY-ST-001
+  rule: Header size bounded before allocation
+  prediction: File claiming header_size = 0xFFFFFFFFFFFFFFFF rejected before alloc
+  test: Craft 16-byte safetensors with max u64 header_size, verify OOM does not occur
+  if_fails: Header size not checked — memory exhaustion attack
+- id: FALSIFY-ST-002
+  rule: Tensor regions within file bounds
+  prediction: Tensor with end offset beyond file returns FormatError
+  test: Craft safetensors with tensor end = file_size + 1, verify bounds error
+  if_fails: OOB read when loading tensor data
+- id: FALSIFY-ST-003
+  rule: No overlapping tensor regions
+  prediction: Two tensors with overlapping byte ranges returns OverlapError
+  test: Craft header with tensor A=[0,100) and tensor B=[50,150), verify rejection
+  if_fails: Tensor data corruption — reads wrong weights silently
+- id: FALSIFY-ST-004
+  rule: DType size matches tensor bytes
+  prediction: F32 tensor with byte count not divisible by 4 returns FormatError
+  test: Craft tensor with dtype=F32, shape=[3], but 11 bytes (not 12), verify error
+  if_fails: Misaligned read or silent truncation
+- id: FALSIFY-ST-005
+  rule: Zero-copy mmap no heap allocation
+  prediction: Loading 4GB tensor via mmap uses <1MB heap memory
+  test: mmap a large safetensors file, measure RSS vs file size
+  if_fails: Data copied to heap — defeats purpose of safetensors format
+kani_harnesses:
+- id: KANI-ST-001
+  obligation: Header size bounded before allocation
+  property: No alloc exceeding MAX_HEADER_SIZE
+  bound: 8
+  strategy: bounded_int
+  harness: verify_header_size_bounded
+- id: KANI-ST-002
+  obligation: Tensor regions within file bounds
+  property: data_start + end <= file_size for all tensors
+  bound: 16
+  strategy: bounded_int
+  harness: verify_tensor_bounds
+- id: KANI-ST-003
+  obligation: No overlapping tensor regions
+  property: Sorted ranges have no intersection
+  bound: 8
+  strategy: exhaustive
+  harness: verify_no_overlap
+- id: KANI-ST-004
+  obligation: DType size matches tensor bytes
+  property: byte_count == product(shape) * sizeof(dtype)
+  bound: 8
+  strategy: stub_float
+  harness: verify_dtype_size_match
+- id: KANI-ST-005
+  obligation: Zero-copy mmap no heap allocation
+  property: mmap_tensor heap alloc == 0
+  bound: 4
+  strategy: exhaustive
+  harness: verify_zero_copy
+qa_gate:
+  id: F-ST-GATE
+  name: Safetensors Format Safety Contract
+  description: Binary format parsing safety for HuggingFace safetensors
+  checks:
+  - header_size_validation
+  - tensor_offset_bounds
+  - dtype_consistency
+  - mmap_zero_copy
+  - no_overlap_invariant
+  pass_criteria: All 5 falsification tests pass
+  falsification: Craft adversarial safetensors to trigger each vulnerability class
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — header_size is validated against both
+    MAX_HEADER_SIZE and file_size before any JSON parsing begins. The parser
+    halts on the first structural anomaly rather than attempting recovery.
+  poka_yoke: >
+    "Mistake-proofing" — tensor offset validation is a separate pass that runs
+    on the complete parsed header before any data access. It is impossible to
+    mmap a tensor whose bounds extend beyond the file because the validation
+    pass rejects overlapping or out-of-bounds regions first.

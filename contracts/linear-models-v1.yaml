@@ -1,0 +1,160 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Linear models — OLS regression and logistic regression
+  references:
+  - Hastie, Tibshirani, Friedman (2009) Elements of Statistical Learning, §3-4
+  - Bishop (2006) Pattern Recognition and Machine Learning, §3-4
+equations:
+  ols_fit:
+    formula: β = (X^T X)^{-1} X^T y
+    domain: X ∈ ℝ^{n×d}, y ∈ ℝⁿ, n > d, rank(X) = d
+    codomain: β ∈ ℝ^d, intercept ∈ ℝ
+    invariants:
+    - 'Prediction: ŷ = Xβ + b'
+    - 'Normal equations: X^T(y - Xβ) = 0'
+    - R² ∈ (-∞, 1] on training data
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ols_Fit
+  ols_predict:
+    formula: ŷ = Xβ + b
+    domain: X ∈ ℝ^{m×d}, fitted β ∈ ℝ^d, b ∈ ℝ
+    codomain: ŷ ∈ ℝ^m
+    invariants:
+    - 'Prediction is linear: predict(αx₁ + x₂) = α·predict(x₁) + predict(x₂) - (α-1)b'
+    - Prediction is deterministic
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ols_Predict
+  logistic_predict_proba:
+    formula: P(y=1|x) = σ(x^T w + b) = 1/(1+exp(-(x^T w + b)))
+    domain: x ∈ ℝ^d, fitted w ∈ ℝ^d, b ∈ ℝ
+    codomain: P ∈ (0, 1)
+    invariants:
+    - Probability ∈ (0, 1) (sigmoid range)
+    - Monotone in x^T w (for fixed w)
+    - P(y=1) + P(y=0) = 1
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Logistic_Predict_Proba
+  r_squared_training:
+    formula: R² = 1 - SS_res/SS_tot
+    domain: y, ŷ ∈ ℝⁿ
+    codomain: R² ∈ (-∞, 1]
+    invariants:
+    - R² ≤ 1 (upper bound)
+    - R² = 1 iff ŷ = y exactly
+    - OLS training R² ≥ 0 (for model with intercept)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.R_Squared_Training
+proof_obligations:
+- type: bound
+  property: OLS training R² non-negative
+  formal: R² ≥ 0 for OLS with intercept on training data
+  applies_to: all
+- type: invariant
+  property: Prediction deterministic
+  formal: predict(X) = predict(X) for all X
+  applies_to: all
+- type: bound
+  property: Logistic probability bounded
+  formal: P(y=1|x) ∈ (0, 1) for all finite x
+  applies_to: all
+- type: invariant
+  property: Logistic probabilities sum to 1
+  formal: P(y=0) + P(y=1) = 1
+  applies_to: all
+- type: invariant
+  property: Perfect fit on collinear data
+  formal: y = Xβ_true + b ⟹ R² ≈ 1 after fit
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-LM-001
+  rule: OLS training R² non-negative
+  prediction: R² ≥ 0 on training data for random linear regression
+  test: 'proptest: fit LinearRegression on random data, compute R² on training'
+  if_fails: Intercept not included or normal equation numerics
+- id: FALSIFY-LM-002
+  rule: Prediction deterministic
+  prediction: predict(X) = predict(X)
+  test: 'proptest: predict twice, compare'
+  if_fails: Non-deterministic state
+- id: FALSIFY-LM-003
+  rule: Perfect fit on collinear data
+  prediction: R² ≈ 1 when y = 2*x + 3 + noise(0)
+  test: 'proptest: generate exact linear relationship, fit, check R²'
+  if_fails: Solver numerical instability
+- id: FALSIFY-LM-004
+  rule: Logistic probability bounded
+  prediction: P(y=1|x) ∈ (0, 1) for all finite x
+  test: 'proptest: fit LogisticRegression, predict_proba, check all in (0,1)'
+  if_fails: Sigmoid overflow or underflow producing 0.0 or 1.0
+- id: FALSIFY-LM-005
+  rule: Logistic probabilities sum to 1
+  prediction: P(y=0) + P(y=1) = 1 for all predictions
+  test: 'proptest: fit LogisticRegression, predict_proba, check P(0)+P(1)=1'
+  if_fails: Probability normalization error
+enforcement:
+  bounded:
+    description: R² must be non-negative for OLS on training data
+    check: contract_tests::FALSIFY-LM-001
+    severity: ERROR
+kani_harnesses:
+- id: KANI-LM-001
+  obligation: LM-BND-001
+  property: OLS training R-squared is non-negative
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ols_r2_nonneg
+- id: KANI-LM-002
+  obligation: LM-BND-002
+  property: Logistic probability bounded in (0, 1)
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_logistic_prob_bounded
+- id: KANI-LINEAR-003
+  obligation: OLS training R² non-negative
+  property: OLS training R² non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-004
+  obligation: Prediction deterministic
+  property: Prediction deterministic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LINEAR-005
+  obligation: Logistic probability bounded
+  property: Logistic probability bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-LINEAR-006
+  obligation: Logistic probabilities sum to 1
+  property: Logistic probabilities sum to 1
+  bound: 8
+  strategy: stub_float
+- id: KANI-LINEAR-007
+  obligation: Perfect fit on collinear data
+  property: Perfect fit on collinear data
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-LM-001
+  name: Linear Models Contract
+  description: Linear model correctness quality gate
+  checks:
+  - ols_r2_nonneg
+  - prediction_deterministic
+  - perfect_fit
+  - logistic_prob_bounded
+  - logistic_probs_sum_to_one
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
+  falsification: Omit intercept or use wrong matrix inverse

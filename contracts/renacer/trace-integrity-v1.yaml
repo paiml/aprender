@@ -1,0 +1,109 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Trace integrity contract — golden tracing capture, collection, and comparison
+  references:
+  - 'Sigelman et al. (2010) Dapper, a Large-Scale Distributed Systems Tracing Infrastructure'
+  - 'OpenTelemetry Specification v1.0'
+equations:
+  trace_capture:
+    formula: 'trace(process) = Spans[] where for-all span: span.trace_id in {0,1}^128'
+    domain: process ∈ PID, filter ∈ TraceFilter
+    codomain: Result<Vec<Span>, TraceError>
+    invariants:
+    - All spans share the same trace_id within a trace
+    - Parent-child relationships form a DAG (no cycles)
+    - 'Detach is safe: process continues after tracer detaches'
+    preconditions:
+    - process is alive and traceable
+    - should_trace(filter, operation) = true
+    lean_theorem: Theorems.Trace_Capture
+  trace_comparison:
+    formula: compare(golden, observed) = Diff where Diff.missing ∪ Diff.extra ∪ Diff.changed = Δ
+    domain: golden ∈ Vec<Span>, observed ∈ Vec<Span>
+    codomain: TraceDiff
+    invariants:
+    - 'Reflexive: compare(t, t).is_empty() = true'
+    - Missing spans detected when golden has spans not in observed
+    - Extra spans detected when observed has spans not in golden
+    preconditions:
+    - golden.len() > 0
+    - observed.len() > 0
+    lean_theorem: Theorems.Trace_Comparison
+  otel_format:
+    formula: otel_trace_id(span) = hex(span.trace_id) where len = 32
+    domain: span ∈ Span with valid trace context
+    codomain: String matching /^[0-9a-f]{32}$/
+    invariants:
+    - Trace ID is 32 hex chars (128-bit)
+    - Parent ID is 16 hex chars (64-bit) or empty
+    - 'Format is W3C Trace Context compliant'
+    preconditions:
+    - span has initialized trace context
+    lean_theorem: Theorems.OTel_Format
+proof_obligations:
+- type: invariant
+  property: Trace DAG acyclicity
+  formal: '∀ trace: is_dag(parent_child_graph(trace.spans))'
+  applies_to: trace_capture
+- type: invariant
+  property: Comparison reflexivity
+  formal: '∀ t: compare_traces(t, t).is_match() = true'
+  applies_to: trace_comparison
+- type: invariant
+  property: OTel trace ID format
+  formal: '∀ span: otel_trace_id(span).len() = 32 ∧ is_hex(otel_trace_id(span))'
+  applies_to: otel_format
+enforcement:
+  trace_dag:
+    description: Span parent-child graph has no cycles
+    check: contract_tests::FALSIFY-TI-001
+    severity: ERROR
+  comparison_reflexive:
+    description: Comparing a trace to itself yields empty diff
+    check: contract_tests::FALSIFY-TI-002
+    severity: ERROR
+  otel_format:
+    description: Trace IDs conform to W3C Trace Context format
+    check: contract_tests::FALSIFY-TI-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TI-001
+  rule: Trace DAG
+  prediction: no span is its own ancestor in the parent chain
+  test: build traces with complex nesting, verify no cycles via DFS
+  if_fails: Parent pointer set incorrectly during concurrent span creation
+- id: FALSIFY-TI-002
+  rule: Comparison reflexivity
+  prediction: compare_traces(t, t) produces zero differences
+  test: capture trace, compare to itself, assert empty diff
+  if_fails: Span matching uses unstable ordering or timing fields
+- id: FALSIFY-TI-003
+  rule: OTel format compliance
+  prediction: otel_trace_id always returns 32 hex characters
+  test: proptest with random span contexts
+  if_fails: Trace ID truncated or contains non-hex characters
+kani_harnesses:
+- id: KANI-TI-001
+  obligation: Trace DAG acyclicity
+  property: parent chain terminates
+  bound: 8
+  strategy: exhaustive
+  harness: verify_trace_dag
+- id: KANI-TI-002
+  obligation: OTel format
+  property: trace ID length and charset
+  bound: 16
+  strategy: exhaustive
+  harness: verify_otel_trace_id_format
+qa_gate:
+  id: F-TI-001
+  name: Trace Integrity Contract
+  description: Golden tracing capture and comparison quality gate
+  checks:
+  - trace_dag
+  - comparison_reflexive
+  - otel_format
+  pass_criteria: All 3 falsification tests pass
+  falsification: Set span parent_id to its own span_id

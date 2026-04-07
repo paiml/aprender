@@ -1,0 +1,159 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    CUDA graph capture for NF4 training backward pass — move gradient clipping D2H sync
+    outside graph boundary, enabling capture of the 28-layer backward loop. Forward graph
+    exists (entrenar@0138b409). Backward is blocked by per-layer gradient clipping calling
+    stream.synchronize() inside the loop (not capturable by CUDA graph).
+  pmat: [PMAT-464]
+  references:
+  - "CUDA Programming Guide: Graph capture cannot include host-device synchronization"
+  - "entrenar instruct_pipeline.rs:2340-2344 — gradient clipping call inside backward loop"
+  - "entrenar cuda_block.rs:3458-3497 — clip_gradients() with squared_sum_cuda() sync"
+  depends_on:
+  - cuda-graph-forward-v1.yaml
+
+equations:
+  current_backward_loop:
+    formula: |
+      Current (NOT capturable — D2H sync inside loop):
+        for layer in 27..=0:
+          grad_output = backward(layer, grad_input)      # GPU: capturable
+          norm = squared_sum_cuda(grad_output)            # GPU→CPU SYNC: NOT capturable
+          if norm > clip_threshold:                       # CPU conditional: NOT capturable
+            scale = clip_threshold / norm
+            gradient_clip_cuda(grad_output, scale)        # GPU: capturable
+          optimizer_step(layer)                           # GPU: capturable
+    domain: 28 transformer layers, NF4 quantized
+    invariants:
+    - squared_sum_cuda() calls stream.synchronize() (cuda_optim.rs:398)
+    - Host conditional (if norm > threshold) breaks graph capture
+    - 6 D2H syncs per layer × 28 layers = 168 sync points per backward pass
+
+  fixed_backward_loop:
+    formula: |
+      Fixed (capturable — sync moved outside graph):
+        # Phase 1: Backward pass (CUDA graph captured)
+        graph_begin_capture()
+        for layer in 27..=0:
+          grad_output = backward(layer, grad_input)      # GPU only
+        graph_end_capture()
+        graph_replay()
+
+        # Phase 2: Gradient clipping (outside graph, single sync)
+        for layer in 27..=0:
+          squared_sum_launch_cuda(layer.grads, &partial_sums[layer])  # async launch
+        stream.synchronize()                              # ONE sync for all layers
+        total_norm = cpu_reduce(partial_sums)
+        if total_norm > clip_threshold:
+          for layer in 27..=0:
+            gradient_clip_cuda(layer.grads, clip_threshold / total_norm)
+
+        # Phase 3: Optimizer step (async, no sync needed)
+        for layer in 27..=0:
+          optimizer_step(layer)
+    domain: 28 transformer layers, NF4 quantized
+    invariants:
+    - Graph boundary contains ONLY GPU kernel launches (no D2H sync)
+    - Single sync point after all squared-sum reductions launched
+    - Optimizer step is already async (adamw_step_cuda launches kernel, no implicit sync)
+    preconditions:
+    - cuBLAS workspace pre-allocated (PMAT-063, 32 MB)
+    - Forward graph already captured (entrenar@0138b409)
+    - All backward buffers pre-allocated (no cudaMalloc inside graph)
+    postconditions:
+    - Backward graph replays in single cudaGraphLaunch
+    - Loss trajectory matches non-graphed backward within tolerance
+    - Throughput improvement from eliminating 168 sync points per backward
+
+  throughput_model:
+    formula: |
+      Without graphs:
+        backward_time = 28 * (kernel_time + 6 * sync_overhead)
+        sync_overhead ~= 5-15μs per D2H transfer
+        total_sync = 28 * 6 * 10μs = 1,680μs = 1.7ms per backward
+
+      With graphs:
+        backward_time = graph_launch_time + 28 * kernel_time + 1 * sync_overhead
+        graph_launch_time ~= 10-20μs
+        1 * sync_overhead ~= 10μs
+        total_sync_saved = 1,680 - 20 = 1,660μs per backward
+
+      Expected speedup: depends on kernel_time relative to sync overhead.
+      If kernel_time dominates (large batch): minimal speedup.
+      If sync_overhead dominates (small batch/decode): up to 2-3x speedup.
+    domain: time in microseconds
+    constants:
+      sync_overhead_us: 10
+      layers: 28
+      syncs_per_layer: 6
+
+proof_obligations:
+- type: equivalence
+  property: Graphed backward produces same gradients as non-graphed
+  formal: '|grad_graphed - grad_ungraphed| < ε for all parameters'
+  tolerance: 1.0e-5
+  applies_to: all
+- type: invariant
+  property: No D2H synchronization inside graph boundary
+  formal: sync_count_inside_graph == 0
+  applies_to: fixed_backward_loop
+- type: invariant
+  property: Gradient clipping still applied (just moved outside graph)
+  formal: clipped_norm <= clip_threshold for all layers
+  applies_to: fixed_backward_loop
+- type: bound
+  property: Reduces sync points from 168 to 1 per backward pass
+  formal: sync_count(fixed) == 1 AND sync_count(current) == 168
+  applies_to: fixed_backward_loop
+
+falsification_tests:
+- id: F-GRAPH-BWD-001
+  rule: Graphed backward produces same gradients as non-graphed
+  prediction: Graphed backward loss trajectory matches ungraphed within 0.1 tolerance
+  test: Run 100-step canary with CUDA_GRAPH=0 and CUDA_GRAPH=1, compare loss at steps 10/50/100
+  if_fails: Gradient clipping order matters — per-layer vs global norm produces different trajectories
+
+- id: F-GRAPH-BWD-002
+  rule: No D2H synchronization inside graph boundary
+  prediction: Backward graph capture succeeds without CUDA_ERROR
+  test: Set CUDA_GRAPH=1, verify cudaStreamBeginCapture+EndCapture succeeds without errors
+  if_fails: Remaining D2H sync inside graph — grep for synchronize() in backward path
+
+- id: F-GRAPH-BWD-003
+  rule: Reduces sync points from 168 to 1 per backward pass
+  prediction: Throughput improvement >= 10% at batch=4
+  test: Run 100-step canary with CUDA_GRAPH=0 and CUDA_GRAPH=1 on yoga, compare throughput
+  if_fails: Sync overhead is not the backward bottleneck — profile with nsys
+
+- id: F-GRAPH-BWD-004
+  rule: Gradient clipping still applied (just moved outside graph)
+  prediction: Global gradient clipping produces equivalent results to per-layer clipping
+  test: Run 1000-step extended canary with both clipping modes, final loss diff < 0.5
+  if_fails: Per-layer clipping prevents gradient explosion in early layers that global clipping misses
+
+kani_harnesses:
+- id: KANI-CGBW-001
+  obligation: Graph boundary contains only GPU kernel launches
+  property: No D2H sync inside graph boundary
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_no_sync_in_graph
+- id: KANI-CGBW-002
+  obligation: Gradient equivalence across graphed and ungraphed paths
+  property: Graphed backward produces same gradients
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gradient_equivalence
+
+qa_gate:
+  id: F-CGBW-001
+  name: cuda-graph-backward-v1 Contract
+  description: Quality gate for CUDA graph backward pass capture
+  checks:
+  - validation
+  - falsification

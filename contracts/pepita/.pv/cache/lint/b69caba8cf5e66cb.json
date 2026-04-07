@@ -1,0 +1,1 @@
+{"content_hash":"b69caba8cf5e66cb","findings":[{"rule_id":"PV-ENF-001","severity":"warning","message":"Equation `connection_count` has no preconditions","file":"contracts/configuration-v1.yaml","line":null,"contract_stem":"configuration-v1","suppressed":false,"is_new":true,"suggestion":"Add to equations.connection_count:\n  preconditions:\n    - \"!input.is_empty()\""}]}

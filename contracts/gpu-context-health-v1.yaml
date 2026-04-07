@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-22'
+  updated: '2026-03-22'
+  author: PAIML Engineering
+  description: GPU context health contract — ensures FP8 warmup does not poison CUDA
+    context on incompatible architectures (Blackwell sm_121+). Prevents CUDA_ERROR_ILLEGAL_ADDRESS
+    from propagating.
+  references:
+  - 'GH-542: 32B batch inference crashes on Blackwell sm_121'
+  - 'GH-480: Blackwell sm_121 PTX JIT backward branch patching'
+  - realizar src/cuda/gpu_profile.rs — detect_fp8_prefill()
+  - realizar src/cuda/executor/layers/cublas_prefill/attention.rs — warmup_fp8_cache()
+equations:
+  fp8_architecture_guard:
+    formula: fp8_enabled = (cc >= 89)
+    domain: cc = CUDA compute capability (integer)
+    codomain: fp8_enabled in {true, false}
+    invariants:
+    - cc < 89 implies fp8_enabled = false (pre-Ada)
+    - cc >= 89 implies fp8_enabled = true (Ada/Hopper/Blackwell)
+    - 'PMAT-410: FP8 GEMM works on sm_121 via lazy cache (no warmup needed)'
+    - warmup_fp8_cache STILL guarded by cc < 100 (warmup crashes on Blackwell)
+    notes: 'Blackwell sm_121 has cc=121 which passes cc >= 89 but FP8 E4M3 cuBLASLt
+      kernels are Ada/Hopper-specific. PMAT-409: warmup_fp8_cache also has internal
+      cc range check — even FP8_PREFILL=1 override does not produce cached plans on
+      sm_121. Combined with PMAT-400 skip_fp16_unified, prefill falls back to DP4A
+      GEMV (5.8x regression). Fix: FORCE_FP16_CACHE=1 for models that fit.'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Fp8_Architecture_Guard
+  context_health:
+    formula: healthy = (post_warmup_status == CUDA_SUCCESS)
+    domain: post_warmup_status = cuCtxGetApiVersion return code after FP8 warmup attempt
+    invariants:
+    - If fp8_enabled = false, context_health is trivially true (no warmup attempted)
+    - If fp8_enabled = true and warmup fails, context MUST be destroyed and recreated
+    - A poisoned context (CUDA_ERROR_ILLEGAL_ADDRESS) MUST NOT be reused for inference
+    preconditions:
+    - 'input.len() > 0'
+    - device_id >= 0
+    lean_theorem: Theorems.Context_Health
+  culink_skip:
+    formula: cuLinkCreate never called — use legacy cuModuleLoadDataEx only
+    finding: 'PMAT-369: cuLinkCreate with CU_JIT_TARGET poisons context on 590.48.01
+      (sm_89) and 540.5.0 (sm_87). Returns INVALID_VALUE (1), subsequent cuModuleLoadDataEx
+      returns UNKNOWN (901).'
+    invariants:
+    - compile_ptx_to_cubin() always returns Err (cuLinkCreate skipped)
+    - Legacy JIT (cuModuleLoadDataEx) used for all PTX modules
+    preconditions:
+    - 'input.len() > 0'
+    - device_id >= 0
+    lean_theorem: Theorems.Culink_Skip
+  cuda_graph_guard:
+    formula: SKIP_CUDA_GRAPH=1 disables graph capture to prevent context poisoning
+    finding: 'PMAT-369: cuStreamBeginCapture poisons CUDA context. First forward pass
+      succeeds, all subsequent fail with CUDA_ERROR_INVALID_VALUE (1). SKIP_CUDA_GRAPH=1
+      workaround.'
+    invariants:
+    - When SKIP_CUDA_GRAPH=1, cuStreamBeginCapture is never called
+    - Non-graphed path dispatches kernels individually (280 launches vs 1)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Cuda_Graph_Guard
+proof_obligations:
+- type: invariant
+  property: FP8 is disabled on Blackwell (cc >= 100)
+  formal: 'For all cc >= 100: fp8_enabled = false'
+- type: invariant
+  property: FP8 warmup cannot poison context on incompatible hardware
+  formal: warmup_fp8_cache() is a no-op when cc >= 100
+- type: invariant
+  property: FP8 dispatch guard prevents runtime FP8 on Blackwell
+  formal: cublas_prefill_gemm() never dispatches FP8 path when cc >= 100
+falsification_tests:
+- id: FT-GPU-CTX-001
+  rule: FP8 architecture guard
+  prediction: detect_fp8_prefill(cc) == false for all cc >= 100
+  if_fails: FP8 enabled on incompatible Blackwell hardware, causes CUDA_ERROR_ILLEGAL_ADDRESS
+- id: FT-GPU-CTX-002
+  rule: Context health after warmup
+  prediction: warmup_fp8_cache() is a no-op when cc >= 100
+  if_fails: FP8 warmup poisons CUDA context on Blackwell, crashing inference
+- id: FT-GPU-CTX-003
+  rule: Ada/Hopper FP8 still enabled
+  prediction: detect_fp8_prefill(cc) == true for cc in [89, 90]
+  if_fails: FP8 regression — disabled on hardware that supports it
+kani_harnesses:
+- id: KANI-GPU-CTX-001
+  obligation: FP8 is disabled on Blackwell
+  bound: 256
+  strategy: exhaustive
+  solver: cadical
+- id: KANI-GPU_CO-002
+  obligation: FP8 is disabled on Blackwell (cc >= 100)
+  property: FP8 is disabled on Blackwell (cc >= 100)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_CO-003
+  obligation: FP8 warmup cannot poison context on incompatible hardware
+  property: FP8 warmup cannot poison context on incompatible hardware
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GPU_CO-004
+  obligation: FP8 dispatch guard prevents runtime FP8 on Blackwell
+  property: FP8 dispatch guard prevents runtime FP8 on Blackwell
+  bound: 8
+  strategy: exhaustive
+five_whys:
+  symptom: 32B batch inference crashes with CUDA_ERROR_ILLEGAL_ADDRESS on Blackwell
+    sm_121
+  analysis:
+  - why: Why does 32B GPU batch fail?
+    answer: 'generate_gpu_resident FAILED: Prefill workspace init failed: CUDA_ERROR_ILLEGAL_ADDRESS'
+  - why: Why ILLEGAL_ADDRESS?
+    answer: FP8 cache warmup writes to invalid memory on sm_121
+  - why: Why does FP8 fail on sm_121?
+    answer: FP8 E4M3 cuBLASLt kernels are Ada/Hopper-specific, not Blackwell-compatible
+  - why: Why is FP8 tried on Blackwell?
+    answer: detect_fp8_prefill() used cc >= 89 without upper bound
+  - why: Why no upper bound?
+    answer: Blackwell didn't exist when FP8 detection was written — assumed cc >=
+      89 means FP8-capable
+  root_cause: Missing architecture upper bound in FP8 auto-detection
+  fix: Changed to cc >= 89 && cc < 100 in gpu_profile.rs, attention.rs, gemm.rs (commit
+    a4bcd908)
+qa_gate:
+  id: F-GCHV-001
+  name: gpu-context-health-v1 Contract
+  description: Quality gate for GPU context health contract — ensures FP8 warmup does
+    not po
+  checks:
+  - validation
+  - falsification

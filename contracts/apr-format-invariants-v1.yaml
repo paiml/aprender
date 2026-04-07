@@ -1,0 +1,124 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: APR format invariants — serialization roundtrip, schema validation,
+    and report formatting for model QA evidence
+  references:
+  - apr-model-qa-playbook — production model quality assurance pipeline
+  - Apache Arrow IPC format specification
+equations:
+  serialize_roundtrip:
+    formula: "serialize_model_evidence: ModelEvidence -> Result<Bytes, SerError>\n\
+      \  Serializes evidence to a deterministic binary format.\n  Inverse: deserialize(serialize(e))\
+      \ == e for all valid evidence e.\n"
+    domain: ModelEvidence with all required fields populated
+    codomain: Result<Bytes, SerError>
+    invariants:
+    - 'Roundtrip: deserialize(serialize(e)) == e'
+    - Output size proportional to evidence complexity
+    preconditions:
+    - 'input.len() > 0'
+    - data.len() > 0
+    lean_theorem: Theorems.Serialize_Roundtrip
+  validate_schema:
+    formula: "validate_evidence_schema: Bytes -> Result<ModelEvidence, ValidationError>\n\
+      \  Validates binary evidence against expected schema.\n  Rejects unknown fields,\
+      \ missing required fields, type mismatches.\n"
+    domain: Bytes (arbitrary byte stream)
+    codomain: Result<ModelEvidence, ValidationError>
+    invariants:
+    - Valid evidence always passes validation
+    - Truncated input produces ValidationError, never panics
+    preconditions:
+    - 'input.len() > 0'
+    lean_theorem: Theorems.Validate_Schema
+  parse_playbook:
+    formula: "parse_qa_playbook: Path -> Result<QaPlaybook, ParseError>\n  Parses\
+      \ YAML playbook defining checks, thresholds, and model configs.\n"
+    domain: Path to a YAML file
+    codomain: Result<QaPlaybook, ParseError>
+    invariants:
+    - Valid YAML with correct schema parses successfully
+    - Missing required fields produce descriptive ParseError
+    preconditions:
+    - 'input.len() > 0'
+    lean_theorem: Theorems.Parse_Playbook
+  format_report:
+    formula: "format_mqs_report: MqsResult -> String\n  Renders human-readable MQS\
+      \ report with dimension breakdown.\n"
+    domain: MqsResult with valid scores
+    codomain: String (non-empty)
+    invariants:
+    - Report contains all 6 dimension scores
+    - Report contains overall grade
+    preconditions:
+    - 'input.len() > 0'
+    - entries.len() > 0
+    lean_theorem: Theorems.Format_Report
+  detect_regression:
+    formula: "detect_regression: (MqsResult, MqsResult) -> Vec<Regression>\n  Compares\
+      \ current vs baseline MQS results.\n  Regression = dimension score decreased\
+      \ beyond tolerance.\n"
+    domain: Two valid MqsResult values (current, baseline)
+    codomain: Vec<Regression> (may be empty)
+    invariants:
+    - No regressions when current >= baseline for all dimensions
+    - Regression detected when any dimension drops > tolerance
+    preconditions:
+    - 'input.len() > 0'
+    lean_theorem: Theorems.Detect_Regression
+proof_obligations:
+- type: equivalence
+  property: Serialization roundtrip
+  formal: deserialize(serialize(e)) == e
+  tolerance: 0.0
+  applies_to: all
+- type: invariant
+  property: Schema validation soundness
+  formal: valid evidence always passes; invalid never passes
+  applies_to: all
+- type: postcondition
+  property: Report completeness
+  formal: format_report output contains all 6 dimension names and scores
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-APR-001
+  rule: Roundtrip identity
+  prediction: deserialize(serialize(e)) == e for random valid evidence
+  test: proptest with generated ModelEvidence
+  if_fails: Serialization loses precision or field
+- id: FALSIFY-APR-002
+  rule: Truncated input rejection
+  prediction: Truncated bytes produce ValidationError, not panic
+  test: proptest truncating valid serialized bytes at random positions
+  if_fails: Missing bounds check in deserializer
+- id: FALSIFY-APR-003
+  rule: Regression detection
+  prediction: Identical baselines produce zero regressions
+  test: Unit test with same MqsResult as both current and baseline
+  if_fails: Floating point comparison not using tolerance
+kani_harnesses:
+- id: KANI-APR-001
+  obligation: Serialization roundtrip
+  property: deserialize(serialize(e)) == e
+  bound: 8
+  strategy: exhaustive
+- id: KANI-APR-002
+  obligation: Schema validation soundness
+  property: valid input always validates; invalid never validates
+  bound: 16
+  strategy: exhaustive
+- id: KANI-APR_FO-003
+  obligation: Report completeness
+  property: Report completeness
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AFIV-001
+  name: apr-format-invariants-v1 Contract
+  description: Quality gate for APR format invariants — serialization roundtrip, schema
+    vali
+  checks:
+  - validation
+  - falsification

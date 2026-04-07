@@ -1,0 +1,285 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: Agent perceive-reason-act loop — termination, state machine, sandboxing, compaction, hooks
+  references:
+  - 'CCX-RS: anton-abyzov/ccx-rs'
+  - 'ReliabilityBench: arXiv:2601.06112'
+  - 'Popper Falsification: arXiv:2502.09858'
+  - 'ByteRobust: arXiv:2509.16293'
+  depends_on:
+  - backend-dispatch-v1
+  - streaming-tpot-v1
+equations:
+  loop_termination:
+    formula: |
+      iterations(agent_run) <= max_iterations
+      AND cost(agent_run) <= cost_budget
+      AND NOT ping_pong_detected(last_N_turns)
+    domain: max_iterations ∈ ℤ⁺, cost_budget ∈ ℝ⁺, N = 4
+    invariants:
+    - Agent loop always terminates
+    - At least one of three guards triggers termination
+    - LoopGuard fires BEFORE budget is exceeded
+    preconditions:
+    - max_iterations > 0
+    - cost_budget > 0.0
+    postconditions:
+    - result.iterations <= max_iterations
+    - result.cost <= cost_budget
+    lean_theorem: Theorems.Loop_Termination
+  state_machine:
+    formula: |
+      States: {Idle, Perceive, Reason, Act, Remember, Done, Failed}
+      Transitions:
+        Idle → Perceive (on: user_message)
+        Perceive → Reason (on: memory_recalled)
+        Reason → Act (on: tool_use)
+        Reason → Remember (on: end_turn)
+        Act → Reason (on: tool_result)
+        Remember → Done (on: success)
+        * → Failed (on: guard_triggered)
+    domain: Finite state machine with 7 states
+    invariants:
+    - No state reached without valid transition
+    - Failed is absorbing
+    - Act always returns to Reason
+    postconditions:
+    - "Final state is Done or Failed (no intermediate state on exit)"
+    - "Failed state is absorbing (no transitions out)"
+    lean_theorem: Theorems.Agent_State_Machine
+  context_compaction:
+    formula: |
+      token_count(messages) <= context_window × auto_threshold
+      OR compact(messages) applied before next LLM call
+    domain: token_count ∈ ℤ⁺, thresholds ∈ (0, 1)
+    invariants:
+    - LLM never called with token_count > context_window
+    - System prompt never truncated
+    - Compaction is idempotent
+    preconditions:
+    - context_window > 0
+    - auto_threshold > micro_threshold
+    postconditions:
+    - "token_count(messages) <= context_window after compaction"
+    - "System prompt is preserved verbatim through compaction"
+    lean_theorem: Theorems.Context_Compaction
+  sandbox_enforcement:
+    formula: |
+      allowed(tool_call) = capability(tool) ∈ manifest.capabilities
+        AND path(tool_call) ∈ sandbox.allowed_paths(tier)
+        AND network(tool_call) ∈ sandbox.allowed_network(tier)
+    domain: Sandbox policies per privacy tier
+    invariants:
+    - Sovereign sandbox allows NO network egress
+    - File writes restricted to project directory
+    - Sandbox enforced at OS kernel level (Landlock/Seatbelt)
+    preconditions:
+    - manifest.capabilities.len() > 0
+    postconditions:
+    - "Unauthorized tool calls return permission error, never execute"
+    - "Sovereign tier produces zero network egress syscalls"
+    lean_theorem: Theorems.Sandbox_Enforcement
+  parallel_tool_safety:
+    formula: |
+      parallel_safe(calls) = ∀(c1, c2) ∈ calls:
+        resources(c1) ∩ resources(c2) = ∅
+        OR one_of(c1, c2) is read_only
+    domain: Set of concurrent tool calls
+    invariants:
+    - Write-write conflicts always serialized
+    - Read-write conflicts serialized (read first)
+    - Read-read always parallelized
+    postconditions:
+    - "No concurrent write-write on the same resource"
+    - "All tool results returned regardless of execution order"
+    lean_theorem: Theorems.Parallel_Tool_Safety
+  session_crash_recovery:
+    formula: |
+      resume(session) = load(messages.jsonl)
+        |> truncate_to_last_complete
+        |> compact_if_needed
+    domain: JSONL append-only log
+    invariants:
+    - Partial writes truncated, not corrupted
+    - No message appears twice after resume
+    postconditions:
+    - "Resumed session contains only complete messages (no partial writes)"
+    - "No duplicate messages after crash recovery"
+    lean_theorem: Theorems.Crash_Recovery
+  hook_ordering:
+    formula: |
+      execution_order(tool_call) =
+        pre_hooks → capability_check → tool.execute() → post_hooks
+    domain: Ordered hook chain per tool call
+    invariants:
+    - Pre-hooks run before capability check
+    - Post-hooks run even if tool returns error
+    - Hook ordering is deterministic
+    postconditions:
+    - "Post-hooks execute even if tool returns error"
+    - "Pre-hook Block verdict prevents tool execution entirely"
+    lean_theorem: Theorems.Hook_Ordering
+proof_obligations:
+- type: termination
+  property: Agent loop always terminates
+  formal: iterations <= max_iterations for all executions
+  applies_to: all
+  lean:
+    theorem: Theorems.LoopTermination
+    status: sorry
+- type: state_machine
+  property: Valid state transitions only
+  formal: No state reached without valid transition edge
+  applies_to: all
+  lean:
+    theorem: Theorems.AgentStateMachine
+    status: sorry
+- type: invariant
+  property: Context window never exceeded
+  formal: token_count(messages) <= context_window at every LLM call
+  applies_to: all
+  lean:
+    theorem: Theorems.ContextCompaction
+    status: sorry
+- type: invariant
+  property: Sandbox blocks unauthorized access
+  formal: Sovereign tier produces zero network syscalls
+  applies_to: all
+  lean:
+    theorem: Theorems.SandboxEnforcement
+    status: sorry
+- type: invariant
+  property: Parallel tools are conflict-free
+  formal: No concurrent write-write on same resource
+  applies_to: all
+  lean:
+    theorem: Theorems.ParallelToolSafety
+    status: sorry
+- type: idempotency
+  property: Compaction is idempotent
+  formal: compact(compact(messages)) == compact(messages)
+  applies_to: all
+  lean:
+    theorem: Theorems.ContextCompactionIdempotent
+    status: sorry
+- type: frame
+  property: Message history append-only
+  formal: messages[0..n] unchanged after appending messages[n+1]
+  applies_to: all
+  lean:
+    theorem: Theorems.CrashRecovery
+    status: sorry
+- type: ordering
+  property: Hook execution order
+  formal: pre_hooks before execute before post_hooks
+  applies_to: all
+  lean:
+    theorem: Theorems.HookOrdering
+    status: sorry
+falsification_tests:
+- id: FALSIFY-AL-001
+  rule: Loop termination
+  prediction: Agent terminates within max_iterations with adversarial LLM
+  test: Mock LLM to always return tool_use; assert LoopGuard fires
+  if_fails: LoopGuard bypassed — infinite agent loop possible
+- id: FALSIFY-AL-002
+  rule: State machine transitions
+  prediction: No invalid state transition through public API
+  test: proptest with random perceive/reason/act sequences
+  if_fails: State machine has unreachable or invalid transitions
+- id: FALSIFY-AL-003
+  rule: Context compaction safety
+  prediction: System prompt survives compaction intact
+  test: Fill context to 95%, trigger auto-compact, assert system prompt identical
+  if_fails: Compaction corrupts system prompt
+- id: FALSIFY-AL-004
+  rule: Sandbox enforcement
+  prediction: Shell tool cannot write outside project dir under Sovereign
+  test: Execute shell with write to /tmp under Sovereign sandbox; assert EACCES
+  if_fails: Sandbox escape — agent can write arbitrary files
+- id: FALSIFY-AL-005
+  rule: Parallel tool conflict detection
+  prediction: Two writes to same file never executed concurrently
+  test: Submit 10 write_file calls to same path; assert sequential execution
+  if_fails: Data race — concurrent writes corrupt file
+- id: FALSIFY-AL-006
+  rule: Session crash recovery
+  prediction: Truncated JSONL resumes without duplicate messages
+  test: Write 100 messages, truncate mid-write at 73, resume, assert 72 loaded
+  if_fails: Crash recovery replays or loses messages
+- id: FALSIFY-AL-007
+  rule: Hook blocking
+  prediction: Pre-hook returning Block prevents tool execution
+  test: Register hook blocking rm -rf; attempt rm -rf; assert tool never executed
+  if_fails: Hook bypass — destructive commands execute
+- id: FALSIFY-AL-008
+  rule: Ping-pong detection
+  prediction: LoopGuard detects repeated identical tool calls within 4 turns
+  test: Mock LLM to emit same file_read 5 times; assert guard fires on 5th
+  if_fails: Agent wastes tokens on futile repeated actions
+- id: FALSIFY-AL-009
+  rule: Memory re-fetch after compaction
+  prediction: Compaction triggers fresh memory recall
+  test: Write memory, compact, update memory, verify next recall returns updated
+  if_fails: Stale memories persist through compaction
+kani_harnesses:
+- id: KANI-AL-001
+  obligation: Agent loop always terminates
+  property: Loop terminates within max_iterations
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_loop_termination
+- id: KANI-AL-002
+  obligation: Valid state transitions only
+  property: State machine transition function total
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_state_transitions
+- id: KANI-AL-003
+  obligation: Context window never exceeded
+  property: Compaction triggers before overflow
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_context_bound
+- id: KANI-AL-004
+  obligation: Parallel tools conflict-free
+  property: No concurrent writes to same resource
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_parallel_safety
+- id: KANI-AL-005
+  obligation: Compaction idempotent
+  property: compact(compact(m)) == compact(m)
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_compaction_idempotent
+- id: KANI-AL-006
+  obligation: Hook execution order
+  property: pre < execute < post for all tool calls
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_hook_ordering
+qa_gate:
+  id: F-AL-001
+  name: Agent Loop Contract
+  description: Agent runtime correctness — termination, state machine, safety, persistence
+  checks:
+  - loop_termination
+  - state_machine_transitions
+  - context_compaction_safety
+  - sandbox_enforcement
+  - parallel_tool_safety
+  - crash_recovery
+  - hook_blocking
+  - ping_pong_detection
+  - memory_refetch
+  pass_criteria: All 9 falsification tests pass + 6 Kani harnesses verify
+  falsification: Adversarial LLM mock that tries to escape loop, sandbox, and context bounds

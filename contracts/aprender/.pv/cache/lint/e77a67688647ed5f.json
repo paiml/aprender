@@ -1,0 +1,1 @@
+{"content_hash":"e77a67688647ed5f","findings":[{"rule_id":"PV-AUD-003","severity":"warning","message":"AUDIT-003: Equations defined but no proof obligations — obligations should be derived from equations","file":"contracts/tensor-layout-v1.yaml","line":null,"contract_stem":"tensor-layout-v1","suppressed":false,"is_new":true}]}

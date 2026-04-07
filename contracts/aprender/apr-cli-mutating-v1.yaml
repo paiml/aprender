@@ -1,0 +1,234 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  description: "Mutating CLI commands — output-path validation, exit-code postconditions, atomic write safety"
+  references:
+  - 'POSIX.1-2017 Utility Conventions (IEEE Std 1003.1-2017, Section 12)'
+  - 'aprender GH-689: Mutating commands need output-path + exit-code postconditions'
+  - 'aprender GH-608: prune exits 0 without output file'
+  - 'aprender GH-632: train plan exits 0 on validation failure'
+  - 'apr-cli/src/dispatch.rs — dispatch_model_commands()'
+  depends_on:
+  - cli-dispatch-v1
+mutating_commands:
+  - import
+  - export
+  - convert
+  - quantize
+  - merge
+  - prune
+  - distill
+  - publish
+  - compile
+  - rm
+  - data
+  - tokenize
+  - pipeline
+  - decrypt
+  - encrypt
+  - train
+equations:
+  output_path_validation:
+    formula: |
+      ∀ cmd ∈ MutatingCommands:
+        cmd.output_path.is_some() ∨ cmd.writes_to_stdout()
+        ∧ (cmd.output_path.is_some() →
+            parent_dir(cmd.output_path).exists()
+            ∧ parent_dir(cmd.output_path).is_writable())
+    domain: (cmd ∈ MutatingCommands, output_path ∈ Option<PathBuf>)
+    codomain: Result<(), CliError>
+    invariants:
+    - Output path parent directory must exist before write
+    - Output path must be writable (permission check before heavy computation)
+    - Commands that write to stdout (pipe mode) are exempt from path validation
+    - Missing output path for non-pipe commands returns CliError::ValidationFailed
+    preconditions:
+    - cmd ∈ MutatingCommands
+    postconditions:
+    - "On error: exit code != 0"
+    - "On success: output file exists at output_path (or stdout has content)"
+    lean_theorem: Theorems.Output_Path_Validation
+  exit_code_on_error:
+    formula: |
+      ∀ cmd ∈ MutatingCommands:
+        result(cmd) = Err(e) → process::exit_code != 0
+        ∧ result(cmd) = Ok(()) → process::exit_code == 0
+        ∧ result(cmd) = Err(e) → stderr.contains(e.display())
+    domain: Result<(), CliError>
+    codomain: (exit_code ∈ {0} ∪ {1, 3..11}, stderr ∈ String)
+    invariants:
+    - Error always produces non-zero exit code (no silent exit 0 on failure)
+    - Error message written to stderr (never swallowed)
+    - Success produces exit code 0
+    - Exit code matches CliError variant (not generic 1)
+    preconditions:
+    - Command has completed execution (not still running)
+    postconditions:
+    - "Err(e) → exit_code = e.exit_code() ∈ {1, 3..11}"
+    - "Ok(()) → exit_code = 0"
+    lean_theorem: Theorems.Exit_Code_On_Error
+  atomic_write_safety:
+    formula: |
+      ∀ cmd ∈ {export, convert, quantize, merge, prune, distill, compile}:
+        write(output) = {
+          tmp = output.with_extension(".tmp");
+          write_all(tmp, content);
+          rename(tmp, output)  // atomic on same filesystem
+        }
+        ∧ interrupted(write) → ¬exists(output)  // no partial files
+    domain: (output ∈ PathBuf, content ∈ Bytes)
+    codomain: Result<(), io::Error>
+    invariants:
+    - Write uses temp file + rename pattern (atomic on same filesystem)
+    - Interrupted write leaves no partial output file
+    - Temp file cleaned up on error (RAII guard)
+    - Original file preserved until new file fully written
+    preconditions:
+    - output_path parent directory is writable
+    - Sufficient disk space for temp + final file
+    postconditions:
+    - "On success: output file is complete and valid"
+    - "On interruption: no partial output file exists"
+    lean_theorem: Theorems.Atomic_Write_Safety
+  rm_confirmation_gate:
+    formula: |
+      rm(model_path) requires:
+        exists(model_path)
+        ∧ (interactive_mode → user_confirmed)
+        ∧ (batch_mode → --force flag present)
+    domain: (model_path ∈ PathBuf, mode ∈ {interactive, batch})
+    codomain: Result<(), CliError>
+    invariants:
+    - rm on non-existent path returns FileNotFound (exit code 3)
+    - Interactive mode requires y/n confirmation
+    - Batch mode requires --force flag (no silent deletion)
+    - rm never follows symlinks (deletes link, not target)
+    preconditions:
+    - model_path is a valid path string
+    postconditions:
+    - "On success: file at model_path no longer exists"
+    - "On cancel: file at model_path is unchanged"
+    lean_theorem: Theorems.Rm_Confirmation_Gate
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate output path, check permissions, estimate disk space
+  - name: execute
+    description: Perform mutation via temp file + rename pattern
+  - name: verify_output
+    description: Verify output file exists, map errors to exit codes
+
+proof_obligations:
+- type: invariant
+  property: No silent exit 0 on error
+  formal: '∀ cmd, e: result(cmd) = Err(e) → exit_code(cmd) != 0'
+  applies_to: exit_code_on_error
+- type: invariant
+  property: No partial output files on interruption
+  formal: '∀ cmd, interrupt: ¬exists(output_path) ∨ is_complete(output_path)'
+  applies_to: atomic_write_safety
+- type: invariant
+  property: Output path parent exists before write
+  formal: '∀ cmd: parent_dir(cmd.output_path).exists()'
+  applies_to: output_path_validation
+- type: invariant
+  property: rm never follows symlinks
+  formal: '∀ p where is_symlink(p): rm(p) deletes p, not readlink(p)'
+  applies_to: rm_confirmation_gate
+
+falsification_tests:
+- id: FALSIFY-MUT-001
+  rule: No silent exit 0 on error
+  prediction: export to /dev/full returns non-zero exit code
+  test: |
+    #[test]
+    fn falsify_mut_001_export_error_nonzero_exit() {
+        let output = std::process::Command::new("apr")
+            .args(&["export", "nonexistent.gguf", "-o", "/dev/full"])
+            .output()
+            .expect("Failed to run apr");
+        assert_ne!(output.status.code().unwrap_or(0), 0,
+            "Mutating command must not exit 0 on error");
+    }
+  if_fails: Silent failure — error swallowed, exit code 0 returned
+- id: FALSIFY-MUT-002
+  rule: Output path parent exists before write
+  prediction: export to /nonexistent/dir/model.apr returns validation error
+  test: |
+    #[test]
+    fn falsify_mut_002_missing_parent_dir() {
+        let output = std::process::Command::new("apr")
+            .args(&["export", "model.gguf", "-o", "/nonexistent/dir/model.apr"])
+            .output()
+            .expect("Failed to run apr");
+        assert_ne!(output.status.code().unwrap_or(0), 0,
+            "Should reject missing parent directory");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.len() > 0, "Error message must be on stderr");
+    }
+  if_fails: Panics or exits 0 when output directory does not exist
+- id: FALSIFY-MUT-003
+  rule: rm on non-existent path returns FileNotFound
+  prediction: rm /nonexistent/model returns exit code 3
+  test: |
+    #[test]
+    fn falsify_mut_003_rm_nonexistent() {
+        let output = std::process::Command::new("apr")
+            .args(&["rm", "/nonexistent/model.gguf"])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(code, 3,
+            "rm on nonexistent path should return exit code 3 (FileNotFound), got {}", code);
+    }
+  if_fails: rm returns generic exit code 1 instead of specific FileNotFound code 3
+- id: FALSIFY-MUT-004
+  rule: No partial output files on interruption
+  prediction: Killing quantize mid-write leaves no partial output
+  test: |
+    #[test]
+    fn falsify_mut_004_no_partial_output() {
+        let output_path = "/tmp/test_partial_output.apr";
+        // Clean up any previous run
+        let _ = std::fs::remove_file(output_path);
+        // Start quantize and kill immediately
+        let mut child = std::process::Command::new("apr")
+            .args(&["quantize", "nonexistent.gguf", "-o", output_path, "--scheme", "q4_0"])
+            .spawn()
+            .expect("Failed to spawn apr");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let _ = child.kill();
+        let _ = child.wait();
+        // Verify no partial file exists
+        assert!(!std::path::Path::new(output_path).exists(),
+            "Partial output file should not exist after interruption");
+    }
+  if_fails: Temp file not cleaned up — partial .tmp file left on filesystem
+
+kani_harnesses:
+- id: KANI-MUT-001
+  obligation: No silent exit 0 on error
+  property: All CliError variants produce non-zero exit codes
+  bound: 11
+  strategy: exhaustive
+  harness: verify_mutating_exit_codes
+- id: KANI-MUT-002
+  obligation: No partial output files on interruption
+  property: Atomic write pattern guarantees all-or-nothing
+  bound: 4
+  strategy: exhaustive
+  harness: verify_atomic_write
+
+qa_gate:
+  id: F-MUT-GATE
+  name: Mutating Command Contract
+  description: Output-path + exit-code quality gate for 16 mutating apr commands
+  checks:
+  - output_path_validation
+  - exit_code_on_error
+  - atomic_write_safety
+  - rm_confirmation_gate
+  pass_criteria: All 4 falsification tests pass
+  falsification: Return Ok(()) from error path to trigger silent failure

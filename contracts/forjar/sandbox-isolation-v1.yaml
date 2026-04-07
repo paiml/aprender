@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Sandbox isolation — filesystem isolation, network isolation, overlay capture
+  references:
+  - 'Schreuders et al. (2013) Towards usable application-level sandboxing'
+  - 'Linux namespaces(7) and seccomp(2) man pages'
+equations:
+  filesystem_isolation:
+    formula: '∀ write in process.writes: write.path ∈ config.allowed_paths ∨ write.path ∈ overlay'
+    domain: (config ∈ SandboxConfig, process ∈ Process)
+    codomain: SandboxResult
+    invariants:
+    - Sandboxed process cannot write outside allowed paths
+    - Host filesystem unmodified outside allowed_paths
+    - Reads are allowed from any path (read-only access)
+    preconditions:
+    - config.allowed_paths is non-empty or overlay is configured
+    - config.backend is valid
+    lean_theorem: Theorems.Filesystem_Isolation
+  network_isolation:
+    formula: 'config.network = false → all connect() calls fail with ENETUNREACH'
+    domain: (config ∈ SandboxConfig, process ∈ Process)
+    codomain: bool
+    invariants:
+    - 'network=false → no outbound connections'
+    - 'network=true → normal network access'
+    - Network isolation is enforced at syscall level
+    preconditions:
+    - config.backend supports network isolation
+    lean_theorem: Theorems.Network_Isolation
+  overlay_capture:
+    formula: '∀ mutation by process: mutation ∈ overlay.upper_dir'
+    domain: (process ∈ Process, overlay ∈ OverlayFs)
+    codomain: Vec<FsChange>
+    invariants:
+    - All filesystem mutations captured in overlay upper dir
+    - 'overlay.lower_dir unchanged (read-only)'
+    - 'merge(lower, upper) = final filesystem state'
+    - FsChange covers Created, Modified, and Deleted
+    preconditions:
+    - overlay.lower_dir exists and is readable
+    - overlay.upper_dir exists and is writable
+    lean_theorem: Theorems.Overlay_Capture
+proof_obligations:
+- type: frame
+  property: FS isolation
+  formal: writes only to allowed_paths ∪ overlay
+  applies_to: all
+- type: precondition
+  property: Network isolation
+  formal: network=false → no outbound connections
+  applies_to: all
+- type: completeness
+  property: Overlay captures all mutations
+  formal: every write in overlay.upper
+  applies_to: all
+- type: conservation
+  property: Lower dir read-only
+  formal: overlay.lower unchanged after execution
+  applies_to: all
+enforcement:
+  fs_isolation:
+    description: Sandboxed process must not write outside allowed paths
+    check: contract_tests::FALSIFY-SBX-001
+    severity: ERROR
+  network_isolation:
+    description: Network-disabled sandbox must block all connections
+    check: contract_tests::FALSIFY-SBX-002
+    severity: ERROR
+  overlay_capture:
+    description: All mutations must appear in overlay upper dir
+    check: contract_tests::FALSIFY-SBX-003
+    severity: ERROR
+  lower_dir_readonly:
+    description: Overlay lower dir must remain unchanged
+    check: contract_tests::FALSIFY-SBX-005
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SBX-001
+  rule: Path restriction
+  prediction: Sandboxed 'touch /etc/test' fails (outside allowed paths)
+  test: run 'touch /etc/test' in sandbox with restricted paths, verify failure
+  if_fails: Path enforcement not applied to write syscalls
+- id: FALSIFY-SBX-002
+  rule: Network blocking
+  prediction: Sandboxed 'curl' with network=false gets ENETUNREACH
+  test: run network request in sandbox with network=false, verify ENETUNREACH
+  if_fails: Network namespace not applied or connect() not intercepted
+- id: FALSIFY-SBX-003
+  rule: Overlay capture
+  prediction: Sandboxed file creation appears in overlay upper dir
+  test: create file in sandbox, verify it exists in overlay.upper_dir
+  if_fails: Overlay not mounted correctly or writes bypass overlay
+- id: FALSIFY-SBX-004
+  rule: Host protection
+  prediction: Host /tmp unmodified after sandboxed write to /tmp
+  test: write to /tmp in sandbox, verify host /tmp unchanged
+  if_fails: Overlay not intercepting /tmp writes
+- id: FALSIFY-SBX-005
+  rule: Lower dir integrity
+  prediction: Overlay lower dir is byte-identical before and after execution
+  test: hash lower dir before execution, hash after, compare
+  if_fails: Lower dir not mounted read-only
+kani_harnesses:
+- id: KANI-SBX-001
+  obligation: FS isolation
+  property: Filesystem isolation
+  bound: 16
+  strategy: exhaustive
+  harness: verify_fs_isolation
+- id: KANI-SBX-002
+  obligation: Network isolation
+  property: Network isolation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_network_isolation
+- id: KANI-SBX-003
+  obligation: Overlay captures all mutations
+  property: Overlay completeness
+  bound: 16
+  strategy: exhaustive
+  harness: verify_overlay_capture
+- id: KANI-SBX-004
+  obligation: Lower dir read-only
+  property: Lower dir conservation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lower_dir_readonly
+qa_gate:
+  id: F-SBX-001
+  name: Sandbox Isolation Contract
+  description: Sandbox isolation quality gate
+  checks:
+  - fs_isolation
+  - network_isolation
+  - overlay_capture
+  - lower_dir_readonly
+  pass_criteria: All 5 falsification tests pass
+  falsification: Remove path restriction from write syscall filter

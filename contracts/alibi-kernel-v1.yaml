@@ -1,0 +1,165 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: ALiBi kernel — Attention with Linear Biases positional encoding
+  references:
+  - Press et al. (2022) Train Short, Test Long
+equations:
+  alibi_bias:
+    formula: scores[i,j] += -m_h * |i - j|
+    domain: i, j in {0, ..., seq_len - 1}, h in {0, ..., H - 1}
+    codomain: bias in (-inf, 0]
+    invariants:
+    - bias <= 0 for all positions (scores only decrease)
+    - bias = 0 when i = j (self-position has zero penalty)
+    - bias decreases linearly with distance |i - j|
+    - future positions (j > i) receive -inf bias in causal mode
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Alibi_Bias
+  alibi_slopes:
+    formula: m_h = 2^(-8h/H)
+    domain: h in {0, ..., H - 1}, H >= 1
+    codomain: m_h in (0, 1]
+    invariants:
+    - m_h > 0 for all heads (slopes are strictly positive)
+    - m_0 > m_1 > ... > m_{H-1} (slopes decrease with head index)
+    - m_0 = 2^(-8/H) (first head slope)
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Alibi_Slopes
+proof_obligations:
+- type: bound
+  property: Negative bias
+  formal: -m_h * |i - j| <= 0 for all i, j, h
+  applies_to: all
+- type: bound
+  property: Slope positivity
+  formal: m_h = 2^(-8h/H) > 0 for all h in {0, ..., H-1}
+  applies_to: all
+- type: invariant
+  property: Causal consistency
+  formal: j > i implies scores[i,j] = -inf in causal mode
+  applies_to: all
+- type: monotonicity
+  property: Head-monotonic slopes
+  formal: h1 < h2 implies m_{h1} > m_{h2}
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: compute_slopes
+    description: Compute m_h = 2^(-8h/H) for each attention head
+    invariant: all slopes in (0, 1]
+  - name: compute_bias
+    description: Compute -m_h * |i - j| for each position pair
+    invariant: all biases <= 0
+  - name: apply_causal_mask
+    description: Set future positions to -inf in causal mode
+    invariant: j > i implies score = -inf
+simd_dispatch:
+  alibi_bias:
+    scalar: alibi_bias_scalar
+    avx2: alibi_bias_avx2
+    ptx: alibi_bias_ptx
+  alibi_slopes:
+    scalar: alibi_slopes_scalar
+    avx2: alibi_slopes_avx2
+    ptx: alibi_slopes_ptx
+enforcement:
+  negative_bias:
+    description: ALiBi biases must be non-positive
+    check: contract_tests::FALSIFY-AL-001
+    severity: ERROR
+  slope_positivity:
+    description: All head slopes must be strictly positive
+    check: contract_tests::FALSIFY-AL-002
+    severity: ERROR
+  causal_consistency:
+    description: Future positions must receive -inf bias
+    check: contract_tests::FALSIFY-AL-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-AL-001
+  rule: Negative bias
+  prediction: -m_h * |i - j| <= 0 for all i, j, h
+  test: proptest with random positions and head indices
+  if_fails: Slope sign error causing positive bias values
+- id: FALSIFY-AL-002
+  rule: Slope positivity
+  prediction: m_h > 0 for all h in {0, ..., H-1}
+  test: proptest with random H in [1, 128] and all head indices
+  if_fails: Exponentiation underflow producing zero or negative slopes
+- id: FALSIFY-AL-003
+  rule: Causal consistency
+  prediction: scores[i,j] = -inf when j > i in causal mode
+  test: proptest with random sequence lengths, check all future positions
+  if_fails: Causal mask not applied or applied to wrong positions
+- id: FALSIFY-AL-004
+  rule: Head-monotonic slopes
+  prediction: m_{h} > m_{h+1} for consecutive heads
+  test: proptest with random H, verify strict ordering of slopes
+  if_fails: Slope formula error breaking monotonic ordering
+- id: FALSIFY-AL-005
+  rule: SIMD equivalence
+  prediction: '|alibi_bias_avx2(x) - alibi_bias_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output for bias computation
+  if_fails: SIMD exp2 approximation differs from scalar pow
+kani_harnesses:
+- id: KANI-AL-001
+  obligation: AL-BND-001
+  property: ALiBi biases are non-positive
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_alibi_negative_bias
+- id: KANI-AL-002
+  obligation: AL-BND-002
+  property: ALiBi slopes are strictly positive
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_alibi_slope_positivity
+- id: KANI-ALIBI_-003
+  obligation: Negative bias
+  property: Negative bias
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ALIBI_-004
+  obligation: Slope positivity
+  property: Slope positivity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ALIBI_-005
+  obligation: Causal consistency
+  property: Causal consistency
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ALIBI_-006
+  obligation: Head-monotonic slopes
+  property: Head-monotonic slopes
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ALIBI_-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AL-001
+  name: ALiBi Contract
+  description: Attention with Linear Biases positional encoding quality gate
+  checks:
+  - negative_bias
+  - slope_positivity
+  - causal_consistency
+  - head_monotonic_slopes
+  - simd_equivalence
+  pass_criteria: All 5 falsification tests pass + Kani harnesses verify
+  falsification: Replace slope formula with constant 1.0 to break head-monotonicity

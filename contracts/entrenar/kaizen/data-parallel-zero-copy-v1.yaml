@@ -1,0 +1,60 @@
+contract: data-parallel-zero-copy-v1
+version: 1.0.0
+status: implemented
+kaizen: '034'
+invariants:
+- id: C-DP-SYNC-001
+  description: Weight synchronization uses zero intermediate allocations
+  preconditions:
+  - pipelines.len() >= 2
+  - All pipelines have same number of LoRA layers
+  postconditions:
+  - No Vec<f32> or Vec<(Vec<f32>, Vec<f32>)> intermediates
+  - Replica LoRA weights equal primary after sync
+  - Replica classifier weights equal primary after sync
+  invariants:
+  - split_at_mut(1) provides disjoint borrows
+  - assign() performs single memcpy per matrix
+  verified_by:
+  - 25 data_parallel tests pass, 0 failures
+affected_files:
+- path: src/finetune/data_parallel.rs
+  functions:
+  - sync_lora_weights_from_primary
+  change: '- Replaced intermediate Vec<(Vec<f32>, Vec<f32>)> with split_at_mut()
+
+    - Replaced to_vec() + clone() per layer with direct assign()
+
+    - Eliminated classifier_data.clone() per replica
+
+    '
+performance_note: 'For 2-GPU data parallel training (48 LoRA layers):
+
+
+  Before (per batch step):
+
+  - 48 LoRA A to_vec(): 48 × 14,336 × 4 = 2.75 MB
+
+  - 48 LoRA B to_vec(): 48 × 14,336 × 4 = 2.75 MB
+
+  - 48 LoRA A clone(): 2.75 MB (per replica)
+
+  - 48 LoRA B clone(): 2.75 MB (per replica)
+
+  - Total: 10.8 MB allocation + deallocation per step
+
+
+  After:
+
+  - 48 assign() calls: zero allocation, single memcpy per matrix
+
+  - Total: 0 bytes allocated per step
+
+  '
+qa_gate:
+  id: F-DPZC-001
+  name: data-parallel-zero-copy-v1 Contract
+  description: Quality gate for data-parallel-zero-copy-v1
+  checks:
+  - validation
+  - falsification

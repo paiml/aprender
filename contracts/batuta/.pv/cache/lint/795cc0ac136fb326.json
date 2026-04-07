@@ -1,0 +1,1 @@
+{"content_hash":"795cc0ac136fb326","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (7) < proof_obligations (8)","file":"contracts/provider-routing-v1.yaml","line":null,"contract_stem":"provider-routing-v1","suppressed":false,"is_new":true}]}

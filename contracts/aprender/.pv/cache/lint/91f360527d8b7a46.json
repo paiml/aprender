@@ -1,0 +1,1 @@
+{"content_hash":"91f360527d8b7a46","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-003: equations must contain at least one equation","file":"contracts/quantized-dot-product-v1.yaml","line":null,"contract_stem":"quantized-dot-product-v1","suppressed":false,"is_new":true}]}

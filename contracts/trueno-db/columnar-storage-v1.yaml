@@ -1,0 +1,113 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Columnar storage contract — query correctness, insert/get consistency, WASM parity
+  references:
+  - 'Abadi et al. (2006) Integrating Compression and Execution in Column-Oriented Database Systems'
+  - 'Lamb et al. (2012) The Vertica Analytic Database'
+equations:
+  query_correctness:
+    formula: Q(predicate) = {row | predicate(row) = true} from columnar store
+    domain: predicate ∈ Predicate, store ∈ ColumnarStore
+    codomain: Result<Vec<Row>>
+    invariants:
+    - 'Completeness: all matching rows returned'
+    - 'Soundness: no non-matching rows returned'
+    - Empty predicate returns all rows
+    preconditions:
+    - store is initialized
+    - predicate references valid column names
+    lean_theorem: Theorems.Query_Correctness
+  insert_get_consistency:
+    formula: '∀ key K, value V: get(insert(store, K, V), K) = V'
+    domain: K ∈ Key, V ∈ Value
+    codomain: Result<Value>
+    invariants:
+    - 'Read-after-write: inserted value is immediately readable'
+    - get_or_insert returns existing value if key present
+    - get_or_insert inserts and returns new value if key absent
+    preconditions:
+    - key is valid (non-empty)
+    lean_theorem: Theorems.Insert_Get_Consistency
+  wasm_parity:
+    formula: query_wasm(p) = query_native(p) for all predicates p
+    domain: p ∈ Predicate
+    codomain: Vec<Row>
+    invariants:
+    - WASM and native query paths produce identical results
+    - WASM query respects same column type constraints
+    preconditions:
+    - WASM runtime is available
+    lean_theorem: Theorems.WASM_Parity
+proof_obligations:
+- type: invariant
+  property: Query completeness and soundness
+  formal: '∀ p, store: Q(p) = {r ∈ store | p(r)}'
+  applies_to: query_correctness
+- type: invariant
+  property: Insert-get consistency
+  formal: '∀ K, V: get(insert(s, K, V), K) = Some(V)'
+  applies_to: insert_get_consistency
+- type: invariant
+  property: WASM-native parity
+  formal: '∀ p: query_wasm(p) = query_native(p)'
+  applies_to: wasm_parity
+enforcement:
+  query_completeness:
+    description: All matching rows returned and no extras
+    check: contract_tests::FALSIFY-TDB-001
+    severity: ERROR
+  insert_get:
+    description: Inserted values immediately readable
+    check: contract_tests::FALSIFY-TDB-002
+    severity: ERROR
+  wasm_parity:
+    description: WASM and native paths produce same results
+    check: contract_tests::FALSIFY-TDB-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TDB-001
+  rule: Query completeness
+  prediction: insert 100 rows matching predicate and 100 not matching, query returns exactly 100
+  test: insert rows with known predicate outcomes, verify exact match count
+  if_fails: Column scan skips rows or predicate evaluation has off-by-one
+- id: FALSIFY-TDB-002
+  rule: Insert-get consistency
+  prediction: get_or_insert(K, V) then get(K) returns V
+  test: insert 1000 random key-value pairs, verify each retrievable
+  if_fails: JIT-compiled insert path has caching or index update bug
+- id: FALSIFY-TDB-003
+  rule: WASM parity
+  prediction: same query in WASM and native modes returns identical rows
+  test: run 50 queries through both paths, compare result sets
+  if_fails: WASM query compilation handles types differently
+kani_harnesses:
+- id: KANI-TDB-001
+  obligation: Query completeness
+  property: query returns exactly matching rows
+  bound: 16
+  strategy: exhaustive
+  harness: verify_query_completeness
+- id: KANI-TDB-002
+  obligation: Insert-get consistency
+  property: read-after-write succeeds
+  bound: 8
+  strategy: exhaustive
+  harness: verify_insert_get
+- id: KANI-TDB-003
+  obligation: WASM-native parity
+  property: WASM matches native
+  bound: 8
+  strategy: exhaustive
+  harness: verify_wasm_parity
+qa_gate:
+  id: F-TDB-001
+  name: Columnar Storage Contract
+  description: Query correctness, insert/get consistency, and WASM parity quality gate
+  checks:
+  - query_completeness
+  - insert_get
+  - wasm_parity
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip last column in scan predicate evaluation

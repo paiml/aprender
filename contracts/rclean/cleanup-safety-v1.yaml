@@ -1,0 +1,121 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Disk cleanup tool safety — duplicate detection, safe deletion, parallel scan correctness
+  references:
+  - 'PMAT Quality Framework: Zero-tolerance defect policy'
+  - 'Rivest (1992) The MD5 Message-Digest Algorithm'
+equations:
+  duplicate_detection:
+    formula: D(files) = {groups} where ∀ g ∈ groups, ∀ f1, f2 ∈ g, hash(f1) = hash(f2) ∧ |g| >= 2
+    domain: files ∈ Vec<PathBuf>
+    codomain: Vec<DuplicateGroup>
+    invariants:
+    - 'All files in a group share the same MD5 hash'
+    - 'No singleton groups: every group has at least 2 members'
+    - 'Every file appears in at most one group'
+    - 'Original files (not duplicates) are identified for preservation'
+    preconditions:
+    - all files exist and are readable
+    - file_count > 0
+    lean_theorem: Theorems.Duplicate_Detection
+  scan_completeness:
+    formula: S(root, options) = {f | f ∈ tree(root) ∧ matches(f, options)}
+    domain: root ∈ Path, options ∈ WalkOptions
+    codomain: DataFrame with columns (path, size, hash, ...)
+    invariants:
+    - 'Respects max_depth when set'
+    - 'Hidden files included only when include_hidden = true'
+    - 'Gitignore respected when respect_gitignore = true'
+    - 'No duplicate paths in output'
+    preconditions:
+    - root exists and is a directory
+    lean_theorem: Theorems.Scan_Completeness
+  outlier_detection:
+    formula: O(files) = {f | f.size > Q3 + 1.5 * IQR} where IQR = Q3 - Q1
+    domain: files ∈ DataFrame with size column
+    codomain: Vec<OutlierFile>
+    invariants:
+    - 'Outlier threshold is deterministic for same dataset'
+    - 'Files below threshold are never flagged'
+    - 'Empty dataset produces no outliers'
+    preconditions:
+    - dataset has at least 4 entries for meaningful IQR
+    lean_theorem: Theorems.Outlier_Detection
+proof_obligations:
+- type: invariant
+  property: Duplicate groups have matching hashes
+  formal: '∀ g ∈ groups, ∀ f1, f2 ∈ g: md5(f1) = md5(f2)'
+  applies_to: duplicate_detection
+- type: invariant
+  property: Scan respects depth limit
+  formal: '∀ f ∈ scan(root, {max_depth: d}): depth(f, root) <= d'
+  applies_to: scan_completeness
+- type: invariant
+  property: Outlier detection is deterministic
+  formal: '∀ dataset: outliers(dataset) = outliers(dataset)'
+  applies_to: outlier_detection
+enforcement:
+  hash_consistency:
+    description: All files in a duplicate group must have identical MD5 hashes
+    check: contract_tests::FALSIFY-RCL-001
+    severity: ERROR
+  depth_limit:
+    description: Scan must respect max_depth option
+    check: contract_tests::FALSIFY-RCL-002
+    severity: ERROR
+  outlier_determinism:
+    description: Outlier detection must be deterministic
+    check: contract_tests::FALSIFY-RCL-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RCL-001
+  rule: Hash consistency in duplicate groups
+  prediction: All files in a reported duplicate group have identical MD5 hash
+  test: create files with known content, run detection, verify all group members hash equal
+  if_fails: Race condition in parallel hashing or hash map collision
+- id: FALSIFY-RCL-002
+  rule: Depth limit enforcement
+  prediction: With max_depth=2, no files deeper than 2 levels appear in results
+  test: create directory tree 5 levels deep, scan with max_depth=2, verify depths
+  if_fails: max_depth not passed to WalkDir or off-by-one in depth counting
+- id: FALSIFY-RCL-003
+  rule: Outlier detection determinism
+  prediction: outliers(dataset) returns identical results on repeated calls
+  test: run outlier detection 10 times on same dataset, assert all equal
+  if_fails: Non-deterministic sorting or floating-point instability in IQR
+- id: FALSIFY-RCL-004
+  rule: No singleton duplicate groups
+  prediction: Every reported duplicate group has at least 2 members
+  test: scan directory with all unique files, verify zero groups returned
+  if_fails: Hash bucket with single entry not filtered out
+kani_harnesses:
+- id: KANI-RCL-001
+  obligation: Hash consistency in duplicate groups
+  property: Group members share hash
+  bound: 16
+  strategy: exhaustive
+  harness: verify_hash_consistency
+- id: KANI-RCL-002
+  obligation: Scan respects depth limit
+  property: No results beyond max_depth
+  bound: 8
+  strategy: exhaustive
+  harness: verify_depth_limit
+- id: KANI-RCL-003
+  obligation: Outlier detection determinism
+  property: Same dataset yields same outliers
+  bound: 16
+  strategy: exhaustive
+  harness: verify_outlier_determinism
+qa_gate:
+  id: F-RCL-001
+  name: Cleanup Safety Contract
+  description: Disk cleanup tool safety and correctness quality gate
+  checks:
+  - hash_consistency
+  - depth_limit
+  - outlier_determinism
+  pass_criteria: All 4 falsification tests pass
+  falsification: Inject a file with different content into a duplicate group and verify detection catches it

@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-09'
+  author: PAIML Engineering
+  description: AVX2+FMA dot product — zero-alloc, fused multiply-add for decoder matmul hot path
+  references:
+  - Intel 64 and IA-32 Architectures Optimization Reference Manual — Section 11.6 FMA
+  - 'Agner Fog (2024) Instruction Tables — vfmadd231ps: 4-5c latency, 0.5c throughput'
+  depends_on:
+  - matmul-kernel-v1.yaml
+equations:
+  dot_product:
+    formula: dot(a, b) = Σ_{i=0}^{n-1} a_i · b_i
+    domain: a, b ∈ ℝ^n (f32)
+    codomain: ℝ (f32)
+    invariants:
+    - dot(a, b) = dot(b, a) (commutativity)
+    - dot(α·a, b) = α·dot(a, b) (linearity)
+    - dot(a, a) ≥ 0 (non-negativity of self-dot)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Dot_Product
+  fma_accumulation:
+    formula: acc_k = fma(a_k, b_k, acc_{k-1}) where fma(x,y,z) = RN(x·y+z)
+    domain: a_k, b_k ∈ f32, acc_0 = 0
+    codomain: f32
+    invariants:
+    - FMA rounds once (not twice as mul+add would)
+    - 4 independent accumulators hide pipeline latency
+    - '|fma_dot - scalar_dot| ≤ n · ε_mach (different rounding, bounded error)'
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Fma_Accumulation
+proof_obligations:
+- type: equivalence
+  property: SIMD matches scalar
+  formal: '|dot_fma_avx2(a, b) - dot_scalar(a, b)| < tolerance'
+  tolerance: 4.0
+  applies_to: simd
+- type: invariant
+  property: Zero-allocation
+  formal: dot_fma_avx2 performs 0 heap allocations
+  applies_to: all
+- type: invariant
+  property: Commutativity
+  formal: '|dot(a, b) - dot(b, a)| < ε'
+  tolerance: 1.0e-06
+  applies_to: all
+- type: bound
+  property: Self-dot non-negative
+  formal: dot(a, a) ≥ 0 for all a
+  applies_to: all
+- type: invariant
+  property: Empty input returns zero
+  formal: dot([], []) = 0.0
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: avx2_fma_loop
+    description: Process 32 elements per iteration using 4 independent FMA accumulators
+    invariant: Each accumulator covers non-overlapping 8-element lanes
+  - name: horizontal_reduce
+    description: Reduce 4 __m256 accumulators to scalar via hadd + extract
+    invariant: All 32 partial sums included exactly once
+  - name: scalar_tail
+    description: Process remaining n % 32 elements with scalar multiply-add
+    invariant: Tail elements processed exactly once
+dispatch:
+- arch: x86_64
+  features:
+  - avx2
+  - fma
+  function: dot_fma_avx2
+- arch: fallback
+  features: []
+  function: a.iter().zip(b).map(|(x,y)| x*y).sum()
+falsification_tests:
+- id: FALSIFY-DOT-001
+  rule: Scalar equivalence
+  prediction: '|dot_fma_avx2(a, b) - scalar_dot(a, b)| < 4 ULP for all valid f32'
+  test: proptest with random f32 vectors, lengths 1..2048
+  if_fails: FMA accumulation order error or missing tail handling
+- id: FALSIFY-DOT-002
+  rule: Empty and unit
+  prediction: dot([], []) = 0.0 and dot([x], [y]) = x*y
+  test: exact equality tests
+  if_fails: Missing base case
+- id: FALSIFY-DOT-003
+  rule: Dimension match for decoder
+  prediction: dot_fma_avx2 matches scalar for d_model=384 and d_ff=1536
+  test: deterministic test with known Whisper dimensions
+  if_fails: Alignment or remainder handling error at d_model boundary
+- id: FALSIFY-DOT-004
+  rule: Commutativity
+  prediction: dot(a, b) = dot(b, a) within 1 ULP
+  test: proptest with random vectors
+  if_fails: Asymmetric accumulation order
+- id: FALSIFY-DOT-005
+  rule: NaN propagation
+  prediction: dot([NaN, 1.0], [1.0, 1.0]) = NaN
+  test: explicit NaN input test
+  if_fails: NaN silently dropped in SIMD lane
+kani_harnesses:
+- id: avx2-fma-dot-v1-kani-001
+  obligation: SIMD matches scalar
+  bound: 8
+  strategy: bounded_int
+- id: KANI-AVX2_F-002
+  obligation: Zero-allocation
+  property: Zero-allocation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-AVX2_F-003
+  obligation: Commutativity
+  property: Commutativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-AVX2_F-004
+  obligation: Self-dot non-negative
+  property: Self-dot non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-AVX2_F-005
+  obligation: Empty input returns zero
+  property: Empty input returns zero
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AFDV-001
+  name: avx2-fma-dot-v1 Contract
+  description: Quality gate for AVX2+FMA dot product — zero-alloc, fused multiply-add for de
+  checks:
+  - validation
+  - falsification

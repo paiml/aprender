@@ -1,0 +1,142 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Roofline model — performance bound analysis for LLM inference
+  references:
+  - 'Williams et al. (2009) Roofline: An Insightful Visual Performance Model'
+  - Qwen3 Performance Parity Spec — throughput analysis
+  - Ivanov et al. (2021) Data Movement Is All You Need
+equations:
+  model_bytes:
+    formula: model_bytes = total_params × bits_per_weight / 8
+    domain: total_params ∈ ℤ⁺, bits_per_weight ∈ {2, 4, 8, 16, 32}
+    invariants:
+    - model_bytes > 0 for valid model
+    - model_bytes monotonically increases with total_params
+    preconditions:
+    - 'input.len() > 0'
+    - num_params > 0
+    lean_theorem: Theorems.Model_Bytes
+  bandwidth_ceiling:
+    formula: bw_ceiling = effective_bandwidth_GB_s / (model_bytes / 1e9)
+    domain: effective_bandwidth_GB_s > 0, model_bytes > 0
+    codomain: bw_ceiling > 0 (tokens/second)
+    invariants:
+    - Higher bandwidth → higher ceiling
+    - Larger model → lower ceiling
+    preconditions:
+    - 'input.len() > 0'
+    - bandwidth_gbps > 0.0
+    lean_theorem: Theorems.Bandwidth_Ceiling
+  compute_ceiling:
+    formula: compute_ceiling = effective_GFLOPS / ops_per_token
+    domain: effective_GFLOPS > 0, ops_per_token > 0
+    codomain: compute_ceiling > 0 (tokens/second)
+    invariants:
+    - Higher GFLOPS → higher ceiling
+    preconditions:
+    - 'input.len() > 0'
+    - flops > 0.0
+    lean_theorem: Theorems.Compute_Ceiling
+  throughput_bound:
+    formula: throughput <= min(bw_ceiling, compute_ceiling)
+    domain: bw_ceiling > 0, compute_ceiling > 0
+    invariants:
+    - Throughput cannot exceed either ceiling
+    - Memory-bound iff bw_ceiling < compute_ceiling
+    preconditions:
+    - 'input.len() > 0'
+    - batch_size > 0
+    lean_theorem: Theorems.Throughput_Bound
+proof_obligations:
+- type: bound
+  property: Ceilings positive
+  formal: bw_ceiling > 0 ∧ compute_ceiling > 0 for valid inputs
+  applies_to: all
+- type: invariant
+  property: Memory-bound classification
+  formal: bw_ceiling < compute_ceiling ⟹ system is memory-bound
+  applies_to: all
+- type: bound
+  property: Throughput bounded
+  formal: throughput <= min(bw_ceiling, compute_ceiling)
+  applies_to: all
+- type: monotonicity
+  property: Model bytes monotonic
+  formal: more params (same quant) → more bytes → lower bw ceiling
+  applies_to: all
+- type: equivalence
+  property: SIMD roofline equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-RM-001
+  rule: Positive ceilings
+  prediction: bw and compute ceilings > 0 for all valid hardware/model specs
+  test: proptest with random positive hardware parameters
+  if_fails: Division by zero in ceiling calculation
+- id: FALSIFY-RM-002
+  rule: Memory-bound classification
+  prediction: Classification matches ceiling comparison
+  test: proptest comparing ceilings and verifying label
+  if_fails: Incorrect bottleneck identification
+- id: FALSIFY-RM-003
+  rule: Throughput bounded
+  prediction: No throughput exceeds both ceilings
+  test: proptest generating random throughputs and checking bounds
+  if_fails: Bound violation in roofline model
+- id: FALSIFY-RM-004
+  rule: Monotonicity
+  prediction: Doubling params halves bandwidth ceiling
+  test: proptest comparing ceiling for n vs 2n params
+  if_fails: Non-monotonic model size behavior
+- id: FALSIFY-RM-005
+  rule: SIMD roofline equivalence
+  prediction: SIMD roofline matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD roofline calc:SIMD roofline bounds differ'
+kani_harnesses:
+- id: KANI-RM-001
+  obligation: RM-BND-001
+  property: Ceilings positive for bounded params
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_roofline_positive
+- id: KANI-ROOFLI-002
+  obligation: Ceilings positive
+  property: Ceilings positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROOFLI-003
+  obligation: Memory-bound classification
+  property: Memory-bound classification
+  bound: 8
+  strategy: stub_float
+- id: KANI-ROOFLI-004
+  obligation: Throughput bounded
+  property: Throughput bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-ROOFLI-005
+  obligation: Model bytes monotonic
+  property: Model bytes monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROOFLI-006
+  obligation: SIMD roofline equivalence
+  property: SIMD roofline equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-RM-001
+  name: Roofline Model Contract
+  description: Performance bound analysis quality gate
+  checks:
+  - positive_ceilings
+  - memory_bound_classification
+  - throughput_bounded
+  - monotonicity
+  pass_criteria: All 5 falsification tests pass
+  falsification: Set bandwidth to 0 to trigger division by zero

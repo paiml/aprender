@@ -1,0 +1,213 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-06'
+  author: PAIML Engineering
+  description: Validates CodeBERT (RoBERTa) tokenizer quality on shell script constructs
+  registry: true
+  references:
+  - shell-safety-inference.md v11.0.0 Section 5.2
+  - 'Feng et al. (2020) CodeBERT: A Pre-Trained Model for Programming and Natural Languages'
+  - 'Liu et al. (2019) RoBERTa: A Robustly Optimized BERT Pretraining Approach'
+  depends_on:
+  - tokenizer-loading-v1
+equations:
+  tokenizer_adequacy:
+    formula: 'acceptable_rate(T, corpus) = |{c ∈ constructs : tokens(T, c) is acceptable}| / |constructs| ≥ 0.70'
+    domain: T = CodeBERT RoBERTa tokenizer (50265 BPE vocab), corpus = shell scripts
+    codomain: acceptable_rate ∈ [0, 1]
+    invariants:
+    - Vocab size = 50265
+    - Every non-empty input produces at least 1 token
+    - No construct produces > 20 tokens
+    - Tokenization is deterministic
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Tokenizer_Adequacy
+tokenizer_config:
+  model_family: RoBERTa
+  model_name: microsoft/codebert-base
+  vocab_size: 50265
+  format: legacy (vocab.json + merges.txt)
+  special_tokens:
+  - id: 0
+    content: <s>
+    role: bos
+  - id: 2
+    content: </s>
+    role: eos
+  - id: 1
+    content: <pad>
+    role: pad
+  - id: 3
+    content: <unk>
+    role: unk
+shell_constructs:
+  command_substitution:
+  - construct: $(command)
+    acceptable_splits:
+    - - $(
+      - command
+      - )
+    - - $(command)
+    unacceptable_signal: fragmented into 5+ tokens
+  redirect:
+  - construct: 2>&1
+    acceptable_splits:
+    - - 2>&1
+    - - 2>
+      - '&1'
+    - - 2>&
+      - '1'
+    unacceptable_signal: each char is separate token
+  variable:
+  - construct: $RANDOM
+    acceptable_splits:
+    - - $RANDOM
+    - - $
+      - RANDOM
+    unacceptable_signal: $ + RAN + DOM
+  - construct: $HOME
+    acceptable_splits:
+    - - $HOME
+    - - $
+      - HOME
+    unacceptable_signal: $ + H + OM + E
+  pipe:
+  - construct: '|'
+    acceptable_splits:
+    - - '|'
+    unacceptable_signal: merged with adjacent code
+  heredoc:
+  - construct: <<'EOF'
+    acceptable_splits:
+    - - '<<'
+      - '''EOF'''
+    - - <<'
+      - EOF
+      - ''''
+    unacceptable_signal: fully fragmented into 6+ tokens
+  shebang:
+  - construct: '#!/bin/sh'
+    acceptable_splits:
+    - - '#!/'
+      - bin/
+      - sh
+    - - '#!'
+      - /bin/sh
+    unacceptable_signal: each char separate
+  eval:
+  - construct: eval
+    acceptable_splits:
+    - - eval
+    unacceptable_signal: ev + al
+  backtick:
+  - construct: '`command`'
+    acceptable_splits:
+    - - '`'
+      - command
+      - '`'
+    - - '`command`'
+    unacceptable_signal: fragmented
+contract:
+  id: C-TOK-001
+  name: Shell tokenizer adequacy
+  description: CodeBERT tokenizer handles >= 70% of shell constructs acceptably
+  threshold: 0.7
+  sample_size: 100
+  methodology: '1. Select 100 shell scripts from bashrs corpus (stratified: safe + unsafe)
+
+    2. Tokenize each with CodeBERT''s RoBERTa tokenizer
+
+    3. For each construct type, check if tokenization is "acceptable"
+
+    4. Report % acceptable per construct type and overall
+
+    '
+  pass_criteria: overall_acceptable_rate >= 0.70
+  fail_action: 'Three fallback options (cheapest first):
+
+    1. Proceed anyway — tokenizer damage may not matter for classification
+
+    2. Mean-pool instead of [CLS] — distributes signal across broken tokens
+
+    3. Continue-pretrain CodeBERT on 100K unlabeled GitHub bash scripts
+
+    '
+invariants:
+- id: F-CTOK-001
+  name: Tokenizer loads CodeBERT vocab
+  description: from_vocab_merges loads exactly 50265 tokens
+  severity: P0
+  critical: true
+- id: F-CTOK-002
+  name: Non-empty tokenization
+  description: Every non-empty shell script produces at least 1 token
+  severity: P0
+  critical: true
+- id: F-CTOK-003
+  name: Construct preservation
+  description: '>= 70% of shell constructs tokenize acceptably'
+  severity: P0
+  critical: true
+- id: F-CTOK-004
+  name: Token count bounded
+  description: No single shell construct explodes into > 20 tokens
+  severity: P1
+- id: F-CTOK-005
+  name: Deterministic tokenization
+  description: Same input always produces identical token sequence
+  severity: P0
+  critical: true
+falsification_tests:
+- id: FALSIFY-CTOK-001
+  rule: F-CTOK-001 (Vocab size)
+  prediction: CodeBERT vocab has exactly 50265 entries
+  if_fails: Vocab file corrupted or wrong model downloaded
+- id: FALSIFY-CTOK-002
+  rule: F-CTOK-002 (Non-empty)
+  prediction: 100 corpus scripts all produce non-empty token sequences
+  if_fails: Tokenizer silently dropping all content
+- id: FALSIFY-CTOK-003
+  rule: F-CTOK-003 (Construct preservation)
+  prediction: '>= 70% of constructs tokenize acceptably'
+  if_fails: RoBERTa tokenizer too fragmented for shell — use fallback options
+- id: FALSIFY-CTOK-004
+  rule: F-CTOK-004 (Token explosion)
+  prediction: No construct produces > 20 tokens
+  if_fails: Pathological tokenization — may need custom pre-tokenizer
+- id: FALSIFY-CTOK-005
+  rule: F-CTOK-005 (Determinism)
+  prediction: Repeated tokenization of same input is bit-identical
+  if_fails: HashMap ordering leak in BPE merge — critical bug
+qa_gate:
+  id: C-TOK-001-GATE
+  name: Tokenizer Validation Gate
+  description: Pre-training quality gate for CodeBERT tokenizer on shell
+  checks:
+  - vocab_size_50265
+  - non_empty_tokenization
+  - construct_preservation_70pct
+  - no_token_explosion
+  - deterministic_encoding
+  pass_criteria: All 5 checks pass
+proof_obligations:
+- type: invariant
+  property: Vocab size = 50265
+  formal: Vocab size = 50265
+  applies_to: all
+- type: invariant
+  property: Every non-empty input produces at least 1 token
+  formal: Every non-empty input produces at least 1 token
+  applies_to: all
+kani_harnesses:
+- id: KANI-CODEBE-001
+  obligation: Vocab size = 50265
+  property: Vocab size = 50265
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CODEBE-002
+  obligation: Every non-empty input produces at least 1 token
+  property: Every non-empty input produces at least 1 token
+  bound: 8
+  strategy: exhaustive

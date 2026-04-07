@@ -1,0 +1,1 @@
+{"content_hash":"01dea2315f0cc1b5","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-001: metadata.references must not be empty — every contract must cite its source paper(s)","file":"contracts/archive-repos-v1.yaml","line":null,"contract_stem":"archive-repos-v1","suppressed":false,"is_new":false}]}

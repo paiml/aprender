@@ -1,0 +1,176 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Byte-pair encoding (BPE) tokenization correctness — merge-based subword tokenization with roundtrip, determinism,
+    and vocabulary invariants
+  references:
+  - Sennrich, Haddow & Birch (2016) Neural Machine Translation of Rare Words with Subword Units. ACL. arXiv:1508.07909
+  - Radford et al. (2019) Language Models are Unsupervised Multitask Learners (GPT-2 BPE)
+  - 'Kudo & Richardson (2018) SentencePiece: A simple and language independent subword tokenizer. EMNLP.'
+  depends_on:
+  - codebert-tokenizer-validation-v1
+equations:
+  merge_rule:
+    formula: "BPE merge operation:\n  Given vocabulary V and merge list M = [(a_1, b_1), (a_2, b_2), ...] ordered by priority:\n\
+      \  For each merge (a_i, b_i) in priority order:\n    Replace all adjacent occurrences of (a_i, b_i) in token sequence\
+      \ with merged token c_i\n    where c_i = concat(a_i, b_i) and c_i ∈ V\n  Merge priority is determined by training corpus\
+      \ frequency (most frequent pairs first).\n"
+    domain: token_sequence ∈ V*, merge_list M = [(V, V)]* — ordered pairs
+    codomain: token_sequence' ∈ V* with |token_sequence'| <= |token_sequence|
+    invariants:
+    - Each merge reduces sequence length by at least 1 (when pair found)
+    - Merge order is deterministic given fixed merge list
+    - 'Concatenation of token strings is preserved: concat(tokens'') == concat(tokens)'
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Merge_Rule
+  encode:
+    formula: "BPE encode: text -> token_ids\n  1. Convert text to initial byte/character sequence: chars = list(text)\n  2.\
+      \ While any mergeable pair exists in chars:\n       Find highest-priority pair (a, b) in chars that appears in merge\
+      \ list\n       Replace all occurrences of (a, b) with merged token ab\n  3. Map final tokens to integer IDs via vocabulary:\
+      \ ids = [vocab[t] for t in chars]\n"
+    domain: text ∈ UTF-8 string (arbitrary)
+    codomain: token_ids ∈ ℤ^n where 0 <= token_ids[i] < |V| and n >= 1
+    invariants:
+    - Output length >= 1 for non-empty input
+    - All token IDs are valid vocabulary indices
+    - Greedy left-to-right merge with priority ordering yields unique result
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Encode
+  decode:
+    formula: "BPE decode: token_ids -> text\n  1. Map each token ID to its string: tokens = [vocab_inverse[id] for id in token_ids]\n\
+      \  2. Concatenate: text = concat(tokens)\nDecode is a simple lookup + concatenation with no merging required.\n"
+    domain: token_ids ∈ ℤ^n where 0 <= token_ids[i] < |V|
+    codomain: text ∈ UTF-8 string
+    invariants:
+    - Decode is O(n) — linear in number of tokens
+    - Every valid token ID maps to a non-empty byte sequence
+    - Concatenation order matches token ID order
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Decode
+proof_obligations:
+- type: roundtrip
+  property: Decode of encode recovers original text
+  formal: decode(encode(text)) == text for all valid UTF-8 strings
+  applies_to: all
+- type: invariant
+  property: Deterministic encoding
+  formal: encode(text) always produces the same token_ids for the same text and vocabulary
+  applies_to: all
+- type: bound
+  property: Token IDs within vocabulary range
+  formal: 0 <= encode(text)[i] < vocab_size for all i
+  applies_to: all
+- type: bound
+  property: Non-empty input produces non-empty output
+  formal: len(text) > 0 implies len(encode(text)) >= 1
+  applies_to: all
+- type: monotonicity
+  property: Encoding length bounded by input bytes
+  formal: len(encode(text)) <= len(bytes(text)) — at most one token per byte
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: pre_tokenize
+    description: Split input text into words/chunks at whitespace and punctuation boundaries
+    invariant: Concatenation of chunks equals original text; no characters dropped
+  - name: byte_encode
+    description: Convert each chunk to initial byte-level token sequence
+    invariant: Each byte maps to exactly one initial token; bijective mapping
+  - name: iterative_merge
+    description: Repeatedly apply highest-priority merge until no more merges possible
+    invariant: Terminates in at most len(text)-1 merge rounds; sequence shrinks monotonically
+  - name: vocabulary_lookup
+    description: Map final token strings to integer IDs
+    invariant: All tokens present in vocabulary; unknown tokens handled by byte fallback
+falsification_tests:
+- id: FALSIFY-BPE-001
+  rule: 'Roundtrip: decode(encode(text)) == text'
+  prediction: Roundtrip holds for all valid UTF-8 strings
+  test: 'proptest: generate random UTF-8 strings (ASCII, CJK, emoji, mixed); encode then decode; assert equality'
+  if_fails: Vocabulary missing byte-level fallback tokens; some bytes have no encoding path
+- id: FALSIFY-BPE-002
+  rule: Deterministic encoding
+  prediction: encode(text) produces identical output on repeated calls
+  test: 'proptest: encode same string 10 times; assert all results identical'
+  if_fails: Non-deterministic merge tie-breaking; hash-map iteration order leaking into merge selection
+- id: FALSIFY-BPE-003
+  rule: Token IDs within vocabulary range
+  prediction: All token IDs in [0, vocab_size) for any input
+  test: 'proptest: generate random strings; encode; verify all IDs < vocab_size and >= 0'
+  if_fails: Vocabulary lookup returns sentinel value or out-of-bounds index for unseen tokens
+- id: FALSIFY-BPE-004
+  rule: Empty string handling
+  prediction: encode('') returns empty token list; decode([]) returns ''
+  test: 'Direct test: encode empty string; decode empty list; verify both return empty'
+  if_fails: Off-by-one in pre-tokenization or special BOS/EOS token injected unconditionally
+- id: FALSIFY-BPE-005
+  rule: Merge reduces sequence length
+  prediction: After each merge operation, token count strictly decreases by number of merges applied
+  test: 'proptest: instrument merge loop; after each merge step, verify len(tokens) decreased'
+  if_fails: Merge applied to overlapping pairs incorrectly; pair found but not actually adjacent
+kani_harnesses:
+- id: KANI-BPE-001
+  obligation: Token ID range bound
+  property: All output token IDs satisfy 0 <= id < vocab_size for bounded inputs
+  bound: 32
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_token_id_range
+- id: KANI-BPE-002
+  obligation: Merge termination
+  property: Merge loop terminates in at most len(input)-1 iterations
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_merge_termination
+- id: KANI-BPE-003
+  obligation: Non-empty output for non-empty input
+  property: len(encode(text)) >= 1 when len(text) >= 1
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_nonempty_output
+- id: KANI-BPE_TO-004
+  obligation: Decode of encode recovers original text
+  property: Decode of encode recovers original text
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BPE_TO-005
+  obligation: Deterministic encoding
+  property: Deterministic encoding
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BPE_TO-006
+  obligation: Token IDs within vocabulary range
+  property: Token IDs within vocabulary range
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BPE_TO-007
+  obligation: Non-empty input produces non-empty output
+  property: Non-empty input produces non-empty output
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BPE_TO-008
+  obligation: Encoding length bounded by input bytes
+  property: Encoding length bounded by input bytes
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-BPE-001
+  name: BPE Tokenization Contract
+  description: Byte-pair encoding roundtrip, determinism, and vocabulary correctness
+  checks:
+  - roundtrip
+  - determinism
+  - token_id_range
+  - empty_handling
+  - merge_termination
+  pass_criteria: All 5 falsification tests pass + 3 Kani harnesses verify
+  falsification: Remove byte-level fallback from vocabulary to break roundtrip on rare characters

@@ -1,0 +1,52 @@
+contract: batched-matmul-zero-copy-v1
+version: 1.0.0
+status: implemented
+kaizen: 039
+invariants:
+- id: C-BATCHGEMM-001
+  description: Batched matmul calls BLIS directly on sub-slices — no intermediate copies
+  preconditions:
+  - a_data.len() == batch * m * k
+  - b_data.len() == batch * k * n
+  postconditions:
+  - output[bh] == gemm(a_data[bh], b_data[bh]) for all bh in [0, batch)
+  - 'Zero intermediate Vec allocations per batch element (was: 2 per element)'
+  - Numerical output identical to Matrix::from_slice + matmul path
+  invariants:
+  - WASM path falls back to Matrix::from_slice (gemm_blis requires x86)
+  - 4D variant handles batch * heads as flat batch dimension
+  verified_by:
+  - 17 batched matmul tests passed, 0 failures
+  - 24 matrix arithmetic tests passed, 0 failures
+affected_files:
+- path: src/matrix/ops/arithmetic.rs
+  functions:
+  - 'batched_matmul: gemm_blis on sub-slices instead of Matrix::from_slice'
+  - 'batched_matmul_4d: same optimization for 4D attention pattern'
+  change: '- Both functions now call crate::blis::gemm_blis directly
+
+    - WASM path preserved via #[cfg] gate
+
+    - Eliminates 2 × batch Vec allocations per call
+
+    '
+performance_note: 'For Qwen3-4B attention (batch=1, heads=32, seq=256, head_dim=80):
+
+  - Before: 64 Matrix::from_slice copies per attention layer (2 × 32 heads)
+
+  - Each copy: 256 × 80 × 4 = 80 KB
+
+  - Total per attention: 64 × 80 KB = 5 MB of unnecessary copies
+
+  - With 36 layers: 180 MB allocation churn per forward pass
+
+  - After: 0 MB — gemm_blis operates directly on input slices
+
+  '
+qa_gate:
+  id: F-BMZC-001
+  name: batched-matmul-zero-copy-v1 Contract
+  description: Quality gate for batched-matmul-zero-copy-v1
+  checks:
+  - validation
+  - falsification

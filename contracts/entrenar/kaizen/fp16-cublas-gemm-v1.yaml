@@ -1,0 +1,213 @@
+contract: fp16-cublas-gemm-v1
+title: FP16 cuBLAS GEMM for Training (Tier 2 Parity)
+kaizen: KAIZEN-068
+parent: apr-training-parity-v1
+status: planned
+date: 2026-04-03
+
+# =============================================================================
+# CONTEXT: APR training is memory-bandwidth bound at 194 tok/s (yoga RTX 4060L)
+# =============================================================================
+# Root cause (DEFINITIVE, 2026-04-02):
+#   1536×1536 fp32 weight matrix = 9.4 MB per GEMM
+#   At 256 GB/s memory BW = 37μs per GEMM (read dominates)
+#   TF32 tensor cores: 1.9μs compute (irrelevant — BW-bound)
+#   SIMD cuBLAS: 80μs compute (still BW-bound at 37μs read)
+#   196 GEMMs per forward pass × 2 (fwd+bwd) = 392 GEMMs per step
+#
+# FP16 weights halve memory traffic: 9.4 → 4.7 MB per GEMM
+# Expected: ~2x throughput → 390 tok/s (Tier 2 target)
+
+baseline:
+  weight_dtype: fp32
+  gemm_compute: CUBLAS_COMPUTE_32F
+  weight_bytes_per_gemm: 9437184  # 1536*1536*4
+  measured_tok_s: 194
+  gpu_utilization_pct: 7
+  bottleneck: memory_bandwidth
+
+target:
+  weight_dtype: fp16
+  gemm_compute: CUBLAS_COMPUTE_16F
+  weight_bytes_per_gemm: 4718592  # 1536*1536*2
+  expected_tok_s: 390
+  expected_improvement: "~2x (memory traffic halved)"
+  tensor_cores: true  # FP16 uses tensor cores on sm_89
+
+# =============================================================================
+# HYPOTHESIS: Switching cuBLAS GEMM from fp32 to fp16 halves memory traffic,
+# doubling throughput from 194 to ~390 tok/s.
+# =============================================================================
+
+hypotheses:
+  - id: H-FP16-001
+    name: "FP16 weights fit on yoga 8GB VRAM"
+    description: >
+      FP16 Qwen2.5-Coder-1.5B = 3.4 GB (vs 6.8 GB fp32).
+      With LoRA + optimizer + activations, total VRAM must be < 8 GB.
+    prediction: >
+      VRAM budget: model 3.4 GB + embedding 0.45 GB + LoRA 0.05 GB +
+      optimizer 0.1 GB + scratch 1.5 GB + CUDA 0.5 GB = ~6.0 GB < 8 GB.
+    falsification_test: >
+      Run: apr finetune fp16.apr --method qlora --rank 16 --vram 8.0
+      If OOM: FALSIFIED — FP16 still too large with LoRA on 8 GB.
+      Action: use mixed fp16 base + NF4 for largest layers.
+    status: UNTESTED
+
+  - id: H-FP16-002
+    name: "cuBLAS fp16 GEMM doubles throughput"
+    description: >
+      Replacing CUBLAS_COMPUTE_32F with CUBLAS_COMPUTE_16F on fp16 weight
+      matrices should halve memory reads. Since throughput is memory-BW-bound,
+      this should roughly double tok/s.
+    prediction: >
+      apr finetune with fp16 model produces > 350 tok/s on yoga
+      (at least 1.8x improvement over fp32's 194 tok/s).
+    falsification_test: >
+      Run: apr finetune fp16.apr --method qlora
+      Measure: tokens_per_sec from canary output.
+      If tok/s < 300: FALSIFIED — bottleneck is NOT memory BW for reads
+      (could be activation writes, kernel launch overhead, or CPU phases).
+      Action: enable step profiler to identify actual bottleneck.
+    status: UNTESTED
+
+  - id: H-FP16-003
+    name: "FP16 GEMM maintains training convergence"
+    description: >
+      FP16 has less precision than fp32 (5 mantissa bits vs 23).
+      Loss-scaling or mixed-precision accumulation may be needed.
+    prediction: >
+      FP16 GEMM produces final_loss < 20.0 (same gate as fp32 baseline).
+      Loss trajectory tracks within 10% of fp32 path.
+    falsification_test: >
+      Compare loss curves: fp32 vs fp16 over 100 steps.
+      If fp16 loss > 2x fp32 loss at step 50: FALSIFIED — precision loss
+      causes divergence. Action: use fp16 GEMM with fp32 accumulation
+      (CUBLAS_COMPUTE_32F_FAST_16F).
+    status: UNTESTED
+
+invariants:
+  - id: C-FP16GEMM-001
+    description: cuBLAS GEMM input/output types match weight dtype
+    preconditions:
+      - Weight buffer dtype == f16
+      - Activation buffer dtype == f16 (upcast from NF4 or loaded as fp16)
+    postconditions:
+      - cublasSgemmEx called with CUDA_R_16F for A, B, C
+      - Or cublasGemmEx with CUBLAS_COMPUTE_16F
+      - Output buffer is f16
+    verified_by:
+      - cuBLAS status check (not `let _ =`)
+      - Output[:4] non-zero check (DIAG-001)
+
+  - id: C-FP16GEMM-002
+    description: Backward pass uses same precision as forward
+    preconditions:
+      - Forward GEMM in fp16
+    postconditions:
+      - Backward grad GEMM in fp16
+      - Gradient accumulation in fp32 (to prevent underflow)
+      - Weight update in fp32 (LoRA delta applied in fp32)
+    verified_by:
+      - Loss convergence test (final_loss < 20.0)
+
+  - id: C-FP16GEMM-003
+    description: No fp32→fp16 conversion on hot path
+    preconditions:
+      - FP16 model loaded from safetensors
+    postconditions:
+      - Weights uploaded as fp16 directly to GPU (no fp32 intermediate)
+      - Zero H2D copy for weight format conversion
+    verified_by:
+      - Step profiler shows h2d phase unchanged vs fp32
+
+implementation_plan:
+  - step: 1
+    description: "Add CudaFp16TransformerBlock alongside existing CudaNf4TransformerBlock"
+    file: entrenar/src/finetune/cuda_nf4_block.rs
+    change: >
+      New struct CudaFp16TransformerBlock that stores weight buffers as
+      GpuBuffer<f16> instead of NF4-packed. Uses cublasHgemm (fp16 GEMM)
+      instead of cublasSgemm (fp32 GEMM) for all 7 projections per layer.
+
+  - step: 2
+    description: "Add FP16 weight loading path in model loader"
+    file: entrenar/src/finetune/instruct_pipeline.rs
+    change: >
+      When model file contains fp16 safetensors (not NF4/GGUF),
+      upload weights directly as f16 without NF4 quantization.
+      Detect via model metadata or file extension.
+
+  - step: 3
+    description: "cuBLAS fp16 GEMM wrapper in trueno"
+    file: trueno/src/gpu/cublas.rs
+    change: >
+      New cublas_hgemm_forward() using cublasHgemm (fp16×fp16→fp16).
+      Uses CUBLAS_COMPUTE_16F with tensor cores on sm_89.
+      Alternative: CUBLAS_COMPUTE_32F_FAST_16F for fp32 accumulation.
+
+  - step: 4
+    description: "Backward pass fp16 GEMM"
+    file: entrenar/src/autograd/cuda_backward/structured.rs
+    change: >
+      Gradient GEMM uses cublasHgemm. Gradient accumulation promoted
+      to fp32 to prevent underflow in small LoRA gradients.
+
+  - step: 5
+    description: "APR canary: --dtype fp16 flag"
+    file: canaries/apr/train.py
+    change: >
+      Add --dtype fp16|fp32|nf4 argument. When fp16, skip --quantize-nf4
+      and use FP16 model file directly. Canary outputs dtype in config.
+
+falsification_tests:
+  - id: FALSIFY-FP16-001
+    rule: H-FP16-001 (VRAM fits)
+    prediction: Peak VRAM < 8000 MB on yoga
+    test: |
+      def test_fp16_vram_fits_yoga():
+          result = run_apr_canary(model="fp16.apr", method="qlora", dtype="fp16")
+          assert result["metrics"]["peak_vram_mb"] < 8000, "FALSIFIED: OOM on 8GB"
+    if_fails: Mixed precision needed (fp16 base + NF4 for large layers)
+
+  - id: FALSIFY-FP16-002
+    rule: H-FP16-002 (throughput doubles)
+    prediction: tokens_per_sec > 350
+    test: |
+      def test_fp16_throughput_doubles():
+          result = run_apr_canary(model="fp16.apr", method="qlora", dtype="fp16")
+          assert result["metrics"]["tokens_per_sec"] > 350, "FALSIFIED: BW not the bottleneck"
+    if_fails: Enable step profiler to find actual bottleneck
+
+  - id: FALSIFY-FP16-003
+    rule: H-FP16-003 (convergence maintained)
+    prediction: final_loss < 20.0
+    test: |
+      def test_fp16_convergence():
+          result = run_apr_canary(model="fp16.apr", method="qlora", dtype="fp16")
+          assert result["metrics"]["final_loss"] < 20.0, "FALSIFIED: precision loss"
+    if_fails: Use CUBLAS_COMPUTE_32F_FAST_16F for fp32 accumulation
+
+roofline_analysis:
+  yoga_rtx4060l:
+    memory_bw_gbs: 256
+    tensor_core_tflops_fp16: 83
+    fp32_weight_bytes_per_step: 3686400  # 392 GEMMs × 9.4 MB
+    fp16_weight_bytes_per_step: 1843200  # 392 GEMMs × 4.7 MB
+    fp32_read_time_ms: 14.4  # 3.6 GB / 256 GB/s
+    fp16_read_time_ms: 7.2   # 1.8 GB / 256 GB/s
+    theoretical_speedup: 2.0
+    # Note: activation reads/writes are additional — actual speedup < 2x
+
+qa_gate:
+  id: F-FP16V-001
+  name: fp16-cublas-gemm-v1 Contract
+  description: Quality gate for FP16 cuBLAS GEMM training (Tier 2 parity)
+  checks:
+    - hypothesis_falsification
+    - vram_gate
+    - throughput_gate
+    - convergence_gate
+  pass_criteria: >
+    All 3 hypotheses either CONFIRMED or FALSIFIED.
+    If CONFIRMED: tok/s > 350 and loss < 20.0 on yoga 8GB.

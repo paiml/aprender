@@ -1,0 +1,124 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: CPU Q4K kernel must pre-quantize activations to Q8_K for integer-only inner loop
+  references:
+  - llama.cpp ggml_vec_dot_q4_K_q8_K — maddubs_epi16 integer-only dot product
+  - realizar fused_k.rs:177 TODO — pre-quantize activations to Q8_0 format
+  - 'qwen-coder-deploy bench-results-v2: apr CPU 9.5 tok/s vs llama.cpp 74 tok/s'
+  - 'Williams et al. (2009) Roofline: memory-bound inference requires bandwidth reduction'
+  depends_on:
+  - roofline-model-v1.yaml
+  - q4k-q6k-superblock-v1.yaml
+equations:
+  current_path:
+    formula: "Current (f32 activations):\n  dot(row, acts) = Σ_b Σ_i dequant_q4k(row[b][i]) × acts[b*256+i]\n\nOperations\
+      \ per super-block (256 values):\n  - 256 nibble extractions (bit ops)\n  - 256 f32 multiplications (dequant × activation)\n\
+      \  - 256 f32 FMA operations\n  - Total: ~768 f32 ops per super-block\n"
+    domain: Q4_K super-blocks (144 bytes, 256 values each)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Current_Path
+  target_path:
+    formula: "Target (Q8_K activations, integer-only inner loop):\n  Phase 1: quantize_row_q8_k(acts) → q8_acts  (once per\
+      \ matmul)\n  Phase 2: dot(q4_row, q8_acts) = Σ_b vpdpbusd(q4[b], q8[b]) × scale[b]\n\nOperations per super-block:\n\
+      \  - 4× _mm256_maddubs_epi16 (integer multiply-accumulate, 1 cycle throughput)\n  - 4× _mm256_madd_epi16 (horizontal\
+      \ pair add, 1 cycle)\n  - 1× horizontal sum + scale application\n  - Total: ~12 integer ops per super-block\n"
+    domain: Q4_K × Q8_K integer arithmetic
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Target_Path
+  speedup_bound:
+    formula: "Theoretical speedup from activation quantization:\n  bandwidth_reduction = sizeof(f32) / sizeof(int8) = 4×\n\
+      \  compute_reduction = fma_latency / maddubs_latency ≈ 3-4×\n  combined_speedup ≈ 4-8× (memory-bound regime)\n\nTarget:\
+      \ apr CPU ≥ 60 tok/s (within 15% of llama.cpp's 74)\n"
+    domain: Memory-bound inference on DDR4/DDR5
+    invariants:
+    - Q8_K quantization error < 0.1% relative to f32
+    - Throughput improvement monotonic with activation vector length
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Speedup_Bound
+proof_obligations:
+- type: equivalence
+  property: Q8_K quantization preserves dot product accuracy
+  formal: '|dot_q4k_f32(row, acts) - dot_q4k_q8k(row, quantize_q8k(acts))| < ε'
+  tolerance: 0.001
+  applies_to: all
+- type: bound
+  property: CPU throughput reaches llama.cpp parity
+  formal: tok/s(apr CPU) ≥ 0.85 × tok/s(llama.cpp CPU) on same hardware
+  applies_to: all
+- type: invariant
+  property: Phase 1 quantization is amortized
+  formal: quantize_row_q8_k called exactly once per matmul, not once per dot product
+  applies_to: all
+- type: equivalence
+  property: SIMD kernel equivalence
+  formal: avx2_q4k_q8k_dot(row, q8_acts) ≡ scalar_q4k_q8k_dot(row, q8_acts)
+  tolerance: 1.0e-06
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-AQ-001
+  rule: Dot product parity
+  prediction: Q4K×Q8K dot matches Q4K×f32 dot within 0.1% for random vectors
+  test: proptest with 10000 random activation vectors, dim 256..4096
+  if_fails: Q8K quantization rounding error exceeds tolerance
+- id: FALSIFY-AQ-002
+  rule: Throughput target
+  prediction: apr CPU ≥ 60 tok/s on Qwen2.5-Coder-1.5B Q4K (RTX 4090 host, CPU-only)
+  test: probador llm bench --prompt-profile medium --duration 30s --runs 3
+  if_fails: Activation quantization not applied or parallelism overhead too high
+- id: FALSIFY-AQ-003
+  rule: Amortized quantization
+  prediction: quantize_row_q8_k called ≤ out_dim times per forward pass (once per matmul)
+  test: Instrument quantize_row_q8_k with counter, run 10-token generation
+  if_fails: Quantization called per-dot instead of per-matmul
+- id: FALSIFY-AQ-004
+  rule: No regression in output quality
+  prediction: argmax(logits_q8k) == argmax(logits_f32) for greedy decoding
+  test: Compare 20-token greedy generation between paths
+  if_fails: Quantization error flips argmax — increase Q8K precision
+kani_harnesses:
+- id: KANI-AQ-001
+  obligation: AQ-EQV-001
+  property: Q8K dot product bounded error for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_q8k_dot_parity
+- id: KANI-CPU_Q4-002
+  obligation: Q8_K quantization preserves dot product accuracy
+  property: Q8_K quantization preserves dot product accuracy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-003
+  obligation: CPU throughput reaches llama.cpp parity
+  property: CPU throughput reaches llama.cpp parity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-004
+  obligation: Phase 1 quantization is amortized
+  property: Phase 1 quantization is amortized
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CPU_Q4-005
+  obligation: SIMD kernel equivalence
+  property: SIMD kernel equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-AQ-001
+  name: CPU Q4K Activation Quantization Contract
+  description: Pre-quantize activations to Q8_K for integer-only CPU inference
+  checks:
+  - dot_product_parity
+  - throughput_target
+  - amortized_quantization
+  - output_quality
+  pass_criteria: All 4 falsification tests pass + throughput ≥ 60 tok/s
+  falsification: Skip activation quantization — measure throughput delta

@@ -1,0 +1,786 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    apr-cli interface contract — command parsing determinism, training pipeline
+    plan/apply semantics, tokenizer training correctness, model contract
+    validation gate (PMAT-237), and stdin pipe support.  Complements
+    cli-dispatch-v1 (dispatch/exit codes) and apr-cli-operations-v1
+    (side effects/resources/inference).
+  references:
+  - 'apr-cli/src/lib.rs — Cli struct, Commands enum, execute_command()'
+  - 'apr-cli/src/dispatch.rs — dispatch_core_command() dispatch tree'
+  - 'apr-cli/src/validate.rs — validate_model_contract(), extract_model_paths()'
+  - 'apr-cli/src/error.rs — CliError variants, exit_code() mapping'
+  - 'apr-cli/src/pipe.rs — with_stdin_support(), TempModelFile RAII cleanup'
+  - 'apr-cli/src/train_commands.rs — TrainCommands::{Plan, Apply, Watch, Sweep, Halving}'
+  - 'apr-cli/src/tokenize_commands.rs — TokenizeCommands::{Plan, Apply}'
+  - 'apr-cli/src/commands/train.rs — training plan/apply execution'
+  - 'apr-cli/src/commands/tokenize.rs — tokenizer training execution'
+  - 'POSIX.1-2017 Section 12 — Utility Conventions'
+  depends_on:
+  - cli-dispatch-v1
+  - apr-cli-operations-v1
+  - training-loop-v1
+  - tokenizer-loading-v1
+
+equations:
+  command_parse_determinism:
+    formula: |
+      parse(argv): Vec<String> -> Result<Cli, ClapError>
+        forall argv: parse(argv) == parse(argv)  (deterministic)
+        parse(["apr"]) == Err(MissingSubcommand)
+        parse(["apr", "unknown"]) == Err(UnrecognizedSubcommand)
+        parse(["apr", "run", "--temperature", "-1.0"]) == Ok(_)  (clap accepts, runtime validates)
+        parse(["apr", "run", "--top-k", "abc"]) == Err(InvalidValue)
+    domain: argv in Vec<String> (any process arguments)
+    codomain: Result<Cli, ClapError>
+    invariants:
+    - Parsing is pure — no side effects, no network, no filesystem access
+    - Same argv always yields same parse result
+    - Global flags (--json, --verbose, --quiet, --offline, --skip-contract) propagate to all subcommands
+    - Conflicting flags (--gpu vs --no-gpu) resolved by clap conflicts_with
+    - Alias commands parse identically (list == ls, rm == remove)
+    preconditions:
+    - argv[0] is the binary name
+    postconditions:
+    - "On Ok: cli.command is a valid Commands variant"
+    - "On Err: exit code 2 (clap convention)"
+    lean_theorem: Theorems.Command_Parse_Determinism
+
+  contract_gate_enforcement:
+    formula: |
+      execute_command(cli): Cli -> Result<(), CliError>
+        if !cli.skip_contract:
+          paths = extract_model_paths(cli.command)
+          validate_model_contract(paths)?
+        dispatch(cli)
+
+      extract_model_paths(cmd): Commands -> Vec<PathBuf>
+        ActionCommands = {Run, Export, Serve, Trace, Convert, Check, Merge,
+                         Quantize, Prune, Distill, Finetune, Tui, Import,
+                         Bench, Eval, Chat, Profile, Probar, CompareHf}
+        DiagnosticCommands = {Validate, Inspect, Debug, Tensors, Diff, Lint,
+                             Explain, List, Rm, Pull, Canary, Qa, Qualify}
+        forall cmd in ActionCommands: extract_model_paths(cmd).len() >= 0
+        forall cmd in DiagnosticCommands: extract_model_paths(cmd) == []
+
+      validate_model_contract(paths): Vec<PathBuf> -> Result<(), CliError>
+        forall path in paths:
+          if path.extension in {"gguf", "safetensors", "apr"}:
+            validate_single_model_metadata(path)?
+          if path ends with "index.json":
+            validate_shard_index(path)?
+    domain: Cli after successful parse
+    codomain: Result<(), CliError>
+    invariants:
+    - Diagnostic commands NEVER blocked by contract gate (must inspect corrupt files)
+    - Action commands fail-fast on corrupt models (exit 5) before loading
+    - --skip-contract bypasses all validation
+    - Non-native formats (ONNX, NeMo) bypass rosetta validation
+    - Shard index validation is O(1) per file (stat only, no hashing)
+    - Plan-mode commands (--plan) bypass contract gate (no model loaded)
+    preconditions:
+    - cli parsed successfully
+    postconditions:
+    - "On Ok: model files pass metadata-only validation (ALB-099)"
+    - "On Err(ValidationFailed): exit code 5"
+    lean_theorem: Theorems.Contract_Gate_Enforcement
+
+  training_plan_apply_semantics:
+    formula: |
+      train_plan(data, model_size, config): (...) -> Result<TrainingPlan, CliError>
+        plan.is_valid() == true
+        plan.resource_estimate.gpu_memory > 0
+        plan.hyperparameters.learning_rate > 0.0
+        plan has no side effects (no GPU allocation, no file writes)
+
+      train_apply(plan): TrainingPlan -> Result<TrainingResult, CliError>
+        result.best_trial.loss < initial_loss (learning occurred)
+        result.checkpoints written to plan.output_dir
+        result.leaderboard sorted by validation metric
+
+      train_plan(args) |> train_apply == train_apply(inline_args)
+        (plan file roundtrip is equivalent to inline parameters)
+    domain: Training data (JSONL), model size, hyperparameters
+    codomain: TrainingPlan (plan) or TrainingResult (apply)
+    invariants:
+    - Plan is pure — no GPU allocation, no weight loading, no file mutation
+    - Apply writes ONLY to --output directory (no implicit paths)
+    - Deterministic mode (--deterministic) produces bitwise identical results
+    - Scout mode (--scout) uses exactly 1 epoch per trial
+    - HPO budget is respected (num_trials <= budget)
+    - Watch mode restarts on crash with exponential backoff
+    preconditions:
+    - data file exists and is valid JSONL
+    - model_size is recognized ("0.5B", "7B", "9B", "13B")
+    postconditions:
+    - "plan: serializable to JSON/YAML"
+    - "apply: checkpoints exist at output_dir"
+    lean_theorem: Theorems.Training_Plan_Apply_Semantics
+
+  tokenizer_training_correctness:
+    formula: |
+      tokenize_plan(data, vocab_size, algorithm): (...) -> Result<TokenizerPlan, CliError>
+        plan.corpus_stats.line_count > 0
+        plan.estimated_time > Duration::ZERO
+        plan has no side effects
+
+      tokenize_apply(data, vocab_size, algorithm, output): (...) -> Result<(), CliError>
+        output/vocab.json exists AND is valid JSON
+        output/merges.txt exists AND has (vocab_size - 256) lines (BPE)
+        forall token in vocab: token is valid UTF-8
+
+      vocab_size_invariant:
+        len(load_vocab(output/vocab.json)) == vocab_size
+    domain: Text corpus file, vocab_size > 0, algorithm in {"bpe", "wordpiece", "unigram"}
+    codomain: TokenizerPlan (plan) or tokenizer artifacts (apply)
+    invariants:
+    - Plan is read-only (no files created)
+    - Apply writes vocab.json and merges.txt to --output directory
+    - Trained vocabulary size equals requested vocab_size
+    - All vocabulary tokens are valid UTF-8
+    - max_lines=0 means "read entire corpus" (not "read zero lines")
+    - Algorithm selection is exhaustive (invalid algorithm = error, not fallback)
+    preconditions:
+    - corpus file exists and is readable
+    - vocab_size > 0
+    - algorithm in {"bpe", "wordpiece", "unigram"}
+    postconditions:
+    - "apply: vocab.json is valid JSON with exactly vocab_size entries"
+    lean_theorem: Theorems.Tokenizer_Training_Correctness
+
+  pipe_stdin_support:
+    formula: |
+      with_stdin_support(file, f): (Path, Fn(Path) -> R) -> R
+        if is_stdin(file):
+          tmp = read_stdin_to_tempfile()
+          result = f(tmp.path())
+          drop(tmp)  -- RAII cleanup
+          return result
+        else:
+          resolved = resolve_model_path(file)
+          return f(resolved)
+
+      is_stdin(path): &str -> bool
+        path in {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+
+      is_stdout(path): &str -> bool
+        path in {"-", "/dev/stdout", "/dev/fd/1", "/proc/self/fd/1"}
+
+      resolve_model_path(path): Path -> Result<PathBuf, CliError>
+        file -> Ok(file)
+        dir with model.safetensors.index.json -> Ok(index.json)  [priority]
+        dir with model.safetensors -> Ok(model.safetensors)
+        dir with *.gguf -> Ok(first .gguf)
+        dir with *.apr -> Ok(first .apr)
+        dir empty -> Err(ValidationFailed)
+        nonexistent -> Err(FileNotFound)
+    domain: file path (PathBuf or "-" for stdin)
+    codomain: Result<PathBuf, CliError> (resolved model path)
+    invariants:
+    - Stdin data is buffered to TempModelFile with RAII cleanup
+    - Temporary file deleted even on panic (Drop impl)
+    - Empty stdin returns error (not silent empty file)
+    - Directory resolution priorities are fixed (index.json > safetensors > gguf > apr)
+    - Sharded SafeTensors index.json takes priority over individual shard files (PMAT-314)
+    - POSIX "-" convention recognized across all stdin/stdout functions
+    preconditions:
+    - "For stdin: data is being piped (not interactive tty)"
+    - "For file: path is valid UTF-8"
+    postconditions:
+    - Resolved path points to an existing regular file
+    - No temporary files remain after command completes
+    lean_theorem: Theorems.Pipe_Stdin_Support
+
+  exit_code_semantics:
+    formula: |
+      exit_code(result): Result<(), CliError> -> i32
+        Ok(()) -> 0
+        Err(InvalidArgument) -> 2 (POSIX convention)
+        Err(FileNotFound) -> 3
+        Err(InvalidFormat) -> 4
+        Err(ValidationFailed) -> 5
+        Err(NetworkError) -> 6
+        Err(InternalError) -> 1
+      Invariant: Err(_) -> exit_code != 0
+    domain: Command execution result
+    codomain: Process exit code (0-255)
+    invariants:
+    - Error results NEVER exit 0 (GH-647)
+    - Unrecognized arguments exit 2 (not 0) (GH-634)
+    - INVALID validation result exits non-zero
+    - Exit codes are stable (no version-to-version changes)
+    preconditions:
+    - result is a valid Result<(), CliError>
+    postconditions:
+    - Ok(()) → exit 0
+    - Err(_) → exit > 0
+    lean_theorem: Theorems.ExitCodeSemantics
+
+  tty_detection:
+    formula: |
+      should_color(stdout): StdoutLock -> bool
+        isatty(stdout) && !env("NO_COLOR").is_some() && !cli.no_color
+      format_output(data, is_tty): (Data, bool) -> String
+        if is_tty: include ANSI escape codes
+        else: plain text only
+    domain: stdout handle, environment variables, CLI flags
+    codomain: bool (whether to emit ANSI escapes)
+    invariants:
+    - Piped output never contains ANSI escape codes (GH-662)
+    - NO_COLOR env var disables all color output
+    - --no-color flag disables all color output
+    - Default is auto-detect based on isatty()
+    preconditions:
+    - stdout is a valid file descriptor
+    postconditions:
+    - piped output contains no \x1b[ sequences
+    lean_theorem: Theorems.TtyDetection
+
+  sigpipe_handling:
+    formula: |
+      handle_sigpipe(): setup at process start
+        signal(SIGPIPE, SIG_DFL)  // restore default (terminate silently)
+        OR: catch BrokenPipe in write, exit 141 (128 + SIGPIPE=13)
+      Never: panic!("Broken pipe")
+    domain: Process signal disposition
+    codomain: Clean process exit (code 0 or 141)
+    invariants:
+    - Writing to closed pipe does not panic (GH-667)
+    - Exit code is 0 or 141 (not 101 from panic)
+    - No stack trace printed on SIGPIPE
+    preconditions:
+    - stdout may be piped to process that has exited
+    postconditions:
+    - process exits cleanly (no panic output on stderr)
+    lean_theorem: Theorems.SigpipeHandling
+
+  model_path_resolution:
+    formula: |
+      resolve_model_path(path): &Path -> Result<PathBuf, CliError>
+        !path.exists() -> Err(FileNotFound(path))
+        path.is_file() -> Ok(path)
+        path.is_dir() ->
+          priority_search(path, [
+            "model.safetensors.index.json",
+            "model.safetensors",
+            "model-00001-of-*.safetensors",
+            "*.gguf",
+            "*.apr"
+          ])
+        else -> Err(NotAFile(path))
+    domain: Path (file, directory, or nonexistent)
+    codomain: Result<PathBuf, CliError>
+    invariants:
+    - Resolution is deterministic (same directory always resolves to same file)
+    - Index.json always takes priority over individual shard files
+    - No implicit side effects (stat() calls only)
+    - Error messages include the original path for debuggability
+    preconditions:
+    - path is valid OS path
+    postconditions:
+    - Ok(p) implies p.exists() && p.is_file()
+    - Err(FileNotFound) implies !path.exists()
+    lean_theorem: Theorems.Model_Path_Resolution
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Parse and validate CLI arguments, check file paths and preconditions
+  - name: execute
+    description: Dispatch to command handler, perform core operation
+  - name: verify_output
+    description: Verify postconditions, cleanup resources, return exit code
+
+proof_obligations:
+- type: determinism
+  property: Command parsing is deterministic
+  formal: forall argv, parse(argv) == parse(argv)
+  applies_to: command_parse_determinism
+  lean:
+    theorem: Theorems.CommandParseDeterminism
+    status: sorry
+- type: completeness
+  property: Contract gate exempts all diagnostic commands
+  formal: forall cmd in DiagnosticCommands, extract_model_paths(cmd) == []
+  applies_to: contract_gate_enforcement
+  lean:
+    theorem: Theorems.ContractGateEnforcement
+    status: sorry
+- type: invariant
+  property: Skip-contract flag bypasses validation
+  formal: cli.skip_contract == true -> no validate_model_contract() call
+  applies_to: contract_gate_enforcement
+  lean:
+    theorem: Theorems.ContractGateEnforcementSkip
+    status: sorry
+- type: invariant
+  property: Training plan has no side effects
+  formal: fs_state_before(train_plan(args)) == fs_state_after(train_plan(args))
+  applies_to: training_plan_apply_semantics
+  lean:
+    theorem: Theorems.TrainingPlanApplySemantics
+    status: sorry
+- type: postcondition
+  property: Training apply writes only to output directory
+  formal: forall file in modified_files(train_apply(plan)), file.starts_with(plan.output_dir)
+  applies_to: training_plan_apply_semantics
+  lean:
+    theorem: Theorems.TrainingApplyOutputDir
+    status: sorry
+- type: postcondition
+  property: Tokenizer vocabulary size matches requested size
+  formal: len(vocab) == vocab_size after tokenize_apply()
+  tolerance: 1e-6
+  applies_to: tokenizer_training_correctness
+  lean:
+    theorem: Theorems.TokenizerTrainingCorrectness
+    status: sorry
+- type: invariant
+  property: Stdin tempfile cleaned up via RAII
+  formal: forall invocation, tmp_files_after <= tmp_files_before
+  applies_to: pipe_stdin_support
+  lean:
+    theorem: Theorems.PipeStdinSupport
+    status: sorry
+- type: invariant
+  property: Directory resolution is deterministic
+  formal: forall dir, resolve_model_path(dir) == resolve_model_path(dir)
+  applies_to: model_path_resolution
+  lean:
+    theorem: Theorems.ModelPathResolution
+    status: sorry
+- type: postcondition
+  property: Shard index.json takes priority in directory resolution
+  formal: >
+    dir.contains("model.safetensors.index.json") ->
+    resolve_model_path(dir) == Ok(dir/"model.safetensors.index.json")
+  applies_to: model_path_resolution
+  lean:
+    theorem: Theorems.ModelPathResolutionShardPriority
+    status: sorry
+- type: invariant
+  property: Error results never exit 0
+  formal: 'forall e: CliError, exit_code(Err(e)) != 0'
+  applies_to: exit_code_semantics
+  lean:
+    theorem: Theorems.ExitCodeSemantics
+    status: sorry
+- type: invariant
+  property: Piped output contains no ANSI escapes
+  formal: '!isatty(stdout) => output.contains("\x1b[") == false'
+  applies_to: tty_detection
+  lean:
+    theorem: Theorems.TtyDetection
+    status: sorry
+- type: invariant
+  property: SIGPIPE does not cause panic
+  formal: 'write_to_closed_pipe() => exit(0 | 141), not panic'
+  applies_to: sigpipe_handling
+  lean:
+    theorem: Theorems.SigpipeHandling
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-ACLI-001
+  rule: Command parsing is deterministic
+  prediction: Parsing the same argv 1000 times yields identical Cli structs
+  test: |
+    #[test]
+    fn falsify_acli_001_parse_determinism() {
+        let argv = vec!["apr", "run", "model.gguf", "--max-tokens", "64",
+                        "--temperature", "0.5", "--seed", "42"];
+        let results: Vec<_> = (0..1000)
+            .map(|_| {
+                let cli = apr_cli::Cli::try_parse_from(&argv);
+                format!("{:?}", cli)
+            })
+            .collect();
+        assert!(results.windows(2).all(|w| w[0] == w[1]),
+            "Parse results differ across invocations");
+    }
+  if_fails: Clap has non-deterministic parsing (HashMap iteration order in arg matching)
+
+- id: FALSIFY-ACLI-002
+  rule: Contract gate exempts diagnostic commands
+  prediction: apr validate on a corrupt file succeeds (not blocked by contract gate)
+  test: |
+    #[test]
+    fn falsify_acli_002_diagnostic_bypass_contract_gate() {
+        // Create a corrupt file (invalid magic bytes)
+        let tmp = std::env::temp_dir().join("corrupt-model.gguf");
+        std::fs::write(&tmp, b"NOT_A_VALID_MODEL_FILE").unwrap();
+        let output = std::process::Command::new("apr")
+            .args(&["validate", tmp.to_str().unwrap()])
+            .output()
+            .expect("Failed to run apr");
+        // Validate should run (not exit 5 from contract gate)
+        // It may fail with exit 4 (InvalidFormat) but NOT exit 5 (ValidationFailed from gate)
+        let code = output.status.code().unwrap_or(-1);
+        assert_ne!(code, 5,
+            "Contract gate blocked diagnostic command — should be exempt");
+        std::fs::remove_file(&tmp).ok();
+    }
+  if_fails: extract_model_paths() incorrectly includes Validate in action commands
+
+- id: FALSIFY-ACLI-003
+  rule: Stdin tempfile cleaned up via RAII
+  prediction: After pipe command completes, no apr-stdin-*.bin files remain in /tmp
+  test: |
+    #[test]
+    fn falsify_acli_003_stdin_tempfile_cleanup() {
+        use std::path::Path;
+        let pid = std::process::id();
+        let tmp_path = std::env::temp_dir().join(format!("apr-stdin-{}.bin", pid));
+
+        // Simulate: create TempModelFile and drop it
+        {
+            let tmp = apr_cli::pipe::TempModelFile {
+                path: tmp_path.clone(),
+            };
+            std::fs::write(tmp.path(), b"test model data").unwrap();
+            assert!(tmp_path.exists(), "Temp file should exist within scope");
+        }
+        // After drop, file should be cleaned up
+        assert!(!tmp_path.exists(),
+            "Temp file leaked after TempModelFile dropped");
+    }
+  if_fails: TempModelFile::drop() not running or failing silently
+
+- id: FALSIFY-ACLI-004
+  rule: Directory resolution prioritizes index.json over shard files
+  prediction: resolve_model_path() returns index.json when both index and shards exist
+  test: |
+    #[test]
+    fn falsify_acli_004_shard_index_priority() {
+        let dir = std::env::temp_dir().join("acli-test-shard-priority");
+        std::fs::create_dir_all(&dir).unwrap();
+        let index = dir.join("model.safetensors.index.json");
+        let shard = dir.join("model-00001-of-00002.safetensors");
+        std::fs::write(&index, b"{}").unwrap();
+        std::fs::write(&shard, b"shard data").unwrap();
+
+        let result = apr_cli::error::resolve_model_path(&dir);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), index,
+            "index.json must take priority over shard files (PMAT-314)");
+
+        std::fs::remove_file(&shard).ok();
+        std::fs::remove_file(&index).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+  if_fails: resolve_model_path() finds shard before index.json — breaks multi-shard loading
+
+- id: FALSIFY-ACLI-005
+  rule: Global --json flag propagates to all subcommands
+  prediction: apr inspect --json and apr --json inspect produce equivalent JSON output
+  test: |
+    #[test]
+    fn falsify_acli_005_global_json_flag_propagation() {
+        let argv_local = vec!["apr", "inspect", "model.gguf", "--json"];
+        let argv_global = vec!["apr", "--json", "inspect", "model.gguf"];
+        let cli_local = apr_cli::Cli::try_parse_from(&argv_local).unwrap();
+        let cli_global = apr_cli::Cli::try_parse_from(&argv_global).unwrap();
+
+        // Global --json should be true in both cases
+        // Local --json is on the subcommand, global is on Cli
+        match (*cli_local.command, *cli_global.command) {
+            (apr_cli::Commands::Inspect { json: local_json, .. },
+             apr_cli::Commands::Inspect { json: _, .. }) => {
+                assert!(local_json || cli_local.json,
+                    "JSON flag not propagated from local --json");
+                assert!(cli_global.json,
+                    "Global --json not set on Cli struct");
+            }
+            _ => panic!("Expected Inspect commands"),
+        }
+    }
+  if_fails: Global --json flag not wired through clap propagate_version/global attribute
+
+- id: FALSIFY-ACLI-006
+  rule: Alias commands parse identically
+  prediction: apr list and apr ls produce identical Cli.command variants
+  test: |
+    #[test]
+    fn falsify_acli_006_alias_equivalence() {
+        let cli_list = apr_cli::Cli::try_parse_from(&["apr", "list"]).unwrap();
+        let cli_ls = apr_cli::Cli::try_parse_from(&["apr", "ls"]).unwrap();
+        assert!(matches!(*cli_list.command, apr_cli::Commands::List));
+        assert!(matches!(*cli_ls.command, apr_cli::Commands::List));
+
+        let cli_rm = apr_cli::Cli::try_parse_from(&["apr", "rm", "model"]).unwrap();
+        let cli_remove = apr_cli::Cli::try_parse_from(&["apr", "remove", "model"]).unwrap();
+        match (*cli_rm.command, *cli_remove.command) {
+            (apr_cli::Commands::Rm { model_ref: ref1 },
+             apr_cli::Commands::Rm { model_ref: ref2 }) => {
+                assert_eq!(ref1, ref2, "rm and remove aliases produce different model_ref");
+            }
+            _ => panic!("Expected Rm commands for both rm and remove"),
+        }
+    }
+  if_fails: Alias declarations missing or mapping to different enum variants
+
+- id: FALSIFY-ACLI-007
+  rule: Training plan is pure (no side effects)
+  prediction: apr train plan does not create any files or directories
+  test: |
+    #[test]
+    fn falsify_acli_007_training_plan_no_side_effects() {
+        let output_dir = std::env::temp_dir().join("acli-test-train-plan-noop");
+        // Ensure output dir does NOT exist before plan
+        let _ = std::fs::remove_dir_all(&output_dir);
+        assert!(!output_dir.exists());
+
+        // Run train plan (it should NOT create the output directory)
+        let output = std::process::Command::new("apr")
+            .args(&["train", "plan",
+                "--data", "/dev/null",
+                "--model-size", "0.5B",
+                "--output", output_dir.to_str().unwrap()])
+            .output();
+
+        // Whether plan succeeds or fails, it should NOT create output_dir
+        assert!(!output_dir.exists(),
+            "train plan created output directory — violates plan purity");
+    }
+  if_fails: train plan eagerly creates output directory before validation
+
+- id: FALSIFY-ACLI-008
+  rule: Skip-contract flag bypasses model validation
+  prediction: apr run --skip-contract on a corrupt model file does not exit with code 5
+  test: |
+    #[test]
+    fn falsify_acli_008_skip_contract_bypasses_gate() {
+        let tmp = std::env::temp_dir().join("corrupt-skip-test.gguf");
+        std::fs::write(&tmp, b"CORRUPT_BYTES").unwrap();
+        let output = std::process::Command::new("apr")
+            .args(&["run", tmp.to_str().unwrap(), "--skip-contract"])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        // Should NOT be exit 5 (contract validation failed)
+        assert_ne!(code, 5,
+            "--skip-contract did not bypass contract gate");
+        std::fs::remove_file(&tmp).ok();
+    }
+  if_fails: --skip-contract flag not checked before validate_model_contract() call
+
+- id: FALSIFY-ACLI-010
+  rule: Error results never exit 0
+  prediction: apr validate on INVALID model exits non-zero
+  test: |
+    #[test]
+    fn falsify_acli_010_error_exits_nonzero() {
+        let tmp = std::env::temp_dir().join("acli-test-invalid-model.gguf");
+        std::fs::write(&tmp, b"GGUF\x03\x00\x00\x00CORRUPT").unwrap();
+        let output = std::process::Command::new("apr")
+            .args(&["validate", tmp.to_str().unwrap()])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_ne!(code, 0,
+            "apr validate exited 0 on INVALID model (GH-647)");
+        std::fs::remove_file(&tmp).ok();
+    }
+  if_fails: Validation reports INVALID but exits 0 (GH-647)
+
+- id: FALSIFY-ACLI-011
+  rule: Unrecognized arguments exit 2
+  prediction: apr --nonexistent-flag exits 2 (clap convention)
+  test: |
+    #[test]
+    fn falsify_acli_011_unrecognized_arg_exits_2() {
+        let output = std::process::Command::new("apr")
+            .args(&["--totally-bogus-flag"])
+            .output()
+            .expect("Failed to run apr");
+        let code = output.status.code().unwrap_or(-1);
+        assert_eq!(code, 2,
+            "Unrecognized argument exited {code}, expected 2 (GH-634)");
+    }
+  if_fails: Unrecognized arguments exit 0 instead of 2 (GH-634)
+
+- id: FALSIFY-ACLI-012
+  rule: Piped output contains no ANSI escapes
+  prediction: apr inspect model.gguf | cat produces no escape sequences
+  test: |
+    #[test]
+    fn falsify_acli_012_no_ansi_when_piped() {
+        let output = std::process::Command::new("apr")
+            .args(&["--help"])
+            .stdout(std::process::Stdio::piped())
+            .output()
+            .expect("Failed to run apr");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(!stdout.contains("\x1b["),
+            "ANSI escapes in piped output (GH-662)");
+    }
+  if_fails: ANSI escape codes emitted regardless of TTY detection (GH-662)
+
+- id: FALSIFY-ACLI-013
+  rule: SIGPIPE does not panic
+  prediction: apr --help | head -1 exits cleanly (no panic trace)
+  test: |
+    #[test]
+    fn falsify_acli_013_sigpipe_no_panic() {
+        let output = std::process::Command::new("sh")
+            .args(&["-c", "apr --help | head -1"])
+            .output()
+            .expect("Failed to run sh");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("panicked"),
+            "apr panicked on SIGPIPE (GH-667): {stderr}");
+    }
+  if_fails: apr panics with 'Broken pipe' when piped to head/less (GH-667)
+
+- id: FALSIFY-ACLI-009
+  rule: Tokenizer vocabulary size matches requested size
+  prediction: After tokenize apply with vocab_size=512, vocab.json has exactly 512 entries
+  test: |
+    #[test]
+    fn falsify_acli_009_tokenizer_vocab_size() {
+        let output_dir = std::env::temp_dir().join("acli-test-tokenizer-vocab");
+        let _ = std::fs::remove_dir_all(&output_dir);
+        let corpus = std::env::temp_dir().join("acli-test-corpus.txt");
+        std::fs::write(&corpus, "hello world foo bar baz\n".repeat(1000)).unwrap();
+        let output = std::process::Command::new("apr")
+            .args(&["tokenize", "apply",
+                "--data", corpus.to_str().unwrap(),
+                "--vocab-size", "512",
+                "--algorithm", "bpe",
+                "--output", output_dir.to_str().unwrap()])
+            .output();
+        if let Ok(out) = output {
+            if out.status.success() {
+                let vocab_path = output_dir.join("vocab.json");
+                let vocab: serde_json::Value =
+                    serde_json::from_str(&std::fs::read_to_string(&vocab_path).unwrap()).unwrap();
+                let count = vocab.as_object().map(|o| o.len()).unwrap_or(0);
+                assert_eq!(count, 512,
+                    "Vocabulary size {count} != requested 512");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&output_dir);
+        let _ = std::fs::remove_file(&corpus);
+    }
+  if_fails: BPE trainer produces fewer tokens than requested vocab_size
+- id: FALSIFY-ACLI-014
+  rule: No silent no-op flags
+  prediction: --verbose on debug produces more output than without
+  test: |
+    Run apr debug model --verbose and apr debug model.
+    Assert verbose output has more lines.
+  if_fails: --verbose flag accepted but produces identical output (GH-685)
+
+kani_harnesses:
+- id: KANI-ACLI-001
+  obligation: Command parsing is deterministic
+  property: forall argv, parse(argv) == parse(argv)
+  bound: 11
+  strategy: exhaustive
+  harness: verify_parse_determinism
+- id: KANI-ACLI-002
+  obligation: Contract gate exempts all diagnostic commands
+  property: forall cmd in DiagnosticCommands, extract_model_paths(cmd) == []
+  bound: 16
+  strategy: exhaustive
+  harness: verify_diagnostic_commands_exempt
+- id: KANI-ACLI-003
+  obligation: Skip-contract flag bypasses validation
+  property: cli.skip_contract == true -> no validate_model_contract() call
+  bound: 8
+  strategy: exhaustive
+  harness: verify_skip_contract_bypass
+- id: KANI-ACLI-004
+  obligation: Training plan has no side effects
+  property: fs_state_before(train_plan(args)) == fs_state_after(train_plan(args))
+  bound: 8
+  strategy: exhaustive
+  harness: verify_training_plan_purity
+- id: KANI-ACLI-005
+  obligation: Training apply writes only to output directory
+  property: forall file in modified_files(train_apply(plan)), file.starts_with(plan.output_dir)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_training_apply_output_dir
+- id: KANI-ACLI-006
+  obligation: Tokenizer vocabulary size matches requested size
+  property: len(vocab) == vocab_size after tokenize_apply()
+  bound: 8
+  strategy: exhaustive
+  harness: verify_tokenizer_vocab_size
+- id: KANI-ACLI-007
+  obligation: Stdin tempfile cleaned up via RAII
+  property: forall invocation, tmp_files_after <= tmp_files_before
+  bound: 8
+  strategy: exhaustive
+  harness: verify_stdin_tempfile_cleanup
+- id: KANI-ACLI-008
+  obligation: Directory resolution is deterministic
+  property: forall dir, resolve_model_path(dir) == resolve_model_path(dir)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_directory_resolution_determinism
+- id: KANI-ACLI-010
+  obligation: Error results never exit 0
+  property: 'forall e: CliError, exit_code(Err(e)) != 0'
+  bound: 16
+  strategy: exhaustive
+  harness: verify_error_exits_nonzero
+- id: KANI-ACLI-011
+  obligation: Piped output contains no ANSI escapes
+  property: '!isatty => no \x1b['
+  bound: 8
+  strategy: bounded_int
+  harness: verify_no_ansi_when_piped
+- id: KANI-ACLI-012
+  obligation: SIGPIPE does not cause panic
+  property: write to closed pipe exits cleanly
+  bound: 4
+  strategy: exhaustive
+  harness: verify_sigpipe_no_panic
+- id: KANI-ACLI-009
+  obligation: Shard index.json takes priority in directory resolution
+  property: >
+    dir.contains("model.safetensors.index.json") ->
+    resolve_model_path(dir) == Ok(dir/"model.safetensors.index.json")
+  bound: 8
+  strategy: exhaustive
+  harness: verify_shard_index_priority
+
+qa_gate:
+  id: F-ACLI-GATE
+  name: apr-cli Interface Contract
+  description: >
+    Quality gate for apr-cli interface layer — command parsing, contract
+    validation gate, training pipeline semantics, tokenizer training, stdin
+    pipe support, and model path resolution.
+  checks:
+  - command_parse_determinism
+  - contract_gate_enforcement
+  - training_plan_apply_semantics
+  - tokenizer_training_correctness
+  - pipe_stdin_support
+  - model_path_resolution
+  pass_criteria: All 14 falsification tests pass
+  falsification: FALSIFY-ACLI-001 through FALSIFY-ACLI-014
+
+toyota_way_principles:
+  jidoka: >
+    "Automation with a human touch" — the contract gate (PMAT-237) automatically
+    validates model integrity before dispatch, but --skip-contract provides human
+    override for diagnostic workflows on corrupt files.
+  poka_yoke: >
+    "Mistake-proofing" — extract_model_paths() classifies commands at compile time.
+    Diagnostic commands return empty paths, making it impossible for the contract gate
+    to accidentally block them. Adding a new command forces the developer to classify it.
+  genchi_genbutsu: >
+    "Go and see" — resolve_model_path() inspects the actual filesystem rather than
+    guessing. Directory resolution does a priority search over real file entries,
+    not pattern-matching on the path string.
+  kaizen: >
+    "Continuous improvement" — the plan/apply pattern for both training and tokenizer
+    commands separates validation (plan) from execution (apply), enabling incremental
+    improvements to resource estimation without changing the execution path.

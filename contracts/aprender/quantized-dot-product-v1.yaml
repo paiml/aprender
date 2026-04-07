@@ -1,0 +1,334 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Mathematical specification for quantized dot product kernels
+  registry: true
+  references:
+  - 'Frantar et al. (2022). GPTQ: Accurate Post-Training Quantization. arXiv:2210.17323'
+  - 'Dettmers et al. (2022). LLM.int8(): 8-bit Matrix Multiplication. NeurIPS 2022'
+  - Wulf & McKee (1995). Hitting the Memory Wall. ACM SIGARCH 23(1)
+  - ggerganov/ggml — K-quant 256-element super-blocks with 6-bit packed sub-block
+    scales
+  - 'contracts/tensor-layout-v1.yaml (LAYOUT-001/002: row-major only)'
+formats:
+  Q4_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 8
+    elements_per_subblock: 32
+    superblock_bytes: 144
+    quant_bits: 4
+    has_dmin: true
+    quant_signed: false
+    zero_offset: 0
+    ulp_tolerance: 8
+    bits_per_weight: 4.5
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      dmin_offset: 2
+      dmin_bytes: 2
+      scales_offset: 4
+      scales_bytes: 12
+      qs_offset: 16
+      qs_bytes: 128
+    dequant_formula: d * s_j * q_i - dmin * m_j
+    scale_extraction: extract_scale_min() — 6-bit packed per PAR-001
+  Q5_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 8
+    elements_per_subblock: 32
+    superblock_bytes: 176
+    quant_bits: 5
+    has_dmin: true
+    quant_signed: false
+    zero_offset: 0
+    ulp_tolerance: 8
+    bits_per_weight: 5.5
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      dmin_offset: 2
+      dmin_bytes: 2
+      scales_offset: 4
+      scales_bytes: 12
+      qh_offset: 16
+      qh_bytes: 32
+      qs_offset: 48
+      qs_bytes: 128
+    dequant_formula: 'd * s_j * q_i - dmin * m_j  (q_i is 5-bit: low4 | high1<<4)'
+    scale_extraction: extract_scale_min() — same as Q4_K
+  Q6_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 16
+    elements_per_subblock: 16
+    superblock_bytes: 210
+    quant_bits: 6
+    has_dmin: false
+    quant_signed: true
+    zero_offset: 32
+    ulp_tolerance: 8
+    bits_per_weight: 6.5625
+    layout:
+      ql_offset: 0
+      ql_bytes: 128
+      qh_offset: 128
+      qh_bytes: 64
+      scales_offset: 192
+      scales_bytes: 16
+      d_offset: 208
+      d_bytes: 2
+    dequant_formula: d * sc[j] * (q_i - 32)
+    scale_extraction: Direct i8 read — no packing
+  Q4_0:
+    family: simple
+    elements_per_superblock: 32
+    subblocks_per_superblock: 1
+    elements_per_subblock: 32
+    superblock_bytes: 18
+    quant_bits: 4
+    has_dmin: false
+    quant_signed: false
+    zero_offset: 8
+    ulp_tolerance: 4
+    bits_per_weight: 4.0
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      qs_offset: 2
+      qs_bytes: 16
+    dequant_formula: scale * (q_i - 8)
+    scale_extraction: N/A — single scale per block
+  Q8_0:
+    family: simple
+    elements_per_superblock: 32
+    subblocks_per_superblock: 1
+    elements_per_subblock: 32
+    superblock_bytes: 34
+    quant_bits: 8
+    has_dmin: false
+    quant_signed: true
+    zero_offset: 0
+    ulp_tolerance: 2
+    bits_per_weight: 8.0
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      qs_offset: 2
+      qs_bytes: 32
+    dequant_formula: scale * q_i  (q_i is signed i8)
+    scale_extraction: N/A — single scale per block
+kernel_structure:
+  phases:
+  - name: validate
+    description: Check data length is multiple of superblock_bytes
+    invariant: data.len() % F::SUPERBLOCK_BYTES == 0
+  - name: preprocess
+    description: Pad activations to super-block boundary (GH-202 fix)
+    invariant: activations.len() >= num_superblocks * F::ELEMENTS_PER_SUPERBLOCK
+  - name: bsum_precompute
+    description: 'For formats with has_dmin=true: precompute sum(activation[sub-block])
+      for each sub-block. This depends ONLY on activations, NOT on weights, so it
+      can be computed once and reused across all weight rows.
+
+      '
+    applies_to: Q4_K, Q5_K (has_dmin=true)
+    gap_in_current_code: 'Current fused_k_part_05.rs computes q8 sums on-the-fly inside
+      the super-block loop (lines 157-200). This is a contract-derived finding — the
+      math shows these sums are weight-independent and should be hoisted out.
+
+      '
+  - name: superblock_loop
+    description: 'For each super-block: read d, dmin, scales; compute scale_term and
+      offset_term. scale_term = d * sum_j(s_j * dot(q_W_block_j, q_x_block_j)) offset_term
+      = dmin * sum_j(m_j * bsum_j)  [only if has_dmin]
+
+      '
+    invariant: Processes exactly F::ELEMENTS_PER_SUPERBLOCK values per iteration
+  - name: combine_terms
+    description: accumulator += scale_term - offset_term
+    note: When has_dmin=false, offset_term is zero — the subtraction is optimized
+      away
+  - name: hsum
+    description: Horizontal sum of SIMD accumulator to scalar result
+    note: SIMD kernels accumulate in vector registers; final hsum reduces to f32
+simd_dispatch:
+  Q4_K:
+    scalar: fused_q4k_dot
+    avx2: fused_q4k_dot_avx2
+    avx512_vnni: fused_q4k_dot_avx512_vnni
+    q8k_scalar: fused_q4k_q8k_dot
+    q8k_avx2: fused_q4k_q8k_dot_simd
+    q8k_avx512_vnni: fused_q4k_q8k_dot_avx512vnni_v2
+    q8k_4row_avx512_vnni: fused_q4k_q8k_dot_4rows_avx512vnni
+  Q5_K:
+    scalar: fused_q5k_dot
+    avx2: fused_q5k_dot (scalar fallback)
+  Q6_K:
+    scalar: fused_q6k_dot
+    avx2: fused_q6k_dot_avx2
+  Q4_0:
+    scalar: fused_q4_0_dot_scalar (via dequant path)
+    avx2: fused_rmsnorm_q4_0_matmul (fused with RMSNorm)
+  Q8_0:
+    scalar: fused_q8_0_q8_0_dot_scalar
+    avx2: fused_q8_0_q8_0_dot_avx2
+enforcement:
+  format_registry_complete:
+    description: Every QuantBlockFormat impl must have a matching entry in this contract
+    check: contract_tests::FALSIFY-QDOT-004 — iterate all format impls, verify YAML
+      entry exists
+    severity: ERROR
+  kernel_correctness:
+    description: Every SIMD kernel must produce output within ULP_TOLERANCE of scalar
+      reference
+    check: contract_tests::FALSIFY-QDOT-001 — proptest with random weights and activations
+    severity: ERROR
+  bsum_precomputation:
+    description: 'For has_dmin formats, precomputed bsums must equal on-the-fly bsums.
+      This validates the mathematical decomposition: offset term depends only on activations.
+
+      '
+    check: contract_tests::FALSIFY-QDOT-003
+    severity: ERROR
+  no_catch_all_dispatch:
+    description: SIMD dispatch must be exhaustive over formats — no _ => fallback
+    check: contract_tests::FALSIFY-QDOT-005
+    severity: ERROR
+    reference: 'tensor-layout-v1.yaml enforcement rule: no catch-all in WeightQuantType
+      match'
+  row_major_only:
+    description: All kernels operate on row-major data (LAYOUT-002)
+    check: No colmajor functions exist in quantize module
+    severity: ERROR
+    reference: contracts/tensor-layout-v1.yaml
+falsification_tests:
+- id: FALSIFY-QDOT-001
+  rule: SIMD kernels are numerically equivalent to scalar reference
+  prediction: For random data, |simd_result - scalar_result| <= ULP_TOLERANCE * epsilon
+  test: 'proptest for each format: generate random superblocks + activations, compare'
+  if_fails: SIMD kernel has a bug (wrong nibble extraction, missing offset term, etc.)
+- id: FALSIFY-QDOT-002
+  rule: Formats are isolated — wrong format kernel produces garbage
+  prediction: Passing Q6_K data through Q4_K kernel produces result that differs >100x
+    from correct
+  test: 'Cross-format: encode known vector as Q4_K and Q6_K, verify wrong-format dot
+    is garbage'
+  if_fails: Format dispatch is broken or formats are accidentally compatible
+- id: FALSIFY-QDOT-003
+  rule: Precomputed bsums equal on-the-fly bsums
+  prediction: For random activations, precomputed sub-block sums match inline computation
+  test: Compute bsums both ways, verify exact equality (integer arithmetic)
+  if_fails: Mathematical decomposition is wrong or sub-block boundaries are misaligned
+- id: FALSIFY-QDOT-004
+  rule: Format registry is complete
+  prediction: Every QuantBlockFormat impl has a YAML entry and vice versa
+  test: Iterate trait impls, check FORMAT_ID exists in YAML; iterate YAML, check impl
+    exists
+  if_fails: New format added to code but not to contract, or vice versa
+- id: FALSIFY-QDOT-005
+  rule: Dispatch table is exhaustive
+  prediction: Every format in registry has at least a scalar entry in simd_dispatch
+  test: For each format in YAML, verify simd_dispatch has an entry with at least 'scalar'
+    key
+  if_fails: Format was added to registry but dispatch table not updated
+qa_gate:
+  id: F-QDOT-001
+  name: Quantized Dot Product Contract
+  description: Validates kernel correctness via mathematical reference
+  checks:
+  - All SIMD kernels match scalar reference within ULP tolerance
+  - Format registry matches trait implementations
+  - Dispatch table covers all formats
+  - Cross-format isolation holds
+  pass_criteria: All 5 FALSIFY tests pass
+  falsification: Introduce a sign error in nibble extraction — gate must catch it
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - input.len() > 0
+    - scale > 0.0
+    lean_theorem: Theorems.Identity
+  simd_scalar_equivalence:
+    formula: |
+      equiv: (SimdKernel, ScalarKernel, Data) -> bool
+        simd_result = simd_kernel(data)
+        scalar_result = scalar_kernel(data)
+        |simd_result - scalar_result| <= ULP_TOLERANCE * f32::EPSILON
+    domain: Quantized weight data and f32 activation vector
+    codomain: bool (true iff SIMD matches scalar within tolerance)
+    invariants:
+    - ULP tolerance is format-specific (2 for Q8_0, 4 for Q4_0, 8 for K-quants)
+    - Scalar kernel is the reference implementation
+    - Every SIMD variant must satisfy this equivalence
+    preconditions:
+    - data.len() % SUPERBLOCK_BYTES == 0
+    - activations.len() >= num_superblocks * ELEMENTS_PER_SUPERBLOCK
+    lean_theorem: Theorems.SimdScalarEquivalence
+  format_isolation:
+    formula: |
+      isolation: (Data_F1, Kernel_F2) -> bool
+        result = kernel_f2(data_f1)
+        |result - correct_result| > 100 * |correct_result|
+    domain: Quantized data in format F1, kernel for format F2 (F1 != F2)
+    codomain: bool (true iff cross-format produces garbage)
+    invariants:
+    - Cross-format dispatch always produces garbage
+    - Formats are not accidentally compatible
+    preconditions:
+    - F1 != F2
+    - data is valid for format F1
+    lean_theorem: Theorems.FormatIsolation
+  bsum_decomposition:
+    formula: |
+      bsum_equiv: (Activations, SubBlockBounds) -> bool
+        precomputed = precompute_bsums(activations, sub_block_bounds)
+        inline = compute_bsums_inline(activations, sub_block_bounds)
+        precomputed == inline  (exact integer equality)
+    domain: f32 activations quantized to Q8 sub-block sums
+    codomain: bool (true iff precomputed matches inline)
+    invariants:
+    - Bsums depend only on activations, not on weights
+    - Integer arithmetic ensures exact equality
+    - Precomputation is valid across all weight rows
+    preconditions:
+    - activations.len() is multiple of ELEMENTS_PER_SUBBLOCK
+    lean_theorem: Theorems.BsumDecomposition
+proof_obligations:
+- type: postcondition
+  property: SIMD-scalar numerical equivalence
+  formal: for all formats F and data D, |simd_F(D) - scalar_F(D)| <= ULP_TOLERANCE_F * f32::EPSILON
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: Format isolation — cross-format dispatch produces garbage
+  formal: for all F1 != F2, |kernel_F2(data_F1) - correct| > 100 * |correct|
+  applies_to: all
+- type: postcondition
+  property: Bsum precomputation equivalence
+  formal: precompute_bsums(act) == inline_bsums(act) (exact integer equality)
+  applies_to: all
+  requires: format.has_dmin == true
+kani_harnesses:
+- id: KANI-QDOT-001
+  obligation: SIMD-scalar numerical equivalence
+  property: '|simd - scalar| <= ULP_TOLERANCE * epsilon'
+  bound: 16
+  strategy: stub_float
+  harness: verify_simd_scalar_equivalence
+- id: KANI-QDOT-002
+  obligation: "Format isolation \u2014 cross-format dispatch produces garbage"
+  property: Cross-format dispatch produces divergent output
+  bound: 8
+  strategy: exhaustive
+  harness: verify_format_isolation
+- id: KANI-QDOT-003
+  obligation: Bsum precomputation equivalence
+  property: precompute_bsums(act) == inline_bsums(act) (exact integer equality)
+  bound: 8
+  strategy: exhaustive
+  harness: verify_bsum_precomputation

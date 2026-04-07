@@ -1,0 +1,119 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: System monitor metrics collection — CPU, memory, disk, network gauge correctness
+  references:
+  - 'Gregg (2020) Systems Performance: Enterprise and the Cloud, 2nd Edition'
+  - 'proc(5) Linux Programmer''s Manual'
+equations:
+  cpu_utilization:
+    formula: U(t) = 1 - (idle(t) - idle(t-1)) / (total(t) - total(t-1)), where total = user + nice + system + idle + iowait + irq + softirq
+    domain: Two consecutive /proc/stat samples
+    codomain: f64 where 0.0 <= U <= 1.0
+    invariants:
+    - 'Bounded: 0.0 <= utilization <= 1.0'
+    - 'Monotonic counters: total(t) >= total(t-1)'
+    - 'Division by zero guarded: if total delta = 0, utilization = 0.0'
+    preconditions:
+    - Two samples at different times
+    - proc/stat readable
+    lean_theorem: Theorems.CPU_Utilization
+  memory_usage:
+    formula: M = (total - available) / total, where total and available from /proc/meminfo or sysinfo
+    domain: System memory state
+    codomain: f64 where 0.0 <= M <= 1.0
+    invariants:
+    - 'Bounded: 0.0 <= memory_percent <= 1.0'
+    - 'available <= total always'
+    - 'total > 0 (system has memory)'
+    preconditions:
+    - sysinfo or heim memory query succeeds
+    lean_theorem: Theorems.Memory_Usage
+  history_persistence:
+    formula: 'save(store, metrics) => load(store) ⊇ metrics for metrics within retention window'
+    domain: store ∈ Path, metrics ∈ Vec<MetricSample>
+    codomain: Result<Vec<MetricSample>>
+    invariants:
+    - 'Roundtrip: saved metrics are loadable'
+    - 'Retention: metrics outside window are pruned'
+    - 'Corrupt store file returns empty history, does not crash'
+    preconditions:
+    - store directory is writable
+    lean_theorem: Theorems.History_Persistence
+proof_obligations:
+- type: invariant
+  property: CPU utilization bounded [0, 1]
+  formal: '∀ t: 0.0 <= cpu_util(t) <= 1.0'
+  applies_to: cpu_utilization
+- type: invariant
+  property: Memory usage bounded [0, 1]
+  formal: '∀ state: 0.0 <= mem_usage(state) <= 1.0'
+  applies_to: memory_usage
+- type: invariant
+  property: History persistence roundtrip
+  formal: '∀ metrics: load(save(metrics)) ⊇ metrics'
+  applies_to: history_persistence
+enforcement:
+  cpu_bounds:
+    description: CPU utilization must be in [0.0, 1.0]
+    check: contract_tests::FALSIFY-ZEN-001
+    severity: ERROR
+  memory_bounds:
+    description: Memory usage must be in [0.0, 1.0]
+    check: contract_tests::FALSIFY-ZEN-002
+    severity: ERROR
+  history_roundtrip:
+    description: Saved metrics must survive load-save roundtrip
+    check: contract_tests::FALSIFY-ZEN-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-ZEN-001
+  rule: CPU utilization bounds
+  prediction: cpu_util(t) is always in [0.0, 1.0] regardless of counter values
+  test: proptest with synthetic /proc/stat values including edge cases (zero delta, overflow)
+  if_fails: Missing clamp or division-by-zero guard in CPU calculation
+- id: FALSIFY-ZEN-002
+  rule: Memory usage bounds
+  prediction: mem_usage is always in [0.0, 1.0]
+  test: proptest with total and available values including available > total edge case
+  if_fails: Missing bounds check or integer underflow in memory calculation
+- id: FALSIFY-ZEN-003
+  rule: History persistence roundtrip
+  prediction: Metrics saved to store are fully recoverable on load
+  test: save random metrics to temp store, load back, compare
+  if_fails: Serialization/deserialization mismatch or file corruption handling
+- id: FALSIFY-ZEN-004
+  rule: Division by zero on identical samples
+  prediction: Two identical /proc/stat samples yield utilization 0.0, not NaN or panic
+  test: construct identical before/after samples, verify result is 0.0
+  if_fails: Unguarded division by zero in CPU calculation
+kani_harnesses:
+- id: KANI-ZEN-001
+  obligation: CPU utilization bounded [0, 1]
+  property: CPU utilization is always in valid range
+  bound: 16
+  strategy: exhaustive
+  harness: verify_cpu_bounds
+- id: KANI-ZEN-002
+  obligation: Memory usage bounded [0, 1]
+  property: Memory usage is always in valid range
+  bound: 16
+  strategy: exhaustive
+  harness: verify_memory_bounds
+- id: KANI-ZEN-003
+  obligation: History persistence roundtrip
+  property: Saved metrics are recoverable
+  bound: 8
+  strategy: exhaustive
+  harness: verify_history_roundtrip
+qa_gate:
+  id: F-ZEN-001
+  name: Monitor Metrics Contract
+  description: System monitor metrics correctness quality gate
+  checks:
+  - cpu_bounds
+  - memory_bounds
+  - history_roundtrip
+  pass_criteria: All 4 falsification tests pass
+  falsification: Inject zero total-delta in CPU calculation and verify bounds test catches NaN

@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Sampling algorithm invariants for autoregressive generation
+  references:
+  - Holtzman et al. (2019) The Curious Case of Neural Text Degeneration
+  - Qwen2.5-Coder Showcase Spec §14.5
+  depends_on:
+  - softmax-kernel-v1
+equations:
+  greedy:
+    formula: greedy(logits) = argmax(logits)
+    domain: logits ∈ ℝ^V (vocabulary logits)
+    invariants:
+    - Returns index of maximum logit
+    - 'Deterministic: same input => same output'
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Greedy
+  top_k:
+    formula: top_k(probs, K) = {p_i if rank(p_i) <= K else 0, renormalized}
+    domain: probs ∈ Δ^V (probability simplex), K ∈ [1, V]
+    invariants:
+    - At most K tokens have non-zero probability
+    - Retained tokens have highest probabilities
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Top_K
+  top_p:
+    formula: top_p(probs, p) = minimal set S where sum(S) >= p
+    domain: probs ∈ Δ^V, p ∈ (0, 1]
+    invariants:
+    - Cumulative probability of retained tokens >= p
+    - 'Set is minimal: removing any token drops below p'
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Top_P
+  temperature:
+    formula: softmax(logits / T)
+    domain: logits ∈ ℝ^V, T > 0
+    invariants:
+    - 'T=1 is identity: softmax(l/1) = softmax(l)'
+    - T→0 converges to argmax (one-hot)
+    - T→∞ converges to uniform distribution
+    preconditions:
+    - input.len() > 0
+    lean_theorem: Theorems.Temperature
+proof_obligations:
+- type: equivalence
+  property: Greedy = argmax
+  formal: greedy(logits) == argmax(logits)
+  tolerance: 0.0
+  applies_to: all
+- type: bound
+  property: Top-K cardinality
+  formal: count(nonzero(top_k(p, K))) <= K
+  applies_to: all
+- type: bound
+  property: Top-P cumulative
+  formal: sum(top_p(p, threshold)) >= threshold
+  applies_to: all
+- type: equivalence
+  property: Temperature identity
+  formal: softmax(l/1) == softmax(l)
+  tolerance: 1e-6
+  applies_to: all
+- type: equivalence
+  property: SIMD sampling equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-SA-001
+  rule: Greedy = argmax
+  prediction: Greedy returns maximum logit index
+  test: proptest with random logit vectors
+  if_fails: Comparison or indexing error
+- id: FALSIFY-SA-002
+  rule: Top-K cardinality
+  prediction: At most K non-zero probabilities
+  test: proptest with random probs and K
+  if_fails: Filtering or sorting error
+- id: FALSIFY-SA-003
+  rule: Top-P cumulative
+  prediction: Retained probabilities sum >= p
+  test: proptest with random probs and p threshold
+  if_fails: Cumulative sum tracking error
+- id: FALSIFY-SA-004
+  rule: Temperature identity
+  prediction: T=1 softmax matches raw softmax
+  test: proptest with random logits
+  if_fails: Temperature division error
+- id: FALSIFY-SA-005
+  rule: SIMD sampling equivalence
+  prediction: SIMD sampling matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD sampling:SIMD sampler selects different tokens'
+kani_harnesses:
+- id: KANI-SA-001
+  obligation: SA-EQ-001
+  property: Greedy = argmax for bounded vocabularies
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_greedy_argmax
+- id: KANI-SAMPLI-002
+  obligation: Greedy = argmax
+  property: Greedy = argmax
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAMPLI-003
+  obligation: Top-K cardinality
+  property: Top-K cardinality
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAMPLI-004
+  obligation: Top-P cumulative
+  property: Top-P cumulative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAMPLI-005
+  obligation: Temperature identity
+  property: Temperature identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SAMPLI-006
+  obligation: SIMD sampling equivalence
+  property: SIMD sampling equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SA-001
+  name: Sampling Algorithms Contract
+  description: Generation sampling quality gate
+  checks:
+  - greedy_argmax
+  - top_k_cardinality
+  - top_p_cumulative
+  - temperature_identity
+  pass_criteria: All 5 falsification tests pass
+  falsification: Set K=0 to observe empty filtered set

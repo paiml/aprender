@@ -1,0 +1,78 @@
+contract: C-BWDSTG-001
+title: Pre-allocated CPU Staging Buffer for Backward Mean-Pool Gradient
+kaizen: KAIZEN-061
+parent: C-GPUTRAINIT-002
+status: implemented
+date: 2026-03-04
+baseline:
+  alloc_per_backward: 1
+  alloc_size_bytes: 1310720
+  per_epoch_heap_churn_bytes: 18350080000
+  affected_functions: 2
+target:
+  alloc_per_backward: 0
+  alloc_size_bytes: 0
+  per_epoch_heap_churn_bytes: 0
+  one_time_cost_bytes: 1310720
+api:
+  backward_cpu_staging_field: 'New `backward_cpu_staging: Vec<f32>` field on GpuTrainingState.
+
+    Sized to max_seq_len * hidden_size. Allocated once during
+
+    init_training_state(). Cost: 1.25MB one-time (for seq=128, h=2560).
+
+    '
+  backward_gpu_blocks: 'Rewrites mean-pool backward to fill training_state.backward_cpu_staging
+
+    directly instead of allocating a local vec![0.0; seq_len * h]. Upload
+
+    via copy_from_host_at on the pre-allocated slice.
+
+    '
+  backward_nf4_gpu_blocks: 'Same rewrite — fills training_state.backward_cpu_staging instead of
+
+    local allocation.
+
+    '
+safety:
+  buffer_sizing: 'backward_cpu_staging is max_seq_len * hidden_size — sufficient for any
+
+    seq_len <= max_seq_len. The mean-pool backward writes exactly
+
+    seq_len * hidden_size elements. Remaining buffer space is ignored.
+
+    '
+  no_zeroing_needed: 'Every element is assigned (grad_pooled[j] * scale) before use.
+
+    copy_from_host_at uploads only the [..seq_len * hidden_size] slice.
+
+    Pre-existing buffer contents are irrelevant.
+
+    '
+  split_borrows: 'backward_cpu_staging and grad_upload_buf are separate struct fields.
+
+    Rust split-borrow rules allow sequential mutable→shared access to
+
+    different fields without &mut self conflicts.
+
+    '
+preconditions:
+- GpuTrainingState initialized (backward_cpu_staging allocated)
+- seq_len <= max_seq_len
+postconditions:
+- Backward behavior identical — same gradient values, same GPU upload
+- Zero per-call CPU heap allocations in both backward functions
+invariants:
+- backward_cpu_staging.len() == max_seq_len * hidden_size
+- backward_cpu_staging never reallocated after construction
+- Inference-only path unchanged (no GpuTrainingState)
+files:
+- path: entrenar/src/finetune/classify_pipeline.rs
+  change: Added backward_cpu_staging to GpuTrainingState, rewrote both backward functions
+qa_gate:
+  id: F-BCSV-001
+  name: backward-cpu-staging-v1 Contract
+  description: Quality gate for backward-cpu-staging-v1
+  checks:
+  - validation
+  - falsification

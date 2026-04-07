@@ -1,0 +1,159 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: RoPE kernel — rotary position embeddings
+  references:
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+equations:
+  rope:
+    formula: RoPE(x, m)_{2k} = x_{2k}·cos(mθ_k) - x_{2k+1}·sin(mθ_k), RoPE(x, m)_{2k+1} = x_{2k}·sin(mθ_k) + x_{2k+1}·cos(mθ_k)
+    domain: x ∈ ℝ^d, m ∈ ℕ, θ_k = 10000^(-2k/d)
+    codomain: ℝ^d
+    invariants:
+    - ‖RoPE(x, m)‖ = ‖x‖ (norm preservation)
+    - ⟨RoPE(q, m), RoPE(k, n)⟩ depends only on q, k, m-n (relative position)
+    preconditions:
+    - x.len() > 0
+    - x.len() % 2 == 0
+    lean_theorem: Theorems.Rope
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output.len() == x.len()"
+      - "norm(output) == norm(x)"
+      - "output is finite"
+proof_obligations:
+- type: precondition
+  property: Input dimension is even, position non-negative
+  formal: 'd mod 2 = 0 ∧ d > 0 ∧ m ≥ 0 ∧ ∀i: isFinite(x_i)'
+- type: postcondition
+  property: Output has same dimension as input, all elements finite
+  formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
+  requires: ROPE-PRE-001
+- type: frame
+  property: Input vector and position unchanged
+  formal: modifies(output) ∧ preserves(x, m, θ)
+- type: invariant
+  property: Norm preservation
+  formal: '|‖RoPE(x, m)‖ - ‖x‖| < ε'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Relative position encoding
+  formal: ⟨RoPE(q, m), RoPE(k, n)⟩ = f(q, k, m-n)
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  tolerance: 4.0
+  applies_to: simd
+- type: bound
+  property: Output bounded by input norm
+  formal: ‖RoPE(x, m)‖ ≤ ‖x‖ + ε
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_freqs
+    description: Compute θ_k = 10000^(-2k/d) for each dimension pair
+    invariant: θ_k > 0 for all k
+  - name: compute_sincos
+    description: Compute cos(m·θ_k) and sin(m·θ_k)
+    invariant: cos²+sin² = 1 within precision
+  - name: rotate_pairs
+    description: Apply 2D rotation to each (x_{2k}, x_{2k+1}) pair
+    invariant: pair norm preserved
+falsification_tests:
+- id: FALSIFY-RP-001
+  rule: Norm preservation
+  prediction: ‖RoPE(x, m)‖ ≈ ‖x‖ for random x, m
+  test: proptest with random vectors and positions
+  if_fails: sin/cos computation error or pair indexing bug
+- id: FALSIFY-RP-002
+  rule: Relative position
+  prediction: dot(RoPE(q,m), RoPE(k,n)) = dot(RoPE(q,0), RoPE(k,n-m))
+  test: proptest verifying translation invariance of inner product
+  if_fails: Incorrect frequency computation
+- id: FALSIFY-RP-003
+  rule: SIMD equivalence
+  prediction: '|rope_avx2(x) - rope_scalar(x)| < 4 ULP'
+  test: proptest comparing implementations
+  if_fails: SIMD sincos approximation differs
+- id: FALSIFY-RP-004
+  rule: Zero position
+  prediction: RoPE(x, 0) = x (identity at position 0)
+  test: direct test with m=0
+  if_fails: Off-by-one in position indexing
+- id: FALSIFY-RP-005
+  rule: Precondition - odd dimension
+  prediction: RoPE with odd d panics or returns Err
+  test: 'proptest: random odd-dimension vectors'
+  if_fails: Missing even-dimension validation
+- id: FALSIFY-RP-006
+  rule: Frame condition
+  prediction: Input vector unchanged after RoPE application
+  test: 'proptest: clone input, apply RoPE, assert clone == original'
+  if_fails: RoPE modifies input buffer
+- id: FALSIFY-RP-007
+  rule: Postcondition - output length
+  prediction: len(RoPE(x, m)) = len(x)
+  test: 'proptest: random inputs, verify length'
+  if_fails: Output allocation mismatch
+kani_harnesses:
+- id: KANI-RP-001
+  obligation: RP-INV-001
+  property: Norm preservation for small vectors
+  bound: 4
+  strategy: stub_float
+  harness: verify_rope_norm_preservation
+- id: KANI-ROPE_K-002
+  obligation: Input dimension is even, position non-negative
+  property: Input dimension is even, position non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-003
+  obligation: Output has same dimension as input, all elements finite
+  property: Output has same dimension as input, all elements finite
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-004
+  obligation: Input vector and position unchanged
+  property: Input vector and position unchanged
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-005
+  obligation: Norm preservation
+  property: Norm preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-006
+  obligation: Relative position encoding
+  property: Relative position encoding
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-007
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_K-008
+  obligation: Output bounded by input norm
+  property: Output bounded by input norm
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-RP-001
+  name: RoPE Contract
+  checks:
+  - norm_preservation
+  - relative_position
+  pass_criteria: All 7 falsification tests pass
+  falsification: Swap sin and cos in rotation matrix
+simd_dispatch:
+  rope:
+    scalar: rope_scalar
+    avx2: rope_avx2
+    ptx: rope_ptx

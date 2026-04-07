@@ -1,0 +1,914 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-23'
+  author: PAIML Engineering
+  description: Architecture-specific tensor name resolution — source of truth
+  registry: true
+  references:
+  - 'GH-311: Tensor name resolution contract'
+  - 'architecture-requirements-v1.yaml: Weight role definitions'
+  - 'realizar/src/tensor_names.rs: Generated Rust implementation'
+architecture_map:
+  LlamaForCausalLM: llama
+  LLaMAForCausalLM: llama
+  llama: llama
+  llama3: llama
+  Qwen2ForCausalLM: qwen2
+  qwen2: qwen2
+  qwen2.5: qwen2
+  qwen: qwen2
+  Qwen3ForCausalLM: qwen3
+  qwen3: qwen3
+  MistralForCausalLM: mistral
+  mistral: mistral
+  GemmaForCausalLM: gemma
+  Gemma2ForCausalLM: gemma
+  gemma: gemma
+  gemma2: gemma
+  Phi3ForCausalLM: phi
+  Phi3SmallForCausalLM: phi
+  phi3: phi
+  phi: phi
+  PhiForCausalLM: phi2
+  phi2: phi2
+  DeepseekV2ForCausalLM: deepseek
+  deepseek: deepseek
+  GPT2LMHeadModel: gpt2
+  gpt2: gpt2
+  GPTNeoXForCausalLM: gpt_neox
+  gpt_neox: gpt_neox
+  BertModel: bert
+  BertForMaskedLM: bert
+  bert: bert
+  OpenELMForCausalLM: openelm
+  openelm: openelm
+  FalconForCausalLM: falcon
+  falcon: falcon
+  StableLmForCausalLM: stablelm
+  stablelm: stablelm
+global_roles:
+  embedding:
+    description: Token embedding matrix [vocab_size, hidden_dim]
+    required: true
+    names:
+      llama:
+      - model.embed_tokens.weight
+      qwen2:
+      - model.embed_tokens.weight
+      qwen3:
+      - model.embed_tokens.weight
+      mistral:
+      - model.embed_tokens.weight
+      gemma:
+      - model.embed_tokens.weight
+      phi:
+      - model.embed_tokens.weight
+      phi2:
+      - model.embed_tokens.weight
+      deepseek:
+      - model.embed_tokens.weight
+      gpt2:
+      - wte.weight
+      - transformer.wte.weight
+      gpt_neox:
+      - gpt_neox.embed_in.weight
+      bert:
+      - bert.embeddings.word_embeddings.weight
+      - embeddings.word_embeddings.weight
+      openelm:
+      - model.embed_tokens.weight
+      - transformer.token_embeddings.weight
+      falcon:
+      - transformer.word_embeddings.weight
+      - model.embed_tokens.weight
+      stablelm:
+      - model.embed_tokens.weight
+      _fallback:
+      - token_embd.weight
+  output_norm_weight:
+    description: Final layer normalization weight
+    required: true
+    names:
+      llama:
+      - model.norm.weight
+      qwen2:
+      - model.norm.weight
+      qwen3:
+      - model.norm.weight
+      mistral:
+      - model.norm.weight
+      gemma:
+      - model.norm.weight
+      phi:
+      - model.norm.weight
+      phi2:
+      - model.final_layernorm.weight
+      - model.norm.weight
+      deepseek:
+      - model.norm.weight
+      gpt2:
+      - ln_f.weight
+      - transformer.ln_f.weight
+      gpt_neox:
+      - gpt_neox.final_layer_norm.weight
+      bert:
+      - bert.encoder.layer_norm.weight
+      - encoder.layer_norm.weight
+      openelm:
+      - model.norm.weight
+      - transformer.norm.weight
+      falcon:
+      - transformer.ln_f.weight
+      - model.norm.weight
+      stablelm:
+      - model.norm.weight
+      _fallback:
+      - output_norm.weight
+  output_norm_bias:
+    description: Final layer normalization bias (optional, LayerNorm models)
+    required: false
+    names:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2:
+      - model.final_layernorm.bias
+      deepseek: []
+      gpt2:
+      - ln_f.bias
+      - transformer.ln_f.bias
+      gpt_neox:
+      - gpt_neox.final_layer_norm.bias
+      bert:
+      - bert.encoder.layer_norm.bias
+      - encoder.layer_norm.bias
+      openelm: []
+      falcon:
+      - transformer.ln_f.bias
+      stablelm: []
+      _fallback:
+      - output_norm.bias
+  lm_head:
+    description: Language model head projection [vocab_size, hidden_dim]
+    required: false
+    names:
+      llama:
+      - lm_head.weight
+      qwen2:
+      - lm_head.weight
+      qwen3:
+      - lm_head.weight
+      mistral:
+      - lm_head.weight
+      gemma:
+      - lm_head.weight
+      phi:
+      - lm_head.weight
+      phi2:
+      - lm_head.weight
+      deepseek:
+      - lm_head.weight
+      gpt2:
+      - lm_head.weight
+      gpt_neox:
+      - embed_out.weight
+      bert:
+      - cls.predictions.decoder.weight
+      openelm:
+      - lm_head.weight
+      falcon:
+      - lm_head.weight
+      stablelm:
+      - lm_head.weight
+      _fallback:
+      - output.weight
+  position_embedding:
+    description: Absolute position embedding (GPT-2 style, optional)
+    required: false
+    names:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2: []
+      deepseek: []
+      gpt2:
+      - wpe.weight
+      - transformer.wpe.weight
+      gpt_neox: []
+      bert:
+      - bert.embeddings.position_embeddings.weight
+      - embeddings.position_embeddings.weight
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback: []
+layer_roles:
+  attn_norm_weight:
+    description: Pre-attention layer normalization weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.input_layernorm.weight
+      qwen2:
+      - model.layers.{n}.input_layernorm.weight
+      qwen3:
+      - model.layers.{n}.input_layernorm.weight
+      mistral:
+      - model.layers.{n}.input_layernorm.weight
+      gemma:
+      - model.layers.{n}.input_layernorm.weight
+      phi:
+      - model.layers.{n}.input_layernorm.weight
+      phi2:
+      - model.layers.{n}.input_layernorm.weight
+      - model.layers.{n}.ln.weight
+      deepseek:
+      - model.layers.{n}.input_layernorm.weight
+      gpt2:
+      - h.{n}.ln_1.weight
+      - transformer.h.{n}.ln_1.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.input_layernorm.weight
+      bert:
+      - bert.encoder.layer.{n}.attention.output.LayerNorm.weight
+      - encoder.layer.{n}.attention.output.LayerNorm.weight
+      openelm:
+      - model.layers.{n}.attn_norm.weight
+      - transformer.layers.{n}.attn_norm.weight
+      falcon:
+      - transformer.h.{n}.input_layernorm.weight
+      - model.layers.{n}.input_layernorm.weight
+      stablelm:
+      - model.layers.{n}.input_layernorm.weight
+      _fallback:
+      - blk.{n}.attn_norm.weight
+  attn_norm_bias:
+    description: Pre-attention layer normalization bias (LayerNorm models)
+    required: false
+    templates:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2:
+      - model.layers.{n}.input_layernorm.bias
+      - model.layers.{n}.ln.bias
+      deepseek: []
+      gpt2:
+      - h.{n}.ln_1.bias
+      - transformer.h.{n}.ln_1.bias
+      gpt_neox:
+      - gpt_neox.layers.{n}.input_layernorm.bias
+      bert:
+      - bert.encoder.layer.{n}.attention.output.LayerNorm.bias
+      openelm: []
+      falcon:
+      - transformer.h.{n}.input_layernorm.bias
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_norm.bias
+  q_proj_weight:
+    description: Query projection weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.self_attn.q_proj.weight
+      qwen2:
+      - model.layers.{n}.self_attn.q_proj.weight
+      qwen3:
+      - model.layers.{n}.self_attn.q_proj.weight
+      mistral:
+      - model.layers.{n}.self_attn.q_proj.weight
+      gemma:
+      - model.layers.{n}.self_attn.q_proj.weight
+      phi:
+      - model.layers.{n}.self_attn.q_proj.weight
+      phi2:
+      - model.layers.{n}.self_attn.q_proj.weight
+      deepseek:
+      - model.layers.{n}.self_attn.q_proj.weight
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.query.weight
+      - encoder.layer.{n}.attention.self.query.weight
+      openelm:
+      - model.layers.{n}.self_attn.q_proj.weight
+      falcon:
+      - model.layers.{n}.self_attn.q_proj.weight
+      - transformer.h.{n}.self_attention.query_key_value.weight
+      stablelm:
+      - model.layers.{n}.self_attn.q_proj.weight
+      _fallback:
+      - blk.{n}.attn_q.weight
+  k_proj_weight:
+    description: Key projection weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.self_attn.k_proj.weight
+      qwen2:
+      - model.layers.{n}.self_attn.k_proj.weight
+      qwen3:
+      - model.layers.{n}.self_attn.k_proj.weight
+      mistral:
+      - model.layers.{n}.self_attn.k_proj.weight
+      gemma:
+      - model.layers.{n}.self_attn.k_proj.weight
+      phi:
+      - model.layers.{n}.self_attn.k_proj.weight
+      phi2:
+      - model.layers.{n}.self_attn.k_proj.weight
+      deepseek:
+      - model.layers.{n}.self_attn.k_proj.weight
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.key.weight
+      - encoder.layer.{n}.attention.self.key.weight
+      openelm:
+      - model.layers.{n}.self_attn.k_proj.weight
+      falcon:
+      - model.layers.{n}.self_attn.k_proj.weight
+      stablelm:
+      - model.layers.{n}.self_attn.k_proj.weight
+      _fallback:
+      - blk.{n}.attn_k.weight
+  v_proj_weight:
+    description: Value projection weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.self_attn.v_proj.weight
+      qwen2:
+      - model.layers.{n}.self_attn.v_proj.weight
+      qwen3:
+      - model.layers.{n}.self_attn.v_proj.weight
+      mistral:
+      - model.layers.{n}.self_attn.v_proj.weight
+      gemma:
+      - model.layers.{n}.self_attn.v_proj.weight
+      phi:
+      - model.layers.{n}.self_attn.v_proj.weight
+      phi2:
+      - model.layers.{n}.self_attn.v_proj.weight
+      deepseek:
+      - model.layers.{n}.self_attn.v_proj.weight
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.value.weight
+      - encoder.layer.{n}.attention.self.value.weight
+      openelm:
+      - model.layers.{n}.self_attn.v_proj.weight
+      falcon:
+      - model.layers.{n}.self_attn.v_proj.weight
+      stablelm:
+      - model.layers.{n}.self_attn.v_proj.weight
+      _fallback:
+      - blk.{n}.attn_v.weight
+  o_proj_weight:
+    description: Output projection weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.self_attn.o_proj.weight
+      qwen2:
+      - model.layers.{n}.self_attn.o_proj.weight
+      qwen3:
+      - model.layers.{n}.self_attn.o_proj.weight
+      mistral:
+      - model.layers.{n}.self_attn.o_proj.weight
+      gemma:
+      - model.layers.{n}.self_attn.o_proj.weight
+      phi:
+      - model.layers.{n}.self_attn.o_proj.weight
+      phi2:
+      - model.layers.{n}.self_attn.dense.weight
+      - model.layers.{n}.self_attn.o_proj.weight
+      deepseek:
+      - model.layers.{n}.self_attn.o_proj.weight
+      gpt2:
+      - h.{n}.attn.c_proj.weight
+      - transformer.h.{n}.attn.c_proj.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.attention.dense.weight
+      bert:
+      - bert.encoder.layer.{n}.attention.output.dense.weight
+      - encoder.layer.{n}.attention.output.dense.weight
+      openelm:
+      - model.layers.{n}.self_attn.o_proj.weight
+      falcon:
+      - model.layers.{n}.self_attn.dense.weight
+      - transformer.h.{n}.self_attention.dense.weight
+      stablelm:
+      - model.layers.{n}.self_attn.o_proj.weight
+      _fallback:
+      - blk.{n}.attn_output.weight
+  ffn_norm_weight:
+    description: Pre-FFN layer normalization weight
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.post_attention_layernorm.weight
+      qwen2:
+      - model.layers.{n}.post_attention_layernorm.weight
+      qwen3:
+      - model.layers.{n}.post_attention_layernorm.weight
+      mistral:
+      - model.layers.{n}.post_attention_layernorm.weight
+      gemma:
+      - model.layers.{n}.post_attention_layernorm.weight
+      phi:
+      - model.layers.{n}.post_attention_layernorm.weight
+      phi2:
+      - model.layers.{n}.post_attention_layernorm.weight
+      deepseek:
+      - model.layers.{n}.post_attention_layernorm.weight
+      gpt2:
+      - h.{n}.ln_2.weight
+      - transformer.h.{n}.ln_2.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.post_attention_layernorm.weight
+      bert:
+      - bert.encoder.layer.{n}.output.LayerNorm.weight
+      - encoder.layer.{n}.output.LayerNorm.weight
+      openelm:
+      - model.layers.{n}.ffn_norm.weight
+      - transformer.layers.{n}.ffn_norm.weight
+      falcon:
+      - transformer.h.{n}.post_attention_layernorm.weight
+      - model.layers.{n}.post_attention_layernorm.weight
+      stablelm:
+      - model.layers.{n}.post_attention_layernorm.weight
+      _fallback:
+      - blk.{n}.ffn_norm.weight
+  ffn_norm_bias:
+    description: Pre-FFN layer normalization bias (LayerNorm models)
+    required: false
+    templates:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2:
+      - model.layers.{n}.post_attention_layernorm.bias
+      deepseek: []
+      gpt2:
+      - h.{n}.ln_2.bias
+      - transformer.h.{n}.ln_2.bias
+      gpt_neox:
+      - gpt_neox.layers.{n}.post_attention_layernorm.bias
+      bert:
+      - bert.encoder.layer.{n}.output.LayerNorm.bias
+      openelm: []
+      falcon:
+      - transformer.h.{n}.post_attention_layernorm.bias
+      stablelm: []
+      _fallback:
+      - blk.{n}.ffn_norm.bias
+  ffn_gate_weight:
+    description: FFN gate projection weight (SwiGLU architectures)
+    required: false
+    templates:
+      llama:
+      - model.layers.{n}.mlp.gate_proj.weight
+      qwen2:
+      - model.layers.{n}.mlp.gate_proj.weight
+      qwen3:
+      - model.layers.{n}.mlp.gate_proj.weight
+      mistral:
+      - model.layers.{n}.mlp.gate_proj.weight
+      gemma:
+      - model.layers.{n}.mlp.gate_proj.weight
+      phi:
+      - model.layers.{n}.mlp.gate_proj.weight
+      phi2: []
+      deepseek:
+      - model.layers.{n}.mlp.gate_proj.weight
+      gpt2: []
+      gpt_neox: []
+      bert: []
+      openelm:
+      - model.layers.{n}.mlp.gate_proj.weight
+      falcon: []
+      stablelm:
+      - model.layers.{n}.mlp.gate_proj.weight
+      _fallback:
+      - blk.{n}.ffn_gate.weight
+  ffn_up_weight:
+    description: FFN up projection weight (or fc1 for non-gated architectures)
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.mlp.up_proj.weight
+      qwen2:
+      - model.layers.{n}.mlp.up_proj.weight
+      qwen3:
+      - model.layers.{n}.mlp.up_proj.weight
+      mistral:
+      - model.layers.{n}.mlp.up_proj.weight
+      gemma:
+      - model.layers.{n}.mlp.up_proj.weight
+      phi:
+      - model.layers.{n}.mlp.up_proj.weight
+      phi2:
+      - model.layers.{n}.mlp.fc1.weight
+      - model.layers.{n}.mlp.up_proj.weight
+      deepseek:
+      - model.layers.{n}.mlp.up_proj.weight
+      gpt2:
+      - h.{n}.mlp.c_fc.weight
+      - transformer.h.{n}.mlp.c_fc.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.mlp.dense_h_to_4h.weight
+      bert:
+      - bert.encoder.layer.{n}.intermediate.dense.weight
+      - encoder.layer.{n}.intermediate.dense.weight
+      openelm:
+      - model.layers.{n}.mlp.up_proj.weight
+      falcon:
+      - transformer.h.{n}.mlp.dense_h_to_4h.weight
+      - model.layers.{n}.mlp.dense_h_to_4h.weight
+      stablelm:
+      - model.layers.{n}.mlp.up_proj.weight
+      _fallback:
+      - blk.{n}.ffn_up.weight
+  ffn_down_weight:
+    description: FFN down projection weight (or fc2 for non-gated architectures)
+    required: true
+    templates:
+      llama:
+      - model.layers.{n}.mlp.down_proj.weight
+      qwen2:
+      - model.layers.{n}.mlp.down_proj.weight
+      qwen3:
+      - model.layers.{n}.mlp.down_proj.weight
+      mistral:
+      - model.layers.{n}.mlp.down_proj.weight
+      gemma:
+      - model.layers.{n}.mlp.down_proj.weight
+      phi:
+      - model.layers.{n}.mlp.down_proj.weight
+      phi2:
+      - model.layers.{n}.mlp.fc2.weight
+      - model.layers.{n}.mlp.down_proj.weight
+      deepseek:
+      - model.layers.{n}.mlp.down_proj.weight
+      gpt2:
+      - h.{n}.mlp.c_proj.weight
+      - transformer.h.{n}.mlp.c_proj.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.mlp.dense_4h_to_h.weight
+      bert:
+      - bert.encoder.layer.{n}.output.dense.weight
+      - encoder.layer.{n}.output.dense.weight
+      openelm:
+      - model.layers.{n}.mlp.down_proj.weight
+      falcon:
+      - transformer.h.{n}.mlp.dense_4h_to_h.weight
+      - model.layers.{n}.mlp.dense_4h_to_h.weight
+      stablelm:
+      - model.layers.{n}.mlp.down_proj.weight
+      _fallback:
+      - blk.{n}.ffn_down.weight
+  q_proj_bias:
+    description: Query projection bias (Qwen2, Phi)
+    required: false
+    templates:
+      llama: []
+      qwen2:
+      - model.layers.{n}.self_attn.q_proj.bias
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi:
+      - model.layers.{n}.self_attn.q_proj.bias
+      phi2:
+      - model.layers.{n}.self_attn.q_proj.bias
+      deepseek: []
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.query.bias
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_q.bias
+  k_proj_bias:
+    description: Key projection bias (Qwen2, Phi)
+    required: false
+    templates:
+      llama: []
+      qwen2:
+      - model.layers.{n}.self_attn.k_proj.bias
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi:
+      - model.layers.{n}.self_attn.k_proj.bias
+      phi2:
+      - model.layers.{n}.self_attn.k_proj.bias
+      deepseek: []
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.key.bias
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_k.bias
+  v_proj_bias:
+    description: Value projection bias (Qwen2, Phi)
+    required: false
+    templates:
+      llama: []
+      qwen2:
+      - model.layers.{n}.self_attn.v_proj.bias
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi:
+      - model.layers.{n}.self_attn.v_proj.bias
+      phi2:
+      - model.layers.{n}.self_attn.v_proj.bias
+      deepseek: []
+      gpt2: []
+      gpt_neox: []
+      bert:
+      - bert.encoder.layer.{n}.attention.self.value.bias
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_v.bias
+  attn_q_norm_weight:
+    description: Per-head Q RMSNorm gamma (Qwen3)
+    required: false
+    templates:
+      llama: []
+      qwen2: []
+      qwen3:
+      - model.layers.{n}.self_attn.q_norm.weight
+      mistral: []
+      gemma: []
+      phi: []
+      phi2: []
+      deepseek: []
+      gpt2: []
+      gpt_neox: []
+      bert: []
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_q_norm.weight
+  attn_k_norm_weight:
+    description: Per-head K RMSNorm gamma (Qwen3)
+    required: false
+    templates:
+      llama: []
+      qwen2: []
+      qwen3:
+      - model.layers.{n}.self_attn.k_norm.weight
+      mistral: []
+      gemma: []
+      phi: []
+      phi2: []
+      deepseek: []
+      gpt2: []
+      gpt_neox: []
+      bert: []
+      openelm: []
+      falcon: []
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_k_norm.weight
+fused_roles:
+  fused_qkv:
+    description: Fused Q/K/V projection weight (GPT-2 c_attn, GPT-NeoX query_key_value)
+    templates:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2: []
+      deepseek: []
+      gpt2:
+      - h.{n}.attn.c_attn.weight
+      - transformer.h.{n}.attn.c_attn.weight
+      gpt_neox:
+      - gpt_neox.layers.{n}.attention.query_key_value.weight
+      bert: []
+      openelm: []
+      falcon:
+      - transformer.h.{n}.self_attention.query_key_value.weight
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_qkv.weight
+  fused_qkv_bias:
+    description: Fused Q/K/V projection bias
+    templates:
+      llama: []
+      qwen2: []
+      qwen3: []
+      mistral: []
+      gemma: []
+      phi: []
+      phi2: []
+      deepseek: []
+      gpt2:
+      - h.{n}.attn.c_attn.bias
+      - transformer.h.{n}.attn.c_attn.bias
+      gpt_neox:
+      - gpt_neox.layers.{n}.attention.query_key_value.bias
+      bert: []
+      openelm: []
+      falcon:
+      - transformer.h.{n}.self_attention.query_key_value.bias
+      stablelm: []
+      _fallback:
+      - blk.{n}.attn_qkv.bias
+equations:
+  name_resolution:
+    formula: "resolve(source, arch, role) =\n  first(name ∈ names(arch, role) : source.has_tensor(name))\n  ?? first(name\
+      \ ∈ fallback(role) : source.has_tensor(name))\n  ?? first(name ∈ names(arch, role) : source.has_tensor(strip_prefix(\"\
+      model.\", name)))\n  ?? Error(\"tensor not found\")\n"
+    domain: 'source: TensorSource, arch: str, role: GlobalTensorRole | LayerTensorRole'
+    codomain: Result<Vec<f32>, Error>
+    invariants:
+    - Architecture-specific names tried before fallbacks
+    - Bare name (without 'model.' prefix) tried as last resort
+    - Error message lists all attempted names for diagnostics
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Name_Resolution
+  architecture_normalization:
+    formula: 'normalize(raw) = architecture_map[raw] ?? "llama" (default)
+
+      '
+    domain: 'raw: str (from config.json architectures or GGUF metadata)'
+    codomain: canonical architecture key
+    invariants:
+    - Unknown architecture defaults to llama (safest default)
+    - Case-sensitive matching on HF class names
+    - Lowercase matching on GGUF arch strings
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Architecture_Normalization
+falsification_tests:
+- id: FALSIFY-TNAME-001
+  rule: YAML-Rust parity
+  prediction: 'For every (architecture, role) pair in this YAML, the generated Rust lookup functions return identical name
+    lists.
+
+    '
+  test: 'Deterministic: iterate all architectures and roles, compare YAML names against Rust function output.
+
+    '
+  if_fails: 'Generated code has diverged from YAML. Regenerate via build.rs.
+
+    '
+- id: FALSIFY-TNAME-002
+  rule: Architecture map completeness
+  prediction: 'Every architecture key referenced in global_roles, layer_roles, and fused_roles has a corresponding entry in
+    architecture_map.
+
+    '
+  test: 'Deterministic: collect all arch keys from role definitions, verify each exists in architecture_map values.
+
+    '
+  if_fails: 'A new architecture was added to roles but not to the map.
+
+    '
+- id: FALSIFY-TNAME-003
+  rule: Fallback non-empty for required roles
+  prediction: 'Every role marked required=true has at least one fallback name.
+
+    '
+  test: 'Deterministic: check _fallback list for each required role.
+
+    '
+  if_fails: 'A required role has no GGUF fallback, breaking models with non-standard naming.
+
+    '
+- id: FALSIFY-TNAME-004
+  rule: PhiForCausalLM maps to phi2, Phi3ForCausalLM maps to phi
+  prediction: 'normalize_architecture("PhiForCausalLM") == "phi2" and normalize_architecture("Phi3ForCausalLM") == "phi".
+
+    '
+  test: 'Deterministic: direct assertion.
+
+    '
+  if_fails: 'Phi-1.5/Phi-2 models will use wrong tensor names (gate_proj instead of fc1).
+
+    '
+- id: FALSIFY-TNAME-005
+  rule: Unknown architecture defaults to llama
+  prediction: 'normalize_architecture("FutureArch2027") returns "llama".
+
+    '
+  test: 'Proptest: random strings all map to "llama".
+
+    '
+  if_fails: 'Default match arm is missing or maps to wrong architecture.
+
+    '
+- id: FALSIFY-TNAME-006
+  rule: GPT-2 bare names resolved
+  prediction: 'For GPT-2 architecture, global_names returns ["wte.weight", "transformer.wte.weight"] for embedding role (no
+    "model." prefix).
+
+    '
+  test: 'Deterministic: verify exact name lists for GPT-2.
+
+    '
+  if_fails: 'GPT-2 names incorrectly prefixed, resolution will fail on real models.
+
+    '
+- id: FALSIFY-TNAME-007
+  rule: Fused QKV resolution for GPT-2/GPT-NeoX
+  prediction: 'fused_templates("gpt2", FusedQkv) returns non-empty list, while q_proj_weight templates for gpt2 returns empty
+    list.
+
+    '
+  test: 'Deterministic: verify fused templates non-empty and separate Q/K/V empty.
+
+    '
+  if_fails: 'GPT-2 will try to load separate Q/K/V tensors that don''t exist.
+
+    '
+enforcement:
+  yaml_rust_parity:
+    description: YAML contract and generated Rust code must be identical
+    check: tensor_names::tests::FALSIFY-TNAME-001
+    severity: CRITICAL
+  architecture_completeness:
+    description: Every architecture in roles has a map entry
+    check: tensor_names::tests::FALSIFY-TNAME-002
+    severity: ERROR
+  phi_distinction:
+    description: PhiForCausalLM != Phi3ForCausalLM
+    check: tensor_names::tests::FALSIFY-TNAME-004
+    severity: CRITICAL
+qa_gate:
+  id: F-TNV-001
+  name: tensor-names-v1 Contract
+  description: Quality gate for Architecture-specific tensor name resolution — source of tru
+  checks:
+  - validation
+  - falsification
+proof_obligations:
+- type: invariant
+  property: Architecture-specific names tried before fallbacks
+  formal: Architecture-specific names tried before fallbacks
+  applies_to: all
+- type: invariant
+  property: Bare name (without 'model.' prefix) tried as last resort
+  formal: Bare name (without 'model.' prefix) tried as last resort
+  applies_to: all
+- type: invariant
+  property: Unknown architecture defaults to llama (safest default)
+  formal: Unknown architecture defaults to llama (safest default)
+  applies_to: all
+- type: invariant
+  property: Case-sensitive matching on HF class names
+  formal: Case-sensitive matching on HF class names
+  applies_to: all
+kani_harnesses:
+- id: KANI-TENSOR-001
+  obligation: Architecture-specific names tried before fallbacks
+  property: Architecture-specific names tried before fallbacks
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-002
+  obligation: Bare name (without 'model.' prefix) tried as last resort
+  property: Bare name (without 'model.' prefix) tried as last resort
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-003
+  obligation: Unknown architecture defaults to llama (safest default)
+  property: Unknown architecture defaults to llama (safest default)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TENSOR-004
+  obligation: Case-sensitive matching on HF class names
+  property: Case-sensitive matching on HF class names
+  bound: 8
+  strategy: exhaustive

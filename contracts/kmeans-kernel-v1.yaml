@@ -1,0 +1,173 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: K-Means kernel — Lloyd's algorithm for cluster assignment
+  references:
+  - Lloyd (1982) Least Squares Quantization in PCM
+  - 'Arthur & Vassilvitskii (2007) k-means++: The Advantages of Careful Seeding'
+equations:
+  assignment:
+    formula: c_i = argmin_j ||x_i - mu_j||^2
+    domain: x in R^{N x d}, mu in R^{K x d}, K >= 1
+    codomain: c in {0, ..., K-1}^N
+    invariants:
+    - Each point assigned to nearest centroid
+    - Every cluster index in [0, K-1]
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Assignment
+  update:
+    formula: mu_j = (1/|S_j|) * sum_{i in S_j} x_i
+    domain: 'x in R^{N x d}, S_j = {i : c_i = j}'
+    codomain: mu in R^{K x d}
+    invariants:
+    - New centroid is mean of assigned points
+    - Empty cluster centroid unchanged
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Update
+  objective:
+    formula: J = sum_{i=1}^{N} ||x_i - mu_{c_i}||^2
+    domain: x in R^{N x d}, mu in R^{K x d}, c in {0..K-1}^N
+    codomain: J in R_>=0
+    invariants:
+    - J >= 0 (non-negative)
+    - J is non-increasing across iterations (monotone convergence)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Objective
+proof_obligations:
+- type: invariant
+  property: Nearest centroid assignment
+  formal: '||x_i - mu_{c_i}|| <= ||x_i - mu_j|| for all j'
+  applies_to: all
+- type: monotonicity
+  property: Objective non-increasing
+  formal: J_{t+1} <= J_t after each assignment+update step
+  applies_to: all
+- type: bound
+  property: Objective non-negative
+  formal: J >= 0
+  applies_to: all
+- type: invariant
+  property: Valid cluster indices
+  formal: c_i in {0, ..., K-1} for all i
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: initialize
+    description: Initialize K centroids (random or k-means++)
+    invariant: K distinct centroids
+  - name: assign
+    description: Assign each point to nearest centroid
+    invariant: All assignments in [0, K-1]
+  - name: update
+    description: Recompute centroids as cluster means
+    invariant: Centroid is mean of assigned points
+  - name: check_convergence
+    description: Check if assignments changed
+    invariant: Terminates in finite iterations
+simd_dispatch:
+  kmeans_assign:
+    scalar: kmeans_assign_scalar
+    avx2: kmeans_assign_avx2
+    ptx: kmeans_ptx
+enforcement:
+  nearest_assignment:
+    description: Each point must be assigned to its nearest centroid
+    check: contract_tests::FALSIFY-KM-001
+    severity: ERROR
+  convergence:
+    description: Objective must not increase between iterations
+    check: contract_tests::FALSIFY-KM-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-KM-001
+  rule: Nearest assignment
+  prediction: dist(x_i, mu_{c_i}) <= dist(x_i, mu_j) for all j
+  test: proptest with random points and centroids, K=2..8, d=1..16
+  if_fails: Distance comparison or argmin implementation incorrect
+- id: FALSIFY-KM-002
+  rule: Monotone convergence
+  prediction: J_{t+1} <= J_t for 100 random iterations
+  test: proptest running 100 iterations on random data
+  if_fails: Centroid update not correctly computing mean
+- id: FALSIFY-KM-003
+  rule: Objective non-negativity
+  prediction: J >= 0 for any assignment
+  test: proptest with random data and random assignments
+  if_fails: Squared distance computation has sign error
+- id: FALSIFY-KM-004
+  rule: Valid indices
+  prediction: All c_i in [0, K-1]
+  test: proptest checking assignments after each iteration
+  if_fails: Out-of-bounds cluster index
+- id: FALSIFY-KM-005
+  rule: SIMD equivalence
+  prediction: '|assign_avx2(x) - assign_scalar(x)| = 0 (exact match for argmin)'
+  test: proptest comparing scalar vs SIMD assignments
+  if_fails: SIMD distance computation differs
+- id: FALSIFY-KM-006
+  rule: Boundary - K=1
+  prediction: All points assigned to cluster 0, centroid = mean(x)
+  test: proptest with K=1
+  if_fails: Single-cluster degenerate case not handled
+kani_harnesses:
+- id: KANI-KM-001
+  obligation: KM-INV-001
+  property: Assignment selects nearest centroid for small N
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kmeans_nearest
+- id: KANI-KM-002
+  obligation: KM-BND-001
+  property: Objective is non-negative
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_kmeans_objective_nonneg
+- id: KANI-KMEANS-003
+  obligation: Nearest centroid assignment
+  property: Nearest centroid assignment
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KMEANS-004
+  obligation: Objective non-increasing
+  property: Objective non-increasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KMEANS-005
+  obligation: Objective non-negative
+  property: Objective non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KMEANS-006
+  obligation: Valid cluster indices
+  property: Valid cluster indices
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KMEANS-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-KM-001
+  name: K-Means Contract
+  description: Lloyd's algorithm cluster assignment quality gate
+  checks:
+  - nearest_assignment
+  - monotone_convergence
+  - objective_bound
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Use random assignment instead of nearest centroid

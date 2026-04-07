@@ -1,0 +1,1 @@
+{"content_hash":"b39de8e5f772fcc0","findings":[{"rule_id":"PV-ENF-001","severity":"warning","message":"Equation `builder_config` has no preconditions","file":"contracts/builder-pattern-v1.yaml","line":null,"contract_stem":"builder-pattern-v1","suppressed":false,"is_new":true,"suggestion":"Add to equations.builder_config:\n  preconditions:\n    - \"!input.is_empty()\""}]}

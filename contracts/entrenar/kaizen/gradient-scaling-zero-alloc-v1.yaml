@@ -1,0 +1,60 @@
+contract: gradient-scaling-zero-alloc-v1
+version: 1.0.0
+status: implemented
+kaizen: '037'
+invariants:
+- id: C-SCALE-GRAD-001
+  description: Tensor::scale_grad mutates gradient in-place — zero allocation
+  preconditions:
+  - factor is finite
+  postconditions:
+  - grad[i] *= factor for all i
+  - No heap allocation during scaling
+  - If no gradient exists, no-op
+  invariants:
+  - Uses ndarray mapv_inplace — no temporary array
+  - RefCell borrow is released before function returns
+  verified_by:
+  - 31 classify_pipeline tests passed
+  - 13 autograd tensor tests passed
+- id: C-SCALE-GRAD-002
+  description: compute_grad_norm iterates without intermediate collection
+  preconditions:
+  - lora_layers and classifier have valid parameters
+  postconditions:
+  - Returns sqrt(sum(grad_i^2)) for all trainable params
+  - No intermediate Vec<&Tensor> allocation
+  verified_by:
+  - 31 classify_pipeline tests passed
+affected_files:
+- path: src/autograd/tensor.rs
+  functions:
+  - 'Tensor::scale_grad (new): in-place gradient scaling via mapv_inplace'
+  change: Added scale_grad method for zero-allocation gradient scaling
+- path: src/finetune/classify_pipeline.rs
+  functions:
+  - 'scale_all_gradients: uses Tensor::scale_grad instead of clone+mul+set'
+  - 'compute_grad_norm: iterates directly instead of collecting into Vec'
+  change: '- scale_all_gradients: 74 array allocs/batch → 0
+
+    - compute_grad_norm: removed Vec<&Tensor> collection
+
+    '
+performance_note: 'For Qwen3-4B LoRA rank=16:
+
+  - 72 LoRA params (36 layers × 2) + 2 classifier params = 74 params
+
+  - Each LoRA A gradient: 2560 × 16 = 40,960 floats = 160 KB
+
+  - Before: 74 × (clone 160 KB + alloc 160 KB + set) = ~23 MB alloc/batch
+
+  - After: 74 × (mutate in-place) = 0 MB alloc/batch
+
+  '
+qa_gate:
+  id: F-GSZA-001
+  name: gradient-scaling-zero-alloc-v1 Contract
+  description: Quality gate for gradient-scaling-zero-alloc-v1
+  checks:
+  - validation
+  - falsification

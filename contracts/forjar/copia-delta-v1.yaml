@@ -1,0 +1,156 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Copia delta sync — delta correctness, block reuse, transfer minimality, identity sync
+  references:
+  - 'Tridgell & Mackerras (1996) The rsync algorithm'
+  - 'O''Connor et al. (2019) BLAKE3: One function, fast everywhere'
+equations:
+  delta_correctness:
+    formula: 'apply(old, compute_delta(old, new)) = new'
+    domain: (old ∈ File, new ∈ File)
+    codomain: File
+    invariants:
+    - 'Byte-for-byte equality: apply(old, delta(old, new)) = new'
+    - Delta application is deterministic
+    - Works for all file sizes including empty
+    preconditions:
+    - old file is readable
+    - new file is readable
+    lean_theorem: Theorems.Delta_Correctness
+  block_reuse:
+    formula: '∀ i: hash_old[i] = hash_new[i] → block[i] reused (0 bytes transferred)'
+    domain: (old_idx ∈ BlockIndex, new_idx ∈ BlockIndex)
+    codomain: SyncResult
+    invariants:
+    - Unchanged blocks are not retransferred
+    - 'bytes_transferred = sum(size(block) for block in delta.new_blocks)'
+    - 'blocks_reused = count(i where hash_old[i] = hash_new[i])'
+    preconditions:
+    - old_idx.block_size = new_idx.block_size
+    - old_idx.block_size > 0
+    lean_theorem: Theorems.Block_Reuse
+  transfer_minimality:
+    formula: '∀ (i, data) in new_blocks: hash(data) ≠ old_hashes[i]'
+    domain: delta ∈ Delta
+    codomain: bool
+    invariants:
+    - No block is included in new_blocks if it already matches
+    - Delta contains only changed blocks
+    - Minimal delta for the given block size
+    preconditions:
+    - delta.new_blocks is well-formed
+    lean_theorem: Theorems.Transfer_Minimality
+  identity_sync:
+    formula: 'compute_delta(f, f) = Delta { new_blocks: [], removed_blocks: [] }'
+    domain: f ∈ File
+    codomain: Delta
+    invariants:
+    - Identical files produce empty delta
+    - bytes_transferred = 0
+    - blocks_reused = total blocks
+    preconditions:
+    - f is readable
+    lean_theorem: Theorems.Identity_Sync
+proof_obligations:
+- type: equivalence
+  property: Delta correctness
+  formal: 'apply(old, delta(old, new)) = new'
+  applies_to: all
+- type: conservation
+  property: Block reuse
+  formal: unchanged blocks → 0 transfer
+  applies_to: all
+- type: bound
+  property: Transfer minimality
+  formal: no redundant blocks in delta
+  applies_to: all
+- type: idempotency
+  property: Identity sync
+  formal: 'delta(f, f) = empty'
+  applies_to: all
+enforcement:
+  delta_correctness:
+    description: Delta application must produce exact copy of new file
+    check: contract_tests::FALSIFY-COPIA-004
+    severity: ERROR
+  block_reuse:
+    description: Unchanged blocks must not be retransferred
+    check: contract_tests::FALSIFY-COPIA-001
+    severity: ERROR
+  transfer_minimality:
+    description: Delta must contain only changed blocks
+    check: contract_tests::FALSIFY-COPIA-001
+    severity: ERROR
+  identity_sync:
+    description: Identical files must produce 0 bytes transferred
+    check: contract_tests::FALSIFY-COPIA-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-COPIA-001
+  rule: Single block change
+  prediction: Single changed block in 1MB file transfers only that block
+  test: create 1MB file, change one block, verify only that block in delta
+  if_fails: Delta includes unchanged blocks
+- id: FALSIFY-COPIA-002
+  rule: Identity sync
+  prediction: Identical files produce 0 bytes transferred
+  test: compute delta of file with itself, verify empty delta
+  if_fails: Hash comparison fails for identical blocks
+- id: FALSIFY-COPIA-003
+  rule: Append detection
+  prediction: Appended data produces delta with new blocks only at end
+  test: append data to file, verify delta contains only new trailing blocks
+  if_fails: Append triggers full resync instead of incremental
+- id: FALSIFY-COPIA-004
+  rule: Byte-for-byte correctness
+  prediction: Delta apply on 100MB file matches byte-for-byte
+  test: compute and apply delta on large file, compare SHA256 of result
+  if_fails: Block reassembly loses or corrupts data
+- id: FALSIFY-COPIA-005
+  rule: Empty to full
+  prediction: Empty file delta to 1MB file transfers all blocks
+  test: compute delta from empty to 1MB file, verify all blocks are new
+  if_fails: Empty file block index not handled correctly
+- id: FALSIFY-COPIA-006
+  rule: Block size change
+  prediction: Block size change forces full resync (no hash reuse)
+  test: compute delta with different block sizes, verify no reuse
+  if_fails: Block hashes compared across different block sizes
+kani_harnesses:
+- id: KANI-COPIA-001
+  obligation: Delta correctness
+  property: Delta apply roundtrip
+  bound: 16
+  strategy: exhaustive
+  harness: verify_delta_correctness
+- id: KANI-COPIA-002
+  obligation: Block reuse
+  property: Block reuse conservation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_block_reuse
+- id: KANI-COPIA-003
+  obligation: Transfer minimality
+  property: No redundant blocks
+  bound: 8
+  strategy: exhaustive
+  harness: verify_transfer_minimality
+- id: KANI-COPIA-004
+  obligation: Identity sync
+  property: Identity delta is empty
+  bound: 8
+  strategy: exhaustive
+  harness: verify_identity_sync
+qa_gate:
+  id: F-COPIA-001
+  name: Copia Delta Sync Contract
+  description: Copia delta sync quality gate
+  checks:
+  - delta_correctness
+  - block_reuse
+  - transfer_minimality
+  - identity_sync
+  pass_criteria: All 6 falsification tests pass
+  falsification: Include unchanged blocks in delta output

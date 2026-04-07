@@ -1,0 +1,162 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-02'
+  author: PAIML Engineering
+  description: Matrix transpose kernel — AVX2 8×8 in-register shuffle with cache blocking
+  references:
+  - Lam, Rothberg & Wolf (1991) Cache Performance of Blocked Algorithms. ASPLOS IV
+  - Intel 64 and IA-32 Architectures Optimization Reference Manual §11.12
+equations:
+  transpose:
+    formula: B[j * rows + i] = A[i * cols + j]
+    domain: A ∈ ℝ^{rows×cols} (row-major)
+    codomain: B ∈ ℝ^{cols×rows} (row-major)
+    invariants:
+    - B has shape (cols, rows)
+    - 'Transpose is an involution: transpose(transpose(A)) = A'
+    - trace(A) = trace(transpose(A)) for square A
+    - det(A) = det(transpose(A))
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Transpose
+proof_obligations:
+- type: invariant
+  property: Shape correctness
+  formal: shape(transpose(A[m,n])) = (n, m)
+  applies_to: all
+- type: idempotency
+  property: Involution (self-inverse)
+  formal: transpose(transpose(A)) = A (bitwise exact)
+  applies_to: all
+  lean:
+    theorem: Transpose.transpose_involution
+    module: ProvableContracts.Transpose
+    status: proved
+    depends_on:
+    - Matrix.transpose_transpose
+    mathlib_imports:
+    - Mathlib.Data.Matrix.Basic
+    notes: Direct application of Mathlib's Matrix.transpose_transpose
+- type: equivalence
+  property: AVX2 matches scalar
+  formal: '|transpose_avx2(A) - transpose_scalar(A)| = 0 (bitwise exact)'
+  tolerance: 0.0
+  applies_to: simd
+- type: invariant
+  property: Element correctness
+  formal: B[j][i] = A[i][j] for all valid i,j
+  applies_to: all
+  lean:
+    theorem: Transpose.transpose_element
+    module: ProvableContracts.Transpose
+    status: proved
+    depends_on: []
+    mathlib_imports:
+    - Mathlib.Data.Matrix.Basic
+    notes: Aᵀ j i = A i j is definitional equality (rfl)
+- type: invariant
+  property: All elements transposed
+  formal: No element lost or duplicated — bijection on index pairs
+  applies_to: all
+verification_summary:
+  total_obligations: 5
+  l2_property_tested: 5
+  l3_kani_proved: 2
+  l4_lean_proved: 2
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+kernel_structure:
+  phases:
+  - name: outer_blocking
+    description: Partition matrix into 8×8 blocks for register-width transpose
+    invariant: All blocks cover the full matrix (remainder handled separately)
+  - name: avx2_8x8_microkernel
+    description: In-register 8×8 transpose via 3-phase AVX2 shuffle/permute
+    invariant: 8 loads + 24 shuffles + 8 stores = 40 ops for 64 elements
+  - name: remainder
+    description: Scalar transpose for rows%8 and cols%8 edges
+    invariant: Edge elements correct — no out-of-bounds access
+falsification_tests:
+- id: FALSIFY-TP-001
+  rule: Element correctness
+  prediction: transpose(A)[j][i] == A[i][j] for random A
+  test: proptest with random matrices up to 256×256
+  if_fails: Index computation error in micro-kernel
+- id: FALSIFY-TP-002
+  rule: Involution
+  prediction: transpose(transpose(A)) == A (bitwise exact)
+  test: proptest with random matrices, assert bitwise equality
+  if_fails: Asymmetric load/store pattern in shuffle phases
+- id: FALSIFY-TP-003
+  rule: Non-8-aligned dimensions
+  prediction: Correct for 7×13, 17×3, 1×N, N×1
+  test: Explicit edge cases with non-aligned dims
+  if_fails: Remainder handling bug — edge elements skipped
+- id: FALSIFY-TP-004
+  rule: AVX2 vs scalar parity
+  prediction: AVX2 output == scalar output (bitwise exact, no FP rounding)
+  test: proptest comparing avx2 vs scalar at 2048×128
+  if_fails: Shuffle phase error — wrong permute immediate
+- id: FALSIFY-TP-005
+  rule: Identity matrix
+  prediction: transpose(I) == I for square identity
+  test: Explicit test with identity matrices of various sizes
+  if_fails: Off-by-one in diagonal element indexing
+- id: FALSIFY-TP-006
+  rule: Attention shape
+  prediction: 2048×128 transpose matches naive reference
+  test: Deterministic 2048×128 matrix, compare against double-loop
+  if_fails: Block boundary error at non-square dimensions
+kani_harnesses:
+- id: KANI-TP-001
+  obligation: TP-INV-001
+  property: Shape correctness for bounded dimensions
+  bound: 16
+  strategy: exhaustive
+  harness: verify_transpose_shape
+- id: KANI-TP-002
+  obligation: TP-IDEMP-001
+  property: 'Involution: transpose(transpose(x)) == x'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_transpose_involution
+- id: KANI-TRANSP-003
+  obligation: Shape correctness
+  property: Shape correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-004
+  obligation: Involution (self-inverse)
+  property: Involution (self-inverse)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-005
+  obligation: AVX2 matches scalar
+  property: AVX2 matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-006
+  obligation: Element correctness
+  property: Element correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TRANSP-007
+  obligation: All elements transposed
+  property: All elements transposed
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TP-001
+  name: Transpose Kernel Contract
+  checks:
+  - element_correctness
+  - involution
+  - simd_equivalence
+  - remainder_handling
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Swap shuffle immediate 0x44 → 0x4E to verify test catches it
+simd_dispatch:
+  transpose:
+    scalar: transpose_scalar
+    avx2: transpose_avx2

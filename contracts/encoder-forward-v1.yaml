@@ -1,0 +1,110 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-05'
+  author: PAIML Engineering
+  description: Encoder forward pass -- full pipeline from tokens to [CLS] embedding
+  references:
+  - 'Devlin et al. (2019) BERT: Pre-training of Deep Bidirectional Transformers'
+  - 'Liu et al. (2019) RoBERTa: A Robustly Optimized BERT Pretraining Approach'
+  depends_on:
+  - bidirectional-attention-v1
+  - learned-position-embedding-v1
+  - layernorm-kernel-v1
+  - gelu-kernel-v1
+equations:
+  encoder_layer:
+    formula: h = LayerNorm(x + BiAttn(x)) ; out = LayerNorm(h + FFN(h))
+    domain: x in R^{n x d_model}
+    codomain: R^{n x d_model}
+    invariants:
+    - Output shape equals input shape (residual connection preserves dimensions)
+    - No NaN or Inf in output for finite input
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Encoder_Layer
+  cls_pooling:
+    formula: embedding = encoder_output[0] (first token)
+    domain: encoder_output in R^{n x d_model}, n >= 1
+    codomain: R^{d_model}
+    invariants:
+    - Output is exactly the first row of encoder output
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Cls_Pooling
+proof_obligations:
+- type: invariant
+  property: Shape preservation
+  formal: output.shape == input.shape for each encoder layer
+  applies_to: all
+- type: bound
+  property: No NaN/Inf
+  formal: is_finite(output[i][j]) for all i, j
+  applies_to: all
+- type: equivalence
+  property: Reference parity
+  formal: '|entrenar_output - reference_output| < tolerance'
+  tolerance: 0.0001
+  applies_to: all
+- type: invariant
+  property: CLS pooling correctness
+  formal: cls_embedding == encoder_output[0]
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-ENC-001
+  rule: Shape preservation
+  prediction: 12 encoder layers preserve (n, 768) shape
+  test: proptest with random input, verify output shape
+  if_fails: Layer reshapes or drops dimensions
+- id: FALSIFY-ENC-002
+  rule: Finite output
+  prediction: No NaN or Inf for inputs in normal float range
+  test: proptest with random inputs in [-10, 10]
+  if_fails: Numerical instability in LayerNorm or attention
+- id: FALSIFY-ENC-003
+  rule: Reference parity
+  prediction: entrenar output matches saved HuggingFace reference within 1e-4
+  test: Compare against fixture embeddings from Python HuggingFace
+  if_fails: Weight loading error or architectural mismatch
+- id: FALSIFY-ENC-004
+  rule: CLS pooling correctness
+  prediction: CLS embedding equals first row of encoder output
+  test: proptest with random encoder output, verify pooling extracts row 0
+  if_fails: Pooling selects wrong token index or averages instead of selecting
+kani_harnesses:
+- id: KANI-ENC-001
+  obligation: Shape preservation
+  property: Each encoder layer preserves input shape
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_shape_preservation
+- id: KANI-ENC-002
+  obligation: No NaN/Inf
+  property: Output contains only finite values for finite input
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_no_nan_inf
+- id: KANI-ENC-003
+  obligation: Reference parity
+  property: Encoder output matches reference within tolerance
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_reference_parity
+- id: KANI-ENC-004
+  obligation: CLS pooling correctness
+  property: CLS embedding is exactly encoder_output[0]
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cls_pooling
+qa_gate:
+  id: F-EFV-001
+  name: encoder-forward-v1 Contract
+  description: Quality gate for Encoder forward pass -- full pipeline from tokens to [CLS] e
+  checks:
+  - validation
+  - falsification

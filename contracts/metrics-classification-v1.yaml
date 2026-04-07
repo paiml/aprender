@@ -1,0 +1,215 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Classification metrics — evaluation measures for discrete predictions
+  references:
+  - Manning, Raghavan & Schütze (2008) Introduction to Information Retrieval
+  - Sokolova & Lapalme (2009) A Systematic Analysis of Performance Measures
+equations:
+  accuracy:
+    formula: 'accuracy = |{i : ŷᵢ = yᵢ}| / n'
+    domain: y, ŷ ∈ {0, ..., C-1}ⁿ, n ≥ 1
+    codomain: accuracy ∈ [0, 1]
+    invariants:
+    - accuracy ∈ [0, 1] (bounded)
+    - accuracy = 1.0 iff ŷᵢ = yᵢ for all i
+    - accuracy = 0.0 iff ŷᵢ ≠ yᵢ for all i
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Accuracy
+  precision:
+    formula: precision_c = TP_c / (TP_c + FP_c)
+    domain: y, ŷ ∈ {0, ..., C-1}ⁿ, TP_c + FP_c > 0
+    codomain: precision ∈ [0, 1]
+    invariants:
+    - precision ∈ [0, 1]
+    - precision = 1.0 when FP = 0 and TP > 0
+    - micro_precision = accuracy (for multi-class single-label)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Precision
+  recall:
+    formula: recall_c = TP_c / (TP_c + FN_c)
+    domain: y, ŷ ∈ {0, ..., C-1}ⁿ, TP_c + FN_c > 0
+    codomain: recall ∈ [0, 1]
+    invariants:
+    - recall ∈ [0, 1]
+    - recall = 1.0 when FN = 0 and TP > 0
+    - micro_recall = accuracy (for multi-class single-label)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Recall
+  f1_score:
+    formula: F1 = 2 · precision · recall / (precision + recall)
+    domain: precision, recall ∈ [0, 1], precision + recall > 0
+    codomain: F1 ∈ [0, 1]
+    invariants:
+    - F1 ∈ [0, 1]
+    - F1 ≤ max(precision, recall) (harmonic ≤ arithmetic mean)
+    - F1 = precision = recall when precision = recall
+    - F1 = 0 when precision = 0 or recall = 0
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.F1_Score
+  confusion_matrix:
+    formula: 'CM[i,j] = |{k : yₖ = i ∧ ŷₖ = j}|'
+    domain: y, ŷ ∈ {0, ..., C-1}ⁿ
+    codomain: CM ∈ ℕ^{C×C}
+    invariants:
+    - Σᵢⱼ CM[i,j] = n (all samples accounted for)
+    - CM[i,j] ≥ 0 (non-negative counts)
+    - Σⱼ CM[i,j] = support(class i)
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Confusion_Matrix
+proof_obligations:
+- type: bound
+  property: Accuracy bounded
+  formal: accuracy ∈ [0, 1] for all y, ŷ
+  applies_to: all
+- type: bound
+  property: Precision bounded
+  formal: precision ∈ [0, 1] for all y, ŷ
+  applies_to: all
+- type: bound
+  property: Recall bounded
+  formal: recall ∈ [0, 1] for all y, ŷ
+  applies_to: all
+- type: bound
+  property: F1 bounded
+  formal: F1 ∈ [0, 1]
+  applies_to: all
+- type: invariant
+  property: F1 harmonic mean property
+  formal: F1 ≤ max(precision, recall)
+  applies_to: all
+- type: invariant
+  property: Confusion matrix row sums
+  formal: Σᵢⱼ CM[i,j] = n
+  applies_to: all
+- type: equivalence
+  property: Perfect classification identity
+  formal: accuracy = 1, precision = 1, recall = 1, F1 = 1 when ŷ = y
+  applies_to: all
+- type: invariant
+  property: Micro-average identity
+  formal: micro_precision = micro_recall = accuracy
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CM-001
+  rule: Accuracy bounded
+  prediction: accuracy ∈ [0, 1] for random predictions
+  test: proptest with random class vectors, C=2..10, n=4..128
+  if_fails: Division by zero or count error
+- id: FALSIFY-CM-002
+  rule: Precision bounded
+  prediction: precision ∈ [0, 1] for all averaging modes
+  test: proptest testing Macro, Micro, Weighted modes
+  if_fails: TP/FP counting error or division error
+- id: FALSIFY-CM-003
+  rule: F1 harmonic mean
+  prediction: F1 ≤ max(precision, recall) for all inputs
+  test: proptest comparing F1 with precision and recall
+  if_fails: Harmonic mean formula incorrect
+- id: FALSIFY-CM-004
+  rule: Confusion matrix conservation
+  prediction: sum(CM) = n for all inputs
+  test: proptest verifying matrix element sum equals sample count
+  if_fails: Sample missed or double-counted
+- id: FALSIFY-CM-005
+  rule: Perfect classification
+  prediction: accuracy = precision = recall = F1 = 1 when ŷ = y
+  test: proptest with identical prediction and truth vectors
+  if_fails: Edge case in perfect prediction handling
+- id: FALSIFY-CM-006
+  rule: Micro-average identity
+  prediction: micro_precision = micro_recall = accuracy
+  test: proptest comparing micro-averaged precision/recall with accuracy
+  if_fails: Micro-averaging aggregation error
+- id: FALSIFY-CM-007
+  rule: Recall bounded
+  prediction: recall ∈ [0, 1] for all averaging modes
+  test: proptest testing Macro, Micro, Weighted modes with random class vectors, C=2..10, n=4..128
+  if_fails: TP/FN counting error or division error
+- id: FALSIFY-CM-008
+  rule: F1 bounded
+  prediction: F1 ∈ [0, 1] for arbitrary precision and recall inputs
+  test: proptest with random class vectors verifying F1 stays in [0, 1] across all averaging modes
+  if_fails: Harmonic mean overflow or division by zero in F1 computation
+kani_harnesses:
+- id: KANI-CM-001
+  obligation: '1'
+  bound: 4
+  strategy: exhaustive
+- id: KANI-CM-002
+  obligation: '2'
+  bound: 4
+  strategy: exhaustive
+- id: KANI-METRIC-003
+  obligation: Accuracy bounded
+  property: Accuracy bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-004
+  obligation: Precision bounded
+  property: Precision bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-005
+  obligation: Recall bounded
+  property: Recall bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-006
+  obligation: F1 bounded
+  property: F1 bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-007
+  obligation: F1 harmonic mean property
+  property: F1 harmonic mean property
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-008
+  obligation: Confusion matrix row sums
+  property: Confusion matrix row sums
+  bound: 8
+  strategy: stub_float
+- id: KANI-METRIC-009
+  obligation: Perfect classification identity
+  property: Perfect classification identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-METRIC-010
+  obligation: Micro-average identity
+  property: Micro-average identity
+  bound: 8
+  strategy: exhaustive
+enforcement:
+  bounded:
+    description: All metrics must be in [0, 1]
+    check: contract_tests::FALSIFY-CM-001
+    severity: ERROR
+  conservation:
+    description: Confusion matrix must account for all samples
+    check: contract_tests::FALSIFY-CM-004
+    severity: ERROR
+qa_gate:
+  id: F-CM-001
+  name: Classification Metrics Contract
+  description: Classification metric correctness quality gate
+  checks:
+  - accuracy_bounded
+  - precision_bounded
+  - f1_harmonic_mean
+  - confusion_matrix_conservation
+  - perfect_classification
+  - micro_average_identity
+  pass_criteria: All 8 falsification tests pass
+  falsification: Swap TP and FP in precision formula

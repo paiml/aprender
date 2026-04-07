@@ -1,0 +1,22 @@
+version: 1.0.0
+target_crate: alimentar
+critical_path:
+- from_bytes
+- to_bytes
+- new
+bindings:
+- contract: serialization-v1.yaml
+  equation: serialize
+  function: to_bytes
+  module_path: alimentar::codec::to_bytes
+  status: implemented
+- contract: serialization-v1.yaml
+  equation: deserialize
+  function: from_bytes
+  module_path: alimentar::codec::from_bytes
+  status: implemented
+- contract: configuration-v1.yaml
+  equation: config
+  function: new
+  module_path: alimentar::config::new
+  status: implemented

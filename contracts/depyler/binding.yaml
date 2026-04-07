@@ -1,0 +1,136 @@
+version: 1.0.0
+target_crate: depyler-core
+bindings:
+- contract: type-preservation-v1.yaml
+  equation: type_map
+  function: hir_to_rust
+  module_path: depyler_core::codegen
+  status: implemented
+  notes: 'Core transpilation: HIR -> Rust source, applies TypeMap compositionally'
+- contract: type-preservation-v1.yaml
+  equation: type_map
+  function: generate_rust
+  module_path: depyler_core::codegen
+  status: implemented
+  notes: syn::File -> formatted Rust string with preserved types
+- contract: type-preservation-v1.yaml
+  equation: type_inference
+  function: get_inferred_var_types
+  module_path: depyler_analysis::type_system::constraint_collector
+  status: implemented
+  notes: Hindley-Milner constraint collection for type inference
+- contract: type-preservation-v1.yaml
+  equation: type_map
+  function: TypeMapper::map_type
+  module_path: depyler_analysis::type_mapper
+  status: implemented
+  notes: Core Python-to-Rust type mapping function
+- contract: type-preservation-v1.yaml
+  equation: copy_semantics
+  function: Type::is_copy
+  module_path: depyler_core::hir
+  status: implemented
+  notes: Determines if Python type maps to Rust Copy type
+- contract: type-preservation-v1.yaml
+  equation: container_preservation
+  function: TypeExtractor::extract
+  module_path: depyler_core::ast_bridge::type_extraction
+  status: implemented
+  notes: Extracts and preserves container type structure from Python AST
+- contract: type-preservation-v1.yaml
+  equation: numeric_semantics
+  function: ExprConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: Converts numeric expressions preserving //, % semantics
+- contract: semantic-equivalence-v1.yaml
+  equation: statement_equivalence
+  function: StmtConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: Statement-level semantic preservation during AST-to-HIR conversion
+- contract: semantic-equivalence-v1.yaml
+  equation: expression_equivalence
+  function: ExprConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: Expression-level semantic preservation during AST-to-HIR conversion
+- contract: semantic-equivalence-v1.yaml
+  equation: control_flow_equivalence
+  function: convert_function_to_rust
+  module_path: depyler_core::codegen
+  status: implemented
+  notes: Control flow transpilation (if/while/for/try) preserving semantics
+- contract: semantic-equivalence-v1.yaml
+  equation: comprehension_equivalence
+  function: ExprConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: List/set/dict comprehension to iterator chain equivalence
+- contract: semantic-equivalence-v1.yaml
+  equation: observational_equivalence
+  function: AstBridge::python_to_hir
+  module_path: depyler_core::ast_bridge
+  status: implemented
+  notes: Top-level Python-to-HIR bridge preserving observable behavior
+- contract: memory-safety-v1.yaml
+  equation: escape_analysis
+  function: EscapeAnalysis::analyze_function
+  module_path: depyler_analysis::escape_analysis
+  status: implemented
+  notes: Interprocedural escape analysis for use-after-move detection
+- contract: memory-safety-v1.yaml
+  equation: ownership_invariant
+  function: BorrowingContext::get_pattern
+  module_path: depyler_analysis::borrowing
+  status: implemented
+  notes: Determines Owned/Borrowed/MutableBorrow for each parameter
+  # REMOVED: LifetimeInference::infer does not exist.
+  # Replaced with LifetimeInference::analyze_function which is the actual API.
+- contract: memory-safety-v1.yaml
+  equation: lifetime_safety
+  function: LifetimeInference::analyze_function
+  module_path: depyler_analysis::lifetime_analysis
+  status: implemented
+  notes: Analyzes function for lifetime parameters for safe reference generation
+  # REMOVED: EscapeAnalysis::detect_use_after_move does not exist as a separate function.
+  # Use-after-move detection is handled within EscapeAnalysis::analyze_function above.
+- contract: memory-safety-v1.yaml
+  equation: bounds_safety
+  function: ExprConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: Collection indexing transpiled to bounds-checked access
+- contract: memory-safety-v1.yaml
+  equation: drop_safety
+  function: StmtConverter::convert
+  module_path: depyler_core::ast_bridge::converters
+  status: implemented
+  notes: With-statement to RAII/Drop pattern transpilation
+- contract: memory-safety-v1.yaml
+  equation: ownership_invariant
+  function: compile_with_cargo
+  module_path: depyler_core::cargo_first
+  status: implemented
+  notes: Verifies generated Rust passes borrow checker
+- contract: cli-transpile-v1.yaml
+  equation: exit_code_dispatch
+  function: main
+  module_path: depyler::main
+  status: pending
+  notes: CLI entry point — exit code dispatch for transpile subcommand
+  # REMOVED: write_output does not exist as a standalone function.
+  # Output writing is handled inline within transpile_file.
+  # REMOVED: validate_input does not exist as a standalone function.
+  # Input validation is handled inline within transpile_file.
+- contract: cli-transpile-v1.yaml
+  equation: transpilation_determinism
+  function: transpile_file
+  module_path: depyler_corpus::transpiler
+  status: pending
+  notes: End-to-end transpilation must be deterministic (same input, same output)
+critical_path:
+- hir_to_rust
+- generate_rust
+- TypeMapper
+- ExprConverter

@@ -1,0 +1,162 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: CLI/HTTP interface contracts — exit codes, output format fidelity, timeout, result cardinality
+  references:
+  - POSIX exit code conventions (IEEE Std 1003.1)
+  - pmat CLI user-facing boundary (pv-spec §32.3)
+equations:
+  exit_code_semantics:
+    formula: |
+      exit_code: (Command, Result<AnalysisOutput, PmatError>) -> u8
+        0 = success (analysis completed, no violations)
+        1 = analysis violation (quality gate failed, threshold exceeded)
+        2 = configuration error (invalid args, missing file, bad TOML)
+        3 = internal error (panic, OOM, unexpected state)
+    domain: Any valid CLI command with any result
+    codomain: u8 in {0, 1, 2, 3}
+    invariants:
+    - Exit code is deterministic for same input
+    - Every outcome maps to exactly one code
+    preconditions:
+    - command is a valid CLI subcommand
+    postconditions:
+    - exit_code in {0, 1, 2, 3}
+    lean_theorem: Theorems.ExitCodeSemantics
+  output_format_fidelity:
+    formula: |
+      render: (AnalysisOutput, OutputFormat) -> String
+        Json  => serde_json::from_str(output).is_ok()
+        Csv   => csv::Reader parses all records
+        Junit => valid XML with <testsuite> root
+        Yaml  => serde_yaml::from_str(output).is_ok()
+    domain: AnalysisOutput with any OutputFormat variant
+    codomain: Valid formatted string
+    invariants:
+    - JSON output is always valid JSON
+    - CSV output has consistent column count
+    - JUnit output is well-formed XML
+    preconditions:
+    - output is non-empty
+    postconditions:
+    - format-specific parser succeeds on rendered output
+    lean_theorem: Theorems.OutputFormatFidelity
+  timeout_honoring:
+    formula: |
+      timeout: (Command, Duration) -> Result<PartialOutput, TimeoutError>
+        wall_clock(analysis) <= timeout + epsilon
+        Where epsilon = 1s (cleanup grace period)
+    domain: Any analysis command with timeout > 0
+    codomain: Result with wall clock bounded
+    invariants:
+    - Analysis never hangs past timeout + 1s
+    - Partial results returned on timeout (not empty)
+    preconditions:
+    - timeout > 0
+    postconditions:
+    - wall_clock <= timeout + Duration::from_secs(1)
+    lean_theorem: Theorems.TimeoutHonoring
+  result_cardinality:
+    formula: |
+      top_files: (AnalysisOutput, N: usize) -> Vec<Entry>
+        output.len() <= N
+        output.len() <= total_available
+    domain: AnalysisOutput with top_files parameter N >= 0
+    codomain: Vec<Entry> with len <= N
+    invariants:
+    - Result count never exceeds requested limit
+    - Result count never exceeds available entries
+    preconditions:
+    - N >= 0
+    postconditions:
+    - result.len() <= N
+    lean_theorem: Theorems.ResultCardinality
+proof_obligations:
+- type: completeness
+  property: Exit code covers all outcomes
+  formal: for-all (cmd, result) exit_code(cmd, result) in {0, 1, 2, 3}
+  applies_to: all
+- type: determinism
+  property: Same input produces same exit code
+  formal: exit_code(cmd, r1) = exit_code(cmd, r2) when r1 = r2
+  applies_to: all
+- type: roundtrip
+  property: JSON output is parseable
+  formal: for-all output where format=Json parse(render(output)) = output
+  applies_to: all
+- type: bound
+  property: Result cardinality bounded
+  formal: for-all output, N abs(top_files(output, N)) <= N
+  applies_to: all
+- type: postcondition
+  property: Timeout honored
+  formal: wall_clock <= timeout + 1s
+  applies_to: all
+  requires: timeout > 0
+falsification_tests:
+- id: FALSIFY-CLI-001
+  rule: Zero-result exit code
+  prediction: Zero-result analysis returns exit code 0, not 1
+  test: Run analysis on empty directory, assert exit code = 0
+  if_fails: Exit code logic treats empty results as violation
+- id: FALSIFY-CLI-002
+  rule: Invalid path exit code
+  prediction: Invalid path returns exit code 2, not panic
+  test: Run analysis on /nonexistent/path, assert exit code = 2
+  if_fails: Missing error mapping for FileNotFound
+- id: FALSIFY-CLI-003
+  rule: JSON with unicode
+  prediction: JSON output with unicode identifiers is valid JSON
+  test: Analyze file with unicode function names, parse JSON output
+  if_fails: Serializer not handling unicode escaping
+- id: FALSIFY-CLI-004
+  rule: CSV quoting
+  prediction: CSV output with commas in function names uses proper quoting
+  test: Analyze file with comma in path, verify CSV field quoting
+  if_fails: CSV writer not quoting fields with special characters
+- id: FALSIFY-CLI-005
+  rule: Top-files zero
+  prediction: --top-files 0 returns empty result, not all results
+  test: Run with --top-files 0, assert output.len() = 0
+  if_fails: Zero treated as unlimited instead of zero
+- id: FALSIFY-CLI-006
+  rule: Timeout partial result
+  prediction: Timeout of 1s on large project returns partial result, not hang
+  test: Run deep analysis with --timeout 1 on large project
+  if_fails: Timeout mechanism not wired to analysis loop
+kani_harnesses:
+- id: KANI-CLI-001
+  obligation: Exit code covers all outcomes
+  property: exit_code always in {0, 1, 2, 3}
+  bound: 16
+  strategy: exhaustive
+- id: KANI-CLI-002
+  obligation: Same input produces same exit code
+  property: deterministic exit code mapping
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CLI-003
+  obligation: Result cardinality bounded
+  property: top_files output len <= N for all N
+  bound: 16
+  strategy: bounded_int
+- id: KANI-CLI-004
+  obligation: Timeout honored
+  property: wall clock bounded by timeout + epsilon
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CLI-005
+  obligation: JSON output parseable
+  property: serde_json roundtrip succeeds
+  bound: 8
+  strategy: stub_float
+qa_gate:
+  id: F-CLI-001
+  name: cli-interface-v1 Contract
+  description: Quality gate for CLI/HTTP interface — exit codes, formats, timeouts
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 6 falsification tests pass
+  falsification: FALSIFY-CLI-001 through FALSIFY-CLI-006

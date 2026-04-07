@@ -1,0 +1,1 @@
+{"content_hash":"914263504cc17355","findings":[{"rule_id":"PV-AUD-003","severity":"warning","message":"AUDIT-003: Equations defined but no proof obligations — obligations should be derived from equations","file":"contracts/quantized-dot-product-v1.yaml","line":null,"contract_stem":"quantized-dot-product-v1","suppressed":false,"is_new":true}]}

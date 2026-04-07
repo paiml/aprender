@@ -1,0 +1,178 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Qwen3.5-9B concrete shape instantiation and RoPE frequency scaling
+  references:
+  - Qwen3.5 Fine-Tune Spec — model configuration
+  - Su et al. (2021) RoFormer — Rotary Position Embedding
+  depends_on:
+  - model-config-algebra-v1
+equations:
+  q_projection_shape:
+    formula: '[n_h * d_k, hidden] = [16*256, 4096] = [4096, 4096]'
+    domain: 'Qwen3.5-9B config: n_h=16, d_k=256, hidden=4096'
+    invariants:
+    - Q projection is square for this config
+    preconditions:
+    - 'input.len() > 0'
+    - num_heads > 0
+    lean_theorem: Theorems.Q_Projection_Shape
+  kv_projection_shape:
+    formula: '[n_kv * d_k, hidden] = [4*256, 4096] = [1024, 4096]'
+    domain: 'Qwen3.5-9B config: n_kv=4, d_k=256'
+    invariants:
+    - 'GQA ratio: n_h / n_kv = 4'
+    preconditions:
+    - 'input.len() > 0'
+    - num_heads > 0
+    lean_theorem: Theorems.Kv_Projection_Shape
+  swiglu_ratio:
+    formula: intermediate / hidden = 12288 / 4096 = 3.0
+    domain: Qwen3.5-9B config
+    invariants:
+    - Expansion ratio is exactly 3.0
+    preconditions:
+    - 'input.len() > 0'
+    - intermediate_size > 0
+    lean_theorem: Theorems.Swiglu_Ratio
+  o_projection_transpose:
+    formula: shape(o_proj) == transpose(shape(q_proj)) = [hidden, n_h * d_k]
+    domain: Standard transformer
+    invariants:
+    - O projection reverses Q projection dimensions
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.O_Projection_Transpose
+  rope_frequency:
+    formula: freq_i = base^(-2i/d_k) for i in [0, d_k/2)
+    domain: base = rope_theta, d_k = head_dim
+    invariants:
+    - len(freqs) = d_k / 2
+    - freq_0 = 1.0
+    - Strictly decreasing
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Rope_Frequency
+proof_obligations:
+- type: invariant
+  property: Q projection shape
+  formal: n_h * d_k = 4096 for Qwen3.5-9B
+  applies_to: all
+- type: invariant
+  property: KV projection shape
+  formal: n_kv * d_k = 1024 for Qwen3.5-9B
+  applies_to: all
+- type: invariant
+  property: SwiGLU expansion ratio
+  formal: 12288 / 4096 = 3.0
+  applies_to: all
+- type: invariant
+  property: O projection transpose
+  formal: shape(o_proj) == reverse(shape(q_proj))
+  applies_to: all
+- type: invariant
+  property: RoPE frequency vector length
+  formal: len(freqs) == d_k / 2
+  applies_to: all
+- type: monotonicity
+  property: RoPE frequency decreasing
+  formal: freq_i > freq_{i+1} for all i
+  applies_to: all
+- type: equivalence
+  property: SIMD shape equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-Q35-001
+  rule: Q projection shape
+  prediction: n_h * d_k = 4096 for Qwen3.5-9B
+  test: 'Deterministic: 16 * 256 == 4096'
+  if_fails: n_h or d_k config constant wrong
+- id: FALSIFY-Q35-002
+  rule: KV projection shape
+  prediction: n_kv * d_k = 1024 for Qwen3.5-9B
+  test: 'Deterministic: 4 * 256 == 1024'
+  if_fails: n_kv config constant wrong
+- id: FALSIFY-Q35-003
+  rule: SwiGLU expansion ratio
+  prediction: intermediate / hidden = 3.0
+  test: 'Deterministic: 12288 / 4096 == 3.0'
+  if_fails: FFN intermediate size wrong
+- id: FALSIFY-Q35-004
+  rule: O projection transpose
+  prediction: O shape is transpose of Q shape
+  test: 'Deterministic: [4096, 4096] == transpose([4096, 4096])'
+  if_fails: O projection dimensions swapped
+- id: FALSIFY-Q35-005
+  rule: RoPE frequency vector length
+  prediction: len(freqs) == d_k / 2 = 128
+  test: proptest with random d_k values
+  if_fails: Off-by-one in frequency generation loop
+- id: FALSIFY-Q35-006
+  rule: RoPE frequency decreasing
+  prediction: freq_i > freq_{i+1} for all i
+  test: proptest with random base and head_dim
+  if_fails: Exponent sign error in frequency formula
+- id: FALSIFY-Q35-007
+  rule: SIMD shape equivalence
+  prediction: SIMD shapes match scalar shapes
+  test: 'proptest: compare scalar vs SIMD projection shapes'
+  if_fails: SIMD implementation uses different dimensions
+kani_harnesses:
+- id: KANI-Q35-001
+  obligation: Q35-INV-001
+  property: Shape consistency for Qwen3.5 config
+  bound: 1
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_qwen35_shapes
+- id: KANI-QWEN35-002
+  obligation: Q projection shape
+  property: Q projection shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-003
+  obligation: KV projection shape
+  property: KV projection shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-004
+  obligation: SwiGLU expansion ratio
+  property: SwiGLU expansion ratio
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-005
+  obligation: O projection transpose
+  property: O projection transpose
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-006
+  obligation: RoPE frequency vector length
+  property: RoPE frequency vector length
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-007
+  obligation: RoPE frequency decreasing
+  property: RoPE frequency decreasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-QWEN35-008
+  obligation: SIMD shape equivalence
+  property: SIMD shape equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-Q35-001
+  name: Qwen3.5 Shapes Contract
+  description: Model shape instantiation quality gate
+  checks:
+  - q_projection
+  - kv_projection
+  - swiglu_ratio
+  - o_projection
+  - rope_frequencies
+  pass_criteria: All 7 falsification tests pass
+  falsification: Change n_kv from 4 to 3 to break GQA divisibility

@@ -1,0 +1,202 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Graph/Index contracts — CSR construction, PageRank convergence, FTS5 consistency, SQLite roundtrip, BM25 scoring
+  references:
+  - Page et al. (1999). The PageRank Citation Ranking. Stanford InfoLab
+  - Robertson & Zaragoza (2009). The Probabilistic Relevance Framework BM25. Found. Trends IR
+  - pmat core infrastructure (pv-spec §32.5)
+  depends_on:
+  - tdg-scoring-v1
+  - context-generation-v1
+equations:
+  csr_construction:
+    formula: |
+      csr_invariant: CSRGraph -> bool
+        num_nodes() = node_map.len()
+        for-all edge (u,v): u in node_map and v in node_map
+    domain: CSR graph with any number of nodes and edges
+    codomain: bool
+    invariants:
+    - Node count always equals node map size (NOT internal graph node count)
+    - All edge endpoints are valid node IDs in the map
+    preconditions:
+    - graph is constructed via add_node/add_edge API
+    postconditions:
+    - num_nodes() = node_map.len()
+    lean_theorem: Theorems.CsrConstruction
+  pagerank_convergence:
+    formula: |
+      pagerank: CSRGraph -> Vec<f64>
+        sum(ranks) = 1.0 +/- 1e-6
+        for-all rank: rank >= 0.0
+        terminates in <= max_iterations
+    domain: CSR graph with >= 1 node
+    codomain: Vec<f64> probability distribution
+    invariants:
+    - Ranks sum to 1.0 within tolerance
+    - All ranks are non-negative
+    - Algorithm terminates within bounded iterations
+    preconditions:
+    - graph has at least 1 node
+    - damping_factor in (0.0, 1.0)
+    - max_iterations > 0
+    postconditions:
+    - abs(sum(ranks) - 1.0) < 1e-6
+    - ranks.iter().all(|r| *r >= 0.0)
+    lean_theorem: Theorems.PageRankConvergence
+  fts5_consistency:
+    formula: |
+      fts5_roundtrip: (DB, Doc) -> bool
+        insert(db, doc)
+        results = search(db, doc.content)
+        doc in results
+    domain: SQLite FTS5 database with any document
+    codomain: bool
+    invariants:
+    - Inserted document is always findable via search
+    - Search results contain exact matches
+    preconditions:
+    - db is open and FTS5 table exists
+    - doc.content is non-empty
+    postconditions:
+    - search(db, doc.content) contains doc
+    lean_theorem: Theorems.Fts5Consistency
+  sqlite_roundtrip:
+    formula: |
+      roundtrip: AgentContextIndex -> bool
+        load(save(index)) ~= index
+        Where ~= ignores field ordering and derived indices
+        Preserves: function entries, quality metrics, source code, call graph
+    domain: AgentContextIndex with any number of functions
+    codomain: bool
+    invariants:
+    - Function count preserved exactly
+    - TDG scores preserved within f64 epsilon
+    - Source code preserved byte-for-byte
+    - Call graph edges preserved exactly
+    preconditions:
+    - index has valid db_path
+    postconditions:
+    - load(save(index)).functions.len() = index.functions.len()
+    lean_theorem: Theorems.SqliteRoundtrip
+  bm25_scoring:
+    formula: |
+      bm25: (Query, Doc) -> f64
+        score >= 0.0
+        tf(term, doc1) > tf(term, doc2) => bm25(q, doc1) >= bm25(q, doc2)
+          (when doc lengths are equal and query is single-term)
+    domain: Query string and document corpus
+    codomain: f64 non-negative relevance score
+    invariants:
+    - Scores are non-negative
+    - Higher term frequency implies higher score (ceteris paribus)
+    preconditions:
+    - query is non-empty
+    - corpus has at least 1 document
+    postconditions:
+    - score >= 0.0
+    lean_theorem: Theorems.Bm25Scoring
+proof_obligations:
+- type: invariant
+  property: CSR node count equals node map size
+  formal: num_nodes() = node_map.len() always
+  applies_to: all
+- type: conservation
+  property: PageRank sums to 1
+  formal: abs(sum(ranks) - 1.0) < 1e-6
+  tolerance: 1.0e-6
+  applies_to: all
+- type: bound
+  property: PageRank non-negative
+  formal: for-all i ranks[i] >= 0.0
+  applies_to: all
+- type: termination
+  property: PageRank converges
+  formal: loop terminates within max_iterations
+  applies_to: all
+- type: roundtrip
+  property: SQLite save/load identity
+  formal: load(save(idx)).functions.len() = idx.functions.len()
+  applies_to: all
+- type: monotonicity
+  property: BM25 relevance ordering
+  formal: Higher TF implies higher score (ceteris paribus)
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-IDX-001
+  rule: Empty graph PageRank
+  prediction: Empty graph has PageRank sum = 0 (not NaN)
+  test: Build empty CSR graph, run PageRank, assert sum is 0 or defined
+  if_fails: Division by zero in normalization step
+- id: FALSIFY-IDX-002
+  rule: Single-node PageRank
+  prediction: Single-node graph has PageRank = [1.0]
+  test: Build 1-node graph, run PageRank, assert ranks = [1.0]
+  if_fails: Edge case not handled in iteration
+- id: FALSIFY-IDX-003
+  rule: FTS5 exact match
+  prediction: FTS5 search for exact function name returns that function
+  test: Insert function, search by name, assert found
+  if_fails: FTS5 tokenizer splitting on underscores or colons
+- id: FALSIFY-IDX-004
+  rule: SQLite function count
+  prediction: SQLite roundtrip preserves function count exactly
+  test: Save index with 100 functions, load, assert count = 100
+  if_fails: Insert/load mismatch or duplicate key handling
+- id: FALSIFY-IDX-005
+  rule: SQLite TDG scores
+  prediction: SQLite roundtrip preserves TDG scores within f64 epsilon
+  test: Save and load, compare TDG scores with f64 epsilon
+  if_fails: Floating point serialization precision loss
+- id: FALSIFY-IDX-006
+  rule: BM25 absent term
+  prediction: BM25 score for absent term is 0.0, not negative
+  test: Search for term not in corpus, assert score = 0.0
+  if_fails: IDF calculation producing negative values for absent terms
+- id: FALSIFY-IDX-007
+  rule: CSR node count
+  prediction: CSR graph with edges between N nodes reports num_nodes() = N
+  test: Build graph with 5 nodes and 8 edges, assert num_nodes() = 5
+  if_fails: num_nodes() using graph internal count instead of node_map.len()
+kani_harnesses:
+- id: KANI-IDX-001
+  obligation: CSR node count equals node map size
+  property: num_nodes() = node_map.len()
+  bound: 16
+  strategy: exhaustive
+- id: KANI-IDX-002
+  obligation: PageRank sums to 1
+  property: abs(sum(ranks) - 1.0) < 1e-6
+  bound: 8
+  strategy: stub_float
+- id: KANI-IDX-003
+  obligation: PageRank non-negative
+  property: all ranks >= 0.0
+  bound: 8
+  strategy: stub_float
+- id: KANI-IDX-004
+  obligation: PageRank converges
+  property: terminates in bounded iterations
+  bound: 16
+  strategy: exhaustive
+- id: KANI-IDX-005
+  obligation: SQLite roundtrip identity
+  property: function count preserved
+  bound: 8
+  strategy: exhaustive
+- id: KANI-IDX-006
+  obligation: BM25 non-negative
+  property: score >= 0.0 for all queries
+  bound: 16
+  strategy: stub_float
+qa_gate:
+  id: F-IDX-001
+  name: graph-index-v1 Contract
+  description: Quality gate for Graph/Index — CSR, PageRank, FTS5, SQLite, BM25
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 7 falsification tests pass
+  falsification: FALSIFY-IDX-001 through FALSIFY-IDX-007

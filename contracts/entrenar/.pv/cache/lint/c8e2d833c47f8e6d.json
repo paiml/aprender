@@ -1,0 +1,1 @@
+{"content_hash":"c8e2d833c47f8e6d","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-013: No qa_gate defined — contract should define a certeza quality gate","file":"contracts/wgpu-resident-weights-v1.yaml","line":null,"contract_stem":"wgpu-resident-weights-v1","suppressed":false,"is_new":true}]}

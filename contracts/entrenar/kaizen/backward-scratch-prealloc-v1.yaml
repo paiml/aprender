@@ -1,0 +1,80 @@
+contract: backward-scratch-prealloc-v1
+version: 1.0.0
+status: implemented
+kaizen: '045'
+invariants:
+- id: C-BWDSCRATCH-001
+  description: ClassifyPipeline backward_nf4_gpu_blocks uses pre-allocated output_scratch and grad_upload_buf
+  preconditions:
+  - GpuTrainingState initialized with output_scratch and grad_upload_buf at buf_size
+  - grad_final_hidden.len() <= buf_size (max_seq_len * hidden_size)
+  postconditions:
+  - Zero GPU memory allocation during backward pass
+  - Gradient upload via copy_from_host_at (reuses existing buffer)
+  - Output scratch buffer reused across all 36 layer backward calls
+  - Numerically identical to original implementation
+  verified_by:
+  - 93 classify pipeline tests passed (4 ignored)
+- id: C-BWDSCRATCH-002
+  description: ClassifyPipeline backward_gpu_blocks uses pre-allocated grad_upload_buf
+  preconditions:
+  - GpuTrainingState initialized with grad_upload_buf at buf_size
+  postconditions:
+  - Zero GPU memory allocation for gradient upload
+  - Numerically identical to original implementation
+  verified_by:
+  - 93 classify pipeline tests passed
+- id: C-BWDSCRATCH-003
+  description: InstructPipeline backward_nf4_gpu_blocks uses pre-allocated output_scratch and grad_upload_buf
+  preconditions:
+  - InstructGpuTrainingState initialized with output_scratch and grad_upload_buf at buf_size
+  - padded_grad.len() == buf_size (always padded to max_seq_len)
+  postconditions:
+  - Zero GPU memory allocation during backward pass
+  - Gradient upload via copy_from_host (exact size match)
+  - Output scratch buffer reused across all layer backward calls
+  - Numerically identical to original implementation
+  verified_by:
+  - 18 instruct pipeline tests passed
+affected_files:
+- path: src/finetune/classify_pipeline.rs
+  functions:
+  - 'GpuTrainingState: +output_scratch, +grad_upload_buf fields'
+  - 'try_init_gpu_training: allocate output_scratch + grad_upload_buf at buf_size'
+  - 'backward_nf4_gpu_blocks: use pre-allocated buffers (was: trainer.zeros + trainer.upload)'
+  - 'backward_gpu_blocks: use pre-allocated grad_upload_buf (was: trainer.upload)'
+  change: '- backward_nf4_gpu_blocks: 2 cuMemAlloc/call → 0 (output_scratch + gpu_grad)
+
+    - backward_gpu_blocks: 1 cuMemAlloc/call → 0 (gpu_grad)
+
+    '
+- path: src/finetune/instruct_pipeline.rs
+  functions:
+  - 'InstructGpuTrainingState: +output_scratch, +grad_upload_buf fields'
+  - 'try_init_gpu_training: allocate output_scratch + grad_upload_buf at buf_size'
+  - 'backward_nf4_gpu_blocks: use pre-allocated buffers (was: trainer.zeros + trainer.upload)'
+  change: '- backward_nf4_gpu_blocks: 2 cuMemAlloc/call → 0 (output_scratch + gpu_grad)
+
+    '
+performance_note: 'For Qwen3-4B SSC training (14K samples, 36 layers):
+
+  - ClassifyPipeline NF4: 2 cuMemAlloc + 2 cuMemFree per sample → 0
+
+  - ClassifyPipeline fp32: 1 cuMemAlloc + 1 cuMemFree per sample → 0
+
+  - InstructPipeline NF4: 2 cuMemAlloc + 2 cuMemFree per sample → 0
+
+  - Total eliminated: ~42K cuMemAlloc + 42K cuMemFree per epoch
+
+  - Estimated savings: 0.8-8.4s per epoch (10-100µs per cuMemAlloc/Free)
+
+  - Additional VRAM: 2 × buf_size × 4 bytes = 2 × 327,680 × 4 = 2.5 MB per pipeline
+
+  '
+qa_gate:
+  id: F-BSPV-001
+  name: backward-scratch-prealloc-v1 Contract
+  description: Quality gate for backward-scratch-prealloc-v1
+  checks:
+  - validation
+  - falsification

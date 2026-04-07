@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: Context generation — produce agent-consumable project context from
+    TDG, call graph, and quality data
+  references:
+  - pmat context — agent context generation for LLM coding assistants
+  - pmat agent — context-aware development agent
+equations:
+  generate_context:
+    formula: "generate_agent_context: ProjectPath -> Result<AgentContext, ContextError>\n\
+      \  AgentContext {\n    functions: Vec<FunctionEntry>,\n    call_graph: Vec<CallEdge>,\n\
+      \    quality_summary: QualitySummary,\n    file_count: usize,\n  }\n  Where\
+      \ FunctionEntry = {\n    name, module_path, file, line, complexity, tdg_score,\
+      \ grade,\n    fault_patterns: Vec<String>, clone_count: u32, churn_score: f64\n\
+      \  }\n"
+    domain: ProjectPath pointing to a valid Rust crate or workspace
+    codomain: Result<AgentContext, ContextError>
+    invariants:
+    - Every function in call_graph edges exists in functions list
+    - file_count matches number of unique files in functions list
+    - All TDG scores are in [0.0, 100.0]
+    preconditions:
+    - '!config.is_empty()'
+    - '!project_path.is_empty()'
+    postconditions:
+    - context.functions.len() >= 1
+    - context.call_graph edges reference only functions in context.functions
+    - context.file_count == context.functions.iter().map(|f| &f.file).collect::<HashSet<_>>().len()
+    lean_theorem: Theorems.Generate_Context
+  index_persistence:
+    formula: "save_index: AgentContext -> Result<PathBuf, IoError>\n  Serializes context\
+      \ to SQLite:\n    functions table: name, module, file, line, complexity, tdg,\
+      \ grade\n    call_edges table: caller_id, callee_id\n    quality_summary table:\
+      \ metric, value\n"
+    domain: AgentContext with at least one function
+    codomain: Result<PathBuf, IoError>
+    invariants:
+    - 'Roundtrip: load(save(ctx)) == ctx for all function entries'
+    - Index file size proportional to function count
+    preconditions:
+    - '!config.is_empty()'
+    - '!project_path.is_empty()'
+    postconditions:
+    - result.is_ok() => result.unwrap().exists()
+    - load(save(ctx)).functions.len() == ctx.functions.len()
+    lean_theorem: Theorems.Index_Persistence
+proof_obligations:
+- type: postcondition
+  property: Call graph consistency
+  formal: 'for all (caller, callee) in call_graph: caller in functions and callee
+    in functions'
+  applies_to: all
+- type: invariant
+  property: TDG scores bounded
+  formal: 'for all f in functions: 0.0 <= f.tdg_score <= 100.0'
+  applies_to: all
+- type: equivalence
+  property: Index roundtrip
+  formal: load(save(ctx)).functions == ctx.functions
+  tolerance: 0.0
+  applies_to: all
+- type: precondition
+  property: Valid project
+  formal: ProjectPath contains at least one .rs file
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CTX-001
+  rule: Call graph no dangling edges
+  prediction: No call edge references a function not in the index
+  test: proptest over synthetic call graphs
+  if_fails: Call graph builder not filtering unreachable nodes
+- id: FALSIFY-CTX-002
+  rule: TDG scores bounded
+  prediction: All TDG scores within [0.0, 100.0]
+  test: proptest scanning generated context
+  if_fails: TDG calculator producing out-of-range values
+- id: FALSIFY-CTX-003
+  rule: Index roundtrip
+  prediction: Save then load produces identical function entries
+  test: Roundtrip test with generated context
+  if_fails: SQLite serialization losing precision or fields
+- id: FALSIFY-CTX-004
+  rule: Empty project rejection
+  prediction: Project with no .rs files returns error, not empty context
+  test: Unit test with empty tempdir
+  if_fails: Missing precondition check
+kani_harnesses:
+- id: KANI-CTX-001
+  obligation: TDG scores bounded
+  property: All function TDG scores in [0.0, 100.0]
+  bound: 16
+  strategy: exhaustive
+- id: KANI-CTX-002
+  obligation: Call graph consistency
+  property: All call edge endpoints exist in function index
+  bound: 8
+  strategy: compositional
+- id: KANI-CONTEX-003
+  obligation: Index roundtrip
+  property: Index roundtrip
+  bound: 8
+  strategy: exhaustive
+- id: KANI-CONTEX-004
+  obligation: Valid project
+  property: Valid project
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-CGV-001
+  name: context-generation-v1 Contract
+  description: Quality gate for Context generation — produce agent-consumable project
+    contex
+  checks:
+  - validation
+  - falsification

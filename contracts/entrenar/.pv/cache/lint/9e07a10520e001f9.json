@@ -1,0 +1,1 @@
+{"content_hash":"9e07a10520e001f9","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-003: equations must contain at least one equation","file":"contracts/apr-checkpoint-v1.yaml","line":null,"contract_stem":"apr-checkpoint-v1","suppressed":false,"is_new":true}]}

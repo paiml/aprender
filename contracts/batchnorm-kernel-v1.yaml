@@ -1,0 +1,174 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: BatchNorm kernel — batch normalization with running statistics
+  references:
+  - 'Ioffe & Szegedy (2015) Batch Normalization: Accelerating Deep Network Training'
+equations:
+  batchnorm_train:
+    formula: BN(x)_i = gamma_i * (x_i - mu_B) / sqrt(sigma_B^2 + eps) + beta_i
+    domain: x in R^{N x C}, gamma in R^C, beta in R^C, eps > 0
+    codomain: BN(x) in R^{N x C}
+    invariants:
+    - mu_B = (1/N) * sum_n x_{n,c} per channel c (batch mean)
+    - sigma_B^2 = (1/N) * sum_n (x_{n,c} - mu_B)^2 per channel c
+    - Output has zero mean and unit variance per channel (before affine)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Batchnorm_Train
+  running_stats:
+    formula: mu_run = (1-m)*mu_run + m*mu_B, sigma_run = (1-m)*sigma_run + m*sigma_B
+    domain: momentum m in (0, 1)
+    codomain: mu_run in R^C, sigma_run in R_>=0^C
+    invariants:
+    - Running stats are exponential moving averages
+    - sigma_run >= 0 (non-negative variance)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Running_Stats
+  batchnorm_eval:
+    formula: BN_eval(x)_i = gamma_i * (x_i - mu_run) / sqrt(sigma_run^2 + eps) + beta_i
+    domain: x in R^C, mu_run in R^C, sigma_run in R_>=0^C
+    codomain: BN_eval(x) in R^C
+    invariants:
+    - Uses running stats, not batch stats
+    - Deterministic (same output for same input)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Batchnorm_Eval
+proof_obligations:
+- type: invariant
+  property: Training output standardized
+  formal: '|mean(BN(x)[:, c]) - beta_c| < eps per channel c when gamma=1'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: bound
+  property: Denominator strictly positive
+  formal: sqrt(sigma_B^2 + eps) > 0 when eps > 0
+  applies_to: all
+- type: invariant
+  property: Running variance non-negative
+  formal: sigma_run >= 0 after any number of updates
+  applies_to: all
+- type: equivalence
+  property: Eval mode uses running stats
+  formal: BN_eval(x) uses mu_run/sigma_run, not batch statistics
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: compute_batch_stats
+    description: Compute per-channel mean and variance across batch
+    invariant: sigma^2 >= 0
+  - name: normalize
+    description: Subtract mean, divide by sqrt(var + eps)
+    invariant: denominator > 0
+  - name: affine_transform
+    description: Apply gamma * normalized + beta
+    invariant: Output dimension preserved
+  - name: update_running_stats
+    description: EMA update of running mean and variance (training only)
+    invariant: Running variance stays non-negative
+simd_dispatch:
+  batchnorm:
+    scalar: batchnorm_scalar
+    avx2: batchnorm_avx2
+    ptx: batchnorm_ptx
+enforcement:
+  standardization:
+    description: Output must be standardized per channel in training mode
+    check: contract_tests::FALSIFY-BN-001
+    severity: ERROR
+  eval_determinism:
+    description: Eval mode must use running stats, not batch stats
+    check: contract_tests::FALSIFY-BN-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-BN-001
+  rule: Training standardization
+  prediction: '|mean(BN(x)[:,c])| < 1e-5 per channel when gamma=1, beta=0'
+  test: proptest with random batch, channels 1..16, batch size 2..32
+  if_fails: Batch mean not correctly subtracted
+- id: FALSIFY-BN-002
+  rule: Denominator safety
+  prediction: No NaN/Inf when all inputs are equal (zero variance)
+  test: proptest with constant batch per channel
+  if_fails: Epsilon not added before sqrt
+- id: FALSIFY-BN-003
+  rule: Running stats non-negativity
+  prediction: sigma_run >= 0 after 1000 random updates
+  test: proptest with 1000 random batch updates
+  if_fails: Floating-point error in EMA accumulation
+- id: FALSIFY-BN-004
+  rule: Eval uses running stats
+  prediction: BN_eval(x) != BN_train(x) when running stats differ from batch
+  test: proptest comparing eval vs train modes with divergent stats
+  if_fails: Mode flag ignored, always using batch stats
+- id: FALSIFY-BN-005
+  rule: SIMD equivalence
+  prediction: '|batchnorm_avx2(x) - batchnorm_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD reduction for mean/variance differs
+- id: FALSIFY-BN-006
+  rule: Boundary - batch size 1
+  prediction: BN with batch_size=1 has zero variance, output = beta when gamma=1
+  test: proptest with single-element batch
+  if_fails: Edge case in variance computation for N=1
+kani_harnesses:
+- id: KANI-BN-001
+  obligation: BN-BND-001
+  property: Denominator always positive with eps > 0
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_batchnorm_denominator_positive
+- id: KANI-BN-002
+  obligation: BN-INV-003
+  property: Running variance stays non-negative
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_running_variance_nonneg
+- id: KANI-BATCHN-003
+  obligation: Training output standardized
+  property: Training output standardized
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHN-004
+  obligation: Denominator strictly positive
+  property: Denominator strictly positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHN-005
+  obligation: Running variance non-negative
+  property: Running variance non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHN-006
+  obligation: Eval mode uses running stats
+  property: Eval mode uses running stats
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BATCHN-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-BN-001
+  name: BatchNorm Contract
+  description: Batch normalization with running statistics quality gate
+  checks:
+  - standardization
+  - denominator_safety
+  - running_stats_validity
+  - eval_determinism
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Use batch stats in eval mode instead of running stats

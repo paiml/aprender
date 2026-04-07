@@ -1,0 +1,97 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Repartir builder pattern — build() produces valid distribution config from builder state
+  references:
+  - 'Gamma et al. (1994) Design Patterns, Builder Pattern'
+equations:
+  build:
+    formula: B(builder) = config where config.is_valid() ∧ config.targets.len() > 0
+    domain: builder ∈ Builder where builder.has_required_fields()
+    codomain: Result<DistConfig, BuildError>
+    invariants:
+    - Build succeeds only when all required fields are set
+    - Built config always passes self-validation
+    - 'Idempotent: build(builder) = build(builder) for immutable builder'
+    preconditions:
+    - builder.targets is non-empty
+    - builder.strategy is set
+    lean_theorem: Theorems.Build_Valid
+  builder_config:
+    formula: C() = builder where builder.targets = [] ∧ builder.strategy = None
+    domain: unit
+    codomain: Builder
+    invariants:
+    - Fresh builder has empty targets
+    - Fresh builder has no strategy set
+    - 'Builder methods return &mut Self (fluent interface)'
+    preconditions: []
+    lean_theorem: Theorems.Builder_Fresh
+proof_obligations:
+- type: invariant
+  property: Build produces valid config
+  formal: '∀ b: build(b).is_ok() → build(b).unwrap().is_valid()'
+  applies_to: build
+- type: invariant
+  property: Missing required fields fail build
+  formal: 'let b = Builder::new(); build(b) = Err(BuildError::MissingField(_))'
+  applies_to: build
+- type: invariant
+  property: Fresh builder has no targets
+  formal: Builder::new().targets.len() = 0
+  applies_to: builder_config
+enforcement:
+  build_validity:
+    description: build() must only return valid configurations
+    check: contract_tests::FALSIFY-RP-001
+    severity: ERROR
+  missing_fields_fail:
+    description: Missing required fields must cause build failure
+    check: contract_tests::FALSIFY-RP-002
+    severity: ERROR
+  fresh_builder_empty:
+    description: Fresh builder must have empty targets and no strategy
+    check: contract_tests::FALSIFY-RP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RP-001
+  rule: Build validity
+  prediction: build(b).unwrap().is_valid() = true for any successful build
+  test: proptest with random builder configurations, assert validity on success
+  if_fails: Build skips validation or validation is incomplete
+- id: FALSIFY-RP-002
+  rule: Missing fields fail
+  prediction: Builder::new().build() returns Err
+  test: call build on fresh builder without setting required fields
+  if_fails: Default values substituted for missing required fields
+- id: FALSIFY-RP-003
+  rule: Fresh builder has no targets
+  prediction: Builder::new().targets.len() == 0
+  test: 'Invariant test: construct a fresh builder via Builder::new(); assert
+    targets is empty and strategy is None'
+  if_fails: Builder constructor initializes default targets or default strategy,
+    violating the empty-initial-state invariant
+kani_harnesses:
+- id: KANI-RP-001
+  obligation: Build validity
+  property: Successful build implies valid config
+  bound: 8
+  strategy: exhaustive
+  harness: verify_build_valid
+- id: KANI-RP-002
+  obligation: Missing fields fail
+  property: Fresh builder build fails
+  bound: 4
+  strategy: exhaustive
+  harness: verify_missing_fields_fail
+qa_gate:
+  id: F-RP-001
+  name: Repartir Builder Contract
+  description: Distribution builder quality gate
+  checks:
+  - build_validity
+  - missing_fields_fail
+  - fresh_builder_empty
+  pass_criteria: All 3 falsification tests pass
+  falsification: Remove required field check in build() to trigger FALSIFY-RP-002

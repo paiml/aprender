@@ -1,0 +1,265 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-08'
+  author: PAIML Engineering
+  description: GPU/CPU forward pass parity contract
+  registry: true
+  references:
+  - 'PMAT-232: 7B GPU garbage output'
+  - 'Toyota Way: Five Whys applied to debugging difficulty'
+  - contracts/tensor-layout-v1.yaml (quant_dispatch section)
+layer_steps:
+- name: attn_norm
+  input: '[hidden_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.0001
+  tolerance_rel: 0.001
+- name: q_proj
+  input: '[hidden_dim]'
+  output: '[q_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+  note: Quantized GEMV has higher tolerance due to dequantization error
+- name: k_proj
+  input: '[hidden_dim]'
+  output: '[kv_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: v_proj
+  input: '[hidden_dim]'
+  output: '[kv_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: rope
+  input: '[q_dim], [kv_dim]'
+  output: '[q_dim], [kv_dim]'
+  tolerance_abs: 0.0001
+  tolerance_rel: 0.001
+- name: attention
+  input: '[q_dim], kv_cache'
+  output: '[q_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: o_proj
+  input: '[q_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: residual1
+  input: '[hidden_dim], [hidden_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.0001
+  tolerance_rel: 0.001
+- name: ffn_norm
+  input: '[hidden_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.0001
+  tolerance_rel: 0.001
+- name: gate_proj
+  input: '[hidden_dim]'
+  output: '[intermediate_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: up_proj
+  input: '[hidden_dim]'
+  output: '[intermediate_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: swiglu
+  input: '[intermediate_dim], [intermediate_dim]'
+  output: '[intermediate_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: down_proj
+  input: '[intermediate_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.001
+  tolerance_rel: 0.005
+- name: residual2
+  input: '[hidden_dim], [hidden_dim]'
+  output: '[hidden_dim]'
+  tolerance_abs: 0.0001
+  tolerance_rel: 0.001
+parity_tool:
+  command: apr parity model.gguf
+  description: 'Runs ONE token through all backends and compares layer-by-layer.
+
+    Prints first divergence point with values.
+
+    '
+  output_format: 'Layer 0: attn_norm   CPU=[0.123, -0.456, ...] GPU=[0.123, -0.456,
+    ...]  OK (max_diff=2.3e-5)
+
+    Layer 0: q_proj      CPU=[1.234, ...]         GPU=[1.234, ...]          OK (max_diff=1.1e-4)
+
+    Layer 0: attention   CPU=[0.567, ...]         GPU=[NaN, ...]            FAIL (nan_count=128)
+
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    DIVERGENCE at Layer 0, step "attention"
+
+    GPU has 128 NaN values, CPU has 0
+
+    '
+  implementation:
+  - 'CPU: Use forward_traced() which already captures per-step activations'
+  - 'GPU: Add forward_traced_gpu() that captures same per-step activations'
+  - 'Compare: diff each step''s output within contract tolerances'
+  - 'Report: first divergence with values, not just pass/fail'
+  ci_integration:
+  - Run on 0.5B, 1.5B, 7B models
+  - Fail CI if any model shows GPU/CPU divergence beyond tolerance
+  - Track max_diff over time to detect gradual drift
+parity_gate:
+  location: realizar/src/gguf/cuda/mod.rs::parity_gate()
+  called_by: OwnedQuantizedModelCuda::with_max_seq_len()
+  input_bos: BOS from config.bos_token_id (architecture-aware, e.g., qwen2=151643,
+    llama=128000, mistral=1)
+  metric: cosine_similarity(cpu_logits, gpu_logits)
+  threshold: 0.99
+  on_failure: CudaInitError — model falls back to CPU automatically
+  bypass: SKIP_PARITY_GATE=1
+spc_tool:
+  command: apr parity model.gguf
+  description: 'Statistical Process Control for GPU/CPU inference parity.
+
+    Runs all prompt tokens through BOTH backends and compares per-position:
+
+    - Cosine similarity (directional agreement)
+
+    - KL divergence (distribution distance)
+
+    - Sigma level (process capability)
+
+    - Cpk (process capability index)
+
+    Auto-diagnoses failure patterns using Five Whys methodology.
+
+    '
+  metrics:
+  - name: cosine_similarity
+    threshold: 0.999
+    description: Directional agreement between logit vectors
+  - name: kl_divergence
+    threshold: 0.01
+    description: Distribution distance (softmax)
+  - name: sigma_level
+    threshold: 3.0
+    description: Process capability (3σ = 99.73% within limits)
+  - name: cpk
+    threshold: 1.33
+    description: Process capability index
+  - name: max_abs_diff
+    threshold: 1.0
+    description: Maximum absolute logit difference
+falsification_tests:
+- id: PARITY-001
+  rule: GPU and CPU produce equivalent logit outputs
+  prediction: For any model, GPU logits match CPU within cosine ≥ 0.999
+  test: apr parity model.gguf --assert
+  if_fails: GPU implementation has a bug — auto-diagnosis shows root cause
+- id: PARITY-002
+  rule: Parity holds across all supported quant types
+  prediction: Q4K, Q5K, Q6K, Q8_0, Q4_0, Q5_0, Q4_1 all produce equivalent results
+  test: apr parity model.gguf --all-quant-types
+  if_fails: Specific quant kernel has a bug
+- id: PARITY-003
+  rule: Parity holds for mixed-quantization models
+  prediction: Models with Q4K+Q6K (like 7B Q4_K_M) produce equivalent GPU/CPU results
+  test: apr parity qwen2.5-coder-7b-instruct-q4_k_m.gguf --assert
+  if_fails: Mixed-quant dispatch or dimension handling has a bug
+  reference: PMAT-232
+- id: PARITY-004
+  rule: Load-time parity gate prevents serving divergent models
+  prediction: OwnedQuantizedModelCuda::new() fails if cosine < 0.99
+  test: Run 7B model with GPU — should fall back to CPU automatically
+  if_fails: Parity gate bypass or threshold too permissive
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - num_layers > 0
+    - tolerance > 0.0
+    lean_theorem: Theorems.Identity
+  layer_parity:
+    formula: |
+      parity_check: (CpuOutput, GpuOutput, LayerStep) -> ParityResult
+        max_diff = max(|cpu[i] - gpu[i]|) for all i
+        max_diff <= tolerance_abs -> Pass
+        max_diff > tolerance_abs -> Fail { divergence_point, values }
+    domain: CPU and GPU activation vectors for a single layer step
+    codomain: ParityResult in {Pass, Fail}
+    invariants:
+    - Tolerance thresholds are positive
+    - CPU and GPU outputs have identical dimensions
+    - First divergence point is reported on failure
+    preconditions:
+    - cpu_output.len() == gpu_output.len()
+    - tolerance_abs > 0.0
+    lean_theorem: Theorems.LayerParity
+  cosine_parity_gate:
+    formula: |
+      gate: (CpuLogits, GpuLogits) -> GateResult
+        sim = cosine_similarity(cpu_logits, gpu_logits)
+        sim >= 0.99 -> Pass
+        sim < 0.99 -> Fail (fall back to CPU)
+    domain: Full logit vectors from CPU and GPU forward passes
+    codomain: GateResult in {Pass, Fail}
+    invariants:
+    - Cosine similarity bounded in [-1.0, 1.0]
+    - Threshold is 0.99
+    - Failure triggers automatic CPU fallback
+    preconditions:
+    - cpu_logits.len() == gpu_logits.len()
+    - cpu_logits.len() > 0
+    lean_theorem: Theorems.CosineParityGate
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify CPU and GPU output vectors have matching dimensions
+  - name: execute
+    description: Compute per-layer parity check with tolerance-aware comparison
+  - name: verify_output
+    description: Report first divergence point with values, apply cosine parity gate
+
+proof_obligations:
+- type: invariant
+  property: GPU/CPU output dimension equality
+  formal: for all steps s, cpu_output[s].len() == gpu_output[s].len()
+  applies_to: all
+- type: postcondition
+  property: Cosine parity gate bounded
+  formal: -1.0 <= cosine_similarity(cpu, gpu) <= 1.0
+  tolerance: 1e-6
+  applies_to: all
+- type: postcondition
+  property: Divergence detection — first failure reported
+  formal: if any step fails tolerance, parity_check returns Fail with divergence_point == first failing step index
+  applies_to: all
+kani_harnesses:
+- id: KANI-PARITY-001
+  obligation: GPU/CPU output dimension equality
+  property: CPU and GPU vectors have same length at each step
+  bound: 8
+  strategy: exhaustive
+  harness: verify_output_dimension_equality
+- id: KANI-PARITY-002
+  obligation: Cosine parity gate bounded
+  property: -1.0 <= cosine_similarity <= 1.0
+  bound: 16
+  strategy: stub_float
+  harness: verify_cosine_similarity_bounded
+- id: KANI-PARITY-003
+  obligation: "Divergence detection \u2014 first failure reported"
+  property: First failing step index reported on divergence
+  bound: 8
+  strategy: exhaustive
+  harness: verify_divergence_first_failure
+qa_gate:
+  id: F-LPV-001
+  name: layer-parity-v1 Contract
+  description: Quality gate for GPU/CPU forward pass parity contract
+  checks:
+  - validation
+  - falsification

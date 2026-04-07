@@ -1,0 +1,225 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: LayerNorm kernel — layer normalization with affine transform
+  references:
+  - Ba et al. (2016) Layer Normalization
+  - Ioffe & Szegedy (2015) Batch Normalization
+equations:
+  layernorm:
+    formula: LN(x)_i = gamma_i * (x_i - mu) / sqrt(sigma^2 + eps) + beta_i
+    domain: x in R^d, gamma in R^d, beta in R^d, eps > 0
+    codomain: LN(x) in R^d
+    invariants:
+    - mean(LN(x)) = mean(beta) when gamma = 1 (centering)
+    - var(LN(x)) = 1 when gamma = 1, beta = 0 (standardization)
+    - 'LN is invariant to input shift: LN(x + c) = LN(x)'
+    preconditions:
+    - x.len() > 0
+    - x.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Layernorm
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output.len() == x.len()"
+      - "output is finite"
+  statistics:
+    formula: mu = (1/d) * sum(x_i), sigma^2 = (1/d) * sum((x_i - mu)^2)
+    domain: x in R^d, d >= 1
+    codomain: mu in R, sigma^2 in R_>=0
+    invariants:
+    - sigma^2 >= 0 (non-negative variance)
+    - sigma^2 = 0 iff x is constant
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Statistics
+proof_obligations:
+- type: invariant
+  property: Centering
+  formal: '|mean(LN(x)) - mean(beta)| < eps when gamma = 1'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Standardization
+  formal: '|var(LN(x)) - 1.0| < eps when gamma = 1, beta = 0'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: bound
+  property: Denominator strictly positive
+  formal: sqrt(sigma^2 + eps) > 0 when eps > 0
+  applies_to: all
+  lean:
+    theorem: LayerNorm.ln_denom_pos
+    module: ProvableContracts.LayerNorm
+    status: proved
+    depends_on:
+    - LayerNorm.variance_nonneg
+    - Real.sqrt_pos_of_pos
+    mathlib_imports:
+    - Mathlib.Data.Real.Sqrt
+    notes: Variance ≥ 0 (sum of squares), so var + ε > 0, and √ positive
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: idempotency
+  property: Idempotent under identity affine
+  formal: '|LN(LN(x)) - LN(x)| < eps when gamma = 1, beta = 0'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: Shift invariance
+  formal: '|LN(x + c) - LN(x)| < eps for any scalar c'
+  tolerance: 1.0e-06
+  applies_to: all
+  lean:
+    theorem: LayerNorm.variance_shift
+    module: ProvableContracts.LayerNorm
+    status: proved
+    depends_on:
+    - LayerNorm.mean_shift
+    - LayerNorm.centered_shift
+    mathlib_imports:
+    - Mathlib.Algebra.BigOperators.Group.Finset
+    notes: mean(x+c) = mean(x)+c, so centered values unchanged, variance unchanged
+verification_summary:
+  total_obligations: 6
+  l2_property_tested: 6
+  l3_kani_proved: 3
+  l4_lean_proved: 2
+  l4_sorry_count: 0
+  l4_not_applicable: 1
+kernel_structure:
+  phases:
+  - name: compute_mean
+    description: Compute mu = mean(x)
+    invariant: min(x) <= mu <= max(x)
+  - name: compute_variance
+    description: Compute sigma^2 = var(x)
+    invariant: sigma^2 >= 0
+  - name: normalize
+    description: Compute (x - mu) / sqrt(sigma^2 + eps)
+    invariant: denominator > 0
+  - name: affine_transform
+    description: Apply gamma * normalized + beta
+    invariant: output dimension equals d
+simd_dispatch:
+  layernorm:
+    scalar: layernorm_scalar
+    avx2: layernorm_avx2
+    ptx: layernorm_ptx
+enforcement:
+  centering:
+    description: Output mean must equal mean(beta) when gamma=1
+    check: contract_tests::FALSIFY-LN-001
+    severity: ERROR
+  standardization:
+    description: Output variance must equal 1 when gamma=1, beta=0
+    check: contract_tests::FALSIFY-LN-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-LN-001
+  rule: Centering
+  prediction: '|mean(LN(x)) - mean(beta)| < 1e-5 with gamma=1'
+  test: proptest with random x, random beta, gamma=1, dim 1..128
+  if_fails: Mean subtraction or affine transform incorrect
+- id: FALSIFY-LN-002
+  rule: Standardization
+  prediction: '|var(LN(x)) - 1.0| < 1e-5 with gamma=1, beta=0'
+  test: proptest with random non-constant x, dim 1..128
+  if_fails: Variance normalization incorrect
+- id: FALSIFY-LN-003
+  rule: Denominator safety
+  prediction: No NaN/Inf in output for any finite input when eps > 0
+  test: proptest with extreme values near f32::MIN/MAX
+  if_fails: Epsilon not added before sqrt, or overflow in variance
+- id: FALSIFY-LN-004
+  rule: SIMD equivalence
+  prediction: '|layernorm_avx2(x) - layernorm_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD reduction order differs from scalar
+- id: FALSIFY-LN-005
+  rule: Idempotency
+  prediction: '|LN(LN(x)) - LN(x)| < 1e-5 with gamma=1, beta=0'
+  test: proptest applying LN twice to random vectors
+  if_fails: Second pass re-normalizes non-trivially
+- id: FALSIFY-LN-006
+  rule: Shift invariance
+  prediction: '|LN(x + c) - LN(x)| < 1e-6 for random scalar c'
+  test: proptest with random x and shift c in [-1000, 1000]
+  if_fails: Mean subtraction not canceling shift
+- id: FALSIFY-LN-007
+  rule: Boundary - constant input
+  prediction: LN([c,c,...,c]) = [beta_1,...,beta_d] when gamma=1
+  test: proptest with constant vectors
+  if_fails: Division by near-zero variance not handled
+kani_harnesses:
+- id: KANI-LN-001
+  obligation: LN-INV-001
+  property: LayerNorm centers output for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_layernorm_centering
+- id: KANI-LN-002
+  obligation: LN-INV-002
+  property: LayerNorm standardizes output for small vectors
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_layernorm_standardization
+- id: KANI-LN-003
+  obligation: LN-BND-001
+  property: Denominator always positive with eps > 0
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_layernorm_denominator_positive
+- id: KANI-LAYERN-004
+  obligation: Centering
+  property: Centering
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LAYERN-005
+  obligation: Standardization
+  property: Standardization
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LAYERN-006
+  obligation: Denominator strictly positive
+  property: Denominator strictly positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LAYERN-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LAYERN-008
+  obligation: Idempotent under identity affine
+  property: Idempotent under identity affine
+  bound: 8
+  strategy: exhaustive
+- id: KANI-LAYERN-009
+  obligation: Shift invariance
+  property: Shift invariance
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-LN-001
+  name: LayerNorm Contract
+  description: Layer normalization with affine transform quality gate
+  checks:
+  - centering
+  - standardization
+  - denominator_safety
+  - simd_equivalence
+  - idempotency
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
+  falsification: Remove epsilon from denominator sqrt

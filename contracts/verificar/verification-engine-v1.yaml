@@ -1,0 +1,126 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Synthetic data factory verification engine — generation, mutation, oracle correctness
+  references:
+  - 'Papadakis et al. (2019) Mutation Testing Advances: An Analysis and Survey'
+  - 'Zeller et al. (2019) The Oracle Problem in Software Testing'
+equations:
+  generator_coverage:
+    formula: G(grammar, strategy, n) = {tc_1, ..., tc_n} where ∀ rule ∈ grammar, ∃ tc_i covering rule
+    domain: grammar ∈ Grammar, strategy ∈ SamplingStrategy, n ∈ usize
+    codomain: Vec<TestCase> with |result| = n
+    invariants:
+    - 'Output count equals requested count: |G| = n'
+    - 'All generated programs are syntactically valid for the target language'
+    - 'CoverageGuided strategy covers all grammar rules within n attempts (for sufficient n)'
+    preconditions:
+    - n > 0
+    - grammar has at least one production rule
+    - strategy.max_depth > 0
+    lean_theorem: Theorems.Generator_Coverage
+  mutation_soundness:
+    formula: M(program, operator) = program' where program' ≠ program ∧ syntactically_valid(program')
+    domain: program ∈ AST, operator ∈ MutationOperator
+    codomain: AST (mutated)
+    invariants:
+    - 'Mutation always produces syntactically valid output'
+    - 'Mutation always changes at least one node: program ≠ program'''
+    - 'Mutation preserves AST structure (only values change, not shape)'
+    preconditions:
+    - program has at least one mutable node for the given operator
+    - operator ∈ {AOR, ROR, LOR, BSR, UOI, SDL}
+    lean_theorem: Theorems.Mutation_Soundness
+  oracle_verdict:
+    formula: O(source, expected_output) = Verdict where Verdict ∈ {Pass, Fail, Timeout, Error}
+    domain: source ∈ String, expected_output ∈ String
+    codomain: Verdict
+    invariants:
+    - 'Deterministic: same (source, expected) always yields same Verdict'
+    - 'Timeout bounded: execution never exceeds configured timeout'
+    - 'Pass iff actual_output = expected_output exactly'
+    preconditions:
+    - source is non-empty
+    - timeout > 0
+    lean_theorem: Theorems.Oracle_Verdict
+proof_obligations:
+- type: invariant
+  property: Generator output count matches request
+  formal: '∀ n > 0: |generate(grammar, strategy, n)| = n'
+  applies_to: generator_coverage
+- type: invariant
+  property: Mutations always change the program
+  formal: '∀ program, op: mutate(program, op) ≠ program when applicable'
+  applies_to: mutation_soundness
+- type: invariant
+  property: Oracle determinism
+  formal: '∀ src, exp: oracle(src, exp) = oracle(src, exp)'
+  applies_to: oracle_verdict
+- type: completeness
+  property: Mutation operator coverage
+  formal: '∀ op ∈ {AOR, ROR, LOR, BSR, UOI, SDL}: op is implemented and tested'
+  applies_to: mutation_soundness
+enforcement:
+  generator_count:
+    description: Generator must produce exactly the requested number of test cases
+    check: contract_tests::FALSIFY-VER-001
+    severity: ERROR
+  mutation_difference:
+    description: Mutation must always produce a different program
+    check: contract_tests::FALSIFY-VER-002
+    severity: ERROR
+  oracle_determinism:
+    description: Oracle must return same verdict for same inputs
+    check: contract_tests::FALSIFY-VER-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-VER-001
+  rule: Generator output count
+  prediction: generate(grammar, strategy, n) always returns exactly n test cases
+  test: proptest with n in 1..100 and all sampling strategies
+  if_fails: Off-by-one or early termination in generation loop
+- id: FALSIFY-VER-002
+  rule: Mutation difference
+  prediction: mutate(program, op) differs from program for any applicable operator
+  test: proptest with generated programs and all 6 operators
+  if_fails: Identity mutation — operator not modifying the AST
+- id: FALSIFY-VER-003
+  rule: Oracle determinism
+  prediction: oracle(src, exp) called twice returns identical Verdict
+  test: run oracle 10 times on same input, assert all equal
+  if_fails: Non-deterministic execution environment or race condition
+- id: FALSIFY-VER-004
+  rule: Syntactic validity of generated programs
+  prediction: All generated programs parse without syntax errors
+  test: generate 1000 programs per language, parse each
+  if_fails: Grammar rule produces syntactically invalid construct
+kani_harnesses:
+- id: KANI-VER-001
+  obligation: Generator output count matches request
+  property: Output vector length equals n
+  bound: 16
+  strategy: exhaustive
+  harness: verify_generator_count
+- id: KANI-VER-002
+  obligation: Mutations always change the program
+  property: Mutated AST differs from original
+  bound: 8
+  strategy: exhaustive
+  harness: verify_mutation_difference
+- id: KANI-VER-003
+  obligation: Oracle determinism
+  property: Same inputs produce same verdict
+  bound: 8
+  strategy: exhaustive
+  harness: verify_oracle_determinism
+qa_gate:
+  id: F-VER-001
+  name: Verification Engine Contract
+  description: Synthetic data factory correctness quality gate
+  checks:
+  - generator_count
+  - mutation_difference
+  - oracle_determinism
+  pass_criteria: All 4 falsification tests pass
+  falsification: Inject identity mutation operator and verify test catches it

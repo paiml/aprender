@@ -1,0 +1,138 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Backend dispatch thresholds, garbage oracle, and BPE roundtrip
+  references:
+  - Qwen2.5-Coder Showcase Spec — backend dispatch
+  - Qwen3 Performance Parity Spec — QK norm score bound
+equations:
+  gpu_threshold:
+    formula: dispatch(n) = GPU if n >= 100_000 else CPU
+    domain: n = tensor element count
+    invariants:
+    - 'Threshold is monotonic: GPU-eligible implies all larger tensors GPU-eligible'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Gpu_Threshold
+  simd_only_threshold:
+    formula: dispatch(n) = SIMD_only if n < 1_000 else SIMD+threading
+    domain: n = tensor element count
+    invariants:
+    - Small tensors avoid threading overhead
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Simd_Only_Threshold
+  garbage_oracle:
+    formula: is_garbage(text) = repetition_ratio > 0.3 OR unique_chars < 10
+    domain: text ∈ String
+    invariants:
+    - Highly repetitive text is garbage
+    - Very low character diversity is garbage
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Garbage_Oracle
+  qk_norm_score_bound:
+    formula: '|pre_softmax_score| <= sqrt(head_dim)'
+    domain: After QK normalization
+    invariants:
+    - Bounded by sqrt of head dimension
+    - Prevents attention score explosion
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Qk_Norm_Score_Bound
+proof_obligations:
+- type: monotonicity
+  property: GPU threshold monotonic
+  formal: n1 >= threshold AND n2 > n1 => n2 >= threshold
+  applies_to: all
+- type: invariant
+  property: Garbage oracle detects repetition
+  formal: repetition_ratio > 0.3 => is_garbage
+  applies_to: all
+- type: bound
+  property: QK norm score bound
+  formal: '|score| <= sqrt(d_k) after L2 normalization'
+  applies_to: all
+- type: equivalence
+  property: BPE roundtrip
+  formal: decode(encode(text)) == text for representable strings
+  applies_to: all
+- type: equivalence
+  property: SIMD dispatch equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-BD-001
+  rule: GPU threshold
+  prediction: Threshold is monotonic step function
+  test: proptest with random element counts
+  if_fails: Non-monotonic dispatch decision
+- id: FALSIFY-BD-002
+  rule: Garbage oracle
+  prediction: Repeated characters flagged as garbage
+  test: proptest with repetitive vs diverse strings
+  if_fails: Oracle misses degenerate text
+- id: FALSIFY-BD-003
+  rule: QK norm bound
+  prediction: Dot product of unit vectors bounded by sqrt(d)
+  test: proptest with random unit vectors
+  if_fails: L2 normalization not applied
+- id: FALSIFY-BD-004
+  rule: BPE roundtrip
+  prediction: encode(decode(tokens)) == tokens
+  test: proptest with random valid token sequences
+  if_fails: Lossy tokenization roundtrip
+- id: FALSIFY-BD-005
+  rule: SIMD dispatch equivalence
+  prediction: SIMD backend produces same results as scalar
+  test: 'proptest: compare scalar vs SIMD dispatch'
+  if_fails: SIMD backend diverges from scalar
+kani_harnesses:
+- id: KANI-BD-001
+  obligation: BD-MON-001
+  property: Dispatch monotonicity for bounded counts
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_dispatch_monotonic
+- id: KANI-BACKEN-002
+  obligation: GPU threshold monotonic
+  property: GPU threshold monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BACKEN-003
+  obligation: Garbage oracle detects repetition
+  property: Garbage oracle detects repetition
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BACKEN-004
+  obligation: QK norm score bound
+  property: QK norm score bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-BACKEN-005
+  obligation: BPE roundtrip
+  property: BPE roundtrip
+  bound: 8
+  strategy: exhaustive
+- id: KANI-BACKEN-006
+  obligation: SIMD dispatch equivalence
+  property: SIMD dispatch equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-BD-001
+  name: Backend Dispatch Contract
+  description: Dispatch threshold and oracle quality gate
+  checks:
+  - gpu_threshold_monotonic
+  - garbage_oracle
+  - qk_norm_bound
+  - bpe_roundtrip
+  pass_criteria: All 5 falsification tests pass
+  falsification: Pass element count just below threshold to test boundary

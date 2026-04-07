@@ -1,0 +1,144 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Format parity — cross-format tensor equivalence (GGUF, SafeTensors,
+    APR)
+  references:
+  - APR-SPEC.md — APR format specification
+  - GGUF spec — GGML unified format
+  - SafeTensors spec — Hugging Face safe serialization
+  - contracts/tensor-layout-v1.yaml — layout contract (source of truth)
+equations:
+  transpose_involution:
+    formula: swap(swap(shape)) == shape
+    domain: shape ∈ ℤ⁺ × ℤ⁺ (2D tensors)
+    invariants:
+    - Transpose is its own inverse
+    - GGUF→APR→GGUF roundtrip preserves shape
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Transpose_Involution
+  element_count:
+    formula: product(gguf_shape) == product(apr_shape)
+    domain: gguf_shape, apr_shape ∈ ℤ⁺^n
+    invariants:
+    - Total element count preserved across format conversion
+    - No data is lost or duplicated
+    preconditions:
+    - 'input.len() > 0'
+    - expected_count > 0
+    lean_theorem: Theorems.Element_Count
+  identity_1d:
+    formula: '1D tensors: apr_shape == gguf_shape (no transpose)'
+    domain: shape ∈ ℤ⁺^1
+    invariants:
+    - Bias vectors and 1D tensors are identity-mapped
+    - Only 2D+ tensors require transpose
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Identity_1D
+  name_bijection:
+    formula: tensor_template defines 1:1 mapping between format names
+    domain: tensor names across formats
+    invariants:
+    - Every GGUF tensor has exactly one APR counterpart
+    - Mapping is invertible
+    preconditions:
+    - 'input.len() > 0'
+    - names.len() > 0
+    lean_theorem: Theorems.Name_Bijection
+proof_obligations:
+- type: invariant
+  property: Transpose involution
+  formal: swap(swap([a, b])) == [a, b]
+  applies_to: all
+- type: invariant
+  property: Element count preserved
+  formal: product(gguf_shape) == product(apr_shape) for all tensors
+  applies_to: all
+- type: invariant
+  property: 1D no transpose
+  formal: len(shape) == 1 ⟹ apr_shape == gguf_shape
+  applies_to: all
+- type: equivalence
+  property: Roundtrip equivalence
+  formal: '|convert(convert(tensor, GGUF→APR), APR→GGUF) - tensor| < ε'
+  tolerance: 0.0
+  applies_to: converter
+- type: equivalence
+  property: SIMD format equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-FP-001
+  rule: Transpose involution
+  prediction: swap(swap(shape)) == shape for all 2D shapes
+  test: proptest with random 2D shapes
+  if_fails: Double-transpose not identity
+- id: FALSIFY-FP-002
+  rule: Element count
+  prediction: product of shape dims preserved after swap
+  test: proptest verifying product invariance
+  if_fails: Shape transformation changes element count
+- id: FALSIFY-FP-003
+  rule: 1D identity
+  prediction: 1D shapes pass through unchanged
+  test: proptest with 1D shapes
+  if_fails: 1D tensors incorrectly transposed
+- id: FALSIFY-FP-004
+  rule: Roundtrip
+  prediction: GGUF→APR→GGUF roundtrip is lossless
+  test: proptest with format converter
+  if_fails: Data corruption in format conversion
+- id: FALSIFY-FP-005
+  rule: SIMD format equivalence
+  prediction: SIMD format check matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD format parity:SIMD format check diverges'
+kani_harnesses:
+- id: KANI-FP-001
+  obligation: FP-INV-001
+  property: Transpose involution for bounded shapes
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_transpose_involution
+- id: KANI-FORMAT-002
+  obligation: Transpose involution
+  property: Transpose involution
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FORMAT-003
+  obligation: Element count preserved
+  property: Element count preserved
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FORMAT-004
+  obligation: 1D no transpose
+  property: 1D no transpose
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FORMAT-005
+  obligation: Roundtrip equivalence
+  property: Roundtrip equivalence
+  bound: 8
+  strategy: exhaustive
+- id: KANI-FORMAT-006
+  obligation: SIMD format equivalence
+  property: SIMD format equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-FP-001
+  name: Format Parity Contract
+  description: Cross-format tensor equivalence quality gate
+  checks:
+  - transpose_involution
+  - element_count
+  - identity_1d
+  - roundtrip
+  pass_criteria: All 5 falsification tests pass
+  falsification: Swap shape elements in wrong order

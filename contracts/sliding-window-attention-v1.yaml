@@ -1,0 +1,194 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Sliding window attention — bounded context for efficient long-sequence inference
+  references:
+  - 'Beltagy et al. (2020) Longformer: The Long-Document Transformer'
+  - Jiang et al. (2023) Mistral 7B — Sliding Window Attention
+  - Qwen3.5 Technical Report — hybrid attention with window constraints
+  depends_on:
+  - softmax-kernel-v1
+  - attention-kernel-v1
+equations:
+  window_mask:
+    formula: mask(i,j) = 1 if |i - j| <= W/2 else 0
+    domain: i,j ∈ [0, seq_len), W = window_size (even positive integer)
+    invariants:
+    - 'Mask is symmetric: mask(i,j) = mask(j,i)'
+    - 'Diagonal always attended: mask(i,i) = 1'
+    - At most W attended positions per query
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Window_Mask
+  causal_window_mask:
+    formula: mask(i,j) = 1 if j <= i and i - j < W else 0
+    domain: Causal (autoregressive) variant
+    invariants:
+    - Strictly lower-triangular within window
+    - 'Causal masking: mask(i,j) = 0 for j > i (no future positions visible)'
+    - At most min(i+1, W) attended positions for query i
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Causal_Window_Mask
+  effective_context:
+    formula: ctx(i) = min(i + 1, W)
+    domain: Number of tokens visible to position i
+    invariants:
+    - ctx(0) = 1 (only self)
+    - ctx(i) = W for i >= W - 1
+    - Monotonically non-decreasing
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Effective_Context
+  attention_sparsity:
+    formula: sparsity = 1 - (sum(mask) / seq_len^2)
+    domain: Fraction of zeroed attention weights
+    invariants:
+    - sparsity ≈ 1 - W/seq_len for large seq_len
+    - sparsity = 0 when W >= seq_len (dense attention)
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Attention_Sparsity
+  multi_layer_receptive_field:
+    formula: receptive(L) = 1 + L * (W - 1)
+    domain: L layers of sliding window attention
+    invariants:
+    - receptive(1) = W
+    - Monotonically increasing in L
+    - Full context reached when receptive(L) >= seq_len
+    preconditions:
+    - q.len() > 0
+    - k.len() == v.len()
+    lean_theorem: Theorems.Multi_Layer_Receptive_Field
+proof_obligations:
+- type: invariant
+  property: Diagonal always attended
+  formal: '∀i: mask(i,i) = 1'
+  applies_to: all
+- type: invariant
+  property: Causal constraint
+  formal: '∀i,j: j > i → mask(i,j) = 0'
+  applies_to: all
+- type: bound
+  property: Attention count bounded by window
+  formal: '∀i: sum_j(mask(i,j)) <= W'
+  applies_to: all
+- type: monotonicity
+  property: Effective context non-decreasing
+  formal: i < j → ctx(i) <= ctx(j)
+  applies_to: all
+- type: invariant
+  property: Sparsity zero for dense case
+  formal: W >= seq_len → sparsity = 0
+  applies_to: all
+- type: monotonicity
+  property: Receptive field grows with layers
+  formal: L1 < L2 → receptive(L1) < receptive(L2)
+  applies_to: all
+- type: conservation
+  property: Attention weight normalization within window
+  formal: '∀i: |sum_j(attn(i,j)) - 1.0| < ε where mask(i,j) = 1'
+  tolerance: 1.0e-06
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-SWA-001
+  rule: Window symmetry (non-causal)
+  prediction: mask(i,j) = mask(j,i)
+  test: proptest with random (i,j,W) triples
+  if_fails: Off-by-one in window boundary
+- id: FALSIFY-SWA-002
+  rule: Causal masking
+  prediction: No future positions attended
+  test: 'proptest: ∀j > i, mask(i,j) = 0'
+  if_fails: Missing causal constraint
+- id: FALSIFY-SWA-003
+  rule: Effective context formula
+  prediction: ctx(i) = min(i+1, W)
+  test: proptest with random i and W
+  if_fails: Context count formula wrong
+- id: FALSIFY-SWA-004
+  rule: Dense degeneration
+  prediction: W >= seq_len produces full attention
+  test: 'proptest: window larger than sequence'
+  if_fails: Sparsity non-zero for dense window
+- id: FALSIFY-SWA-005
+  rule: Multi-layer receptive field
+  prediction: receptive(L) = 1 + L*(W-1)
+  test: proptest with random L and W
+  if_fails: Receptive field accumulation error
+- id: FALSIFY-SWA-006
+  rule: Attention normalization
+  prediction: Windowed softmax sums to 1
+  test: proptest with random logits and window mask
+  if_fails: Masked softmax not properly normalized
+- id: FALSIFY-SWA-007
+  rule: Attention count bounded
+  prediction: count(mask(i,:) == 1) <= W for all i
+  test: proptest with random seq_len and W
+  if_fails: Window boundary off-by-one expands count
+kani_harnesses:
+- id: KANI-SWA-001
+  obligation: SWA-INV-001
+  property: Window mask invariants
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_window_mask
+- id: KANI-SWA-002
+  obligation: SWA-BND-001
+  property: Attention count bounded
+  bound: 16
+  strategy: exhaustive
+  harness: verify_attention_bound
+- id: KANI-SLIDIN-003
+  obligation: Diagonal always attended
+  property: Diagonal always attended
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SLIDIN-004
+  obligation: Causal constraint
+  property: Causal constraint
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SLIDIN-005
+  obligation: Attention count bounded by window
+  property: Attention count bounded by window
+  bound: 8
+  strategy: stub_float
+- id: KANI-SLIDIN-006
+  obligation: Effective context non-decreasing
+  property: Effective context non-decreasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SLIDIN-007
+  obligation: Sparsity zero for dense case
+  property: Sparsity zero for dense case
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SLIDIN-008
+  obligation: Receptive field grows with layers
+  property: Receptive field grows with layers
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SLIDIN-009
+  obligation: Attention weight normalization within window
+  property: Attention weight normalization within window
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SWA-001
+  name: Sliding Window Attention Contract
+  description: Window masking and sparsity quality gate
+  checks:
+  - window_mask
+  - causal_window_mask
+  - effective_context
+  - attention_sparsity
+  - multi_layer_receptive_field
+  pass_criteria: All 7 falsification tests pass
+  falsification: Set W=0 to break diagonal attendance invariant

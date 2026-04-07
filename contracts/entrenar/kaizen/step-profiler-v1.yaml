@@ -1,0 +1,135 @@
+contract: step-profiler-v1
+version: 1.0.0
+status: implemented
+kaizen: '047'
+invariants:
+- id: C-STEPPROF-001
+  description: Profiler is zero-overhead when disabled
+  preconditions:
+  - StepProfiler::disabled() or profile_interval=0 in config
+  postconditions:
+  - All begin/end/begin_step/finish_step calls are no-ops (early return)
+  - step_count remains 0
+  - No Instant::now() calls
+  verified_by:
+  - test_disabled_profiler_is_noop
+- id: C-STEPPROF-002
+  description: Profiler captures wall-clock timing for all 11 training phases
+  preconditions:
+  - StepProfiler::new(true, N) with N > 0
+  - train_step_single() called with valid input
+  postconditions:
+  - '11 phases measured: embed, h2d, forward, norm_lm, loss, grad_h2d, lm_bwd, norm_bwd, blk_bwd, embed_bwd, opt'
+  - Phase durations accumulate across steps
+  - '''other'' category captures unaccounted time (function call overhead, branches)'
+  - step_count increments by 1 per finish_step()
+  verified_by:
+  - test_enabled_profiler_counts_steps
+  - test_multiple_steps_accumulate
+  - test_unaccounted_time_captured
+- id: C-STEPPROF-003
+  description: Profiler does not add GPU synchronization points
+  preconditions:
+  - Profiler enabled
+  postconditions:
+  - No stream.synchronize() calls added by profiler
+  - Timings include async dispatch latency (not pure kernel time)
+  - Existing synchronization points in gpu_forward/gpu_backward unchanged
+  verified_by:
+  - 'Code review: step_profiler.rs contains no GPU/CUDA imports'
+  - 'Code review: only Instant::now() calls, no stream operations'
+- id: C-STEPPROF-004
+  description: Profiler overhead is bounded
+  preconditions:
+  - Profiler enabled
+  postconditions:
+  - 'Overhead per step: ≤22 Instant::now() calls (11 begin + 11 end)'
+  - 'Estimated overhead: ~2µs per step on Linux (vDSO clock_gettime)'
+  - No heap allocations during steady-state profiling
+  verified_by:
+  - Overhead negligible vs ~300ms per training step
+affected_files:
+- path: src/train/transformer_trainer/step_profiler.rs
+  functions:
+  - 'StepProfiler: new, disabled, begin_step, begin, end, finish_step, print_report'
+  change: 'New module: wall-clock profiler with 11 training phases'
+- path: src/train/transformer_trainer/cuda_trainer.rs
+  functions:
+  - 'CudaTransformerTrainer: +profiler field'
+  - 'train_step_single: begin_step/finish_step + loss/embed_bwd phases'
+  - 'gpu_forward: embed, h2d, forward, norm_lm phases'
+  - 'gpu_backward: grad_h2d, lm_bwd, norm_bwd, blk_bwd phases'
+  - 'train_epoch_with_callback: auto-print report at epoch end'
+  - 'enable_profiler: public API to activate'
+  - 'print_profiler_report: manual report trigger'
+  change: 11 Instant::now() instrumentation points, disabled by default
+- path: src/train/transformer_trainer/config.rs
+  functions:
+  - 'TransformerTrainConfig: +profile_interval field'
+  change: Config-driven profiler activation (0=disabled, N=report every N steps)
+- path: src/train/transformer_trainer/mod.rs
+  change: Wire step_profiler module
+usage: '# Enable via config (YAML):
+
+  profile_interval: 10  # report every 10 steps
+
+
+  # Enable programmatically:
+
+  trainer.enable_profiler(10);
+
+
+  # Manual report:
+
+  trainer.print_profiler_report();
+
+
+  # Example output:
+
+  # ┌─ Step Profiler (100 steps, avg 312.4 ms/step) ─┐
+
+  # │      phase │ total_ms │    pct │   avg_ms │
+
+  # │      embed │     42.3 │  0.1%  │     0.42 │
+
+  # │        h2d │    198.7 │  0.6%  │     1.99 │
+
+  # │    forward │  12847.1 │ 41.1%  │   128.47 │
+
+  # │    norm_lm │   3621.4 │ 11.6%  │    36.21 │
+
+  # │       loss │   8432.0 │ 27.0%  │    84.32 │
+
+  # │   grad_h2d │    187.2 │  0.6%  │     1.87 │
+
+  # │     lm_bwd │   2341.8 │  7.5%  │    23.42 │
+
+  # │   norm_bwd │    312.1 │  1.0%  │     3.12 │
+
+  # │    blk_bwd │   2987.3 │  9.6%  │    29.87 │
+
+  # │  embed_bwd │    241.6 │  0.8%  │     2.42 │
+
+  # │        opt │      0.0 │  0.0%  │     0.00 │
+
+  # │      other │     32.1 │  0.1%  │     0.32 │
+
+  # │      TOTAL │  31243.6 │  100%  │   312.44 │
+
+  # └────────────┴──────────┴────────┴──────────┘
+
+  '
+policy: 'MANDATORY: All future KAIZEN tickets MUST include profiler data as precondition.
+
+  Speculative optimization (estimating savings from code reading) is prohibited.
+
+  The profiler output is the single source of truth for optimization priority.
+
+  '
+qa_gate:
+  id: F-SPV-001
+  name: step-profiler-v1 Contract
+  description: Quality gate for step-profiler-v1
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,235 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-06'
+  author: PAIML Engineering
+  registry: true
+  description: >
+    Cross-backend SIMD/scalar parity contract — every SIMD-accelerated
+    function must produce results equivalent to its scalar reference
+    implementation within IEEE 754 tolerance. Covers AVX2, AVX-512,
+    NEON, SSE2, WASM backends against the scalar fallback.
+  references:
+  - 'trueno/src/backends/ — 6 backend implementations'
+  - 'trueno/src/blis/softmax.rs — SIMD softmax'
+  - 'IEEE 754-2019 §5.4 — rounding modes and FMA semantics'
+  - 'Higham (2002) Accuracy and Stability of Numerical Algorithms'
+  depends_on:
+  - avx2-fma-dot-v1
+  - softmax-kernel-v1
+  - rmsnorm-kernel-v1
+  - activation-kernel-v1
+
+equations:
+  softmax_parity:
+    formula: |
+      forall backend B in {avx2, avx512, neon, sse2, wasm, scalar}:
+        forall input x:
+          |softmax_B(x) - softmax_scalar(x)| < epsilon
+      where epsilon = n * f32::EPSILON * max(softmax_scalar(x))
+    domain: f32 vector, backend selection
+    codomain: f32 probability vector
+    invariants:
+    - All backends produce valid probability distributions (sum ≈ 1.0)
+    - Argmax preserved across all backends
+    - Max absolute error bounded by n * machine epsilon
+    preconditions:
+    - x.len() > 0
+    - x.iter().all(|v| v.is_finite())
+    postconditions:
+    - max element-wise difference < epsilon
+    tolerance: 1.0e-5
+    float_tolerance: 1.0e-7
+    lean_theorem: Theorems.SoftmaxParity
+    guarantees:
+      constraints:
+      - "all backends produce equivalent results"
+
+  dot_product_parity:
+    formula: |
+      forall backend B:
+        |dot_B(a, b) - dot_scalar(a, b)| < n * f32::EPSILON * max(|a_i * b_i|)
+    domain: Two f32 vectors, backend
+    codomain: f32 scalar
+    invariants:
+    - FMA backends may differ from mul+add by one ULP per accumulation
+    - 4-way unrolled accumulators change association order
+    - Result within n * epsilon of scalar
+    preconditions:
+    - a.len() == b.len()
+    - a.len() > 0
+    postconditions:
+    - absolute difference < tolerance
+    tolerance: 8.0
+    lean_theorem: Theorems.DotProductParity
+
+  rmsnorm_parity:
+    formula: |
+      forall backend B:
+        |rmsnorm_B(x, w, eps) - rmsnorm_scalar(x, w, eps)| < tolerance
+    domain: f32 vector, weight vector, epsilon
+    codomain: f32 normalized vector
+    invariants:
+    - RMS computation uses compensated summation in SIMD path
+    - Division by RMS is the main error source
+    - Output shape preserved across backends
+    preconditions:
+    - x.len() == w.len()
+    - eps > 0
+    postconditions:
+    - element-wise difference < tolerance
+    tolerance: 1.0e-4
+    lean_theorem: Theorems.RmsnormParity
+
+  elementwise_parity:
+    formula: |
+      forall op in {add, sub, mul, div}:
+        forall backend B:
+          |op_B(a, b) - op_scalar(a, b)| == 0  (exact for add/sub/mul)
+    domain: Two f32 vectors, elementwise operation, backend
+    codomain: f32 result vector
+    invariants:
+    - add/sub/mul are exact (same IEEE 754 rounding)
+    - div may differ by 1 ULP (reciprocal approximation on some backends)
+    - Non-temporal stores don't affect values (only cache behavior)
+    preconditions:
+    - a.len() == b.len()
+    postconditions:
+    - exact match for add/sub/mul
+    - 1 ULP tolerance for div
+    lean_theorem: Theorems.ElementwiseParity
+
+  activation_parity:
+    formula: |
+      forall act in {gelu, silu, sigmoid, relu}:
+        forall backend B:
+          |act_B(x) - act_scalar(x)| < tolerance
+    domain: f32 vector, activation function, backend
+    codomain: f32 result vector
+    invariants:
+    - relu is exact (max(0, x) is a comparison, not arithmetic)
+    - gelu/silu use transcendental approximations (exp, tanh)
+    - Tolerance accounts for polynomial approximation differences
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    postconditions:
+    - element-wise difference < tolerance
+    tolerance: 1.0e-5
+    lean_theorem: Theorems.ActivationParity
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Verify input vectors are finite, lengths match
+  - name: execute
+    description: Run operation on both SIMD and scalar backends
+  - name: verify_output
+    description: Compare results element-wise within tolerance
+
+proof_obligations:
+- type: equivalence
+  property: Softmax parity across all backends
+  formal: '|softmax_B(x) - softmax_scalar(x)| < n * eps'
+  tolerance: 1.0e-5
+  applies_to: softmax_parity
+  lean:
+    theorem: Theorems.SoftmaxParity
+    status: sorry
+- type: equivalence
+  property: Dot product parity
+  formal: '|dot_B(a,b) - dot_scalar(a,b)| < n * eps * max(|a_i*b_i|)'
+  tolerance: 8.0
+  applies_to: dot_product_parity
+  lean:
+    theorem: Theorems.DotProductParity
+    status: sorry
+- type: equivalence
+  property: RMSNorm parity
+  formal: '|rmsnorm_B - rmsnorm_scalar| < 1e-4'
+  tolerance: 1.0e-4
+  applies_to: rmsnorm_parity
+  lean:
+    theorem: Theorems.RmsnormParity
+    status: sorry
+- type: equivalence
+  property: Elementwise exact for add/sub/mul
+  formal: 'add_B(a,b) == add_scalar(a,b) (bitwise)'
+  applies_to: elementwise_parity
+  lean:
+    theorem: Theorems.ElementwiseParity
+    status: sorry
+- type: equivalence
+  property: Activation parity
+  formal: '|act_B(x) - act_scalar(x)| < 1e-5'
+  tolerance: 1.0e-5
+  applies_to: activation_parity
+  lean:
+    theorem: Theorems.ActivationParity
+    status: sorry
+
+falsification_tests:
+- id: FALSIFY-PARITY-001
+  rule: Softmax parity
+  prediction: AVX2 softmax matches scalar within 1e-5
+  test: Compute softmax on 1024-element vector, compare backends
+  if_fails: SIMD softmax implementation diverges from scalar
+- id: FALSIFY-PARITY-002
+  rule: Dot product parity
+  prediction: FMA dot matches scalar within 8 ULP
+  test: Dot product of 4096-element random vectors
+  if_fails: FMA accumulation order causes excessive error
+- id: FALSIFY-PARITY-003
+  rule: Elementwise exact
+  prediction: AVX2 add produces bitwise identical results to scalar
+  test: Add two 1024-element vectors, assert bitwise equality
+  if_fails: Non-temporal store or alignment handling corrupts values
+- id: FALSIFY-PARITY-004
+  rule: Activation parity
+  prediction: SIMD gelu matches scalar gelu within 1e-5
+  test: gelu on 1024 uniformly sampled values in [-5, 5]
+  if_fails: Polynomial approximation differs between backends
+- id: FALSIFY-PARITY-005
+  rule: RMSNorm parity
+  prediction: SIMD rmsnorm matches scalar within 1e-4
+  test: rmsnorm on 768-element hidden state
+  if_fails: Compensated summation implementation differs
+
+kani_harnesses:
+- id: KANI-PARITY-001
+  obligation: Softmax parity across all backends
+  property: '|simd - scalar| < epsilon'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_softmax_parity
+- id: KANI-PARITY-002
+  obligation: Dot product parity
+  property: '|fma - scalar| < n * eps'
+  bound: 16
+  strategy: bounded_int
+  harness: verify_dot_parity
+- id: KANI-PARITY-003
+  obligation: Elementwise exact for add/sub/mul
+  property: bitwise equality
+  bound: 8
+  strategy: exhaustive
+  harness: verify_elementwise_exact
+- id: KANI-PARITY-004
+  obligation: Activation parity
+  property: '|simd_act - scalar_act| < 1e-5'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_activation_parity
+- id: KANI-PARITY-005
+  obligation: RMSNorm parity
+  property: '|simd - scalar| < 1e-4'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_rmsnorm_parity
+
+qa_gate:
+  id: F-PARITY-GATE
+  name: SIMD/Scalar Parity Contract
+  description: Quality gate for cross-backend numerical equivalence
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 5 falsification tests pass

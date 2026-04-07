@@ -1,0 +1,138 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-03'
+  author: PAIML Engineering
+  description: GGUF CPU inference must use KV cache for O(n) autoregressive generation
+  references:
+  - 'realizar#95: GGUF CPU inference 11x slower than APR CPU'
+  - qwen-coder-deploy/contracts/inference-showdown-v1.yaml (GAP-CPU-001)
+equations:
+  autoregressive_generation:
+    formula: "Without KV cache (current bug):\n  work(n) = Σ_{i=1}^{n} (i × L × M)  =  n(n+1)/2 × L × M  ∈ O(n²)\n\nWith KV\
+      \ cache (correct):\n  work(n) = n × L × M  ∈ O(n)\n\nWhere:\n  n = number of generated tokens\n  L = number of transformer\
+      \ layers (28 for Qwen2.5-1.5B)\n  M = matmul cost per layer (fused_q4k_parallel_matvec)\n\nSpeedup ratio = (n+1)/2\n\
+      \  n=20 tokens → 10.5x (matches measured 11x gap)\n"
+    domain: n ∈ ℕ, L ∈ ℕ, M > 0
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Autoregressive_Generation
+proof_obligations:
+- type: equivalence
+  property: KV cache output matches no-cache output
+  formal: generate_with_cache(prompt, config) ≡ generate(prompt, config) for all prompts
+  tolerance: 1.0e-05
+  applies_to: all
+- type: invariant
+  property: KV cache reduces work from O(n²) to O(n)
+  formal: forward_single_with_cache processes exactly 1 token per call
+  applies_to: all
+- type: bound
+  property: GGUF CPU throughput matches APR CPU
+  formal: tok/s(GGUF CPU) ≥ 0.8 × tok/s(APR CPU)
+  applies_to: all
+- type: invariant
+  property: No regression in generation quality
+  formal: argmax(logits_cached) == argmax(logits_uncached) for greedy decoding
+  applies_to: all
+implementation:
+  bug:
+    file: src/api/batch.rs
+    line: 29
+    current: quantized_model.generate(&prompt_ids, &q_config)
+    description: 'Calls O(n²) generate() which reprocesses the entire token sequence
+
+      on every autoregressive step. Each call to forward() processes ALL
+
+      tokens from position 0 to current position.
+
+      '
+    fix: quantized_model.generate_with_cache(&prompt_ids, &q_config)
+    description_fix: 'Calls O(n) generate_with_cache() which uses KV cache to process
+
+      only the new token on each step. Previous K/V vectors are cached
+
+      and reused, eliminating redundant computation.
+
+      '
+  verification:
+    function: generate_with_cache
+    file: src/gguf/inference/generate_quantized.rs:137
+    exists: true
+    signature: 'pub fn generate_with_cache(&self, prompt: &[u32], config: &QuantizedGenerateConfig) -> Result<Vec<u32>>'
+falsification:
+  FALSIFY-CACHE-001:
+    name: Output parity between cached and uncached paths
+    assertion: generate_with_cache produces identical tokens to generate for greedy (temp=0)
+    test: Compare token sequences for 10-token generation
+  FALSIFY-CACHE-002:
+    name: Throughput improvement
+    assertion: GGUF CPU tok/s ≥ 5.0 after fix (was 0.8, target 9.1)
+    test: probador llm load --concurrency 1 --duration 30s
+  FALSIFY-CACHE-003:
+    name: No memory leak in KV cache
+    assertion: KV cache memory bounded by O(layers × seq_len × head_dim)
+    test: Monitor RSS during 100-token generation
+falsification_tests:
+- id: FALSIFY-CC-001
+  rule: Output equivalence
+  prediction: generate_with_cache produces identical tokens to generate for greedy (temp=0)
+  test: proptest comparing 10-token cached vs uncached generation on random prompts
+  if_fails: KV cache corrupts hidden state across autoregressive steps
+- id: FALSIFY-CC-002
+  rule: Single-token forward
+  prediction: forward_single_with_cache processes exactly 1 token per call
+  test: instrument forward call with token-count assertion
+  if_fails: Cache miss causes full-sequence recomputation
+- id: FALSIFY-CC-003
+  rule: Throughput bound
+  prediction: GGUF CPU tok/s >= 0.8 * APR CPU tok/s after cache fix
+  test: probador llm bench comparing GGUF and APR CPU throughput
+  if_fails: KV cache overhead negates O(n) benefit at short sequences
+- id: FALSIFY-CC-004
+  rule: Greedy decoding parity
+  prediction: argmax(logits_cached) == argmax(logits_uncached) for all steps
+  test: proptest greedy decoding 20 tokens, compare argmax at each step
+  if_fails: Numerical divergence in cached attention computation
+kani_harnesses:
+- id: KANI-CC-001
+  obligation: KV cache output matches no-cache output
+  property: generate_with_cache produces identical tokens to generate for greedy decoding
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cache_output_equivalence
+- id: KANI-CC-002
+  obligation: KV cache reduces work from O(n^2) to O(n)
+  property: forward_single_with_cache processes exactly 1 token per call
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_single_token_forward
+- id: KANI-CC-003
+  obligation: GGUF CPU throughput matches APR CPU
+  property: Throughput ratio tok/s(GGUF CPU) >= 0.8 * tok/s(APR CPU)
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_throughput_bound
+- id: KANI-CC-004
+  obligation: No regression in generation quality
+  property: argmax(logits_cached) == argmax(logits_uncached) for greedy decoding
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_greedy_decoding_parity
+- id: KANI-GGUF_C-005
+  obligation: KV cache reduces work from O(n²) to O(n)
+  property: KV cache reduces work from O(n²) to O(n)
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GGUF-CACHE-001
+  name: GGUF CPU KV Cache Contract
+  checks:
+  - try_quantized_generate calls generate_with_cache, not generate
+  - Output tokens match between cached and uncached for greedy decoding
+  - GGUF CPU throughput >= 5.0 tok/s on Qwen2.5-Coder-1.5B
+  - No regression in GPU path
+  pass_criteria: All checks pass

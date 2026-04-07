@@ -1,0 +1,198 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: |
+    Model discovery contract — search order, APR/GGUF format preference,
+    Jidoka validation at discovery time, architecture extraction.
+
+    Motivated by PMAT-185 dogfood: discover_model() preferred broken APR
+    (Qwen2.5-Coder, valid but no tool-use) over better GGUF (Qwen3 1.7B,
+    0.960 tool score) because sort was valid > APR > mtime. Fixed to
+    valid > mtime > APR.
+  references:
+  - 'PMAT-150: Jidoka model discovery'
+  - 'PMAT-185: mtime-first sort, Qwen3 confirmed'
+  - 'batuta/src/agent/manifest.rs — ModelConfig::discover_model()'
+  - 'batuta/src/agent/code.rs — discover_and_set_model()'
+  depends_on:
+  - apr-code-v1
+
+equations:
+  search_order:
+    formula: |
+      discover_model() searches directories in order:
+        1. ~/.apr/models/           (apr model cache)
+        2. ~/.cache/huggingface/    (HF cache)
+        3. ./models/                (project-local)
+      Within each directory: scan for .apr and .gguf files
+    domain: Filesystem with optional model directories
+    codomain: Option<PathBuf> (best model found, or None)
+    invariants:
+    - Search order is fixed (not configurable)
+    - Missing directories are silently skipped
+    - Only .apr and .gguf extensions are considered
+    preconditions:
+    - At least one search directory exists
+    postconditions:
+    - Returns the highest-priority valid model, or None
+    lean_theorem: Theorems.Search_Order
+
+  sort_priority:
+    formula: |
+      candidates.sort_by(|a, b|
+        b.valid.cmp(&a.valid)      // 1. valid preferred
+          .then(b.mtime.cmp(&a.mtime))  // 2. newest first (user intent)
+          .then(b.is_apr.cmp(&a.is_apr)) // 3. APR tiebreaker only
+      )
+    domain: Vec<(PathBuf, SystemTime, bool, bool)> — (path, mtime, is_apr, is_valid)
+    codomain: Sorted vec, first element is best candidate
+    invariants:
+    - Valid models always beat invalid ones
+    - Among valid models, newest (most recently downloaded) wins
+    - APR format is tiebreaker only — does NOT override mtime
+    - Invalid APR does NOT shadow valid GGUF
+    preconditions:
+    - candidates.len() > 0
+    postconditions:
+    - candidates[0] is the optimal model selection
+    lean_theorem: Theorems.Sort_Priority
+    notes: |
+      PMAT-185: Previous sort was valid > APR > mtime. This caused
+      Qwen2.5-Coder APR (valid tokenizer but can't do tool-use) to
+      shadow Qwen3 GGUF (newer, better quality). User intent = most
+      recent download, so mtime beats format preference.
+
+  jidoka_validation:
+    formula: |
+      is_valid_model_file(path) =>
+        For .apr: has embedded tokenizer (tokenizer.merges OR tokenizer.vocabulary OR tokenizer.ggml)
+        For .gguf: has valid GGUF magic bytes (0x47475546)
+      Invalid files get is_valid=false → sorted last
+    domain: Model file path (.apr or .gguf)
+    codomain: bool (valid for inference)
+    invariants:
+    - "APR without tokenizer → invalid (Jidoka: stop before REPL starts)"
+    - GGUF with wrong magic → invalid
+    - "Validation reads only file header (≤64KB), not entire file"
+    - Invalid models are deprioritized, not rejected (GGUF fallback)
+    preconditions:
+    - File exists and is readable
+    postconditions:
+    - Valid file can be loaded by RealizarDriver or AprServeDriver
+    lean_theorem: Theorems.Jidoka_Validation
+
+  architecture_extraction:
+    formula: |
+      For GGUF models:
+        architecture = metadata["general.architecture"]  (e.g., "qwen3", "llama")
+      For APR models:
+        architecture = metadata.architecture  (from APR header)
+      Architecture MUST be cached in AppState at construction time
+    domain: Loaded model (GGUF or APR)
+    codomain: String (architecture identifier)
+    invariants:
+    - Architecture available before first inference request
+    - Used for chat template auto-detection (detect_format_from_name)
+    - Qwen3 architecture → Qwen3NoThinkTemplate (chat-template-v1 contract)
+    preconditions:
+    - Model loaded successfully
+    postconditions:
+    - state.model_architecture().is_some()
+    lean_theorem: Theorems.Architecture_Extraction
+
+  no_model_ux:
+    formula: |
+      discover_model() == None =>
+        print actionable error with:
+          1. Download instructions (apr pull qwen3:1.7b-q4k)
+          2. Manual placement path (~/.apr/models/)
+          3. APR re-conversion tip if invalid APR found
+        exit with code 5 (NO_MODEL)
+    domain: System with no valid models installed
+    codomain: User-visible error message + exit code 5
+    invariants:
+    - Never silently use MockDriver when user expects real model
+    - Error message includes specific model download command
+    - If invalid APR exists, mentions apr convert
+    preconditions:
+    - No model found by discover_model()
+    - No --model flag provided
+    postconditions:
+    - Process exits with code 5
+    - stderr contains download instructions
+    lean_theorem: Theorems.No_Model_UX
+
+proof_obligations:
+- type: invariant
+  property: mtime beats format preference
+  formal: 'newer_gguf.mtime > older_apr.mtime → discover_model() returns newer_gguf'
+  applies_to: sort_priority
+- type: invariant
+  property: Invalid APR does not shadow valid GGUF
+  formal: 'invalid_apr ∧ valid_gguf → discover_model() returns valid_gguf'
+  applies_to: jidoka_validation
+- type: invariant
+  property: Architecture cached at construction
+  formal: 'AppState::with_quantized_model_and_vocab(m, v).model_architecture().is_some()'
+  applies_to: architecture_extraction
+- type: postcondition
+  property: No model produces exit code 5
+  formal: 'discover_model() == None → exit(5)'
+  applies_to: no_model_ux
+
+falsification_tests:
+- id: FALSIFY-DISC-001
+  rule: mtime-first sort order
+  prediction: Newer GGUF selected over older APR when both valid
+  test: |
+    Create two temp model files in ~/.apr/models/:
+    - old.apr (mtime = yesterday, valid tokenizer)
+    - new.gguf (mtime = today, valid magic)
+    Assert discover_model() returns new.gguf
+  file: src/agent/manifest.rs
+  if_fails: Older APR shadows newer GGUF, user gets stale model
+
+- id: FALSIFY-DISC-002
+  rule: Invalid APR deprioritized (Jidoka)
+  prediction: Invalid APR (no tokenizer) loses to valid GGUF
+  test: |
+    Create two temp model files:
+    - broken.apr (no tokenizer metadata)
+    - valid.gguf (correct magic bytes)
+    Assert discover_model() returns valid.gguf
+  file: src/agent/manifest.rs
+  if_fails: Broken APR selected, REPL crashes on missing tokenizer
+
+- id: FALSIFY-DISC-003
+  rule: No model produces exit code 5
+  prediction: batuta code -p "test" with empty model dirs exits 5
+  test: |
+    Set HOME to temp dir with empty ~/.apr/models/
+    Run batuta code -p "test"
+    Assert exit code == 5
+    Assert stderr contains "apr pull"
+  file: src/agent/code.rs
+  if_fails: Silent fallback to MockDriver when user expects real model
+
+- id: FALSIFY-DISC-004
+  rule: Search order is ~/.apr/models first
+  prediction: Model in ~/.apr/models/ preferred over ./models/
+  test: |
+    Place model.gguf in both ~/.apr/models/ and ./models/
+    Assert discover_model() returns the ~/.apr/models/ one
+  file: src/agent/manifest.rs
+  if_fails: Project-local model overrides user-installed model
+
+- id: FALSIFY-DISC-005
+  rule: Architecture extracted from GGUF metadata
+  prediction: model.config.architecture == "qwen3" for Qwen3 GGUF
+  test: See realizar/src/api/tests/chat_template_contract.rs FALSIFY-CT-002
+  file: src/api/mod_app_state_gpu.rs
+  if_fails: Architecture not extracted, chat template auto-detection fails
+kani_harnesses:
+- id: KANI-DISC-001
+  obligation: mtime beats format preference
+  property: Newer GGUF wins over older APR in sort
+  bound: 8
+  strategy: exhaustive

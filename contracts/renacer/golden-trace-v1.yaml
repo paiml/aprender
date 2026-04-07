@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Golden trace contract — trace capture, validation, and comparison correctness
+  references:
+  - 'Sigelman et al. (2010) Dapper, a Large-Scale Distributed Systems Tracing Infrastructure'
+  - 'OpenTelemetry Specification v1.0 (2021)'
+equations:
+  trace_capture:
+    formula: 'C(process) = {spans, events, trace_id} where trace_id = otel_trace_id(ctx)'
+    domain: process ∈ TracedProcess
+    codomain: UnifiedTrace
+    invariants:
+    - 'Trace ID format: valid 128-bit hex string'
+    - 'Parent ID valid: otel_parent_id returns valid span ID or None'
+    - All spans have monotonically increasing timestamps
+    preconditions:
+    - process is attached via ptrace or eBPF
+    - should_trace(operation) returns true
+    lean_theorem: Theorems.Trace_Capture
+  trace_validate:
+    formula: V(golden, actual) = compare_traces(golden, actual) → {pass, diffs}
+    domain: golden ∈ UnifiedTrace, actual ∈ UnifiedTrace
+    codomain: ComparisonResult
+    invariants:
+    - 'Reflexive: compare_traces(t, t) = pass for all t'
+    - 'Structural: same span tree shape required for pass'
+    - Timing diffs within tolerance do not cause failure
+    preconditions:
+    - both traces are well-formed (valid trace_id, non-empty spans)
+    lean_theorem: Theorems.Trace_Validate
+  adaptive_sampling:
+    formula: S(op, rate) = should_sample_trace(op) respecting rate budget
+    domain: op ∈ Operation, rate ∈ f64 (0.0..1.0]
+    codomain: bool
+    invariants:
+    - 'trace_all mode: S(op) = true for all op'
+    - 'Rate limiting: over N ops, sampled ≈ N * rate (within 10%)'
+    - reset_trace_counter resets to clean state
+    preconditions:
+    - rate > 0.0 && rate <= 1.0
+    lean_theorem: Theorems.Adaptive_Sampling
+proof_obligations:
+- type: invariant
+  property: Trace ID format validity
+  formal: '∀ ctx: otel_trace_id(ctx) matches /^[0-9a-f]{32}$/'
+  applies_to: trace_capture
+- type: invariant
+  property: Comparison reflexivity
+  formal: '∀ t: compare_traces(t, t).pass = true'
+  applies_to: trace_validate
+- type: invariant
+  property: Trace-all mode completeness
+  formal: 'set_trace_all(true) → ∀ op: should_sample_trace(op) = true'
+  applies_to: adaptive_sampling
+enforcement:
+  trace_id_format:
+    description: Trace IDs are valid 128-bit hex strings
+    check: contract_tests::FALSIFY-RNC-001
+    severity: ERROR
+  comparison_reflexivity:
+    description: Comparing a trace to itself always passes
+    check: contract_tests::FALSIFY-RNC-002
+    severity: ERROR
+  trace_all_completeness:
+    description: trace_all mode samples every operation
+    check: contract_tests::FALSIFY-RNC-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RNC-001
+  rule: Trace ID format
+  prediction: otel_trace_id always returns 32 hex chars
+  test: generate 1000 trace contexts, validate format
+  if_fails: Trace ID generation uses wrong encoding or length
+- id: FALSIFY-RNC-002
+  rule: Comparison reflexivity
+  prediction: compare_traces(t, t) passes for any well-formed trace t
+  test: capture 100 traces, compare each to itself
+  if_fails: Comparison has non-deterministic field ordering
+- id: FALSIFY-RNC-003
+  rule: Trace-all completeness
+  prediction: after set_trace_all(true), 1000/1000 operations are sampled
+  test: set trace_all, run 1000 should_sample_trace calls, count true
+  if_fails: trace_all flag not checked in should_sample_trace
+kani_harnesses:
+- id: KANI-RNC-001
+  obligation: Trace ID format validity
+  property: trace ID is 32 hex characters
+  bound: 8
+  strategy: exhaustive
+  harness: verify_trace_id_format
+- id: KANI-RNC-002
+  obligation: Comparison reflexivity
+  property: self-comparison always passes
+  bound: 8
+  strategy: exhaustive
+  harness: verify_comparison_reflexivity
+- id: KANI-RNC-003
+  obligation: Trace-all completeness
+  property: trace_all samples everything
+  bound: 16
+  strategy: exhaustive
+  harness: verify_trace_all_completeness
+qa_gate:
+  id: F-RNC-001
+  name: Golden Trace Contract
+  description: Trace capture, validation, and adaptive sampling quality gate
+  checks:
+  - trace_id_format
+  - comparison_reflexivity
+  - trace_all_completeness
+  pass_criteria: All 3 falsification tests pass
+  falsification: Truncate trace_id to 16 chars instead of 32

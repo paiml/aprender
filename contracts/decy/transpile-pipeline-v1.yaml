@@ -1,0 +1,108 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Transpile pipeline contract — C/C++ to Rust transpilation soundness
+  references:
+  - 'Emmerich et al. (2015) Program Equivalence in Source-to-Source Translation'
+equations:
+  parse_soundness:
+    formula: parse(source) = AST where AST preserves all semantic tokens of source
+    domain: source ∈ String, valid C/C++ translation unit
+    codomain: Result<AST, ParseError>
+    invariants:
+    - All function declarations preserved in AST
+    - All type definitions preserved in AST
+    - Parse errors contain source location (line, column)
+    preconditions:
+    - '!source.is_empty()'
+    - source is valid UTF-8
+    lean_theorem: Theorems.Parse_Soundness
+  transpile_determinism:
+    formula: '∀ source: transpile(source) = transpile(source)'
+    domain: source ∈ String, valid C/C++ source
+    codomain: Result<String, TranspileError>
+    invariants:
+    - 'Deterministic: same input always produces same Rust output'
+    - Output is valid Rust syntax (parseable by syn)
+    - Include directives resolved before transpilation
+    preconditions:
+    - source parses successfully
+    lean_theorem: Theorems.Transpile_Determinism
+  type_preservation:
+    formula: 'T_cpp → T_rust where: class → struct, namespace → mod, operator → trait impl'
+    domain: C++ type declarations
+    codomain: Rust type declarations
+    invariants:
+    - 'Class fields preserved: |fields(class)| = |fields(struct)|'
+    - 'Namespace hierarchy preserved: ns::inner → mod ns { mod inner }'
+    - 'Operator overloads mapped to trait impls (Add, Sub, etc.)'
+    - 'Inheritance → composition with Deref/DerefMut'
+    preconditions:
+    - AST type node is well-formed
+    lean_theorem: Theorems.Type_Preservation
+proof_obligations:
+- type: invariant
+  property: Parse completeness
+  formal: '∀ valid source: parse(source).functions.count >= source.function_count'
+  applies_to: parse_soundness
+- type: invariant
+  property: Transpile determinism
+  formal: '∀ source: transpile(source) = transpile(source)'
+  applies_to: transpile_determinism
+- type: invariant
+  property: Field count preservation
+  formal: '∀ class: |fields(transpile(class))| = |fields(class)|'
+  applies_to: type_preservation
+enforcement:
+  parse_completeness:
+    description: Parser extracts all function and type declarations
+    check: contract_tests::FALSIFY-TP-001
+    severity: ERROR
+  transpile_determinism:
+    description: Transpilation is deterministic
+    check: contract_tests::FALSIFY-TP-002
+    severity: ERROR
+  type_field_count:
+    description: Struct fields match class fields
+    check: contract_tests::FALSIFY-TP-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TP-001
+  rule: Parse completeness
+  prediction: parse(source).functions contains all declared functions
+  test: transpile known C++ files, verify function count matches
+  if_fails: Parser drops function declarations silently
+- id: FALSIFY-TP-002
+  rule: Transpile determinism
+  prediction: two calls to transpile(source) produce identical output
+  test: run transpile twice on 100 source files, diff outputs
+  if_fails: Non-deterministic HashMap iteration or timestamp in output
+- id: FALSIFY-TP-003
+  rule: Type field preservation
+  prediction: transpiled struct has same number of fields as source class
+  test: transpile classes with varying field counts, compare
+  if_fails: Field extraction drops members or merges duplicates
+kani_harnesses:
+- id: KANI-TP-001
+  obligation: Transpile determinism
+  property: identical input produces identical output
+  bound: 16
+  strategy: exhaustive
+  harness: verify_transpile_determinism
+- id: KANI-TP-002
+  obligation: Field count preservation
+  property: struct fields match class fields
+  bound: 8
+  strategy: exhaustive
+  harness: verify_field_preservation
+qa_gate:
+  id: F-TP-001
+  name: Transpile Pipeline Contract
+  description: C/C++ to Rust transpilation correctness gate
+  checks:
+  - parse_completeness
+  - transpile_determinism
+  - type_field_count
+  pass_criteria: All 3 falsification tests pass
+  falsification: Inject HashMap ordering into transpile output

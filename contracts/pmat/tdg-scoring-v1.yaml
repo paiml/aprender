@@ -1,0 +1,114 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-27'
+  author: PAIML Engineering
+  description: TDG scoring — weighted composite of test, documentation, and grade
+    metrics for Rust source files
+  references:
+  - pmat analyze complexity — cyclomatic complexity and cognitive weight analysis
+  - McCabe (1976) A Complexity Measure. IEEE TSE
+equations:
+  calculate_tdg:
+    formula: "calculate_weighted_tdg: FileMetrics -> TdgScore\n  TdgScore = w_test\
+      \ * test_score + w_doc * doc_score + w_grade * grade_score\n  Where:\n    test_score\
+      \  = clamp(covered_lines / total_lines, 0.0, 1.0)\n    doc_score   = clamp(documented_items\
+      \ / total_items, 0.0, 1.0)\n    grade_score = letter_to_numeric(complexity_grade)\n\
+      \    w_test + w_doc + w_grade = 1.0\n"
+    domain: FileMetrics with non-negative line counts and valid complexity grade
+    codomain: TdgScore in [0.0, 100.0]
+    invariants:
+    - 'Score is bounded: 0.0 <= TdgScore <= 100.0'
+    - Score is monotonically increasing with coverage and documentation
+    - Zero coverage and zero documentation yields minimum score
+    preconditions:
+    - '!config.is_empty()'
+    - '!path.is_empty()'
+    postconditions:
+    - result >= 0.0 && result <= 100.0
+    - w_test + w_doc + w_grade == 1.0
+    lean_theorem: Theorems.Calculate_Tdg
+  letter_grade:
+    formula: "grade: TdgScore -> LetterGrade\n  A+ if score >= 97, A if score >= 93,\
+      \ A- if score >= 90\n  B+ if score >= 87, B if score >= 83, B- if score >= 80\n\
+      \  C+ if score >= 77, C if score >= 73, C- if score >= 70\n  D+ if score >=\
+      \ 67, D if score >= 63, D- if score >= 60\n  F otherwise\n"
+    domain: TdgScore in [0.0, 100.0]
+    codomain: LetterGrade in {A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F}
+    invariants:
+    - Grade mapping is monotonically non-decreasing with score
+    - Every valid score maps to exactly one grade
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    postconditions:
+    - result in {A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-, F}
+    - score >= 97.0 => result == A+
+    - score < 60.0 => result == F
+    lean_theorem: Theorems.Letter_Grade
+proof_obligations:
+- type: bound
+  property: TDG score bounded
+  formal: 0.0 <= calculate_weighted_tdg(m) <= 100.0 for all valid FileMetrics m
+  applies_to: all
+- type: invariant
+  property: Weights sum to unity
+  formal: w_test + w_doc + w_grade = 1.0
+  applies_to: all
+- type: monotonicity
+  property: Score monotonic in coverage
+  formal: coverage(a) > coverage(b) => TdgScore(a) >= TdgScore(b) (other metrics equal)
+  applies_to: all
+- type: precondition
+  property: Valid input metrics
+  formal: total_lines > 0 and total_items >= 0 and complexity_grade in valid set
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TDG-001
+  rule: Score bounded at zero
+  prediction: Zero coverage, zero docs, worst grade => score >= 0.0
+  test: proptest with boundary inputs
+  if_fails: Underflow in weighted sum or negative weight
+- id: FALSIFY-TDG-002
+  rule: Score bounded at max
+  prediction: 100% coverage, 100% docs, best grade => score <= 100.0
+  test: proptest with maximum inputs
+  if_fails: Overflow in weighted sum or weights > 1.0
+- id: FALSIFY-TDG-003
+  rule: Score deterministic
+  prediction: Same inputs always produce same TDG score
+  test: replay test with fixed seed
+  if_fails: Non-deterministic state leaking into calculation
+- id: FALSIFY-TDG-004
+  rule: Grade monotonic
+  prediction: Higher score never maps to lower grade
+  test: proptest with ascending score pairs
+  if_fails: Grade boundary thresholds incorrectly ordered
+kani_harnesses:
+- id: KANI-TDG-001
+  obligation: TDG score bounded
+  property: 0.0 <= TdgScore <= 100.0 for all valid inputs
+  bound: 16
+  strategy: exhaustive
+- id: KANI-TDG-002
+  obligation: Score monotonic in coverage
+  property: Higher coverage never decreases TDG score
+  bound: 8
+  strategy: exhaustive
+- id: KANI-TDG_SC-003
+  obligation: Weights sum to unity
+  property: Weights sum to unity
+  bound: 8
+  strategy: stub_float
+- id: KANI-TDG_SC-004
+  obligation: Valid input metrics
+  property: Valid input metrics
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-TSV-001
+  name: tdg-scoring-v1 Contract
+  description: Quality gate for TDG scoring — weighted composite of test, documentation,
+    and
+  checks:
+  - validation
+  - falsification

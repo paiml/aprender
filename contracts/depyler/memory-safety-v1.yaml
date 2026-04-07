@@ -1,0 +1,322 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-25'
+  author: PAIML Engineering
+  description: Memory safety — generated Rust code free of undefined behavior, dangling
+    references, and buffer overflows
+  references:
+  - 'arXiv:2104.12986 — RustBelt: Securing the Foundations of the Rust Programming
+    Language'
+  - 'Jung et al. (2017) RustBelt: Securing the Foundations of the Rust Programming
+    Language, POPL'
+  - 'arXiv:2103.15420 — Oxide: The Essence of Rust'
+  - 'Weiss et al. (2019) Oxide: The Essence of Rust'
+  - The Rustonomicon — Unsafe Rust reference
+  - Miri — An interpreter for Rust's mid-level intermediate representation
+  depends_on:
+  - type-preservation-v1
+equations:
+  ownership_invariant:
+    formula: 'forall v in GeneratedVars: owned(v) xor borrowed(v, ''a) at any program
+      point'
+    domain: 'v: variable bindings in generated Rust code'
+    invariants:
+    - Every value has exactly one owner at any point
+    - Borrows do not outlive the owned value
+    - Mutable borrows are exclusive (no aliasing)
+    - Multiple immutable borrows are allowed simultaneously
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Ownership_Invariant
+  escape_analysis:
+    formula: 'forall v in Params(f): escape(v) => owned(v); not escape(v) and mutated(v)
+      => mut_borrow(v); not escape(v) and not mutated(v) => borrow(v)'
+    domain: 'f: transpiled Rust function, v: function parameters'
+    invariants:
+    - Parameters that escape (returned or stored) are taken by value
+    - Parameters that are mutated but don't escape use &mut
+    - Parameters that are only read use & (immutable borrow)
+    - Copy types bypass borrowing analysis (passed by value)
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Escape_Analysis
+  lifetime_safety:
+    formula: 'forall ref r with lifetime ''a: lifetime(referent(r)) >= ''a'
+    domain: 'r: references in generated Rust code'
+    invariants:
+    - 'No dangling references: referent outlives all references to it'
+    - Return references have lifetime tied to input parameter lifetimes
+    - String slices (&str) lifetime bounded by owning String
+    - Iterators do not outlive their source collection
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Lifetime_Safety
+  bounds_safety:
+    formula: 'forall access c[i]: 0 <= i < len(c) or access is bounds-checked'
+    domain: 'c: Vec, HashMap, array; i: index expression'
+    invariants:
+    - Vec indexing uses .get() or is guarded by bounds check
+    - HashMap access uses .get() returning Option, not direct index
+    - Slice operations produce valid sub-slices or panic safely
+    - Array access is statically bounded where possible
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - num_layers > 0
+    lean_theorem: Theorems.Bounds_Safety
+  use_after_move:
+    formula: 'forall v moved at point p: no use of v at any point q > p (unless v
+      is reassigned between p and q)'
+    domain: 'v: non-Copy variables in generated Rust code'
+    invariants:
+    - Strategic clone inserted when value used after move
+    - Borrow inserted when ownership transfer unnecessary
+    - Move analysis tracks all variable consumption points
+    - Reassignment after move resets liveness
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Use_After_Move
+  drop_safety:
+    formula: 'forall resource r acquired in scope S: Drop(r) called exactly once when
+      S exits'
+    domain: 'r: values implementing Drop (files, locks, connections)'
+    invariants:
+    - Python with-statement maps to Rust scope-based RAII
+    - Resources dropped in reverse acquisition order
+    - Drop called even on early return or panic (unwind safety)
+    - 'No double-free: each value dropped exactly once'
+    preconditions:
+    - 'input.len() > 0'
+    - '!config.is_empty()'
+    - '!source.is_empty()'
+    lean_theorem: Theorems.Drop_Safety
+proof_obligations:
+- type: precondition
+  property: Input Python code is valid and parseable
+  formal: parse(source) succeeds and produces valid AST
+  applies_to: all
+- type: postcondition
+  property: Generated Rust compiles without errors
+  formal: cargo check on generated code succeeds (no borrow checker errors)
+  applies_to: all
+- type: invariant
+  property: No use-after-move in generated code
+  formal: 'forall v: moved_at(v, p) => not used_at(v, q) for q > p without intervening
+    reassignment'
+  applies_to: all
+- type: invariant
+  property: No dangling references
+  formal: 'forall &''a T: lifetime(''a) <= lifetime(owner(T))'
+  applies_to: all
+- type: invariant
+  property: No mutable aliasing
+  formal: 'forall &mut T at point p: count(active_refs(T, p)) == 1'
+  applies_to: all
+- type: invariant
+  property: Bounds-checked collection access
+  formal: 'forall c[i] in generated code: i < len(c) or access uses .get()'
+  applies_to: all
+- type: invariant
+  property: No unsafe blocks in generated code
+  formal: count(unsafe_blocks(generated_code)) == 0
+  applies_to: all
+- type: invariant
+  property: Drop correctness for with-statements
+  formal: 'forall with ctx: Drop::drop(ctx) called exactly once on scope exit'
+  applies_to: all
+- type: invariant
+  property: Escape analysis correctness
+  formal: escape(v) => BorrowingPattern::Owned; mutated(v) => MutableBorrow; read_only(v)
+    => Borrowed
+  applies_to: all
+- type: invariant
+  property: Copy type optimization
+  formal: is_copy(T) => param passed by value (no unnecessary & or .clone())
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: escape_analysis
+    description: Interprocedural analysis detecting use-after-move and aliasing
+    invariant: All variables classified as owned, borrowed, or mut-borrowed
+  - name: borrowing_inference
+    description: Determine parameter borrowing patterns from escape analysis
+    invariant: BorrowingPattern assigned to each non-Copy parameter
+  - name: lifetime_inference
+    description: Infer lifetime parameters for references in function signatures
+    invariant: All references have valid lifetime annotations
+  - name: strategic_clone
+    description: Insert .clone() only where ownership analysis requires it
+    invariant: 'Minimal cloning: no unnecessary clone() calls'
+  - name: codegen_ownership
+    description: Emit &, &mut, .clone(), move in generated Rust code
+    invariant: Generated code passes borrow checker
+falsification_tests:
+- id: FALSIFY-MS-001
+  rule: No use-after-move
+  prediction: Variables used after being passed to consuming functions get .clone()
+    or &
+  test: 'proptest: generate functions with multiple uses of same variable, verify
+    compilation'
+  if_fails: EscapeAnalysis::analyze_function misses a consumption point
+- id: FALSIFY-MS-002
+  rule: Borrowing pattern correctness
+  prediction: Read-only params get &, mutated params get &mut, escaping params are
+    owned
+  test: 'proptest: generate functions with varied parameter usage patterns, verify
+    signatures'
+  if_fails: BorrowingContext::get_pattern returns wrong BorrowingPattern variant
+- id: FALSIFY-MS-003
+  rule: No dangling references
+  prediction: References returned from functions have lifetime tied to input parameters
+  test: 'Unit test: transpile functions returning references, verify lifetime annotations'
+  if_fails: LifetimeInference fails to propagate lifetime from input to output
+- id: FALSIFY-MS-004
+  rule: Bounds-checked access
+  prediction: List indexing transpiles to .get() or bounds-checked access, not raw
+    []
+  test: 'proptest: generate functions with list[i] access, verify .get() in output'
+  if_fails: Codegen emits unchecked [] indexing for Vec
+- id: FALSIFY-MS-005
+  rule: No unsafe in generated code
+  prediction: Generated Rust contains zero unsafe blocks
+  test: 'Grep test: scan all generated .rs files for ''unsafe'' keyword'
+  if_fails: Codegen emits unsafe block for some transpilation pattern
+- id: FALSIFY-MS-006
+  rule: Copy type bypass
+  prediction: Copy types (int, float, bool) passed by value, not by reference
+  test: 'Unit test: transpile functions with int params, verify no & in signature'
+  if_fails: Type::is_copy() returns false for a Copy type, or borrowing ignores Copy
+- id: FALSIFY-MS-007
+  rule: Strategic clone minimality
+  prediction: clone() only inserted when variable genuinely used after move
+  test: 'proptest: count clone() calls in output, verify each corresponds to a real
+    use-after-move'
+  if_fails: Conservative analysis inserts unnecessary clones
+- id: FALSIFY-MS-008
+  rule: With-to-Drop mapping
+  prediction: Python with open(f) as h maps to scoped Rust with Drop-based cleanup
+  test: 'Unit test: transpile with-statements, verify scope-based resource management'
+  if_fails: With-statement codegen does not use RAII pattern
+- id: FALSIFY-MS-009
+  rule: Mutable borrow exclusivity
+  prediction: No simultaneous &mut and & to same variable in generated code
+  test: 'proptest: generate functions with mixed read/write access, verify borrow
+    checker passes'
+  if_fails: Borrowing analysis allows aliased mutable reference
+- id: FALSIFY-MS-010
+  rule: Iterator lifetime safety
+  prediction: Iterators created from collections do not outlive their source
+  test: 'Unit test: transpile for-loops with complex iterators, verify no dangling
+    iterator'
+  if_fails: Iterator codegen creates reference that outlives source collection
+kani_harnesses:
+- id: KANI-MS-001
+  obligation: Escape analysis classification
+  property: Every parameter classified as exactly one of {Owned, Borrowed, MutableBorrow}
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_escape_classification
+- id: KANI-MS-002
+  obligation: Use-after-move detection
+  property: If variable moved at stmt i and used at stmt j > i, clone is inserted
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_use_after_move_detection
+- id: KANI-MS-003
+  obligation: Copy type identification
+  property: is_copy returns true iff type maps to a Rust Copy type
+  bound: 16
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_copy_type_identification
+- id: KANI-MS-004
+  obligation: No unsafe emission
+  property: Generated token stream contains no unsafe keyword
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_no_unsafe_emission
+- id: KANI-MS-005
+  obligation: Borrowing pattern determinism
+  property: Same function body always produces same borrowing pattern
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_borrowing_determinism
+- id: KANI-MEMORY-006
+  obligation: Input Python code is valid and parseable
+  property: Input Python code is valid and parseable
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-007
+  obligation: Generated Rust compiles without errors
+  property: Generated Rust compiles without errors
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-008
+  obligation: No use-after-move in generated code
+  property: No use-after-move in generated code
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-009
+  obligation: No dangling references
+  property: No dangling references
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-010
+  obligation: No mutable aliasing
+  property: No mutable aliasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-011
+  obligation: Bounds-checked collection access
+  property: Bounds-checked collection access
+  bound: 8
+  strategy: stub_float
+- id: KANI-MEMORY-012
+  obligation: No unsafe blocks in generated code
+  property: No unsafe blocks in generated code
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-013
+  obligation: Drop correctness for with-statements
+  property: Drop correctness for with-statements
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-014
+  obligation: Escape analysis correctness
+  property: Escape analysis correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-MEMORY-015
+  obligation: Copy type optimization
+  property: Copy type optimization
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-MS-001
+  name: Memory Safety Contract
+  checks:
+  - use_after_move
+  - borrowing_patterns
+  - lifetime_safety
+  - bounds_checking
+  - no_unsafe
+  - copy_optimization
+  - clone_minimality
+  - drop_safety
+  - mutable_exclusivity
+  - iterator_lifetime
+  pass_criteria: All 10 falsification tests pass, all 5 Kani harnesses verify
+  falsification: Skip escape analysis to emit raw moves, causing use-after-move in
+    generated code

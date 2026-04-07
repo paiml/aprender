@@ -1,0 +1,193 @@
+contract: wgpu-transformer-trainer-v1
+version: 5.0.0
+status: implemented
+kaizen: 203
+description: >
+  WgpuTransformerTrainer: end-to-end training loop on non-NVIDIA GPUs.
+  Forward (CPU/WGPU) → cross-entropy loss → GEMM backward A/B (GPU) → AdamW (GPU).
+  Delegates backward compute to trueno GpuDevice WGSL shaders.
+
+invariants:
+- id: C-WGPU-TRAIN-001
+  description: Training step updates weights and decreases loss
+  preconditions:
+  - WGPU device available (Vulkan/Metal/DX12)
+  - Hidden states and lm_head weights are finite fp32
+  - Optimizer state (m, v) initialized to zero
+  postconditions:
+  - Loss is finite and positive
+  - lm_head_weight is modified after step (weight update applied)
+  - Loss decreases by >10% within 50 steps on toy data
+  verified_by:
+  - test_falsify_wgpu_002_toy_convergence — PASS on AMD W5700X
+  severity: critical
+
+- id: C-WGPU-TRAIN-002
+  description: FFN backward produces non-zero gradients through gate/up/down projections
+  preconditions:
+  - grad_output is non-zero
+  - Cached forward activations (gate, up, silu_gate) are available
+  postconditions:
+  - grad_ffn_input has non-zero norm (gradient flow works)
+  - All gradient values are finite
+  verified_by:
+  - test_ffn_backward_gradient_flow — PASS on AMD W5700X
+  severity: high
+
+- id: C-WGPU-TRAIN-003
+  description: NF4 weight loading from safetensors + GPU dequant
+  preconditions:
+  - Qwen3-4B safetensors shards exist on disk
+  - WGPU device available
+  postconditions:
+  - All 7 projections per layer loaded and quantized to NF4
+  - GPU dequant produces finite values with >50% non-zero
+  - Per-layer memory < 60MB NF4
+  verified_by:
+  - test_load_qwen3_4b_layer0_nf4 — PASS on AMD W5700X (3.4s)
+  severity: critical
+
+- id: C-WGPU-TRAIN-004
+  description: LoRA forward adds adapter contribution when B is non-zero
+  preconditions:
+  - LoRA A initialized (non-zero), B initialized
+  postconditions:
+  - B=0 → output equals base (x @ W^T only)
+  - B≠0 → output differs from base (LoRA contributes)
+  verified_by:
+  - test_lora_forward_adds_to_base — PASS on AMD W5700X
+  severity: high
+
+- id: C-WGPU-TRAIN-005
+  description: LoRA backward produces non-zero gradients for A, B, and x
+  preconditions:
+  - Non-zero grad_output, non-zero x, non-zero A and B
+  postconditions:
+  - grad_A norm > 1e-6
+  - grad_B norm > 1e-6
+  - grad_x norm > 1e-6
+  - All gradients finite
+  verified_by:
+  - test_lora_backward_gradient_flow — PASS on AMD W5700X
+  severity: critical
+
+- id: C-WGPU-CKPT-001
+  description: Checkpoint round-trip preserves all LoRA weights bit-identically
+  preconditions:
+  - WgpuModelState with LoRA adapters (Q+V per layer)
+  - Output directory exists or can be created
+  postconditions:
+  - Saved checkpoint file is valid JSON
+  - Loaded checkpoint reproduces identical A, B, m_a, v_a, m_b, v_b per adapter
+  - Step and loss metadata preserved
+  verified_by:
+  - test_checkpoint_round_trip — PASS
+  severity: critical
+
+- id: C-WGPU-TRAIN-009
+  description: Full pipeline training run (attention+FFN+LoRA) converges on real data
+  preconditions:
+  - Qwen3-4B model loaded with attention+FFN weight caches
+  - conversations_v4.jsonl tokenized
+  - LoRA Q/V adapters participate in forward AND backward
+  postconditions:
+  - Loss decreases from initial value within 100 steps
+  - Checkpoint saved and loadable
+  - All losses and gradients finite
+  verified_by:
+  - Run v5 — loss 13.8→3.09, plateau at step 500, 3 checkpoints (PASS on AMD W5700X)
+  severity: critical
+
+- id: C-WGPU-TRAIN-008
+  description: Attention forward with LoRA produces finite output
+  preconditions:
+  - Hidden states finite, QKVO weights dequanted
+  - LoRA Q/V adapters initialized
+  postconditions:
+  - Output is finite with non-zero norm
+  - LoRA B≠0 changes output vs LoRA B=0 (adapter contributes)
+  - GQA respects causal mask (no future token leakage)
+  verified_by:
+  - test_attention_forward_basic — PASS on AMD W5700X
+  severity: critical
+
+- id: C-WGPU-TRAIN-007
+  description: Backward through all FFN layers updates LoRA Q/V adapters
+  preconditions:
+  - grad_hidden from lm_head backward is finite
+  - Forward activations cached per layer (hidden_input, gate, up, silu)
+  - FFN weight cache populated
+  postconditions:
+  - LoRA Q and V adapter weights modified (AdamW applied)
+  - grad_hidden propagated through all layers to layer 0
+  - All gradients finite
+  verified_by:
+  - test_backward_through_layers_gradient_flow — PASS on AMD W5700X
+  severity: critical
+
+- id: C-WGPU-CACHE-001
+  description: FFN weight dequant cache eliminates redundant NF4 ops
+  preconditions:
+  - WgpuModelState with NF4 layers loaded
+  - GpuDevice available for initial dequant
+  postconditions:
+  - First call to populate_ffn_cache dequants all 36 layers (~54s on W5700X)
+  - Subsequent steps skip dequant entirely (cache hit, 0s)
+  - Cached weights match direct dequant output bit-identically
+  verified_by:
+  - full_train_step uses cached_ffn for all forward passes — PASS
+  severity: high
+
+- id: C-WGPU-CKPT-002
+  description: Checkpoint rejects dimension mismatch on load
+  preconditions:
+  - Checkpoint saved from model with hidden_size=H1
+  - Target model has hidden_size=H2 where H1≠H2
+  postconditions:
+  - load_checkpoint returns Err with descriptive message
+  - Model state is unchanged (no partial load)
+  verified_by:
+  - test_checkpoint_dimension_mismatch — PASS
+  severity: high
+
+- id: C-WGPU-TRAIN-006
+  description: Training converges on real data (loss < initial within 500 steps)
+  preconditions:
+  - Qwen3-4B model loaded on WGPU device
+  - conversations_v4.jsonl tokenized
+  postconditions:
+  - Loss decreases from initial ~11-17 to < 3.0 within 500 steps
+  - All losses and gradients finite
+  verified_by:
+  - Live training on AMD W5700X — loss=1.956 at step 356 (verified 2026-03-28)
+  severity: critical
+
+affected_files:
+- path: src/train/transformer_trainer/wgpu_trainer.rs
+  functions:
+  - 'WgpuTransformerTrainer::new: initialize with WgpuForwardPass + GpuDevice'
+  - 'train_step: forward→loss→backward_a→backward_b→adamw'
+  - 'full_train_step: 36-layer forward + lm_head + loss + backward + AdamW'
+  - 'ffn_backward: down_proj→silu→gate/up_proj backward chain'
+  - 'lora_forward: x@W^T + (alpha/rank)*x@B^T@A^T'
+  - 'lora_backward: grad_A, grad_B, grad_x via GPU GEMM'
+  - 'save_checkpoint: serialize LoRA adapters + optimizer state to JSON'
+  - 'load_checkpoint: restore LoRA adapters from JSON with validation'
+- path: src/train/transformer_trainer/wgpu_nf4.rs
+  functions:
+  - 'Nf4LayerWeights::from_safetensors: load 7 projections as NF4'
+  - 'quantize_to_nf4: pure Rust NF4 quantization'
+  - 'quantize_projection: safetensors→NF4 pipeline'
+  - 'dequant_gate/up/down: GPU NF4→fp32 dispatch'
+  - 'LoraAdapter::new: Kaiming-uniform A, zero B'
+  - 'LoraCheckpoint: serializable checkpoint format'
+- path: src/train/transformer_trainer/wgpu_attention.rs
+  functions:
+  - 'attention_forward: QKV proj + LoRA + RoPE + GQA + causal mask + O proj'
+- path: src/train/transformer_trainer/wgpu_backward.rs
+  functions:
+  - 'backward_through_layers: 36-layer FFN backward + LoRA Q/V AdamW'
+  - 'LayerActivations: per-layer forward cache for backward'
+- path: src/train/transformer_trainer/wgpu_runner.rs
+  functions:
+  - 'run_wgpu_training: tokenize→embed→36-layer train loop→checkpoint'

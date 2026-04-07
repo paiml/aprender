@@ -1,0 +1,95 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-24'
+  author: PAIML Engineering
+  description: Execution safety — atomic writes and jidoka failure policy
+  references:
+  - Lampson & Sturgis (1979) Crash Recovery in a Distributed Data Storage System
+  - Ohno (1988) Toyota Production System — Jidoka (autonomation)
+equations:
+  atomic_write:
+    formula: save_lock(dir, lock) = write(tmp) ∘ rename(tmp, target)
+    domain: state_dir ∈ Path, lock ∈ StateLock
+    codomain: Result<(), String>
+    invariants:
+    - No temp file remains after successful save
+    - Target file exists after successful save
+    - Parent directories are created if absent
+    preconditions:
+    - '!config.is_empty()'
+    - '!path.is_empty()'
+    lean_theorem: Theorems.Atomic_Write
+  jidoka_stop:
+    formula: on_failure(policy, error) = if policy = StopOnFirst then halt else continue
+    domain: policy ∈ {StopOnFirst, ContinueIndependent}, error ∈ String
+    codomain: bool (should_stop)
+    invariants:
+    - StopOnFirst policy returns true on failure
+    - ContinueIndependent policy returns false on failure
+    - Failed resource is recorded in lock regardless of policy
+    preconditions:
+    - '!config.is_empty()'
+    - max_retries > 0
+    lean_theorem: Theorems.Jidoka_Stop
+proof_obligations:
+- type: invariant
+  property: Atomic write leaves no temp file
+  formal: '∀ save_lock(d, l) = Ok(()): ¬exists(d/l.machine/state.lock.yaml.tmp)'
+  applies_to: all
+- type: invariant
+  property: Jidoka dispatches correctly
+  formal: record_failure(StopOnFirst, ...) = true ∧ record_failure(Continue, ...)
+    = false
+  applies_to: all
+enforcement:
+  atomic_write:
+    description: Temp file must not remain after save_lock
+    check: contract_tests::FALSIFY-ES-001
+    severity: ERROR
+  jidoka_stop:
+    description: StopOnFirst must halt on first failure
+    check: contract_tests::FALSIFY-ES-002
+    severity: ERROR
+  jidoka_continue:
+    description: ContinueIndependent must not halt on failure
+    check: contract_tests::FALSIFY-ES-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-ES-001
+  rule: Atomic write
+  prediction: After save_lock succeeds, no .tmp file exists
+  test: proptest with random StateLock content
+  if_fails: Temp file cleanup failed or rename not atomic
+- id: FALSIFY-ES-002
+  rule: Jidoka stop
+  prediction: record_failure with StopOnFirst returns true
+  test: direct test with StopOnFirst policy
+  if_fails: Jidoka policy dispatch broken
+- id: FALSIFY-ES-003
+  rule: Jidoka continue
+  prediction: record_failure with ContinueIndependent returns false
+  test: direct test with ContinueIndependent policy
+  if_fails: Continue policy incorrectly stops
+kani_harnesses:
+- id: KANI-ES-001
+  obligation: Atomic write leaves no temp file
+  strategy: bounded_int
+  solver: cadical
+  bound: 8
+  description: Verify save_lock with arbitrary StateLock content leaves no temp file
+- id: KANI-ES-002
+  obligation: Jidoka dispatches correctly
+  strategy: exhaustive
+  solver: cadical
+  bound: 2
+  description: Enumerate both policies and verify correct stop/continue behavior
+qa_gate:
+  id: F-ES-001
+  name: Execution Safety Contract
+  description: Atomic writes and jidoka policy quality gate
+  checks:
+  - atomic_write
+  - jidoka_stop
+  - jidoka_continue
+  pass_criteria: All 3 falsification tests pass
+  falsification: Skip rename in save_lock, leaving only temp file

@@ -1,0 +1,155 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Performance grading systems for model evaluation
+  references:
+  - Qwen2.5-Coder Showcase Spec §11.6 — Ollama parity grade
+  - Qwen2.5-Coder Showcase Spec §11.7 — performance efficiency grade
+equations:
+  ollama_parity:
+    formula: ratio = apr_tps / ollama_tps; grade = classify(ratio)
+    domain: ratio ∈ [0, ∞)
+    codomain: grade ∈ {F, D, C, B, A, A+}
+    invariants:
+    - 'Grade boundaries: F(<0.5), D[0.5,0.75), C[0.75,1.0), B[1.0,1.5), A[1.5,2.0), A+(>=2.0)'
+    - 'Monotonic: higher ratio => same or better grade'
+    - Boundaries are exhaustive and non-overlapping
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ollama_Parity
+  llamacpp_parity:
+    formula: ratio = apr_tps / llamacpp_tps; grade = classify(ratio)
+    domain: ratio ∈ [0, ∞)
+    codomain: grade ∈ {F, D, C, B, A, A+}
+    invariants:
+    - Same grade boundaries as ollama_parity
+    - Measured at c=1 (single request) and c=4 (concurrent)
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Llamacpp_Parity
+  vllm_parity:
+    formula: ratio = apr_tps / vllm_tps; grade = classify(ratio)
+    domain: ratio ∈ [0, ∞), vLLM uses AWQ INT4 (not GGUF)
+    codomain: grade ∈ {F, D, C, B, A, A+}
+    invariants:
+    - Same grade boundaries as ollama_parity
+    - vLLM is the ceiling for continuous batching (c>=4)
+    - Compare at c=4+ where vLLM's PagedAttention advantage matters
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Vllm_Parity
+  efficiency_grade:
+    formula: eff = actual_tps / roofline_ceiling; grade = classify(eff)
+    domain: eff ∈ [0, 1]
+    codomain: grade ∈ {F, D, C, B, A}
+    invariants:
+    - 'Grade boundaries: F(<10%), D[10%,20%), C[20%,40%), B[40%,50%), A(>=50%)'
+    - 'Monotonic: higher efficiency => same or better grade'
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Efficiency_Grade
+  concrete_instance:
+    formula: 'Qwen3-8B Q4K: bw_ceiling = 33GB/s / 4.19GB ≈ 7.9 tok/s'
+    domain: DDR4 desktop, specific model
+    invariants:
+    - Concrete value within 10% of theoretical
+    preconditions:
+    - grad_output.len() > 0
+    - grad_output.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Concrete_Instance
+proof_obligations:
+- type: invariant
+  property: Ollama grade exhaustive
+  formal: For all ratio >= 0, exactly one grade bucket matches
+  applies_to: all
+- type: monotonicity
+  property: Ollama grade monotonic
+  formal: r1 > r2 => grade(r1) >= grade(r2)
+  applies_to: all
+- type: monotonicity
+  property: Efficiency grade monotonic
+  formal: e1 > e2 => grade(e1) >= grade(e2)
+  applies_to: all
+- type: bound
+  property: Concrete ceiling bound
+  formal: DDR4 33 GB/s, 4.19 GB model => ceiling ∈ [7.0, 9.0]
+  applies_to: all
+- type: equivalence
+  property: SIMD grading equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-PG-001
+  rule: Exhaustive grading
+  prediction: No ratio falls between grade boundaries
+  test: proptest with random ratios in [0, 10]
+  if_fails: Gap or overlap in grade boundaries
+- id: FALSIFY-PG-002
+  rule: Monotonicity
+  prediction: Increasing ratio never decreases grade
+  test: proptest with random ratio pairs
+  if_fails: Grade boundaries not monotonically ordered
+- id: FALSIFY-PG-003
+  rule: Concrete ceiling
+  prediction: Calculation matches expected range
+  test: Deterministic test with DDR4 values
+  if_fails: Arithmetic error in ceiling formula
+- id: FALSIFY-PG-004
+  rule: Efficiency grade monotonic
+  prediction: Higher efficiency => same or better grade
+  test: 'proptest: eff1 < eff2 => grade(eff1) <= grade(eff2)'
+  if_fails: Grade function not monotonic
+- id: FALSIFY-PG-005
+  rule: SIMD grading equivalence
+  prediction: SIMD grading matches scalar
+  test: 'proptest: compare scalar vs SIMD grade computation'
+  if_fails: SIMD path assigns different grades
+kani_harnesses:
+- id: KANI-PG-001
+  obligation: PG-INV-001
+  property: Grade exhaustive for bounded ratios
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_grade_exhaustive
+- id: KANI-PERFOR-002
+  obligation: Ollama grade exhaustive
+  property: Ollama grade exhaustive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PERFOR-003
+  obligation: Ollama grade monotonic
+  property: Ollama grade monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PERFOR-004
+  obligation: Efficiency grade monotonic
+  property: Efficiency grade monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-PERFOR-005
+  obligation: Concrete ceiling bound
+  property: Concrete ceiling bound
+  bound: 8
+  strategy: stub_float
+- id: KANI-PERFOR-006
+  obligation: SIMD grading equivalence
+  property: SIMD grading equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-PG-001
+  name: Performance Grading Contract
+  description: Grading system quality gate
+  checks:
+  - ollama_exhaustive
+  - ollama_monotonic
+  - efficiency_monotonic
+  - concrete_bound
+  pass_criteria: All 5 falsification tests pass
+  falsification: Insert gap between C and B boundaries

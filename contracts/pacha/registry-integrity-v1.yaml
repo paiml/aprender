@@ -1,0 +1,108 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Registry integrity contract — pull, run, list determinism for ML artifact management
+  references:
+  - 'Sculley et al. (2015) Hidden Technical Debt in Machine Learning Systems'
+equations:
+  pull_idempotency:
+    formula: '∀ artifact: pull(artifact) ; pull(artifact) ≡ pull(artifact)'
+    domain: artifact ∈ {model, dataset, recipe} with valid name + version
+    codomain: Result<PathBuf, FetchError>
+    invariants:
+    - Repeated pulls produce identical local files
+    - Content-addressed storage prevents corruption
+    - pull_quiet suppresses progress output but same result
+    preconditions:
+    - artifact name is non-empty
+    - registry is reachable
+    lean_theorem: Theorems.Pull_Idempotency
+  run_lifecycle:
+    formula: start_run(recipe) → update_run(metrics) → get_run(id) with monotonic step_count
+    domain: recipe ∈ String, run_id ∈ u64
+    codomain: Result<RunInfo, RegistryError>
+    invariants:
+    - run_id is unique and monotonically increasing
+    - step_count only increases within a run
+    - 'Completed runs are immutable: update after finish returns error'
+    - list_runs returns runs in creation order
+    preconditions:
+    - recipe exists in registry
+    - run_id > 0
+    lean_theorem: Theorems.Run_Lifecycle
+  list_completeness:
+    formula: '|list_X()| = |{x ∈ registry : type(x) = X}|'
+    domain: X ∈ {models, datasets, recipes}
+    codomain: Vec<String>
+    invariants:
+    - List returns all registered items of type X
+    - No duplicates in output
+    - Alphabetically sorted by name
+    preconditions: []
+    lean_theorem: Theorems.List_Completeness
+proof_obligations:
+- type: invariant
+  property: Pull idempotency
+  formal: '∀ a: hash(pull(a)) = hash(pull(a))'
+  applies_to: pull_idempotency
+- type: invariant
+  property: Run ID monotonicity
+  formal: '∀ r1, r2: created_at(r1) < created_at(r2) → id(r1) < id(r2)'
+  applies_to: run_lifecycle
+- type: invariant
+  property: List no duplicates
+  formal: '∀ X: |set(list_X())| = |list_X()|'
+  applies_to: list_completeness
+enforcement:
+  pull_idempotent:
+    description: Pulling same artifact twice yields identical files
+    check: contract_tests::FALSIFY-RI-001
+    severity: ERROR
+  run_monotonic:
+    description: Run IDs and step counts are monotonically increasing
+    check: contract_tests::FALSIFY-RI-002
+    severity: ERROR
+  list_no_duplicates:
+    description: List operations return unique entries
+    check: contract_tests::FALSIFY-RI-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RI-001
+  rule: Pull idempotency
+  prediction: hash of pulled artifact is identical across two pulls
+  test: pull same model twice, compare SHA-256 of files
+  if_fails: Cache invalidation or partial download bug
+- id: FALSIFY-RI-002
+  rule: Run ID monotonicity
+  prediction: start_run() always returns ID greater than previous
+  test: start 100 runs, verify strictly increasing IDs
+  if_fails: ID generation race condition or counter reset
+- id: FALSIFY-RI-003
+  rule: List uniqueness
+  prediction: list_models() contains no duplicate names
+  test: register models with similar names, verify list output
+  if_fails: Case-insensitive collision or index corruption
+kani_harnesses:
+- id: KANI-RI-001
+  obligation: Run ID monotonicity
+  property: sequential start_run calls produce increasing IDs
+  bound: 8
+  strategy: exhaustive
+  harness: verify_run_id_monotonic
+- id: KANI-RI-002
+  obligation: List uniqueness
+  property: list output has no duplicates
+  bound: 16
+  strategy: exhaustive
+  harness: verify_list_unique
+qa_gate:
+  id: F-RI-001
+  name: Registry Integrity Contract
+  description: Pull/run/list correctness quality gate
+  checks:
+  - pull_idempotent
+  - run_monotonic
+  - list_no_duplicates
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return stale cached file after upstream update

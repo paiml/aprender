@@ -1,0 +1,104 @@
+contract: C-INSTBUF-001
+title: Pre-allocated Forward/Backward Buffers in InstructPipeline
+kaizen: KAIZEN-062
+parent: C-GPUTRAINIT-002
+status: implemented
+date: 2026-03-04
+baseline:
+  cuMemAlloc_per_step: 3
+  cuMemFree_per_step: 3
+  cpu_alloc_per_step: 2
+  cpu_alloc_size_bytes: 5242880
+  per_step_overhead_us: 60
+target:
+  cuMemAlloc_per_step: 0
+  cuMemFree_per_step: 0
+  cpu_alloc_per_step: 0
+  per_step_overhead_us: 0
+  one_time_cost_bytes: 15728640
+api:
+  fwd_scratch_a_b: 'New fields on InstructGpuTrainingState: fwd_scratch_a, fwd_scratch_b.
+
+    Both GpuBuffer<f32> sized to max_seq_len * hidden_size.
+
+    Allocated once during try_init_gpu_training().
+
+    '
+  lm_head_hidden_buf: 'New field on InstructGpuTrainingState: lm_head_hidden_buf.
+
+    GpuBuffer<f32> sized to max_seq_len * hidden_size.
+
+    Used for normed hidden upload before lm_head GEMM.
+
+    '
+  forward_cuda_training: 'Rewritten to use pre-allocated ping-pong buffers.
+
+    Upload via copy_from_host_at (partial write into fwd_scratch_a).
+
+    Ping-pong via raw pointers (same pattern as KAIZEN-060 classify pipeline).
+
+    '
+  backward_nf4_gpu_blocks: 'Removed CPU vec![0.0; padded_size] allocation.
+
+    Uses copy_from_host_at to write gradient directly to grad_upload_buf.
+
+    '
+  forward_logits_gpu: 'Replaced trainer.upload(&normed_hidden) with
+
+    copy_from_host_at into lm_head_hidden_buf.
+
+    '
+safety:
+  buffer_sizing: 'fwd_scratch_a/b and lm_head_hidden_buf are max_seq_len * hidden_size — sufficient
+
+    for any seq_len <= max_seq_len. copy_from_host_at writes only seq_len * hidden_size
+
+    elements at offset 0. Remaining buffer contents are irrelevant (kernels use seq_len).
+
+    '
+  ping_pong_safety: 'Raw pointers used for disjoint field access (same pattern as cuda_trainer.rs
+
+    and classify_pipeline.rs KAIZEN-060). scratch_a_ptr and scratch_b_ptr point to
+
+    different struct fields. Only one is written per iteration; the other is read-only.
+
+    '
+  partial_upload: 'copy_from_host_at writes only the actual data (seq_len * hidden_size elements).
+
+    Padded positions retain stale values from previous samples. This is safe because
+
+    all GPU kernels use seq_len for GEMM dimensions and attention masking — padded
+
+    positions are never read in any computation that affects the loss.
+
+    '
+  split_borrows: 'fwd_scratch_a, fwd_scratch_b, lm_head_hidden_buf, layer_inputs, blocks_output,
+
+    grad_upload_buf are all separate struct fields. Rust split-borrow rules allow
+
+    concurrent access to different fields without &mut self conflicts.
+
+    '
+preconditions:
+- InstructGpuTrainingState initialized (fwd_scratch_a/b, lm_head_hidden_buf allocated)
+- seq_len <= max_seq_len
+postconditions:
+- Forward/backward behavior identical — same GEMM, same gradients, same optimizer
+- Zero per-call GPU memory allocations during training step
+- Zero per-call CPU heap allocations for staging buffers
+invariants:
+- fwd_scratch_a/b.len() == max_seq_len * hidden_size
+- lm_head_hidden_buf.len() == max_seq_len * hidden_size
+- No buffer reallocated after construction
+- Inference-only path unchanged (no InstructGpuTrainingState)
+files:
+- path: entrenar/src/finetune/instruct_pipeline.rs
+  change: Added fwd_scratch_a/b, lm_head_hidden_buf to InstructGpuTrainingState; rewrote forward/backward to use pre-allocated
+    buffers
+qa_gate:
+  id: F-IBPV-001
+  name: instruct-buffer-prealloc-v1 Contract
+  description: Quality gate for instruct-buffer-prealloc-v1
+  checks:
+  - validation
+  - falsification

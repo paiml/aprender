@@ -1,0 +1,217 @@
+metadata:
+  version: 1.0.0
+  description: CLF-RUN classifier pipeline — CodeBERT embedding extraction + linear probe training
+  references:
+  - 'SSC v11 Section 4.3: Classifier Infrastructure'
+  - 'SSC v11 Phase 1: CLF-RUN task'
+  - Alain & Bengio (2016) Understanding intermediate layers using linear classifier probes
+  depends_on:
+  - codebert-tokenizer-validation-v1
+  - linear-probe-classifier-v1
+  - conversation-generation-v1
+equations:
+  embedding_extraction:
+    formula: cls_emb = EncoderModel.forward(tokenize(script))[0, :hidden_size]
+    domain: script in String, model in EncoderModel
+    codomain: cls_emb in R^768
+    invariants:
+    - Output dimension equals hidden_size (768 for CodeBERT)
+    - 'Output is deterministic: same input → same embedding'
+    - Encoder weights are frozen (no gradient updates)
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Embedding_Extraction
+  linear_probe:
+    formula: P(unsafe|x) = sigmoid(w @ cls_emb + b)
+    domain: cls_emb in R^768, w in R^768, b in R
+    codomain: probability in [0, 1]
+    invariants:
+    - Only w and b are trainable (768 + 1 = 769 parameters)
+    - Prediction threshold at 0.5
+    - sigmoid(0) = 0.5 exactly
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Linear_Probe
+  evaluation:
+    formula: MCC = (TP*TN - FP*FN) / sqrt((TP+FP)(TP+FN)(TN+FP)(TN+FN))
+    domain: predictions in Vec<(u8, u8)>
+    codomain: MCC in [-1, 1]
+    invariants:
+    - MCC = 0 for random classifier
+    - MCC > 0.3 beats keyword baseline (C-CLF-001 Level 1)
+    - MCC > 0.4 beats linter baseline (C-CLF-001 Level 2)
+    preconditions:
+    - capacity > 0
+    lean_theorem: Theorems.Evaluation
+proof_obligations:
+- type: invariant
+  property: Embedding determinism
+  formal: extract(model, script) == extract(model, script) for same inputs
+  applies_to: all
+- type: invariant
+  property: Split determinism
+  formal: split(data, seed) == split(data, seed) for same seed
+  applies_to: all
+- type: invariant
+  property: Probe convergence
+  formal: train_accuracy(epoch=N) >= train_accuracy(epoch=0) for N >= 10
+  applies_to: training
+- type: invariant
+  property: Ship gate C-CLF-001
+  formal: test_mcc > 0.3 (beats keyword) AND test_mcc > 0.0 (beats majority)
+  applies_to: evaluation
+- type: invariant
+  property: No empty embeddings
+  formal: 'for all e in embeddings: e.embedding.len() == hidden_size AND any(e != 0.0)'
+  applies_to: extraction
+falsification_tests:
+- id: FALSIFY-CLF-001
+  rule: Sigmoid correctness
+  prediction: sigmoid(0) = 0.5, sigmoid(large) ≈ 1, sigmoid(-large) ≈ 0
+  test: Unit test sigmoid function at boundary values
+  if_fails: Numerical implementation error in activation
+  status: PASS — test_sigmoid
+- id: FALSIFY-CLF-002
+  rule: Split determinism
+  prediction: Same seed produces identical train/test partition
+  test: Split twice with same seed, compare sets
+  if_fails: Non-deterministic hash or random element in splitting
+  status: PASS — test_split_deterministic, test_fnv1a_deterministic, test_fnv1a_different_seeds
+- id: FALSIFY-CLF-003
+  rule: Linear probe learns
+  prediction: Training accuracy > 70% on linearly separable synthetic data
+  test: Create synthetic embeddings with clear separation, train, measure accuracy
+  if_fails: SGD implementation error or learning rate too large/small
+  status: PASS — test_train_linear_probe_learns
+- id: FALSIFY-CLF-004
+  rule: Serialization roundtrip
+  prediction: save_probe → load_probe preserves all fields exactly
+  test: Create probe, save, load, compare all fields
+  if_fails: JSON serialization loses precision or drops fields
+  status: PASS — test_save_load_probe + test_mlp_probe_weights_roundtrip (KAIZEN-106)
+- id: FALSIFY-CLF-005
+  rule: Embedding serialization roundtrip
+  prediction: save_embeddings → load_embeddings preserves all entries
+  test: Create embeddings, save to JSONL, reload, verify count and values
+  if_fails: JSONL line parsing error or float precision loss
+  status: PASS — test_save_load_embeddings
+kani_harnesses:
+- id: KANI-CLF-001
+  obligation: Embedding determinism
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+- id: KANI-CLF-002
+  obligation: Split determinism
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+- id: KANI-CLF-003
+  obligation: Probe convergence
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+- id: KANI-CLF-004
+  obligation: Ship gate C-CLF-001
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+- id: KANI-CLF-005
+  obligation: No empty embeddings
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+qa_gate:
+  id: C-CLF-PIPELINE-001
+  name: C-CLF-PIPELINE-001
+  description: Classifier pipeline quality gate
+  checks:
+  - 14 unit tests pass (sigmoid, split, train, save/load, tokenize, mlp_forward)
+  - Linear probe achieves > 70% accuracy on synthetic data
+  - MLP probe (Level 0.5) achieves MCC > 0.6 at all tested scales (3k-12k)
+  - Embedding extraction produces 768-dimensional vectors
+  - Train/test split is deterministic with same seed
+  - All serialization roundtrips preserve data exactly (LinearProbe + MlpProbeWeights)
+  - 45 CLI integration tests pass (assert_cmd)
+validated_results:
+  date: '2026-03-06'
+  model: microsoft/codebert-base (124M params, 199 safetensors)
+  tokenizer: RoBERTa BPE (vocab.json + merges.txt, 50265 tokens)
+  metrics:
+  - name: 500-entry BPE
+    test_mcc: 0.592
+    test_accuracy: 0.952
+    test_precision: 0.667
+    test_recall: 0.571
+    test_f1: 0.615
+    train_mcc: 0.86
+    ship_gate: PASS
+  - name: 672-entry BPE (partial)
+    test_mcc: 0.608
+    test_accuracy: 0.957
+    test_precision: 0.714
+    test_recall: 0.556
+    test_f1: 0.625
+    train_mcc: 0.808
+    ship_gate: PASS
+  - name: 2047-entry BPE (class-weighted)
+    test_mcc: 0.321
+    test_accuracy: 0.837
+    test_precision: 0.328
+    test_recall: 0.512
+    test_f1: 0.4
+    train_mcc: 0.546
+    ship_gate: PASS
+    notes: Class-weighted online SGD (sqrt-inverse balanced), L2=1e-4, 100 epochs, lr=0.001
+  - name: 3000-entry shell + 350 adv (MLP h=32)
+    test_mcc: 0.754
+    test_accuracy: 0.942
+    test_precision: 0.67
+    test_recall: 0.918
+    test_f1: 0.775
+    ship_gate: PASS
+    notes: MLP probe (Level 0.5), lr=1e-4, 50 epochs, L2=1e-4, shell-based labels (#172), adversarial augmentation
+  - name: 10k-entry shell + 350 adv (MLP h=32)
+    test_mcc: 0.693
+    test_accuracy: 0.966
+    test_precision: 0.554
+    test_recall: 0.906
+    ship_gate: PASS
+    notes: MLP probe, lr=1e-4, 50 epochs, scale validation
+  - name: 12k-entry shell + 350 adv (MLP h=32)
+    test_mcc: 0.654
+    test_accuracy: 0.967
+    test_precision: 0.49
+    test_recall: 0.909
+    ship_gate: PASS
+    notes: MLP probe, lr=1e-4, 50 epochs, scale validation
+  - name: FULL 17942-entry shell + 350 adv (MLP h=32)
+    test_mcc: 0.443
+    test_accuracy: 0.93
+    test_precision: 0.248
+    test_recall: 0.87
+    test_f1: 0.386
+    ship_gate: PASS
+    notes: 'CLF-FULL complete. MLP probe, lr=1e-4, 50 epochs. Train: 14671, Test: 3621.'
+  - name: 3000-entry shell (linear, no aug)
+    test_mcc: 0.043
+    ship_gate: FAIL
+    notes: Linear probe insufficient for shell-based labels; 0.82% positive rate
+  extraction_rate: '1.82 entries/s (CPU release build, shell-based #172)'
+  model_load_time: ~23s (476MB safetensors)
+  unsafe_label_count: 148
+  unsafe_label_distribution: 0.82% unsafe (148/17942), concentrated in first ~3000 entries
+  training_data_domain: 'transpiled shell output (matches inference, #172 fix)'
+  baseline_mcc:
+    majority: 0.0
+    keyword_regex: 0.103
+    linter: 1.0
+  known_limitations:
+  - 'MCC degrades at n>3000 without augmentation: entries 3000+ have zero unsafe labels (#171)'
+  - 'MLP probe + 350 adversarial entries: MCC scales from 0.754 (3k) to 0.654 (12k) — all PASS'
+  - 'Adversarial augmentation is required: without it, both linear and MLP probes predict all-safe'
+  - Linear probe (Level 0) insufficient for shell-based labels (KAIZEN-104); use MLP (Level 0.5)
+  - Full-batch GD fails on imbalanced data (aprender#428); online SGD required
+  - Linter baseline MCC=1.000 is tautological (labels derived from linter findings)
+  - 'Pre-#172: trained on Rust code, inferred on shell (domain mismatch) — now fixed'

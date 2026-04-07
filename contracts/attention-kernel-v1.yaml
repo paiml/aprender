@@ -1,0 +1,145 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Scaled dot-product attention kernel
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need
+  depends_on:
+  - softmax-kernel-v1
+equations:
+  attention:
+    formula: Attention(Q, K, V) = softmax(QK^T / √d_k) · V
+    domain: Q ∈ ℝ^{n×d_k}, K ∈ ℝ^{m×d_k}, V ∈ ℝ^{m×d_v}
+    codomain: ℝ^{n×d_v}
+    invariants:
+    - Each row of attention weights sums to 1.0
+    - Attention weights ∈ (0,1)
+    - Output rows are convex combinations of V rows
+    preconditions:
+    - query.len() > 0
+    - key.len() > 0
+    - value.len() > 0
+    lean_theorem: Theorems.Attention
+    postconditions:
+    - result.iter().all(|v| v.is_finite())
+    assumes:
+      constraints:
+      - "softmax output is valid probability distribution"
+      - "attention weights sum to 1.0 per row"
+      from_contract: softmax-kernel-v1
+      from_equation: softmax
+    guarantees:
+      shapes:
+        output: { dims: ["n", "d_v"] }
+      constraints:
+      - "output is finite"
+      - "output rows are convex combinations of V rows"
+proof_obligations:
+- type: invariant
+  property: Attention weights normalize
+  formal: Σ_j softmax(QK^T/√d_k)_{ij} = 1 for all i
+  tolerance: 1.0e-05
+  applies_to: all
+- type: bound
+  property: Attention weights in (0,1)
+  formal: 0 < attn_{ij} < 1 for all i,j
+  applies_to: all
+- type: bound
+  property: Output bounded by V
+  formal: min(V) ≤ output_{ij} ≤ max(V)
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  tolerance: 8.0
+  applies_to: simd
+- type: invariant
+  property: Scaling factor
+  formal: Uses 1/√d_k scaling (not 1/d_k)
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_scores
+    description: QK^T matrix multiplication
+    invariant: scores shape is (n, m)
+  - name: scale
+    description: Divide by √d_k
+    invariant: scaled = scores / √d_k
+  - name: softmax_rows
+    description: Apply softmax to each row
+    invariant: each row sums to 1.0
+  - name: weighted_sum
+    description: Multiply attention weights by V
+    invariant: output shape is (n, d_v)
+falsification_tests:
+- id: FALSIFY-ATT-001
+  rule: Weight normalization
+  prediction: Each attention weight row sums to 1.0
+  test: proptest with random Q, K matrices
+  if_fails: Softmax not applied row-wise or scaling error
+- id: FALSIFY-ATT-002
+  rule: Output convexity
+  prediction: Output values within min/max of V
+  test: proptest verifying output bounds
+  if_fails: Matmul error or softmax weight leak
+- id: FALSIFY-ATT-003
+  rule: Scaling factor
+  prediction: attention(Q,K,V) uses 1/√d_k not 1/d_k
+  test: Compare against reference impl
+  if_fails: Wrong scaling factor constant
+- id: FALSIFY-ATT-004
+  rule: SIMD equivalence
+  prediction: '|attn_simd(Q,K,V) - attn_scalar(Q,K,V)| < 8 ULP'
+  test: proptest comparing implementations
+  if_fails: Matmul accumulation order in SIMD differs
+- id: FALSIFY-ATT-005
+  rule: Attention weights bounded
+  prediction: All attention weights in (0, 1)
+  test: 'proptest: verify 0 < attn_ij < 1 for random Q,K'
+  if_fails: Softmax output outside (0,1) range
+kani_harnesses:
+- id: KANI-ATT-001
+  obligation: ATT-INV-001
+  property: Attention weights sum to 1 for tiny matrices
+  bound: 4
+  strategy: stub_float
+  harness: verify_attention_weights_normalize
+- id: KANI-ATTENT-002
+  obligation: Attention weights normalize
+  property: Attention weights normalize
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-003
+  obligation: Attention weights in (0,1)
+  property: Attention weights in (0,1)
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-004
+  obligation: Output bounded by V
+  property: Output bounded by V
+  bound: 8
+  strategy: stub_float
+- id: KANI-ATTENT-005
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ATTENT-006
+  obligation: Scaling factor
+  property: Scaling factor
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ATT-001
+  name: Attention Contract
+  checks:
+  - weight_normalization
+  - output_convexity
+  - scaling_factor
+  pass_criteria: All 5 falsification tests pass
+  falsification: Use 1/d_k instead of 1/√d_k for scaling
+simd_dispatch:
+  attention:
+    scalar: attention_scalar
+    avx2: attention_avx2
+    ptx: attention_ptx

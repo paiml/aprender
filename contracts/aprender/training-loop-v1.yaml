@@ -1,0 +1,317 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: Production training loop with epoch management, validation, checkpointing, and LR scheduling
+  registry: true
+  references:
+  - shell-safety-inference.md v2.2.0 (bashrs spec, Section 14)
+  - batch-training-v1.yaml (batch training contract)
+  - classification-finetune-v1.yaml (classification invariants)
+  - Loshchilov & Hutter (2019). Decoupled Weight Decay Regularization. ICLR.
+  - Smith (2018). A Disciplined Approach to Neural Network Hyper-Parameters. arXiv:1803.09820
+  depends_on:
+  - batch-training-v1
+  - classification-finetune-v1
+  - tokenizer-loading-v1
+  - qwen2-weight-loading-v1
+training_config:
+  default_epochs: 50
+  default_batch_size: 32
+  default_val_split: 0.2
+  default_learning_rate: 2.0e-05
+  default_warmup_steps: 100
+  default_save_every: 5
+  default_early_stopping_patience: 10
+  default_seed: 42
+  lr_schedule:
+    type: warmup_cosine
+    warmup_steps: 100
+    min_lr: 1.0e-06
+    description: Linear warmup for first 100 steps, then cosine decay to min_lr
+training_invariants:
+  convergence:
+  - id: F-LOOP-001
+    name: Loss decreasing (smoothed)
+    description: 'Exponential moving average of training loss (alpha=0.1, window=5 epochs)
+
+      is decreasing over the course of training. Occasional per-epoch increases
+
+      are acceptable; the EMA trend must be downward.
+
+      '
+    severity: P0
+    critical: true
+  - id: F-LOOP-002
+    name: Validation computed every epoch
+    description: Validation accuracy and loss are computed and logged at every epoch boundary
+    severity: P0
+    critical: true
+  checkpointing:
+  - id: F-LOOP-003
+    name: Checkpoint restorable
+    description: 'Loading a checkpoint and evaluating on validation set produces
+
+      val_loss within epsilon of the loss at checkpoint time.
+
+      '
+    severity: P0
+    critical: true
+    tolerance: 0.01
+  - id: F-LOOP-004
+    name: Best model tracked
+    description: Checkpoint is saved when val_loss improves (best-model tracking)
+    severity: P1
+  scheduling:
+  - id: F-LOOP-005
+    name: LR schedule applied
+    description: Learning rate changes according to warmup+cosine schedule each step
+    severity: P1
+  - id: F-LOOP-006
+    name: LR warmup monotone
+    description: During warmup phase, LR is strictly increasing
+    severity: P1
+  data_handling:
+  - id: F-LOOP-007
+    name: Data shuffled per epoch
+    description: Training data order differs between epochs (seeded RNG for reproducibility)
+    severity: P1
+  - id: F-LOOP-008
+    name: Val split disjoint
+    description: Validation set and training set have zero overlap
+    severity: P0
+    critical: true
+  - id: F-LOOP-009
+    name: Val set frozen
+    description: Validation set composition does not change between epochs
+    severity: P0
+    critical: true
+  early_stopping:
+  - id: F-LOOP-010
+    name: Early stopping respects patience
+    description: Training stops after patience epochs without val_loss improvement
+    severity: P1
+epoch_metrics:
+  fields:
+  - name: epoch
+    type: usize
+    description: Current epoch number (0-indexed)
+  - name: train_loss
+    type: f32
+    description: Average training loss over all batches
+  - name: val_loss
+    type: f32
+    description: Average validation loss
+  - name: val_accuracy
+    type: f32
+    description: Validation accuracy (correct / total)
+  - name: learning_rate
+    type: f32
+    description: Current learning rate
+  - name: epoch_time_ms
+    type: u64
+    description: Wall-clock time for this epoch in milliseconds
+  - name: samples_per_sec
+    type: f32
+    description: Training throughput
+equations:
+  ema_loss:
+    formula: 'EMA_t = alpha * L_t + (1 - alpha) * EMA_{t-1}
+
+      where alpha = 0.1, L_t = loss at epoch t
+
+      '
+    domain: alpha in (0, 1), L_t > 0
+    invariants:
+    - EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
+    preconditions:
+    - predicted.len() == target.len()
+    - predicted.len() > 0
+    lean_theorem: Theorems.Ema_Loss
+  warmup_lr:
+    formula: "lr_t = lr_base * (t / warmup_steps) for t < warmup_steps\nlr_t = lr_min + 0.5 * (lr_base - lr_min) * (1 + cos(pi\
+      \ * (t - warmup) / (T - warmup)))\n  for t >= warmup_steps\n"
+    domain: t in [0, T], warmup_steps < T
+    invariants:
+    - lr_0 = 0 (or lr_base / warmup_steps)
+    - lr_{warmup} = lr_base (peak)
+    - lr_T = lr_min (end)
+    preconditions:
+    - learning_rate > 0.0
+    - params.len() > 0
+    lean_theorem: Theorems.Warmup_Lr
+  val_split:
+    formula: 'N_val = floor(N * val_split)
+
+      N_train = N - N_val
+
+      '
+    domain: val_split in (0, 0.5], N >= 10
+    invariants:
+    - N_train + N_val == N
+    - N_val >= 1
+    - train_set ∩ val_set = {}
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Val_Split
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Validate training config, split data, initialize scheduler
+  - name: execute
+    description: Run epoch loop with validation, checkpointing, and LR scheduling
+  - name: verify_output
+    description: Verify loss convergence, checkpoint restorability, split disjointness
+
+falsification_tests:
+- id: FALSIFY-LOOP-001
+  rule: F-LOOP-001 (Loss decreasing)
+  prediction: EMA loss decreases over training on learnable data
+  test: "#[test]\nfn falsify_loop_001_loss_decreasing() {\n    let corpus = create_learnable_corpus(100);  // balanced, separable\n\
+    \    let mut trainer = ClassifyTrainer::new(\n        TrainingConfig { epochs: 20, batch_size: 8, ..default() }\n    );\n\
+    \    let metrics = trainer.train(&corpus);\n\n    let ema_first_5 = ema(&metrics[..5].iter().map(|m| m.train_loss).collect());\n\
+    \    let ema_last_5 = ema(&metrics[15..].iter().map(|m| m.train_loss).collect());\n    assert!(ema_last_5 < ema_first_5,\n\
+    \            \"Loss not decreasing: first_5_ema={}, last_5_ema={}\", ema_first_5, ema_last_5);\n}\n"
+  if_fails: Model not learning — check gradient flow, LR, or data quality
+- id: FALSIFY-LOOP-002
+  rule: F-LOOP-002 (Validation computed)
+  prediction: Validation metrics present for every epoch
+  test: "#[test]\nfn falsify_loop_002_validation_every_epoch() {\n    let corpus = create_learnable_corpus(50);\n    let mut\
+    \ trainer = ClassifyTrainer::new(\n        TrainingConfig { epochs: 10, ..default() }\n    );\n    let metrics = trainer.train(&corpus);\n\
+    \    assert_eq!(metrics.len(), 10);\n    for (i, m) in metrics.iter().enumerate() {\n        assert!(m.val_loss.is_finite(),\n\
+    \                \"Epoch {} val_loss not finite\", i);\n        assert!(m.val_accuracy >= 0.0 && m.val_accuracy <= 1.0,\n\
+    \                \"Epoch {} val_accuracy out of range: {}\", i, m.val_accuracy);\n    }\n}\n"
+  if_fails: Validation not computed or produces invalid metrics
+- id: FALSIFY-LOOP-003
+  rule: F-LOOP-003 (Checkpoint restorable)
+  prediction: Checkpoint restores to same validation loss
+  test: "#[test]\nfn falsify_loop_003_checkpoint_restorable() {\n    let corpus = create_learnable_corpus(50);\n    let tmp\
+    \ = tempdir().unwrap();\n    let config = TrainingConfig {\n        epochs: 10,\n        checkpoint_dir: tmp.path().to_path_buf(),\n\
+    \        save_every: 5,\n        ..default()\n    };\n\n    let mut trainer = ClassifyTrainer::new(config.clone());\n\
+    \    let metrics = trainer.train(&corpus);\n    let loss_at_5 = metrics[4].val_loss;\n\n    // Restore from epoch 5 checkpoint\n\
+    \    let restored = ClassifyTrainer::from_checkpoint(\n        tmp.path().join(\"checkpoint-epoch-5\")\n    ).unwrap();\n\
+    \    let restored_loss = restored.evaluate(&corpus.val_set());\n    assert!((restored_loss - loss_at_5).abs() < 0.01,\n\
+    \            \"Restored loss {} != checkpoint loss {}\", restored_loss, loss_at_5);\n}\n"
+  if_fails: Checkpoint missing model state, optimizer state, or RNG state
+- id: FALSIFY-LOOP-004
+  rule: F-LOOP-005 (LR schedule)
+  prediction: LR follows warmup+cosine schedule
+  test: "#[test]\nfn falsify_loop_004_lr_schedule() {\n    let corpus = create_learnable_corpus(50);\n    let mut trainer\
+    \ = ClassifyTrainer::new(\n        TrainingConfig {\n            epochs: 20,\n            warmup_steps: 5,\n         \
+    \   lr: 2e-5,\n            ..default()\n        }\n    );\n    let metrics = trainer.train(&corpus);\n\n    // Warmup:\
+    \ LR should increase\n    assert!(metrics[2].learning_rate > metrics[0].learning_rate,\n            \"LR not increasing\
+    \ during warmup\");\n\n    // Post-warmup: LR should decrease (cosine)\n    assert!(metrics[19].learning_rate < metrics[6].learning_rate,\n\
+    \            \"LR not decreasing after warmup\");\n}\n"
+  if_fails: LR scheduler not connected to training loop
+- id: FALSIFY-LOOP-005
+  rule: F-LOOP-008 (Val split disjoint)
+  prediction: Training and validation sets have zero overlap
+  test: "#[test]\nfn falsify_loop_005_val_split_disjoint() {\n    let corpus = create_learnable_corpus(100);\n    let (train,\
+    \ val) = split_corpus(&corpus, 0.2);\n\n    let train_ids: HashSet<_> = train.iter().map(|s| &s.input).collect();\n  \
+    \  let val_ids: HashSet<_> = val.iter().map(|s| &s.input).collect();\n\n    let overlap = train_ids.intersection(&val_ids).count();\n\
+    \    assert_eq!(overlap, 0, \"Train/val overlap: {} samples\", overlap);\n    assert_eq!(train.len() + val.len(), 100);\n\
+    }\n"
+  if_fails: Data leakage — validation metrics unreliable
+- id: FALSIFY-LOOP-006
+  rule: F-LOOP-007 (Data shuffled)
+  prediction: Training order differs between epochs
+  test: "#[test]\nfn falsify_loop_006_data_shuffled() {\n    let corpus = create_learnable_corpus(50);\n    let mut trainer\
+    \ = ClassifyTrainer::new(\n        TrainingConfig { epochs: 3, seed: 42, ..default() }\n    );\n\n    let orders = trainer.train_with_order_tracking(&corpus);\n\
+    \    assert_ne!(orders[0], orders[1],\n               \"Epoch 0 and 1 have same order — not shuffled\");\n    assert_ne!(orders[1],\
+    \ orders[2],\n               \"Epoch 1 and 2 have same order — not shuffled\");\n}\n"
+  if_fails: Shuffle not applied between epochs — may cause ordering bias
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — training halts automatically when loss
+
+    becomes NaN (immediate) or stops improving (early stopping with patience).
+
+    Human decides whether to resume with different hyperparameters.
+
+    '
+  poka_yoke: '"Mistake-proofing" — val_split validated at construction (0 < split <= 0.5).
+
+    Impossible to accidentally train on validation data because split is computed
+
+    once and frozen. Checkpoint format includes config hash for integrity.
+
+    '
+  genchi_genbutsu: '"Go and see" — convergence test uses real forward/backward passes on
+
+    separable data. EMA loss trend computed from actual training, not simulated.
+
+    '
+  kaizen: '"Continuous improvement" — epoch metrics are structured and logged.
+
+    Easy to compare training runs. Checkpoint versioning supports incremental
+
+    improvements to training config.
+
+    '
+qa_gate:
+  id: F-LOOP-GATE
+  name: Training Loop Contract
+  description: Production training loop quality gate
+  checks:
+  - loss_decreasing
+  - validation_every_epoch
+  - checkpoint_restorable
+  - lr_schedule_applied
+  - val_split_disjoint
+  - data_shuffled
+  pass_criteria: All 6 falsification tests pass
+  falsification: Set val_split=0.0 to break validation computation
+proof_obligations:
+- type: invariant
+  property: EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
+  formal: EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: lr_0 = 0 (or lr_base / warmup_steps)
+  formal: lr_0 = 0 (or lr_base / warmup_steps)
+  applies_to: all
+- type: invariant
+  property: lr_{warmup} = lr_base (peak)
+  formal: lr_{warmup} = lr_base (peak)
+  applies_to: all
+- type: invariant
+  property: N_train + N_val == N
+  formal: N_train + N_val == N
+  applies_to: all
+- type: invariant
+  property: N_val >= 1
+  formal: N_val >= 1
+  applies_to: all
+kani_harnesses:
+- id: KANI-LOOP-001
+  obligation: EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
+  property: EMA of training loss decreases over 5-epoch windows for learnable data
+  bound: 16
+  strategy: exhaustive
+  harness: verify_loss_monotonicity
+- id: KANI-LOOP-002
+  obligation: lr_0 = 0 (or lr_base / warmup_steps)
+  property: Learning rate starts at zero or lr_base/warmup_steps
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lr_initial
+- id: KANI-LOOP-003
+  obligation: lr_{warmup} = lr_base (peak)
+  property: Learning rate reaches lr_base at warmup_steps
+  bound: 8
+  strategy: exhaustive
+  harness: verify_lr_peak
+- id: KANI-LOOP-004
+  obligation: N_train + N_val == N
+  property: Training and validation sample counts sum to total
+  bound: 16
+  strategy: bounded_int
+  harness: verify_split_conservation
+- id: KANI-LOOP-005
+  obligation: N_val >= 1
+  property: Validation set has at least one sample
+  bound: 8
+  strategy: exhaustive
+  harness: verify_val_nonempty

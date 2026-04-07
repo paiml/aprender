@@ -1,0 +1,47 @@
+contract: wgpu-batched-eval-v1
+version: 1.0.0
+status: pending
+kaizen: 175
+description: >
+  Use trueno GpuCommandBatch to batch multiple GPU operations per layer
+  into a single command encoder submission. Eliminates per-dispatch overhead
+  (buffer create/upload/submit/readback) that dominates eval at ~36s/entry.
+
+references:
+  - "trueno GpuCommandBatch API: src/backends/gpu/batch/mod.rs"
+  - "trueno PipelineCache: src/backends/gpu/batch/execute/dispatch.rs"
+  - "Current: 288 individual dispatches per entry (36 layers × 8 ops)"
+
+invariants:
+
+- id: C-TRUENO-BATCH-EVAL-001
+  description: >
+    Batched forward produces identical output to sequential forward.
+    For each test entry, batched_loss == sequential_loss within fp32 eps.
+  preconditions:
+  - Same model weights, same input tokens
+  - GpuCommandBatch with PipelineCache reuse
+  postconditions:
+  - max_diff(batched_output, sequential_output) < 1e-4
+  - cosine_sim > 0.9999
+  verified_by:
+  - PENDING — test_batched_vs_sequential_parity
+  severity: critical
+
+- id: C-TRUENO-BATCH-EVAL-002
+  description: >
+    Batched eval achieves >5x speedup over sequential dispatch.
+    Target: <7s/entry (from ~36s). Minimum 5x.
+  preconditions:
+  - Same hardware (AMD W5700X)
+  - Same model, same seq_len=64
+  postconditions:
+  - batched_time < sequential_time / 5
+  verified_by:
+  - PENDING — benchmark on AMD W5700X
+  severity: high
+
+affected_files:
+- path: entrenar/examples/wgpu_eval.rs
+  functions:
+  - 'forward loop: replace individual matmul/gemm calls with GpuCommandBatch'

@@ -1,0 +1,81 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Pepita connection management — connect/disconnect lifecycle and connection counting invariants
+  references:
+  - 'Russell (2008) virtio: Towards a De-Facto Standard for Virtual I/O Devices'
+equations:
+  connect:
+    formula: C(addr) = conn where conn.is_active() = true ∧ connection_count() incremented by 1
+    domain: addr ∈ SocketAddr
+    codomain: Result<Connection, ConnectError>
+    invariants:
+    - Successful connect increments connection_count by exactly 1
+    - Connection has unique identifier
+    - 'Idempotent close: close(close(conn)) = close(conn)'
+    preconditions:
+    - addr is reachable
+    - connection_count() < MAX_CONNECTIONS
+    lean_theorem: Theorems.Connect_Lifecycle
+  connection_count:
+    formula: 'N() = count(c in Connections where c.is_active())'
+    domain: unit
+    codomain: usize
+    invariants:
+    - Count is non-negative (guaranteed by usize)
+    - 'Monotonic under connect: count_after >= count_before'
+    - 'Conservation: connect increments by 1, disconnect decrements by 1'
+    preconditions: []
+    lean_theorem: Theorems.Connection_Count
+proof_obligations:
+- type: invariant
+  property: Connect increments count by 1
+  formal: 'let n = connection_count(); connect(addr).is_ok() → connection_count() = n + 1'
+  applies_to: connect
+- type: invariant
+  property: Connection count conservation
+  formal: '∀ t: connection_count(t) = connects(0..t) - disconnects(0..t)'
+  applies_to: connection_count
+enforcement:
+  count_increment:
+    description: Successful connect must increment connection count by exactly 1
+    check: contract_tests::FALSIFY-PEC-001
+    severity: ERROR
+  count_conservation:
+    description: Connection count must equal connects minus disconnects
+    check: contract_tests::FALSIFY-PEC-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-PEC-001
+  rule: Count increment
+  prediction: connection_count() increases by 1 after successful connect()
+  test: record count before/after connect, assert difference is 1
+  if_fails: Counter not incremented or double-increment race condition
+- id: FALSIFY-PEC-002
+  rule: Count conservation
+  prediction: connect N times, disconnect M times, count = N - M
+  test: connect 10 times, disconnect 5, assert count = 5
+  if_fails: Counter leak on failed disconnect or missing decrement
+kani_harnesses:
+- id: KANI-PEC-001
+  obligation: Count increment
+  property: Connect increments count by 1
+  bound: 8
+  strategy: exhaustive
+  harness: verify_connect_count_increment
+- id: KANI-PEC-002
+  obligation: Count conservation
+  property: Count = connects - disconnects
+  bound: 8
+  strategy: exhaustive
+  harness: verify_count_conservation
+qa_gate:
+  id: F-PEC-001
+  name: Pepita Connection Contract
+  description: Connection lifecycle quality gate
+  checks:
+  - count_increment
+  - count_conservation
+  pass_criteria: All 2 falsification tests pass
+  falsification: Skip counter increment in connect() to trigger FALSIFY-PEC-001

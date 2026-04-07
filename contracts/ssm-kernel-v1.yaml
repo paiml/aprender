@@ -1,0 +1,174 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: SSM kernel — selective state space model (Mamba)
+  references:
+  - 'Gu & Dao (2023) Mamba: Linear-Time Sequence Modeling with Selective State Spaces'
+  - Gu et al. (2021) Efficiently Modeling Long Sequences with Structured State Spaces
+equations:
+  ssm_discretize:
+    formula: A_bar = exp(Delta * A), B_bar = (Delta * A)^{-1} * (exp(Delta * A) - I) * Delta * B
+    domain: A in R^{n x n}, B in R^{n x 1}, Delta in R_>0
+    codomain: A_bar in R^{n x n}, B_bar in R^{n x 1}
+    invariants:
+    - A_bar is stable when eigenvalues of A have negative real parts
+    - Discretization reduces to Euler method as Delta -> 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Ssm_Discretize
+  ssm_scan:
+    formula: h_t = A_bar * h_{t-1} + B_bar * x_t, y_t = C * h_t
+    domain: x in R^L, h_0 = 0, A_bar in R^{n x n}, B_bar in R^{n x 1}, C in R^{1 x n}
+    codomain: y in R^L
+    invariants:
+    - 'Linear recurrence: output is linear in input for fixed parameters'
+    - 'Causal: y_t depends only on x_1..x_t'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Ssm_Scan
+  selective_gate:
+    formula: Delta_t = softplus(Linear(x_t)), B_t = Linear(x_t), C_t = Linear(x_t)
+    domain: x_t in R^d
+    codomain: Delta_t in R_>0, B_t in R^n, C_t in R^n
+    invariants:
+    - Delta_t > 0 (softplus ensures positivity)
+    - 'Input-dependent selectivity: different inputs get different dynamics'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+    lean_theorem: Theorems.Selective_Gate
+proof_obligations:
+- type: invariant
+  property: Causality
+  formal: y_t depends only on x_1..x_t, not x_{t+1}..x_L
+  applies_to: all
+- type: bound
+  property: Softplus positivity
+  formal: Delta_t = softplus(z) > 0 for all z
+  applies_to: all
+- type: invariant
+  property: Scan linearity
+  formal: SSM(alpha*x + beta*z) = alpha*SSM(x) + beta*SSM(z) for fixed params
+  applies_to: all
+- type: equivalence
+  property: Parallel scan matches sequential scan
+  formal: '|parallel_scan(x) - sequential_scan(x)| < eps'
+  tolerance: 1.0e-05
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+kernel_structure:
+  phases:
+  - name: selective_projection
+    description: Compute input-dependent Delta, B, C via linear projections
+    invariant: Delta > 0 via softplus
+  - name: discretize
+    description: Convert continuous A, B to discrete A_bar, B_bar using Delta
+    invariant: A_bar stable when A has negative eigenvalues
+  - name: parallel_scan
+    description: Associative parallel prefix scan over sequence
+    invariant: Equivalent to sequential recurrence
+  - name: output_projection
+    description: Compute y = C * h for each timestep
+    invariant: Output dimension matches input
+simd_dispatch:
+  ssm_scan:
+    scalar: ssm_scan_scalar
+    avx2: ssm_scan_avx2
+    ptx: ssm_ptx
+enforcement:
+  causality:
+    description: Output at time t must not depend on future inputs
+    check: contract_tests::FALSIFY-SSM-001
+    severity: ERROR
+  scan_equivalence:
+    description: Parallel scan must equal sequential scan
+    check: contract_tests::FALSIFY-SSM-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SSM-001
+  rule: Causality
+  prediction: Changing x_{t+1} does not affect y_t
+  test: proptest with sequence modification after position t
+  if_fails: Non-causal dependency in scan implementation
+- id: FALSIFY-SSM-002
+  rule: Softplus positivity
+  prediction: softplus(z) > 0 for z in [-1000, 1000]
+  test: proptest with extreme inputs
+  if_fails: Numerical underflow in softplus
+- id: FALSIFY-SSM-003
+  rule: Scan linearity
+  prediction: '|SSM(a*x+b*z) - (a*SSM(x)+b*SSM(z))| < 1e-5'
+  test: proptest with random sequences and scalars
+  if_fails: Non-linear operation in scan path
+- id: FALSIFY-SSM-004
+  rule: Parallel-sequential equivalence
+  prediction: '|parallel_scan(x) - seq_scan(x)| < 1e-5'
+  test: proptest comparing both implementations
+  if_fails: Associative scan reduction incorrect
+- id: FALSIFY-SSM-005
+  rule: SIMD equivalence
+  prediction: '|ssm_scan_avx2(x) - ssm_scan_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD vectorized scan differs
+- id: FALSIFY-SSM-006
+  rule: Boundary - zero input
+  prediction: SSM(0) = 0 when h_0 = 0
+  test: proptest with zero-input sequence
+  if_fails: Initial state or bias not handled
+kani_harnesses:
+- id: KANI-SSM-001
+  obligation: SSM-INV-001
+  property: SSM scan is causal for small sequences
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_ssm_causality
+- id: KANI-SSM-002
+  obligation: SSM-BND-001
+  property: Softplus output is always positive
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_softplus_positive
+- id: KANI-SSM_KE-003
+  obligation: Causality
+  property: Causality
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SSM_KE-004
+  obligation: Softplus positivity
+  property: Softplus positivity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SSM_KE-005
+  obligation: Scan linearity
+  property: Scan linearity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SSM_KE-006
+  obligation: Parallel scan matches sequential scan
+  property: Parallel scan matches sequential scan
+  bound: 8
+  strategy: exhaustive
+- id: KANI-SSM_KE-007
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-SSM-001
+  name: SSM Contract
+  description: Selective state space model (Mamba) quality gate
+  checks:
+  - causality
+  - softplus_positivity
+  - scan_equivalence
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Replace parallel scan with non-associative reduction

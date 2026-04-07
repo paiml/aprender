@@ -1,0 +1,115 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Fused NF4 Q/K/V GEMM for GQA attention — computes all three projections
+    with shared input activation load. Handles asymmetric output dimensions
+    (Q: hidden→q_dim, K/V: hidden→kv_dim) in a single kernel.
+  pmat: [PMAT-478]
+  references:
+  - "Ainslie et al. (2023) GQA: Training Generalized Multi-Query Transformer Models"
+  - "FusedNf4GateUpGemmKernel: proven dual-output NF4 GEMM pattern"
+  depends_on:
+  - fused-qkv-projection-v1.yaml
+  - nf4-fused-gate-up-swiglu-v1.yaml
+
+equations:
+  separate_qkv:
+    formula: |
+      Standard (3 kernels, 3 input reads from DRAM):
+        q = A[M,K] @ dequant(W_q_nf4[K, q_dim])     # reads A from DRAM
+        k = A[M,K] @ dequant(W_k_nf4[K, kv_dim])    # reads A from DRAM AGAIN
+        v = A[M,K] @ dequant(W_v_nf4[K, kv_dim])    # reads A from DRAM AGAIN
+    domain: A ∈ ℝ^{M × K}, M = seq_len, K = hidden_size
+    codomain: q ∈ ℝ^{M × q_dim}, k,v ∈ ℝ^{M × kv_dim}
+    constants:
+      qwen_hidden: 1536
+      qwen_q_dim: 1536
+      qwen_kv_dim: 256
+
+  fused_qkv:
+    formula: |
+      Fused (1 kernel for Q, 1 for K+V — A loaded twice total, not 3×):
+        q = A @ dequant(W_q)                          # reads A from DRAM (once)
+        k, v = FusedKVGemm(A, W_k, W_v)               # reads A from DRAM (once)
+      Total: 2 reads instead of 3 (K+V share because same output dim)
+    domain: same as separate
+    codomain: same as separate
+    invariants:
+    - "K and V output dims are identical (GQA: both = num_kv_heads × head_dim)"
+    - A loaded from DRAM at most twice (Q path + KV path)
+    preconditions:
+    - K dim == V dim (required for fused K+V)
+    - hidden_size divisible by 64 (NF4 block alignment)
+    postconditions:
+    - q, k, v element-wise match separate within tolerance
+
+  bandwidth_savings:
+    formula: |
+      separate_bw = 3 × M × K × 4 bytes (3 input reads)
+      fused_bw = 2 × M × K × 4 bytes (Q + fused KV)
+      savings = M × K × 4 bytes
+
+      For Qwen 1.5B (K=1536, M=2048 at batch=4):
+        savings = 2048 × 1536 × 4 = 12.6 MB per layer
+        Per forward (28 layers) = 352 MB saved
+    domain: bytes
+
+proof_obligations:
+- type: equivalence
+  property: Fused K+V output matches separate K, V projections
+  formal: '|fused_kv(A, W_k, W_v) - [separate_k(A, W_k), separate_v(A, W_v)]| < ε'
+  tolerance: 1.0e-4
+  applies_to: all
+- type: bound
+  property: Reduces input reads from 3 to 2 per attention layer
+  formal: dram_reads(fused) == 2 AND dram_reads(separate) == 3
+  applies_to: fused_qkv
+- type: invariant
+  property: K dim equals V dim for fused K+V path
+  formal: kv_dim_k == kv_dim_v
+  applies_to: fused_qkv
+
+kani_harnesses:
+- id: KANI-NFQKV-001
+  obligation: Fused K+V equivalence to separate projections
+  property: Fused K+V output matches separate within tolerance
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_fused_kv_equivalence
+- id: KANI-NFQKV-002
+  obligation: Dimension precondition enforcement
+  property: kv_dim_k == kv_dim_v enforced at input
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_kv_dim_precondition
+
+falsification_tests:
+- id: F-NF4-QKV-001
+  rule: Fused K+V output matches separate K, V within 1e-4
+  prediction: Fused K+V output matches separate projections within 1e-4 tolerance
+  test: Run both paths with Qwen dims (K=1536, kv_dim=256). Compare element-wise.
+  if_fails: Check NF4 dequant ordering or accumulation precision in fused path
+
+- id: F-NF4-QKV-002
+  rule: Reduces input reads from 3 to 2 per attention layer
+  prediction: Throughput improvement >= 10% for attention projections
+  test: Run 100-step canary with separate vs fused K+V. Compare tok/s.
+  if_fails: Memory bandwidth is not the QKV bottleneck — profile for compute saturation
+
+- id: F-NF4-QKV-003
+  rule: K dim equals V dim for fused K+V path
+  prediction: Fused path rejects asymmetric K/V dims at initialization
+  test: Attempt fused K+V with kv_dim_k=256 and kv_dim_v=128. Expect error, not silent corruption.
+  if_fails: Fused kernel silently computes wrong V output with mismatched dims
+
+qa_gate:
+  id: F-NFQKV-001
+  name: nf4-fused-qkv-gemm-v1 Contract
+  description: Quality gate for fused NF4 Q/K/V GEMM
+  checks:
+  - validation
+  - falsification

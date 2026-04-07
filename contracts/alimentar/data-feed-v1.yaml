@@ -1,0 +1,82 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Data feed contract — ETL pipeline with serialization roundtrip and configuration integrity
+  references:
+  - 'Kleppmann (2017) Designing Data-Intensive Applications'
+  - 'Protocol Buffers Wire Format Specification'
+equations:
+  serialize_roundtrip:
+    formula: '∀ value V: from_bytes(to_bytes(V)) = V'
+    domain: V ∈ Serializable
+    codomain: Result<V>
+    invariants:
+    - 'Lossless: from_bytes(to_bytes(v)) = v for all v'
+    - 'Deterministic: to_bytes(v) = to_bytes(v)'
+    - Empty values serialize to non-empty byte vectors (header present)
+    preconditions:
+    - value is a valid Serializable type
+    lean_theorem: Theorems.Serialize_Roundtrip
+  config_validity:
+    formula: C = new(params) where all required fields are present and valid
+    domain: params ∈ Map<String, Value>
+    codomain: Result<Config>
+    invariants:
+    - Missing required fields produce Err with field name
+    - Default values applied for optional fields
+    - 'Config is immutable after construction'
+    preconditions:
+    - params contains all required keys
+    lean_theorem: Theorems.Config_Validity
+proof_obligations:
+- type: invariant
+  property: Serialization roundtrip
+  formal: '∀ v: from_bytes(to_bytes(v)) = v'
+  applies_to: serialize_roundtrip
+- type: invariant
+  property: Config construction validity
+  formal: '∀ params: new(params).is_ok() → config.validate().is_ok()'
+  applies_to: config_validity
+enforcement:
+  roundtrip:
+    description: Serialize then deserialize returns original value
+    check: contract_tests::FALSIFY-ALM-001
+    severity: ERROR
+  config_required:
+    description: Missing required fields produce descriptive errors
+    check: contract_tests::FALSIFY-ALM-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-ALM-001
+  rule: Serialization roundtrip
+  prediction: from_bytes(to_bytes(v)) = v for any serializable value
+  test: proptest with random values of all supported types
+  if_fails: Codec mishandles edge case (empty string, max int, NaN float)
+- id: FALSIFY-ALM-002
+  rule: Config required fields
+  prediction: new() with missing required field returns Err naming the field
+  test: omit each required field one at a time, verify error message
+  if_fails: Config constructor silently uses zero-value for required field
+kani_harnesses:
+- id: KANI-ALM-001
+  obligation: Serialization roundtrip
+  property: serialize/deserialize identity
+  bound: 16
+  strategy: exhaustive
+  harness: verify_serialize_roundtrip
+- id: KANI-ALM-002
+  obligation: Config construction validity
+  property: required field validation
+  bound: 8
+  strategy: exhaustive
+  harness: verify_config_required_fields
+qa_gate:
+  id: F-ALM-001
+  name: Data Feed Contract
+  description: ETL serialization roundtrip and configuration quality gate
+  checks:
+  - roundtrip
+  - config_required
+  pass_criteria: All 2 falsification tests pass
+  falsification: Swap byte order in to_bytes without updating from_bytes

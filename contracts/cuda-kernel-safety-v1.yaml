@@ -1,0 +1,93 @@
+metadata:
+  version: 1.0.0
+  description: CUDA kernel safety contract for Decy transpiler
+  references:
+  - 'HPCTransCompile CUDA dataset [2506.10401]'
+  - 'CASS NVIDIA to AMD transpilation [2505.16968]'
+  enforcement_level: standard
+equations:
+  kernel_ffi:
+    formula: 'forall f with __global__: transpile(f) = extern "C" { fn name(raw_params); }'
+    lean_theorem: Theorems.Kernel_Ffi
+    domain: CUDA __global__ kernel functions
+    codomain: 'Rust extern "C" FFI declarations with raw pointer types'
+    invariants:
+    - Function name preserved in FFI declaration
+    - Pointer parameters become *mut T (raw pointers)
+    - Return type preserved (typically void)
+    - FFI declaration is inside extern "C" block
+    preconditions:
+    - Function has __global__ qualifier
+    - Function is parseable by clang in C++ mode
+    postconditions:
+    - 'Output contains extern "C" block'
+    - Output contains fn with matching name
+  qualifier_preservation:
+    formula: 'cuda_qualifier(AST) = cuda_qualifier(HIR) = cuda_qualifier(codegen input)'
+    lean_theorem: Theorems.Qualifier_Preservation
+    domain: Functions with CUDA qualifiers through transformation pipeline
+    codomain: Preserved qualifier at codegen stage
+    invariants:
+    - Qualifier survives borrow_gen transformation
+    - Qualifier survives array_slice transformation
+    - Qualifier survives optimize transformation
+    preconditions:
+    - Source contains __global__, __device__, or __host__ keyword
+    postconditions:
+    - Codegen receives non-None cuda_qualifier for annotated functions
+  host_transpilation:
+    formula: 'forall f without CUDA qualifier: transpile(f) = normal Rust function'
+    lean_theorem: Theorems.Host_Transpilation
+    domain: Host-side functions in .cu files
+    codomain: Standard safe Rust functions
+    invariants:
+    - Host functions use normal transpilation pipeline
+    - No FFI wrappers for host code
+    - Ownership inference applies normally
+    preconditions:
+    - Function has no CUDA qualifier (or __host__ only)
+    postconditions:
+    - Output is a regular Rust function (not extern C)
+proof_obligations:
+- type: invariant
+  property: Kernel name preservation in FFI declaration
+- type: invariant
+  property: CUDA qualifier preservation through borrow/array/optimize transforms
+- type: postcondition
+  property: Host functions transpile without FFI wrapper
+falsification_tests:
+- id: FALSIFY-CUDA-001
+  rule: __global__ kernel generates extern C
+  prediction: '__global__ void kernel(int* a) -> extern "C" { fn kernel(a: *mut i32); }'
+  test: E2E transpilation test
+  if_fails: Qualifier detection or FFI codegen broken
+- id: FALSIFY-CUDA-002
+  rule: Host code transpiles normally
+  prediction: 'void host_func(int x) in .cu file -> fn host_func(mut x: i32)'
+  test: E2E transpilation test
+  if_fails: Host function incorrectly treated as kernel
+- id: FALSIFY-CUDA-003
+  rule: Qualifier preserved through ownership transform
+  prediction: __global__ qualifier survives borrow_gen and optimize
+  test: Unit test on transform chain
+  if_fails: set_cuda_qualifier not called in transformation stage
+- id: FALSIFY-CUDA-004
+  rule: CUDA keywords detected in inline source
+  prediction: Source with __global__ enables C++ mode and empty macro definitions
+  test: Parser unit test
+  if_fails: Keyword detection regex or macro definitions broken
+kani_harnesses:
+- id: KANI-CUDA-001
+  obligation: Qualifier preservation
+  property: transform(func with qualifier) preserves qualifier
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_cuda_qualifier_preservation
+qa_gate:
+  id: F-CUDA-001
+  name: cuda-kernel-safety-v1 Contract
+  description: CUDA kernel safety quality gate for Decy transpiler
+  checks:
+  - validation
+  - falsification

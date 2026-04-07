@@ -1,0 +1,201 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-04'
+  author: PAIML Engineering
+  description: |
+    Tokenizer contract for context window management in apr code.
+    The tokenizer is used to estimate token counts for context window
+    tracking, auto-compaction triggers, and project instruction budgeting.
+
+    Both APR (embedded tokenizer) and GGUF (metadata tokenizer) models
+    provide tokenization. Context management relies on accurate token
+    counting to enforce the 80% auto-compaction threshold (PMAT-133)
+    and the 25% project instruction budget (PMAT-142).
+  references:
+  - 'PMAT-133: Auto-compaction at 80% context window'
+  - 'PMAT-142: Context-aware prompt budgeting'
+  - 'PMAT-154: APR tokenizer embedding requirement'
+  - 'apr-code.md §7: Context Management'
+  depends_on:
+  - apr-code-v1
+  - apr-model-discovery-v1
+
+equations:
+  deterministic_encode:
+    formula: |
+      forall text T, tokenizer K:
+        K.encode(T) == K.encode(T)
+      (same input always produces same output)
+    domain: (String, Tokenizer) — text and tokenizer instance
+    codomain: Vec<u32> — token IDs
+    invariants:
+    - No randomness in tokenization
+    - Result independent of prior calls (no state leakage)
+    - Result independent of thread (no thread-local state)
+    preconditions:
+    - text is valid UTF-8
+    - tokenizer is initialized
+    postconditions:
+    - tokens.len() > 0 for non-empty input
+    - tokens identical across calls
+    lean_theorem: Theorems.Deterministic_Encode
+
+  empty_input:
+    formula: |
+      forall tokenizer K:
+        K.encode("").len() == 0
+    domain: Empty string + any valid tokenizer
+    codomain: Empty Vec<u32>
+    invariants:
+    - Empty input produces zero tokens
+    - No special tokens added for empty input
+    preconditions:
+    - tokenizer is initialized
+    postconditions:
+    - tokens.is_empty()
+    lean_theorem: Theorems.Empty_Input
+
+  vocab_size_bound:
+    formula: |
+      forall tokenizer K, text T:
+        forall token_id in K.encode(T):
+          token_id < K.vocab_size()
+    domain: All encodable text for a given tokenizer
+    codomain: Token IDs strictly less than vocab_size
+    invariants:
+    - No out-of-range token IDs
+    - vocab_size > 0 for any valid tokenizer
+    - Unknown characters mapped to valid fallback tokens
+    preconditions:
+    - tokenizer loaded with valid vocabulary
+    postconditions:
+    - max(tokens) < vocab_size
+    lean_theorem: Theorems.Vocab_Size_Bound
+    notes: |
+      PMAT-154: APR models without embedded tokenizer rejected at load
+      time. GGUF models always have tokenizer in metadata.
+
+  thread_safety:
+    formula: |
+      forall tokenizer K (behind Arc<K>):
+        parallel { K.encode(T1), K.encode(T2), ..., K.encode(TN) }
+        == sequential { K.encode(T1), K.encode(T2), ..., K.encode(TN) }
+    domain: Concurrent tokenization requests
+    codomain: Same results regardless of scheduling
+    invariants:
+    - No data races (Rust Send+Sync enforced)
+    - No cross-request state corruption
+    - Results identical to sequential execution
+    preconditions:
+    - "tokenizer is Arc<T> where T: Send + Sync"
+    postconditions:
+    - All concurrent results match sequential baseline
+    lean_theorem: Theorems.Thread_Safety
+
+  roundtrip:
+    formula: |
+      forall tokenizer K, text T:
+        K.decode(K.encode(T)) ≈ T
+      where ≈ means content-equivalent modulo:
+        - Whitespace normalization (leading/trailing)
+        - Unicode normalization (NFC/NFD)
+        - BPE merge artifacts
+    domain: Text → tokens → text roundtrip
+    codomain: Content-equivalent string
+    invariants:
+    - No semantic information lost
+    - Roundtrip preserves word boundaries
+    - Numerical values preserved exactly
+    preconditions:
+    - text is valid UTF-8
+    postconditions:
+    - decoded text contains all original words
+    lean_theorem: Theorems.Roundtrip
+
+proof_obligations:
+- type: invariant
+  property: Deterministic encoding
+  formal: encode(T) == encode(T) (idempotent)
+  applies_to: deterministic_encode
+- type: postcondition
+  property: Empty input produces empty output
+  formal: encode("").len() == 0
+  applies_to: empty_input
+- type: invariant
+  property: Token IDs within vocabulary bounds
+  formal: forall id in encode(T). id < vocab_size
+  applies_to: vocab_size_bound
+- type: invariant
+  property: Thread-safe concurrent access
+  formal: parallel(encode) == sequential(encode)
+  applies_to: thread_safety
+
+falsification_tests:
+- id: FALSIFY-TOK-001
+  rule: Deterministic encode
+  prediction: Same text always produces same token count and IDs
+  test: |
+    Load tokenizer from test model.
+    Encode "Hello, world!" 100 times.
+    Assert all results are identical (same Vec<u32>).
+  if_fails: Non-deterministic tokenization breaks reproducibility
+  file: src/agent/driver/validate.rs
+
+- id: FALSIFY-TOK-002
+  rule: Empty input produces zero tokens
+  prediction: encode("") returns empty vec
+  test: |
+    Load tokenizer. Encode empty string.
+    Assert tokens.is_empty().
+    Encode whitespace-only strings.
+    Assert tokens.len() > 0 (whitespace IS tokenized).
+  if_fails: Edge case handling for empty or whitespace input missing
+  file: src/agent/driver/validate.rs
+
+- id: FALSIFY-TOK-003
+  rule: Token IDs within vocab_size
+  prediction: All token IDs strictly less than vocab_size
+  test: |
+    Load tokenizer with known vocab_size.
+    Encode diverse text (ASCII, Unicode, code, special chars).
+    Assert max(token_ids) < vocab_size.
+  if_fails: Token ID overflow or incorrect vocabulary mapping
+  file: src/agent/driver/validate.rs
+
+- id: FALSIFY-TOK-004
+  rule: Thread-safe concurrent tokenization
+  prediction: 10 threads encoding same text produce identical results
+  test: |
+    Load tokenizer behind Arc.
+    Spawn 10 threads, each encoding "The quick brown fox".
+    Collect all results. Assert all identical.
+  if_fails: Thread-unsafe tokenizer produces inconsistent results under concurrency
+  file: src/agent/driver/validate.rs
+
+- id: FALSIFY-TOK-005
+  rule: Encode-decode roundtrip
+  prediction: decode(encode(text)) preserves content
+  test: |
+    Load tokenizer. Encode "fn main() { println!(\"hello\"); }".
+    Decode the tokens. Assert decoded contains "fn", "main", "println", "hello".
+  if_fails: Lossy encode-decode roundtrip corrupts token content
+  file: src/agent/driver/validate.rs
+
+qa_gate:
+  id: F-TOK-001
+  name: Tokenizer Contract
+  description: Tokenizer correctness for context window management
+  checks:
+  - deterministic_encode
+  - empty_input
+  - vocab_size_bound
+  - thread_safety
+  - roundtrip
+  pass_criteria: All 5 falsification tests pass
+  falsification: Unit tests with embedded tokenizer from test models
+kani_harnesses:
+- id: KANI-TOK-001
+  obligation: Token IDs within vocabulary bounds
+  property: All token IDs strictly less than vocab_size
+  bound: 16
+  strategy: bounded_int

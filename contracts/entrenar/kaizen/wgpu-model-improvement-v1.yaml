@@ -1,0 +1,134 @@
+contract: wgpu-model-improvement-v1
+version: 1.0.0
+status: pending
+kaizen: 203
+description: >
+  Five Whys root cause analysis + improvement plan to raise MCC from 0.64 to 0.75+.
+  Based on: Hu et al. LoRA (2021), Liu et al. DoRA (2024), Hayou et al. LoRA+ (2024),
+  albor finetune-lora.yaml (6 target modules), apr-leaderboard recipe-c (rank=32, 5 epochs).
+
+five_whys:
+  q1: "Why is MCC only 0.64 (not 0.75+)?"
+  a1: >
+    Loss delta between safe (11.689) and unsafe (11.839) is only 0.150 — barely
+    distinguishable. The model's learned representations are too weak to separate classes.
+  q2: "Why is the delta so small?"
+  a2: >
+    Eval only uses lm_head (embedding → logits → CE loss), skipping the 36-layer
+    transformer forward. LoRA adapters don't contribute to scoring.
+  q3: "Why skip the transformer during eval?"
+  a3: >
+    Forward through 36 layers is ~100s/entry on single GPU. Need forward-only path
+    (no backward/AdamW) and GPU command batching.
+  q4: "Why are only Q+V targeted with rank=16?"
+  a4: >
+    Initial conservative choice. Albor targets 6 modules (Q/V/O/gate/up/down).
+    Apr-leaderboard uses rank=32 with 5 epochs. Both significantly outperform Q+V-only.
+  q5: "Why was eval not included in the training loop?"
+  a5: >
+    Focus was on proving the training pipeline works. Now that ship criteria is met,
+    optimization requires eval-in-the-loop.
+
+improvements:
+  fix_a:
+    name: "Target all 6 linear modules (not just Q+V)"
+    description: >
+      Add LoRA adapters to: K, O, gate_proj, up_proj, down_proj in addition to Q, V.
+      This is the standard in albor and PEFT. Increases trainable params from 5.9M to ~18M.
+    expected_impact: "+5-10% MCC (major — covers all gradient paths)"
+    references:
+    - "albor/configs/train/finetune-lora.yaml: targets q/v/o/gate/up/down"
+    - "Unsloth docs: 'target all linear layers for best results'"
+    effort: "Medium (extend LoraAdapter to 6 projections per layer)"
+
+  fix_b:
+    name: "Increase rank from 16 to 32"
+    description: >
+      Higher rank captures more complex patterns. Apr-leaderboard recipe-c uses rank=32.
+      Memory cost: 2x LoRA params (18M → 36M) + 2x optimizer states.
+    expected_impact: "+3-5% MCC (more expressive adapters)"
+    references:
+    - "apr-leaderboard/configs/recipes/recipe-c-full-pipeline.yaml: rank=32"
+    effort: "Low (change config parameter)"
+
+  fix_c:
+    name: "Forward-only eval through full transformer"
+    description: >
+      Current eval skips 36 layers. Implement forward_only() that runs
+      attention+FFN without backward/AdamW. LoRA adapters contribute to scoring.
+    expected_impact: "+10-15% MCC (critical — LoRA representations used in scoring)"
+    references:
+    - "Five Whys Q2/Q3: eval skips learned representations"
+    effort: "Medium (extract forward path from full_train_step)"
+
+  fix_d:
+    name: "LoRA+ (different LR for A and B)"
+    description: >
+      Hayou et al. (2024): use higher LR for B matrix than A matrix.
+      B starts at zero and needs faster updates to break symmetry.
+      Typical: lr_B = 4-8x lr_A.
+    expected_impact: "+2-3% MCC (faster convergence, especially early)"
+    references:
+    - "Hayou et al., LoRA+: Efficient Low Rank Adaptation (arXiv:2402.12354, 2024)"
+    effort: "Low (modify CPU AdamW to use different lr per matrix)"
+
+  fix_e:
+    name: "NEFTune noise injection (Jain et al. ICLR 2024)"
+    description: >
+      Add uniform noise to embeddings: embed += noise * alpha / sqrt(seq_len * hidden).
+      Reduces overfitting, improves instruction following. alpha=5-15.
+    expected_impact: "+2-5% MCC (trivial implementation, proven gains)"
+    references:
+    - "Jain et al., NEFTune: Noisy Embeddings Improve Instruction Finetuning (2310.05914)"
+    effort: "Trivial (one line in forward pass after embedding lookup)"
+
+  fix_f:
+    name: "Focal loss for class imbalance"
+    description: >
+      Dataset is 79% safe / 21% unsafe. Focal loss: FL = -alpha*(1-p)^gamma*log(p).
+      gamma=2.0, alpha=0.75 for minority class. Focuses on hard misclassified examples.
+    expected_impact: "+3-5% MCC (directly addresses the small loss delta problem)"
+    effort: "Low (modify cross-entropy in full_train_step)"
+
+  fix_g:
+    name: "albor hyperparameters: beta2=0.95, weight_decay=0.1"
+    description: >
+      Current: beta2=0.999, wd=0.01. albor's proven recipe uses beta2=0.95 (sharper
+      variance tracking) and wd=0.1 (stronger regularization). Also cosine LR decay.
+    expected_impact: "+1-2% MCC"
+    references:
+    - "albor/docs/specifications/components/training.md"
+    effort: "Trivial (config change)"
+
+  priority_order:
+  - fix_c  # Forward-only eval (biggest impact, unlocks LoRA contribution)
+  - fix_a  # Target all 7 modules (standard best practice)
+  - fix_b  # Rank 32 + rsLoRA (easy win)
+  - fix_e  # NEFTune (trivial, proven)
+  - fix_f  # Focal loss (class imbalance)
+  - fix_d  # LoRA+ (better convergence)
+  - fix_g  # albor HPs (trivial)
+
+invariants:
+- id: C-WGPU-IMPROVE-001
+  description: Forward-only eval through full 36-layer transformer
+  preconditions:
+  - All weight caches populated
+  - Checkpoint loaded
+  postconditions:
+  - Loss computed using full transformer (not just lm_head)
+  - LoRA adapters contribute to hidden state before lm_head scoring
+  - Eval completes in < 10s/entry (forward only, no backward)
+  verified_by:
+  - PENDING
+  severity: critical
+
+- id: C-WGPU-IMPROVE-002
+  description: 6-module LoRA targeting improves MCC over 2-module
+  preconditions:
+  - Same training data, same hyperparameters except target modules
+  postconditions:
+  - MCC(6-module) > MCC(2-module) on same test split
+  verified_by:
+  - PENDING
+  severity: high

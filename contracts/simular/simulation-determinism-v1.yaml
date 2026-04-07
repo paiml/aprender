@@ -1,0 +1,115 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Simulation determinism contract — step reproducibility, time advancement, audit trail
+  references:
+  - 'Fujimoto (2000) Parallel and Distributed Simulation Systems'
+  - 'Hairer et al. (2006) Geometric Numerical Integration'
+equations:
+  step_determinism:
+    formula: '∀ state S, dt: step(S, dt) = step(S, dt)'
+    domain: S ∈ SimState, dt ∈ f64 where dt > 0
+    codomain: SimState
+    invariants:
+    - 'Deterministic: identical initial state + dt → identical next state'
+    - 'Energy conservation: |E(S_n) - E(S_0)| < ε for symplectic integrators'
+    - step_count increments by 1 per step call
+    preconditions:
+    - dt > 0.0
+    - state is finite (no NaN/Inf)
+    lean_theorem: Theorems.Step_Determinism
+  time_advancement:
+    formula: t(n) = t(0) + n * timestep_secs(config)
+    domain: config ∈ ClockConfig, n ∈ usize
+    codomain: f64
+    invariants:
+    - 'Monotonic: t(n+1) > t(n) for all n'
+    - steps_until(target) returns correct step count
+    - substep_multiplier partitions steps for Heijunka scheduling
+    preconditions:
+    - timestep_secs > 0.0
+    - target_time > current_time
+    lean_theorem: Theorems.Time_Advancement
+  audit_trail:
+    formula: A(step_id) = record_step(state, equations) → AuditEntry
+    domain: state ∈ SimState, equations ∈ [String]
+    codomain: AuditEntry
+    invariants:
+    - record_step produces unique audit entries
+    - find_by_step_id retrieves exact match
+    - seek(step_id) positions iterator at correct entry
+    preconditions:
+    - step_id is valid (within simulation range)
+    lean_theorem: Theorems.Audit_Trail
+proof_obligations:
+- type: invariant
+  property: Step determinism
+  formal: '∀ S, dt: step(S, dt) = step(S, dt)'
+  applies_to: step_determinism
+- type: invariant
+  property: Time monotonicity
+  formal: '∀ n: t(n+1) > t(n)'
+  applies_to: time_advancement
+- type: invariant
+  property: Audit retrieval correctness
+  formal: '∀ id: find_by_step_id(record_step(s).id) = Some(s)'
+  applies_to: audit_trail
+enforcement:
+  step_reproducibility:
+    description: Same state and timestep produce identical next state
+    check: contract_tests::FALSIFY-SML-001
+    severity: ERROR
+  time_monotonicity:
+    description: Simulation time always advances forward
+    check: contract_tests::FALSIFY-SML-002
+    severity: ERROR
+  audit_retrieval:
+    description: Recorded audit steps are retrievable by ID
+    check: contract_tests::FALSIFY-SML-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SML-001
+  rule: Step determinism
+  prediction: step(S, dt) called twice from same state produces identical output
+  test: run harmonic oscillator 1000 steps from fixed seed twice, compare
+  if_fails: Random state or floating-point non-determinism in integrator
+- id: FALSIFY-SML-002
+  rule: Time monotonicity
+  prediction: t(n+1) > t(n) for 10000 consecutive steps
+  test: run simulation 10000 steps, verify strictly increasing timestamps
+  if_fails: Timestep calculation underflows or clock wraps
+- id: FALSIFY-SML-003
+  rule: Audit retrieval
+  prediction: record_step then find_by_step_id returns the recorded entry
+  test: record 100 steps, retrieve each by ID, compare state
+  if_fails: Audit storage has indexing or serialization bug
+kani_harnesses:
+- id: KANI-SML-001
+  obligation: Step determinism
+  property: step is deterministic
+  bound: 8
+  strategy: exhaustive
+  harness: verify_step_determinism
+- id: KANI-SML-002
+  obligation: Time monotonicity
+  property: time always advances
+  bound: 16
+  strategy: exhaustive
+  harness: verify_time_monotonicity
+- id: KANI-SML-003
+  obligation: Audit retrieval
+  property: audit entries are retrievable
+  bound: 8
+  strategy: exhaustive
+  harness: verify_audit_retrieval
+qa_gate:
+  id: F-SML-001
+  name: Simulation Determinism Contract
+  description: Step reproducibility, time advancement, and audit trail quality gate
+  checks:
+  - step_reproducibility
+  - time_monotonicity
+  - audit_retrieval
+  pass_criteria: All 3 falsification tests pass
+  falsification: Add random perturbation to timestep in step()

@@ -1,0 +1,167 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: GELU kernel — Gaussian Error Linear Unit activation function
+  references:
+  - Hendrycks & Gimpel (2016) Gaussian Error Linear Units
+equations:
+  gelu:
+    formula: GELU(x) = x * Phi(x) where Phi is the standard normal CDF
+    domain: x in R
+    codomain: GELU(x) in (-0.171, +inf)
+    invariants:
+    - GELU(0) = 0 (zero preservation)
+    - GELU(x) >= 0 for x > 0 (non-negativity for positive inputs)
+    - GELU(x) ~ x for large positive x (asymptotic linearity)
+    - GELU is monotonically increasing for x > 0
+    - GELU(-x) + GELU(x) ~ 0 near origin (odd-function symmetry)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Gelu
+  gelu_tanh_approx:
+    formula: GELU_approx(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    domain: x in R
+    codomain: GELU_approx(x) in (-0.171, +inf)
+    invariants:
+    - '|GELU(x) - GELU_approx(x)| < 0.005 for all x'
+    - GELU_approx(0) = 0 (zero preservation)
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Gelu_Tanh_Approx
+proof_obligations:
+- type: bound
+  property: Non-negativity for positive inputs
+  formal: x > 0 implies GELU(x) >= 0
+  applies_to: all
+- type: monotonicity
+  property: Monotonically increasing for positive inputs
+  formal: x > y > 0 implies GELU(x) > GELU(y)
+  applies_to: all
+- type: symmetry
+  property: Odd-function symmetry around origin
+  formal: GELU(-x) = -GELU(x) in the limit as the CDF approaches the step function
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar within ULP
+  tolerance: 8.0
+  applies_to: simd
+- type: bound
+  property: Tanh approximation accuracy
+  formal: '|GELU(x) - GELU_approx(x)| < 0.005 for all x'
+  applies_to: all
+kernel_structure:
+  phases:
+  - name: compute_cdf
+    description: Compute Phi(x) via standard normal CDF or tanh approximation
+    invariant: output in (0, 1)
+  - name: multiply
+    description: Compute x * Phi(x)
+    invariant: result >= 0 for x > 0
+simd_dispatch:
+  gelu:
+    scalar: gelu_scalar
+    avx2: gelu_avx2
+    ptx: gelu_ptx
+  gelu_tanh_approx:
+    scalar: gelu_tanh_approx_scalar
+    avx2: gelu_tanh_approx_avx2
+    ptx: gelu_tanh_approx_ptx
+enforcement:
+  non_negativity:
+    description: GELU(x) >= 0 for positive x
+    check: contract_tests::FALSIFY-GE-001
+    severity: ERROR
+  monotonicity:
+    description: GELU monotonically increasing for positive inputs
+    check: contract_tests::FALSIFY-GE-002
+    severity: ERROR
+  approximation_accuracy:
+    description: Tanh approximation within 0.005 of exact
+    check: contract_tests::FALSIFY-GE-005
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GE-001
+  rule: Non-negativity for positive inputs
+  prediction: GELU(x) >= 0 for all x > 0
+  test: proptest with random positive x
+  if_fails: CDF computation underflow causing negative output
+- id: FALSIFY-GE-002
+  rule: Positive monotonicity
+  prediction: GELU(x) > GELU(y) when x > y > 0
+  test: proptest with sorted positive pairs
+  if_fails: CDF saturation causing non-monotonicity
+- id: FALSIFY-GE-003
+  rule: Odd-function symmetry
+  prediction: '|GELU(-x) + GELU(x)| < epsilon near origin'
+  test: proptest with x in [-5, 5], check GELU(-x) + GELU(x) ~ 0
+  if_fails: Asymmetric CDF approximation breaks odd-function property
+- id: FALSIFY-GE-004
+  rule: SIMD equivalence
+  prediction: '|gelu_avx2(x) - gelu_scalar(x)| < 8 ULP'
+  test: proptest comparing scalar vs SIMD output
+  if_fails: SIMD exp/tanh approximation differs from scalar
+- id: FALSIFY-GE-005
+  rule: Tanh approximation accuracy
+  prediction: '|GELU(x) - GELU_approx(x)| < 0.005 for all x'
+  test: proptest with random x in [-10, 10]
+  if_fails: Tanh approximation diverges from exact CDF-based GELU
+- id: FALSIFY-GE-006
+  rule: Boundary - large input stability
+  prediction: '|GELU(x) - x| < 0.01 for x > 10 and |GELU(x)| < 0.01 for x < -10'
+  test: proptest with large magnitude x
+  if_fails: Numerical overflow in exp or tanh for extreme inputs
+kani_harnesses:
+- id: KANI-GE-001
+  obligation: GE-BND-001
+  property: GELU non-negative for positive inputs
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gelu_non_negativity
+- id: KANI-GE-002
+  obligation: GE-APX-001
+  property: Tanh approximation within 0.005 of exact GELU
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gelu_approx_accuracy
+- id: KANI-GELU_K-003
+  obligation: Non-negativity for positive inputs
+  property: Non-negativity for positive inputs
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GELU_K-004
+  obligation: Monotonically increasing for positive inputs
+  property: Monotonically increasing for positive inputs
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GELU_K-005
+  obligation: Odd-function symmetry around origin
+  property: Odd-function symmetry around origin
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GELU_K-006
+  obligation: SIMD matches scalar within ULP
+  property: SIMD matches scalar within ULP
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GELU_K-007
+  obligation: Tanh approximation accuracy
+  property: Tanh approximation accuracy
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-GE-001
+  name: GELU Contract
+  description: Gaussian Error Linear Unit activation quality gate
+  checks:
+  - non_negativity
+  - monotonicity
+  - odd_symmetry
+  - simd_equivalence
+  - approximation_accuracy
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  falsification: Replace CDF with constant 0.5 to reduce GELU to 0.5*x

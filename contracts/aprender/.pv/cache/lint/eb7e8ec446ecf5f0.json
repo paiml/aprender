@@ -1,0 +1,1 @@
+{"content_hash":"eb7e8ec446ecf5f0","findings":[{"rule_id":"PV-AUD-003","severity":"warning","message":"AUDIT-003: Equations defined but no proof obligations — obligations should be derived from equations","file":"contracts/layer-parity-v1.yaml","line":null,"contract_stem":"layer-parity-v1","suppressed":false,"is_new":true}]}

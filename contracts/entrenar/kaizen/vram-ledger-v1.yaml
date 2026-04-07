@@ -1,0 +1,188 @@
+---
+# Contract: VRAM Reservation Ledger (GPU-SHARE-001)
+#
+# Provides mutual-exclusion VRAM accounting via flock + JSON ledger.
+# Prevents TOCTOU races where two concurrent jobs both see free VRAM
+# and both allocate, causing OOM.
+#
+# Five-Whys:
+#   Why 1: Two QLoRA jobs launched simultaneously crash with OOM
+#   Why 2: Both jobs check cuMemGetInfo, see 17 GB free, both allocate 8 GB
+#   Why 3: No coordination between independent apr processes
+#   Why 4: cuMemGetInfo is a point-in-time snapshot with no reservation semantics
+#   Why 5: Need a ledger with mutual exclusion to serialize VRAM claims
+
+contract: vram-ledger-v1
+version: "1.0.0"
+status: draft
+depends_on:
+  - "gpu-weight-residency-v1.yaml"
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Flock-based VRAM reservation ledger with lease expiry and dead PID cleanup"
+  references:
+    - "GPU Sharing Spec v2 §1.1 — VRAM Guard + Ledger"
+    - "flock(2) — Linux file locking"
+    - "rename(2) — Atomic file replacement"
+    - "Lamport (1978) — Mutual exclusion"
+
+equations:
+  capacity_invariant:
+    formula: "sum(active[i].budget_mb) + new_budget <= total_mb × reserve_factor"
+    lean_theorem: Theorems.Capacity_Invariant
+    domain: "active: Vec<Reservation> where pid_alive(r.pid) && !lease_expired(r)"
+    codomain: "bool"
+    invariants:
+      - "Evaluated under flock — no concurrent mutation"
+      - "reserve_factor ∈ {0.85 (discrete), 0.60 (unified)}"
+      - "total_mb from cuMemGetInfo at ledger creation"
+
+  atomic_write:
+    formula: "write(tmp_path, data) → fsync(tmp) → rename(tmp_path, ledger_path)"
+    lean_theorem: Theorems.Atomic_Write
+    domain: "tmp_path and ledger_path on same filesystem"
+    invariants:
+      - "rename(2) is atomic on POSIX — no partial reads"
+      - "fsync ensures data hits disk before rename"
+      - "Crash between write and rename leaves stale tmp (harmless)"
+
+  lease_expiry:
+    formula: "expired(r) := now() > r.started + lease_duration"
+    lean_theorem: Theorems.Lease_Expiry
+    domain: "lease_duration = 24h (default, configurable)"
+    invariants:
+      - "Expired reservations treated as dead — pruned on next access"
+      - "Prevents permanent VRAM starvation from kill -9 scenarios"
+      - "Clock monotonic — immune to wall-clock adjustments"
+
+  pid_liveness:
+    formula: "alive(pid) := exists(/proc/{pid}/stat)"
+    lean_theorem: Theorems.Pid_Liveness
+    domain: "Linux only (procfs)"
+    invariants:
+      - "PID reuse: 32-bit PID space, reuse after ~32K PIDs — acceptable risk"
+      - "False positive (PID reused by unrelated process) bounded by lease_duration"
+
+  reservation_id:
+    formula: "id = hash(gpu_uuid, pid, started_ns)"
+    lean_theorem: Theorems.Reservation_Id
+    domain: "gpu_uuid from nvidia-smi -L, pid from getpid(), started_ns from clock_monotonic"
+    invariants:
+      - "Unique within a single GPU's ledger"
+      - "Deterministic — same inputs produce same ID"
+
+proof_obligations:
+  - type: invariant
+    property: "Capacity invariant holds under flock"
+    formal: "For all states S reachable via try_reserve(): sum(S.active.budget_mb) <= S.total_mb × S.reserve_factor"
+    applies_to: all
+
+  - type: invariant
+    property: "Atomic write crash safety"
+    formal: "If process crashes during write_ledger(), the on-disk file is either the old state or the new state, never partial"
+    applies_to: all
+
+  - type: bound
+    property: "Lease expiry prevents permanent starvation"
+    formal: "For any reservation r: if pid_dead(r.pid), then r is pruned within max(lease_duration, next_access_time)"
+    applies_to: all
+
+  - type: invariant
+    property: "Dead PID cleanup correctness"
+    formal: "prune_dead() removes exactly those reservations where !alive(pid) || expired(r)"
+    applies_to: all
+
+  - type: invariant
+    property: "GPU UUID stability"
+    formal: "GPU UUID does not change across reboots or driver reloads (nvidia-smi -L)"
+    applies_to: all
+
+  - type: bound
+    property: "Flock acquisition bounded"
+    formal: "flock(LOCK_EX) returns within O(1) contention time for N<=10 concurrent processes"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-VL-001
+    rule: "Capacity invariant"
+    prediction: "Two concurrent processes cannot both reserve if combined budget exceeds capacity"
+    test: "Fork two processes, both call try_reserve(total_mb × 0.6). Exactly one succeeds."
+    if_fails: "Flock not providing mutual exclusion — race condition in ledger access"
+
+  - id: FALSIFY-VL-002
+    rule: "Atomic write crash safety"
+    prediction: "Kill -9 during write_ledger() leaves valid JSON on disk"
+    test: "In loop: fork child that reserves + writes, parent sends SIGKILL at random delay. After 100 iterations, all reads succeed."
+    if_fails: "rename not atomic or fsync missing — partial file on disk"
+
+  - id: FALSIFY-VL-003
+    rule: "Lease expiry"
+    prediction: "Reservation with expired lease is pruned on next try_reserve()"
+    test: "Create reservation with lease_duration=1s, sleep 2s, call try_reserve(). Old reservation not counted."
+    if_fails: "Lease expiry check uses wrong clock or comparison"
+
+  - id: FALSIFY-VL-004
+    rule: "Dead PID cleanup"
+    prediction: "Reservation for PID that no longer exists is pruned"
+    test: "Fork child, child reserves, child exits. Parent calls try_reserve() — child's reservation pruned."
+    if_fails: "/proc/{pid}/stat check incorrect or not performed"
+
+  - id: FALSIFY-VL-005
+    rule: "Reserve factor bounds"
+    prediction: "Cannot reserve more than total_mb × reserve_factor even with no other reservations"
+    test: "try_reserve(total_mb × 0.90) fails when reserve_factor = 0.85"
+    if_fails: "Reserve factor not applied to total capacity"
+
+  - id: FALSIFY-VL-006
+    rule: "Flock contention"
+    prediction: "10 concurrent processes all complete try_reserve() within 5 seconds"
+    test: "Fork 10 processes, all call try_reserve(1 MB). All complete. Wall-clock < 5s."
+    if_fails: "Flock deadlock or starvation under contention"
+
+affected_files:
+  - path: "src/gpu/ledger.rs"
+    functions:
+      - "VramLedger: new, try_reserve, release, prune_dead, total_reserved, read_ledger, write_ledger"
+      - "Reservation: new, is_expired, is_alive"
+    change: "New module: flock-based VRAM reservation ledger"
+
+  - path: "src/gpu/mod.rs"
+    change: "Wire ledger module"
+
+  - path: "src/gpu/error.rs"
+    functions:
+      - "GpuError: InsufficientMemory, Timeout, LedgerCorrupt"
+    change: "New error types for GPU sharing"
+
+qa_gate:
+  id: F-VL-001
+  name: "VRAM Ledger Contract"
+  description: "Flock-based VRAM reservation with crash safety and lease expiry"
+  checks:
+    - "capacity_invariant_under_flock"
+    - "atomic_write_crash_safe"
+    - "lease_expiry_prevents_starvation"
+    - "dead_pid_cleanup"
+
+profiling:
+  brick_phases:
+    - name: "lock_acq"
+      description: "flock(LOCK_EX) acquisition time"
+    - name: "ledger_rd"
+      description: "JSON read + deserialize + PID prune"
+    - name: "ledger_wr"
+      description: "Serialize + write tmp + fsync + rename"
+    - name: "lock_rel"
+      description: "flock release (close fd)"
+
+tracing:
+  trace_steps:
+    - name: "LedgerReserve"
+      metadata: "budget={budget_mb}MB gpu={gpu_uuid}"
+    - name: "LedgerCleanup"
+      metadata: "pruned={count} expired={expired_count}"
+    - name: "LedgerRelease"
+      metadata: "pid={pid} budget={budget_mb}MB"

@@ -1,0 +1,1 @@
+{"content_hash":"c43d86a00cdee744","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: Kernel contract has no kani_harnesses","file":"contracts/vram-ledger-v1.yaml","line":null,"contract_stem":"vram-ledger-v1","suppressed":false,"is_new":true}]}

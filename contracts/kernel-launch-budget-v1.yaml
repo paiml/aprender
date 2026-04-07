@@ -1,0 +1,117 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: GPU kernel launch count budget for transformer inference
+  references:
+  - Qwen2.5-Coder Showcase Spec §13.10 — kernel launch decomposition
+  - Qwen3 Performance Parity Spec — bsum instruction budget
+equations:
+  per_token_launches:
+    formula: kernel_launches(L) = 12 * L + 2
+    domain: L ∈ ℤ⁺ (number of transformer layers)
+    codomain: kernel_launches ∈ ℤ⁺
+    invariants:
+    - Linear in L
+    - 'Minimum: 14 launches for L=1'
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Per_Token_Launches
+  per_layer_decomposition:
+    formula: 12 = 2(norm) + 5(matmul) + 1(rope) + 1(attn) + 1(swiglu) + 2(residual)
+    domain: fixed transformer architecture
+    invariants:
+    - Decomposition sums to 12
+    - Each component count >= 1
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Per_Layer_Decomposition
+  bsum_budget:
+    formula: waste = L * P * ceil(D/256) * C
+    domain: L=layers, P=passes_per_layer, D=hidden_dim, C=cycles_per_bsum
+    codomain: waste ∈ ℤ⁺ (wasted cycles)
+    invariants:
+    - Waste proportional to layer count
+    - Waste proportional to hidden dim (via ceil)
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Bsum_Budget
+proof_obligations:
+- type: invariant
+  property: Per-token formula
+  formal: kernel_launches(L) = 12 * L + 2 for all L >= 1
+  applies_to: all
+- type: invariant
+  property: Decomposition sum
+  formal: 2 + 5 + 1 + 1 + 1 + 2 = 12
+  applies_to: all
+- type: monotonicity
+  property: Launch count monotonic
+  formal: L1 < L2 => kernel_launches(L1) < kernel_launches(L2)
+  applies_to: all
+- type: equivalence
+  property: SIMD kernel equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-KL-001
+  rule: Per-token formula
+  prediction: kernel_launches agrees with formula for random L
+  test: proptest with L in [1, 200]
+  if_fails: Formula constant wrong
+- id: FALSIFY-KL-002
+  rule: Decomposition
+  prediction: Component sum = 12
+  test: static assertion
+  if_fails: Missing or extra kernel in decomposition
+- id: FALSIFY-KL-003
+  rule: Monotonicity
+  prediction: More layers => more launches
+  test: proptest comparing L and L+delta
+  if_fails: Non-monotonic launch count
+- id: FALSIFY-KL-004
+  rule: SIMD kernel equivalence
+  prediction: SIMD kernel budget matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD budget calc:SIMD budget computation differs'
+kani_harnesses:
+- id: KANI-KL-001
+  obligation: KL-INV-001
+  property: Launch count formula for bounded L
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_kernel_launch_count
+- id: KANI-KERNEL-002
+  obligation: Per-token formula
+  property: Per-token formula
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KERNEL-003
+  obligation: Decomposition sum
+  property: Decomposition sum
+  bound: 8
+  strategy: stub_float
+- id: KANI-KERNEL-004
+  obligation: Launch count monotonic
+  property: Launch count monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-KERNEL-005
+  obligation: SIMD kernel equivalence
+  property: SIMD kernel equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-KL-001
+  name: Kernel Launch Budget Contract
+  description: GPU kernel launch count quality gate
+  checks:
+  - per_token_formula
+  - decomposition_sum
+  - monotonicity
+  pass_criteria: All 4 falsification tests pass
+  falsification: Change a component count to break sum

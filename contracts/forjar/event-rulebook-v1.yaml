@@ -1,0 +1,134 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Event rulebook — trigger dispatch completeness, cooldown deduplication, action ordering with fail-fast
+  references:
+  - 'Luckham (2002) The Power of Events'
+  - 'Google SRE Book, Chapter 6: Monitoring and Alerting'
+equations:
+  trigger_dispatch_completeness:
+    formula: '∀ kind in TriggerKind: handler(kind) exists ∧ handler(kind) ≠ no-op'
+    domain: kind ∈ TriggerKind ∈ {File, Process, Cron, Webhook, Metric, Manual}
+    codomain: Handler
+    invariants:
+    - Every trigger kind has a registered handler
+    - No trigger kind silently drops events
+    - Handler dispatch is exhaustive (match covers all variants)
+    preconditions:
+    - kind is a valid TriggerKind variant
+    lean_theorem: Theorems.Trigger_Dispatch_Completeness
+  cooldown_deduplication:
+    formula: 'now - last_fired < cooldown → event suppressed; now - last_fired >= cooldown → event fires'
+    domain: (rule ∈ Rule, event ∈ Event, last_fired ∈ Instant)
+    codomain: bool
+    invariants:
+    - Events within cooldown window are deduplicated
+    - First event always fires (no prior last_fired)
+    - Cooldown of zero means no deduplication
+    preconditions:
+    - rule.cooldown >= Duration::ZERO
+    - now >= last_fired
+    lean_theorem: Theorems.Cooldown_Deduplication
+  action_ordering:
+    formula: '∀ i < j: end_time(actions[i]) < start_time(actions[j])'
+    domain: rule ∈ Rule
+    codomain: Vec<ActionResult>
+    invariants:
+    - Actions within a rule execute sequentially
+    - 'Fail-fast: action[i] fails → actions[i+1..] skipped'
+    - Empty action list succeeds immediately
+    preconditions:
+    - rule.actions.len() >= 0
+    lean_theorem: Theorems.Action_Ordering
+proof_obligations:
+- type: completeness
+  property: All triggers handled
+  formal: '∀ kind: handler(kind) exists'
+  applies_to: all
+- type: idempotency
+  property: Cooldown dedup
+  formal: events within cooldown → 1 execution
+  applies_to: all
+- type: ordering
+  property: Sequential actions
+  formal: action[i] completes before action[i+1] starts
+  applies_to: all
+- type: soundness
+  property: Fail-fast
+  formal: action failure → remaining skipped
+  applies_to: all
+enforcement:
+  trigger_dispatch:
+    description: Every trigger kind must have a handler
+    check: contract_tests::FALSIFY-EVT-001
+    severity: ERROR
+  cooldown_dedup:
+    description: Events within cooldown window must be deduplicated
+    check: contract_tests::FALSIFY-EVT-002
+    severity: ERROR
+  action_ordering:
+    description: Actions must execute sequentially with fail-fast
+    check: contract_tests::FALSIFY-EVT-004
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-EVT-001
+  rule: Trigger completeness
+  prediction: File trigger on modified path fires exactly once
+  test: create file trigger, modify file, verify exactly one event fired
+  if_fails: File trigger handler missing or fires duplicate events
+- id: FALSIFY-EVT-002
+  rule: Cooldown within window
+  prediction: Two events within 10s cooldown fire only once
+  test: fire two events 5s apart with 10s cooldown, verify one execution
+  if_fails: Cooldown comparison not enforced or uses wrong time source
+- id: FALSIFY-EVT-003
+  rule: Cooldown after expiry
+  prediction: Event after cooldown expires fires normally
+  test: fire event, wait past cooldown, fire again, verify both executed
+  if_fails: Cooldown never resets or last_fired not updated
+- id: FALSIFY-EVT-004
+  rule: Fail-fast actions
+  prediction: Second action not executed when first action fails
+  test: create rule with 2 actions, fail first, verify second not called
+  if_fails: Action execution continues after failure
+- id: FALSIFY-EVT-005
+  rule: Unconditional manual trigger
+  prediction: Manual trigger with no condition always fires
+  test: create Manual trigger with empty condition, verify fires
+  if_fails: Empty condition evaluated as false instead of vacuously true
+kani_harnesses:
+- id: KANI-EVT-001
+  obligation: All triggers handled
+  property: Trigger dispatch completeness
+  bound: 8
+  strategy: exhaustive
+  harness: verify_trigger_dispatch
+- id: KANI-EVT-002
+  obligation: Cooldown dedup
+  property: Cooldown deduplication
+  bound: 8
+  strategy: exhaustive
+  harness: verify_cooldown_dedup
+- id: KANI-EVT-003
+  obligation: Sequential actions
+  property: Action ordering
+  bound: 8
+  strategy: exhaustive
+  harness: verify_action_ordering
+- id: KANI-EVT-004
+  obligation: Fail-fast
+  property: Fail-fast semantics
+  bound: 8
+  strategy: exhaustive
+  harness: verify_fail_fast
+qa_gate:
+  id: F-EVT-001
+  name: Event Rulebook Contract
+  description: Event/rulebook automation quality gate
+  checks:
+  - trigger_dispatch
+  - cooldown_dedup
+  - action_ordering
+  pass_criteria: All 5 falsification tests pass
+  falsification: Remove cooldown check from event dispatch

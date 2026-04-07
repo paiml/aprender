@@ -1,0 +1,141 @@
+metadata:
+  version: 1.0.0
+  description: Synthetic conversation generation for shell safety chat model training
+    (SSC v11 S6)
+  references:
+  - 'SSC v11 Section 6: Synthetic Conversation Generation'
+  - 'SSC v11 Section 6.5: Honesty Requirements'
+  depends_on:
+  - codebert-tokenizer-validation-v1
+equations:
+  conversation_types:
+    formula: type(entry) = D if safe(entry) else C if !deterministic(entry) else B
+      if SEC(entry) && even(seed) else A
+    domain: entry in CorpusEntry, seed in u64
+    codomain: '{ClassifyExplain, Fix, Debug, ConfirmSafe}'
+    invariants:
+    - Safe entries always produce Type D
+    - Non-deterministic unsafe entries always produce Type C
+    - Security findings alternate between Type A and Type B
+    preconditions:
+    - 'input.len() > 0'
+    - num_turns > 0
+    lean_theorem: Theorems.Conversation_Types
+  quality_gate:
+    formula: pass = type_d_pct >= 30% AND empty_responses == 0 AND variant_balanced
+    domain: conversations in Vec<Conversation>
+    codomain: bool
+    invariants:
+    - At least 30% of conversations are Type D (safe confirmations)
+    - No conversation has empty/trivial response content
+    - No single prompt variant exceeds 20% of total
+    preconditions:
+    - 'input.len() > 0'
+    - threshold > 0.0
+    lean_theorem: Theorems.Quality_Gate
+  chatml_format:
+    formula: turns = [system_prompt, user_prompt, assistant_response]
+    domain: Conversation
+    codomain: Vec<Turn> with len == 3
+    invariants:
+    - First turn is always system with honesty disclaimer
+    - Second turn is user with script in code block
+    - Third turn is assistant with analysis or confirmation
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Chatml_Format
+proof_obligations:
+- type: invariant
+  property: ChatML structure
+  formal: conversation.turns.len() == 3 AND turns[0].role == 'system' AND turns[1].role
+    == 'user' AND turns[2].role == 'assistant'
+  applies_to: all
+- type: invariant
+  property: Type D minimum
+  formal: type_d_count / total >= 0.30
+  applies_to: batch
+- type: invariant
+  property: No empty responses
+  formal: 'for all conv: all turns have non-empty content'
+  applies_to: all
+- type: invariant
+  property: System prompt honesty
+  formal: SYSTEM_PROMPT contains 'not a replacement' AND 'pattern matching'
+  applies_to: all
+- type: invariant
+  property: Deterministic generation
+  formal: generate(entries, seed) == generate(entries, seed) for same inputs
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-CONV-001
+  rule: ChatML 3-turn structure
+  prediction: Every conversation has exactly 3 turns (system, user, assistant)
+  test: Generate batch, verify all have 3 turns with correct roles
+  if_fails: Missing system prompt or broken turn generation
+- id: FALSIFY-CONV-002
+  rule: Type D minimum threshold
+  prediction: Safe corpus entries produce >= 30% Type D conversations
+  test: Generate from mixed safe/unsafe batch, check type_d_pct
+  if_fails: Classification logic incorrectly marks safe entries as unsafe
+- id: FALSIFY-CONV-003
+  rule: No empty responses
+  prediction: All generated responses have non-trivial content
+  test: Generate 1000 conversations, check for empty trim
+  if_fails: Edge case in template rendering produces empty output
+- id: FALSIFY-CONV-004
+  rule: Variant diversity
+  prediction: 12+ prompt variants prevents any single variant > 20%
+  test: Generate 100 conversations, check variant distribution
+  if_fails: Seed modular arithmetic clusters on few variants
+- id: FALSIFY-CONV-005
+  rule: Honesty in system prompt
+  prediction: System prompt disclaims novel reasoning and audit replacement
+  test: Check SYSTEM_PROMPT constant for required phrases
+  if_fails: S6.5 honesty requirements not embedded in training data
+kani_harnesses:
+- id: KANI-CONV-001
+  obligation: ChatML structure
+  property: Every conversation has exactly 3 turns with correct roles
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_chatml_structure
+- id: KANI-CONV-002
+  obligation: Type D minimum
+  property: Safe entries produce Type D classification
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_type_d_minimum
+- id: KANI-CONV-003
+  obligation: No empty responses
+  property: All generated turns have non-empty content
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_no_empty_responses
+- id: KANI-CONV-004
+  obligation: System prompt honesty
+  property: System prompt contains required honesty disclaimers
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_system_prompt_honesty
+- id: KANI-CONV-005
+  obligation: Deterministic generation
+  property: Same inputs produce identical output
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_deterministic_generation
+qa_gate:
+  id: C-CONV-001
+  name: Conversation Generation Quality Gate
+  description: Conversation generation quality gate
+  checks:
+  - generate_batch produces >= 30% Type D
+  - No empty responses in full corpus generation
+  - JSONL valid (each line parses as JSON)
+  - System prompt contains S6.5 honesty disclaimers
+  - Dataset README includes YAML front matter and limitations section

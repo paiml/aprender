@@ -1,0 +1,199 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Token embedding and unembedding algebra — vocabulary projection invariants for Qwen3.5
+  references:
+  - Vaswani et al. (2017) Attention Is All You Need — shared embeddings
+  - Press & Wolf (2017) Using the Output Embedding to Improve Language Models
+  - Qwen3.5 Technical Report — tied embedding weights
+equations:
+  embedding_lookup:
+    formula: embed(token_id) = W_e[token_id, :]
+    domain: token_id ∈ [0, V), W_e ∈ R^{V × d_model}
+    invariants:
+    - 'Output shape: [d_model]'
+    - 'Deterministic: same token_id always gives same vector'
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Embedding_Lookup
+  unembedding_projection:
+    formula: logits = h @ W_u^T where W_u ∈ R^{V × d_model}
+    domain: h = final hidden state, shape [seq_len, d_model]
+    invariants:
+    - 'Output shape: [seq_len, V]'
+    - Logits are real-valued (can be any finite float)
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Unembedding_Projection
+  tied_weights:
+    formula: W_u = W_e (weight tying)
+    domain: Shared embedding matrix for input and output
+    invariants:
+    - 'Single matrix shared: no independent parameters'
+    - 'Parameter count: V * d_model (not 2 * V * d_model)'
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Tied_Weights
+  vocabulary_bounds:
+    formula: 0 <= token_id < V
+    domain: V = vocabulary size (e.g., 151936 for Qwen)
+    invariants:
+    - All token IDs in valid range
+    - No negative IDs
+    - No IDs >= V
+    preconditions:
+    - 'input.len() > 0'
+    - vocab_size > 0
+    lean_theorem: Theorems.Vocabulary_Bounds
+  embedding_norm:
+    formula: '||embed(t)||_2 for t ∈ [0, V)'
+    domain: L2 norm of each embedding vector
+    invariants:
+    - All norms finite and positive
+    - No zero embeddings (non-degenerate)
+    preconditions:
+    - input.iter().all(|v| v.is_finite())
+    - input.len() > 0
+    lean_theorem: Theorems.Embedding_Norm
+  logit_temperature:
+    formula: logits_T = logits / T for temperature T > 0
+    domain: Temperature scaling before softmax
+    invariants:
+    - T = 1.0 is identity
+    - T → 0 concentrates on argmax
+    - T → ∞ approaches uniform
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Logit_Temperature
+proof_obligations:
+- type: invariant
+  property: Embedding lookup shape
+  formal: '∀t ∈ [0,V): shape(embed(t)) = [d_model]'
+  applies_to: all
+- type: invariant
+  property: Unembedding output shape
+  formal: shape(h @ W_u^T) = [seq_len, V]
+  applies_to: all
+- type: invariant
+  property: Tied weight identity
+  formal: W_u ≡ W_e (pointer equality or value equality)
+  applies_to: all
+- type: bound
+  property: Token ID bounds
+  formal: '∀t in batch: 0 <= t < V'
+  applies_to: all
+- type: invariant
+  property: Embedding non-degeneracy
+  formal: '∀t ∈ [0,V): ||embed(t)||_2 > 0'
+  applies_to: all
+- type: invariant
+  property: Temperature identity
+  formal: logits / 1.0 = logits
+  applies_to: all
+- type: monotonicity
+  property: Temperature scaling effect
+  formal: T1 < T2 → entropy(softmax(logits/T1)) < entropy(softmax(logits/T2))
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-EMB-001
+  rule: Lookup determinism
+  prediction: Same ID always returns same vector
+  test: 'proptest: embed(t) == embed(t) for random t'
+  if_fails: Non-deterministic embedding lookup
+- id: FALSIFY-EMB-002
+  rule: Shape preservation
+  prediction: Embedding output is d_model-dimensional
+  test: proptest with random valid token IDs
+  if_fails: Shape mismatch in embedding table
+- id: FALSIFY-EMB-003
+  rule: Tied weight sharing
+  prediction: embed(t) @ W_u == logits row identity
+  test: 'Deterministic: W_e === W_u pointer check'
+  if_fails: Embedding weights not actually tied
+- id: FALSIFY-EMB-004
+  rule: Vocabulary bounds
+  prediction: Out-of-range IDs rejected
+  test: 'proptest: token_id >= V triggers error'
+  if_fails: Missing bounds check on token ID
+- id: FALSIFY-EMB-005
+  rule: Non-zero embeddings
+  prediction: No all-zero embedding vectors
+  test: Exhaustive check over vocabulary
+  if_fails: Dead embedding row in weight matrix
+- id: FALSIFY-EMB-006
+  rule: Temperature identity
+  prediction: logits / 1.0 == logits exactly
+  test: proptest with random logit vectors
+  if_fails: Floating-point division by 1.0 not exact
+- id: FALSIFY-EMB-007
+  rule: Temperature scaling monotonicity
+  prediction: Higher temperature => higher entropy of softmax(logits/T)
+  test: 'proptest: T1 < T2 => H(softmax(logits/T1)) <= H(softmax(logits/T2))'
+  if_fails: Temperature scaling inverted
+kani_harnesses:
+- id: KANI-EMB-001
+  obligation: EMB-BND-001
+  property: Token ID within vocabulary
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_token_bounds
+- id: KANI-EMB-002
+  obligation: EMB-INV-001
+  property: Embedding shape and non-degeneracy
+  bound: 4
+  strategy: stub_float
+  harness: verify_embedding_shape
+- id: KANI-EMBEDD-003
+  obligation: Embedding lookup shape
+  property: Embedding lookup shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-004
+  obligation: Unembedding output shape
+  property: Unembedding output shape
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-005
+  obligation: Tied weight identity
+  property: Tied weight identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-006
+  obligation: Token ID bounds
+  property: Token ID bounds
+  bound: 8
+  strategy: stub_float
+- id: KANI-EMBEDD-007
+  obligation: Embedding non-degeneracy
+  property: Embedding non-degeneracy
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-008
+  obligation: Temperature identity
+  property: Temperature identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-EMBEDD-009
+  obligation: Temperature scaling effect
+  property: Temperature scaling effect
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-EMB-001
+  name: Embedding Algebra Contract
+  description: Token embedding and unembedding quality gate
+  checks:
+  - embedding_lookup
+  - unembedding_projection
+  - tied_weights
+  - vocabulary_bounds
+  - embedding_norm
+  - logit_temperature
+  pass_criteria: All 7 falsification tests pass
+  falsification: Use token_id = V to trigger out-of-bounds

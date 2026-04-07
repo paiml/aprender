@@ -1,0 +1,28 @@
+version: 1.0.0
+target_crate: zenith
+bindings:
+- contract: monitor-metrics-v1.yaml
+  equation: cpu_utilization
+  module_path: zenith::metrics
+  function: collect_cpu
+  signature: 'fn collect_cpu() -> CPUTimeApp'
+  status: implemented
+  notes: Uses heim for async CPU stat collection; delta-based utilization
+- contract: monitor-metrics-v1.yaml
+  equation: memory_usage
+  module_path: zenith::metrics
+  function: collect_memory
+  signature: 'fn collect_memory() -> MemoryInfo'
+  status: implemented
+  notes: Uses heim/sysinfo for memory stats; total and available
+- contract: monitor-metrics-v1.yaml
+  equation: history_persistence
+  module_path: zenith::metrics::histogram
+  function: load_zenith_store
+  signature: 'fn load_zenith_store(path: &Path, now: &SystemTime) -> Option<HashMap>'
+  status: implemented
+  notes: Compressed bincode store with retention-based pruning
+critical_path:
+- cpu_utilization
+- memory_usage
+- history_persistence

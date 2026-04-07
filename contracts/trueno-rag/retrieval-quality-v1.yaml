@@ -1,0 +1,112 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Retrieval quality contract — embedding, retrieval, and IR metric correctness
+  references:
+  - 'Robertson & Zaragoza (2009) The Probabilistic Relevance Framework: BM25 and Beyond'
+  - 'Johnson et al. (2019) Billion-scale similarity search with GPUs'
+equations:
+  embedding_insert:
+    formula: insert(doc, embedding) → index where retrieve(query, k) returns doc if sim(query, doc) is top-k
+    domain: doc ∈ Chunk, embedding ∈ R^d
+    codomain: Result<(), IndexError>
+    invariants:
+    - 'Inserted documents are retrievable: insert then retrieve finds the document'
+    - 'Embedding dimension consistent: all vectors in index have same d'
+    - chunk_count increments by 1 after insert
+    preconditions:
+    - embedding.len() == index.dimension
+    - '!doc.text.is_empty()'
+    lean_theorem: Theorems.Embedding_Insert
+  retrieval_ranking:
+    formula: retrieve(query, k) = top-k documents by similarity score, descending
+    domain: query ∈ R^d, k ∈ usize
+    codomain: Vec<(Chunk, f32)> with len <= k
+    invariants:
+    - Results sorted by score descending
+    - '|results| <= k'
+    - '|results| <= chunk_count'
+    - 'Dense and sparse retrieval produce valid rankings independently'
+    preconditions:
+    - k > 0
+    - index is non-empty
+    lean_theorem: Theorems.Retrieval_Ranking
+  metric_bounds:
+    formula: '∀ metric ∈ {recall@k, precision@k, MRR, nDCG@k, F1@k}: metric ∈ [0, 1]'
+    domain: retrieved ∈ Vec<DocId>, relevant ∈ Set<DocId>, k ∈ usize
+    codomain: f64 ∈ [0.0, 1.0]
+    invariants:
+    - All IR metrics bounded in [0, 1]
+    - 'Perfect retrieval: recall@k = 1.0 when all relevant docs retrieved'
+    - 'Empty retrieval: precision@k = 0.0 when no relevant docs retrieved'
+    - 'MRR = 1/rank of first relevant doc'
+    preconditions:
+    - k > 0
+    - relevant.len() > 0 (for recall, MRR)
+    lean_theorem: Theorems.Metric_Bounds
+proof_obligations:
+- type: invariant
+  property: Insert-retrieve round-trip
+  formal: '∀ doc, emb: insert(doc, emb) ; retrieve(emb, 1)[0] = doc'
+  applies_to: embedding_insert
+- type: invariant
+  property: Retrieval sorted descending
+  formal: '∀ i < j < k: score(results[i]) >= score(results[j])'
+  applies_to: retrieval_ranking
+- type: invariant
+  property: Metric unit interval
+  formal: '∀ metric: 0.0 <= metric(retrieved, relevant) <= 1.0'
+  applies_to: metric_bounds
+enforcement:
+  insert_retrieve:
+    description: Inserted document is retrievable as top-1
+    check: contract_tests::FALSIFY-RQ-001
+    severity: ERROR
+  sorted_descending:
+    description: Retrieval results sorted by score descending
+    check: contract_tests::FALSIFY-RQ-002
+    severity: ERROR
+  metric_bounds:
+    description: All IR metrics in [0, 1]
+    check: contract_tests::FALSIFY-RQ-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RQ-001
+  rule: Insert-retrieve round-trip
+  prediction: inserting a document then querying with its embedding returns it as top-1
+  test: insert 10 random documents, query each by own embedding
+  if_fails: Index corruption or distance metric bug
+- id: FALSIFY-RQ-002
+  rule: Sorted descending
+  prediction: retrieve(q, k) results have monotonically decreasing scores
+  test: proptest with random queries, verify sort order
+  if_fails: Sort comparator reversed or unstable sort breaks ties wrong
+- id: FALSIFY-RQ-003
+  rule: Metric bounds
+  prediction: recall_at_k, precision_at_k, MRR, nDCG, F1 all in [0, 1]
+  test: proptest with random retrieved/relevant sets, boundary cases
+  if_fails: Division by zero or missing clamp in metric computation
+kani_harnesses:
+- id: KANI-RQ-001
+  obligation: Metric unit interval
+  property: all metrics bounded [0, 1]
+  bound: 8
+  strategy: exhaustive
+  harness: verify_metric_bounds
+- id: KANI-RQ-002
+  obligation: Retrieval sorted
+  property: scores descending
+  bound: 16
+  strategy: exhaustive
+  harness: verify_retrieval_sorted
+qa_gate:
+  id: F-RQ-001
+  name: Retrieval Quality Contract
+  description: Embedding, retrieval, and IR metric correctness gate
+  checks:
+  - insert_retrieve
+  - sorted_descending
+  - metric_bounds
+  pass_criteria: All 3 falsification tests pass
+  falsification: Return unsorted results from retrieve_dense

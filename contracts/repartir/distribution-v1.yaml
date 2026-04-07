@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Distribution contract — artifact build, distribution pipeline, warm start correctness
+  references:
+  - 'Humble & Farley (2010) Continuous Delivery'
+  - 'Nygard (2018) Release It! Design and Deploy Production-Ready Software'
+equations:
+  build_integrity:
+    formula: B(config) = artifact where hash(artifact) is deterministic for fixed config
+    domain: config ∈ BuildConfig (via builder pattern)
+    codomain: Result<Artifact>
+    invariants:
+    - 'Deterministic: B(c) = B(c) for same config and source'
+    - Builder pattern validates all required fields before build
+    - Missing required fields produce Err at build() call
+    preconditions:
+    - config has all required fields set
+    - source files are accessible
+    lean_theorem: Theorems.Build_Integrity
+  distribution_delivery:
+    formula: D(artifact, targets) = ∀ t ∈ targets, deliver(artifact, t)
+    domain: artifact ∈ Artifact, targets ∈ [Target]
+    codomain: Result<DistributionReport>
+    invariants:
+    - All targets receive identical artifact bytes
+    - Partial failure reports which targets succeeded/failed
+    - Warm start skips unchanged artifacts
+    preconditions:
+    - artifact is valid (non-empty, passes integrity check)
+    - targets list is non-empty
+    lean_theorem: Theorems.Distribution_Delivery
+proof_obligations:
+- type: invariant
+  property: Build determinism
+  formal: '∀ c: hash(build(c)) = hash(build(c))'
+  applies_to: build_integrity
+- type: invariant
+  property: Delivery completeness
+  formal: '∀ t ∈ targets: deliver(a, t).is_ok() → verify(t, a).is_ok()'
+  applies_to: distribution_delivery
+enforcement:
+  build_determinism:
+    description: Same config produces identical artifacts
+    check: contract_tests::FALSIFY-RPT-001
+    severity: ERROR
+  delivery_completeness:
+    description: All targets receive the artifact on success
+    check: contract_tests::FALSIFY-RPT-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RPT-001
+  rule: Build determinism
+  prediction: build(config) produces same hash twice for unchanged source
+  test: build same config twice, compare artifact hashes
+  if_fails: Build includes timestamps or non-deterministic ordering
+- id: FALSIFY-RPT-002
+  rule: Delivery completeness
+  prediction: after distribute(), all targets have matching artifact hash
+  test: distribute to 5 mock targets, verify each has correct hash
+  if_fails: Distribution skips targets or corrupts during transfer
+kani_harnesses:
+- id: KANI-RPT-001
+  obligation: Build determinism
+  property: build is deterministic
+  bound: 8
+  strategy: exhaustive
+  harness: verify_build_determinism
+- id: KANI-RPT-002
+  obligation: Delivery completeness
+  property: all targets receive artifact
+  bound: 8
+  strategy: exhaustive
+  harness: verify_delivery_completeness
+qa_gate:
+  id: F-RPT-001
+  name: Distribution Contract
+  description: Artifact build and distribution quality gate
+  checks:
+  - build_determinism
+  - delivery_completeness
+  pass_criteria: All 2 falsification tests pass
+  falsification: Embed build timestamp in artifact header

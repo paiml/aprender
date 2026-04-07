@@ -1,0 +1,85 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    Sovereign tensor contract — entrenar uses ONLY trueno Tensor or raw Vec<f32>
+    for all tensor operations. No external tensor libraries (ndarray, nalgebra, etc.).
+    This enforces the sovereign stack principle: trueno IS the tensor library.
+  references:
+    - "trueno: SIMD-accelerated tensor operations (crates.io)"
+    - "KAIZEN: ndarray is redundant with trueno"
+
+equations:
+  elementwise_binary:
+    formula: "c[i] = a[i] ⊕ b[i] for ⊕ ∈ {+, -, *, /}"
+    lean_theorem: Theorems.Elementwise_Binary
+    domain: "a, b ∈ ℝ^n (same length)"
+    codomain: "c ∈ ℝ^n"
+    invariants:
+      - "len(c) == len(a) == len(b)"
+      - "No external tensor library used"
+
+  scalar_mul:
+    formula: "c[i] = α * a[i]"
+    lean_theorem: Theorems.Scalar_Mul
+    domain: "a ∈ ℝ^n, α ∈ ℝ"
+    codomain: "c ∈ ℝ^n"
+
+  dot_product:
+    formula: "s = Σ_i a[i] * b[i]"
+    lean_theorem: Theorems.Dot_Product
+    domain: "a, b ∈ ℝ^n"
+    codomain: "s ∈ ℝ"
+
+invariants:
+  no_ndarray:
+    statement: "grep -r 'ndarray' entrenar/Cargo.toml returns zero matches"
+    rationale: "ndarray is redundant with trueno Tensor + Vec<f32>"
+
+  optimizer_parity:
+    statement: "AdamW/Adam/SGD produce identical parameter updates before and after refactor"
+    rationale: "Replacing Array1<f32> with Vec<f32> must not change numeric results"
+
+  lora_parity:
+    statement: "LoRA forward/backward produce identical outputs before and after refactor"
+    rationale: "Replacing ndarray ops with Vec<f32> loops must not change results"
+
+falsification_tests:
+  - id: FALSIFY-SOV-001
+    rule: no_ndarray
+    prediction: "Zero ndarray references in Cargo.toml"
+    if_fails: "ndarray dependency not fully removed"
+  - id: FALSIFY-SOV-002
+    rule: optimizer_parity
+    prediction: "All AdamW/Adam/SGD tests pass without ndarray"
+    if_fails: "Optimizer regression after ndarray removal"
+  - id: FALSIFY-SOV-003
+    rule: lora_parity
+    prediction: "All LoRA forward/backward tests pass without ndarray"
+    if_fails: "LoRA regression after ndarray removal"
+  - id: FALSIFY-SOV-004
+    rule: no_ndarray_source
+    prediction: "Zero 'use ndarray' in production source"
+    if_fails: "ndarray imports remain in source code"
+
+proof_obligations:
+  - type: postcondition
+    property: No ndarray in sovereign tensor ops
+    formal: "zero ndarray references"
+
+kani_harnesses:
+  - id: KANI-SOV-001
+    obligation: no_ndarray
+    property: ndarray-free tensor operations
+    bound: 4
+    strategy: bounded_int
+
+qa_gate:
+  id: F-SOV-TENSOR-001
+  name: Sovereign Tensor Contract
+  description: Quality gate for sovereign tensor operations using trueno instead of external libraries
+  checks:
+  - validation
+  - falsification
+

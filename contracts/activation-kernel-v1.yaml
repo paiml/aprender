@@ -1,0 +1,169 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: Activation functions — GELU, SiLU/Swish, ReLU kernels
+  references:
+  - Hendrycks & Gimpel (2016) Gaussian Error Linear Units (GELUs)
+  - Ramachandran et al. (2017) Searching for Activation Functions (SiLU)
+  - Nair & Hinton (2010) Rectified Linear Units Improve Restricted Boltzmann Machines
+equations:
+  gelu:
+    formula: GELU(x) = x · Φ(x) ≈ 0.5x(1 + tanh(√(2/π)(x + 0.044715x³)))
+    domain: x ∈ ℝ
+    codomain: ℝ
+    invariants:
+    - GELU(x) → x as x → +∞
+    - GELU(x) → 0 as x → -∞
+    - GELU(0) = 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Gelu
+    postconditions:
+    - result.len() == x.len()
+    - result.iter().all(|v| v.is_finite())
+    guarantees:
+      shapes:
+        output: { dims: ["x.len()"] }
+      constraints:
+      - "output is finite"
+      - "output.len() == x.len()"
+  silu:
+    formula: SiLU(x) = x · σ(x) = x / (1 + exp(-x))
+    domain: x ∈ ℝ
+    codomain: ℝ
+    invariants:
+    - SiLU(x) → x as x → +∞
+    - SiLU(x) → 0 as x → -∞
+    - SiLU(0) = 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Silu
+  relu:
+    formula: ReLU(x) = max(0, x)
+    domain: x ∈ ℝ
+    codomain: '[0, ∞)'
+    invariants:
+    - ReLU(x) ≥ 0 (non-negativity)
+    - ReLU(x) = x for x > 0
+    - ReLU(x) = 0 for x ≤ 0
+    preconditions:
+    - x.iter().all(|v| v.is_finite())
+    - x.len() > 0
+    lean_theorem: Theorems.Relu
+proof_obligations:
+- type: invariant
+  property: GELU at zero
+  formal: GELU(0) = 0
+  applies_to: all
+- type: bound
+  property: GELU approximation error
+  formal: '|GELU_approx(x) - GELU_exact(x)| < ε for |x| < 10'
+  tolerance: 0.0001
+  applies_to: all
+- type: invariant
+  property: SiLU at zero
+  formal: SiLU(0) = 0
+  applies_to: all
+- type: monotonicity
+  property: ReLU monotonic
+  formal: x ≥ y ⟹ ReLU(x) ≥ ReLU(y)
+  applies_to: all
+- type: invariant
+  property: ReLU non-negative
+  formal: ReLU(x) ≥ 0 for all x
+  applies_to: all
+- type: equivalence
+  property: SIMD matches scalar
+  tolerance: 4.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-ACT-001
+  rule: GELU zero
+  prediction: GELU(0) = 0
+  test: direct test
+  if_fails: Constant term in approximation
+- id: FALSIFY-ACT-002
+  rule: GELU approximation
+  prediction: '|GELU_fast(x) - GELU_ref(x)| < 1e-4 for |x| < 10'
+  test: proptest with random x in [-10, 10]
+  if_fails: tanh approximation coefficients wrong
+- id: FALSIFY-ACT-003
+  rule: SiLU zero
+  prediction: SiLU(0) = 0
+  test: direct test
+  if_fails: sigmoid(0) not exactly 0.5
+- id: FALSIFY-ACT-004
+  rule: ReLU non-negative
+  prediction: ReLU(x) ≥ 0 for all x including -0.0
+  test: proptest including signed zeros and subnormals
+  if_fails: Signed zero handling
+- id: FALSIFY-ACT-005
+  rule: SIMD equivalence
+  prediction: '|act_avx2(x) - act_scalar(x)| < 4 ULP for each activation'
+  test: proptest comparing all activations scalar vs SIMD
+  if_fails: SIMD fast-math approximation diverges
+- id: FALSIFY-ACT-006
+  rule: ReLU monotonic
+  prediction: x1 <= x2 => ReLU(x1) <= ReLU(x2)
+  test: proptest with random x1 <= x2 pairs
+  if_fails: ReLU implementation not monotonic
+kani_harnesses:
+- id: KANI-ACT-001
+  obligation: ACT-INV-001
+  property: ReLU non-negativity
+  bound: 32
+  strategy: exhaustive
+  harness: verify_relu_nonnegative
+- id: KANI-ACT-002
+  obligation: ACT-MON-001
+  property: ReLU monotonicity
+  bound: 32
+  strategy: exhaustive
+  harness: verify_relu_monotonic
+- id: KANI-ACTIVA-003
+  obligation: GELU at zero
+  property: GELU at zero
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVA-004
+  obligation: GELU approximation error
+  property: GELU approximation error
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVA-005
+  obligation: SiLU at zero
+  property: SiLU at zero
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVA-006
+  obligation: ReLU monotonic
+  property: ReLU monotonic
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVA-007
+  obligation: ReLU non-negative
+  property: ReLU non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ACTIVA-008
+  obligation: SIMD matches scalar
+  property: SIMD matches scalar
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-ACT-001
+  name: Activation Contract
+  checks:
+  - gelu_zero
+  - relu_nonnegative
+  - simd_equivalence
+  pass_criteria: All 6 falsification tests pass + Kani verifies ReLU
+  falsification: Replace max(0,x) with x to break ReLU non-negativity
+simd_dispatch:
+  activation:
+    scalar: activation_scalar
+    avx2: activation_avx2
+    ptx: activation_ptx

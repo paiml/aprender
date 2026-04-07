@@ -1,0 +1,1 @@
+{"content_hash":"0e879b9d9f60fd31","findings":[{"rule_id":"PV-VAL-001","severity":"error","message":"SCHEMA-003: equations must contain at least one equation","file":"contracts/tokenizer-loading-v1.yaml","line":null,"contract_stem":"tokenizer-loading-v1","suppressed":false,"is_new":true}]}

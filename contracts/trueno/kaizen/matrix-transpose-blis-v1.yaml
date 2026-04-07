@@ -1,0 +1,53 @@
+contract: matrix-transpose-blis-v1
+version: 1.0.0
+status: implemented
+kaizen: '040'
+invariants:
+- id: C-TRANSPOSE-001
+  description: Matrix::transpose() delegates to crate::blis::transpose for AVX2 acceleration
+  preconditions:
+  - self.data.len() == self.rows * self.cols
+  postconditions:
+  - result[j, i] == self[i, j] for all (i, j)
+  - Uses AVX2 8×8 in-register micro-kernel on x86_64 with AVX2
+  - Falls back to scalar for WASM, non-AVX2, and matrices < 64 elements
+  - Backend field preserved in result matrix
+  invariants:
+  - 'Output dimensions: result.rows == self.cols, result.cols == self.rows'
+  - Bitwise identical to scalar transpose (no floating-point reordering)
+  - BLIS transpose handles remainder edges (non-8-aligned dims) internally
+  verified_by:
+  - 20 linear algebra tests passed
+  - 8 BLIS transpose tests passed
+  - 188 matrix tests passed (including property tests)
+affected_files:
+- path: src/matrix/ops/linear/mod.rs
+  functions:
+  - 'Matrix::transpose: delegates to crate::blis::transpose::transpose()'
+  change: '- Replaced scalar 32×32 block iteration with crate::blis::transpose() call
+
+    - BLIS transpose uses AVX2 8×8 micro-kernel, 64×64 L1 tiling, prefetch
+
+    - Shape-adaptive loop ordering for tall-skinny matrices
+
+    - Fallback to scalar element-copy on dimension mismatch (unreachable by construction)
+
+    '
+performance_note: 'For attention-shaped transpose (2048×128, Qwen3-4B):
+
+  - Before: scalar element copy, 32×32 blocks, no SIMD
+
+  - After: AVX2 8-wide loads/stores, 3-phase shuffle/permute, L1-resident tiling
+
+  - AVX2 processes 8×8 = 64 elements per micro-kernel invocation
+
+  - Shape-adaptive: tall-skinny (rows ≥ 4×cols) uses sequential-write loop order
+
+  '
+qa_gate:
+  id: F-MTBV-001
+  name: matrix-transpose-blis-v1 Contract
+  description: Quality gate for matrix-transpose-blis-v1
+  checks:
+  - validation
+  - falsification

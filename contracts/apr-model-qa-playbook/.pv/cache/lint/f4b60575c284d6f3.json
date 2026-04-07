@@ -1,0 +1,1 @@
+{"content_hash":"f4b60575c284d6f3","findings":[{"rule_id":"PV-PRV-001","severity":"error","message":"PROVABILITY-001: falsification_tests (3) < proof_obligations (4)","file":"contracts/mqs-scoring-v1.yaml","line":null,"contract_stem":"mqs-scoring-v1","suppressed":false,"is_new":true}]}

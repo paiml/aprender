@@ -1,0 +1,136 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: >
+    Fused RMSNorm + NF4 GEMV — normalize input and project through NF4-quantized weights
+    in a single kernel launch. Eliminates global memory roundtrip between RMSNorm output
+    and GEMV input. Replicates proven Q4K fusion pattern (FusedRmsNormQ4KGemvKernel) for NF4.
+  pmat: [PMAT-475]
+  references:
+  - "FusedRmsNormGateUpSwigluQ4KKernel (QWEN-009): proven Q4K 3-way fusion in trueno"
+  - "Zhang & Sennrich (2019) Root Mean Square Layer Normalization"
+  - "Dettmers et al. (2023) QLoRA: NF4 data type for memory-efficient fine-tuning"
+  depends_on:
+  - rmsnorm-kernel-v1.yaml
+  - nf4-dequant-v1.yaml
+
+equations:
+  separate_rmsnorm_gemv:
+    formula: |
+      Standard (2 kernels, 1 global memory roundtrip):
+        normed = x / sqrt(mean(x^2) + epsilon) * gamma     # kernel 1: RMSNorm
+        write(normed, global_memory)                         # BW: hidden_size * 4 bytes
+        read(normed, global_memory)                          # BW: hidden_size * 4 bytes
+        y = NF4_dequant(W_nf4) @ normed                     # kernel 2: dequant + GEMV
+    domain: x ∈ ℝ^{hidden_size}, gamma ∈ ℝ^{hidden_size}, W_nf4 ∈ NF4^{out_dim × hidden_size}
+    codomain: y ∈ ℝ^{out_dim}
+    constants:
+      epsilon: 1.0e-5
+    preconditions:
+    - x.len() == hidden_size
+    - gamma.len() == hidden_size
+    - W_nf4 block count == ceil(hidden_size * out_dim / 64)
+
+  fused_rmsnorm_nf4_gemv:
+    formula: |
+      Fused (1 kernel, zero global memory roundtrip for normed):
+        # Phase 1: RMSNorm in registers
+        rms = sqrt(warp_reduce_sum(x_i^2) / hidden_size + epsilon)
+        normed_i = x_i / rms * gamma_i                      # stays in registers
+
+        # Phase 2: NF4 dequant + GEMV using normed_i from registers
+        for each output row j:
+          acc_j += nf4_lut[W_nf4_nibble] * scale * normed_i # fused accumulation
+        y_j = acc_j
+    domain: x ∈ ℝ^{hidden_size}, gamma ∈ ℝ^{hidden_size}, W_nf4 ∈ NF4^{out_dim × hidden_size}
+    codomain: y ∈ ℝ^{out_dim}
+    constants:
+      epsilon: 1.0e-5
+    invariants:
+    - NF4 dequant uses 16-value register LUT (same as standalone Nf4GemmKernel)
+    - RMSNorm epsilon matches unfused kernel
+    - No intermediate global memory write for normed output
+    preconditions:
+    - x.len() == hidden_size
+    - gamma.len() == hidden_size
+    - hidden_size divisible by 64 (NF4 block alignment)
+    postconditions:
+    - y element-wise matches separate_rmsnorm_gemv within tolerance
+
+proof_obligations:
+- type: equivalence
+  property: Fused matches separate RMSNorm + NF4 GEMV
+  formal: '|fused_rmsnorm_nf4_gemv(x, gamma, W) - separate_rmsnorm_gemv(x, gamma, W)| < ε'
+  tolerance: 1.0e-4
+  applies_to: all
+- type: invariant
+  property: No global memory write for intermediate normed output
+  formal: global_memory_writes(fused) < global_memory_writes(separate)
+  applies_to: fused_rmsnorm_nf4_gemv
+- type: invariant
+  property: NF4 dequant numerically identical to standalone kernel
+  formal: nf4_dequant_fused(block) == nf4_dequant_standalone(block) for all blocks
+  applies_to: all
+- type: bound
+  property: Memory bandwidth reduction
+  formal: bw_saved >= hidden_size * 4 * 2 bytes per call (read + write of normed)
+  applies_to: fused_rmsnorm_nf4_gemv
+
+kernel_structure:
+  phases:
+  - name: rmsnorm_in_registers
+    description: Load x, compute RMS via warp shuffle, normalize in registers
+    invariant: normed values never touch global memory
+  - name: nf4_dequant_gemv
+    description: Load NF4 blocks, dequant via register LUT, accumulate with normed input
+    invariant: NF4 LUT identical to standalone Nf4GemmKernel
+
+falsification_tests:
+- id: F-NF4-RMS-001
+  rule: Fused matches separate RMSNorm + NF4 GEMV
+  prediction: Fused output matches separate RMSNorm + NF4 GEMV within 1e-4 tolerance
+  test: Run both paths with Qwen dimensions (hidden=1536, out=1536), compare element-wise
+  if_fails: Check RMSNorm epsilon, warp shuffle reduction, NF4 scale application order
+
+- id: F-NF4-RMS-002
+  rule: No global memory write for intermediate normed output
+  prediction: Fused kernel eliminates intermediate global memory writes for normed output
+  test: Profile with nsys, verify fused path has 1 kernel launch and zero intermediate writes
+  if_fails: Compiler spilled normed to global memory — check register pressure
+
+- id: F-NF4-RMS-003
+  rule: Memory bandwidth reduction
+  prediction: Throughput improvement >= 5% on training forward
+  test: Run 100-step APR canary with fused vs separate, compare tok/s
+  if_fails: Bottleneck is not RMSNorm→GEMV roundtrip — profile to find actual bottleneck
+
+- id: F-NF4-RMS-004
+  rule: NF4 dequant numerically identical to standalone kernel
+  prediction: Works for GQA dimensions where kv_dim != hidden_size
+  test: Test with Qwen 1.5B Q (1536→1536) and K/V (1536→256) rectangular weight matrices
+  if_fails: Kernel tile size assumes square — add rectangular support
+
+kani_harnesses:
+- id: KANI-NFRG-001
+  obligation: Fused RMSNorm+GEMV equivalence
+  property: Fused output matches separate within tolerance
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_fused_rmsnorm_gemv_equivalence
+- id: KANI-NFRG-002
+  obligation: NF4 dequant numerical identity
+  property: NF4 dequant in fused kernel matches standalone
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_nf4_dequant_identity
+
+qa_gate:
+  id: F-NFRG-001
+  name: nf4-fused-rmsnorm-gemv-v1 Contract
+  description: Quality gate for fused RMSNorm + NF4 GEMV kernel
+  checks:
+  - validation
+  - falsification

@@ -1,0 +1,169 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-05'
+  author: PAIML Engineering
+  description: AVX-512 BLIS GEMM — 8×16 microkernel using zmm registers for large matrices
+  registry: true
+  references:
+  - 'CGP spec section 3.1: Roofline model, AVX-512 peak = 2× AVX2'
+  - '[4] Williams et al. Roofline (2009) — arithmetic intensity model'
+  - '[16] Hager & Wellein HPC (2010) — bandwidth analysis, BLIS cache blocking'
+  - 'PMAT-037: cgp-driven optimization identified AVX2→AVX-512 gap (0.76x→0.98x NumPy)'
+
+microkernel:
+- id: C-AVX512-BLIS-001
+  name: 8×16 zmm tile processes 2× elements per FMA vs AVX2
+  description: |
+    Each C row = 16 f32 = 1 zmm register (512-bit).
+    8 zmm accumulators for 8 rows × 16 columns = 128 elements.
+    B loaded as zmm (16 f32), A broadcast as scalar to zmm.
+    8 FMA ops per K step, each processing 16 elements.
+    Register budget: 8 C accumulators + 1 B load + 8 A broadcasts = 17 zmm,
+    well within AVX-512's 32-register file.
+  severity: P0
+  critical: true
+  verification: blis::tests::blis_gemm (6 tests, all sizes)
+
+- id: C-AVX512-BLIS-002
+  name: Dispatch guard — AVX-512 only when avx512f + fma detected
+  description: |
+    Runtime dispatch in gemm_blis() checks:
+      is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("fma")
+    Falls back to gemm_blis_nr8_rowmajor_c (AVX2 8×8) otherwise.
+    The dispatch occurs BEFORE the AVX2 check so AVX-512 takes priority.
+  severity: P0
+  critical: true
+  verification: Runs on non-AVX-512 hardware without crash (AVX2 fallback)
+
+- id: C-AVX512-BLIS-003
+  name: NR=16 B packing for zmm-width columns
+  description: |
+    pack_b_block_nr16 packs B in NR=16 panels (KC × 16 contiguous).
+    Zero-pads when nc_block < 16 to prevent zmm load from reading garbage.
+    Existing pack_a_block (MR=8) is reused unchanged.
+  severity: P0
+  critical: true
+  verification: Correctness tests verify edge cases (non-multiple-of-16 N)
+
+cache_blocking:
+- id: C-AVX512-CACHE-001
+  name: Cache parameters match AVX2 path
+  description: |
+    MC=64, KC=256, NC=1024 (same as gemm_blis_nr8_rowmajor_c).
+    A panel: MC×KC×4 = 64 KB — fits L2 (512 KB/core on Zen 4).
+    B panel: KC×NR×4 = 16 KB — fits L1 (32 KB).
+    B macro: KC×NC×4 = 1 MB — fits L3 (~5 MB/CCX on Zen 4).
+  severity: P1
+  critical: false
+
+profiling:
+- id: C-AVX512-PROF-001
+  name: BlisProfiler integration REQUIRED
+  description: |
+    STATUS: NOT IMPLEMENTED (process violation, 2026-04-05 audit).
+    gemm_blis_avx512_large currently has no profiler parameter.
+    The dispatch guard (profiler.is_none()) intentionally bypasses profiling.
+    REMEDIATION: Add Option<&mut BlisProfiler> param, record tile-level
+    stats (TileStats) for each MC×NC×KC block.
+  severity: P0
+  critical: true
+  verification: PENDING — must wire profiler before marking implemented
+
+falsification_tests:
+- id: FT-AVX512-BLIS-001
+  rule: AVX-512 matches AVX2 numerically
+  prediction: For all M,N,K, avx512 path produces same result as avx2 path within 1e-5
+  test: blis::tests::blis_gemm with avx512f feature flag
+  if_fails: Register allocation or packing bug in zmm path
+
+- id: FT-AVX512-BLIS-002
+  rule: No K-unrolling regression
+  prediction: Simple for-loop outperforms manual 4-way K-unroll (LLVM optimizes better)
+  test: Benchmark comparison — documented negative result (567→400 GFLOPS)
+  if_fails: LLVM changed optimization strategy
+
+- id: FT-AVX512-BLIS-003
+  rule: Shared-B packing regresses vs per-thread packing
+  prediction: Per-thread B packing faster due to L1/L2 locality (495 > 316 GFLOPS)
+  test: Benchmark comparison — documented negative result
+  if_fails: Cache hierarchy changed (different CPU)
+
+equations:
+  flops_per_tile:
+    formula: "FLOPs = 2 × MR × NR × KC = 2 × 8 × 16 × 256 = 65536"
+    domain: BLIS tile parameters (MR, NR, KC)
+    codomain: FLOPs per tile iteration
+    invariants:
+    - MR=8 rows fit 8 zmm accumulators
+    - NR=16 columns fit 1 zmm width (512-bit / 32-bit)
+    preconditions:
+    - "MR = 8, NR = 16, KC = 256"
+    postconditions:
+    - "tile FLOPs == 65536"
+    lean_theorem: Theorems.FlopsPerTile
+
+  numerical_equivalence:
+    formula: |
+      forall A(M×K), B(K×N):
+        |gemm_avx512(A, B) - gemm_scalar(A, B)| < n * f32::EPSILON
+    domain: Two matrices A and B
+    codomain: Result matrix C
+    invariants:
+    - AVX-512 and scalar paths produce equivalent results
+    - FMA rounding may differ by 1 ULP per accumulation
+    preconditions:
+    - A and B have compatible dimensions
+    postconditions:
+    - max element-wise error < n * machine epsilon
+    tolerance: 1.0e-4
+    lean_theorem: Theorems.NumericalEquivalence
+
+  peak_throughput:
+    formula: "peak = 2 × FMA_ports × zmm_width × clock = 2 × 2 × 16 × freq"
+    domain: CPU microarchitecture parameters
+    codomain: Peak GFLOPS
+    preconditions:
+    - "Zen 4: 2 FMA ports, 16 SP per zmm"
+    - "At 4.0 GHz sustained AVX-512: peak = 256 GFLOPS/core"
+    postconditions:
+    - "measured throughput > 40% of peak (no severe regression)"
+    lean_theorem: Theorems.PeakThroughput
+
+proof_obligations:
+- type: equivalence
+  property: AVX-512 matches scalar numerically
+  formal: '|avx512 - scalar| < n * eps per element'
+  tolerance: 1.0e-4
+  applies_to: numerical_equivalence
+  lean:
+    theorem: Theorems.NumericalEquivalence
+    status: sorry
+- type: bound
+  property: Throughput above 40% of peak
+  formal: 'measured GFLOPS > 0.4 * peak GFLOPS'
+  applies_to: peak_throughput
+  lean:
+    theorem: Theorems.PeakThroughput
+    status: sorry
+
+kani_harnesses:
+- id: KANI-AVX512-001
+  obligation: AVX-512 matches scalar numerically
+  property: '|avx512 - scalar| < epsilon'
+  bound: 8
+  strategy: bounded_int
+  harness: verify_avx512_scalar_parity
+- id: KANI-AVX512-002
+  obligation: Throughput above 40% of peak
+  property: 'gflops > 0.4 * peak'
+  bound: 4
+  strategy: bounded_int
+  harness: verify_throughput_bound
+
+qa_gate:
+  id: F-AVX512-BLIS-001
+  name: avx512-blis-v1 Contract
+  description: Quality gate for AVX-512 BLIS 8×16 microkernel
+  checks:
+  - validation
+  - falsification

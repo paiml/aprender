@@ -1,0 +1,118 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: RAG pipeline contract — embed, retrieve, rank correctness for retrieval-augmented generation
+  references:
+  - 'Lewis et al. (2020) Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks'
+  - 'Karpukhin et al. (2020) Dense Passage Retrieval for Open-Domain Question Answering'
+equations:
+  embed_insert:
+    formula: E(doc) = embed(chunk(doc)) → insert(index, embedding)
+    domain: doc ∈ String, index ∈ MultivectorIndex
+    codomain: Result<()>
+    invariants:
+    - 'Deterministic embedding: embed(s) = embed(s) for all s'
+    - Inserted vectors are retrievable via nearest-neighbor search
+    - Compression preserves nearest-centroid assignment
+    preconditions:
+    - '!doc.is_empty()'
+    - index is initialized
+    lean_theorem: Theorems.Embed_Insert
+  retrieve_rank:
+    formula: R(query, k) = top_k(score(embed(query), index), k)
+    domain: query ∈ String, k ∈ usize where k > 0
+    codomain: Vec<(ChunkId, f64)>
+    invariants:
+    - 'Result count: |R| <= k'
+    - 'Scores monotonically decreasing: R[i].score >= R[i+1].score'
+    - retrieve_dense and retrieve_sparse are composable via hybrid fusion
+    preconditions:
+    - '!query.is_empty()'
+    - k > 0
+    - index contains at least 1 document
+    lean_theorem: Theorems.Retrieve_Rank
+  metric_correctness:
+    formula: recall@k = |relevant ∩ retrieved_k| / |relevant|
+    domain: relevant ∈ Set<DocId>, retrieved ∈ Vec<DocId>, k ∈ usize
+    codomain: f64 ∈ [0.0, 1.0]
+    invariants:
+    - 'recall@k ∈ [0.0, 1.0]'
+    - 'precision@k ∈ [0.0, 1.0]'
+    - 'MRR ∈ [0.0, 1.0]'
+    - 'NDCG@k ∈ [0.0, 1.0]'
+    preconditions:
+    - '!relevant.is_empty()'
+    - k > 0
+    lean_theorem: Theorems.Metric_Correctness
+proof_obligations:
+- type: invariant
+  property: Embedding determinism
+  formal: '∀ s: embed(s) = embed(s)'
+  applies_to: embed_insert
+- type: invariant
+  property: Retrieval score ordering
+  formal: '∀ i < |R|-1: R[i].score >= R[i+1].score'
+  applies_to: retrieve_rank
+- type: invariant
+  property: Metric bounds
+  formal: '∀ metrics m: 0.0 <= m <= 1.0'
+  applies_to: metric_correctness
+enforcement:
+  embedding_determinism:
+    description: Same input always produces same embedding vector
+    check: contract_tests::FALSIFY-TRAG-001
+    severity: ERROR
+  score_ordering:
+    description: Retrieved results are sorted by descending score
+    check: contract_tests::FALSIFY-TRAG-002
+    severity: ERROR
+  metric_bounds:
+    description: All retrieval metrics are in [0, 1] range
+    check: contract_tests::FALSIFY-TRAG-003
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TRAG-001
+  rule: Embedding determinism
+  prediction: embed(s) produces identical vectors on repeated calls
+  test: embed 500 random strings twice each, compare bit-exact
+  if_fails: Embedding model has non-deterministic dropout or random projection
+- id: FALSIFY-TRAG-002
+  rule: Score ordering
+  prediction: retrieve(q, k) returns scores in descending order
+  test: insert 1000 docs, query 100 times, verify sorted output
+  if_fails: Top-k selection or sort has comparison bug
+- id: FALSIFY-TRAG-003
+  rule: Metric bounds
+  prediction: recall_at_k, precision_at_k, MRR, NDCG all in [0.0, 1.0]
+  test: proptest with random relevant sets and retrieved lists
+  if_fails: Division by zero or overflow in metric calculation
+kani_harnesses:
+- id: KANI-TRAG-001
+  obligation: Embedding determinism
+  property: embed is deterministic
+  bound: 8
+  strategy: exhaustive
+  harness: verify_embedding_determinism
+- id: KANI-TRAG-002
+  obligation: Score ordering
+  property: results sorted descending
+  bound: 16
+  strategy: exhaustive
+  harness: verify_score_ordering
+- id: KANI-TRAG-003
+  obligation: Metric bounds
+  property: all metrics in [0, 1]
+  bound: 8
+  strategy: exhaustive
+  harness: verify_metric_bounds
+qa_gate:
+  id: F-TRAG-001
+  name: RAG Pipeline Contract
+  description: Embed, retrieve, and rank correctness quality gate
+  checks:
+  - embedding_determinism
+  - score_ordering
+  - metric_bounds
+  pass_criteria: All 3 falsification tests pass
+  falsification: Shuffle retrieval results before returning

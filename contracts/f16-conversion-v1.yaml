@@ -1,0 +1,109 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: IEEE 754 half-precision (F16) to single-precision (F32) conversion invariants
+  references:
+  - IEEE 754-2008 — Binary floating-point arithmetic
+  - Qwen2.5-Coder Showcase Spec §11.5 — F16 passthrough
+equations:
+  f16_to_f32_bias:
+    formula: f32_bits = (sign << 31) | ((exp_f16 + 112) << 23) | (mantissa << 13)
+    domain: exp_f16 ∈ [1, 30] (normal f16), mantissa ∈ [0, 1023]
+    codomain: valid f32 bit pattern
+    invariants:
+    - 'Sign preserved: sign(f32) == sign(f16)'
+    - 'Exponent bias shift: e_f32 = e_f16 + 112 (bias 127 - bias 15)'
+    - 'Mantissa zero-padded: lower 13 bits of f32 mantissa are 0'
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.F16_To_F32_Bias
+  roundtrip:
+    formula: f32_to_f16(f16_to_f32(h)) == h
+    domain: h ∈ normal f16 values (exp ∈ [1, 30])
+    codomain: identity mapping
+    invariants:
+    - Exact roundtrip for all normal f16 values
+    - Subnormals may lose precision (not covered)
+    preconditions:
+    - scale > 0.0
+    - input.len() > 0
+    lean_theorem: Theorems.Roundtrip
+proof_obligations:
+- type: equivalence
+  property: Bias trick correctness
+  formal: f16_to_f32 via bit manipulation == f16_to_f32 via arithmetic conversion
+  tolerance: 0.0
+  applies_to: all
+- type: invariant
+  property: Roundtrip identity
+  formal: f32_to_f16(f16_to_f32(h)) == h for normal f16
+  applies_to: all
+- type: invariant
+  property: Sign preservation
+  formal: sign(f16_to_f32(h)) == sign(h)
+  applies_to: all
+- type: equivalence
+  property: SIMD conversion equivalence
+  tolerance: 0.0
+  applies_to: simd
+falsification_tests:
+- id: FALSIFY-F16-001
+  rule: Bias trick
+  prediction: Bit manipulation matches Rust's f32::from(f16)
+  test: proptest over all 31744 normal f16 bit patterns
+  if_fails: Exponent bias constant wrong (should be 112)
+- id: FALSIFY-F16-002
+  rule: Roundtrip
+  prediction: f16→f32→f16 is identity for normal values
+  test: proptest over sampled f16 bit patterns
+  if_fails: Precision loss in f32→f16 truncation
+- id: FALSIFY-F16-003
+  rule: Sign preservation
+  prediction: Negative f16 maps to negative f32
+  test: proptest with sign bit set
+  if_fails: Sign bit position error
+- id: FALSIFY-F16-004
+  rule: SIMD conversion equivalence
+  prediction: SIMD f16 conversion matches scalar
+  test: proptest
+  if_fails: ' compare scalar vs SIMD f16 conversion:SIMD conversion rounding differs'
+kani_harnesses:
+- id: KANI-F16-001
+  obligation: F16-INV-001
+  property: Roundtrip identity for bounded exponents
+  bound: 5
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_f16_roundtrip
+- id: KANI-F16_CO-002
+  obligation: Bias trick correctness
+  property: Bias trick correctness
+  bound: 8
+  strategy: exhaustive
+- id: KANI-F16_CO-003
+  obligation: Roundtrip identity
+  property: Roundtrip identity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-F16_CO-004
+  obligation: Sign preservation
+  property: Sign preservation
+  bound: 8
+  strategy: exhaustive
+- id: KANI-F16_CO-005
+  obligation: SIMD conversion equivalence
+  property: SIMD conversion equivalence
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-F16-001
+  name: F16 Conversion Contract
+  description: IEEE 754 half-precision conversion quality gate
+  checks:
+  - bias_trick_correct
+  - roundtrip_identity
+  - sign_preserved
+  pass_criteria: All 4 falsification tests pass
+  falsification: Pass subnormal f16 to observe precision loss

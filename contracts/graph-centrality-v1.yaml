@@ -1,0 +1,230 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-19'
+  author: PAIML Engineering
+  description: Graph centrality measures — node importance in network structures
+  references:
+  - 'Freeman (1978) Centrality in social networks: conceptual clarification'
+  - Brandes (2001) A faster algorithm for betweenness centrality
+  - Boldi & Vigna (2014) Axioms for centrality
+equations:
+  degree:
+    formula: C_D(v) = deg(v) / (n - 1)
+    domain: G = (V, E), |V| ≥ 2
+    codomain: C_D ∈ [0, 1]
+    invariants:
+    - C_D ∈ [0, 1] (Freeman's normalization)
+    - C_D = 0 for isolated nodes
+    - C_D = 1 for nodes connected to all others
+    - Σ C_D(v) = 2|E| / (n-1) (sum relates to edge count)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Degree
+  betweenness:
+    formula: C_B(v) = Σ_{s≠v≠t} σ_{st}(v) / σ_{st}
+    domain: G = (V, E), σ_{st} = shortest path count from s to t
+    codomain: C_B ∈ [0, (n-1)(n-2)/2]
+    invariants:
+    - C_B ≥ 0 (non-negativity)
+    - C_B(v) = 0 if v is pendant (degree 1) in a tree
+    - Normalized C_B ∈ [0, 1]
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Betweenness
+  closeness:
+    formula: C_C(v) = (n-1) / Σ_{u≠v} d(v, u)
+    domain: G = (V, E), connected, d = shortest path distance
+    codomain: C_C ∈ (0, 1]
+    invariants:
+    - C_C > 0 for connected graphs
+    - C_C = 1 for center of star graph
+    - Higher C_C = closer to all other nodes
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Closeness
+  eigenvector:
+    formula: x_v = (1/λ) Σ_{u∈N(v)} x_u, λ = largest eigenvalue
+    domain: G = (V, E), connected, A = adjacency matrix
+    codomain: x ∈ ℝⁿ, x_v ≥ 0, ||x|| = 1
+    invariants:
+    - x_v ≥ 0 for all v (Perron-Frobenius)
+    - '||x||₂ = 1 (unit norm)'
+    - Ax = λx (eigenvector equation)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Eigenvector
+  katz:
+    formula: x_v = α Σ_{u∈N(v)} x_u + β
+    domain: G = (V, E), α < 1/λ_max, β > 0
+    codomain: x ∈ ℝⁿ, x_v > 0
+    invariants:
+    - x_v > 0 for all v (strictly positive from β)
+    - Converges when α < 1/λ_max
+    - Reduces to eigenvector centrality as β → 0
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Katz
+  harmonic:
+    formula: C_H(v) = (1/(n-1)) Σ_{u≠v} 1/d(v,u)
+    domain: G = (V, E), d = shortest path distance (∞ if disconnected)
+    codomain: C_H ∈ [0, 1]
+    invariants:
+    - C_H ∈ [0, 1]
+    - C_H = 0 for completely isolated node
+    - C_H handles disconnected graphs (1/∞ = 0)
+    - C_H ≥ C_C for connected graphs (AM-HM inequality)
+    preconditions:
+    - n > 0
+    lean_theorem: Theorems.Harmonic
+proof_obligations:
+- type: bound
+  property: Degree centrality bounded
+  formal: C_D(v) ∈ [0, 1] for all v
+  applies_to: degree
+- type: bound
+  property: Betweenness non-negative
+  formal: C_B(v) ≥ 0 for all v
+  applies_to: betweenness
+- type: bound
+  property: Closeness positive for connected
+  formal: C_C(v) > 0 for all v in connected graph
+  applies_to: closeness
+- type: invariant
+  property: Eigenvector non-negativity
+  formal: x_v ≥ 0 for all v (Perron-Frobenius)
+  applies_to: eigenvector
+- type: bound
+  property: Katz strictly positive
+  formal: x_v > 0 for all v when β > 0
+  applies_to: katz
+- type: bound
+  property: Harmonic centrality bounded
+  formal: C_H(v) ∈ [0, 1] for all v
+  applies_to: harmonic
+- type: invariant
+  property: Star graph maximum
+  formal: degree centrality of center of star K_{1,n-1} = 1
+  applies_to: degree
+- type: invariant
+  property: Complete graph symmetry
+  formal: All centralities equal for complete graph K_n
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-GC-001
+  rule: Degree centrality bounded
+  prediction: C_D ∈ [0, 1] for random graphs
+  test: proptest with random edge lists, n=3..20
+  if_fails: Normalization by (n-1) missing
+- id: FALSIFY-GC-002
+  rule: Betweenness non-negative
+  prediction: C_B ≥ 0 for all nodes in random graphs
+  test: proptest with random connected graphs
+  if_fails: Path counting error in Brandes algorithm
+- id: FALSIFY-GC-003
+  rule: Eigenvector non-negativity
+  prediction: x_v ≥ 0 for all v after convergence
+  test: proptest with random connected graphs
+  if_fails: Power iteration converging to wrong eigenvector
+- id: FALSIFY-GC-004
+  rule: Complete graph symmetry
+  prediction: All nodes have equal centrality in K_n
+  test: proptest with complete graphs, n=3..10
+  if_fails: Algorithm not converging for symmetric inputs
+- id: FALSIFY-GC-005
+  rule: Star graph degree
+  prediction: Center of star has degree centrality = 1
+  test: proptest with star graphs K_{1,n}
+  if_fails: Freeman normalization by (n-1) incorrect
+- id: FALSIFY-GC-006
+  rule: Harmonic bounded
+  prediction: C_H ∈ [0, 1] for all graphs
+  test: proptest with random graphs including disconnected
+  if_fails: Disconnected component handling (1/∞)
+- id: FALSIFY-GC-007
+  rule: Closeness positive for connected
+  prediction: C_C > 0 for all nodes in connected graphs
+  test: proptest with random connected graphs, n=3..20
+  if_fails: Distance sum overflow or zero-division in closeness formula
+- id: FALSIFY-GC-008
+  rule: Katz strictly positive
+  prediction: x_v > 0 for all v when β > 0 and α < 1/λ_max
+  test: proptest with random graphs, α drawn below spectral radius inverse
+  if_fails: Attenuation factor α too large or β=0 edge case
+kani_harnesses:
+- id: KANI-GC-001
+  obligation: '1'
+  bound: 4
+  strategy: exhaustive
+  description: Exhaustive check that degree centrality stays in [0,1] for graphs up to 4 nodes
+- id: KANI-GC-002
+  obligation: '2'
+  bound: 4
+  strategy: exhaustive
+  description: Exhaustive check that betweenness centrality is non-negative for graphs up to 4 nodes
+- id: KANI-GC-003
+  obligation: '6'
+  bound: 4
+  strategy: exhaustive
+  description: Exhaustive check that harmonic centrality stays in [0,1] for graphs up to 4 nodes
+- id: KANI-GRAPH_-004
+  obligation: Degree centrality bounded
+  property: Degree centrality bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-GRAPH_-005
+  obligation: Betweenness non-negative
+  property: Betweenness non-negative
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GRAPH_-006
+  obligation: Closeness positive for connected
+  property: Closeness positive for connected
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GRAPH_-007
+  obligation: Eigenvector non-negativity
+  property: Eigenvector non-negativity
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GRAPH_-008
+  obligation: Katz strictly positive
+  property: Katz strictly positive
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GRAPH_-009
+  obligation: Harmonic centrality bounded
+  property: Harmonic centrality bounded
+  bound: 8
+  strategy: stub_float
+- id: KANI-GRAPH_-010
+  obligation: Star graph maximum
+  property: Star graph maximum
+  bound: 8
+  strategy: exhaustive
+- id: KANI-GRAPH_-011
+  obligation: Complete graph symmetry
+  property: Complete graph symmetry
+  bound: 8
+  strategy: exhaustive
+enforcement:
+  bounded:
+    description: All normalized centralities must be in valid range
+    check: contract_tests::FALSIFY-GC-001
+    severity: ERROR
+  non_negative:
+    description: All centralities must be non-negative
+    check: contract_tests::FALSIFY-GC-002
+    severity: ERROR
+qa_gate:
+  id: F-GC-001
+  name: Graph Centrality Contract
+  description: Graph centrality correctness quality gate
+  checks:
+  - degree_bounded
+  - betweenness_non_negative
+  - eigenvector_non_negative
+  - complete_graph_symmetry
+  - star_graph_degree
+  - harmonic_bounded
+  pass_criteria: All 8 falsification tests pass
+  falsification: Skip normalization in degree centrality

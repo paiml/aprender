@@ -1,0 +1,329 @@
+metadata:
+  version: 1.0.0
+  created: '2026-03-02'
+  author: PAIML Engineering
+  description: Performance obligations for tiled backward GEMM kernels
+  references:
+  - Volkov & Demmel (2008) Benchmarking GPUs to tune dense linear algebra
+  - 'NVIDIA CUDA C Programming Guide: Shared Memory, Matrix Multiply'
+  - 'Kerr et al. (2017) CUTLASS: Fast Linear Algebra in CUDA C++'
+  - trueno-gpu forward tiled_unrolled WAPR-PERF-009 (measured 70x over naive)
+  depends_on:
+  - lora-algebra-v1
+equations:
+  tiled_gemm_arithmetic_intensity:
+    formula: AI = (2 * TILE^2 * K) / (2 * TILE * K * sizeof(f32)) = TILE / sizeof(f32)
+    domain: TILE in {16, 32}, K in Z+
+    codomain: AI in R+, AI >= 4.0 FLOP/byte for TILE=16, AI >= 8.0 for TILE=32
+    invariants:
+    - Tiled GEMM AI scales linearly with tile size
+    - Naive GEMM AI = 2*K / (K + N) * 1/sizeof(f32) ~ 0.5 for large N
+    - 'RTX 4090: compute/bandwidth ridge point at ~100 FLOP/byte (fp32)'
+    - TILE=32 achieves 8.0 FLOP/byte — 2.5x over naive minimum
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Tiled_Gemm_Arithmetic_Intensity
+  shared_memory_per_tile:
+    formula: smem = 2 * TILE^2 * sizeof(f32)
+    domain: TILE in {16, 32}
+    codomain: smem = 2048 bytes for TILE=16, smem = 8192 bytes for TILE=32
+    invariants:
+    - 'RTX 4090 (sm_89): 100KB shared memory per SM'
+    - 'TILE=32: 8KB << 100KB, allows 12 concurrent blocks per SM'
+    - 'Two tiles loaded per iteration: A_tile[TILE,TILE] and B_tile[TILE,TILE]'
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Shared_Memory_Per_Tile
+  backward_a_gemm:
+    formula: grad_A[M,K] = grad_C[M,N] @ B^T[N,K]
+    domain: grad_C in R^{M,N}, B in R^{K,N}
+    codomain: grad_A in R^{M,K}
+    invariants:
+    - 'B^T access: B is stored row-major [K,N], transposed read is B[j,i] for column i'
+    - 'Tiled: load B_tile as transposed tile from global memory'
+    - FLOPs = 2 * M * K * N (same as forward)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Backward_A_Gemm
+  backward_b_gemm:
+    formula: grad_B[K,N] = A^T[K,M] @ grad_C[M,N]
+    domain: A in R^{M,K}, grad_C in R^{M,N}
+    codomain: grad_B in R^{K,N}
+    invariants:
+    - 'A^T access: A stored row-major [M,K], transposed read is A[i,j] for row j'
+    - 'Tiled: load A_tile as transposed tile from global memory'
+    - FLOPs = 2 * K * N * M (same as forward)
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Backward_B_Gemm
+  unrolled_instruction_ratio:
+    formula: IPC_ratio = (FMA_count) / (FMA_count + branch + cmp + inc) = 4 / (4 + 3) = 0.57
+    domain: unroll_factor = 4
+    codomain: IPC_ratio >= 0.57
+    invariants:
+    - 'Without unrolling: 1 / (1 + 3) = 0.25 (75% overhead)'
+    - 'With 4x unroll: 4 / (4 + 3) = 0.57 (43% overhead)'
+    - WAPR-PERF-009 measured 12:1 -> ~3:1 instruction ratio
+    preconditions:
+    - a.len() > 0
+    - b.len() > 0
+    lean_theorem: Theorems.Unrolled_Instruction_Ratio
+contracts:
+  C-TILE-BWD-001:
+    name: Backward GEMM A uses shared memory tiling
+    precondition: M >= 1, N >= 1, K >= 1, tile_size in {16, 32}
+    postcondition: emitted PTX contains .shared allocation >= 2 * tile_size^2 * 4 bytes
+    invariant: Shared memory eliminates redundant global loads within each tile
+    proof_obligation: 'Static analysis of emitted PTX: grep ''.shared .align'''
+    falsification_test: 'let kernel = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
+
+      let ptx = kernel.emit_ptx();
+
+      assert!(ptx.contains(".shared"), "C-TILE-BWD-001: must use shared memory");
+
+      // 2 tiles * 32*32 * 4 = 8192 bytes minimum
+
+      assert!(!ptx.contains("gemm_backward_a_naive"), "C-TILE-BWD-001: must not be naive");
+
+      '
+  C-TILE-BWD-002:
+    name: Backward GEMM B uses shared memory tiling
+    precondition: M >= 1, N >= 1, K >= 1, tile_size in {16, 32}
+    postcondition: emitted PTX contains .shared allocation >= 2 * tile_size^2 * 4 bytes
+    invariant: Shared memory eliminates redundant global loads within each tile
+    proof_obligation: Static analysis of emitted PTX
+    falsification_test: 'let kernel = GemmBackwardBKernel::tiled(128, 2560, 2560, 32);
+
+      let ptx = kernel.emit_ptx();
+
+      assert!(ptx.contains(".shared"), "C-TILE-BWD-002: must use shared memory");
+
+      '
+  C-TILE-BWD-003:
+    name: Tiled backward GEMM A matches naive within 1e-4
+    precondition: Random matrices A[M,N], B[K,N] with elements in [-1, 1]
+    postcondition: '|tiled_result[i,j] - naive_result[i,j]| < 1e-4 for all i,j'
+    invariant: Tiling is a performance optimization that must not change numerical results
+    proof_obligation: 'GPU execution test: run both variants, compare elementwise'
+    falsification_test: '// M=128, N=2560, K=2560 (Qwen3-4B Q projection backward)
+
+      let naive = GemmBackwardAKernel::naive(128, 2560, 2560);
+
+      let tiled = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
+
+      // Launch both on same input, compare outputs
+
+      assert_max_diff(naive_output, tiled_output, 1e-4);
+
+      '
+  C-TILE-BWD-004:
+    name: Tiled backward GEMM B matches naive within 1e-4
+    precondition: Random matrices A[M,K], grad_C[M,N] with elements in [-1, 1]
+    postcondition: '|tiled_result[i,j] - naive_result[i,j]| < 1e-4 for all i,j'
+    invariant: Tiling is a performance optimization that must not change numerical results
+    proof_obligation: 'GPU execution test: run both variants, compare elementwise'
+    falsification_test: 'let naive = GemmBackwardBKernel::naive(128, 2560, 2560);
+
+      let tiled = GemmBackwardBKernel::tiled(128, 2560, 2560, 32);
+
+      assert_max_diff(naive_output, tiled_output, 1e-4);
+
+      '
+  C-TILE-BWD-005:
+    name: Tiled backward uses FMA instructions
+    precondition: Kernel built with tiled or tiled_unrolled variant
+    postcondition: emitted PTX contains fma.rn.f32 instructions
+    invariant: FMA reduces instruction count by fusing multiply+add
+    proof_obligation: 'Static PTX analysis: grep ''fma.rn.f32'''
+    falsification_test: 'let kernel = GemmBackwardAKernel::tiled_unrolled(128, 2560, 2560, 32);
+
+      let ptx = kernel.emit_ptx();
+
+      assert!(ptx.contains("fma.rn.f32"), "C-TILE-BWD-005: must use FMA");
+
+      '
+  C-TILE-BWD-006:
+    name: Barrier safety for tiled backward GEMM
+    precondition: Kernel uses bar.sync for shared memory synchronization
+    postcondition: All threads in a CTA reach every bar.sync unconditionally
+    invariant: Divergent barrier = undefined behavior / deadlock
+    proof_obligation: trueno-gpu analyze_barrier_safety() returns is_safe=true
+    falsification_test: 'let kernel = GemmBackwardAKernel::tiled(128, 2560, 2560, 32);
+
+      let result = kernel.analyze_barrier_safety();
+
+      assert!(result.is_safe, "C-TILE-BWD-006: barrier safety violated");
+
+      '
+  C-TILE-BWD-007:
+    name: Default backward dispatch uses tiled variant
+    precondition: entrenar calls gemm_backward_a() or gemm_backward_b()
+    postcondition: Dispatched kernel name does not contain 'naive'
+    invariant: Production training must never use naive backward GEMM
+    proof_obligation: 'Code review: gemm_backward_a/b construct tiled kernel'
+    falsification_test: '// In entrenar/src/autograd/cuda_backward/gemm.rs:
+
+      // Verify GemmBackwardAKernel::tiled() is used, not ::new()
+
+      '
+qa_gates:
+  ptx_static_analysis:
+    description: Verify emitted PTX has shared memory and FMA
+    command: cargo test -p trueno-gpu -- backward_gemm_tiled
+    expected: All tiled backward GEMM tests pass
+  numerical_parity:
+    description: Tiled vs naive output parity on GPU
+    command: cargo test -p trueno-gpu --features cuda-test -- backward_gemm_parity
+    expected: Max elementwise diff < 1e-4
+  barrier_safety:
+    description: No divergent barriers in tiled kernels
+    command: cargo test -p trueno-gpu -- backward_gemm_barrier
+    expected: analyze_barrier_safety().is_safe == true
+  entrenar_dispatch:
+    description: Production backward dispatch uses tiled kernels
+    command: cargo test -p entrenar -- backward_gemm_dispatch
+    expected: Kernel names do not contain 'naive'
+qa_gate:
+  id: F-GBTV-001
+  name: gemm-backward-tiled-v1 Contract
+  description: Quality gate for Performance obligations for tiled backward GEMM kernels
+  checks:
+  - validation
+  - falsification
+proof_obligations:
+- type: invariant
+  property: Tiled GEMM AI scales linearly with tile size
+  formal: Tiled GEMM AI scales linearly with tile size
+  applies_to: all
+- type: invariant
+  property: Naive GEMM AI = 2*K / (K + N) * 1/sizeof(f32) ~ 0.5 for large N
+  formal: Naive GEMM AI = 2*K / (K + N) * 1/sizeof(f32) ~ 0.5 for large N
+  applies_to: all
+- type: invariant
+  property: 'RTX 4090 (sm_89): 100KB shared memory per SM'
+  formal: 'RTX 4090 (sm_89): 100KB shared memory per SM'
+  applies_to: all
+- type: invariant
+  property: 'TILE=32: 8KB << 100KB, allows 12 concurrent blocks per SM'
+  formal: 'TILE=32: 8KB << 100KB, allows 12 concurrent blocks per SM'
+  applies_to: all
+- type: invariant
+  property: 'B^T access: B is stored row-major [K,N], transposed read is B[j,i] for column i'
+  formal: 'B^T access: B is stored row-major [K,N], transposed read is B[j,i] for column i'
+  applies_to: all
+- type: invariant
+  property: 'Tiled: load B_tile as transposed tile from global memory'
+  formal: 'Tiled: load B_tile as transposed tile from global memory'
+  applies_to: all
+- type: invariant
+  property: 'A^T access: A stored row-major [M,K], transposed read is A[i,j] for row j'
+  formal: 'A^T access: A stored row-major [M,K], transposed read is A[i,j] for row j'
+  applies_to: all
+- type: invariant
+  property: 'Tiled: load A_tile as transposed tile from global memory'
+  formal: 'Tiled: load A_tile as transposed tile from global memory'
+  applies_to: all
+- type: invariant
+  property: 'Without unrolling: 1 / (1 + 3) = 0.25 (75% overhead)'
+  formal: 'Without unrolling: 1 / (1 + 3) = 0.25 (75% overhead)'
+  applies_to: all
+- type: invariant
+  property: 'With 4x unroll: 4 / (4 + 3) = 0.57 (43% overhead)'
+  formal: 'With 4x unroll: 4 / (4 + 3) = 0.57 (43% overhead)'
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-TGBW-001
+  rule: Arithmetic intensity bounds
+  prediction: AI >= 4.0 for TILE=16, AI >= 8.0 for TILE=32
+  test: Compute AI = TILE/sizeof(f32) for TILE in {16,32}
+  if_fails: Tile formula incorrect or sizeof assumption wrong
+- id: FALSIFY-TGBW-002
+  rule: Shared memory per tile
+  prediction: smem = 2*TILE^2*4 fits SM limit (100KB on sm_89)
+  test: Verify 2*32^2*4 = 8192 < 102400
+  if_fails: Shared memory overflow causes silent data corruption
+- id: FALSIFY-TGBW-003
+  rule: Backward GEMM A correctness
+  prediction: Tiled result matches naive within 1e-4
+  test: M=128, N=2560, K=2560 random matrices, elementwise diff
+  if_fails: Tile boundary handling or accumulation order bug
+- id: FALSIFY-TGBW-004
+  rule: Backward GEMM B correctness
+  prediction: Tiled result matches naive within 1e-4
+  test: M=128, N=2560, K=2560 random matrices, elementwise diff
+  if_fails: Transpose indexing or tile boundary bug
+- id: FALSIFY-TGBW-005
+  rule: FMA instruction usage
+  prediction: Emitted PTX contains fma.rn.f32
+  test: Static PTX analysis for fma.rn.f32 instruction
+  if_fails: Compiler not fusing multiply-add operations
+- id: FALSIFY-TGBW-006
+  rule: Barrier safety
+  prediction: All threads reach bar.sync unconditionally
+  test: analyze_barrier_safety() returns is_safe=true
+  if_fails: Divergent barrier causes deadlock
+- id: FALSIFY-TGBW-007
+  rule: Register pressure
+  prediction: Registers per thread <= 255 (sm_89 limit)
+  test: Check PTX register allocation count
+  if_fails: Register spill to local memory kills performance
+- id: FALSIFY-TGBW-008
+  rule: Performance improvement
+  prediction: Tiled backward faster than naive for training shapes
+  test: Benchmark M=128,N=2560,K=2560 tiled vs naive
+  if_fails: Overhead of tiling exceeds benefit at this shape
+- id: FALSIFY-TGBW-009
+  rule: Non-square correctness
+  prediction: Correct for non-square M!=N!=K matrices
+  test: Test with M=64,N=128,K=256 non-square shape
+  if_fails: Tile remainder handling for non-multiple dimensions
+- id: FALSIFY-TGBW-010
+  rule: Batch backward through LoRA
+  prediction: Full LoRA training step backward passes
+  test: Complete backward pass with LoRA adapters attached
+  if_fails: Gradient accumulation or adapter chain broken
+kani_harnesses:
+- id: KANI-TGBW-001
+  obligation: C-TILE-BWD-001
+  property: Arithmetic intensity bounds hold for all tile sizes
+  bound: 8
+- id: KANI-TGBW-002
+  obligation: C-TILE-BWD-002
+  property: Shared memory per tile fits SM limits
+  bound: 8
+- id: KANI-TGBW-003
+  obligation: C-TILE-BWD-003
+  property: Backward GEMM A matches naive within tolerance
+  bound: 8
+- id: KANI-TGBW-004
+  obligation: C-TILE-BWD-004
+  property: Backward GEMM B matches naive within tolerance
+  bound: 8
+- id: KANI-TGBW-005
+  obligation: C-TILE-BWD-005
+  property: FMA instructions emitted in tiled kernel
+  bound: 8
+- id: KANI-TGBW-006
+  obligation: C-TILE-BWD-006
+  property: Barrier safety — unconditional convergence
+  bound: 8
+- id: KANI-TGBW-007
+  obligation: C-TILE-BWD-007
+  property: Register pressure within SM limit
+  bound: 8
+- id: KANI-TGBW-008
+  obligation: C-TILE-BWD-008
+  property: Tiled backward faster than naive
+  bound: 8
+- id: KANI-TGBW-009
+  obligation: C-TILE-BWD-009
+  property: Non-square matrix backward correctness
+  bound: 8
+- id: KANI-TGBW-010
+  obligation: C-TILE-BWD-010
+  property: Batch backward through LoRA training step
+  bound: 8

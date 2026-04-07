@@ -1,0 +1,285 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: HTTP client contracts — request construction, URL parsing, response handling, LRU caching, SSRF prevention
+  references:
+  - HTTP/1.1 message syntax (RFC 9110, RFC 9112)
+  - Zero-copy URL parsing (rurl-url-rewriter crate)
+  - SSRF prevention (OWASP SSRF Cheat Sheet, RFC 1918)
+  - Lambda Runtime API (AWS Lambda Runtime Interface)
+  - CloudFront Lambda@Edge response format (AWS docs)
+equations:
+  request_construction:
+    formula: |
+      build_request: (Method, Path, Host, Option<Body>) -> String
+        GET  => "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        POST => "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {ct}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}"
+      Where:
+        Content-Length = body.len() (byte count, not char count)
+        Every request ends with \r\n\r\n (double CRLF)
+    domain: Valid HTTP method with non-empty path and host
+    codomain: RFC 9112-conformant HTTP/1.1 request string
+    invariants:
+    - Request always contains Host header
+    - POST requests always contain Content-Length header
+    - Content-Length equals exact byte length of body
+    - Request terminates with double CRLF
+    preconditions:
+    - path starts with '/'
+    - host is non-empty
+    postconditions:
+    - output is valid HTTP/1.1 request per RFC 9112
+    lean_theorem: Theorems.RequestConstruction
+  response_parsing:
+    formula: |
+      parse_response: (TcpStream) -> Result<(u16, Vec<(String, String)>, String), String>
+        1. parse_status_code(status_line) -> u16
+        2. parse_headers(reader) -> Vec<(name, value)>
+        3. read_body(reader, headers) -> String
+      Where:
+        status_code = second whitespace-delimited token of first line
+        headers terminate at empty line (\r\n or \n alone)
+        body length = Content-Length header value OR read-to-EOF
+    domain: Byte stream from TCP connection with HTTP/1.1 response
+    codomain: Tuple of (status_code, headers, body) or error string
+    invariants:
+    - Status code is a valid u16 parsed from status line
+    - Headers parsed until empty line delimiter
+    - Body read uses Content-Length when present, EOF otherwise
+    - Body is valid UTF-8
+    preconditions:
+    - Stream contains at least one line (status line)
+    postconditions:
+    - status_code in 100..=599
+    - headers is a list of (name, value) pairs
+    lean_theorem: Theorems.ResponseParsing
+  url_validation:
+    formula: |
+      parse_url: (&str) -> Result<UrlView, RewriteError>
+        UrlView { scheme, host, path, query, fragment }
+      Parsing order (reverse to avoid backtracking):
+        1. fragment = input.split_at('#')
+        2. query    = remainder.split_at('?')
+        3. scheme   = remainder.split_at("://")
+        4. host     = after_scheme.split_at('/')
+        5. path     = remainder
+      Zero-copy invariant:
+        for-all component c in UrlView:
+          c.as_ptr() >= input.as_ptr() AND
+          c.as_ptr() + c.len() <= input.as_ptr() + input.len()
+    domain: Any &str input (absolute or relative URL)
+    codomain: UrlView with lifetime tied to input, or RewriteError
+    invariants:
+    - All returned string slices reference the original input (zero-copy)
+    - Relative URLs have scheme=None and host=None
+    - Absolute URLs always have scheme and host
+    - Parse never panics on any input
+    preconditions:
+    - input is valid UTF-8 (guaranteed by &str)
+    postconditions:
+    - All components are subslices of input
+    - scheme is Some iff input contains "://"
+    lean_theorem: Theorems.UrlValidation
+  error_propagation:
+    formula: |
+      error_map: (io::Error | parse_error | env_error) -> RuntimeError
+        EnvVarMissing   <- std::env::VarError (missing AWS_LAMBDA_RUNTIME_API)
+        EventFetchFailed <- GET /invocation/next fails (connection, timeout, non-200)
+        ResponseFailed   <- POST /invocation/{id}/response fails (connection, non-202)
+      Error chain preserves original cause as String in variant payload.
+      No error is silently swallowed:
+        for-all e in io::Error: send_request(e) -> Err(RuntimeError)
+    domain: Any I/O, parse, or environment error during runtime operation
+    codomain: RuntimeError enum variant with descriptive message
+    invariants:
+    - Every I/O error maps to exactly one RuntimeError variant
+    - Error messages contain the original cause description
+    - No error is silently discarded (no unwrap on fallible ops in production path)
+    preconditions:
+    - An error occurred during runtime operation
+    postconditions:
+    - Caller receives a typed RuntimeError with context
+    lean_theorem: Theorems.ErrorPropagation
+  lru_cache_eviction:
+    formula: |
+      cache_invariant: LruCache<K, V>
+        for-all state s after any operation:
+          s.len() <= s.capacity()
+        eviction_order:
+          put(k, v) when len == capacity =>
+            evict(least_recently_used) then insert(k, v)
+        get_promotes:
+          get(k) when k in cache =>
+            k moves to front of access_order (most recently used)
+    domain: LruCache with capacity > 0
+    codomain: Cache state satisfying size invariant
+    invariants:
+    - Cache size never exceeds capacity
+    - Eviction removes the least recently used entry
+    - get() promotes entry to most-recently-used position
+    - put() of existing key updates value and promotes to front
+    preconditions:
+    - capacity > 0
+    postconditions:
+    - len() <= capacity() after every put()
+    - get(k) after put(k, v) returns Some(&v) if no eviction of k occurred
+    lean_theorem: Theorems.LruCacheEviction
+  ssrf_prevention:
+    formula: |
+      validate_redirect_target: (&str) -> Result<(), String>
+        BLOCK if:
+          host == "localhost" (case-insensitive)
+          host parses as IPv4 in: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+            127.0.0.0/8, 169.254.0.0/16
+          host parses as IPv6 in: ::1, fe80::/10, fc00::/7
+        ALLOW otherwise (public IPs and domain names)
+    domain: Any URL string intended as redirect target
+    codomain: Ok(()) if safe, Err(reason) if blocked
+    invariants:
+    - All RFC 1918 private ranges are blocked
+    - AWS metadata endpoint (169.254.169.254) is blocked
+    - Loopback addresses (127.0.0.0/8, ::1) are blocked
+    - Public IPs and domain names are allowed
+    preconditions:
+    - url is non-empty and contains "://"
+    postconditions:
+    - If Ok, the URL host is not a private/reserved address
+    lean_theorem: Theorems.SsrfPrevention
+  multi_tier_routing:
+    formula: |
+      rewrite_url: (&str) -> (Option<String>, Option<&str>)
+        Tier 1: HashMap exact match   -> O(1),   returns ("tier1")
+        Tier 2: PrefixTrie wildcard    -> O(k),   returns ("tier2")
+        No match                       -> (None, None)
+      Priority: Tier 1 > Tier 2 (exact match always wins)
+      Where k = number of path segments in URI
+    domain: URI string (e.g., "/go/docs", "/blog/post-123")
+    codomain: Optional target URL with tier label
+    invariants:
+    - Tier 1 exact match takes priority over Tier 2 wildcard
+    - Longest prefix wins within Tier 2
+    - Return value is deterministic for same input
+    preconditions:
+    - uri is a valid path string
+    postconditions:
+    - If Some, target is a valid absolute URL
+    - tier label accurately identifies which tier matched
+    lean_theorem: Theorems.MultiTierRouting
+proof_obligations:
+- type: invariant
+  property: URL parsing allocates zero heap memory
+  formal: for-all input, components of UrlView::parse(input) are subslices of input
+  applies_to: url_validation
+- type: completeness
+  property: Every RuntimeError variant has a source mapping
+  formal: for-all e in {io::Error, VarError, parse_error} exists v in RuntimeError mapping(e) = v
+  applies_to: error_propagation
+- type: bound
+  property: LRU cache never exceeds capacity
+  formal: for-all ops in Seq<Put|Get> cache.len() <= cache.capacity() after each op
+  applies_to: lru_cache_eviction
+- type: invariant
+  property: All RFC 1918 private IP ranges are blocked
+  formal: for-all ip in {10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16} validate_redirect_target("http://{ip}") = Err(_)
+  applies_to: ssrf_prevention
+- type: determinism
+  property: Multi-tier routing is deterministic
+  formal: for-all uri rewrite_url(uri) = rewrite_url(uri) (same input, same output)
+  applies_to: multi_tier_routing
+- type: invariant
+  property: HTTP requests conform to RFC 9112 message format
+  formal: for-all (method, path, host, body) output of build_request contains required headers and terminates with \r\n\r\n
+  applies_to: request_construction
+- type: roundtrip
+  property: Content-Length matches actual body byte length
+  formal: for-all body Content-Length header value = body.as_bytes().len()
+  applies_to: request_construction
+falsification_tests:
+- id: FALSIFY-RURL-001
+  rule: Zero-copy URL parsing
+  prediction: All UrlView components point into the original input buffer
+  test: Parse URL with all components, verify each component's pointer is within input bounds
+  if_fails: UrlView::parse allocates new strings instead of slicing input
+- id: FALSIFY-RURL-002
+  rule: Parse never panics
+  prediction: UrlView::parse returns Ok or Err for any arbitrary byte sequence (valid UTF-8)
+  test: Proptest with arbitrary Unicode strings, assert no panic
+  if_fails: Parser has unchecked slice indexing or unwrap on malformed input
+- id: FALSIFY-RURL-003
+  rule: LRU eviction order
+  prediction: After inserting N+1 items into capacity-N cache, the least recently accessed item is evicted
+  test: Insert keys 1..=N, access key 1, insert key N+1, assert key 2 (not key 1) is evicted
+  if_fails: access_order not updated on get(), or eviction pops wrong end of VecDeque
+- id: FALSIFY-RURL-004
+  rule: SSRF blocks AWS metadata
+  prediction: validate_redirect_target("http://169.254.169.254/latest/meta-data/") returns Err
+  test: Call validate_redirect_target with AWS metadata IP, assert Err
+  if_fails: 169.254.0.0/16 link-local range not in blocklist
+- id: FALSIFY-RURL-005
+  rule: Content-Length accuracy for POST
+  prediction: HttpClient::post sets Content-Length to exact byte count of body
+  test: POST with multi-byte UTF-8 body, verify Content-Length equals body.len() (bytes, not chars)
+  if_fails: Content-Length computed from char count instead of byte count
+- id: FALSIFY-RURL-006
+  rule: Tier priority
+  prediction: When a URI matches both Tier 1 (exact) and Tier 2 (wildcard), Tier 1 wins
+  test: Insert "/go/docs" in HashMap and "/go/*" in PrefixTrie, query "/go/docs", assert tier="tier1"
+  if_fails: rewrite_url checks PrefixTrie before HashMap
+- id: FALSIFY-RURL-007
+  rule: Missing env var produces typed error
+  prediction: Runtime::new() without AWS_LAMBDA_RUNTIME_API returns RuntimeError::EnvVarMissing
+  test: Unset env var, call Runtime::new(), match on EnvVarMissing variant
+  if_fails: new() panics or returns wrong error variant
+- id: FALSIFY-RURL-008
+  rule: CloudFront event parse with query string
+  prediction: parse_cloudfront_event correctly appends "?{querystring}" when querystring is non-empty
+  test: Event with uri="/search" and querystring="q=rust", assert result="/search?q=rust"
+  if_fails: Query string silently dropped or double-appended
+kani_harnesses:
+- id: KANI-RURL-001
+  obligation: LRU cache size invariant
+  property: cache.len() <= cache.capacity() after any sequence of put/get operations
+  bound: 32
+  strategy: bounded_int
+  description: |
+    Generate arbitrary sequences of put() and get() operations on an LruCache
+    with small capacity (1..8). Assert len() <= capacity() as postcondition
+    after every operation.
+- id: KANI-RURL-002
+  obligation: URL parser totality
+  property: UrlView::parse never panics and always returns Ok for valid URL patterns
+  bound: 16
+  strategy: exhaustive
+  description: |
+    Construct symbolic strings matching "{scheme}://{host}/{path}?{query}#{fragment}"
+    pattern. Verify parse() returns Ok with correct component extraction. Uses
+    kani::any() for each component with length bounds.
+- id: KANI-RURL-003
+  obligation: Private IP coverage
+  property: is_private_ip returns true for all addresses in RFC 1918, loopback, and link-local ranges
+  bound: 256
+  strategy: exhaustive
+  description: |
+    Enumerate representative IPs from each blocked range (10.x.x.x, 172.16-31.x.x,
+    192.168.x.x, 127.x.x.x, 169.254.x.x) and verify is_private_ip returns true.
+    Also verify boundary IPs (172.15.x.x, 172.32.x.x) return false.
+- id: KANI-RURL-004
+  obligation: HTTP status code parsing
+  property: parse_status_code extracts valid u16 from any well-formed status line
+  bound: 16
+  strategy: exhaustive
+  description: |
+    Generate status lines matching "HTTP/1.1 {code} {reason}\r\n" with
+    symbolic code in 100..599. Verify parse_status_code returns the correct u16
+    value. Also verify malformed status lines (missing space, non-numeric code)
+    return Err.
+qa_gate:
+  id: F-RURL-001
+  name: http-client-v1 Contract
+  description: Quality gate for rurl HTTP client — request/response, URL parsing, caching, security
+  checks:
+  - validation
+  - falsification
+  pass_criteria: All 8 falsification tests pass
+  falsification: FALSIFY-RURL-001 through FALSIFY-RURL-008

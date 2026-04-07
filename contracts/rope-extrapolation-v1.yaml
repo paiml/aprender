@@ -1,0 +1,220 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-18'
+  author: PAIML Engineering
+  description: RoPE extrapolation — NTK-aware scaling and YaRN interpolation for long-context inference
+  references:
+  - 'Su et al. (2021) RoFormer: Enhanced Transformer with Rotary Position Embedding'
+  - bloc97 (2023) NTK-Aware Scaled RoPE
+  - 'Peng et al. (2023) YaRN: Efficient Context Window Extension of Large Language Models'
+  - Qwen3.5 Technical Report — extended context via NTK-scaled RoPE
+  depends_on:
+  - rope-kernel-v1
+equations:
+  base_frequency:
+    formula: freq_i = theta^(-2i/d) for i in [0, d/2)
+    domain: theta = rope_base (default 10000), d = head_dim
+    invariants:
+    - freq_0 = 1.0
+    - Strictly decreasing in i
+    - All frequencies positive
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Base_Frequency
+  ntk_scaled_base:
+    formula: theta' = theta * (alpha * L_new / L_orig)^(d / (d - 2))
+    domain: alpha = scaling factor, L_new = target length, L_orig = trained length
+    invariants:
+    - theta' > theta when L_new > L_orig
+    - theta' = theta when L_new = L_orig
+    - All derived frequencies remain positive
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Ntk_Scaled_Base
+  linear_interpolation:
+    formula: freq'_i = freq_i / scale where scale = L_new / L_orig
+    domain: Naive position interpolation (PI)
+    invariants:
+    - freq'_i < freq_i when scale > 1
+    - 'Frequency ratios preserved: freq''_i / freq''_j = freq_i / freq_j'
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Linear_Interpolation
+  yarn_ramp:
+    formula: s(r) = (r - lo) / (hi - lo) clamped to [0, 1]
+    domain: r = wavelength ratio, lo/hi = interpolation bounds
+    invariants:
+    - s(r) = 0 for r <= lo
+    - s(r) = 1 for r >= hi
+    - Monotonically non-decreasing
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Yarn_Ramp
+  yarn_mixed_frequency:
+    formula: freq'_i = (1 - s_i) * freq_i / scale + s_i * freq_i
+    domain: Per-dimension interpolation mix
+    invariants:
+    - Low frequencies (small i) get interpolated
+    - High frequencies (large i) stay unchanged
+    - All freq'_i > 0
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Yarn_Mixed_Frequency
+  rotation_matrix:
+    formula: R(pos, i) = [[cos(pos*freq_i), -sin(pos*freq_i)], [sin(pos*freq_i), cos(pos*freq_i)]]
+    domain: 2x2 rotation block for dimension pair (2i, 2i+1)
+    invariants:
+    - 'R is orthogonal: R^T R = I'
+    - det(R) = 1 (proper rotation)
+    - R(0, i) = I (identity at position 0)
+    preconditions:
+    - indices.iter().all(|&i| i < vocab_size)
+    - indices.len() > 0
+    lean_theorem: Theorems.Rotation_Matrix
+proof_obligations:
+- type: invariant
+  property: Base frequencies positive and decreasing
+  formal: '∀i: freq_i > 0 ∧ (i < d/2-1 → freq_i > freq_{i+1})'
+  applies_to: all
+- type: invariant
+  property: NTK identity at original length
+  formal: L_new = L_orig → theta' = theta
+  applies_to: all
+- type: monotonicity
+  property: NTK base grows with target length
+  formal: L_new > L_orig → theta' > theta
+  applies_to: all
+- type: invariant
+  property: Linear interpolation preserves ratios
+  formal: freq'_i / freq'_j = freq_i / freq_j
+  applies_to: all
+- type: bound
+  property: YaRN ramp bounded [0,1]
+  formal: '∀r: 0 <= s(r) <= 1'
+  applies_to: all
+- type: monotonicity
+  property: YaRN ramp non-decreasing
+  formal: r1 < r2 → s(r1) <= s(r2)
+  applies_to: all
+- type: invariant
+  property: Rotation matrix orthogonality
+  formal: '∀pos,i: R(pos,i)^T R(pos,i) = I (tolerance 1e-12)'
+  tolerance: 1.0e-12
+  applies_to: all
+- type: idempotency
+  property: Rotation at position 0 is identity
+  formal: R(0, i) = I for all i
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-REXT-001
+  rule: Base frequency formula
+  prediction: freq_0 = 1.0 and strictly decreasing
+  test: proptest with random theta and d
+  if_fails: Exponent sign or base computation error
+- id: FALSIFY-REXT-002
+  rule: NTK scaling identity
+  prediction: theta unchanged when L_new = L_orig
+  test: 'proptest: scale factor = 1.0'
+  if_fails: Off-by-one in NTK exponent
+- id: FALSIFY-REXT-003
+  rule: Linear interpolation ratio preservation
+  prediction: freq'_i / freq'_j = freq_i / freq_j
+  test: proptest with random scale > 1
+  if_fails: Per-dimension scaling not uniform
+- id: FALSIFY-REXT-004
+  rule: YaRN ramp clamping
+  prediction: Output in [0,1] for all inputs
+  test: proptest with extreme r values
+  if_fails: Missing clamp in ramp function
+- id: FALSIFY-REXT-005
+  rule: Rotation orthogonality
+  prediction: R^T R = I within 1e-12
+  test: proptest with random positions and dimensions
+  if_fails: sin/cos numerical error or formula bug
+- id: FALSIFY-REXT-006
+  rule: Position 0 identity
+  prediction: cos(0) = 1, sin(0) = 0
+  test: 'Deterministic: R(0, i) == I'
+  if_fails: Off-by-one position indexing
+- id: FALSIFY-REXT-007
+  rule: NTK base monotonicity
+  prediction: Larger target length => larger base
+  test: 'proptest: L1 < L2 => base''(L1) <= base''(L2)'
+  if_fails: Exponent formula inverted in NTK scaling
+- id: FALSIFY-REXT-008
+  rule: YaRN ramp non-decreasing
+  prediction: ramp(r1) <= ramp(r2) for r1 < r2
+  test: proptest with ordered r values
+  if_fails: Ramp function not monotonic
+kani_harnesses:
+- id: KANI-REXT-001
+  obligation: REXT-INV-001
+  property: Frequency positivity and ordering
+  bound: 64
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_rope_frequencies
+- id: KANI-REXT-002
+  obligation: REXT-BND-001
+  property: YaRN ramp bounds
+  bound: 32
+  strategy: exhaustive
+  harness: verify_yarn_ramp
+- id: KANI-ROPE_E-003
+  obligation: Base frequencies positive and decreasing
+  property: Base frequencies positive and decreasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-004
+  obligation: NTK identity at original length
+  property: NTK identity at original length
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-005
+  obligation: NTK base grows with target length
+  property: NTK base grows with target length
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-006
+  obligation: Linear interpolation preserves ratios
+  property: Linear interpolation preserves ratios
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-007
+  obligation: YaRN ramp bounded [0,1]
+  property: YaRN ramp bounded [0,1]
+  bound: 8
+  strategy: stub_float
+- id: KANI-ROPE_E-008
+  obligation: YaRN ramp non-decreasing
+  property: YaRN ramp non-decreasing
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-009
+  obligation: Rotation matrix orthogonality
+  property: Rotation matrix orthogonality
+  bound: 8
+  strategy: exhaustive
+- id: KANI-ROPE_E-010
+  obligation: Rotation at position 0 is identity
+  property: Rotation at position 0 is identity
+  bound: 8
+  strategy: exhaustive
+qa_gate:
+  id: F-REXT-001
+  name: RoPE Extrapolation Contract
+  description: NTK-aware scaling and YaRN interpolation quality gate
+  checks:
+  - base_frequency
+  - ntk_scaled_base
+  - linear_interpolation
+  - yarn_ramp
+  - yarn_mixed_frequency
+  - rotation_matrix
+  pass_criteria: All 8 falsification tests pass
+  falsification: Negate exponent in NTK formula to break monotonicity

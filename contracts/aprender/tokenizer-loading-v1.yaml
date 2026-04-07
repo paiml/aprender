@@ -1,0 +1,236 @@
+metadata:
+  version: 1.0.0
+  created: '2026-02-25'
+  author: PAIML Engineering
+  description: BPE tokenizer loading from HuggingFace tokenizer.json format
+  registry: true
+  references:
+  - shell-safety-inference.md v2.2.0 (bashrs spec, Section 14)
+  - HuggingFace tokenizers library — tokenizer.json schema
+  - Sennrich et al. (2016). Neural Machine Translation of Rare Words with Subword Units. ACL.
+  depends_on:
+  - classification-finetune-v1
+tokenizer_config:
+  model_family: Qwen2
+  model_name: Qwen2.5-Coder-0.5B
+  vocab_size: 151936
+  special_tokens:
+  - id: 151643
+    content: <|endoftext|>
+    role: eos
+  - id: 151644
+    content: <|im_start|>
+    role: chat_start
+  - id: 151645
+    content: <|im_end|>
+    role: chat_end
+  merge_count: ~151K merge rules
+  encoding: byte-level BPE (UTF-8 byte encoder)
+  json_schema:
+    model_vocab: object — maps token string to integer ID
+    model_merges: array of string — ordered merge rules ('Ġ t' format)
+    added_tokens: array of AddedToken — special tokens with attributes
+loading_invariants:
+  parsing:
+  - id: F-TOK-001
+    name: Roundtrip encode-decode
+    description: decode(encode(text)) == text for all valid UTF-8 input
+    severity: P0
+    critical: true
+  - id: F-TOK-002
+    name: Special token ID preservation
+    description: Special token IDs match HuggingFace config exactly
+    severity: P0
+    critical: true
+  - id: F-TOK-003
+    name: Vocab size match
+    description: Loaded vocab size == BpeConfig vocab_size (151,936 for Qwen2)
+    severity: P0
+    critical: true
+  - id: F-TOK-004
+    name: Deterministic encoding
+    description: Same input always produces identical token ID sequence
+    severity: P0
+    critical: true
+  - id: F-TOK-005
+    name: Empty input handling
+    description: encode('') returns empty or only special tokens (no crash)
+    severity: P1
+  merge_rules:
+  - id: F-TOK-006
+    name: Merge order preserved
+    description: Merges applied in priority order (first rule = highest priority)
+    severity: P0
+    critical: true
+  - id: F-TOK-007
+    name: No duplicate merges
+    description: Each merge rule appears exactly once
+    severity: P1
+  byte_encoder:
+  - id: F-TOK-008
+    name: Byte coverage
+    description: Byte encoder covers all 256 byte values
+    severity: P0
+    critical: true
+falsification_tests:
+- id: FALSIFY-TOK-001
+  rule: F-TOK-001 (Roundtrip)
+  prediction: encode then decode recovers original text
+  test: "#[test]\nfn falsify_tok_001_roundtrip_ascii() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\"\
+    ).unwrap();\n    let text = \"echo $HOME && mkdir -p /tmp/test\";\n    let ids = tok.encode(text);\n    let decoded =\
+    \ tok.decode(&ids);\n    assert_eq!(decoded, text);\n}\n"
+  if_fails: Merge rules or byte encoder corrupted during loading
+- id: FALSIFY-TOK-002
+  rule: F-TOK-002 (Special tokens)
+  prediction: Special token IDs match config
+  test: "#[test]\nfn falsify_tok_002_special_token_ids() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\"\
+    ).unwrap();\n    assert_eq!(tok.token_to_id(\"<|endoftext|>\"), Some(151643));\n    assert_eq!(tok.token_to_id(\"<|im_start|>\"\
+    ), Some(151644));\n    assert_eq!(tok.token_to_id(\"<|im_end|>\"), Some(151645));\n}\n"
+  if_fails: Special token mapping incorrect — will corrupt chat/instruction format
+- id: FALSIFY-TOK-003
+  rule: F-TOK-003 (Vocab size)
+  prediction: Vocab size matches config
+  test: "#[test]\nfn falsify_tok_003_vocab_size() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\").unwrap();\n\
+    \    assert_eq!(tok.vocab_size(), 151936);\n}\n"
+  if_fails: Vocab truncated or inflated during loading
+- id: FALSIFY-TOK-004
+  rule: F-TOK-004 (Determinism)
+  prediction: Encoding is deterministic
+  test: "proptest! {\n    #[test]\n    fn falsify_tok_004_deterministic_encoding(\n        text in \"[a-zA-Z0-9 ${}()\\\\\
+    -_./|&;]{1,200}\"\n    ) {\n        let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\").unwrap();\n        let\
+    \ ids1 = tok.encode(&text);\n        let ids2 = tok.encode(&text);\n        prop_assert_eq!(ids1, ids2);\n    }\n}\n"
+  if_fails: Non-deterministic merge selection — hash map ordering leak
+- id: FALSIFY-TOK-005
+  rule: F-TOK-005 (Empty input)
+  prediction: Empty string does not panic
+  test: "#[test]\nfn falsify_tok_005_empty_input() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\").unwrap();\n\
+    \    let ids = tok.encode(\"\");\n    // Must not panic, may return empty or special-token-only\n    assert!(ids.len()\
+    \ <= 2); // at most BOS + EOS\n}\n"
+  if_fails: Off-by-one or panic on empty input
+- id: FALSIFY-TOK-006
+  rule: F-TOK-008 (Byte coverage)
+  prediction: All 256 bytes have encoder mappings
+  test: "#[test]\nfn falsify_tok_006_byte_coverage() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\").unwrap();\n\
+    \    for byte in 0u8..=255 {\n        assert!(tok.byte_encoder().contains_key(&byte),\n                \"Missing byte\
+    \ encoder for {}\", byte);\n    }\n}\n"
+  if_fails: Byte encoder incomplete — will fail on binary content
+- id: FALSIFY-TOK-007
+  rule: F-TOK-001 (Roundtrip UTF-8)
+  prediction: Roundtrip works for non-ASCII UTF-8
+  test: "#[test]\nfn falsify_tok_007_roundtrip_utf8() {\n    let tok = BpeTokenizer::from_huggingface(\"tokenizer.json\").unwrap();\n\
+    \    let text = \"echo \\\"hello world\\\" # comment with unicode\";\n    let ids = tok.encode(text);\n    let decoded\
+    \ = tok.decode(&ids);\n    assert_eq!(decoded, text);\n}\n"
+  if_fails: UTF-8 multi-byte handling broken in byte encoder
+toyota_way_principles:
+  jidoka: '"Automation with a human touch" — tokenizer loading validates every merge
+
+    rule and vocab entry. First malformed entry halts loading with descriptive error.
+
+    '
+  poka_yoke: '"Mistake-proofing" — token IDs are u32 bounded by vocab_size. Attempting to
+
+    encode produces only valid IDs. The type system prevents out-of-range tokens.
+
+    '
+  genchi_genbutsu: '"Go and see" — falsification tests use real tokenizer.json from HuggingFace,
+
+    not mocked data. Real inputs, real merge rules, real byte encoding.
+
+    '
+  kaizen: '"Continuous improvement" — as new model families are added (Qwen3.5 248K vocab),
+
+    the contract extends with new vocab_size targets while preserving all invariants.
+
+    '
+qa_gate:
+  id: F-TOK-GATE
+  name: Tokenizer Loading Contract
+  description: BPE tokenizer loading quality gate
+  checks:
+  - roundtrip_encode_decode
+  - special_token_ids
+  - vocab_size_match
+  - deterministic_encoding
+  - empty_input_handling
+  - merge_order_preserved
+  - byte_coverage
+  pass_criteria: All 7 falsification tests pass
+  falsification: Truncate merges list to first 100 entries to break roundtrip
+equations:
+  identity:
+    formula: f(x) = x
+    preconditions:
+    - '!input.is_empty()'
+    - vocab_size > 0
+    lean_theorem: Theorems.Identity
+  roundtrip_encoding:
+    formula: |
+      roundtrip: (Tokenizer, Text) -> bool
+        ids = tokenizer.encode(text)
+        decoded = tokenizer.decode(ids)
+        decoded == text
+    domain: Valid UTF-8 text and loaded BPE tokenizer
+    codomain: bool (true iff roundtrip is lossless)
+    invariants:
+    - Roundtrip holds for all valid UTF-8 input
+    - Token IDs are bounded by vocab_size
+    - Encoding is deterministic (same input -> same IDs)
+    preconditions:
+    - tokenizer is loaded with vocab_size > 0
+    - text is valid UTF-8
+    lean_theorem: Theorems.RoundtripEncoding
+  byte_encoder_coverage:
+    formula: |
+      coverage: ByteEncoder -> bool
+        for all b in 0..=255: byte_encoder.contains(b)
+    domain: Byte encoder mapping
+    codomain: bool (true iff all 256 bytes covered)
+    invariants:
+    - Exactly 256 entries in byte encoder
+    - Mapping is bijective (no duplicate targets)
+    preconditions:
+    - byte_encoder is initialized
+    lean_theorem: Theorems.ByteEncoderCoverage
+
+kernel_structure:
+  phases:
+  - name: validate_input
+    description: Parse tokenizer.json, validate vocab entries and merge rules
+  - name: execute
+    description: Build BPE merge table, byte encoder, and special token mapping
+  - name: verify_output
+    description: Verify roundtrip correctness, vocab size, byte coverage
+
+proof_obligations:
+- type: postcondition
+  property: Roundtrip encode-decode correctness
+  formal: for all valid UTF-8 text t, decode(encode(t)) == t
+  tolerance: 1e-6
+  applies_to: all
+- type: invariant
+  property: Token IDs bounded by vocab_size
+  formal: for all ids in encode(text), id < vocab_size
+  applies_to: all
+- type: invariant
+  property: Byte encoder covers all 256 byte values
+  formal: byte_encoder.len() == 256 and for all b in 0..=255, byte_encoder.contains_key(b)
+  applies_to: all
+kani_harnesses:
+- id: KANI-TOK-001
+  obligation: Roundtrip encode-decode correctness
+  property: for all valid UTF-8 text t, decode(encode(t)) == t
+  bound: 8
+  strategy: exhaustive
+  harness: verify_roundtrip_encode_decode
+- id: KANI-TOK-002
+  obligation: Token IDs bounded by vocab_size
+  property: All encoded IDs < vocab_size
+  bound: 16
+  strategy: exhaustive
+  harness: verify_token_ids_bounded
+- id: KANI-TOK-003
+  obligation: Byte encoder covers all 256 byte values
+  property: byte_encoder.len() == 256
+  bound: 8
+  strategy: exhaustive
+  harness: verify_byte_encoder_coverage

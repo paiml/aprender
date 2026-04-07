@@ -1,0 +1,70 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-03'
+  author: PAIML Engineering
+  description: Trueno-Graph BFS traversal — shortest path correctness for graph traversal operations
+  references:
+  - 'Cormen et al. (2009) Introduction to Algorithms, Ch. 22 Elementary Graph Algorithms'
+equations:
+  bfs:
+    formula: BFS(G, source) = level_map where level_map[source] = 0
+    domain: G = (V, E), source ∈ V
+    codomain: HashMap<NodeId, usize>
+    invariants:
+    - Unreachable nodes are absent from result
+    - Result size <= |V|
+    - 'Monotonic levels: for edge (u, v), level[v] <= level[u] + 1'
+    preconditions:
+    - source ∈ V (source node exists in graph)
+    lean_theorem: Theorems.BFS_Level_Map
+proof_obligations:
+- type: invariant
+  property: Unreachable nodes excluded
+  formal: '∀ v not in reachable(source): v not in bfs(G, source)'
+  applies_to: bfs
+- type: invariant
+  property: Result bounded by graph size
+  formal: bfs(G, source).len() <= |V|
+  applies_to: bfs
+enforcement:
+  unreachable_excluded:
+    description: Nodes not reachable from source must not appear in BFS result
+    check: contract_tests::FALSIFY-TGC-001
+    severity: ERROR
+  result_bounded:
+    description: BFS result size must not exceed number of nodes
+    check: contract_tests::FALSIFY-TGC-002
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-TGC-001
+  rule: Unreachable excluded
+  prediction: Disconnected nodes do not appear in BFS result
+  test: build graph with disconnected component, run BFS, assert disconnected nodes absent
+  if_fails: Initialization visits all nodes instead of just reachable ones
+- id: FALSIFY-TGC-002
+  rule: Result bounded
+  prediction: bfs(G, s).len() <= G.num_nodes() for any graph
+  test: proptest with random graphs, assert result size bounded
+  if_fails: Node visited multiple times due to missing visited set
+kani_harnesses:
+- id: KANI-TGC-001
+  obligation: Unreachable excluded
+  property: Disconnected nodes absent from result
+  bound: 8
+  strategy: exhaustive
+  harness: verify_bfs_unreachable
+- id: KANI-TGC-002
+  obligation: Result bounded
+  property: Result size <= num_nodes
+  bound: 8
+  strategy: exhaustive
+  harness: verify_bfs_bounded
+qa_gate:
+  id: F-TGC-001
+  name: Trueno-Graph BFS Contract
+  description: BFS traversal correctness quality gate
+  checks:
+  - unreachable_excluded
+  - result_bounded
+  pass_criteria: All 2 falsification tests pass
+  falsification: Initialize all nodes as visited to trigger FALSIFY-TGC-001

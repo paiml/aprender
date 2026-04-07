@@ -1,0 +1,314 @@
+version: 1.0.0
+target_crate: forjar
+bindings:
+- contract: blake3-state-v1.yaml
+  equation: hash_string
+  module_path: forjar::tripwire::hasher::hash_string
+  function: hash_string
+  signature: 'fn hash_string(s: &str) -> String'
+  status: implemented
+  notes: Returns 'blake3:' || hex(BLAKE3(s))
+- contract: blake3-state-v1.yaml
+  equation: hash_file
+  module_path: forjar::tripwire::hasher::hash_file
+  function: hash_file
+  signature: 'fn hash_file(path: &Path) -> Result<String, String>'
+  status: implemented
+  notes: Streaming 64KB buffer for large files
+- contract: blake3-state-v1.yaml
+  equation: composite_hash
+  module_path: forjar::tripwire::hasher::composite_hash
+  function: composite_hash
+  signature: 'fn composite_hash(components: &[&str]) -> String'
+  status: implemented
+  notes: NUL-separated component concatenation
+- contract: dag-ordering-v1.yaml
+  equation: topological_sort
+  module_path: forjar::core::resolver::build_execution_order
+  function: build_execution_order
+  signature: 'fn build_execution_order(config: &ForjarConfig) -> Result<Vec<String>,
+    String>'
+  status: implemented
+  notes: Kahn's algorithm with alphabetical tie-breaking
+- contract: dag-ordering-v1.yaml
+  equation: kahn_sort
+  module_path: forjar::core::resolver::kahn_sort
+  function: kahn_sort
+  signature: 'fn kahn_sort(resource_ids: &[String], in_degree: &mut HashMap<String,
+    usize>, adjacency: &mut HashMap<String, Vec<String>>) -> Vec<String>'
+  status: implemented
+  notes: Private helper; tested via build_execution_order
+- contract: execution-safety-v1.yaml
+  equation: atomic_write
+  module_path: forjar::core::state::save_lock
+  function: save_lock
+  signature: 'fn save_lock(state_dir: &Path, lock: &StateLock) -> Result<(), String>'
+  status: implemented
+  notes: temp + rename pattern; creates parent dirs
+- contract: execution-safety-v1.yaml
+  equation: jidoka_stop
+  module_path: forjar::core::executor::record_failure
+  function: record_failure
+  signature: 'fn record_failure(ctx: &mut RecordCtx, resource_id: &str, resource_type:
+    &ResourceType, duration: f64, error: &str) -> bool'
+  status: implemented
+  notes: Private helper; returns should_stop based on FailurePolicy
+- contract: recipe-determinism-v1.yaml
+  equation: expand_recipe
+  module_path: forjar::core::recipe::expand_recipe
+  function: expand_recipe
+  signature: 'fn expand_recipe(recipe_id: &str, recipe_file: &RecipeFile, machine:
+    &MachineTarget, provided_inputs: &HashMap<String, Value>, external_depends_on:
+    &[String]) -> Result<IndexMap<String, Resource>, String>'
+  status: implemented
+  notes: Namespaces resource IDs, propagates machine target
+- contract: recipe-determinism-v1.yaml
+  equation: validate_inputs
+  module_path: forjar::core::recipe::validate_inputs
+  function: validate_inputs
+  signature: 'fn validate_inputs(recipe: &RecipeMetadata, provided: &HashMap<String,
+    Value>) -> Result<HashMap<String, String>, String>'
+  status: implemented
+  notes: Type-checks all 6 input types (string, int, bool, path, enum, list)
+- contract: recipe-determinism-v1.yaml
+  equation: validate_input_type
+  module_path: forjar::core::recipe::validate_input_type
+  function: validate_input_type
+  signature: 'fn validate_input_type(name: &str, type_name: &str, value: &Value, decl:
+    &RecipeInput) -> Result<String, String>'
+  status: implemented
+  notes: Private helper; dispatches to type-specific validation
+- contract: codegen-dispatch-v1.yaml
+  equation: check_script
+  module_path: forjar::core::codegen::check_script
+  function: check_script
+  signature: 'fn check_script(resource: &Resource) -> Result<String, String>'
+  status: implemented
+  notes: Dispatches to resource-specific check handlers
+- contract: codegen-dispatch-v1.yaml
+  equation: apply_script
+  module_path: forjar::core::codegen::apply_script
+  function: apply_script
+  signature: 'fn apply_script(resource: &Resource) -> Result<String, String>'
+  status: implemented
+  notes: Dispatches to resource-specific apply handlers
+- contract: codegen-dispatch-v1.yaml
+  equation: state_query_script
+  module_path: forjar::core::codegen::state_query_script
+  function: state_query_script
+  signature: 'fn state_query_script(resource: &Resource) -> Result<String, String>'
+  status: implemented
+  notes: Dispatches to resource-specific state query handlers
+- contract: store-cas-v1.yaml
+  equation: derivation_determinism
+  module_path: forjar::store::cas::derive
+  function: derive
+  signature: 'fn derive(d: &Derivation) -> StorePath'
+  status: pending
+  notes: Content-addressed derivation from inputs + builder + env
+- contract: store-cas-v1.yaml
+  equation: closure_completeness
+  module_path: forjar::store::cas::closure
+  function: closure
+  signature: 'fn closure(entry: &StoreEntry) -> HashSet<StorePath>'
+  status: pending
+  notes: Transitive closure of store references
+- contract: store-cas-v1.yaml
+  equation: purity_monotonicity
+  module_path: forjar::store::purity::classify
+  function: classify_purity
+  signature: 'fn classify_purity(d: &Derivation) -> PurityLevel'
+  status: pending
+  notes: Purity level propagation through dependency chain
+- contract: store-cas-v1.yaml
+  equation: far_archive_roundtrip
+  module_path: forjar::store::far::pack
+  function: pack
+  signature: 'fn pack(dir: &Path) -> Result<FarArchive, String>'
+  status: pending
+  notes: FAR archive pack with metadata preservation
+- contract: store-cas-v1.yaml
+  equation: gc_safety
+  module_path: forjar::store::gc::collect
+  function: collect_garbage
+  signature: 'fn collect_garbage(store: &mut Store, roots: &HashSet<StorePath>) -> usize'
+  status: pending
+  notes: GC that preserves all live paths reachable from roots
+- contract: oci-manifest-v1.yaml
+  equation: manifest_digest_consistency
+  module_path: forjar::oci::manifest::digest
+  function: manifest_digest
+  signature: 'fn manifest_digest(manifest: &OciManifest) -> String'
+  status: pending
+  notes: SHA256 digest of canonical JSON manifest
+- contract: oci-manifest-v1.yaml
+  equation: layer_ordering
+  module_path: forjar::oci::layer::apply_layers
+  function: apply_layers
+  signature: 'fn apply_layers(layers: &[Layer]) -> Result<Filesystem, String>'
+  status: pending
+  notes: Layer application with later-overrides-earlier semantics
+- contract: oci-manifest-v1.yaml
+  equation: layer_cache_hit
+  module_path: forjar::oci::cache::lookup
+  function: cache_lookup
+  signature: 'fn cache_lookup(cache: &LayerCache, layer: &Layer) -> (Descriptor, bool)'
+  status: pending
+  notes: Layer cache hit detection by digest
+- contract: oci-manifest-v1.yaml
+  equation: reproducible_build
+  module_path: forjar::oci::build::build_image
+  function: build_image
+  signature: 'fn build_image(dockerfile: &Path, context: &Path) -> Result<OciManifest, String>'
+  status: pending
+  notes: Deterministic image build with sorted entries and fixed timestamps
+- contract: task-pipeline-v1.yaml
+  equation: pipeline_dag_execution
+  module_path: forjar::task::pipeline::execute
+  function: execute_pipeline
+  signature: 'fn execute_pipeline(stages: &[PipelineStage]) -> Vec<(StageId, TaskStatus)>'
+  status: pending
+  notes: DAG-ordered stage execution with parallelism
+- contract: task-pipeline-v1.yaml
+  equation: quality_gate_enforcement
+  module_path: forjar::task::gate::evaluate
+  function: evaluate_gate
+  signature: 'fn evaluate_gate(gate: &QualityGate, value: f64) -> bool'
+  status: pending
+  notes: Quality gate threshold evaluation
+- contract: task-pipeline-v1.yaml
+  equation: task_status_terminal
+  module_path: forjar::task::status::is_terminal
+  function: is_terminal
+  signature: 'fn is_terminal(status: &TaskStatus) -> bool'
+  status: pending
+  notes: Terminal state detection for task lifecycle
+- contract: task-pipeline-v1.yaml
+  equation: health_check_retry
+  module_path: forjar::task::health::check_health
+  function: check_health
+  signature: 'fn check_health(hc: &HealthCheck) -> TaskStatus'
+  status: pending
+  notes: Health check with bounded retry
+- contract: event-rulebook-v1.yaml
+  equation: trigger_dispatch_completeness
+  module_path: forjar::event::dispatch::dispatch_trigger
+  function: dispatch_trigger
+  signature: 'fn dispatch_trigger(kind: &TriggerKind) -> Handler'
+  status: pending
+  notes: Exhaustive trigger kind dispatch
+- contract: event-rulebook-v1.yaml
+  equation: cooldown_deduplication
+  module_path: forjar::event::cooldown::should_fire
+  function: should_fire
+  signature: 'fn should_fire(rule: &Rule, last_fired: Option<Instant>) -> bool'
+  status: pending
+  notes: Cooldown-based event deduplication
+- contract: event-rulebook-v1.yaml
+  equation: action_ordering
+  module_path: forjar::event::action::execute_actions
+  function: execute_actions
+  signature: 'fn execute_actions(actions: &[Action]) -> Vec<ActionResult>'
+  status: pending
+  notes: Sequential action execution with fail-fast
+- contract: plugin-lifecycle-v1.yaml
+  equation: lifecycle_state_machine
+  module_path: forjar::plugin::lifecycle::transition
+  function: transition
+  signature: 'fn transition(state: PluginState, event: LifecycleEvent) -> Result<PluginState, InvalidTransition>'
+  status: pending
+  notes: Valid state machine transitions with error recovery
+- contract: plugin-lifecycle-v1.yaml
+  equation: permission_scoping
+  module_path: forjar::plugin::permission::check
+  function: check_permission
+  signature: 'fn check_permission(plugin: &Plugin, operation: &Operation) -> Result<(), PermissionDenied>'
+  status: pending
+  notes: Subset-based permission enforcement
+- contract: plugin-lifecycle-v1.yaml
+  equation: schema_validation
+  module_path: forjar::plugin::schema::validate
+  function: validate_inputs
+  signature: 'fn validate_inputs(schema: &PluginSchema, inputs: &Inputs) -> Result<ValidInputs, SchemaError>'
+  status: pending
+  notes: Schema-based input validation with type checking
+- contract: secret-provider-v1.yaml
+  equation: provider_dispatch
+  module_path: forjar::secret::resolve::resolve
+  function: resolve_secret
+  signature: 'fn resolve_secret(ref_: &SecretRef) -> Result<ResolvedSecret, SecretError>'
+  status: pending
+  notes: Provider-specific secret resolution
+- contract: secret-provider-v1.yaml
+  equation: ephemeral_cleanup
+  module_path: forjar::secret::ephemeral::drop
+  function: drop_ephemeral
+  signature: 'fn drop(secret: ResolvedSecret)'
+  status: pending
+  notes: Memory zeroing for ephemeral secrets
+- contract: secret-provider-v1.yaml
+  equation: drift_detection
+  module_path: forjar::secret::drift::detect
+  function: detect_drift
+  signature: 'fn detect_drift(ref_: &SecretRef, stored: Option<Hash>, current: Hash) -> DriftStatus'
+  status: pending
+  notes: Secret hash comparison for drift detection
+- contract: copia-delta-v1.yaml
+  equation: delta_correctness
+  module_path: forjar::copia::delta::apply_delta
+  function: apply_delta
+  signature: 'fn apply_delta(old: &[u8], delta: &Delta) -> Vec<u8>'
+  status: pending
+  notes: Delta application producing new file contents
+- contract: copia-delta-v1.yaml
+  equation: block_reuse
+  module_path: forjar::copia::sync::sync_blocks
+  function: sync_blocks
+  signature: 'fn sync_blocks(old_idx: &BlockIndex, new_idx: &BlockIndex) -> SyncResult'
+  status: pending
+  notes: Block-level reuse detection
+- contract: copia-delta-v1.yaml
+  equation: transfer_minimality
+  module_path: forjar::copia::delta::compute_delta
+  function: compute_delta
+  signature: 'fn compute_delta(old: &[u8], new: &[u8], block_size: usize) -> Delta'
+  status: pending
+  notes: Minimal delta computation
+- contract: copia-delta-v1.yaml
+  equation: identity_sync
+  module_path: forjar::copia::delta::compute_delta
+  function: compute_delta
+  signature: 'fn compute_delta(old: &[u8], new: &[u8], block_size: usize) -> Delta'
+  status: pending
+  notes: Identity case produces empty delta
+- contract: sandbox-isolation-v1.yaml
+  equation: filesystem_isolation
+  module_path: forjar::sandbox::fs::isolate
+  function: isolate_filesystem
+  signature: 'fn isolate_filesystem(config: &SandboxConfig, process: &Process) -> SandboxResult'
+  status: pending
+  notes: Filesystem write restriction to allowed paths
+- contract: sandbox-isolation-v1.yaml
+  equation: network_isolation
+  module_path: forjar::sandbox::net::isolate
+  function: isolate_network
+  signature: 'fn isolate_network(config: &SandboxConfig) -> Result<(), SandboxError>'
+  status: pending
+  notes: Network namespace isolation when network=false
+- contract: sandbox-isolation-v1.yaml
+  equation: overlay_capture
+  module_path: forjar::sandbox::overlay::capture
+  function: capture_mutations
+  signature: 'fn capture_mutations(overlay: &OverlayFs) -> Vec<FsChange>'
+  status: pending
+  notes: Overlay upper dir mutation capture
+critical_path:
+- build
+- hash
+- kahn_sort
+- expand_recipe
+- validate_input
+- derive
+- execute_pipeline
+- apply_delta
+- isolate_filesystem

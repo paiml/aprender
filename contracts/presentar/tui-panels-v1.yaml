@@ -1,0 +1,315 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: >
+    Agent TUI panel composition contracts for apr code. Covers 6-panel layout,
+    streaming token display, tool status, cost dashboard, BrickHouse budget,
+    adaptive degradation, and probar-first test requirements.
+  references:
+  - 'apr-code spec: presentar-probar-integration.md'
+  - 'presentar-terminal ptop: 14-panel reference implementation'
+  - 'probar Brick architecture: PROBAR-SPEC-009'
+  - 'Nielsen (1994): 100ms/1s/10s response time thresholds'
+  - 'WCAG 2.1 Level AA: 4.5:1 contrast'
+  depends_on:
+  - tui-rendering-v1
+  - display-format-v1
+  - agent-ux-v1
+equations:
+  panel_layout_nonoverlap:
+    formula: |
+      for all terminal sizes (w, h) where w >= 20, h >= 10:
+        for all pairs (p1, p2) in panels:
+          rect(p1) ∩ rect(p2) == ∅
+        union(rect(p) for p in panels) == rect(0, 0, w, h)
+    domain: 5 detail levels x all terminal sizes
+    invariants:
+    - No two panels share any cell
+    - All cells belong to exactly one panel (no gaps)
+    - Layout computed in O(panels) time, not O(cells)
+    preconditions:
+    - terminal_width >= 20
+    - terminal_height >= 10
+    - panels.len() == 6
+    postconditions:
+    - overlap_cells == 0
+    - gap_cells == 0
+    lean_theorem: Theorems.Panel_Layout_Nonoverlap
+
+  adaptive_degradation:
+    formula: |
+      detail_level(w, h) =
+        Exploded  if w >= 160 AND h >= 50
+        Expanded  if w >= 120 AND h >= 40
+        Normal    if w >= 100 AND h >= 30
+        Compact   if w >= 80  AND h >= 24
+        Minimal   if w >= 20  AND h >= 10
+    domain: Terminal dimensions
+    invariants:
+    - Detail level is a pure function of (w, h) — deterministic
+    - Higher detail strictly shows more panels/info than lower
+    - Minimal shows only StreamingOutput + StatusBar (2 panels)
+    - Compact shows StreamingOutput + ToolStatus + StatusBar (3 panels)
+    - Transition between levels produces no flicker (diff render handles)
+    preconditions:
+    - w >= 20
+    - h >= 10
+    postconditions:
+    - visible_panels >= 2
+    - visible_panels <= 6
+    lean_theorem: Theorems.Adaptive_Degradation
+
+  streaming_token_ordering:
+    formula: |
+      for all tokens t_i, t_j received from SSE:
+        i < j => display_position(t_i) < display_position(t_j)
+    domain: StreamingOutputPanel receiving StreamEvent::TextDelta
+    invariants:
+    - Tokens appear in SSE arrival order (no reordering)
+    - No token is displayed twice
+    - No token is lost (all TextDelta events rendered)
+    - Partial token at buffer boundary is handled (append, not corrupt)
+    preconditions:
+    - streaming_active == true
+    postconditions:
+    - displayed_text == concat(all_tokens_in_order)
+    lean_theorem: Theorems.Streaming_Token_Ordering
+
+  tool_progress_monotonic:
+    formula: |
+      for each active tool t:
+        progress(t, time_i) <= progress(t, time_j) when time_i < time_j
+      progress(t) ∈ [0.0, 1.0]
+      final_state(t) ∈ {completed, failed, blocked}
+    domain: ToolStatusPanel
+    invariants:
+    - Progress never decreases
+    - Progress never exceeds 1.0
+    - Completed tool shows 100% and checkmark
+    - Blocked tool shows reason from sandbox/hook
+    preconditions:
+    - tool_calls.len() > 0
+    postconditions:
+    - progress >= 0.0
+    - progress <= 1.0
+    lean_theorem: Theorems.Tool_Progress_Monotonic
+
+  cost_display_invariants:
+    formula: |
+      displayed_cost >= 0.0
+      cumulative_cost(turn_N) >= cumulative_cost(turn_N-1)
+      budget_bar.fill == cumulative_cost / session_budget
+    domain: CostDashboardPanel
+    invariants:
+    - Cost is never negative
+    - Cumulative cost is monotonically increasing
+    - Budget bar fill in [0.0, 1.0] (clamped, not overflow)
+    - Provider name always displayed
+    - Token counts displayed (input + output)
+    postconditions:
+    - displayed_cost >= 0.0
+    - budget_bar_fill >= 0.0
+    - budget_bar_fill <= 1.0
+    lean_theorem: Theorems.Cost_Display_Invariants
+
+  sandbox_violation_visibility:
+    formula: |
+      for each sandbox_violation V:
+        display(V.reason) within 1 frame of V.timestamp
+        display(V.policy_rule)
+        display(V.tool_name)
+    domain: SandboxLogPanel
+    invariants:
+    - Violations are never silently swallowed
+    - Most recent violation visible without scrolling
+    - AAA contrast (7.0) for violation text (higher than normal AA 4.5)
+    - Violation count badge on panel border
+    postconditions:
+    - visible_violations.contains(most_recent_violation)
+    lean_theorem: Theorems.Sandbox_Violation_Visibility
+
+  brick_budget_enforcement:
+    formula: |
+      frame_time = sum(brick.render_time for brick in house.bricks)
+      frame_time <= house.budget_ms
+      for each brick in house.bricks:
+        brick.render_time <= brick.allocation_ms
+    domain: BrickHouse with 6 agent panel bricks
+    invariants:
+    - Total frame time bounded by house budget (16ms default)
+    - No individual brick exceeds its allocation
+    - Budget exceeded => previous frame frozen + warning in StatusBar
+    - After 10 consecutive budget failures => degrade to Minimal layout
+    - Budget report accessible via /tui command
+    preconditions:
+    - house.bricks.len() > 0
+    - house.budget_ms > 0
+    postconditions:
+    - frame_time <= house.budget_ms OR degradation_triggered
+    lean_theorem: Theorems.Brick_Budget_Enforcement
+
+  statusbar_state_display:
+    formula: |
+      statusbar.state ∈ {Idle, Perceive, Reason, Act, Remember, Done, Failed}
+      statusbar always displays: state, iteration_count, context_percentage, session_cost
+    domain: StatusBar (bottom row)
+    invariants:
+    - State matches actual agent FSM state
+    - Iteration count matches agent loop counter
+    - Context percentage = token_count / context_window * 100
+    - Session cost matches CostDashboardPanel
+    - StatusBar visible in ALL detail levels (even Minimal)
+    postconditions:
+    - statusbar.state == agent.current_state
+    - statusbar.iterations == agent.iteration_count
+    lean_theorem: Theorems.StatusBar_State_Display
+
+proof_obligations:
+- type: invariant
+  property: No panel overlap at any terminal size
+  formal: overlap_cells == 0 for all (w, h) where w >= 20, h >= 10
+  applies_to: all
+- type: determinism
+  property: Detail level is pure function of dimensions
+  formal: detail_level(w1, h1) == detail_level(w2, h2) when (w1,h1) == (w2,h2)
+  applies_to: all
+- type: ordering
+  property: Streaming tokens display in order
+  formal: display_position(t_i) < display_position(t_j) when i < j
+  applies_to: all
+- type: monotonicity
+  property: Tool progress never decreases
+  formal: progress(t, now) >= progress(t, before) for all tools t
+  applies_to: all
+- type: monotonicity
+  property: Cumulative cost never decreases
+  formal: cost(turn_N) >= cost(turn_N-1)
+  applies_to: all
+- type: postcondition
+  property: Sandbox violations always visible
+  formal: most_recent_violation in visible_violations
+  applies_to: all
+- type: bound
+  property: Frame time bounded by BrickHouse budget
+  formal: frame_time <= budget_ms OR degradation_triggered
+  applies_to: all
+- type: equivalence
+  property: StatusBar state matches agent state
+  formal: statusbar.state == agent.current_state
+  applies_to: all
+- type: bound
+  property: Cost display non-negative
+  formal: displayed_cost >= 0.0
+  applies_to: all
+- type: invariant
+  property: StatusBar visible in all detail levels
+  formal: statusbar.visible == true for all detail_levels
+  applies_to: all
+
+falsification_tests:
+- id: FALSIFY-TP-001
+  rule: Panel layout non-overlap
+  prediction: Zero overlap pixels across 50 terminal sizes (20x10 to 200x60)
+  test: probar pixel sweep — render all 6 panels at each size, count overlapping cells
+  if_fails: Layout engine collision — panels corrupt each other
+- id: FALSIFY-TP-002
+  rule: Adaptive degradation determinism
+  prediction: Same terminal size always produces same detail level
+  test: Call detail_level(w, h) 1000 times with same input; assert identical output
+  if_fails: Non-deterministic layout — flickering between detail levels
+- id: FALSIFY-TP-003
+  rule: Streaming token ordering
+  prediction: 10K tokens from mock SSE arrive in display order
+  test: Send numbered tokens; verify display string == "0123456789..."
+  if_fails: Token reordering — garbled LLM output shown to user
+- id: FALSIFY-TP-004
+  rule: Tool progress monotonicity
+  prediction: Progress bar never goes backwards
+  test: proptest — random progress updates; assert monotonic sequence
+  if_fails: Progress bar regresses — confusing tool status display
+- id: FALSIFY-TP-005
+  rule: Cost non-negative
+  prediction: Displayed cost >= 0 after any sequence of turns
+  test: proptest — random token counts and pricing; assert cost >= 0.0
+  if_fails: Negative cost displayed — nonsensical dashboard
+- id: FALSIFY-TP-006
+  rule: Sandbox violation visibility
+  prediction: Blocked tool always shows in SandboxLogPanel within 1 frame
+  test: Trigger 100 sandbox violations; screenshot each frame; assert all visible
+  if_fails: Silent sandbox failures — user unaware of blocked actions
+- id: FALSIFY-TP-007
+  rule: BrickHouse budget enforcement
+  prediction: Budget violation triggers frame freeze + warning, not crash
+  test: Insert artificial 50ms delay in one brick; verify previous frame displayed + warning
+  if_fails: Budget exceeded => blank screen or crash
+- id: FALSIFY-TP-008
+  rule: StatusBar state accuracy
+  prediction: StatusBar state matches agent FSM at every frame
+  test: Record agent state + statusbar state at 1000 frames; assert equality
+  if_fails: StatusBar lies about agent state — user trusts wrong information
+- id: FALSIFY-TP-009
+  rule: Minimal layout completeness
+  prediction: At 20x10 terminal, StreamingOutput + StatusBar render without truncation
+  test: Render at 20x10; verify both panels present with readable content
+  if_fails: Minimum size too small — unusable on constrained terminals
+- id: FALSIFY-TP-010
+  rule: Budget degradation recovery
+  prediction: After 10 consecutive budget failures, layout degrades; after 5 successes, upgrades
+  test: Inject 10 slow frames, verify Minimal; inject 5 fast frames, verify upgrade
+  if_fails: Degradation is one-way — never recovers from temporary slowness
+
+kani_harnesses:
+- id: KANI-TP-001
+  obligation: Panel layout non-overlap
+  property: No cell belongs to two panels
+  bound: 8
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_panel_nonoverlap
+- id: KANI-TP-002
+  obligation: Detail level deterministic
+  property: Pure function of (w, h)
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_detail_level_deterministic
+- id: KANI-TP-003
+  obligation: Tool progress bounded
+  property: progress ∈ [0.0, 1.0]
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_progress_bounded
+- id: KANI-TP-004
+  obligation: Cost non-negative
+  property: displayed_cost >= 0.0
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cost_nonnegative
+- id: KANI-TP-005
+  obligation: StatusBar always visible
+  property: statusbar.visible == true for all detail levels
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_statusbar_visible
+
+qa_gate:
+  id: F-TP-001
+  name: TUI Panels Contract
+  description: Agent panel layout, streaming, tools, cost, sandbox, BrickHouse, StatusBar
+  checks:
+  - panel_nonoverlap
+  - adaptive_degradation
+  - streaming_token_ordering
+  - tool_progress_monotonic
+  - cost_nonnegative
+  - sandbox_violation_visibility
+  - brick_budget_enforcement
+  - statusbar_state_accuracy
+  - minimal_layout_completeness
+  - budget_degradation_recovery
+  pass_criteria: All 10 falsification tests pass + 5 Kani harnesses verify
+  falsification: probar pixel sweep + proptest + TuiTestBackend frame capture

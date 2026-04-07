@@ -1,0 +1,203 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-02'
+  author: PAIML Engineering
+  description: Multi-provider routing correctness — privacy enforcement, failover, cost budget, format translation
+  references:
+  - 'RouteLLM (Chen et al., 2024): arXiv:2406.18665'
+  - 'FrugalGPT (Chen et al., 2023): arXiv:2305.05176'
+  - 'ReliabilityBench: arXiv:2601.06112'
+  - 'CCX-RS: anton-abyzov/ccx-rs'
+  depends_on:
+  - backend-dispatch-v1
+  - streaming-tpot-v1
+equations:
+  privacy_enforcement:
+    formula: |
+      route(request, tier) ∈ allowed_providers(tier)
+      where allowed_providers(Sovereign) = {realizar}
+            allowed_providers(Private) = {realizar, ollama, vllm}
+            allowed_providers(Standard) = {realizar, ollama, vllm, anthropic, openai, openrouter}
+    domain: tier ∈ {Sovereign, Private, Standard}
+    invariants:
+    - Sovereign tier NEVER routes to external network
+    - Privacy tier ordering is total — Sovereign < Private < Standard
+    - Downgrading tier always reduces provider set
+    preconditions:
+    - request.messages.len() > 0
+    postconditions:
+    - result.provider.privacy_tier() <= tier
+    lean_theorem: Theorems.Privacy_Enforcement
+  failover_cascade:
+    formula: |
+      route(request) = first(p in providers_by_priority
+                             where p.tier <= max_tier
+                             AND p.failures < threshold
+                             AND p.budget_remaining > 0)
+    domain: providers ordered by priority, threshold ∈ ℤ⁺
+    invariants:
+    - Higher-priority provider always tried first
+    - Failed providers skipped (not retried in same turn)
+    - All providers exhausted → AllProvidersFailed error
+    preconditions:
+    - providers.len() > 0
+    lean_theorem: Theorems.Failover_Cascade
+  cost_budget:
+    formula: |
+      cost(turn) = (input_tokens × input_rate + output_tokens × output_rate) / 1_000_000
+      cumulative(session) = sum(cost(turn) for turn in session)
+    domain: input_tokens, output_tokens ∈ ℤ⁺, rates ∈ ℝ⁺
+    invariants:
+    - cumulative(session) <= session_budget at all times
+    - Per-provider daily cost <= provider.daily_budget
+    - Cost is non-negative and monotonically increasing
+    postconditions:
+    - result.estimated_usd >= 0.0
+    - result.estimated_usd.is_finite()
+    lean_theorem: Theorems.Cost_Budget
+  backoff_jitter:
+    formula: delay(attempt) = random(0, min(cap, base × 2^attempt))
+    domain: attempt ∈ [0, max_retries), base > 0, cap > 0
+    invariants:
+    - delay(attempt) <= cap for all attempts
+    - delay(attempt) >= 0 for all attempts
+    preconditions:
+    - attempt < max_retries
+    lean_theorem: Theorems.Backoff_Jitter
+  format_translation:
+    formula: |
+      from_openai(to_openai(anthropic_msg)) ≈ anthropic_msg
+      to_openai(from_openai(openai_msg)) ≈ openai_msg
+    domain: Valid Anthropic/OpenAI message types
+    invariants:
+    - Role preserved through round-trip
+    - Tool call IDs preserved through round-trip
+    - Content text identical after round-trip
+    lean_theorem: Theorems.Format_Translation
+proof_obligations:
+- type: invariant
+  property: Sovereign tier blocks remote egress
+  formal: tier == Sovereign => provider ∈ {realizar}
+  applies_to: all
+- type: monotonicity
+  property: Priority ordering respected in failover
+  formal: priority(selected) <= priority(any_available)
+  applies_to: all
+- type: bound
+  property: Cost never exceeds budget
+  formal: cumulative_cost <= session_budget
+  applies_to: all
+- type: bound
+  property: Backoff delay bounded by cap
+  formal: delay <= cap for all attempts
+  applies_to: all
+- type: roundtrip
+  property: Format translation preserves semantics
+  formal: content(round_trip(msg)) == content(msg)
+  applies_to: all
+- type: termination
+  property: Failover terminates
+  formal: route() terminates in O(|providers|) steps
+  applies_to: all
+- type: frame
+  property: Request immutability
+  formal: routing does not mutate the original CompletionRequest
+  applies_to: all
+- type: postcondition
+  property: SSE stream completeness
+  formal: streaming produces MessageStop event with usage data
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-MPA-001
+  rule: Privacy enforcement
+  prediction: Sovereign tier never calls external HTTP endpoint
+  test: Set tier=Sovereign, configure Anthropic provider, assert zero HTTP calls
+  if_fails: Privacy tier leak — Sovereign data sent to external provider
+- id: FALSIFY-MPA-002
+  rule: Failover cascade
+  prediction: After 2 failures on provider A, next request goes to provider B
+  test: Mock provider A to return 500, verify provider B receives next request
+  if_fails: Failover not triggering — stuck on broken provider
+- id: FALSIFY-MPA-003
+  rule: Cost budget enforcement
+  prediction: Request blocked when cumulative cost exceeds session budget
+  test: Set budget=$0.01, send requests until budget exhausted, assert BudgetExhausted
+  if_fails: Cost tracking underestimates or budget not enforced
+- id: FALSIFY-MPA-004
+  rule: Backoff cap
+  prediction: No retry delay exceeds 30s
+  test: proptest 10000 attempts with random attempt counts, assert all delays <= cap
+  if_fails: Exponential growth not capped — unbounded sleep durations
+- id: FALSIFY-MPA-005
+  rule: Format translation round-trip
+  prediction: Anthropic message survives round-trip through OpenAI format
+  test: proptest with arbitrary tool_use messages, assert content equality
+  if_fails: Lossy translation — tool arguments or content corrupted
+- id: FALSIFY-MPA-006
+  rule: SSE stream completeness
+  prediction: Every stream ends with MessageStop containing usage data
+  test: Stream from mock server, inject partial chunks, verify MessageStop
+  if_fails: Stream parser drops final event — cost tracking breaks
+- id: FALSIFY-MPA-007
+  rule: Provider failover under chaos
+  prediction: Agent completes task despite 50% random provider failures
+  test: Chaos injection — random 429/500/timeout, verify task completion
+  if_fails: Failover cascade too brittle for real-world instability
+- id: FALSIFY-MPA-008
+  rule: Request immutability
+  prediction: The original CompletionRequest is not mutated by the routing process
+  test: 'Frame test: clone request before routing; invoke route(request); deep-compare
+    original clone with request after routing returns; assert byte-identical'
+  if_fails: Router mutates request fields (e.g., injects provider-specific headers
+    or rewrites model name) instead of working on a copy
+kani_harnesses:
+- id: KANI-MPA-001
+  obligation: Sovereign tier blocks remote egress
+  property: Privacy enforcement invariant
+  bound: 4
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_sovereign_no_egress
+- id: KANI-MPA-002
+  obligation: Cost never exceeds budget
+  property: Cumulative cost bounded
+  bound: 8
+  strategy: stub_float
+  solver: cadical
+  harness: verify_cost_budget_bound
+- id: KANI-MPA-003
+  obligation: Backoff delay bounded by cap
+  property: Delay cap enforcement
+  bound: 16
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_backoff_cap
+- id: KANI-MPA-004
+  obligation: Format translation preserves semantics
+  property: Round-trip content equality
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_translation_roundtrip
+- id: KANI-MPA-005
+  obligation: Failover terminates
+  property: Route function terminates in bounded steps
+  bound: 8
+  strategy: exhaustive
+  solver: cadical
+  harness: verify_failover_terminates
+qa_gate:
+  id: F-MPA-001
+  name: Multi-Provider API Contract
+  description: Provider routing correctness, privacy enforcement, cost bounds
+  checks:
+  - sovereign_no_egress
+  - failover_cascade_priority
+  - cost_budget_bound
+  - backoff_cap
+  - format_translation_roundtrip
+  - sse_stream_completeness
+  - chaos_failover_resilience
+  - request_immutability
+  pass_criteria: All 8 falsification tests pass + 5 Kani harnesses verify
+  falsification: Inject chaos at provider boundary
