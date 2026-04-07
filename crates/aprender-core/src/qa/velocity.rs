@@ -6,7 +6,7 @@
 //! - **Flow**: Fast feedback loops enable continuous improvement
 //! - **Jidoka**: Fail fast on broken tests
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// Find the workspace root by walking up from CWD looking for a Cargo.toml

@@ -1,0 +1,1 @@
+{"content_hash":"71784a500c087e87","findings":[{"rule_id":"PV-VAL-001","severity":"warning","message":"SCHEMA-012: kani_harnesses.KH-SVG-001.bound not specified — Kani requires an unwind bound","file":"contracts/hero-svg-v1.yaml","line":null,"contract_stem":"hero-svg-v1","suppressed":false,"is_new":true}]}

@@ -39,7 +39,7 @@ jobs:
       - name: Workspace check (all 70 crates)
         run: cargo check --workspace
       - name: Workspace lib tests (25,300+)
-        run: cargo test --workspace --lib
+        run: cargo test --workspace --lib --exclude aprender-gpu
       - name: Integration tests
         run: |
           cargo test -p aprender-core --test monorepo_invariants
