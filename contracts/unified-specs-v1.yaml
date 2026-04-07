@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'APR-MONO consolidation spec — 20 repos merged into 1'
+  - 'Polars/Burn/Nushell — monorepo documentation patterns'
+  description: >
+    Unified specifications contract — all subcrate specs consolidated
+    into root docs/specifications/ with a single TOC (max 500 lines).
+
+equations:
+  single_toc:
+    formula: |
+      docs/specifications/TOC.md exists AND
+      wc -l docs/specifications/TOC.md <= 500 AND
+      forall spec in docs/specifications/**/*.md:
+        TOC.md contains a link to spec
+    domain: docs/specifications/ directory
+    codomain: bool
+    invariants:
+    - "TOC is the single entry point for all specifications"
+    - "TOC line count never exceeds 500"
+    - "Every .md file in docs/specifications/ is linked from TOC"
+
+  no_orphan_specs:
+    formula: |
+      forall md in docs/specifications/**/*.md:
+        md is referenced in TOC.md
+    domain: docs/specifications/ file system
+    codomain: bool
+    invariants:
+    - "No specification exists without a TOC entry"
+
+  no_subcrate_specs:
+    formula: |
+      find crates/ -path "*/docs/specifications/*.md" returns 0 files
+    domain: crates/ directory tree
+    codomain: bool
+    invariants:
+    - "After unification, specs live ONLY at root docs/specifications/"
+    - "Subcrate docs/specifications/ directories are removed or emptied"
+
+  spec_provenance:
+    formula: |
+      forall spec moved from crates/<name>/docs/specifications/<file>:
+        root spec has comment "# Source: crates/<name>" in first 5 lines
+    domain: moved specification files
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-SPECS-001
+  rule: TOC exists and is under 500 lines
+  prediction: "wc -l docs/specifications/TOC.md <= 500"
+  test: "test $(wc -l < docs/specifications/TOC.md) -le 500"
+  if_fails: "TOC too large or missing"
+
+- id: FALSIFY-SPECS-002
+  rule: no orphan specs
+  prediction: "every .md in docs/specifications/ is in TOC"
+  test: "find docs/specifications/ -name '*.md' ! -name TOC.md | while read f; do grep -q $(basename $f) docs/specifications/TOC.md || echo ORPHAN:$f; done | grep -q ORPHAN && exit 1 || exit 0"
+  if_fails: "specification not linked from TOC"
+
+- id: FALSIFY-SPECS-003
+  rule: no subcrate specs remain
+  prediction: "zero .md files in crates/*/docs/specifications/"
+  test: "test $(find crates/ -path '*/docs/specifications/*.md' | wc -l) -eq 0"
+  if_fails: "subcrate still has local specs — should be at root"
+
+proof_obligations:
+- type: invariant
+  property: "TOC is single source of truth for all specifications"
+
+kani_harnesses:
+- id: KH-SPECS-001
+  obligation: single_toc
+  property: toc_covers_all_specs
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 3
+  status: tested
