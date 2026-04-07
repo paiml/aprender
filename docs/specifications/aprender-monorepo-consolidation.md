@@ -161,7 +161,7 @@ Every successful large Rust project uses this pattern:
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
-| Phase 7c: Update CLAUDE.md | TODO | Root CLAUDE.md references old project structure |
+| Phase 7c: Update CLAUDE.md | DONE | Updated for monorepo: 70 crates, cargo install aprender, paths |
 | Phase 7d: CI pipeline | TODO | Update ci.yml for `cargo test --workspace` |
 
 **Current count**: 70 active workspace members, 0 compile failures, 0 `[patch.crates-io]`.

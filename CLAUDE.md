@@ -2,24 +2,29 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.27.5 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 17,573 tests (12,974 lib + 4,154 CLI + 300 contract + 116 oracle + 13 traits + 16 mutation) with comprehensive quality gates. 73 provable YAML contracts, zero orphan annotations.
+Aprender is a next-generation ML framework in pure Rust — **monorepo with 70 workspace crates**. Install: `cargo install aprender` → `apr` binary (57 subcommands). 25,300+ tests, 405 provable contracts. Core library in `crates/aprender-core/` ([lib] name = "aprender"). All 20 repos (trueno, realizar, entrenar, batuta, + 15 satellites) consolidated per APR-MONO spec.
 
 ## Build Commands
 
 ```bash
-cargo build --release        # Optimized build
-cargo test                   # Full test suite (17573 tests)
-cargo test --lib             # Unit tests only
-cargo fmt --check            # Check formatting
-cargo clippy -- -D warnings  # Strict linting
-cargo bench                  # Run criterion benchmarks
+cargo build --release              # Optimized build (all 70 crates)
+cargo test --workspace --lib       # Full workspace lib tests (25,300+)
+cargo test -p aprender-core --lib  # Core ML library only (12,975)
+cargo test -p apr-cli --lib        # CLI tests only (4,158)
+cargo check --workspace            # Type-check all 70 crates
+cargo fmt --check                  # Check formatting
+cargo clippy -- -D warnings        # Strict linting
+
+# Install
+cargo install aprender             # Install `apr` binary (like cargo install ollama)
+apr --version                      # Verify
 
 # Makefile tiered quality gates
 make tier1                   # Fast feedback (<1s): fmt, clippy, check
 make tier2                   # Pre-commit (<5s): tests + strict clippy
 make tier3                   # Pre-push (1-5min): full validation + coverage
 make tier4                   # CI/CD: includes pmat analysis
-make coverage                # Coverage report (96.35% achieved, target ≥95%)
+make coverage                # Coverage report (target ≥95%)
 ```
 
 ## Debugging: Use apr Tools First (MANDATORY)
@@ -75,9 +80,16 @@ TraceSteps: `Tokenize`, `Embed`, `LayerNorm`, `Attention`, `FFN`, `TransformerBl
 2. **Backend Agnostic** - CPU (SIMD), GPU, WASM via Trueno
 3. **Three-Tier API**: High (`Estimator` trait), Mid (`Optimizer`/`Loss`/`Regularizer`), Low (Trueno primitives)
 
-**Runtime:** `trueno = "0.16.0"` (SIMD-accelerated tensor ops), `provable-contracts = "0.2"` (contract enforcement)
-**Dev Tools:** `proptest`, `criterion`, `pmat` v3.10.0, `renacer`, `cargo-mutants`, `jugar-probar`
-**Banned:** serde, rayon, tokio, thiserror, ndarray, polars, arrow (see spec)
+**Monorepo layout** (70 crates, flat `crates/aprender-*` per Polars/Burn/Nushell pattern):
+- `crates/aprender-core/` — ML library ([lib] name = "aprender")
+- `crates/aprender-compute/` — SIMD/GPU (was trueno, [lib] name = "trueno")
+- `crates/aprender-serve/` — inference server (was realizar, [lib] name = "realizar")
+- `crates/aprender-train/` — training (was entrenar, [lib] name = "entrenar")
+- `crates/apr-cli/` — CLI logic (internal, `apr` binary from root facade)
+- Root `Cargo.toml` — workspace + facade (`cargo install aprender` → `apr`)
+
+**Runtime:** `aprender-compute` (SIMD), `aprender-contracts` (provable contracts)
+**Dev Tools:** `proptest`, `criterion`, `pmat`, `cargo-mutants`
 
 ## CRITICAL: Realizar-First Architecture
 
@@ -240,18 +252,20 @@ Key: `unsafe_code = "forbid"`, `clippy::all + pedantic = "warn"`, ML-specific al
 
 ## Key Files
 
-- `src/lib.rs` - Library entry, module exports
-- `src/traits.rs` - Core traits (Estimator, UnsupervisedEstimator, Transformer)
-- `src/primitives/` - Vector/Matrix with Cholesky solver
-- `src/format/` - APR format, validation, lint, converter, export
-- `src/text/chat_template.rs` - Chat template engine (6+ formats, sandboxed Jinja2)
-- `crates/apr-cli/` - CLI tool
-- `docs/specifications/aprender-spec.md` - Unified spec (single source of truth)
-- `docs/specifications/components/` - 26 component specs (max 500 lines each)
+- `crates/aprender-core/src/lib.rs` - ML library entry, module exports
+- `crates/aprender-core/src/traits.rs` - Core traits (Estimator, UnsupervisedEstimator, Transformer)
+- `crates/aprender-core/src/primitives/` - Vector/Matrix with Cholesky solver
+- `crates/aprender-core/src/format/` - APR format, validation, lint, converter, export
+- `crates/aprender-core/src/text/chat_template.rs` - Chat template engine
+- `crates/apr-cli/` - CLI logic (57 commands)
+- `src/bin/apr.rs` - Root binary entry point (`cargo install aprender`)
+- `contracts/` - 405 provable contracts (merged from all 20 repos)
+- `docs/specifications/aprender-monorepo-consolidation.md` - Monorepo spec
 
-## APR CLI (`crates/apr-cli/`)
+## APR CLI (`cargo install aprender`)
 
-53 commands across 9 groups. Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
+57 commands across 10 categories. Contract: `contracts/apr-cli-commands-v1.yaml`.
+Key commands: `run`, `chat`, `serve`, `pull`, `finetune`, `prune`, `distill`, `merge`, `quantize`, `inspect`, `debug`, `validate`, `diff`, `tensors`, `trace`, `lint`, `explain`, `export`, `import`, `convert`, `compile`, `train`, `tune`, `eval`, `bench`, `profile`, `qa`, `probar`, `cbtop`, `tui`, `hex`, `tree`, `flow`, `qualify`
 
 ```bash
 apr run hf://openai/whisper-tiny --input audio.wav
