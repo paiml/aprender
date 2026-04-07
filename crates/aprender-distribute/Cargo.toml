@@ -74,8 +74,8 @@ trueno-db = { version = "0.3.16", features = ["distributed"], optional = true }
 trueno = { version = "0.16", features = ["parallel"], optional = true }
 
 # v2.0: Parquet checkpoint storage (Apache Arrow ecosystem)
-arrow = { version = "53.0", optional = true }
-parquet = { version = "53.0", optional = true }
+arrow = { version = "57.0", optional = true }
+parquet = { version = "57.0", optional = true }
 
 # v2.0: Pepita - Sovereign AI kernel interfaces and infrastructure
 pepita = { version = "0.1.0", optional = true }

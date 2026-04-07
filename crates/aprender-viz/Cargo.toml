@@ -165,6 +165,7 @@ monitor-full = ["monitor-nvidia", "monitor-tls", "monitor-stack", "gpu-wgpu"]
 full = ["gpu", "parallel", "ml", "graph", "db", "terminal", "svg", "monitor"]
 
 [lib]
+name = "trueno_viz"
 crate-type = ["cdylib", "rlib"]
 
 [profile.release]

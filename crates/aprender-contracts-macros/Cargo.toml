@@ -11,6 +11,7 @@ keywords = ["verification", "contracts", "proc-macro", "compile-time"]
 categories = ["development-tools::testing"]
 
 [lib]
+name = "provable_contracts_macros"
 proc-macro = true
 
 [dependencies]
