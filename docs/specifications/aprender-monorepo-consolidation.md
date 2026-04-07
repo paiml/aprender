@@ -162,7 +162,7 @@ Every successful large Rust project uses this pattern:
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
 | Phase 7c: Update CLAUDE.md | DONE | Updated for monorepo: 70 crates, cargo install aprender, paths |
-| Phase 7d: CI pipeline | TODO | Update ci.yml for `cargo test --workspace` |
+| Phase 7d: CI pipeline | DONE | Added workspace-test job (70 crates + integration tests) |
 
 **Current count**: 70 active workspace members, 0 compile failures, 0 `[patch.crates-io]`.
 **Tests**: **25,309 pass, 4 fail** (workspace lib + apr-cli + integration). 4 fail are contract panics in apr-cli.

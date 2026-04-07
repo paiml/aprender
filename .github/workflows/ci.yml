@@ -28,13 +28,30 @@ jobs:
       repo: ${{ github.event.repository.name }}
     secrets: inherit
 
+  # APR-MONO: Workspace-wide test (all 70 crates)
+  workspace-test:
+    runs-on: self-hosted
+    container:
+      image: localhost:5000/sovereign-ci:stable
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Workspace check (all 70 crates)
+        run: cargo check --workspace
+      - name: Workspace lib tests (25,300+)
+        run: cargo test --workspace --lib
+      - name: Integration tests
+        run: |
+          cargo test -p aprender-core --test monorepo_invariants
+          cargo test -p apr-cli --test cli_commands
+
   mutants:
     runs-on: self-hosted
     continue-on-error: true
     container:
       image: localhost:5000/sovereign-ci:stable
     timeout-minutes: 120
-    needs: ci
+    needs: [ci, workspace-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
