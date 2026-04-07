@@ -272,3 +272,7 @@ MIT License -- see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with Extreme TDD | Part of the <a href="https://github.com/paiml">PAIML Sovereign AI Stack</a></sub>
 </div>
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

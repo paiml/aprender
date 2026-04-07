@@ -64,3 +64,7 @@ MIT License - see [LICENSE](../LICENSE)
 ## Part of Trueno
 
 This crate is part of [Trueno](https://github.com/paiml/trueno).
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

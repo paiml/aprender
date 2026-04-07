@@ -553,3 +553,7 @@ This project implements research findings from the certeza specification, incorp
 - **trueno project** (https://github.com/paiml/trueno) - Reference implementation
 - **PMAT** (https://github.com/paiml/paiml-mcp-agent-toolkit) - Test orchestration toolkit
 - Pragmatic AI Labs Research Division
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

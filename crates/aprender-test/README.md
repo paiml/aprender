@@ -489,3 +489,7 @@ MIT OR Apache-2.0
 <p align="center">
   <strong>Probar</strong> - by <a href="https://paiml.com">Pragmatic AI Labs</a>
 </p>
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

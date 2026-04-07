@@ -30,3 +30,7 @@ aprender-monte-carlo risk --ticker AAPL --confidence 0.95
 ## License
 
 MIT
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

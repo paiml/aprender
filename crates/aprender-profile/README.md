@@ -769,3 +769,7 @@ Built with:
 - [Trueno](https://github.com/paiml/trueno) SIMD library
 
 Developed by [Pragmatic AI Labs](https://paiml.com)
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

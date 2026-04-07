@@ -343,3 +343,7 @@ trueno is the compute foundation for the PAIML Sovereign AI Stack.
 ## License
 
 MIT -- see [LICENSE](LICENSE).
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

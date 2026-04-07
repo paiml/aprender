@@ -41,3 +41,7 @@ trueno-ptx-debug gen-fkr kernel.ptx -o tests/kernel_fkr.rs
 ## License
 
 MIT
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

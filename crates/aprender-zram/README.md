@@ -265,3 +265,7 @@ MIT OR Apache-2.0
 **25 GB/s decompression. 19x faster than kernel zram. Use it today.**
 
 </div>
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

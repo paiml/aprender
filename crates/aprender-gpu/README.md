@@ -97,3 +97,7 @@ MIT License - see [LICENSE](../LICENSE) for details.
 ## Part of Trueno
 
 This crate is part of the [Trueno](https://github.com/paiml/trueno) high-performance compute library.
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

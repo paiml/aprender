@@ -396,7 +396,7 @@ name = "apr"
 path = "src/bin/apr.rs"
 
 [dependencies]
-apr-cli = { path = "crates/apr-cli", version = "0.29.0", default-features = true }
+apr-cli = { path = "crates/apr-cli", default-features = true }
 # Core ML library (lib name = "aprender")
 aprender_ml = { path = "crates/aprender-core", version = "0.29.0", package = "aprender-core" }
 

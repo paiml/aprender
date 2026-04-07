@@ -445,3 +445,7 @@ See [provable-contracts-cookbook](https://github.com/paiml/provable-contracts-co
 ## License
 
 MIT
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

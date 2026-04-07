@@ -265,3 +265,7 @@ Minimum Supported Rust Version: **1.75**
 ## License
 
 MIT - see [LICENSE](LICENSE) for details.
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

@@ -97,3 +97,7 @@ cargo test -p cbtop f301
 ## Documentation
 
 See the full specification at `docs/specifications/compute-block-tui-cbtop.md` and the book chapter at `book/src/ecosystem/cbtop.md`.
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

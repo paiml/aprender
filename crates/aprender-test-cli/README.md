@@ -137,3 +137,7 @@ fn test_game() {
 ## License
 
 MIT OR Apache-2.0
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

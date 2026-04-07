@@ -751,3 +751,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 **Built with the Iron Lotus Framework**
 *Quality is not inspected in; it is built in.*
 
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

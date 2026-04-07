@@ -277,3 +277,7 @@ cargo run --example qa_falsify
 ## License
 
 MIT
+
+---
+
+Part of the [Aprender monorepo](https://github.com/paiml/aprender) — 70 workspace crates.

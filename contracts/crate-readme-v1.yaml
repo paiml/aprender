@@ -1,0 +1,62 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'crates.io documentation policy — README required for discoverability'
+  description: >
+    Every workspace crate must have a README.md for crates.io documentation.
+    README must contain: crate name, install/usage, link to monorepo.
+
+equations:
+  readme_exists:
+    formula: |
+      forall crate in workspace_members:
+        crates/<crate>/README.md exists AND
+        wc -l crates/<crate>/README.md >= 5
+    domain: crates/ directory
+    codomain: bool
+    invariants:
+    - "Every crate has a README.md"
+    - "README is non-trivial (>= 5 lines)"
+
+  readme_content:
+    formula: |
+      forall crate README:
+        contains(crate_name) AND
+        contains("cargo install aprender" OR "aprender-core" OR usage example) AND
+        contains("paiml/aprender" link)
+    domain: README.md content
+    codomain: bool
+    invariants:
+    - "README identifies the crate by name"
+    - "README links to the monorepo"
+
+falsification_tests:
+- id: FALSIFY-README-CRATE-001
+  rule: every crate has README.md
+  prediction: "find crates/*/README.md returns one per workspace member"
+  test: "for d in crates/*/; do test -f $d/README.md || echo MISSING:$(basename $d); done | grep -q MISSING && exit 1 || exit 0"
+  if_fails: "crate missing README — invisible on crates.io"
+
+- id: FALSIFY-README-CRATE-002
+  rule: README links to monorepo
+  prediction: "every README contains paiml/aprender"
+  test: "for d in crates/*/; do grep -q 'paiml/aprender' $d/README.md 2>/dev/null || echo MISSING:$(basename $d); done | grep -q MISSING && exit 1 || exit 0"
+  if_fails: "README doesn't link to monorepo"
+
+proof_obligations:
+- type: invariant
+  property: "all 70 crates have README.md"
+
+kani_harnesses:
+- id: KH-README-001
+  obligation: readme_exists
+  property: all_crates_have_readme
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 2
+  status: tested

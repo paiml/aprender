@@ -120,3 +120,55 @@ fn test_hero_svg_valid() {
     assert!(content.trim().starts_with("<svg"), "FALSIFY-SVG-003: not valid SVG");
     assert!(content.trim().ends_with("</svg>"), "FALSIFY-SVG-003: not valid SVG");
 }
+
+/// FALSIFY-README-CRATE-001: Every crate has README.md
+#[test]
+fn test_every_crate_has_readme() {
+    let ws_root = workspace_root();
+    let crates_dir = ws_root.join("crates");
+    let mut missing = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&crates_dir) {
+        for entry in entries.flatten() {
+            if !entry.path().join("Cargo.toml").exists() {
+                continue; // Not a crate
+            }
+            if !entry.path().join("README.md").exists() {
+                missing.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "FALSIFY-README-CRATE-001: Crates missing README.md: {:?}",
+        missing
+    );
+}
+
+/// FALSIFY-README-CRATE-002: Every README links to monorepo
+#[test]
+fn test_every_readme_links_monorepo() {
+    let ws_root = workspace_root();
+    let crates_dir = ws_root.join("crates");
+    let mut no_link = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&crates_dir) {
+        for entry in entries.flatten() {
+            let readme = entry.path().join("README.md");
+            if !readme.exists() {
+                continue;
+            }
+            let content = std::fs::read_to_string(&readme).unwrap_or_default();
+            if !content.contains("paiml/aprender") {
+                no_link.push(entry.file_name().to_string_lossy().to_string());
+            }
+        }
+    }
+
+    assert!(
+        no_link.is_empty(),
+        "FALSIFY-README-CRATE-002: READMEs without monorepo link: {:?}",
+        no_link
+    );
+}
