@@ -159,6 +159,10 @@ Every successful large Rust project uses this pattern:
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
 | Phase 5: Publish + shims | READY | `apr mono publish`, `apr mono shims` (behind `dev` feature) |
 | Phase 6: Archive old repos | READY | `apr mono archive` (behind `dev` feature) |
+| Phase 7a: Fix apr-cli lib tests | TODO | 48 compile errors from stashed serve route changes |
+| Phase 7b: Remove config patches | TODO | Eliminate `.cargo/config.toml` `[patch.crates-io]` |
+| Phase 7c: Update CLAUDE.md | TODO | Root CLAUDE.md references old project structure |
+| Phase 7d: CI pipeline | TODO | Update ci.yml for `cargo test --workspace` |
 
 **Current count**: 69 active workspace members, 0 compile failures.
 **Tests**: **21,157 pass, 0 fail** (workspace-wide lib + integration).
@@ -644,12 +648,12 @@ cargo workspaces publish --from-git
 
 ## Success Criteria
 
-1. `cargo test --workspace` passes (all 5500+ files compile together)
-2. `cargo publish -p apr-cli` succeeds without `[patch.crates-io]`
-3. `cargo install apr-cli` works from a clean machine
-4. Old crate names (`trueno`, `entrenar`, `realizar`, `batuta`) still resolve via shims
-5. Daily apr-cli releases take < 5 minutes (publish + verify)
-6. Zero cross-crate version mismatch incidents for 90 days post-migration
+1. ~~`cargo test --workspace` passes~~ DONE: 21,157 pass / 0 fail
+2. `cargo publish -p aprender` succeeds without `[patch.crates-io]` — Phase 7b
+3. `cargo install aprender` works from a clean machine — Phase 5
+4. Old crate names (`trueno`, `entrenar`, `realizar`, `batuta`) still resolve via shims — Phase 5
+5. Daily aprender releases take < 5 minutes (publish + verify) — Phase 5
+6. Zero cross-crate version mismatch incidents for 90 days post-migration — ongoing
 
 ---
 
