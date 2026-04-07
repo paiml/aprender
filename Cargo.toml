@@ -1,0 +1,21 @@
+[package]
+name = "batuta-common"
+version = "0.1.0"
+edition = "2024"
+authors = ["Noah Gift <noah@paiml.com>"]
+description = "Shared utilities for the Batuta stack: formatting, system info, display helpers"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/batuta-common"
+keywords = ["formatting", "utilities", "terminal", "display"]
+categories = ["command-line-utilities", "text-processing"]
+
+[dependencies]
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
+zstd = { version = "0.13", default-features = false }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
