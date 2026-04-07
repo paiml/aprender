@@ -157,7 +157,8 @@ Every successful large Rust project uses this pattern:
 | Phase 4b: Integration tests | DONE | 8 invariant tests pass (naming, layout, deps, bins) |
 | Phase 4c: Build provable contract | DONE | `cgp-monorepo-build-v1.yaml` — 7 falsification conditions |
 | Phase 4d: `cargo install aprender` | DONE | Root=facade+binary, ML lib=aprender-core |
-| Phase 5: Publish + shims | IN PROGRESS | 7/63 live on crates.io, publishing continues (rate-limited) |
+| Phase 5a: Publish first pass | IN PROGRESS | 9 OK, 6 FAIL (deps not yet on crates.io) |
+| Phase 5b: Fix path deps | DONE | Added `version = "0.29.0"` to 56 path deps |
 | Phase 6: Archive old repos | DONE | 20/20 repos archived via GitHub API |
 | Phase 7a: Fix apr-cli lib tests | DONE | 48→0 compile errors, 4,158 pass / 4 contract panics |
 | Phase 7b: Remove config patches | DONE | Zero `[patch.crates-io]`, batuta-common merged, 70 crates |
