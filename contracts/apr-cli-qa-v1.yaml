@@ -1,0 +1,192 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-07'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'apr-cookbook/.claude/skills/qa/SKILL.md — fleet QA skill (12 protocols)'
+  - 'POSIX.1-2017 Section 12 — Utility Conventions'
+  description: >
+    Exhaustive QA contract for the apr CLI. Every subcommand must respond
+    to --help, handle missing models gracefully, produce valid JSON with
+    --json, and satisfy 12 protocol invariants from fleet testing.
+
+equations:
+  help_universality:
+    formula: |
+      forall cmd in REGISTERED_COMMANDS:
+        apr cmd --help exits 0 AND stdout.len() > 0
+    domain: "set of 57 registered CLI commands"
+    codomain: bool
+    invariants:
+    - "No command panics on --help"
+    - "Every command has non-empty help text"
+    preconditions:
+    - "apr binary is installed and on PATH"
+    postconditions:
+    - "exit code 0 for all 57 commands"
+
+  missing_model_graceful:
+    formula: |
+      forall cmd in MODEL_COMMANDS:
+        apr cmd /nonexistent/model.gguf exits non-zero AND
+        stderr contains "not found" or "does not exist" AND
+        no panic in stderr
+    domain: "commands that require a model file"
+    codomain: "Result<(), CliError>"
+    invariants:
+    - "Missing model never panics"
+    - "Exit code is non-zero (1 or 2)"
+    - "Error message is human-readable"
+
+  json_validity:
+    formula: |
+      forall cmd in JSON_COMMANDS:
+        apr cmd --json model | jq . exits 0
+    domain: "commands that support --json flag"
+    codomain: bool
+    invariants:
+    - "JSON output is valid (parseable by jq)"
+    - "No f32 precision artifacts (0.999999761...)"
+    - "No NaN or Inf values in output"
+
+  flag_materiality:
+    formula: |
+      forall flag in MATERIAL_FLAGS:
+        diff(apr cmd model, apr cmd --flag model) is non-empty
+    domain: "flags that should change output"
+    codomain: bool
+    invariants:
+    - "No silent flag no-ops"
+    - "--json changes output format"
+    - "--verbose adds detail"
+    - "--quiet reduces output"
+
+  exit_code_honesty:
+    formula: |
+      forall cmd:
+        (stderr contains "error" or "FAIL") implies exit_code != 0
+    domain: "all command invocations"
+    codomain: bool
+    invariants:
+    - "No exit-code lies (error message with exit 0)"
+
+  cross_subcommand_consistency:
+    formula: |
+      forall model M:
+        apr inspect --json M .architecture ==
+        apr check M .architecture ==
+        apr oracle --json M .architecture
+    domain: "model metadata across commands"
+    codomain: bool
+    invariants:
+    - "Architecture/family reported consistently across subcommands"
+
+  nan_inf_absence:
+    formula: |
+      forall cmd, forall model M:
+        apr cmd M stdout does NOT contain NaN, nan, Inf, -Inf
+    domain: "all command outputs"
+    codomain: bool
+    invariants:
+    - "No numerical garbage in user-facing output"
+
+  version_sanity:
+    formula: |
+      apr --version matches pattern "apr X.Y.Z (HASH)"
+      where HASH == git rev-parse --short HEAD
+    domain: "version string"
+    codomain: bool
+
+  no_phantom_subcommands:
+    formula: |
+      forall cmd in (apr --help subcommands):
+        apr cmd --help does NOT contain "not yet implemented"
+    domain: "advertised subcommands"
+    codomain: bool
+
+  cache_integrity:
+    formula: |
+      apr pull M -> apr list contains M -> apr rm M -> apr list does NOT contain M
+    domain: "model cache state machine"
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-QA-001
+  rule: all 57 commands respond to --help
+  prediction: "every registered command exits 0 on --help"
+  test: "cargo test -p apr-cli --test cli_commands"
+  if_fails: "phantom subcommand or broken dispatch"
+
+- id: FALSIFY-QA-002
+  rule: missing model exits non-zero
+  prediction: "apr inspect /nonexistent exits 1"
+  test: "apr inspect /nonexistent/model.gguf; test $? -ne 0"
+  if_fails: "missing file not detected"
+
+- id: FALSIFY-QA-003
+  rule: json output is valid
+  prediction: "apr inspect --json model | jq . exits 0"
+  test: "apr inspect --json ~/models/*.gguf | jq . > /dev/null"
+  if_fails: "invalid JSON emitted"
+
+- id: FALSIFY-QA-004
+  rule: no NaN in output
+  prediction: "no command emits NaN or Inf"
+  test: "apr run model 'test' --max-tokens 8 2>&1 | grep -qE 'NaN|Inf' && exit 1 || exit 0"
+  if_fails: "numerical garbage in user output"
+
+- id: FALSIFY-QA-005
+  rule: version matches HEAD
+  prediction: "apr --version contains current git hash"
+  test: "apr --version | grep -q $(git rev-parse --short HEAD)"
+  if_fails: "stale binary installed"
+
+- id: FALSIFY-QA-006
+  rule: exit code honesty
+  prediction: "error output implies non-zero exit"
+  test: "apr validate /nonexistent; test $? -ne 0"
+  if_fails: "exit-code lie"
+
+- id: FALSIFY-QA-007
+  rule: --json flag changes output
+  prediction: "json output differs from default"
+  test: "diff <(apr inspect model) <(apr inspect --json model) | grep -q ."
+  if_fails: "--json flag is a no-op"
+
+- id: FALSIFY-QA-008
+  rule: no phantom subcommands
+  prediction: "all advertised commands have real implementations"
+  test: "apr --help | awk '/^  [a-z]/{print $1}' | while read c; do apr $c --help >/dev/null 2>&1 || echo PHANTOM:$c; done | grep -q PHANTOM && exit 1 || exit 0"
+  if_fails: "subcommand listed but not implemented"
+
+- id: FALSIFY-QA-009
+  rule: 3-format coverage
+  prediction: "inspect works on GGUF, APR, and SafeTensors"
+  test: "apr inspect model.gguf && apr inspect model.apr && apr inspect model.safetensors"
+  if_fails: "format not supported"
+
+- id: FALSIFY-QA-010
+  rule: cross-subcommand architecture consistency
+  prediction: "inspect and check report same architecture"
+  test: "diff <(apr inspect --json M | jq .architecture) <(apr check M 2>&1 | grep -i arch)"
+  if_fails: "architecture disagrees across subcommands"
+
+proof_obligations:
+- type: invariant
+  property: "all 57 commands exit 0 on --help"
+- type: invariant
+  property: "missing model produces non-zero exit code"
+- type: invariant
+  property: "JSON output is always valid"
+
+kani_harnesses:
+- id: KH-QA-001
+  obligation: help_universality
+  property: all_commands_respond_to_help
+
+verification_summary:
+  total_obligations: 10
+  proven: 0
+  tested: 10
+  status: tested
