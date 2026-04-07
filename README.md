@@ -1,7 +1,5 @@
-<h1 align="center">aprender</h1>
-
 <p align="center">
-  <strong>Next-generation ML framework in pure Rust. One install, one binary, full stack.</strong>
+  <img src="docs/hero.svg" alt="aprender — Next-generation ML framework in pure Rust" width="100%">
 </p>
 
 <p align="center">
