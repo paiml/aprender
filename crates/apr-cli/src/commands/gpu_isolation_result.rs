@@ -180,6 +180,7 @@ fn run_gpu_state_isolation_gate(path: &Path, config: &QaConfig) -> Result<GateRe
 }
 
 /// Output from GPU state isolation test.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 enum GpuIsolationResult {
     Passed,
@@ -188,6 +189,7 @@ enum GpuIsolationResult {
 }
 
 /// Run the 3-generation GPU isolation test.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
     use realizar::gguf::{
@@ -247,6 +249,7 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
 }
 
 /// Convert GPU isolation test result to gate result.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn gpu_isolation_gate_result(result: GpuIsolationResult, duration: Duration) -> GateResult {
     match result {

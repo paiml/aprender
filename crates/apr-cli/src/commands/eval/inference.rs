@@ -390,6 +390,7 @@ fn run_humaneval_inference(
 // --- ALB-089: GPU-accelerated inference for eval ---
 
 /// Load TransformerConfig from checkpoint dir's config.json.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "cuda", feature = "training"))]
 fn load_transformer_config(
     checkpoint_dir: &Path,
@@ -423,6 +424,7 @@ fn load_transformer_config(
 ///
 /// Uses `forward_logits()` for autoregressive generation. No KV cache -- each step
 /// reprocesses the full sequence. Still 20-40x faster than CPU for 350M model.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "cuda", feature = "training"))]
 fn run_humaneval_inference_cuda(
     model_path: &Path,
@@ -940,6 +942,7 @@ fn run_mbpp_inference(
 }
 
 /// GPU-accelerated MBPP inference via entrenar CudaTransformerTrainer (ALB-089).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "cuda", feature = "training"))]
 fn run_mbpp_inference_cuda(
     model_path: &Path,

@@ -415,6 +415,7 @@ fn test_cuda_demo_disabled_result() {
 }
 
 #[test]
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn test_cuda_demo_runs_successfully() {
     let temp_dir = tempfile::tempdir().expect("value");

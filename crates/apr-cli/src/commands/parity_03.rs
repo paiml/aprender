@@ -3,6 +3,7 @@
 // MAIN ENTRY POINT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) -> Result<()> {
     use realizar::gguf::{

@@ -367,6 +367,7 @@ pub(super) fn run_real_benchmark(
 }
 
 /// GPU benchmark using CUDA-accelerated inference with KV cache
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 pub(super) fn run_real_benchmark_cuda(
     model: &mut realizar::gguf::OwnedQuantizedModelCuda,

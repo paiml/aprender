@@ -129,6 +129,7 @@ fn template_format_name(tf: TemplateFormat) -> &'static str {
 
 /// GH-224: Try to initialize GGUF CUDA model from a mapped model.
 /// Returns (cuda_model, init_failed).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
@@ -170,6 +171,7 @@ fn try_init_gguf_cuda(
 /// GH-224: Try to initialize APR CUDA model.
 /// GH-272: Warns about F32 performance when VRAM > 2GB.
 /// Returns (cuda_model, init_failed).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn try_init_apr_cuda(
     model_bytes: &[u8],
@@ -212,6 +214,7 @@ fn try_init_apr_cuda(
 }
 
 /// GH-272: Print F32 performance tip suggesting APR-native Q4K quantization.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn print_apr_f32_perf_tip(vram_mb: u64, path: &Path) {
     println!(
@@ -239,6 +242,7 @@ fn print_apr_f32_perf_tip(vram_mb: u64, path: &Path) {
 
 /// GH-224: Try to initialize SafeTensors CUDA model.
 /// Returns (cuda_model, init_failed).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(feature = "cuda")]
 fn try_init_safetensors_cuda(
     model_path: &Path,

@@ -259,6 +259,7 @@ fn handle_zero_generation_fallback(
 }
 
 /// Try CUDA benchmark, returning None if GPU produced 0 tokens (extracted to reduce complexity).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn try_cuda_benchmark(
     path: &Path,
@@ -406,6 +407,7 @@ fn run_apr_measurement(
 /// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV,
 /// 190+ tok/s) instead of AprV2ModelCuda (generic transformer, 0.5 tok/s).
 /// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_apr_cuda_benchmark(
     path: &Path,

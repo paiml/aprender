@@ -125,6 +125,7 @@ fn bench_log_done(config: &BenchConfig) {
 ///
 /// Loading path: SafeTensors → apr_import(Q4K) → MappedAprModel →
 /// OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_safetensors_cuda_benchmark(
     path: &Path,
@@ -182,6 +183,7 @@ fn run_safetensors_cuda_benchmark(
 }
 
 /// Run warmup iterations for CUDA benchmark.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_warmup(
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
@@ -212,6 +214,7 @@ fn run_cuda_warmup(
 }
 
 /// Run measurement iterations for CUDA benchmark.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_measurement(
     cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
@@ -267,6 +270,7 @@ fn run_cuda_measurement(
 }
 
 /// CUDA GPU-accelerated benchmark path
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_cuda_benchmark(
     _gguf: &realizar::gguf::GGUFModel,

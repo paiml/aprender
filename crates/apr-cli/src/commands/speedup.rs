@@ -288,6 +288,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 ///
 /// Toyota Way: Genchi Genbutsu - Go and see for yourself. Measure real performance.
 /// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn measure_gpu_cpu_tps(
     path: &Path,

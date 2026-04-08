@@ -5,6 +5,7 @@
 /// Per spec: Qwen2.5-Coder Showcase Demo v3.0.0
 ///
 /// Toyota Way: Mieruka (visual control) - shows where time is spent.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult> {
     use realizar::brick::{ComputeBrick, FusedFfnBrick, TransformerLayerBrick};

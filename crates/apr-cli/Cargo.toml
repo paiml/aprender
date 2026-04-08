@@ -19,6 +19,7 @@ exclude = [
 [lints.rust]
 # Safety
 unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [lints.clippy]
 # Base level

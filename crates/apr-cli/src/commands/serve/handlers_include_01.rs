@@ -5,6 +5,7 @@
 ///   2. F32 APR: MappedAprModel → OwnedQuantizedModel → OwnedQuantizedModelCuda (GGUF path)
 ///
 /// Try Q4K path first (avoids redundant is_apr_q4k scan). Falls back to F32 on error.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_apr_server_gpu(
     model_path: &Path,
@@ -90,6 +91,7 @@ fn start_apr_server_gpu(
 ///   - Pool allocator: single cuMemAlloc for all tensors (~17 GB)
 ///   - Dedicated thread: CudaExecutor is !Send, owns GPU context
 ///   - Channel-based: HTTP handler → mpsc → inference thread → oneshot → response
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda-batch"))]
 fn start_apr_q4k_server_gpu(
     model_path: &Path,
@@ -142,6 +144,7 @@ fn start_apr_q4k_server_gpu(
 }
 
 /// Stub: Q4K batch scheduler requires cuda-batch feature (realizar >=0.9).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda", not(feature = "cuda-batch")))]
 fn start_apr_q4k_server_gpu(
     _model_path: &Path,
@@ -158,6 +161,7 @@ fn start_apr_q4k_server_gpu(
 /// OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 /// Uses realizar's built-in AppState + create_router (same as GGUF/APR serve path)
 /// for full Ollama-parity endpoints with fused Q4K/Q6K GEMV kernels.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_safetensors_server_gpu(
     model_path: &Path,
@@ -299,6 +303,7 @@ fn start_safetensors_server_cpu_quantized(
 /// Build the axum Router for GPU inference endpoints.
 ///
 /// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the runtime.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 fn build_gpu_router(

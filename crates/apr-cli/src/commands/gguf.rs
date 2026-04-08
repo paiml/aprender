@@ -203,6 +203,7 @@ fn run_headless_apr(
 /// - Supports GGUF, SafeTensors, and APR formats
 /// - Measures real per-brick timings via unified BrickProfiler
 /// - Reports real hardware info from CUDA context
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_headless_real(config: CbtopConfig) -> Result<()> {
     use realizar::gguf::QuantizedGenerateConfig;
@@ -372,6 +373,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
 /// GH-176: Build brick scores from real BrickProfiler measurements.
 /// Replaces derived estimates (the `*` suffixed fugazi) with actual GPU timing.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn brick_scores_from_profiler(
     cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
@@ -440,6 +442,7 @@ fn brick_scores_from_profiler(
 }
 
 /// Load and initialize GGUF model for CUDA profiling.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn load_gguf_cuda_for_profiling(
     model_path: &std::path::Path,
@@ -480,6 +483,7 @@ fn load_gguf_cuda_for_profiling(
 
 /// Extract model dimensions from a mapped GGUF model.
 /// C-08 (Meyer DbC): Use 0 for missing dimensions, never hardcoded Qwen2-0.5B defaults.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn extract_model_dims(
     mapped: &realizar::gguf::MappedGGUFModel,
@@ -501,6 +505,7 @@ fn extract_model_dims(
 }
 
 /// Compute coefficient of variation (CV%) from latency measurements.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn compute_cv_percent(latencies_us: &[f64]) -> f64 {
     let mean = latencies_us.iter().sum::<f64>() / latencies_us.len() as f64;

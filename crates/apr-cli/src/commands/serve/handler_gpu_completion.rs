@@ -2,6 +2,7 @@
 /// Handle POST /v1/completions for GPU inference.
 ///
 /// GH-284: Now async with `spawn_blocking` to avoid blocking the tokio runtime.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 async fn handle_gpu_completion(
@@ -106,6 +107,7 @@ async fn handle_gpu_completion(
 }
 
 /// GH-261: Handle GPU failure with CPU fallback inference.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)]
 async fn gpu_cpu_fallback(
@@ -152,6 +154,7 @@ async fn gpu_cpu_fallback(
 }
 
 /// Build a chat completion response for a successful CPU fallback.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)]
 fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum::response::Response {
@@ -183,6 +186,7 @@ fn build_cpu_fallback_response(out: &AprInferenceOutput, start: Instant) -> axum
 }
 
 /// Build an SSE stream from pre-generated GPU tokens.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
 fn build_gpu_sse_stream(
@@ -240,6 +244,7 @@ fn build_gpu_sse_stream(
 ///
 /// GH-284: True per-token SSE streaming. GPU generates all tokens in
 /// `spawn_blocking`, then streams them as individual SSE events.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 async fn handle_gpu_chat_completion(
@@ -427,6 +432,7 @@ fn extract_gguf_vocab(
 }
 
 /// Start GGUF server with CUDA acceleration (PAR-111).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_gguf_server_cuda(
     quantized_model: realizar::gguf::OwnedQuantizedModel,
@@ -521,6 +527,7 @@ fn start_gguf_server_cuda(
 }
 
 /// Pre-upload model weights to GPU for maximum performance.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn preload_gpu_weights(cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda) {
     println!("  Initializing GPU on device 0...");

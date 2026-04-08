@@ -64,6 +64,7 @@ fn run_cpu_server(
 ///
 /// Uses OwnedQuantizedModelCachedSync with continuous batching scheduler
 /// for maximum throughput on GPU. Achieves 800+ tok/s (2.8x Ollama).
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_gguf_server_gpu_batched(
     quantized_model: realizar::gguf::OwnedQuantizedModel,

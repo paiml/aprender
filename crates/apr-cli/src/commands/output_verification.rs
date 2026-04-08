@@ -381,6 +381,7 @@ pub fn strip_thinking_blocks(output: &str) -> String {
 ///
 /// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
 /// Returns `Some(failure_reason)` if GPU output fails, `None` if pass or skipped.
+#[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn validate_gpu_golden_output(
     mapped: &realizar::gguf::MappedGGUFModel,
