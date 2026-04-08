@@ -376,11 +376,19 @@ pmat query --coverage-gaps --coverage-file /path/to/coverage.json
 # Prerequisite: run `cargo llvm-cov test --lib --no-report` first to generate data
 ```
 
-**Workflow for coverage improvement:**
+**Workflow for coverage improvement (MUST co-evolve with contracts):**
 1. `cargo llvm-cov test --lib --no-report` — generate coverage data
-2. `pmat query --coverage-gaps` — find top uncovered functions
-3. Write tests targeting those functions
-4. `make coverage` — verify improvement
+2. `pmat query --coverage-gaps --exclude-tests` — find top uncovered functions by impact
+3. For EACH function being tested, ALSO:
+   a. Add `#[contract]` annotation if missing
+   b. Add/strengthen falsification conditions in the relevant contract YAML
+   c. Eliminate placeholder preconditions
+4. Write tests targeting those functions
+5. `make coverage` — verify improvement
+6. `pmat comply check` — verify contract density improved
+
+**RULE: Coverage without contracts is REJECTED. Both must improve together.**
+See monorepo spec Rule 7: Coverage + Contracts Co-Evolution.
 
 ## Stack Documentation Search
 

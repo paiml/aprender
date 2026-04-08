@@ -168,6 +168,33 @@ that is a P0 bug. The CLI commands integration test (`cli_commands.rs`) verifies
 **Anti-pattern**: `apr run model.gguf` → "inference requires --features inference" is FORBIDDEN.
 The user should never see a feature-gate error.
 
+### Rule 7: Coverage + Contracts Co-Evolution
+
+**Every coverage improvement MUST simultaneously improve contract density and quality.**
+
+When writing tests to increase coverage, you MUST also:
+
+1. **Add or strengthen provable contracts** for the functions being tested
+2. **Add `#[contract]` annotations** to newly-tested functions
+3. **Add falsification conditions** to existing contract YAMLs
+4. **Improve precondition/postcondition specificity** — no placeholder preconditions
+
+This is NOT optional. A PR that adds 50 tests but 0 contract improvements is REJECTED.
+
+| Action | Must Pair With |
+|--------|---------------|
+| Write unit test for `fn foo()` | Add `#[contract]` on `foo()` if missing |
+| Write integration test for `apr cmd` | Add falsification test to command contract YAML |
+| Increase coverage from X% to Y% | Reduce placeholder preconditions by same ratio |
+| Add test for error path | Add postcondition asserting error return type |
+
+**Rationale**: Tests without contracts are just regression guards — they tell you WHAT broke
+but not WHY it should work. Contracts define the invariant; tests falsify it. Both together
+give provable correctness.
+
+**Metric**: `pmat comply check` CB-1339 tracks placeholder preconditions (currently 3%).
+Target: 0% placeholder preconditions.
+
 ### Rule 6: GPU Auto-Detection at Runtime
 
 **GPU support is detected at runtime, not compile time.**
