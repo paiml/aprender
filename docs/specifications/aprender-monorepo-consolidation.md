@@ -56,7 +56,7 @@
 | **2 version outliers** | P2 | **NOT A GAP** — `aprender-present` and `aprender-test` are sub-workspaces with independent `[workspace.package] version`. By design. |
 | **120 workspace members** | P2 | Cosmetic — root Cargo.toml has 120 member path entries (includes sub-workspace paths). 74 top-level crate directories. |
 | **Stale "Previous State" section** | P3 | Historical context — kept for reference. |
-| **apr-cli coverage 58%** | P1 | apr-cli at 58.06% line coverage (target ≥80%). +159 tests added for data/diagnose/canary. Remaining gap is ~40% cfg-gated CUDA/training code unreachable without features. Realistic ceiling without CUDA: ~70%. |
+| **apr-cli coverage 58%** | P1 | apr-cli at 58% line (target ≥80%). Strategy: (1) tiny GGUF fixture unlocks 20+ cmd paths, (2) `#[coverage(off)]` on cfg-gated CUDA removes dead code from denominator, (3) insta-cmd snapshot tests for output formatting. Contract: `apr-cli-coverage-v1.yaml`. |
 
 ---
 
