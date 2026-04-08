@@ -37,12 +37,12 @@
 | Contract YAML files | 522 | — | INFO |
 | unwrap() calls | 0 | 0 | **PASS** |
 | pmat TDG | 92.5/100 (A) | A+ | **PASS** |
-| pmat comply | CRASH | PASS | **BUG** — pmat panics on Unicode em-dash (paiml-mcp-agent-toolkit#291) |
+| pmat comply | PASS (4 warnings) | PASS | **PASS** — 52 work contracts valid, 85 bindings verified, 0 ghosts |
 | pmat project score | 165.8/279 (D) | A+ | **WARN** — subcrate scoring misses root configs |
 
 ### Known Issues
 
-1. **pmat comply crash**: panics on Unicode em-dash in commit messages (pmat bug, filed paiml/paiml-mcp-agent-toolkit#291)
+1. ~~**pmat comply crash**~~: RESOLVED — pmat comply now passes (52 work contracts, 85 bindings, 0 ghosts). 4 soft warnings remain.
 2. **pmat project score**: D grade because subcrates lack local Cargo.lock, CI, Makefile — these exist at workspace root but pmat scores per-crate directory
 3. ~~**unwrap() calls**~~: RESOLVED — 0 unwrap() in production code, TDG 92.5/100 (A)
 4. **Qwen3.5 inference**: `apr run` fails on Qwen3.5-0.8B (GH-278 — new Gated Delta Net arch)
