@@ -14,10 +14,6 @@ readme = "README.md"
 name = "aprender_shell"
 path = "src/lib.rs"
 
-[[bin]]
-name = "aprender-shell"
-path = "src/main.rs"
-
 [[bench]]
 name = "shell_benchmarks"
 harness = false

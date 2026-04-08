@@ -260,7 +260,6 @@
 - [Regularization Theory](./ml-fundamentals/regularization.md)
 - [Speech and Voice Processing Theory](./ml-fundamentals/speech-voice-processing.md)
 - [Support Vector Machines (SVM)](./ml-fundamentals/svm.md)
-- [[Topic] Theory - Template](./ml-fundamentals/TEMPLATE.md)
 - [Transfer Learning Theory](./ml-fundamentals/transfer-learning.md)
 - [t-SNE Theory](./ml-fundamentals/tsne.md)
 - [Weak Supervision Theory](./ml-fundamentals/weak-supervision.md)

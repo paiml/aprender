@@ -178,11 +178,6 @@ harness = false
 name = "gemm_comparison"
 harness = false
 
-[[bin]]
-name = "trueno-monitor"
-path = "src/bin/trueno_monitor/main.rs"
-required-features = ["tui-monitor"]
-
 [[example]]
 name = "gpu_batch_demo"
 required-features = ["gpu"]

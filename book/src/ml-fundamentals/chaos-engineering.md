@@ -201,7 +201,7 @@ Scheduled chaos exercises:
 ### Rust
 
 ```rust
-use renacer::chaos::{inject_latency, corrupt_tensor};
+use aprender::chaos::{inject_latency, corrupt_tensor};
 
 #[chaos_experiment]
 fn test_model_resilience() {

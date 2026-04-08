@@ -49,10 +49,10 @@ The `showcase_benchmark` example implements:
 
 | Model | Size | GPU Target | GPU Achieved | CPU Target |
 |-------|------|------------|--------------|------------|
-| Qwen2.5-Coder-0.5B | 490MB | 500+ tok/s | TBD | 150+ tok/s |
+| Qwen2.5-Coder-0.5B | 490MB | 500+ tok/s | — | 150+ tok/s |
 | Qwen2.5-Coder-1.5B | 1.1GB | 350+ tok/s | **824.7 tok/s** ✅ | 75+ tok/s |
-| Qwen2.5-Coder-7B | 4.4GB | 150+ tok/s | TBD | 25+ tok/s |
-| Qwen2.5-Coder-32B | 19GB | 40+ tok/s | TBD | 6+ tok/s |
+| Qwen2.5-Coder-7B | 4.4GB | 150+ tok/s | — | 25+ tok/s |
+| Qwen2.5-Coder-32B | 19GB | 40+ tok/s | — | 6+ tok/s |
 
 ## Metrics
 

@@ -14,9 +14,8 @@ readme = "README.md"
 name = "aprender_monte_carlo"
 path = "src/lib.rs"
 
-[[bin]]
+[[example]]
 name = "aprender-monte-carlo"
-path = "src/main.rs"
 
 [dependencies]
 aprender = { path = "../../", version = "0.29.0" }

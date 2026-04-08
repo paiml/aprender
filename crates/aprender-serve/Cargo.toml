@@ -237,19 +237,6 @@ minimal = []  # Only core inference engine
 name = "aprender-serve"
 required-features = ["cli"]
 
-[[bin]]
-name = "wine_lambda"
-required-features = ["lambda"]
-
-[[bin]]
-name = "mnist_lambda"
-required-features = ["aprender-serve", "lambda"]
-
-[[bin]]
-name = "realizar-monitor"
-path = "src/bin/realizar_monitor/main.rs"
-required-features = ["tui"]
-
 [[bench]]
 name = "tensor_ops"
 harness = false

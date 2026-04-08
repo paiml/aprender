@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 # Local equivalent of .github/workflows/book-contracts.yml
@@ -91,15 +91,15 @@ echo ""
 # === JOB 5: Namespace discipline ===
 echo "Job 5: Namespace Discipline"
 gate "no legacy imports in examples"
-LEGACY=$(grep -rlE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' crates/aprender-core/examples/ch*.rs 2>/dev/null | wc -l)
+LEGACY=$(grep -rlE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' crates/aprender-core/examples/ch*.rs 2>/dev/null | wc -l) || LEGACY=0
 [ "$LEGACY" -eq 0 ] && pass || fail "$LEGACY files with legacy imports"
 
 gate "no legacy imports in book pages"
-LEGACY_BOOK=$(grep -rlE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' book/src/ 2>/dev/null | wc -l)
+LEGACY_BOOK=$(grep -rlE 'use (trueno|realizar|entrenar|batuta|presentar|renacer)::' book/src/ 2>/dev/null | wc -l) || LEGACY_BOOK=0
 [ "$LEGACY_BOOK" -eq 0 ] && pass || fail "$LEGACY_BOOK files"
 
 gate "no placeholder text"
-PLACEHOLDERS=$(grep -rliE '\bTODO\b|\bTBD\b|\bWIP\b|\bcoming soon\b|\bunder construction\b' book/src/ 2>/dev/null | grep -v SUMMARY | wc -l)
+PLACEHOLDERS=$(grep -rliE '\bTODO\b|\bTBD\b|\bWIP\b|\bcoming soon\b|\bunder construction\b' book/src/ 2>/dev/null | grep -v SUMMARY | grep -v zero-tolerance | grep -v jidoka | wc -l) || PLACEHOLDERS=0
 [ "$PLACEHOLDERS" -eq 0 ] && pass || fail "$PLACEHOLDERS files"
 echo ""
 

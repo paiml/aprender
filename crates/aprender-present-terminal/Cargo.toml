@@ -84,14 +84,12 @@ name = "ptop"
 path = "src/bin/ptop.rs"
 required-features = ["ptop"]
 
-[[bin]]
+[[example]]
 name = "tui-compare"
-path = "src/bin/tui-compare.rs"
 required-features = ["tui-compare"]
 
-[[bin]]
+[[example]]
 name = "cbtop-bench"
-path = "src/bin/cbtop-bench.rs"
 required-features = ["bench-tool"]
 
 [[example]]

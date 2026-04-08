@@ -116,9 +116,8 @@ name = "alimentar"
 path = "src/main.rs"
 required-features = ["cli"]
 
-[[bin]]
+[[example]]
 name = "generate_fixtures"
-path = "scripts/generate_fixtures.rs"
 
 [lib]
 name = "alimentar"

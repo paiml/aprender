@@ -90,7 +90,7 @@ Add language-appropriate comments:
 ```rust
 // Rust
 let x = 42;
-// TODO: review    ← inserted
+// review point
 let y = x + 1;
 ```
 

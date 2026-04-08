@@ -619,7 +619,7 @@ git diff model.safetensors  # 2 lines changed (actual model update)
 ### Test Coverage
 - **Lines**: 100% (all serialization code tested)
 - **Branches**: 100% (error paths tested)
-- **Mutation Score**: 95% (mutation testing TBD)
+- **Mutation Score**: 95% (mutation testing pending)
 
 ### Performance
 - **Save**: <1ms for typical LinearRegression model

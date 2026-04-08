@@ -186,7 +186,9 @@ jobs:
       - name: No placeholder text in book
         run: |
           FAIL=0
-          for f in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
+          # Exclude files that DISCUSS TODO/SATD policy (zero-tolerance.md, jidoka.md)
+          for f in $(find book/src -name "*.md" -not -name "SUMMARY.md" \
+                     -not -name "zero-tolerance.md" -not -name "jidoka.md"); do
             if grep -qiE '\bTODO\b|\bTBD\b|\bWIP\b|\bcoming soon\b|\bunder construction\b' "$f"; then
               echo "::error::Placeholder text in $f"
               FAIL=1

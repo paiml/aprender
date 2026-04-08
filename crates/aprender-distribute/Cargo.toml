@@ -128,10 +128,6 @@ harness = false
 name = "pool_bench"
 harness = false
 
-[[bin]]
-name = "repartir-worker"
-required-features = ["remote"]
-
 [[example]]
 name = "test_mac_worker"
 required-features = ["remote"]

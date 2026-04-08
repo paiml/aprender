@@ -77,11 +77,6 @@ aprender-integration = ["aprender"]
 alimentar-integration = ["alimentar"]
 full = ["compression", "cli", "remote", "encryption", "signing", "lineage-graph", "aprender-integration", "alimentar-integration"]
 
-[[bin]]
-name = "aprender_registry"
-path = "src/main.rs"
-required-features = ["cli"]
-
 [lib]
 name = "pacha"
 path = "src/lib.rs"
