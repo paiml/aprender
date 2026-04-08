@@ -1,0 +1,62 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'APR-MONO consolidation — apr-cli still deps on old crate names from crates.io'
+  description: >
+    Migrate apr-cli Cargo.toml from old crate names (batuta, realizar,
+    trueno, entrenar) to new workspace names (aprender-orchestrate,
+    aprender-serve, aprender-compute, aprender-train). Required for
+    cargo install aprender to work from crates.io without pulling old repos.
+
+equations:
+  no_old_dep_names:
+    formula: |
+      forall dep in apr-cli/Cargo.toml [dependencies]:
+        dep.name not in {batuta, realizar, trueno, entrenar, alimentar,
+                         renacer, certeza, simular, verificar, repartir,
+                         pacha, trueno-db, trueno-graph, trueno-rag,
+                         trueno-viz, trueno-gpu, trueno-quant,
+                         batuta-common, presentar-core, presentar-terminal}
+    domain: crates/apr-cli/Cargo.toml
+    codomain: bool
+    invariants:
+    - "All deps use aprender-* names"
+    - "cargo install aprender resolves entirely from aprender-* crates"
+
+  cargo_install_clean:
+    formula: |
+      cargo install aprender (from crates.io, clean machine) exits 0 AND
+      apr --version outputs current version
+    domain: clean crates.io resolution
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-DEPMIG-001
+  rule: no old dep names in apr-cli
+  prediction: "zero old crate names in apr-cli Cargo.toml deps"
+  test: "grep -cE '^(batuta|realizar|trueno|entrenar|alimentar|renacer|certeza) ' crates/apr-cli/Cargo.toml == 0"
+  if_fails: "apr-cli still pulls old crates.io packages"
+
+- id: FALSIFY-DEPMIG-002
+  rule: cargo install works from crates.io
+  prediction: "cargo install aprender on clean machine exits 0"
+  test: "cargo install aprender --force 2>&1 | grep -q 'Replacing\\|Installed'"
+  if_fails: "dep resolution fails — old crate versions conflict"
+
+proof_obligations:
+- type: invariant
+  property: "apr-cli deps are all aprender-* workspace names"
+
+kani_harnesses:
+- id: KH-DEPMIG-001
+  obligation: no_old_dep_names
+  property: all_deps_use_new_names
+
+verification_summary:
+  total_obligations: 2
+  proven: 0
+  tested: 0
+  status: pending
