@@ -645,7 +645,7 @@ mod tests {
     #[test]
     fn test_generate_from_bricks_invalid_output_dir() {
         let config = GenerateConfig {
-            output_dir: std::path::PathBuf::from("/nonexistent/readonly/path"),
+            output_dir: std::path::PathBuf::from("/dev/null/impossible/path"),
             ..Default::default()
         };
 
