@@ -1,0 +1,103 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+  - "https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview"
+  - "crates/apr-cli/src/commands/run.rs"
+  description: >
+    Chrome Trace Event Format (JSON) for apr run --tracing.
+    Output loadable in chrome://tracing, Perfetto, and speedscope.
+    Candle parity: matching tracing_chrome output format. Refs GH-574.
+
+equations:
+  chrome_trace_schema:
+    formula: |
+      apr run --tracing <model> produces JSON with:
+        { "traceEvents": [ ... ] }
+      Each event is a Chrome Trace Event Format object:
+        { "ph": "X"|"B"|"E"|"i",
+          "name": string,
+          "cat": string,
+          "pid": u64,
+          "tid": u64,
+          "ts": f64 (microseconds),
+          "dur": f64 (for "X" events) }
+    domain: apr run --tracing output
+    codomain: JSON array of trace events
+    invariants:
+    - "Output is valid JSON parseable by jq"
+    - "traceEvents array contains at least 1 event per inference step"
+    - "Timestamps (ts) are monotonically non-decreasing within a thread"
+    - "Duration events (ph=X) have dur > 0"
+
+  trace_event_categories:
+    formula: |
+      Categories (cat field) MUST include:
+        "tokenize" — tokenization step
+        "embed"    — embedding lookup
+        "layer"    — transformer layer (includes layer index in name)
+        "sample"   — token sampling
+        "decode"   — token decoding
+    domain: trace event categories
+    codomain: string enum
+    invariants:
+    - "Every inference run produces tokenize + embed + layer(s) + sample + decode events"
+    - "Layer events include layer index: 'layer_0', 'layer_1', etc."
+    - "Events are nested: layer contains attention + ffn sub-events"
+
+  output_format_flag:
+    formula: |
+      --tracing flag:
+        apr run --tracing <model> → writes trace.json to current dir
+        apr run --tracing --trace-output <path> → writes to specified path
+      Does NOT interfere with normal inference output (text goes to stdout,
+      trace goes to file).
+    domain: CLI flags
+    codomain: file path
+    invariants:
+    - "--tracing flag does not change inference output on stdout"
+    - "Trace file written atomically (no partial writes on error)"
+    - "Default output: trace.json in current directory"
+
+falsification_tests:
+- id: FALSIFY-TRACE-001
+  rule: valid chrome trace JSON
+  prediction: "apr run --tracing output is valid JSON"
+  test: |
+    apr run --tracing model.gguf "test" --max-tokens 4 2>/dev/null
+    jq '.traceEvents | length > 0' trace.json
+  if_fails: "trace output not valid JSON or empty"
+
+- id: FALSIFY-TRACE-002
+  rule: required categories present
+  prediction: "trace contains tokenize, layer, sample events"
+  test: |
+    apr run --tracing model.gguf "test" --max-tokens 4 2>/dev/null
+    CATS=$(jq -r '.traceEvents[].cat' trace.json | sort -u)
+    echo "$CATS" | grep -q "tokenize" && echo "$CATS" | grep -q "layer"
+  if_fails: "missing required trace categories"
+
+- id: FALSIFY-TRACE-003
+  rule: timestamps monotonic
+  prediction: "ts values non-decreasing within same tid"
+  test: |
+    apr run --tracing model.gguf "test" --max-tokens 4 2>/dev/null
+    jq '[.traceEvents | sort_by(.ts) | .[0:-1] as $a | .[1:] as $b |
+         [$a, $b] | transpose | map(.[1].ts >= .[0].ts) | all]' trace.json
+  if_fails: "timestamps not monotonic"
+
+proof_obligations:
+- type: invariant
+  property: "output is valid Chrome Trace Event Format JSON"
+- type: invariant
+  property: "all required categories present"
+- type: invariant
+  property: "timestamps monotonically non-decreasing"
+
+verification_summary:
+  total_obligations: 3
+  proven: 0
+  tested: 0
+  status: pending

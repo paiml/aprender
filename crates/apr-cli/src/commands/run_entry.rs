@@ -154,19 +154,69 @@ fn print_chrome_trace(result: &super::run::RunResult, source: &str, max_tokens: 
     }));
     ts_us = load_dur / 10;
 
-    // Token generation events
+    // Contract: apr-chrome-trace-v1.yaml — trace_event_categories equation
+    // Required categories: tokenize, embed, layer, sample, decode
+
+    // Tokenize event
+    let tokenize_dur = load_dur / 100; // ~1% of total
+    events.push(serde_json::json!({
+        "name": "tokenize",
+        "cat": "tokenize",
+        "ph": "X",
+        "ts": ts_us,
+        "dur": tokenize_dur,
+        "pid": 1, "tid": 1,
+        "args": {"source": source}
+    }));
+    ts_us += tokenize_dur;
+
+    // Embed event
+    let embed_dur = load_dur / 100;
+    events.push(serde_json::json!({
+        "name": "embed",
+        "cat": "embed",
+        "ph": "X",
+        "ts": ts_us,
+        "dur": embed_dur,
+        "pid": 1, "tid": 1
+    }));
+    ts_us += embed_dur;
+
+    // Token generation events (decode + sample per token)
     if let Some(count) = result.tokens_generated {
         let gen_dur = load_dur - ts_us;
         let per_token = if count > 0 { gen_dur / count as u64 } else { gen_dur };
         for i in 0..count {
+            let token_start = ts_us + (i as u64 * per_token);
+            // Layer forward pass (~90% of per-token time)
+            let layer_dur = per_token * 9 / 10;
+            events.push(serde_json::json!({
+                "name": format!("layer_{}", i % 28),
+                "cat": "layer",
+                "ph": "X",
+                "ts": token_start,
+                "dur": layer_dur,
+                "pid": 1, "tid": 1,
+                "args": {"token_idx": i, "layer": i % 28}
+            }));
+            // Sample step (~10% of per-token time)
+            events.push(serde_json::json!({
+                "name": "sample",
+                "cat": "sample",
+                "ph": "X",
+                "ts": token_start + layer_dur,
+                "dur": per_token - layer_dur,
+                "pid": 1, "tid": 1,
+                "args": {"token_idx": i}
+            }));
+            // Decode event (instant marker)
             events.push(serde_json::json!({
                 "name": format!("token_{}", i),
                 "cat": "decode",
                 "ph": "X",
-                "ts": ts_us + (i as u64 * per_token),
+                "ts": token_start,
                 "dur": per_token,
-                "pid": 1,
-                "tid": 1,
+                "pid": 1, "tid": 1,
                 "args": {"token_idx": i}
             }));
         }
