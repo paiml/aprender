@@ -71,7 +71,7 @@ code = ["dep:batuta"]
 dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
-cuda = ["inference", "realizar/cuda"]
+cuda = ["inference", "realizar/cuda", "entrenar/cuda"]
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]
@@ -178,9 +178,8 @@ trueno-explain = { version = "0.2.2", optional = true }
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { version = "0.3.0", optional = true }
-# ML training engine: classification fine-tuning pipeline (--task classify)
-# ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
-entrenar = { version = "0.8.1", optional = true }
+# ML training engine (workspace path dep — enables cuda feature forwarding)
+entrenar = { workspace = true, optional = true }
 # Heap profiling (opt-in via --features dhat-heap)
 dhat = { version = "0.3", optional = true }
 # Data loading, splitting, imbalance detection (apr data subcommands)
