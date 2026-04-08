@@ -17,8 +17,8 @@ thiserror.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 
-# TUI (optional for WASM builds)
-ratatui = { workspace = true, optional = true }
+# TUI (optional for WASM builds) — presentar-terminal replaces ratatui
+presentar-terminal = { workspace = true, optional = true }
 crossterm = { workspace = true, optional = true }
 
 # WASM (optional for TUI builds)
@@ -38,7 +38,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = ["tui"]
-tui = ["dep:ratatui", "dep:crossterm"]
+tui = ["dep:presentar-terminal", "dep:crossterm"]
 wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:console_error_panic_hook"]
 
 [lib]

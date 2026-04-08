@@ -1,7 +1,7 @@
 //! TUI Load Testing Module
 //!
 //! Framework-agnostic load testing for terminal user interfaces.
-//! Works with any TUI framework (presentar, ratatui, crossterm, etc.).
+//! Works with any TUI framework (presentar-terminal, crossterm, etc.).
 //!
 //! ## Key Features
 //!

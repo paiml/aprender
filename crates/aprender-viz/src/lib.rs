@@ -98,6 +98,7 @@ pub mod interop;
 /// TUI monitoring system (btop-like).
 #[cfg(feature = "monitor")]
 #[cfg_attr(docsrs, doc(cfg(feature = "monitor")))]
+#[cfg(feature = "ratatui")]
 pub mod monitor;
 /// Text prompt interface for declarative visualization DSL.
 pub mod prompt;

@@ -1,7 +1,7 @@
 //! TUI Test Backend for Frame Capture
 //!
 //! Provides a test backend that captures frames for assertion.
-//! Uses TextGrid instead of ratatui::Buffer for zero external dependencies.
+//! Uses TextGrid instead of presentar-terminal CellBuffer for zero external dependencies.
 //!
 //! ## EXTREME TDD: Tests written FIRST per spec
 
@@ -197,7 +197,7 @@ impl fmt::Display for FrameDiff {
 /// TUI Test Backend for capturing frames
 ///
 /// Provides a text grid and frame capture functionality for testing terminal UIs.
-/// Uses TextGrid instead of ratatui::Buffer for zero external dependencies.
+/// Uses TextGrid instead of presentar-terminal CellBuffer for zero external dependencies.
 #[derive(Debug)]
 pub struct TuiTestBackend {
     grid: TextGrid,

@@ -4,8 +4,9 @@ use crate::{
     chaos::ChaosConfig,
     filter, tracer, transpiler_map,
     validate::{self, ValidateConfig},
-    visualize::{self, VisualizeConfig},
 };
+#[cfg(feature = "ratatui")]
+use crate::visualize::{self, VisualizeConfig};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
@@ -292,6 +293,7 @@ pub enum Commands {
     /// Launches an interactive terminal UI showing syscall heatmaps, anomaly
     /// timelines, ML clustering, and OTLP span waterfalls in real-time.
     /// Uses ttop-identical architecture for 8ms frame times.
+    #[cfg(feature = "ratatui")]
     Visualize(VisualizeArgs),
 }
 
@@ -354,6 +356,7 @@ pub enum ValidationOutputFormat {
 }
 
 /// Arguments for the visualize subcommand (Sprint 52-55)
+#[cfg(feature = "ratatui")]
 #[derive(Args, Debug)]
 pub struct VisualizeArgs {
     /// Tick rate in milliseconds (default: 50, matches ttop)
@@ -586,6 +589,7 @@ fn run_validate_subcommand(args: &ValidateArgs) -> i32 {
 }
 
 /// Run the visualize subcommand (Sprint 52-55)
+#[cfg(feature = "ratatui")]
 fn run_visualize_subcommand(args: &VisualizeArgs) -> Result<i32> {
     // Validate: must have either -p PID or -- COMMAND (same gate as root handler)
     let has_command = args.command.as_ref().is_some_and(|c| !c.is_empty());
@@ -635,6 +639,7 @@ pub fn run() -> Result<i32> {
             Commands::Validate(validate_args) => {
                 return Ok(run_validate_subcommand(validate_args));
             }
+            #[cfg(feature = "ratatui")]
             Commands::Visualize(visualize_args) => {
                 return run_visualize_subcommand(visualize_args);
             }
@@ -1854,8 +1859,9 @@ mod tests {
         assert_ne!(ValidationOutputFormat::Json, ValidationOutputFormat::Junit);
     }
 
-    // Sprint 56: Metrics and Alerting CLI Tests
+    // Sprint 56: Metrics and Alerting CLI Tests (requires ratatui feature)
 
+    #[cfg(feature = "ratatui")]
     /// Parse a visualize CLI invocation and extract VisualizeArgs
     fn parse_visualize(args: &[&str]) -> VisualizeArgs {
         let mut full: Vec<&str> = vec!["renacer", "visualize"];
@@ -1867,11 +1873,13 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_metrics_flag() {
         assert!(parse_visualize(&["--metrics", "--", "echo", "test"]).enable_metrics);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_defaults() {
         let a = parse_visualize(&["--", "echo", "test"]);
@@ -1881,23 +1889,27 @@ mod tests {
         assert!((a.alert_error_rate - 5.0).abs() < f32::EPSILON);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_alerts_flag() {
         assert!(parse_visualize(&["--alerts", "--", "echo", "test"]).enable_alerts);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_alert_latency_threshold_custom() {
         let a = parse_visualize(&["--alert-latency-threshold", "5000", "--", "echo", "test"]);
         assert_eq!(a.alert_latency_threshold, 5000);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_alert_error_rate_custom() {
         let a = parse_visualize(&["--alert-error-rate", "2.5", "--", "echo", "test"]);
         assert!((a.alert_error_rate - 2.5).abs() < f32::EPSILON);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_metrics_and_alerts_combined() {
         let a = parse_visualize(&[
@@ -1917,6 +1929,7 @@ mod tests {
         assert!((a.alert_error_rate - 3.0).abs() < f32::EPSILON);
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_no_pid_no_command_errors() {
         let args = parse_visualize(&[]);
@@ -1924,6 +1937,7 @@ mod tests {
         assert!(err.to_string().contains("Must specify either"));
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_both_pid_and_command_errors() {
         let mut args = parse_visualize(&["--", "echo"]);
@@ -1932,6 +1946,7 @@ mod tests {
         assert!(err.to_string().contains("Cannot specify both"));
     }
 
+    #[cfg(feature = "ratatui")]
     #[test]
     fn test_visualize_empty_command_errors() {
         let mut args = parse_visualize(&[]);

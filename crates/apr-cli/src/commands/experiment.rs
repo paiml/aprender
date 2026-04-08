@@ -153,6 +153,7 @@ fn open_store(db: &Option<PathBuf>, global: bool) -> Result<SqliteBackend> {
 // Ratatui TUI browser
 // =============================================================================
 
+#[cfg(feature = "ratatui")]
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind},
     execute,
@@ -167,9 +168,20 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Sparkline as RatatuiSparkline},
     Frame, Terminal,
 };
+#[cfg(feature = "ratatui")]
 use std::io;
 
+#[cfg(not(feature = "ratatui"))]
+fn run_tui_browser(_runs: &[RunEntry]) -> Result<()> {
+    Err(CliError::ValidationFailed(
+        "Experiment TUI browser requires the 'ratatui' feature (being migrated to presentar-terminal).\n\
+         Use --json for non-interactive output: apr experiment view --json"
+            .to_string(),
+    ))
+}
+
 /// Pre-computed row data for the browser table.
+#[cfg(feature = "ratatui")]
 struct TableRow {
     experiment: String,
     run_id: String,
@@ -180,12 +192,14 @@ struct TableRow {
 }
 
 /// TUI application state.
+#[cfg(feature = "ratatui")]
 struct BrowserApp {
     rows: Vec<TableRow>,
     selected: usize,
     should_quit: bool,
 }
 
+#[cfg(feature = "ratatui")]
 impl BrowserApp {
     fn new(rows: Vec<TableRow>) -> Self {
         Self {
@@ -209,6 +223,7 @@ impl BrowserApp {
 }
 
 /// Run the interactive TUI experiment browser.
+#[cfg(feature = "ratatui")]
 fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
     let table_rows: Vec<TableRow> = runs
         .iter()
@@ -262,6 +277,7 @@ fn run_tui_browser(runs: &[RunEntry]) -> Result<()> {
 }
 
 /// Handle a key press event in the experiment browser.
+#[cfg(feature = "ratatui")]
 fn handle_browser_key(app: &mut BrowserApp, code: KeyCode) {
     match code {
         KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
@@ -275,6 +291,7 @@ fn handle_browser_key(app: &mut BrowserApp, code: KeyCode) {
     }
 }
 
+#[cfg(feature = "ratatui")]
 fn run_event_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut BrowserApp,
@@ -302,6 +319,7 @@ fn run_event_loop(
     }
 }
 
+#[cfg(feature = "ratatui")]
 fn draw_ui(f: &mut Frame, app: &BrowserApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -317,6 +335,7 @@ fn draw_ui(f: &mut Frame, app: &BrowserApp) {
     draw_footer(f, chunks[2]);
 }
 
+#[cfg(feature = "ratatui")]
 fn draw_run_table(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect) {
     let header_style = Style::default()
         .fg(Color::Cyan)
@@ -391,6 +410,7 @@ fn draw_run_table(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect) 
     }
 }
 
+#[cfg(feature = "ratatui")]
 fn draw_loss_panel(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect) {
     let row = &app.rows[app.selected];
 
@@ -480,6 +500,7 @@ fn draw_loss_panel(f: &mut Frame, app: &BrowserApp, area: ratatui::layout::Rect)
     }
 }
 
+#[cfg(feature = "ratatui")]
 fn draw_footer(f: &mut Frame, area: ratatui::layout::Rect) {
     let footer = Paragraph::new(Line::from(vec![
         Span::styled(

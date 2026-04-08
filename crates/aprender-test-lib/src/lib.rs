@@ -181,7 +181,7 @@ pub mod tui;
 /// TUI Load Testing (Framework-Agnostic Performance Testing)
 ///
 /// Test TUI performance with large datasets, hang detection, and frame timing.
-/// Works with any TUI framework (presentar, ratatui, crossterm, etc.).
+/// Works with any TUI framework (presentar-terminal, crossterm, etc.).
 #[allow(
     clippy::missing_errors_doc,
     clippy::must_use_candidate,

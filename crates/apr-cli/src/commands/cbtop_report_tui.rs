@@ -166,7 +166,18 @@ fn print_report_text(report: &HeadlessReport) {
     println!("═══════════════════════════════════════════════════════════════");
 }
 
+/// Stub when ratatui is not available — TUI mode requires ratatui feature
+#[cfg(not(feature = "ratatui"))]
+fn run_tui(_model: Option<&str>, _attach: Option<&str>) -> Result<()> {
+    Err(CliError::ValidationFailed(
+        "TUI mode requires the 'ratatui' feature (being migrated to presentar-terminal).\n\
+         Use --headless mode instead: apr cbtop --headless --model-path <FILE>"
+            .to_string(),
+    ))
+}
+
 /// Run TUI mode (original behavior)
+#[cfg(feature = "ratatui")]
 fn run_tui(model: Option<&str>, attach: Option<&str>) -> Result<()> {
     // GH-526: Warn that --attach is not yet implemented for TUI mode
     if attach.is_some() {
@@ -200,6 +211,7 @@ fn run_tui(model: Option<&str>, attach: Option<&str>) -> Result<()> {
     res
 }
 
+#[cfg(feature = "ratatui")]
 fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         app.tick();
@@ -223,6 +235,7 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
     }
 }
 
+#[cfg(feature = "ratatui")]
 fn handle_cbtop_key(key: crossterm::event::KeyEvent, app: &mut App) {
     if key.kind != KeyEventKind::Press {
         return;

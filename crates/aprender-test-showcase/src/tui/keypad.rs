@@ -7,14 +7,74 @@
 //! - Highlighted when corresponding key is pressed
 //! - Used for visual demonstration of calculator operation
 
-#[cfg(feature = "ratatui")]
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, Borders, Widget},
-};
+/// A rectangle for layout/hit-testing (u16 coordinates, terminal cells).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rect {
+    /// X position of top-left corner
+    pub x: u16,
+    /// Y position of top-left corner
+    pub y: u16,
+    /// Width in terminal cells
+    pub width: u16,
+    /// Height in terminal cells
+    pub height: u16,
+}
+
+impl Rect {
+    /// Create a new rectangle with the given position and dimensions.
+    #[must_use]
+    pub fn new(x: u16, y: u16, width: u16, height: u16) -> Self {
+        Self { x, y, width, height }
+    }
+}
+
+/// A simple text buffer for TUI rendering (replaces ratatui::Buffer).
+#[derive(Debug, Clone)]
+pub struct TextBuffer {
+    cells: Vec<char>,
+    width: u16,
+    height: u16,
+}
+
+impl TextBuffer {
+    /// Create an empty buffer filled with spaces.
+    #[must_use]
+    pub fn empty(area: Rect) -> Self {
+        let size = (area.width as usize) * (area.height as usize);
+        Self {
+            cells: vec![' '; size],
+            width: area.width,
+            height: area.height,
+        }
+    }
+
+    /// Write a string at the given position.
+    pub fn write_str(&mut self, x: u16, y: u16, s: &str) {
+        let mut cx = x;
+        for ch in s.chars() {
+            if cx >= self.width || y >= self.height {
+                break;
+            }
+            let idx = (y as usize) * (self.width as usize) + (cx as usize);
+            if idx < self.cells.len() {
+                self.cells[idx] = ch;
+            }
+            cx += 1;
+        }
+    }
+
+    /// Get the full buffer content as a string.
+    #[must_use]
+    pub fn to_string_content(&self) -> String {
+        self.cells.iter().collect()
+    }
+
+    /// Check if the buffer contains a substring.
+    #[must_use]
+    pub fn contains(&self, text: &str) -> bool {
+        self.to_string_content().contains(text)
+    }
+}
 
 /// A single keypad button
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,51 +388,30 @@ impl<'a> KeypadWidget<'a> {
     pub fn new(keypad: &'a Keypad) -> Self {
         Self { keypad }
     }
-}
 
-impl Widget for KeypadWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // Draw border
-        Block::default()
-            .title(" Keypad ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan))
-            .render(area, buf);
+    /// Render the keypad into a TextBuffer
+    pub fn render(&self, area: Rect, buf: &mut TextBuffer) {
+        // Draw border with title
+        if area.width >= 2 && area.height >= 2 {
+            buf.write_str(area.x + 1, area.y, " Keypad ");
+        }
 
         // Calculate inner area
-        let inner = Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(2),
-            height: area.height.saturating_sub(2),
-        };
+        let inner_x = area.x + 1;
+        let inner_y = area.y + 1;
+        let inner_w = area.width.saturating_sub(2);
+        let inner_h = area.height.saturating_sub(2);
 
-        if inner.width < 4 || inner.height < 5 {
+        if inner_w < 4 || inner_h < 5 {
             return; // Too small to render
         }
 
-        let btn_width = inner.width / self.keypad.cols as u16;
-        let btn_height = inner.height / self.keypad.rows as u16;
+        let btn_width = inner_w / self.keypad.cols as u16;
+        let btn_height = inner_h / self.keypad.rows as u16;
 
         for ((row, col), btn) in self.keypad.buttons_with_positions() {
-            let x = inner.x + (col as u16 * btn_width);
-            let y = inner.y + (row as u16 * btn_height);
-
-            // Button style based on pressed state
-            let style = if btn.pressed {
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                match btn.action {
-                    ButtonAction::Digit(_) => Style::default().fg(Color::White),
-                    ButtonAction::Operator(_) => Style::default().fg(Color::Yellow),
-                    ButtonAction::Equals => Style::default().fg(Color::Green),
-                    ButtonAction::Clear => Style::default().fg(Color::Red),
-                    _ => Style::default().fg(Color::Cyan),
-                }
-            };
+            let x = inner_x + (col as u16 * btn_width);
+            let y = inner_y + (row as u16 * btn_height);
 
             // Render button label centered
             if btn_width >= 3 {
@@ -380,8 +419,8 @@ impl Widget for KeypadWidget<'_> {
                 let label_x = x + (btn_width.saturating_sub(label.len() as u16)) / 2;
                 let label_y = y + btn_height / 2;
 
-                if label_y < inner.y + inner.height && label_x < inner.x + inner.width {
-                    buf.set_span(label_x, label_y, &Span::styled(label, style), btn_width);
+                if label_y < inner_y + inner_h && label_x < inner_x + inner_w {
+                    buf.write_str(label_x, label_y, &label);
                 }
             }
         }
@@ -723,11 +762,11 @@ mod tests {
         let keypad = Keypad::new();
         let widget = KeypadWidget::new(&keypad);
         let area = Rect::new(0, 0, 22, 12);
-        let mut buf = Buffer::empty(area);
+        let mut buf = TextBuffer::empty(area);
 
         widget.render(area, &mut buf);
 
-        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        let content = buf.to_string_content();
         assert!(content.contains("Keypad"));
         assert!(content.contains("[7]"));
         assert!(content.contains("[+]"));
@@ -738,7 +777,7 @@ mod tests {
         let keypad = Keypad::new();
         let widget = KeypadWidget::new(&keypad);
         let area = Rect::new(0, 0, 5, 5); // Too small
-        let mut buf = Buffer::empty(area);
+        let mut buf = TextBuffer::empty(area);
 
         // Should not panic, just render border
         widget.render(area, &mut buf);
@@ -750,11 +789,11 @@ mod tests {
         keypad.press_button(0); // Press '7'
         let widget = KeypadWidget::new(&keypad);
         let area = Rect::new(0, 0, 22, 12);
-        let mut buf = Buffer::empty(area);
+        let mut buf = TextBuffer::empty(area);
 
         widget.render(area, &mut buf);
         // Pressed button should still render
-        let content: String = buf.content().iter().map(|c| c.symbol()).collect();
+        let content = buf.to_string_content();
         assert!(content.contains("[7]"));
     }
 

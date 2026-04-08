@@ -448,5 +448,6 @@ include!("cbtop_get_cpu_memory.rs");
 include!("cbtop_report_tui.rs");
 include!("gguf.rs");
 include!("cbtop_measure_batch.rs");
+#[cfg(feature = "ratatui")]
 include!("cbtop_render_title.rs");
 include!("cbtop_06.rs");

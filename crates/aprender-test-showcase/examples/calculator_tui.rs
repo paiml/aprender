@@ -1,38 +1,38 @@
 //! Calculator TUI Example
 //!
 //! This example demonstrates the calculator TUI interface.
+//! Uses presentar-terminal CellBuffer + DiffRenderer for rendering.
 //!
 //! Run with: cargo run --example calculator_tui --features tui
 
-use std::io;
+use std::io::{self, Write};
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event},
+    cursor,
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
-use showcase_calculator::tui::{render, CalculatorApp, InputHandler, KeyAction};
+use presentar_terminal::{CellBuffer, Color, DiffRenderer, Modifiers};
+use showcase_calculator::tui::{render_to_buffer, CalculatorApp, InputHandler, KeyAction};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, cursor::Hide)?;
 
     // Run app
-    let result = run_app(&mut terminal);
+    let result = run_app(&mut stdout);
 
     // Restore terminal
     disable_raw_mode()?;
     execute!(
-        terminal.backend_mut(),
+        stdout,
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        cursor::Show,
     )?;
-    terminal.show_cursor()?;
 
     if let Err(err) = result {
         eprintln!("Error: {err}");
@@ -61,18 +61,57 @@ fn handle_action(app: &mut CalculatorApp, action: KeyAction) -> bool {
     false
 }
 
-fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn run_app(stdout: &mut io::Stdout) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = CalculatorApp::new();
     let input_handler = InputHandler::new();
 
+    let (mut width, mut height) = crossterm::terminal::size().unwrap_or((80, 24));
+    let mut cell_buf = CellBuffer::new(width, height);
+    let mut renderer = DiffRenderer::new();
+
     loop {
-        terminal.draw(|f| render(&app, f))?;
+        // Check for terminal resize
+        let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
+        if w != width || h != height {
+            width = w;
+            height = h;
+            cell_buf.resize(w, h);
+            renderer.reset();
+        }
+
+        // Render calculator to text buffer, then transfer to cell buffer
+        let text_buf = render_to_buffer(&app, width, height);
+        cell_buf.clear();
+
+        // Transfer text content to presentar CellBuffer
+        let content = text_buf.to_string_content();
+        let mut cx: u16 = 0;
+        let mut cy: u16 = 0;
+        for ch in content.chars() {
+            if cx >= width {
+                cx = 0;
+                cy += 1;
+            }
+            if cy >= height {
+                break;
+            }
+            if ch != ' ' {
+                let mut buf = [0u8; 4];
+                let s = ch.encode_utf8(&mut buf);
+                cell_buf.update(cx, cy, s, Color::WHITE, Color::TRANSPARENT, Modifiers::NONE);
+            }
+            cx += 1;
+        }
+
+        // Flush to terminal
+        renderer.flush(&mut cell_buf, stdout)?;
+        stdout.flush()?;
 
         if let Event::Key(key) = event::read()? {
-            if handle_action(&mut app, input_handler.handle_key(key)) {
-                break;
+            if key.kind == KeyEventKind::Press {
+                if handle_action(&mut app, input_handler.handle_key(key)) {
+                    break;
+                }
             }
         }
 

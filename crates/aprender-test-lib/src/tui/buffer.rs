@@ -1,10 +1,10 @@
 //! Simple text grid for TUI testing.
 //!
-//! This module provides a lightweight text buffer that replaces ratatui::Buffer
+//! This module provides a lightweight text buffer that replaces presentar-terminal CellBuffer
 //! for TUI testing purposes. It stores characters in a grid format and can be
 //! converted directly to string lines for frame comparison.
 
-/// Simple text grid for TUI testing (replaces ratatui::Buffer).
+/// Simple text grid for TUI testing (replaces presentar-terminal CellBuffer).
 ///
 /// Stores characters in a flat vector with row-major ordering.
 /// Designed for testing terminal output without the complexity of full
@@ -78,7 +78,7 @@ impl TextGrid {
         self.cells.fill(' ');
     }
 
-    /// Alias for clear() to match ratatui::Buffer API.
+    /// Alias for clear() to match presentar-terminal CellBuffer API.
     pub fn reset(&mut self) {
         self.clear();
     }

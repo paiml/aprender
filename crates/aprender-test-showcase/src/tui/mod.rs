@@ -9,5 +9,5 @@ mod ui;
 
 pub use app::CalculatorApp;
 pub use input::{InputHandler, KeyAction};
-pub use keypad::{ButtonAction, Keypad, KeypadButton, KeypadWidget};
-pub use ui::render;
+pub use keypad::{ButtonAction, Keypad, KeypadButton, KeypadWidget, Rect, TextBuffer};
+pub use ui::render_to_buffer;
