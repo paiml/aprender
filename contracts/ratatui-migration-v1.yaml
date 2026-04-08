@@ -1,0 +1,89 @@
+metadata:
+  version: 1.0.0
+  created: '2026-04-08'
+  author: PAIML Engineering
+  registry: true
+  references:
+  - 'Sovereign AI Stack — presentar-terminal replaces ratatui'
+  - 'docs/specifications/ratatui-to-presentar-migration.md'
+  description: >
+    Complete removal of ratatui from the workspace. All TUI rendering
+    migrates to presentar-terminal (sovereign stack).
+
+equations:
+  zero_ratatui_deps:
+    formula: |
+      grep "ratatui" crates/*/Cargo.toml returns 0 matches
+    domain: all workspace Cargo.toml files
+    codomain: bool
+    invariants:
+    - "ratatui does not appear in any Cargo.toml"
+    - "cargo install aprender never downloads ratatui"
+
+  zero_ratatui_source:
+    formula: |
+      grep -r "use ratatui" crates/*/src/ returns 0 matches
+    domain: all Rust source files
+    codomain: bool
+    invariants:
+    - "No source file imports ratatui"
+    - "All TUI code uses presentar_terminal::"
+
+  tui_commands_functional:
+    formula: |
+      apr tui --help exits 0 AND
+      apr cbtop --help exits 0 AND
+      apr monitor --help exits 0
+    domain: CLI binary
+    codomain: bool
+    invariants:
+    - "TUI commands still work after migration"
+    - "Rendering uses presentar-terminal instead of ratatui"
+
+  workspace_compiles:
+    formula: |
+      cargo check --workspace exits 0
+    domain: workspace build
+    codomain: bool
+
+falsification_tests:
+- id: FALSIFY-RATATUI-001
+  rule: zero ratatui in Cargo.toml
+  prediction: "grep ratatui crates/*/Cargo.toml returns 0"
+  test: "! grep -rq 'ratatui' crates/*/Cargo.toml"
+  if_fails: "ratatui dep not removed"
+
+- id: FALSIFY-RATATUI-002
+  rule: zero ratatui in source
+  prediction: "grep -r 'use ratatui' returns 0"
+  test: "! grep -rq 'use ratatui' crates/*/src/"
+  if_fails: "source still imports ratatui"
+
+- id: FALSIFY-RATATUI-003
+  rule: workspace compiles
+  prediction: "cargo check --workspace exits 0"
+  test: "cargo check --workspace"
+  if_fails: "migration broke compilation"
+
+- id: FALSIFY-RATATUI-004
+  rule: TUI commands work
+  prediction: "apr tui/cbtop/monitor --help exit 0"
+  test: "apr tui --help && apr cbtop --help && apr monitor --help"
+  if_fails: "TUI command broken after migration"
+
+proof_obligations:
+- type: invariant
+  property: "zero ratatui in entire workspace"
+- type: invariant
+  property: "TUI functionality preserved via presentar-terminal"
+
+kani_harnesses:
+- id: KH-RATATUI-001
+  obligation: zero_ratatui_deps
+  property: no_ratatui_anywhere
+
+verification_summary:
+  total_obligations: 4
+  proven: 0
+  tested: 0
+  status: pending
